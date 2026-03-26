@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/icon'
 interface CrmSettings {
   agentName: string
   agentRole: 'owner' | 'agent'
+  profilePhotoUrl: string | null
   forwardingNumber: string
   forwardingEmail: string
   smsAlerts: boolean
@@ -20,6 +21,7 @@ interface CrmSettings {
 const DEFAULT_SETTINGS: CrmSettings = {
   agentName: 'Ernest A. Dodson III',
   agentRole: 'owner',
+  profilePhotoUrl: null,
   forwardingNumber: '+18413737722',
   forwardingEmail: '',
   smsAlerts: true,
@@ -63,6 +65,21 @@ export default function SettingsPage() {
     setSettings((prev) => ({ ...prev, [key]: value }))
   }
 
+  function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        update('profilePhotoUrl', reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  function removePhoto() {
+    update('profilePhotoUrl', null)
+  }
+
   function save() {
     localStorage.setItem('crm_settings', JSON.stringify(settings))
     setSaved(true)
@@ -90,8 +107,40 @@ export default function SettingsPage() {
             <Icon name="person" size="text-base" /> Agent Profile
           </h2>
           <div className="flex items-start gap-6 mb-6">
-            <div className="w-16 h-16 rounded-full bg-primary text-white flex items-center justify-center text-xl font-black shrink-0">
-              {initials}
+            <div className="relative shrink-0">
+              {settings.profilePhotoUrl ? (
+                <img
+                  src={settings.profilePhotoUrl}
+                  alt="Profile"
+                  className="w-16 h-16 rounded-full object-cover border-2 border-primary/20"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-primary text-white flex items-center justify-center text-xl font-black">
+                  {initials}
+                </div>
+              )}
+              <label
+                htmlFor="photo-upload"
+                className="absolute -bottom-1 -right-1 w-7 h-7 bg-secondary text-white rounded-full flex items-center justify-center cursor-pointer hover:bg-secondary/90 transition-colors shadow-md"
+              >
+                <Icon name="photo_camera" size="text-sm" />
+              </label>
+              <input
+                id="photo-upload"
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
+              {settings.profilePhotoUrl && (
+                <button
+                  onClick={removePhoto}
+                  className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-md"
+                  title="Remove photo"
+                >
+                  <Icon name="close" size="text-xs" />
+                </button>
+              )}
             </div>
             <div className="flex-1 space-y-4">
               <div>

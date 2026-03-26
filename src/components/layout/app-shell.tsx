@@ -1,12 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavTabs } from './nav-tab'
 import { TelephonyBar } from '@/components/telephony/telephony-bar'
 import { Icon } from '@/components/ui/icon'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('crm_settings')
+      if (stored) {
+        const settings = JSON.parse(stored)
+        setProfilePhotoUrl(settings.profilePhotoUrl || null)
+      }
+    } catch {}
+  }, [])
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -54,9 +65,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button className="hidden sm:flex p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors" onClick={() => window.location.href = '/settings'}>
                 <Icon name="settings" />
               </button>
-              <div className="h-8 w-8 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold ml-1">
-                ED
-              </div>
+              {profilePhotoUrl ? (
+                <img
+                  src={profilePhotoUrl}
+                  alt="Profile"
+                  className="h-8 w-8 rounded-full object-cover border border-primary/20 ml-1 cursor-pointer"
+                  onClick={() => window.location.href = '/settings'}
+                />
+              ) : (
+                <div className="h-8 w-8 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold ml-1 cursor-pointer" onClick={() => window.location.href = '/settings'}>
+                  ED
+                </div>
+              )}
             </div>
           </div>
         </div>
