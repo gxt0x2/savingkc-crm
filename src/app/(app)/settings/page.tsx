@@ -200,6 +200,7 @@ export default function SettingsPage() {
                 readOnly
                 className="w-full border border-outline-variant/10 rounded-lg px-3 py-2 text-sm bg-surface-container text-on-surface-variant cursor-not-allowed"
               />
+              <p className="text-[10px] text-on-surface-variant mt-1">Your outbound calling number shown to leads.</p>
             </div>
             <div>
               <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
@@ -212,6 +213,19 @@ export default function SettingsPage() {
                 className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 placeholder="you@example.com"
               />
+              <p className="text-[10px] text-on-surface-variant mt-1">Email notifications will be sent here.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
+                Assigned Email (Outbound)
+              </label>
+              <input
+                type="email"
+                value="ernest@savingkc.com"
+                readOnly
+                className="w-full border border-outline-variant/10 rounded-lg px-3 py-2 text-sm bg-surface-container text-on-surface-variant cursor-not-allowed"
+              />
+              <p className="text-[10px] text-on-surface-variant mt-1">Your outbound email address shown to leads.</p>
             </div>
           </div>
         </section>
@@ -284,6 +298,46 @@ export default function SettingsPage() {
           <p className="text-xs text-on-surface-variant mt-3">
             Ari will only route calls and alerts during these hours. Outside office hours, all calls go to voicemail.
           </p>
+        </section>
+
+        {/* Voicemail Setup */}
+        <section className="bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-6 shadow-sm">
+          <h2 className="text-sm font-black uppercase tracking-widest text-primary mb-5 flex items-center gap-2">
+            <Icon name="voicemail" size="text-base" /> Voicemail
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
+                Voicemail Greeting
+              </label>
+              <textarea
+                rows={3}
+                defaultValue="You've reached Ernest Dodson with Saving KC Homebuyers. I'm either on another call or away from the phone. Leave your name and number, and I'll get back to you within the hour."
+                className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="text-[10px] text-on-surface-variant mt-1">This is stored for reference. Actual Twilio voicemail configuration is external.</p>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold">Voicemail Transcription</div>
+                <div className="text-xs text-on-surface-variant">Auto-transcribe voicemails (requires Twilio config)</div>
+              </div>
+              <Toggle checked={true} onChange={() => {}} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
+                After-Hours Behavior
+              </label>
+              <select
+                defaultValue="both"
+                className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+              >
+                <option value="voicemail">Send to voicemail only</option>
+                <option value="sms">Send SMS auto-response only</option>
+                <option value="both">Both voicemail + SMS auto-response</option>
+              </select>
+            </div>
+          </div>
         </section>
 
         {/* System Info */}

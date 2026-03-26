@@ -154,5 +154,77 @@
 - GET `/api/agent/accountability-timeline?lead_id={id}` - Returns timeline
 
 **Files Created:** 8
-**TypeScript Build:** Pending verification
+**TypeScript Build:** ✅ PASSES (1 pre-existing error in .next/dev)
+
+---
+
+## Phase 2: Ghost Protocol Full Build
+
+**Status:** ✅ COMPLETE (5/5 items)
+
+### GHP-02: Phase 1 Actions (Days 1-7) ✅
+**Already existed** from Night 2 - verified complete
+
+### GHP-03: Phase 2 Actions (Days 8-21) ✅
+**Added to:** `src/lib/ghost-protocol.ts`
+- `createPhase2Tasks()` function created
+- Day 10: SMS (different angle)
+- Day 14: Voicemail (strategic, mention comp)
+- Day 18: Second handwritten note
+- Day 21: Final SMS (door always open)
+
+**Template examples:**
+- Day 10 SMS: "No hard feelings either way — just want to make sure you know your options."
+- Day 21 SMS: "The door is always open. If anything changes with {address}, my direct line is {phone}."
+
+### GHP-04: Phase 3 - Long Nurture (Day 22+) ✅
+**Added to:** `src/lib/ghost-protocol.ts`
+
+**Functions created:**
+- `enterPhase3LongNurture()` - Sets up quarterly touchpoints
+- `advanceGhostProtocolPhase()` - Transitions leads through phases
+- `checkTriggerEventsForPhase3Leads()` - Monitors for trigger events
+
+**Touchpoints:**
+- Day 52 (30 days): SMS check-in
+- Day 82 (60 days): Handwritten note
+- Day 112 (90 days): SMS check-in
+- Day 202+ : Quarterly note
+
+**Trigger events monitored:**
+- Tax delinquency in county data
+- Pre-foreclosure filing
+- Ownership change
+- Code violations
+- On trigger: Lead moves back to Stage 1 (New) with "Ghost Protocol - Trigger Event" source
+- Critical Ari briefing event generated
+
+### GHP-05: Dashboard Widget ✅
+**Created:** `src/components/dashboard/ghost-protocol-widget.tsx` (170 lines)
+- Shows Phase 1 / Phase 2 / Phase 3 counts
+- Each count is clickable → filters leads list to that phase
+- Recovery rate progress bar and percentage
+- Real-time stats from `/api/ghost-protocol/stats`
+
+### GHP-06: Ghost Protocol Controls ✅
+**Created:**
+- `src/components/leads/ghost-protocol-controls.tsx` (320 lines) - UI component
+- Pause/resume/cancel functions in ghost-protocol.ts
+- API routes: `/api/ghost-protocol/pause`, `/resume`, `/cancel`
+
+**Features:**
+- Shows current status (active/paused/completed/cancelled), phase, next action date
+- **Pause:** Requires reason (Traveling, Hospitalization, Family Situation, Other). Logs action. Stops scheduled tasks.
+- **Resume:** Picks up where it left off. Logs action.
+- **Cancel:** Requires reason (Lead Reconnected, Not a Good Fit, Property Sold, Other). Lead stays in current stage. Logs action.
+- All pause/resume/cancel actions logged to lead_activities timeline
+
+**Phase 2 API Endpoints Created:**
+- GET `/api/ghost-protocol/stats` - Returns phase breakdown and recovery rate
+- POST `/api/ghost-protocol/pause` - Pause with reason
+- POST `/api/ghost-protocol/resume` - Resume protocol
+- POST `/api/ghost-protocol/cancel` - Cancel with reason
+
+**Files Created:** 10
+**Commit:** 29343d4
 
