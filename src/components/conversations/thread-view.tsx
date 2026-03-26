@@ -22,9 +22,11 @@ interface DateGroup {
 export function ThreadView({
   contact,
   dateGroups,
+  leadId,
 }: {
   contact: ThreadContact
   dateGroups: DateGroup[]
+  leadId?: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -79,7 +81,7 @@ export function ThreadView({
         <div className="flex items-center gap-3">
           <a
             className="text-sm font-bold text-primary border-b-2 border-primary-fixed pb-0.5 hover:border-primary transition-all cursor-pointer"
-            href="#"
+            href={leadId ? `/leads/${leadId}` : '#'}
           >
             View Profile
           </a>

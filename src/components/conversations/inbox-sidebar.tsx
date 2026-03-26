@@ -26,10 +26,12 @@ export function InboxSidebar({
   threads,
   activeThreadId,
   onSelectThread,
+  onNewMessage,
 }: {
   threads: ThreadPreview[]
   activeThreadId: string
   onSelectThread: (id: string) => void
+  onNewMessage?: () => void
 }) {
   const [activeTab, setActiveTab] = useState<TabFilter>('all')
   const [search, setSearch] = useState('')
@@ -59,7 +61,7 @@ export function InboxSidebar({
               Unified Messaging
             </p>
           </div>
-          <button className="p-2 bg-white rounded-lg shadow-sm">
+          <button className="p-2 bg-white rounded-lg shadow-sm" onClick={onNewMessage}>
             <Icon name="edit_square" className="text-primary" />
           </button>
         </div>
