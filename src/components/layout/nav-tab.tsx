@@ -12,6 +12,7 @@ const tabs = [
   { label: 'Calendar', href: '/calendar', icon: 'calendar_today' },
   { label: 'Pipeline', href: '/pipeline', icon: 'view_kanban' },
   { label: 'SOD/EOD', href: '/checklist', icon: 'checklist' },
+  { label: 'Settings', href: '/settings', icon: 'settings' },
 ]
 
 interface NavTabsProps {

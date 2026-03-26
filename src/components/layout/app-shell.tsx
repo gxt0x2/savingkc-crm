@@ -51,7 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button className="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
                 <Icon name="notifications" />
               </button>
-              <button className="hidden sm:flex p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
+              <button className="hidden sm:flex p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors" onClick={() => window.location.href = '/settings'}>
                 <Icon name="settings" />
               </button>
               <div className="h-8 w-8 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold ml-1">
