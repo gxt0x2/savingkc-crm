@@ -67,6 +67,7 @@ export default function LeadDetailPage() {
   const [activities, setActivities] = useState<ActivityRow[]>([])
   const [letterStage, setLetterStage] = useState<LetterStage | null>(null)
   const [savingLetter, setSavingLetter] = useState(false)
+  const [ghostProtocolStatus, setGhostProtocolStatus] = useState<{ phase: number; status: string } | null>(null)
 
   useEffect(() => {
     async function fetchLead() {
@@ -98,6 +99,14 @@ export default function LeadDetailPage() {
       const letterRow = rows.find((r) => r.type === 'letter_tracking')
       if (letterRow?.metadata?.stage) {
         setLetterStage(letterRow.metadata.stage as LetterStage)
+      }
+      // Check for Ghost Protocol enrollment
+      const ghostRow = rows.find((r) => r.type === 'ghost_protocol_enrollment')
+      if (ghostRow?.metadata?.status === 'active') {
+        setGhostProtocolStatus({
+          phase: ghostRow.metadata.current_phase as number,
+          status: ghostRow.metadata.status as string,
+        })
       }
     }
     if (id) fetchActivities()
@@ -253,6 +262,14 @@ export default function LeadDetailPage() {
             <h1 className="text-4xl font-black text-primary tracking-tight">
               {lead.full_name || 'Unknown'}
             </h1>
+            {ghostProtocolStatus && (
+              <div className="px-3 py-1 bg-purple-100 border border-purple-300 rounded-full flex items-center gap-1.5">
+                <Icon name="psychology" className="!text-sm text-purple-600" />
+                <span className="text-[11px] font-black uppercase tracking-wide text-purple-700">
+                  Ghost Protocol Phase {ghostProtocolStatus.phase}
+                </span>
+              </div>
+            )}
           </div>
           <p className="text-on-surface-variant flex items-center gap-2 ml-9">
             <Icon name="location_on" size="text-sm" />
