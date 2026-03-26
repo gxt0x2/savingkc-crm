@@ -15,6 +15,7 @@ import { SkipTraceStatus, type SkipTraceData } from '@/components/leads/skip-tra
 import { ContractStatus, type ContractStatusData } from '@/components/leads/contract-status'
 import { TemperatureBadge } from '@/components/leads/temperature-badge'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
+import { MailTracker } from '@/components/leads/mail-tracker'
 import { createClient } from '@/lib/supabase/client'
 
 interface Lead {
@@ -66,9 +67,6 @@ interface ActivityRow {
   created_at: string
 }
 
-const LETTER_STAGES = ['Queued', 'Written', 'Mailed', 'In Transit', 'Follow-up Set'] as const
-type LetterStage = (typeof LETTER_STAGES)[number]
-
 function formatActivityTimestamp(ts: string): string {
   const d = new Date(ts)
   const now = new Date()
@@ -94,8 +92,6 @@ export default function LeadDetailPage() {
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
   const [activities, setActivities] = useState<ActivityRow[]>([])
-  const [letterStage, setLetterStage] = useState<LetterStage | null>(null)
-  const [savingLetter, setSavingLetter] = useState(false)
   const [ghostProtocolStatus, setGhostProtocolStatus] = useState<{ phase: number; status: string } | null>(null)
 
   useEffect(() => {
@@ -124,11 +120,6 @@ export default function LeadDetailPage() {
         .limit(50)
       const rows = (data as ActivityRow[]) || []
       setActivities(rows)
-      // Restore letter tracking stage from DB
-      const letterRow = rows.find((r) => r.type === 'letter_tracking')
-      if (letterRow?.metadata?.stage) {
-        setLetterStage(letterRow.metadata.stage as LetterStage)
-      }
       // Check for Ghost Protocol enrollment
       const ghostRow = rows.find((r) => r.type === 'ghost_protocol_enrollment')
       if (ghostRow?.metadata?.status === 'active') {
@@ -140,28 +131,6 @@ export default function LeadDetailPage() {
     }
     if (id) fetchActivities()
   }, [id])
-
-  async function handleLetterStage(stage: LetterStage) {
-    setSavingLetter(true)
-    setLetterStage(stage)
-    const supabase = createClient()
-    const existing = activities.find((a) => a.type === 'letter_tracking')
-    if (existing) {
-      await supabase
-        .from('lead_activities')
-        .update({ metadata: { stage }, description: `Letter stage: ${stage}` })
-        .eq('id', existing.id)
-    } else {
-      await supabase.from('lead_activities').insert({
-        lead_id: id,
-        type: 'letter_tracking',
-        description: `Letter stage: ${stage}`,
-        agent: 'System',
-        metadata: { stage },
-      })
-    }
-    setSavingLetter(false)
-  }
 
   if (loading) {
     return (
@@ -214,8 +183,6 @@ export default function LeadDetailPage() {
       content: a.description || undefined,
       timestamp: formatActivityTimestamp(a.created_at),
     }))
-
-  const letterStageIdx = letterStage ? LETTER_STAGES.indexOf(letterStage) : -1
 
   // CIM-01: Track 4 qualification pillars
   const pillarRow = activities.find((a) => a.type === 'pillar_data')
@@ -398,60 +365,12 @@ export default function LeadDetailPage() {
 
           <ActivityFeed activities={feedActivities} />
 
-          {/* Letter Tracking — LED-04 */}
-          <section className="bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-sm font-black uppercase tracking-widest text-primary">
-                Letter Tracking
-              </h2>
-              {savingLetter && (
-                <span className="text-xs text-on-surface-variant animate-pulse">Saving...</span>
-              )}
-            </div>
-
-            {/* Visual pipeline */}
-            <div className="flex items-center gap-1 mb-5 overflow-x-auto pb-1">
-              {LETTER_STAGES.map((stage, idx) => {
-                const isActive = idx <= letterStageIdx
-                const isCurrent = stage === letterStage
-                return (
-                  <div key={stage} className="flex items-center gap-1 flex-shrink-0">
-                    <button
-                      onClick={() => handleLetterStage(stage)}
-                      className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg text-[11px] font-bold transition-all ${
-                        isCurrent
-                          ? 'bg-primary text-white shadow-sm'
-                          : isActive
-                          ? 'bg-secondary-container text-on-secondary-container'
-                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                      }`}
-                    >
-                      <Icon
-                        name={
-                          idx === 0 ? 'inbox' :
-                          idx === 1 ? 'edit' :
-                          idx === 2 ? 'send' :
-                          idx === 3 ? 'local_shipping' :
-                          'check_circle'
-                        }
-                        size="text-base"
-                      />
-                      {stage}
-                    </button>
-                    {idx < LETTER_STAGES.length - 1 && (
-                      <div className={`h-0.5 w-4 rounded-full ${isActive && idx < letterStageIdx ? 'bg-secondary' : 'bg-outline-variant/30'}`} />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            <p className="text-sm text-on-surface-variant">
-              {letterStage
-                ? <>Current status: <span className="font-bold text-primary">{letterStage}</span></>
-                : 'Click a stage above to track the outreach letter for this lead.'}
-            </p>
-          </section>
+          {/* MNT-01, MNT-02, MNT-03: Mail Tracker - Replaces LED-04 Letter Tracking */}
+          <MailTracker
+            leadId={id}
+            leadName={lead.full_name || undefined}
+            onAddMail={() => {/* TODO: Open add mail modal */}}
+          />
         </div>
 
         {/* RIGHT COLUMN: Comps & Calculator */}
