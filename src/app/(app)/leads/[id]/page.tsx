@@ -10,6 +10,11 @@ import { PropertyHero } from '@/components/leads/property-hero'
 import { ActivityFeed } from '@/components/leads/activity-feed'
 import { MarketComps } from '@/components/leads/market-comps'
 import { NetProceeds } from '@/components/leads/net-proceeds'
+import { PropertyDetailsCard, type PropertyHousingDetails } from '@/components/leads/property-details-card'
+import { SkipTraceStatus, type SkipTraceData } from '@/components/leads/skip-trace-status'
+import { ContractStatus, type ContractStatusData } from '@/components/leads/contract-status'
+import { TemperatureBadge } from '@/components/leads/temperature-badge'
+import { FavoriteToggle } from '@/components/leads/favorite-toggle'
 import { createClient } from '@/lib/supabase/client'
 
 interface Lead {
@@ -21,11 +26,35 @@ interface Lead {
   city: string | null
   state: string | null
   zip: string | null
+  county: string | null
   source: string | null
   station: string | null
   priority: string | null
   notes: string | null
   created_at: string
+  is_favorite: boolean | null
+
+  // Housing details (LED-09)
+  beds: number | null
+  baths_full: number | null
+  baths_half: number | null
+  sqft: number | null
+  lot_size: number | null
+  year_built: number | null
+  basement_type: string | null
+  stories: number | null
+  garage_spaces: number | null
+  roof_type: string | null
+  heating: string | null
+  cooling: string | null
+  property_type: string | null
+  zoning: string | null
+  hoa_amount: number | null
+  tax_assessment: number | null
+  last_sale_date: string | null
+  last_sale_price: number | null
+  data_source: string | null
+  data_enriched_at: string | null
 }
 
 interface ActivityRow {
@@ -262,6 +291,21 @@ export default function LeadDetailPage() {
             <h1 className="text-4xl font-black text-primary tracking-tight">
               {lead.full_name || 'Unknown'}
             </h1>
+            {/* TMP-02: Favorite Toggle */}
+            <FavoriteToggle
+              leadId={lead.id}
+              isFavorite={lead.is_favorite ?? false}
+              size="lg"
+            />
+            {/* TMP-03: Temperature Badge */}
+            <TemperatureBadge
+              lead={{
+                priority: lead.priority,
+                station: lead.station,
+                created_at: lead.created_at,
+              }}
+              size="lg"
+            />
             {ghostProtocolStatus && (
               <div className="px-3 py-1 bg-purple-100 border border-purple-300 rounded-full flex items-center gap-1.5">
                 <Icon name="psychology" className="!text-sm text-purple-600" />
@@ -305,6 +349,53 @@ export default function LeadDetailPage() {
         {/* CENTER COLUMN: Property, Activity, Letter Tracking */}
         <div className="col-span-12 lg:col-span-6 space-y-8">
           <PropertyHero property={property} />
+
+          {/* LED-05 + LED-06: Property Details Card with 18 fields */}
+          <PropertyDetailsCard
+            details={{
+              beds: lead.beds,
+              baths_full: lead.baths_full,
+              baths_half: lead.baths_half,
+              sqft: lead.sqft,
+              lot_size: lead.lot_size,
+              year_built: lead.year_built,
+              basement_type: lead.basement_type,
+              stories: lead.stories,
+              garage_spaces: lead.garage_spaces,
+              roof_type: lead.roof_type,
+              heating: lead.heating,
+              cooling: lead.cooling,
+              property_type: lead.property_type,
+              zoning: lead.zoning,
+              hoa_amount: lead.hoa_amount,
+              tax_assessment: lead.tax_assessment,
+              last_sale_date: lead.last_sale_date,
+              last_sale_price: lead.last_sale_price,
+              data_source: lead.data_source,
+              data_enriched_at: lead.data_enriched_at,
+            }}
+            address={addressLine}
+            onEdit={() => {/* TODO: Open edit modal */}}
+          />
+
+          {/* SKP-01: Skip Trace Status */}
+          <SkipTraceStatus
+            data={{
+              last_traced_date: null, // TODO: Pull from skip trace data
+              phones: [], // TODO: Pull from skip trace data
+            }}
+            onRetrace={() => {/* TODO: Trigger skip trace */}}
+          />
+
+          {/* DOC-01: Contract Status */}
+          <ContractStatus
+            data={{
+              status: 'none', // TODO: Pull from contract tracking
+              // sent_date, viewed_date, signed_date, etc.
+            }}
+            onSendContract={() => {/* TODO: Open contract generation */}}
+          />
+
           <ActivityFeed activities={feedActivities} />
 
           {/* Letter Tracking — LED-04 */}
