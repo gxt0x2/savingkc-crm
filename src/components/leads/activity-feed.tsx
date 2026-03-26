@@ -1,4 +1,5 @@
 import { Icon } from '@/components/ui/icon'
+import Link from 'next/link'
 import type { ActivityType } from '@/types'
 
 interface FeedItem {
@@ -8,6 +9,8 @@ interface FeedItem {
   content?: string
   timestamp: string
   statusBadge?: string
+  link?: string // OPP-01: Deep link to opportunities or other pages
+  linkLabel?: string
 }
 
 interface ActivityFeedProps {
@@ -59,6 +62,16 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
                   <p className={`text-sm text-on-surface-variant ${activity.type === 'sms' ? 'italic' : ''}`}>
                     {activity.content}
                   </p>
+                )}
+                {/* OPP-01: Deep link to opportunities when relevant */}
+                {activity.link && (
+                  <Link
+                    href={activity.link}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-secondary hover:underline mt-1"
+                  >
+                    <Icon name="arrow_forward" size="text-xs" />
+                    {activity.linkLabel || 'View'}
+                  </Link>
                 )}
               </div>
             </div>

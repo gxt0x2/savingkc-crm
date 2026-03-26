@@ -77,10 +77,14 @@ export default function OpportunitiesPage() {
   async function fetchLeads() {
     setLoading(true)
     const supabase = createClient()
+    // OPP-01: Include qualifying, appt_set (offers), and negotiations stages
+    // Stage 3: QUALIFIED = qualifying
+    // Stage 4: OFFER MADE = appt_set (repurposed) or negotiations
+    // Stage 5: UNDER CONTRACT = contract_signed (not shown here, different page)
     const { data } = await supabase
       .from('leads')
       .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at')
-      .in('station', ['qualifying', 'negotiations'])
+      .in('station', ['qualifying', 'appt_set', 'negotiations'])
       .order('priority', { ascending: false })
       .order('created_at', { ascending: false })
     const rows = (data as LeadRow[]) || []

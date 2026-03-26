@@ -176,13 +176,30 @@ export default function LeadDetailPage() {
   const feedActivities = activities
     .filter((a) => ['sms', 'call', 'email', 'status_change'].includes(a.type))
     .slice(0, 20)
-    .map((a) => ({
-      id: a.id,
-      type: activityTypeToFeedType(a.type),
-      title: a.type === 'sms' ? 'SMS' : a.type === 'call' ? 'Phone call' : a.type === 'email' ? 'Email' : 'Status update',
-      content: a.description || undefined,
-      timestamp: formatActivityTimestamp(a.created_at),
-    }))
+    .map((a) => {
+      // OPP-01: Add deep link to opportunities for relevant stage changes
+      let link: string | undefined
+      let linkLabel: string | undefined
+
+      if (a.type === 'status_change' && a.metadata) {
+        const newStation = a.metadata.new_station as string | undefined
+        const opportunityStages = ['qualifying', 'appt_set', 'negotiations']
+        if (newStation && opportunityStages.includes(newStation)) {
+          link = '/opportunities'
+          linkLabel = 'View in Hot Opportunities'
+        }
+      }
+
+      return {
+        id: a.id,
+        type: activityTypeToFeedType(a.type),
+        title: a.type === 'sms' ? 'SMS' : a.type === 'call' ? 'Phone call' : a.type === 'email' ? 'Email' : 'Status update',
+        content: a.description || undefined,
+        timestamp: formatActivityTimestamp(a.created_at),
+        link,
+        linkLabel,
+      }
+    })
 
   // CIM-01: Track 4 qualification pillars
   const pillarRow = activities.find((a) => a.type === 'pillar_data')
