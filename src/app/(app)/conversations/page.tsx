@@ -109,6 +109,7 @@ export default function ConversationsPage() {
   const [activities, setActivities] = useState<ActivityRow[]>([])
   const [showNewMessage, setShowNewMessage] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
     async function fetchLeads() {
@@ -186,17 +187,17 @@ export default function ConversationsPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="relative flex h-[calc(100vh-4rem)]">
       {showNewMessage && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center" onClick={() => setShowNewMessage(false)}>
-          <div className="bg-white rounded-xl p-6 shadow-2xl w-96 max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-xl p-6 shadow-2xl w-96 max-w-[90vw] max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h2 className="font-bold text-lg mb-4">Start New Conversation</h2>
             <p className="text-sm text-slate-500 mb-4">Select a lead to open their conversation thread:</p>
             <div className="space-y-2">
               {leads.map((lead) => (
                 <button
                   key={lead.id}
-                  onClick={() => { setActiveLeadId(lead.id); setShowNewMessage(false) }}
+                  onClick={() => { setActiveLeadId(lead.id); setShowNewMessage(false); setSidebarOpen(false) }}
                   className="w-full text-left p-3 rounded-lg hover:bg-slate-50 border border-slate-100 transition-colors"
                 >
                   <div className="font-semibold text-sm">{lead.full_name || '(no name)'}</div>
@@ -207,17 +208,46 @@ export default function ConversationsPage() {
           </div>
         </div>
       )}
-      <InboxSidebar
-        threads={threads}
-        activeThreadId={activeLeadId || ''}
-        onSelectThread={setActiveLeadId}
-        onNewMessage={() => setShowNewMessage(true)}
-      />
-      <ThreadView
-        contact={contact}
-        dateGroups={dateGroups.length > 0 ? dateGroups : [{ label: 'No messages yet', messages: [] }]}
-        leadId={activeLeadId || undefined}
-      />
+
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - hidden on mobile unless sidebarOpen, always visible on desktop */}
+      <div className={`${sidebarOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden'} md:block`}>
+        <InboxSidebar
+          threads={threads}
+          activeThreadId={activeLeadId || ''}
+          onSelectThread={(id) => { setActiveLeadId(id); setSidebarOpen(false) }}
+          onNewMessage={() => setShowNewMessage(true)}
+        />
+      </div>
+
+      {/* Thread view - full width on mobile, flex-1 on desktop */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile header with menu button */}
+        <div className="md:hidden flex items-center gap-3 p-4 border-b border-slate-200 bg-white">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <h2 className="font-bold text-lg">{contact.name}</h2>
+        </div>
+
+        <ThreadView
+          contact={contact}
+          dateGroups={dateGroups.length > 0 ? dateGroups : [{ label: 'No messages yet', messages: [] }]}
+          leadId={activeLeadId || undefined}
+        />
+      </div>
     </div>
   )
 }
