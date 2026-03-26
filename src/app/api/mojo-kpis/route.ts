@@ -1,13 +1,31 @@
 import { NextResponse } from 'next/server'
-import { readFileSync } from 'fs'
+import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 
 export async function GET() {
   try {
-    const filePath = join(
+    const memoryDir = join(
       process.env.HOME || '/Users/ernestdodson',
-      '.openclaw/workspace/memory/mojo-calls-2026-03-20.json'
+      '.openclaw/workspace/memory'
     )
+
+    // Find the most recent mojo-calls-*.json file
+    const files = readdirSync(memoryDir)
+      .filter(f => f.startsWith('mojo-calls-') && f.endsWith('.json'))
+      .sort()
+      .reverse()
+
+    if (files.length === 0) {
+      // No mojo files found, return zeros
+      return NextResponse.json({
+        totalCalls: 0,
+        meaningfulCalls: 0,
+        avgMotivation: 0,
+        hotLeads: 0,
+      })
+    }
+
+    const filePath = join(memoryDir, files[0])
 
     const raw = readFileSync(filePath, 'utf-8')
     const data = JSON.parse(raw)
