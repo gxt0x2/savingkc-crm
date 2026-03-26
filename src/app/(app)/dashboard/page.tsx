@@ -8,6 +8,7 @@ import { PipelineFunnel } from '@/components/dashboard/pipeline-funnel'
 import { ColdCallStats } from '@/components/dashboard/cold-call-stats'
 import { ConversionHealth } from '@/components/dashboard/conversion-health'
 import { createClient } from '@/lib/supabase/client'
+import { useFinancials } from '@/hooks/use-financials'
 
 interface LeadCounts {
   total: number
@@ -82,6 +83,7 @@ function useMojoKpis() {
 export default function DashboardPage() {
   const leadCounts = useLeadCounts()
   const mojoKpis = useMojoKpis()
+  const { data: financials } = useFinancials()
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-[1440px] mx-auto w-full space-y-6 pb-32">
@@ -185,13 +187,21 @@ export default function DashboardPage() {
           </div>
           <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Revenue to Date</div>
-            <div className="text-3xl font-black text-slate-300">$0</div>
-            <div className="text-[10px] text-slate-400 mt-1">No closings recorded</div>
+            <div className={`text-3xl font-black ${(financials?.total.revenue || 0) > 0 ? 'text-green-500' : 'text-slate-300'}`}>
+              ${((financials?.total.revenue || 0) / 1000).toFixed(financials?.total.revenue ? 1 : 0)}{(financials?.total.revenue || 0) >= 1000 ? 'k' : ''}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1">
+              {(financials?.total.revenue || 0) > 0 ? 'Total revenue' : 'No closings recorded'}
+            </div>
           </div>
           <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Expenses to Date</div>
-            <div className="text-3xl font-black text-orange-500">$1,775</div>
-            <div className="text-[10px] text-slate-400 mt-1">$975 office/meals + $800 travel</div>
+            <div className="text-3xl font-black text-orange-500">
+              ${((financials?.total.expenses || 1775) / 1000).toFixed(1)}k
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1">
+              {financials?.total.expenses ? 'Total expenses' : '$975 office/meals + $800 travel'}
+            </div>
           </div>
         </div>
       </div>

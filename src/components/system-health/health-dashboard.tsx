@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { SprintBurndownChart } from '@/components/feedback/sprint-burndown-chart'
 
 interface SystemHealthStats {
   feature_completion: { current: number; total: number; percentage: number }
@@ -63,6 +64,9 @@ export function HealthDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Sprint Burndown Chart - FBK-07 */}
+      <SprintBurndownChart />
+
       {/* Feature Completion Ring + Bug Count */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-6 shadow-sm">

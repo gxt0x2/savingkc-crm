@@ -91,15 +91,21 @@ export async function getMorningBriefing(
     .lt('metadata->due_date', `${today}T23:59:59`)
     .order('metadata->due_date', { ascending: true })
 
-  const callbacks: CallbackItem[] =
-    callbackTasks?.map((task: any) => ({
-      lead_id: task.lead_id,
-      lead_name: task.leads?.full_name,
-      property_address: task.leads?.property_address,
-      scheduled_time: task.metadata?.due_date || 'Not scheduled',
-      task_description: task.description || 'Callback',
-      missing_pillars: [], // TODO: Check pillar data
-    })) || []
+  // Fetch missing pillars for each callback - CIM-03
+  const callbacks: CallbackItem[] = []
+  if (callbackTasks) {
+    for (const task of callbackTasks as any[]) {
+      const missingPillars = await getMissingPillars(task.lead_id)
+      callbacks.push({
+        lead_id: task.lead_id,
+        lead_name: task.leads?.full_name,
+        property_address: task.leads?.property_address,
+        scheduled_time: task.metadata?.due_date || 'Not scheduled',
+        task_description: task.description || 'Callback',
+        missing_pillars: missingPillars,
+      })
+    }
+  }
 
   // Overdue follow-ups
   const { data: overdueTasks } = await supabase
