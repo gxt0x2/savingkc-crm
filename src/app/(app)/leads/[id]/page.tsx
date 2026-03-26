@@ -318,7 +318,7 @@ export default function LeadDetailPage() {
       </div>
 
       {/* 3-Column Layout */}
-      <div className="grid grid-cols-12 gap-8">
+      <div className="grid grid-cols-12 gap-4 sm:gap-6 lg:gap-8">
         {/* LEFT COLUMN: Ari AI & Pain Points */}
         <div className="col-span-12 lg:col-span-3 space-y-8">
           <AriBriefing
