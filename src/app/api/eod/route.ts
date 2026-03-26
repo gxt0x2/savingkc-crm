@@ -49,6 +49,16 @@ export async function POST(req: NextRequest) {
 
     console.log(`EOD submitted — ${smsBody}`)
 
+    // Trigger immediate Mojo refresh (INT-02)
+    try {
+      await fetch(`${req.nextUrl.origin}/api/workers/mojo-sync?force=true`, {
+        method: 'POST',
+      })
+      console.log('Mojo refresh triggered')
+    } catch (mojoErr) {
+      console.error('Mojo refresh failed (non-fatal):', mojoErr)
+    }
+
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('EOD route error:', err)
