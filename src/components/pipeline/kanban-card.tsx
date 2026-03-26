@@ -1,6 +1,7 @@
 import { Icon } from '@/components/ui/icon'
 import { PersonalityBadge } from '@/components/ui/personality-badge'
 import { cn, formatCurrency } from '@/lib/utils'
+import { calculateTemperature, TEMPERATURE_CONFIG } from '@/lib/lead-temperature'
 import type { PersonalityType, DealStage } from '@/types'
 
 export interface KanbanCardData {
@@ -23,6 +24,7 @@ export interface KanbanCardData {
   statusLabel?: string
   contractLocked?: boolean
   avatarBg?: string
+  created_at?: string
 }
 
 const showFeeStages: DealStage[] = ['qualifying', 'appt_set', 'negotiations', 'contract_signed']
@@ -30,6 +32,12 @@ const showFeeStages: DealStage[] = ['qualifying', 'appt_set', 'negotiations', 'c
 export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: (id: string) => void }) {
   const showFee = showFeeStages.includes(card.stage) && card.estFee != null
   const isContacted = card.stage === 'contacted'
+  const temp = calculateTemperature({
+    priority: card.timerUrgent ? 'hot' : null,
+    station: card.stage,
+    created_at: card.created_at || new Date().toISOString(),
+  })
+  const tempCfg = TEMPERATURE_CONFIG[temp]
 
   return (
     <div
@@ -136,15 +144,23 @@ export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: 
         </div>
       )}
 
-      {/* Bottom: personality + status */}
+      {/* Bottom: personality + temperature + status */}
       <div className="flex items-center justify-between">
-        <PersonalityBadge type={card.personalityType} />
-        {card.statusLabel && (
-          <span className="text-[11px] font-bold text-tertiary">{card.statusLabel}</span>
-        )}
-        {card.lastActivity && card.stage !== 'contract_signed' && card.stage !== 'not_contacted' && !card.statusLabel && card.nextStep && (
-          <span className="text-[11px] text-on-surface-variant/60">Updated {card.lastActivity}</span>
-        )}
+        <div className="flex items-center gap-2">
+          <PersonalityBadge type={card.personalityType} />
+          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${tempCfg.bg} ${tempCfg.text}`}>
+            <span className={`w-1 h-1 rounded-full ${tempCfg.dot}`} />
+            {temp.charAt(0).toUpperCase() + temp.slice(1)}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {card.statusLabel && (
+            <span className="text-[11px] font-bold text-tertiary">{card.statusLabel}</span>
+          )}
+          {card.lastActivity && card.stage !== 'contract_signed' && card.stage !== 'not_contacted' && !card.statusLabel && card.nextStep && (
+            <span className="text-[11px] text-on-surface-variant/60">Updated {card.lastActivity}</span>
+          )}
+        </div>
       </div>
 
       {/* Action buttons — hover reveal */}

@@ -120,6 +120,7 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
       avatarBg: avatarColor(lead.id),
       timerUrgent: lead.priority === 'hot',
       timerLabel: lead.priority === 'hot' ? '🔥 Hot' : undefined,
+      created_at: lead.created_at,
     })
   })
 

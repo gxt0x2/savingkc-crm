@@ -179,8 +179,67 @@ export default function LeadDetailPage() {
 
   const letterStageIdx = letterStage ? LETTER_STAGES.indexOf(letterStage) : -1
 
+  // CIM-01: Track 4 qualification pillars
+  const pillarRow = activities.find((a) => a.type === 'pillar_data')
+  const pillars = (pillarRow?.metadata || {}) as Record<string, boolean>
+  const PILLAR_LABELS = ['TIMELINE', 'CONDITION', 'MOTIVATION', 'PRICE'] as const
+
+  async function togglePillar(pillar: string) {
+    const supabase = createClient()
+    const current = (pillarRow?.metadata || {}) as Record<string, boolean>
+    const updated = { ...current, [pillar]: !current[pillar] }
+    if (pillarRow) {
+      await supabase.from('lead_activities').update({ metadata: updated }).eq('id', pillarRow.id)
+    } else {
+      await supabase.from('lead_activities').insert({
+        lead_id: id,
+        type: 'pillar_data',
+        description: 'Qualification pillars',
+        agent: 'System',
+        metadata: updated,
+      })
+    }
+    // Refresh activities
+    const { data } = await supabase
+      .from('lead_activities')
+      .select('id, type, description, agent, metadata, created_at')
+      .eq('lead_id', id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    setActivities((data as ActivityRow[]) || [])
+  }
+
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+      {/* CIM-01: Critical Info Missing Banner */}
+      {PILLAR_LABELS.some((p) => !pillars[p]) && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 flex-wrap">
+          <Icon name="warning" className="text-amber-500 shrink-0" />
+          <span className="text-sm font-bold text-amber-800">Missing Qualification Data:</span>
+          <div className="flex gap-2 flex-wrap">
+            {PILLAR_LABELS.map((p) => (
+              <button
+                key={p}
+                onClick={() => togglePillar(p)}
+                className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wide transition-all ${
+                  pillars[p]
+                    ? 'bg-green-100 text-green-700 border border-green-300'
+                    : 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200'
+                }`}
+              >
+                {pillars[p] ? '✓ ' : '✗ '}{p}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-amber-600 ml-auto">Click to mark as captured</span>
+        </div>
+      )}
+      {PILLAR_LABELS.every((p) => pillars[p]) && (
+        <div className="mb-6 p-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2">
+          <Icon name="check_circle" className="text-green-500" />
+          <span className="text-sm font-bold text-green-800">All 4 qualification pillars captured — ready to advance stage.</span>
+        </div>
+      )}
       {/* Lead Header */}
       <div className="mb-8 flex justify-between items-end">
         <div>

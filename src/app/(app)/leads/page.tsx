@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
+import { calculateTemperature, TEMPERATURE_CONFIG } from '@/lib/lead-temperature'
 
 interface Lead {
   id: string
@@ -128,6 +129,7 @@ export default function LeadsPage() {
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Temp</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Phone</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">Address</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Source</th>
@@ -145,6 +147,18 @@ export default function LeadsPage() {
                   >
                     <td className="px-4 py-3 font-medium text-slate-900">
                       {lead.full_name || '—'}
+                    </td>
+                    <td className="px-4 py-3 hidden sm:table-cell">
+                      {(() => {
+                        const temp = calculateTemperature(lead)
+                        const cfg = TEMPERATURE_CONFIG[temp]
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${cfg.bg} ${cfg.text}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                            {temp.charAt(0).toUpperCase() + temp.slice(1)}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">
                       {lead.phone || '—'}
