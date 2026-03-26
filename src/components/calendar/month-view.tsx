@@ -90,10 +90,12 @@ export function MonthView({
   year,
   month,
   tasks,
+  onTaskClick,
 }: {
   year: number
   month: number
   tasks: Task[]
+  onTaskClick?: (task: Task) => void
 }) {
   const cells = getMonthGrid(year, month)
   const today = new Date()
@@ -151,11 +153,13 @@ export function MonthView({
                 return (
                   <div
                     key={task.id}
+                    onClick={(e) => { e.stopPropagation(); onTaskClick?.(task) }}
                     className={cn(
                       'mt-2 p-1.5 border-l-4 text-[10px] font-bold rounded-sm flex flex-col gap-0.5',
                       colors.bg,
                       colors.border,
-                      colors.text
+                      colors.text,
+                      'cursor-pointer hover:opacity-80'
                     )}
                   >
                     {task.status === 'overdue' && (

@@ -86,13 +86,17 @@ export function WeekView({
   year,
   month,
   tasks,
+  onTaskClick,
 }: {
   year: number
   month: number
   tasks: Task[]
+  onTaskClick?: (task: Task) => void
 }) {
   const today = new Date()
-  const weekDates = getWeekDates(year, month, today.getDate())
+  const isCurrentMonth = year === today.getFullYear() && month === today.getMonth()
+  const referenceDay = isCurrentMonth ? today.getDate() : 1
+  const weekDates = getWeekDates(year, month, referenceDay)
 
   const now = new Date()
   const currentHour = now.getHours()
@@ -179,6 +183,7 @@ export function WeekView({
                       return (
                         <div
                           key={task.id}
+                          onClick={() => onTaskClick?.(task)}
                           className={cn(
                             'absolute inset-x-1 top-1 p-2 border-l-4 rounded-sm shadow-sm cursor-pointer',
                             colors.bg,

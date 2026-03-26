@@ -20,12 +20,14 @@ export function ViewToggle({
   currentYear,
   onPrevMonth,
   onNextMonth,
+  onNewTask,
 }: {
   currentView: CalendarView
   currentMonth: string
   currentYear: number
   onPrevMonth: () => void
   onNextMonth: () => void
+  onNewTask?: () => void
 }) {
   return (
     <section className="px-8 py-6 bg-surface-container-low flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -69,7 +71,7 @@ export function ViewToggle({
             </button>
           </div>
         </div>
-        <button className="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 shadow-sm hover:opacity-90 transition-all">
+        <button onClick={onNewTask} className="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 shadow-sm hover:opacity-90 transition-all">
           <Icon name="add" size="text-lg" />
           New Task
         </button>

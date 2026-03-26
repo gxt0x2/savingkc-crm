@@ -119,13 +119,16 @@ function groupTasksIntoSections(tasks: Task[]): AgendaSection[] {
   return sections
 }
 
-function AgendaRow({ task }: { task: Task }) {
+function AgendaRow({ task, onTaskClick }: { task: Task; onTaskClick?: (task: Task) => void }) {
   const isOverdue = task.status === 'overdue'
   return (
-    <div className={cn(
-      'grid grid-cols-12 gap-4 px-6 py-4 items-center transition-colors group',
-      isOverdue ? 'hover:bg-error-container/10' : 'hover:bg-surface-container-low/50'
-    )}>
+    <div
+      onClick={() => onTaskClick?.(task)}
+      className={cn(
+        'grid grid-cols-12 gap-4 px-6 py-4 items-center transition-colors group cursor-pointer',
+        isOverdue ? 'hover:bg-error-container/10' : 'hover:bg-surface-container-low/50'
+      )}
+    >
       <div className="col-span-1">
         <span className={cn('w-2 h-2 rounded-full inline-block', statusDotColor(task))} />
       </div>
@@ -168,7 +171,7 @@ function AgendaRow({ task }: { task: Task }) {
   )
 }
 
-export function AgendaView({ tasks }: { tasks: Task[] }) {
+export function AgendaView({ tasks, onTaskClick }: { tasks: Task[]; onTaskClick?: (task: Task) => void }) {
   const sections = groupTasksIntoSections(tasks)
 
   return (
@@ -196,7 +199,7 @@ export function AgendaView({ tasks }: { tasks: Task[] }) {
               {section.label}
             </div>
             {section.tasks.map((task) => (
-              <AgendaRow key={task.id} task={task} />
+              <AgendaRow key={task.id} task={task} onTaskClick={onTaskClick} />
             ))}
           </div>
         ))}
