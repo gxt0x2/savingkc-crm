@@ -189,4 +189,51 @@
 
 ## Phase 3: Integration Wiring
 
+**Status:** ✅ COMPLETE (3/3 items)
+
+### INT-01: Mercury API Integration ✅
+**Created:**
+- `src/lib/mercury-api.ts` (280 lines) - Full Mercury banking API client
+- `src/app/api/integrations/mercury/sync/route.ts` - Sync endpoint
+
+**Features:**
+- `fetchMercuryTransactions()` - Fetches recent transactions from Mercury API
+- `categorizeExpense()` - Auto-categorizes by merchant (operations/marketing/travel/software/payroll/general)
+- `syncMercuryTransactions()` - Imports to expense_transactions with duplicate prevention
+- `getMercuryBalance()` - Fetches current account balance
+- Auto-updates financial_summary via increment_expenses RPC
+
+**Endpoints:**
+- POST /api/integrations/mercury/sync - Trigger sync (requires MERCURY_API_KEY, MERCURY_ACCOUNT_ID)
+- GET /api/integrations/mercury/sync - Status + setup instructions
+
+**Graceful handling:** Returns clear setup instructions if credentials not configured
+
+### INT-02: Mojo Integration Hardening ✅
+**Created:**
+- `src/app/api/workers/mojo-sync/route.ts` (220 lines) - Worker endpoint with office hours check
+
+**Features:**
+- Office hours detection: 8am-5pm CT, Monday-Friday only
+- Graceful skip outside office hours (unless force=true)
+- Reads most recent mojo-calls-*.json from ~/.openclaw/workspace/memory
+- Syncs to agent_daily_stats table (calls_made, meaningful_conversations, avg_motivation)
+- Updates system_workers health status (last_run, last_success, status)
+- Error handling: Missing files → success with error message, not crash
+
+**Enhanced:**
+- `src/app/api/eod/route.ts` - Added Mojo refresh trigger after EOD submission
+
+**Behavior:**
+- EOD submission → triggers POST /api/workers/mojo-sync?force=true
+- 15-minute polling (external cron) → calls POST /api/workers/mojo-sync during office hours only
+- Manual trigger: POST /api/workers/mojo-sync?force=true (bypasses office hours)
+
+### INT-03: Google Sheet Import ✅
+Completed in Phase 2 (DSH-05) - Same endpoint
+
+---
+
+## Phase 4: Ari Doctrine Behavioral Verification
+
 **Status:** 🚧 IN PROGRESS
