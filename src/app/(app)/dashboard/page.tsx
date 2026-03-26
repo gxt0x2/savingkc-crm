@@ -115,7 +115,7 @@ export default function DashboardPage() {
           <h3 className="text-xs font-black text-secondary uppercase tracking-[0.2em] mb-3">
             Mojo Dialer — {mojoKpis.date || 'Mar 20'}
           </h3>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Calls</div>
               <div className="text-3xl font-black text-primary">{mojoKpis.totalCalls}</div>
@@ -141,7 +141,7 @@ export default function DashboardPage() {
         <h3 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-3">
           Live Lead Pipeline
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Leads</div>
             <div className="text-3xl font-black text-primary">{leadCounts?.total ?? '—'}</div>
@@ -166,7 +166,7 @@ export default function DashboardPage() {
         <h3 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-3">
           Operational Pulse
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Days Since Last Closing</div>
             <div className={`text-3xl font-black ${leadCounts?.daysSinceLastContract != null ? (leadCounts.daysSinceLastContract > 30 ? 'text-red-500' : 'text-primary') : 'text-slate-300'}`}>
@@ -232,7 +232,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Metric Row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <MetricCard value="$45" label="Cost Per Lead" change="12% QoQ" changeDirection="down" />
         <MetricCard value="$8,420" label="Avg. Assignment" change="15% QoQ" changeDirection="up" />
         <MetricCard value="$3,740" label="Acquisition Cost" change="5% QoQ" changeDirection="down" />
