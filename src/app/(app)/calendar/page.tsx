@@ -72,7 +72,7 @@ function CalendarContent() {
         onNewTask={() => setShowNewTask(true)}
       />
 
-      <main className="px-8 pb-32">
+      <main className="px-4 sm:px-6 lg:px-8 pb-32">
         {viewParam === 'month' && (
           <MonthView year={year} month={month} tasks={tasks} onTaskClick={handleTaskClick} />
         )}

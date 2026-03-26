@@ -30,8 +30,8 @@ export function ViewToggle({
   onNewTask?: () => void
 }) {
   return (
-    <section className="px-8 py-6 bg-surface-container-low flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div className="flex items-center gap-4">
+    <section className="px-4 sm:px-6 lg:px-8 py-6 bg-surface-container-low flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
         <h1 className="text-2xl font-bold tracking-tight text-primary">Schedule</h1>
         <div className="flex items-center bg-surface-container-highest rounded-lg p-1">
           {views.map((v) => (
@@ -39,7 +39,7 @@ export function ViewToggle({
               key={v.key}
               href={`/calendar?view=${v.key}`}
               className={cn(
-                'px-4 py-1.5 text-xs font-semibold rounded-md transition-all',
+                'px-3 sm:px-4 py-1.5 text-xs font-semibold rounded-md transition-all',
                 currentView === v.key
                   ? 'bg-surface-container-lowest shadow-sm'
                   : 'hover:bg-surface-container'
@@ -50,7 +50,7 @@ export function ViewToggle({
           ))}
         </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
         <div className="flex items-center bg-surface-container-lowest border border-outline-variant/15 rounded-md px-3 py-2 gap-2">
           <Icon name="calendar_today" className="text-on-surface-variant" size="text-sm" />
           <span className="text-sm font-medium">
@@ -71,9 +71,10 @@ export function ViewToggle({
             </button>
           </div>
         </div>
-        <button onClick={onNewTask} className="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 shadow-sm hover:opacity-90 transition-all">
+        <button onClick={onNewTask} className="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 shadow-sm hover:opacity-90 transition-all whitespace-nowrap">
           <Icon name="add" size="text-lg" />
-          New Task
+          <span className="hidden sm:inline">New Task</span>
+          <span className="sm:hidden">Task</span>
         </button>
       </div>
     </section>
