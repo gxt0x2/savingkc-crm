@@ -2,6 +2,10 @@ import { Icon } from '@/components/ui/icon'
 
 interface PropertyDetails {
   address: string
+  city?: string
+  state?: string
+  zip?: string
+  county?: string
   beds: number
   baths: number
   sqft: number
@@ -14,20 +18,51 @@ interface PropertyHeroProps {
   property: PropertyDetails
 }
 
+const COUNTY_URLS: Record<string, string> = {
+  jackson: 'https://www.jacksongov.org/residents/assessment',
+  clay: 'https://www.claycountymo.gov/assessor',
+  platte: 'https://www.platteassessor.org',
+  wyandotte: 'https://www.wycokck.org/appraiser',
+  johnson: 'https://www.jocogov.org/appraiser',
+}
+
+function getCountyUrl(county: string | undefined): string {
+  if (!county) return 'https://www.jacksongov.org/residents/assessment'
+  const key = county.toLowerCase().replace(/\s*county\s*/i, '').trim()
+  return COUNTY_URLS[key] || 'https://www.jacksongov.org/residents/assessment'
+}
+
 export function PropertyHero({ property }: PropertyHeroProps) {
+  const fullAddress = [property.address, property.city, property.state, property.zip]
+    .filter(Boolean)
+    .join(', ')
+  const encodedAddress = encodeURIComponent(fullAddress || property.address)
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`
+  const redfinUrl = `https://www.redfin.com/query?q=${encodedAddress}`
+  const countyUrl = getCountyUrl(property.county)
+
   return (
     <div className="space-y-4">
-      {/* Hero Image Placeholder */}
-      <div className="relative h-80 rounded-2xl overflow-hidden shadow-sm bg-surface-container-highest">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            <Icon name="home" className="text-outline/40 !text-6xl" />
-            <p className="text-sm text-outline/60 mt-2">Street View</p>
+      {/* Street View Hero — links to Google Maps */}
+      <div className="relative h-80 rounded-2xl overflow-hidden shadow-sm bg-slate-800">
+        <a
+          href={googleMapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 group"
+          title="Open Street View on Google Maps"
+        >
+          <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
+            <Icon name="location_on" className="text-white !text-3xl" />
           </div>
-        </div>
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-        <div className="absolute bottom-6 left-6 text-white">
-          <div className="flex items-center gap-2 mb-2">
+          <span className="text-white/80 text-sm font-semibold group-hover:text-white transition-colors">
+            View on Google Maps ↗
+          </span>
+          <span className="text-white/50 text-xs px-4 text-center">{fullAddress || property.address}</span>
+        </a>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute bottom-6 left-6 text-white pointer-events-none">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             {property.tags.map((tag) => (
               <span
                 key={tag}
@@ -46,23 +81,25 @@ export function PropertyHero({ property }: PropertyHeroProps) {
         <div className="bg-surface-container-low p-4 rounded-xl">
           <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Beds/Baths</p>
           <p className="text-xl font-black text-primary">
-            {property.beds} / {property.baths}
+            {property.beds || '—'} / {property.baths || '—'}
           </p>
         </div>
         <div className="bg-surface-container-low p-4 rounded-xl">
           <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Total SF</p>
           <p className="text-xl font-black text-primary">
-            {property.sqft.toLocaleString()}
+            {property.sqft ? property.sqft.toLocaleString() : '—'}
           </p>
         </div>
         <div className="bg-surface-container-low p-4 rounded-xl">
           <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Built</p>
-          <p className="text-xl font-black text-primary">{property.yearBuilt}</p>
+          <p className="text-xl font-black text-primary">{property.yearBuilt || '—'}</p>
         </div>
         <div className="bg-surface-container-low p-4 rounded-xl">
           <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Lot Size</p>
           <p className="text-xl font-black text-primary">
-            {property.lotSize} <span className="text-xs font-medium opacity-60">AC</span>
+            {property.lotSize && property.lotSize !== '—' ? (
+              <>{property.lotSize} <span className="text-xs font-medium opacity-60">AC</span></>
+            ) : '—'}
           </p>
         </div>
       </div>
@@ -70,16 +107,28 @@ export function PropertyHero({ property }: PropertyHeroProps) {
       {/* Quick Links */}
       <div className="flex gap-4">
         <a
-          href="#"
+          href={redfinUrl}
+          target="_blank"
+          rel="noopener noreferrer"
           className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2 text-sm font-bold text-primary hover:bg-surface-container-low transition-all"
         >
           <Icon name="open_in_new" className="text-red-600" /> Redfin
         </a>
         <a
-          href="#"
+          href={countyUrl}
+          target="_blank"
+          rel="noopener noreferrer"
           className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2 text-sm font-bold text-primary hover:bg-surface-container-low transition-all"
         >
           <Icon name="description" className="text-blue-600" /> County Records
+        </a>
+        <a
+          href={googleMapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2 text-sm font-bold text-primary hover:bg-surface-container-low transition-all"
+        >
+          <Icon name="map" className="text-green-600" /> Maps
         </a>
       </div>
     </div>
