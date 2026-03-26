@@ -106,16 +106,16 @@ export default function SettingsPage() {
           <h2 className="text-sm font-black uppercase tracking-widest text-primary mb-5 flex items-center gap-2">
             <Icon name="person" size="text-base" /> Agent Profile
           </h2>
-          <div className="flex items-start gap-6 mb-6">
-            <div className="relative shrink-0">
+          <div className="flex flex-col sm:flex-row items-start gap-4 sm:gap-6 mb-6">
+            <div className="relative shrink-0 mx-auto sm:mx-0">
               {settings.profilePhotoUrl ? (
                 <img
                   src={settings.profilePhotoUrl}
                   alt="Profile"
-                  className="w-16 h-16 rounded-full object-cover border-2 border-primary/20"
+                  className="w-20 h-20 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-primary/20"
                 />
               ) : (
-                <div className="w-16 h-16 rounded-full bg-primary text-white flex items-center justify-center text-xl font-black">
+                <div className="w-20 h-20 sm:w-16 sm:h-16 rounded-full bg-primary text-white flex items-center justify-center text-xl font-black">
                   {initials}
                 </div>
               )}
@@ -142,7 +142,7 @@ export default function SettingsPage() {
                 </button>
               )}
             </div>
-            <div className="flex-1 space-y-4">
+            <div className="flex-1 w-full space-y-4">
               <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
                   Full Name
@@ -270,8 +270,8 @@ export default function SettingsPage() {
             />
           </div>
           {settings.officeHoursEnabled && (
-            <div className="flex items-center gap-4">
-              <div className="flex-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
                   Start Time
                 </label>
@@ -282,7 +282,7 @@ export default function SettingsPage() {
                   className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
-              <div className="flex-1">
+              <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
                   End Time
                 </label>
@@ -369,9 +369,9 @@ export default function SettingsPage() {
       </div>
 
       {/* Save Button */}
-      <div className="mt-8 flex items-center justify-end gap-4">
+      <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 sm:gap-4">
         {saved && (
-          <span className="text-sm text-secondary font-semibold flex items-center gap-1">
+          <span className="text-sm text-secondary font-semibold flex items-center justify-center gap-1">
             <Icon name="check_circle" size="text-base" /> Saved
           </span>
         )}
