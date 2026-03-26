@@ -167,3 +167,72 @@
 ## Phase 2: Mail Tracker
 
 **Status:** 🚧 IN PROGRESS
+
+---
+
+## Phase 2: Mail Tracker
+
+**Status:** ✅ COMPLETE (3/3 items)
+
+### MNT-01/02/03: Complete Mail Tracking System ✅
+**Created:**
+- `supabase/migrations/002_create_mail_pieces.sql` - Full schema with auto-calculations
+- `src/components/leads/mail-tracker.tsx` (330 lines) - Visual timeline + auto follow-up
+- `src/components/mail/mail-batch-view.tsx` (270 lines) - Batch view across all leads
+- Business days calculation, auto-delivery estimation, auto follow-up task creation
+- Replaced old LED-04 letter tracking
+
+---
+
+## Phase 3: Opportunities + Recycler
+
+**Status:** ✅ COMPLETE (2/2 items)
+
+### OPP-01 + RCY-01 ✅
+**Created:**
+- `src/lib/dead-lead-recycler.ts` (260 lines) - 90/180 day recycler
+- `src/app/api/recycle-dead-leads/route.ts` - Cron-callable API
+- Enhanced ActivityFeed with deep links to opportunities
+- Updated opportunities page to include appt_set (Stage 4: Offer Made)
+
+---
+
+## Phase 4: Roles & Accountability
+
+**Status:** ✅ COMPLETE (4/4 items)
+
+### ROL-01/02/03/04: Complete Role + Worker System ✅
+**Created:**
+- `supabase/migrations/003_create_roles_and_workers.sql` - Roles + workers tables
+- `src/lib/system-health.ts` (200 lines) - Health monitoring
+- `src/app/api/system-health/route.ts` - Health check API
+- 2 roles seeded (Owner, Agent) with full KPI definitions
+- 9 system workers seeded with health tracking
+
+---
+
+## Summary
+
+**Completion:** 19/19 items ✅ (100%)
+**Files Created:** 16
+**Files Modified:** 4
+**Commits:** 4
+**Build:** TypeScript 0 errors, 27 routes
+**Completed at:** 11:45 PM
+
+### Doctrine Behaviors Wired:
+- Doctrine 2: Temperature changes, recycle events, mail lifecycle
+- Doctrine 3: System workers monitored as employees
+- Doctrine 4: Role KPIs defined
+- Doctrine 7: Data quality alerts on property details
+- Doctrine 9: Contract escalation alerts (24hr/48hr)
+
+### Night 5 Targets:
+1. Run schema migrations
+2. Dashboard metrics refresh
+3. Agent scorecard UI
+4. System health dashboard
+5. Data enrichment API integration
+6. Skip trace integration
+7. DocuSeal webhooks
+
