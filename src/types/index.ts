@@ -6,7 +6,20 @@ export type ActivityDirection = 'in' | 'out'
 export type TaskType = 'follow_up' | 'appointment' | 'send_offer' | 'review' | 'task'
 export type TaskStatus = 'pending' | 'completed' | 'overdue'
 
-export type DealStage = 'new' | 'not_contacted' | 'contacted' | 'qualifying' | 'appt_set' | 'negotiations' | 'contract_signed'
+export type DealStage =
+  | 'new'
+  | 'not_contacted'
+  | 'contacted'
+  | 'qualifying'
+  | 'appt_set'
+  | 'negotiations'
+  | 'contract_signed'
+  | 'qualified'
+  | 'offer_made'
+  | 'under_contract'
+  | 'disposition'
+  | 'closed'
+  | 'dead'
 
 export type ChecklistProtocol = 'sod' | 'eod'
 

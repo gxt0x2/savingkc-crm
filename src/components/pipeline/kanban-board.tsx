@@ -7,27 +7,41 @@ import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import type { KanbanCardData } from './kanban-card'
 import type { DealStage } from '@/types'
 
-const columns: { title: string; stage: DealStage }[] = [
-  { title: 'New', stage: 'new' },
-  { title: 'Not Contacted', stage: 'not_contacted' },
-  { title: 'Contacted', stage: 'contacted' },
-  { title: 'Qualifying', stage: 'qualifying' },
-  { title: 'Appt Set', stage: 'appt_set' },
-  { title: 'Negotiations', stage: 'negotiations' },
-  { title: 'Contract Signed', stage: 'contract_signed' },
+const columns: { title: string; stage: DealStage; number: number }[] = [
+  { title: 'New', stage: 'new', number: 1 },
+  { title: 'Contacted', stage: 'contacted', number: 2 },
+  { title: 'Qualified', stage: 'qualified', number: 3 },
+  { title: 'Offer Made', stage: 'offer_made', number: 4 },
+  { title: 'Under Contract', stage: 'under_contract', number: 5 },
+  { title: 'Disposition', stage: 'disposition', number: 6 },
+  { title: 'Closed', stage: 'closed', number: 7 },
 ]
 
 function stationToStage(station: string | null): DealStage | null {
-  const map: Record<string, DealStage> = {
+  // Direct mapping - station is now the canonical stage ID
+  const validStages: DealStage[] = [
+    'new',
+    'contacted',
+    'qualified',
+    'offer_made',
+    'under_contract',
+    'disposition',
+    'closed',
+  ]
+
+  // Legacy mapping for backward compatibility
+  const legacyMap: Record<string, DealStage> = {
     intake: 'new',
-    not_contacted: 'not_contacted',
-    contacted: 'contacted',
-    qualifying: 'qualifying',
-    appt_set: 'appt_set',
-    negotiations: 'negotiations',
-    contract_signed: 'contract_signed',
+    not_contacted: 'new',
+    qualifying: 'qualified',
+    appt_set: 'qualified',
+    negotiations: 'offer_made',
+    contract_signed: 'under_contract',
   }
-  return station ? (map[station] ?? null) : null
+
+  if (!station) return null
+  if (validStages.includes(station as DealStage)) return station as DealStage
+  return legacyMap[station] ?? null
 }
 
 function getInitials(name: string | null): string {
@@ -100,8 +114,19 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
   })
 
   const cardsByStage: Record<DealStage, KanbanCardData[]> = {
-    new: [], not_contacted: [], contacted: [],
-    qualifying: [], appt_set: [], negotiations: [], contract_signed: [],
+    new: [],
+    not_contacted: [],
+    contacted: [],
+    qualifying: [],
+    qualified: [],
+    appt_set: [],
+    negotiations: [],
+    contract_signed: [],
+    offer_made: [],
+    under_contract: [],
+    disposition: [],
+    closed: [],
+    dead: [],
   }
 
   filteredLeads.forEach((lead) => {
@@ -144,10 +169,10 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
         className="flex-1 overflow-x-auto overflow-y-hidden flex gap-6 items-start pb-6"
         style={{ height: 'calc(100vh - 260px)' }}
       >
-        {columns.map(({ title, stage }) => (
+        {columns.map(({ title, stage, number }) => (
           <KanbanColumn
             key={stage}
-            title={title}
+            title={`${number}. ${title}`}
             stage={stage}
             cards={cardsByStage[stage]}
           />

@@ -101,9 +101,15 @@ export function useDealsByStage() {
         not_contacted: [],
         contacted: [],
         qualifying: [],
+        qualified: [],
         appt_set: [],
         negotiations: [],
         contract_signed: [],
+        offer_made: [],
+        under_contract: [],
+        disposition: [],
+        closed: [],
+        dead: [],
       }
 
       for (const deal of (data as LeadRow[]).map(rowToDeal)) {
