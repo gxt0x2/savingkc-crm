@@ -8,6 +8,8 @@ export interface KanbanCardData {
   initials: string
   name: string
   address: string
+  phone?: string | null
+  email?: string | null
   personalityType: PersonalityType | null
   timerLabel?: string
   timerUrgent?: boolean
@@ -33,7 +35,7 @@ export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: 
     <div
       onClick={() => onClick?.(card.id)}
       className={cn(
-        'bg-surface-container-lowest p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-shadow cursor-pointer border border-transparent hover:border-outline-variant/20',
+        'group bg-surface-container-lowest p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-shadow cursor-pointer border border-transparent hover:border-outline-variant/20',
         isContacted && 'border-l-4 border-l-secondary',
         card.stage === 'qualifying' && 'border-l-4 border-l-primary',
         card.stage === 'contract_signed' && 'border border-secondary/20'
@@ -143,6 +145,42 @@ export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: 
         {card.lastActivity && card.stage !== 'contract_signed' && card.stage !== 'not_contacted' && !card.statusLabel && card.nextStep && (
           <span className="text-[11px] text-on-surface-variant/60">Updated {card.lastActivity}</span>
         )}
+      </div>
+
+      {/* Action buttons — hover reveal */}
+      <div className="mt-3 pt-3 border-t border-outline-variant/10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (card.phone) window.dispatchEvent(new CustomEvent('crm:dial', { detail: { phone: card.phone } }))
+          }}
+          disabled={!card.phone}
+          title={card.phone ? `Call ${card.phone}` : 'No phone'}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[11px] font-bold hover:bg-green-50 text-slate-400 hover:text-green-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <Icon name="call" size="text-sm" /> Call
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            window.location.href = `/conversations?lead=${card.id}`
+          }}
+          title="Open conversation"
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[11px] font-bold hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors"
+        >
+          <Icon name="sms" size="text-sm" /> SMS
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (card.email) window.location.href = `mailto:${card.email}`
+          }}
+          disabled={!card.email}
+          title={card.email ? `Email ${card.email}` : 'No email'}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[11px] font-bold hover:bg-purple-50 text-slate-400 hover:text-purple-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <Icon name="mail" size="text-sm" /> Email
+        </button>
       </div>
     </div>
   )

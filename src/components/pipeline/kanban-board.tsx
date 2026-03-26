@@ -113,6 +113,8 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
       initials: getInitials(lead.full_name),
       name: lead.full_name || '(no name)',
       address: address || '(no address)',
+      phone: lead.phone,
+      email: lead.email,
       personalityType: null,
       stage,
       avatarBg: avatarColor(lead.id),

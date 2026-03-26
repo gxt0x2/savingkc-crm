@@ -36,6 +36,8 @@ export function ReflectionModal({ open, onClose, teamMember = 'Ernest' }: Reflec
       const data = await res.json()
       if (data.success) {
         setStatus('success')
+        // EOD-02: Trigger Mojo metrics refresh on successful EOD submission
+        fetch('/api/mojo-kpis').catch(() => {})
         setTimeout(() => {
           onClose()
           setUnexpected('')

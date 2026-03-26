@@ -13,6 +13,8 @@ interface LeadCounts {
   total: number
   byStation: Record<string, number>
   byPriority: Record<string, number>
+  daysSinceLastContract: number | null
+  daysSinceLastContractSigned: number | null
 }
 
 interface MojoKpis {
@@ -23,24 +25,44 @@ interface MojoKpis {
   date?: string
 }
 
+function daysSince(dateStr: string | null): number | null {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  const now = new Date()
+  return Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 function useLeadCounts() {
   const [data, setData] = useState<LeadCounts | null>(null)
   useEffect(() => {
     const supabase = createClient()
     supabase
       .from('leads')
-      .select('station, priority')
+      .select('station, priority, created_at')
       .then(({ data: rows }) => {
         if (!rows) return
         const byStation: Record<string, number> = {}
         const byPriority: Record<string, number> = {}
+        let lastContractDate: string | null = null
         for (const row of rows) {
           const s = row.station || 'unknown'
           const p = row.priority || 'normal'
           byStation[s] = (byStation[s] || 0) + 1
           byPriority[p] = (byPriority[p] || 0) + 1
+          if (s === 'contract_signed') {
+            if (!lastContractDate || row.created_at > lastContractDate) {
+              lastContractDate = row.created_at
+            }
+          }
         }
-        setData({ total: rows.length, byStation, byPriority })
+        const daysSinceContract = daysSince(lastContractDate)
+        setData({
+          total: rows.length,
+          byStation,
+          byPriority,
+          daysSinceLastContract: daysSinceContract,
+          daysSinceLastContractSigned: daysSinceContract,
+        })
       })
   }, [])
   return data
@@ -133,6 +155,43 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Normal Priority</div>
             <div className="text-3xl font-black text-slate-700">{leadCounts?.byPriority?.normal ?? 0}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Operational Metrics — DSH-01, DSH-02, DSH-06, DSH-07 */}
+      <div>
+        <h3 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-3">
+          Operational Pulse
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Days Since Last Closing</div>
+            <div className={`text-3xl font-black ${leadCounts?.daysSinceLastContract != null ? (leadCounts.daysSinceLastContract > 30 ? 'text-red-500' : 'text-primary') : 'text-slate-300'}`}>
+              {leadCounts?.daysSinceLastContract != null ? leadCounts.daysSinceLastContract : '—'}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1">
+              {leadCounts?.daysSinceLastContract != null ? 'days ago' : 'No closings yet'}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Days Since Last Contract</div>
+            <div className={`text-3xl font-black ${leadCounts?.daysSinceLastContractSigned != null ? (leadCounts.daysSinceLastContractSigned > 14 ? 'text-orange-500' : 'text-secondary') : 'text-slate-300'}`}>
+              {leadCounts?.daysSinceLastContractSigned != null ? leadCounts.daysSinceLastContractSigned : '—'}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1">
+              {leadCounts?.daysSinceLastContractSigned != null ? 'days ago' : 'No contracts yet'}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Revenue to Date</div>
+            <div className="text-3xl font-black text-slate-300">$0</div>
+            <div className="text-[10px] text-slate-400 mt-1">No closings recorded</div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Expenses to Date</div>
+            <div className="text-3xl font-black text-orange-500">$1,775</div>
+            <div className="text-[10px] text-slate-400 mt-1">$975 office/meals + $800 travel</div>
           </div>
         </div>
       </div>
