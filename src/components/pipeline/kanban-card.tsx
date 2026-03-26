@@ -25,14 +25,15 @@ export interface KanbanCardData {
 
 const showFeeStages: DealStage[] = ['qualifying', 'appt_set', 'negotiations', 'contract_signed']
 
-export function KanbanCard({ card }: { card: KanbanCardData }) {
+export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: (id: string) => void }) {
   const showFee = showFeeStages.includes(card.stage) && card.estFee != null
   const isContacted = card.stage === 'contacted'
 
   return (
     <div
+      onClick={() => onClick?.(card.id)}
       className={cn(
-        'bg-surface-container-lowest p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-shadow cursor-grab border border-transparent hover:border-outline-variant/20',
+        'bg-surface-container-lowest p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-shadow cursor-pointer border border-transparent hover:border-outline-variant/20',
         isContacted && 'border-l-4 border-l-secondary',
         card.stage === 'qualifying' && 'border-l-4 border-l-primary',
         card.stage === 'contract_signed' && 'border border-secondary/20'

@@ -22,13 +22,23 @@ export function KanbanColumn({
   title,
   stage,
   cards,
+  onCardClick,
 }: {
   title: string
   stage: DealStage
   cards: KanbanCardData[]
+  onCardClick?: (id: string) => void
 }) {
   const badge = badgeStyles[stage]
   const isContractSigned = stage === 'contract_signed'
+
+  function handleCardClick(id: string) {
+    if (onCardClick) {
+      onCardClick(id)
+    } else {
+      window.location.href = `/leads/${id}`
+    }
+  }
 
   return (
     <section className="min-w-[320px] max-w-[320px] flex flex-col bg-surface-container-low rounded-xl shrink-0 h-full">
@@ -61,7 +71,7 @@ export function KanbanColumn({
         )}
       >
         {cards.map((card) => (
-          <KanbanCard key={card.id} card={card} />
+          <KanbanCard key={card.id} card={card} onClick={handleCardClick} />
         ))}
       </div>
     </section>

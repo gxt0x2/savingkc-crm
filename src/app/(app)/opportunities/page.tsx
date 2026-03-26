@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { OpportunityCard } from '@/components/opportunities/opportunity-card'
 import { ActivityTable } from '@/components/opportunities/activity-table'
@@ -67,9 +68,11 @@ function leadToDeal(lead: LeadRow): Deal {
 }
 
 export default function OpportunitiesPage() {
+  const router = useRouter()
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
+  const [pinning, setPinning] = useState<string | null>(null)
 
   async function fetchLeads() {
     setLoading(true)
@@ -78,6 +81,7 @@ export default function OpportunitiesPage() {
       .from('leads')
       .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at')
       .in('station', ['qualifying', 'negotiations'])
+      .order('priority', { ascending: false })
       .order('created_at', { ascending: false })
     const rows = (data as LeadRow[]) || []
     setDeals(rows.map(leadToDeal))
@@ -85,6 +89,18 @@ export default function OpportunitiesPage() {
   }
 
   useEffect(() => { fetchLeads() }, [])
+
+  async function togglePin(dealId: string, currentPriority: string | null) {
+    setPinning(dealId)
+    const supabase = createClient()
+    const newPriority = currentPriority === 'hot' ? 'normal' : 'hot'
+    await supabase.from('leads').update({ priority: newPriority }).eq('id', dealId)
+    await fetchLeads()
+    setPinning(null)
+  }
+
+  const hotDeals = deals.filter((d) => d.contact?.smart_tags?.includes('Hot Lead'))
+  const otherDeals = deals.filter((d) => !d.contact?.smart_tags?.includes('Hot Lead'))
 
   return (
     <div className="pt-6 pb-32 px-4 sm:px-6 lg:px-8 max-w-[1600px] mx-auto">
@@ -99,7 +115,9 @@ export default function OpportunitiesPage() {
       <header className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-primary mb-2">Hot Opportunities</h1>
-          <p className="text-on-surface-variant text-sm">Leads in qualifying &amp; negotiations stages.</p>
+          <p className="text-on-surface-variant text-sm">
+            Leads in qualifying &amp; negotiations. Double-click any card for full details. Use the pin button to mark Top Hot deals.
+          </p>
         </div>
         <button
           onClick={() => setShowAdd(true)}
@@ -110,7 +128,6 @@ export default function OpportunitiesPage() {
         </button>
       </header>
 
-      {/* Bento Grid */}
       {loading ? (
         <div className="text-slate-400 py-16 text-center">Loading opportunities...</div>
       ) : deals.length === 0 ? (
@@ -123,11 +140,66 @@ export default function OpportunitiesPage() {
           </button>
         </div>
       ) : (
-        <section className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(380px,1fr))] gap-6 mb-16">
-          {deals.map((deal) => (
-            <OpportunityCard key={deal.id} deal={deal} />
-          ))}
-        </section>
+        <>
+          {/* Top Hot Deals section */}
+          {hotDeals.length > 0 && (
+            <section className="mb-10">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-lg font-black text-primary">🔥 Top Hot Deals</span>
+                <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs font-bold rounded-full">
+                  {hotDeals.length} pinned
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(380px,1fr))] gap-6">
+                {hotDeals.map((deal) => (
+                  <div
+                    key={deal.id}
+                    onDoubleClick={() => router.push(`/leads/${deal.contact?.id}`)}
+                    className="relative group"
+                  >
+                    <button
+                      onClick={() => togglePin(deal.id, 'hot')}
+                      disabled={pinning === deal.id}
+                      title="Unpin from Top Hot Deals"
+                      className="absolute top-3 right-3 z-10 p-1.5 bg-red-50 hover:bg-red-100 rounded-lg transition-colors text-red-500 opacity-0 group-hover:opacity-100"
+                    >
+                      <Icon name="push_pin" size="text-sm" />
+                    </button>
+                    <OpportunityCard deal={deal} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* All Other Opportunities */}
+          <section className="mb-16">
+            {hotDeals.length > 0 && otherDeals.length > 0 && (
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-base font-bold text-on-surface-variant">All Opportunities</span>
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(380px,1fr))] gap-6">
+              {otherDeals.map((deal) => (
+                <div
+                  key={deal.id}
+                  onDoubleClick={() => router.push(`/leads/${deal.contact?.id}`)}
+                  className="relative group"
+                >
+                  <button
+                    onClick={() => togglePin(deal.id, null)}
+                    disabled={pinning === deal.id}
+                    title="Pin to Top Hot Deals"
+                    className="absolute top-3 right-3 z-10 p-1.5 bg-white hover:bg-orange-50 rounded-lg transition-colors text-slate-300 hover:text-orange-500 shadow-sm opacity-0 group-hover:opacity-100"
+                  >
+                    <Icon name="push_pin" size="text-sm" />
+                  </button>
+                  <OpportunityCard deal={deal} />
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
       )}
 
       {/* Activity Table */}

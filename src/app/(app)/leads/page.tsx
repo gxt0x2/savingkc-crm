@@ -54,6 +54,24 @@ export default function LeadsPage() {
     )
   })
 
+  function handleCall(e: React.MouseEvent, phone: string | null) {
+    e.stopPropagation()
+    if (!phone) return
+    // Dispatch custom event to open telephony bar with this number
+    window.dispatchEvent(new CustomEvent('crm:dial', { detail: { phone } }))
+  }
+
+  function handleSms(e: React.MouseEvent, leadId: string) {
+    e.stopPropagation()
+    router.push(`/conversations?lead=${leadId}`)
+  }
+
+  function handleEmail(e: React.MouseEvent, email: string | null) {
+    e.stopPropagation()
+    if (!email) return
+    window.location.href = `mailto:${email}`
+  }
+
   return (
     <div className="px-4 sm:px-6 lg:px-8 pt-6 pb-32 max-w-[1440px] mx-auto">
       {showAdd && (
@@ -115,6 +133,7 @@ export default function LeadsPage() {
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Source</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Station</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Priority</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -151,6 +170,33 @@ export default function LeadsPage() {
                       }`}>
                         {lead.priority || 'normal'}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => handleCall(e, lead.phone)}
+                          disabled={!lead.phone}
+                          title={lead.phone ? `Call ${lead.phone}` : 'No phone number'}
+                          className="p-1.5 rounded-md hover:bg-green-50 text-slate-400 hover:text-green-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Icon name="call" size="text-base" />
+                        </button>
+                        <button
+                          onClick={(e) => handleSms(e, lead.id)}
+                          title="Open conversation"
+                          className="p-1.5 rounded-md hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors"
+                        >
+                          <Icon name="sms" size="text-base" />
+                        </button>
+                        <button
+                          onClick={(e) => handleEmail(e, lead.email)}
+                          disabled={!lead.email}
+                          title={lead.email ? `Email ${lead.email}` : 'No email'}
+                          className="p-1.5 rounded-md hover:bg-purple-50 text-slate-400 hover:text-purple-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Icon name="mail" size="text-base" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

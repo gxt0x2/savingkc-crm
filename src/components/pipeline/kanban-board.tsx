@@ -1,4 +1,9 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { KanbanColumn } from './kanban-column'
+import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import type { KanbanCardData } from './kanban-card'
 import type { DealStage } from '@/types'
 
@@ -12,369 +17,139 @@ const columns: { title: string; stage: DealStage }[] = [
   { title: 'Contract Signed', stage: 'contract_signed' },
 ]
 
-const mockCards: Record<DealStage, KanbanCardData[]> = {
-  new: [
-    {
-      id: 'n1',
-      initials: 'MT',
-      name: 'Michael Thompson',
-      address: '1234 Oak St, Kansas City, MO',
-      personalityType: 'assertive',
-      timerLabel: '4h left',
-      timerUrgent: true,
-      nextStep: 'Today 2:00 PM',
-      lastActivity: '2h ago',
-      stage: 'new',
-      avatarBg: 'bg-primary-fixed text-on-primary-fixed',
-    },
-    {
-      id: 'n2',
-      initials: 'RB',
-      name: 'Robert Blake',
-      address: '882 High Ave, Independence',
-      personalityType: 'analytical',
-      timerLabel: '18h left',
-      timerUrgent: false,
-      nextStep: 'Tomorrow 9:00 AM',
-      stage: 'new',
-      avatarBg: 'bg-secondary-fixed-dim text-on-secondary-fixed',
-    },
-    {
-      id: 'n3',
-      initials: 'PW',
-      name: 'Patricia Wells',
-      address: '440 Elm Dr, Overland Park',
-      personalityType: 'amiable',
-      timerLabel: '12h left',
-      timerUrgent: false,
-      nextStep: 'Tomorrow 11:00 AM',
-      stage: 'new',
-      avatarBg: 'bg-surface-variant text-on-surface',
-    },
-  ],
-  not_contacted: [
-    {
-      id: 'nc1',
-      initials: 'KD',
-      name: 'Kevin Durant',
-      address: '712 Broadway Blvd, KC',
-      personalityType: 'amiable',
-      nextStep: 'ASAP Call',
-      callAttempts: 3,
-      stage: 'not_contacted',
-      avatarBg: 'bg-surface-variant text-on-surface',
-    },
-    {
-      id: 'nc2',
-      initials: 'TJ',
-      name: 'Tamara Jones',
-      address: '901 Paseo Blvd, KC',
-      personalityType: 'analytical',
-      nextStep: 'First Call',
-      stage: 'not_contacted',
-      avatarBg: 'bg-primary-fixed text-on-primary-fixed',
-    },
-    {
-      id: 'nc3',
-      initials: 'RL',
-      name: 'Richard Lee',
-      address: '555 Troost Ave, KC',
-      personalityType: 'assertive',
-      nextStep: 'ASAP Call',
-      callAttempts: 1,
-      stage: 'not_contacted',
-      avatarBg: 'bg-tertiary-fixed text-on-tertiary-fixed',
-    },
-    {
-      id: 'nc4',
-      initials: 'MB',
-      name: 'Maria Bautista',
-      address: '2233 Independence Ave',
-      personalityType: 'accommodator',
-      nextStep: 'Schedule Call',
-      stage: 'not_contacted',
-      avatarBg: 'bg-secondary-fixed text-on-secondary-fixed',
-    },
-    {
-      id: 'nc5',
-      initials: 'GL',
-      name: 'Gary Lewis',
-      address: '118 Linwood Blvd, KC',
-      personalityType: 'amiable',
-      nextStep: 'First Call',
-      stage: 'not_contacted',
-      avatarBg: 'bg-surface-variant text-on-surface',
-    },
-  ],
-  contacted: [
-    {
-      id: 'c1',
-      initials: 'SC',
-      name: 'Sarah Chen',
-      address: '5678 Maple Ave, OP, KS',
-      personalityType: 'analytical',
-      nextStep: 'Today 4:15 PM',
-      lastActivity: '5h ago',
-      stage: 'contacted',
-      avatarBg: 'bg-secondary-fixed text-on-secondary-fixed',
-    },
-    {
-      id: 'c2',
-      initials: 'WP',
-      name: 'William Park',
-      address: '3300 Main St, KC',
-      personalityType: 'amiable',
-      nextStep: 'Tomorrow 10:00 AM',
-      lastActivity: '1d ago',
-      stage: 'contacted',
-      avatarBg: 'bg-primary-fixed text-on-primary-fixed',
-    },
-  ],
-  qualifying: [
-    {
-      id: 'q1',
-      initials: 'AM',
-      name: 'Alisha Miller',
-      address: '2921 Prospect Ave, KC',
-      personalityType: 'expressive',
-      estFee: 15500,
-      statusNote: 'PRD Underway',
-      lastActivity: '1h ago',
-      stage: 'qualifying',
-      avatarBg: 'bg-primary-fixed text-on-primary-fixed',
-    },
-    {
-      id: 'q2',
-      initials: 'TN',
-      name: 'Tony Nguyen',
-      address: '1840 Vine St, KC',
-      personalityType: 'analytical',
-      estFee: 11200,
-      lastActivity: '3h ago',
-      stage: 'qualifying',
-      avatarBg: 'bg-surface-variant text-on-surface',
-    },
-    {
-      id: 'q3',
-      initials: 'DR',
-      name: 'Diana Rodriguez',
-      address: '607 Armour Blvd, KC',
-      personalityType: 'assertive',
-      estFee: 18000,
-      lastActivity: '6h ago',
-      stage: 'qualifying',
-      avatarBg: 'bg-tertiary-fixed text-on-tertiary-fixed',
-    },
-    {
-      id: 'q4',
-      initials: 'BF',
-      name: 'Brian Foster',
-      address: '4420 Swope Pkwy, KC',
-      personalityType: 'amiable',
-      estFee: 9800,
-      lastActivity: '2d ago',
-      stage: 'qualifying',
-      avatarBg: 'bg-secondary-fixed text-on-secondary-fixed',
-    },
-  ],
-  appt_set: [
-    {
-      id: 'a1',
-      initials: 'JW',
-      name: 'James Wilson',
-      address: "9101 Pine Terrace, Lee's Summit",
-      personalityType: 'amiable',
-      estFee: 12500,
-      nextStep: 'Inspection Call - Today 4:30 PM',
-      stage: 'appt_set',
-      avatarBg: 'bg-tertiary-fixed text-on-tertiary-fixed',
-    },
-  ],
-  negotiations: [
-    {
-      id: 'ng1',
-      initials: 'DH',
-      name: 'David Harris',
-      address: '402 W 14th St, KC',
-      personalityType: 'assertive',
-      estFee: 22000,
-      progressPercent: 75,
-      statusLabel: 'Closing Gap',
-      stage: 'negotiations',
-      avatarBg: 'bg-surface-variant text-on-surface',
-    },
-    {
-      id: 'ng2',
-      initials: 'LM',
-      name: 'Lisa Martinez',
-      address: '1520 E 63rd St, KC',
-      personalityType: 'expressive',
-      estFee: 16800,
-      progressPercent: 45,
-      statusLabel: 'Counter Pending',
-      stage: 'negotiations',
-      avatarBg: 'bg-primary-fixed text-on-primary-fixed',
-    },
-    {
-      id: 'ng3',
-      initials: 'CP',
-      name: 'Charles Pittman',
-      address: '830 Benton Blvd, KC',
-      personalityType: 'analytical',
-      estFee: 19500,
-      progressPercent: 90,
-      statusLabel: 'Almost There',
-      stage: 'negotiations',
-      avatarBg: 'bg-secondary-fixed text-on-secondary-fixed',
-    },
-  ],
-  contract_signed: [
-    {
-      id: 'cs1',
-      initials: 'LC',
-      name: 'Linda Carter',
-      address: '2102 Jackson Ave',
-      personalityType: 'amiable',
-      estFee: 18700,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-secondary-container text-on-secondary-container',
-    },
-    {
-      id: 'cs2',
-      initials: 'MR',
-      name: 'Mark Robinson',
-      address: '4517 Prospect Ave, KC',
-      personalityType: 'assertive',
-      estFee: 21000,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-primary-fixed text-on-primary-fixed',
-    },
-    {
-      id: 'cs3',
-      initials: 'AW',
-      name: 'Angela White',
-      address: '1103 E 12th St, KC',
-      personalityType: 'analytical',
-      estFee: 14200,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-surface-variant text-on-surface',
-    },
-    {
-      id: 'cs4',
-      initials: 'JT',
-      name: 'Jerome Taylor',
-      address: '725 Woodland Ave, KC',
-      personalityType: 'expressive',
-      estFee: 16500,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-tertiary-fixed text-on-tertiary-fixed',
-    },
-    {
-      id: 'cs5',
-      initials: 'SN',
-      name: 'Sandra Nelson',
-      address: '3340 Troost Ave, KC',
-      personalityType: 'amiable',
-      estFee: 13800,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-secondary-fixed text-on-secondary-fixed',
-    },
-    {
-      id: 'cs6',
-      initials: 'RG',
-      name: 'Robert Green',
-      address: '901 Van Brunt Blvd',
-      personalityType: 'assertive',
-      estFee: 25000,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-primary-fixed text-on-primary-fixed',
-    },
-    {
-      id: 'cs7',
-      initials: 'KH',
-      name: 'Karen Hall',
-      address: '2200 Benton Blvd, KC',
-      personalityType: 'analytical',
-      estFee: 11900,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-surface-variant text-on-surface',
-    },
-    {
-      id: 'cs8',
-      initials: 'DW',
-      name: 'Derek Washington',
-      address: '505 E 31st St, KC',
-      personalityType: 'amiable',
-      estFee: 17600,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-secondary-container text-on-secondary-container',
-    },
-    {
-      id: 'cs9',
-      initials: 'NB',
-      name: 'Nicole Brown',
-      address: '1414 Askew Ave, KC',
-      personalityType: 'expressive',
-      estFee: 20100,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-tertiary-fixed text-on-tertiary-fixed',
-    },
-    {
-      id: 'cs10',
-      initials: 'EP',
-      name: 'Edward Phillips',
-      address: '3600 Independence Ave',
-      personalityType: 'assertive',
-      estFee: 15400,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-primary-fixed text-on-primary-fixed',
-    },
-    {
-      id: 'cs11',
-      initials: 'JA',
-      name: 'Janet Adams',
-      address: '818 E 47th St, KC',
-      personalityType: 'amiable',
-      estFee: 12700,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-secondary-fixed text-on-secondary-fixed',
-    },
-    {
-      id: 'cs12',
-      initials: 'TC',
-      name: 'Thomas Clark',
-      address: '2700 Prospect Ave, KC',
-      personalityType: 'analytical',
-      estFee: 23500,
-      contractLocked: true,
-      stage: 'contract_signed',
-      avatarBg: 'bg-surface-variant text-on-surface',
-    },
-  ],
+function stationToStage(station: string | null): DealStage | null {
+  const map: Record<string, DealStage> = {
+    intake: 'new',
+    not_contacted: 'not_contacted',
+    contacted: 'contacted',
+    qualifying: 'qualifying',
+    appt_set: 'appt_set',
+    negotiations: 'negotiations',
+    contract_signed: 'contract_signed',
+  }
+  return station ? (map[station] ?? null) : null
 }
 
-export function KanbanBoard() {
+function getInitials(name: string | null): string {
+  if (!name) return '??'
+  const parts = name.trim().split(' ')
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+const AVATAR_COLORS = [
+  'bg-primary-fixed text-on-primary-fixed',
+  'bg-secondary-fixed text-on-secondary-fixed',
+  'bg-tertiary-fixed text-on-tertiary-fixed',
+  'bg-surface-variant text-on-surface',
+  'bg-secondary-fixed-dim text-on-secondary-fixed',
+]
+
+function avatarColor(id: string): string {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) & 0xffff
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+
+interface Lead {
+  id: string
+  full_name: string | null
+  phone: string | null
+  email: string | null
+  property_address: string | null
+  city: string | null
+  station: string | null
+  priority: string | null
+  created_at: string
+}
+
+export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
+  onNewLead?: () => void
+  showFilters?: boolean
+  filterPriority?: string
+}) {
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+
+  async function fetchLeads() {
+    setLoading(true)
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('leads')
+      .select('id, full_name, phone, email, property_address, city, station, priority, created_at')
+      .not('station', 'eq', 'dead')
+      .order('created_at', { ascending: false })
+      .limit(500)
+    setLeads((data as Lead[]) || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchLeads() }, [])
+
+  // Handle new lead trigger from parent
+  useEffect(() => {
+    if (onNewLead !== undefined) {
+      // Parent controls Add Lead, we just expose fetchLeads via effect
+    }
+  }, [onNewLead])
+
+  const filteredLeads = leads.filter((lead) => {
+    if (filterPriority && filterPriority !== 'all' && lead.priority !== filterPriority) return false
+    return true
+  })
+
+  const cardsByStage: Record<DealStage, KanbanCardData[]> = {
+    new: [], not_contacted: [], contacted: [],
+    qualifying: [], appt_set: [], negotiations: [], contract_signed: [],
+  }
+
+  filteredLeads.forEach((lead) => {
+    const stage = stationToStage(lead.station)
+    if (!stage) return
+    const address = [lead.property_address, lead.city].filter(Boolean).join(', ')
+    cardsByStage[stage].push({
+      id: lead.id,
+      initials: getInitials(lead.full_name),
+      name: lead.full_name || '(no name)',
+      address: address || '(no address)',
+      personalityType: null,
+      stage,
+      avatarBg: avatarColor(lead.id),
+      timerUrgent: lead.priority === 'hot',
+      timerLabel: lead.priority === 'hot' ? '🔥 Hot' : undefined,
+    })
+  })
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-on-surface-variant">
+        Loading pipeline...
+      </div>
+    )
+  }
+
   return (
-    <div className="flex-1 overflow-x-auto overflow-y-hidden flex gap-6 items-start pb-6" style={{ height: 'calc(100vh - 220px)' }}>
-      {columns.map(({ title, stage }) => (
-        <KanbanColumn
-          key={stage}
-          title={title}
-          stage={stage}
-          cards={mockCards[stage]}
+    <>
+      {showAdd && (
+        <AddLeadModal
+          onClose={() => setShowAdd(false)}
+          onSuccess={() => { setShowAdd(false); fetchLeads() }}
         />
-      ))}
-    </div>
+      )}
+      <div
+        className="flex-1 overflow-x-auto overflow-y-hidden flex gap-6 items-start pb-6"
+        style={{ height: 'calc(100vh - 260px)' }}
+      >
+        {columns.map(({ title, stage }) => (
+          <KanbanColumn
+            key={stage}
+            title={title}
+            stage={stage}
+            cards={cardsByStage[stage]}
+          />
+        ))}
+      </div>
+    </>
   )
 }

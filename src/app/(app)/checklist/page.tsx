@@ -8,6 +8,12 @@ import { HistoryTable } from '@/components/checklist/history-table'
 
 export default function ChecklistPage() {
   const [modalOpen, setModalOpen] = useState(false)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+
+  function handleEodModalClose() {
+    setModalOpen(false)
+    setRefreshTrigger((n) => n + 1)
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-8 pt-12">
@@ -21,9 +27,12 @@ export default function ChecklistPage() {
         <EodSection onSubmit={() => setModalOpen(true)} />
       </div>
 
-      <HistoryTable />
+      <HistoryTable refreshTrigger={refreshTrigger} />
 
-      <ReflectionModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      <ReflectionModal
+        open={modalOpen}
+        onClose={handleEodModalClose}
+      />
     </div>
   )
 }
