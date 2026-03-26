@@ -235,7 +235,7 @@ export default function LeadDetailPage() {
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 mt-6">
       {/* CIM-01: Critical Info Missing Banner */}
       {PILLAR_LABELS.some((p) => !pillars[p]) && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 flex-wrap">
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start sm:items-center gap-3 flex-wrap">
           <Icon name="warning" className="text-amber-500 shrink-0" />
           <span className="text-sm font-bold text-amber-800">Missing Qualification Data:</span>
           <div className="flex gap-2 flex-wrap">
@@ -253,7 +253,7 @@ export default function LeadDetailPage() {
               </button>
             ))}
           </div>
-          <span className="text-xs text-amber-600 ml-auto">Click to mark as captured</span>
+          <span className="text-xs text-amber-600 w-full sm:w-auto sm:ml-auto mt-2 sm:mt-0">Click to mark as captured</span>
         </div>
       )}
       {PILLAR_LABELS.every((p) => pillars[p]) && (
@@ -263,16 +263,16 @@ export default function LeadDetailPage() {
         </div>
       )}
       {/* Lead Header */}
-      <div className="mb-8 flex justify-between items-end">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
+      <div className="mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 mb-1 flex-wrap">
             <Link
               href="/leads"
-              className="text-on-surface-variant hover:text-primary transition-colors"
+              className="text-on-surface-variant hover:text-primary transition-colors shrink-0"
             >
               <Icon name="arrow_back" size="text-xl" />
             </Link>
-            <h1 className="text-4xl font-black text-primary tracking-tight">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-primary tracking-tight break-words">
               {lead.full_name || 'Unknown'}
             </h1>
             {/* TMP-02: Favorite Toggle */}
@@ -299,19 +299,20 @@ export default function LeadDetailPage() {
               </div>
             )}
           </div>
-          <p className="text-on-surface-variant flex items-center gap-2 ml-9">
+          <p className="text-on-surface-variant flex items-center gap-2 ml-0 sm:ml-9 text-sm">
             <Icon name="location_on" size="text-sm" />
-            {addressLine || '—'}
+            <span className="break-words">{addressLine || '—'}</span>
           </p>
         </div>
 
-        <div className="flex gap-3">
-          <button className="bg-surface-container-lowest border border-outline-variant/15 px-6 py-2.5 rounded-lg font-bold text-primary hover:bg-surface-container-low transition-all">
+        <div className="flex gap-2 sm:gap-3 flex-wrap sm:flex-nowrap shrink-0">
+          <button className="bg-surface-container-lowest border border-outline-variant/15 px-4 sm:px-6 py-2.5 rounded-lg font-bold text-primary hover:bg-surface-container-low transition-all text-sm sm:text-base">
             Edit Lead
           </button>
-          <button className="bg-secondary text-on-secondary px-6 py-2.5 rounded-lg font-bold hover:opacity-90 transition-all flex items-center gap-2">
+          <button className="bg-secondary text-on-secondary px-4 sm:px-6 py-2.5 rounded-lg font-bold hover:opacity-90 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap">
             <Icon name="bolt" />
-            Generate Contract
+            <span className="hidden sm:inline">Generate Contract</span>
+            <span className="sm:hidden">Contract</span>
           </button>
         </div>
       </div>
