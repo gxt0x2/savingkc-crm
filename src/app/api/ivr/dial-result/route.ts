@@ -1,0 +1,67 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+
+const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18413737722'
+const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+
+export async function POST(req: Request) {
+  const url = new URL(req.url)
+  const from = url.searchParams.get('from') || ''
+  const leadId = url.searchParams.get('leadId') || ''
+
+  const body = await req.formData()
+  const dialStatus = body.get('DialCallStatus') as string
+
+  if (dialStatus === 'completed') {
+    // Casey connected — log it
+    if (leadId) {
+      await supabase.from('lead_activities').insert({
+        lead_id: leadId,
+        activity_type: 'call',
+        description: 'Inbound seller connected live with Casey',
+        agent: 'System',
+        metadata: { outcome: 'connected', direction: 'inbound' }
+      })
+      // Mark callback task done
+      await supabase.from('lead_activities')
+        .update({ metadata: { status: 'completed' } })
+        .eq('lead_id', leadId)
+        .eq('activity_type', 'task')
+        .contains('metadata', { assigned_to: 'Casey' })
+    }
+    return new NextResponse('<Response></Response>', { headers: { 'Content-Type': 'text/xml' } })
+  }
+
+  // Casey didn't answer — escalate to Ernest
+  const ernestMsg = `🚨 ESCALATION — Inbound seller ${from} called in, Casey didn't pick up. Call back NOW.\n${BASE_URL}/leads/${leadId}`
+  try {
+    await twilio.messages.create({ body: ernestMsg, from: TWILIO_PHONE, to: ERNEST_PHONE })
+  } catch (e) { console.error('Ernest escalation text failed:', e) }
+
+  // Schedule Ari text-back in 10 min if NEITHER calls back
+  // (handled by a cron that checks pending IVR leads)
+  if (leadId) {
+    await supabase.from('lead_activities').insert({
+      lead_id: leadId,
+      activity_type: 'task',
+      description: `ESCALATED: Neither Casey nor Ernest called back ${from}`,
+      agent: 'Ari',
+      metadata: {
+        task_type: 'ari_textback',
+        due_date: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        assigned_to: 'Ari',
+        status: 'pending',
+        seller_phone: from
+      }
+    })
+  }
+
+  return new NextResponse('<Response></Response>', { headers: { 'Content-Type': 'text/xml' } })
+}

@@ -1,30 +1,22 @@
 import { NextResponse } from 'next/server'
 
+const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+
 export async function POST(req: Request) {
   const body = await req.formData()
-  const to = body.get('To') as string
-  const from = process.env.TWILIO_PHONE_NUMBER!
+  const callSid = body.get('CallSid') as string
+  const from = body.get('From') as string
 
-  let twiml: string
-  if (to && to.startsWith('+')) {
-    // Outbound PSTN call
-    twiml = `<?xml version="1.0" encoding="UTF-8"?>
+  // Main IVR greeting
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${from}">
-    <Number>${to}</Number>
-  </Dial>
+  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&callSid=${encodeURIComponent(callSid)}" method="POST" timeout="8">
+    <Say voice="Polly.Joanna">Hey, thanks for calling Saving KC Homebuyers — we buy homes in any condition, and we can close in as little as seven days. If you're calling about selling a property, press 1. For anything else, press 2.</Say>
+  </Gather>
+  <!-- No input fallback -->
+  <Redirect method="POST">${BASE_URL}/api/ivr/no-input?from=${encodeURIComponent(from)}</Redirect>
 </Response>`
-  } else {
-    // Client call (browser to browser)
-    twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial>
-    <Client>${to || 'crm-user'}</Client>
-  </Dial>
-</Response>`
-  }
 
-  return new NextResponse(twiml, {
-    headers: { 'Content-Type': 'text/xml' },
-  })
+  return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
 }
