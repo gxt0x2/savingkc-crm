@@ -37,7 +37,6 @@ function getInitials(name: string | null): string {
 
 function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null {
   const type = activity.type
-  if (type !== 'sms' && type !== 'email' && type !== 'call') return null
 
   const meta = activity.metadata || {}
   const direction = (meta.direction as string) === 'received' ? 'received' : 'sent'
@@ -71,13 +70,25 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
     }
   }
 
+  if (type === 'sms') {
+    return {
+      id: activity.id,
+      type: 'sms',
+      direction,
+      content: activity.description || '',
+      timestamp,
+      senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+    }
+  }
+
+  // All other types (task, voicemail, status_change, etc.) — show as system message
   return {
     id: activity.id,
     type: 'sms',
-    direction,
-    content: activity.description || '',
+    direction: 'sent' as const,
+    content: `[${type.replace(/_/g, ' ').toUpperCase()}] ${activity.description || ''}`,
     timestamp,
-    senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+    senderInitials: 'Ari',
   }
 }
 
@@ -174,7 +185,7 @@ export default function ConversationsPage() {
           .from('lead_activities')
           .select('id, lead_id, activity_type, description, agent, metadata, created_at')
           .is('lead_id', null)
-          .in('activity_type', ['sms', 'email', 'call'])
+          .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'task', 'status_change', 'letter_tracking', 'ghost_protocol_enrollment', 'followup_enrollment'])
           .order('created_at', { ascending: true })
           .limit(100)
         // Filter by phone in metadata
@@ -189,7 +200,7 @@ export default function ConversationsPage() {
           .from('lead_activities')
           .select('id, lead_id, activity_type, description, agent, metadata, created_at')
           .eq('lead_id', activeLeadId)
-          .in('activity_type', ['sms', 'email', 'call'])
+          .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'task', 'status_change', 'letter_tracking', 'ghost_protocol_enrollment', 'followup_enrollment'])
           .order('created_at', { ascending: true })
           .limit(100)
         setActivities((data || []).map((a: any) => ({ ...a, type: a.activity_type })) as unknown as ActivityRow[])
@@ -215,7 +226,7 @@ export default function ConversationsPage() {
     starred: lead.priority === 'hot',
   }))
 
-  const commActivities = activities.filter((a) => a.type === 'sms' || a.type === 'email' || a.type === 'call')
+  const commActivities = activities
   const messages: Message[] = commActivities
     .map((act) => activeLead ? activityToMessage(act, activeLead) : null)
     .filter((m): m is Message => m !== null)
