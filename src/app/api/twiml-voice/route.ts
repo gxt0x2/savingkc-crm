@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   // Main IVR greeting
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&callSid=${encodeURIComponent(callSid)}" method="POST" timeout="8">
+  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}" method="POST" timeout="8">
     <Play>https://crm.savingkc.com/audio/ivr-greeting.mp3</Play>
   </Gather>
   <!-- No input fallback -->

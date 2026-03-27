@@ -116,7 +116,7 @@ export async function POST(req: Request) {
 
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&leadId=${leadId || ''}&primary=${encodeURIComponent(primaryLabel)}" method="POST" timeout="15" callerId="${TWILIO_PHONE}">
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${leadId || ''}&primary=${encodeURIComponent(primaryLabel)}" method="POST" timeout="15" callerId="${TWILIO_PHONE}">
     <Number>${primaryPhone}</Number>
   </Dial>
   <!-- If primary doesn't answer -->

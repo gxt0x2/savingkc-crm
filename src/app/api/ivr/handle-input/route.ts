@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Play>https://crm.savingkc.com/audio/ivr-press1.mp3</Play>
-  <Record action="${BASE_URL}/api/ivr/after-record?from=${encodeURIComponent(from)}&callSid=${encodeURIComponent(callSid)}" method="POST" maxLength="30" playBeep="true" />
+  <Record action="${BASE_URL}/api/ivr/after-record?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}" method="POST" maxLength="30" playBeep="true" />
 </Response>`
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   }
