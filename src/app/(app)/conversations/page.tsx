@@ -114,6 +114,7 @@ export default function ConversationsPage() {
   useEffect(() => {
     async function fetchLeads() {
       const supabase = createClient()
+      // Fetch leads with comms
       const { data } = await supabase
         .from('leads')
         .select('id, full_name, phone, email, property_address, city, station, priority, created_at')
@@ -121,8 +122,41 @@ export default function ConversationsPage() {
         .order('created_at', { ascending: false })
         .limit(100)
       const rows = (data as LeadRow[]) || []
-      setLeads(rows)
-      if (rows.length > 0) setActiveLeadId(rows[0].id)
+
+      // Also fetch unmatched conversations (lead_id is null)
+      const { data: unmatchedData } = await supabase
+        .from('lead_activities')
+        .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+        .is('lead_id', null)
+        .in('activity_type', ['call', 'sms'])
+        .order('created_at', { ascending: false })
+        .limit(50)
+      const unmatched = (unmatchedData || []) as ActivityRow[]
+
+      // Group unmatched by phone number to create virtual threads
+      const phoneMap = new Map<string, ActivityRow[]>()
+      for (const act of unmatched) {
+        const phone = (act.metadata?.from as string) || (act.metadata?.to as string) || 'unknown'
+        if (!phoneMap.has(phone)) phoneMap.set(phone, [])
+        phoneMap.get(phone)!.push(act)
+      }
+
+      // Create virtual lead entries for unmatched numbers
+      const virtualLeads: LeadRow[] = Array.from(phoneMap.entries()).map(([phone, acts]) => ({
+        id: `unmatched:${phone}`,
+        full_name: phone,
+        phone,
+        email: null,
+        property_address: null,
+        city: null,
+        station: 'unmatched',
+        priority: 'normal',
+        created_at: acts[0].created_at,
+      }))
+
+      const allLeads = [...virtualLeads, ...rows]
+      setLeads(allLeads)
+      if (allLeads.length > 0) setActiveLeadId(allLeads[0].id)
       setLoading(false)
     }
     fetchLeads()
@@ -132,14 +166,34 @@ export default function ConversationsPage() {
     if (!activeLeadId) return
     async function fetchActivities() {
       const supabase = createClient()
-      const { data } = await supabase
-        .from('lead_activities')
-        .select('id, lead_id, type, description, agent, metadata, created_at')
-        .eq('lead_id', activeLeadId)
-        .in('type', ['sms', 'email', 'call'])
-        .order('created_at', { ascending: true })
-        .limit(100)
-      setActivities((data as ActivityRow[]) || [])
+
+      if (activeLeadId.startsWith('unmatched:')) {
+        // Fetch unmatched activities by phone number
+        const phone = activeLeadId.replace('unmatched:', '')
+        const { data } = await supabase
+          .from('lead_activities')
+          .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+          .is('lead_id', null)
+          .in('activity_type', ['sms', 'email', 'call'])
+          .order('created_at', { ascending: true })
+          .limit(100)
+        // Filter by phone in metadata
+        const filtered = (data || []).filter((a: any) => {
+          const meta = a.metadata || {}
+          return meta.from === phone || meta.to === phone
+        })
+        // Map activity_type to type for compatibility
+        setActivities(filtered.map((a: any) => ({ ...a, type: a.activity_type })) as unknown as ActivityRow[])
+      } else {
+        const { data } = await supabase
+          .from('lead_activities')
+          .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+          .eq('lead_id', activeLeadId)
+          .in('activity_type', ['sms', 'email', 'call'])
+          .order('created_at', { ascending: true })
+          .limit(100)
+        setActivities((data || []).map((a: any) => ({ ...a, type: a.activity_type })) as unknown as ActivityRow[])
+      }
     }
     fetchActivities()
   }, [activeLeadId])
@@ -149,15 +203,15 @@ export default function ConversationsPage() {
   const threads: ThreadPreview[] = leads.map((lead) => ({
     id: lead.id,
     name: lead.full_name || '(no name)',
-    initials: getInitials(lead.full_name),
-    avatarBg: lead.priority === 'hot' ? 'bg-red-900' : 'bg-slate-700',
+    initials: lead.station === 'unmatched' ? '📞' : getInitials(lead.full_name),
+    avatarBg: lead.priority === 'hot' ? 'bg-red-900' : lead.station === 'unmatched' ? 'bg-amber-700' : 'bg-slate-700',
     avatarText: 'text-white',
-    address: [lead.property_address, lead.city].filter(Boolean).join(', ') || '—',
+    address: [lead.property_address, lead.city].filter(Boolean).join(', ') || (lead.station === 'unmatched' ? 'Unassigned — needs review' : '—'),
     personality: null,
-    tags: lead.priority === 'hot' ? [{ label: 'Hot Lead', variant: 'hot' as const }] : [],
-    lastMessage: lead.station ? `Stage: ${lead.station.replace(/_/g, ' ')}` : 'No activity yet',
+    tags: lead.priority === 'hot' ? [{ label: 'Hot Lead', variant: 'hot' as const }] : lead.station === 'unmatched' ? [{ label: 'New Call', variant: 'hot' as const }] : [],
+    lastMessage: lead.station === 'unmatched' ? 'Inbound call — not yet a lead' : lead.station ? `Stage: ${lead.station.replace(/_/g, ' ')}` : 'No activity yet',
     timestamp: new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    unread: false,
+    unread: lead.station === 'unmatched',
     starred: lead.priority === 'hot',
   }))
 
