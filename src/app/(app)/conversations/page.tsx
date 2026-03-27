@@ -131,7 +131,7 @@ export default function ConversationsPage() {
         .in('activity_type', ['call', 'sms'])
         .order('created_at', { ascending: false })
         .limit(50)
-      const unmatched = (unmatchedData || []) as ActivityRow[]
+      const unmatched = (unmatchedData || []) as unknown as ActivityRow[]
 
       // Group unmatched by phone number to create virtual threads
       const phoneMap = new Map<string, ActivityRow[]>()
@@ -167,9 +167,9 @@ export default function ConversationsPage() {
     async function fetchActivities() {
       const supabase = createClient()
 
-      if (activeLeadId.startsWith('unmatched:')) {
+      if (activeLeadId!.startsWith('unmatched:')) {
         // Fetch unmatched activities by phone number
-        const phone = activeLeadId.replace('unmatched:', '')
+        const phone = activeLeadId!.replace('unmatched:', '')
         const { data } = await supabase
           .from('lead_activities')
           .select('id, lead_id, activity_type, description, agent, metadata, created_at')
