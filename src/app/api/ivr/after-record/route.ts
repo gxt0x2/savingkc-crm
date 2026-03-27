@@ -12,6 +12,15 @@ const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18413737722'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
+
+function isOfficeHours(): boolean {
+  // 9AM - 5PM CST (UTC-6, or UTC-5 during DST)
+  const now = new Date()
+  const cst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }))
+  const hour = cst.getHours()
+  return hour >= 9 && hour < 17
+}
+
 export async function POST(req: Request) {
   const url = new URL(req.url)
   const from = url.searchParams.get('from') || ''
@@ -55,11 +64,13 @@ export async function POST(req: Request) {
     })
   }
 
-  // Send Casey an urgent text immediately
-  const caseyMsg = `🔥 INBOUND SELLER — ${from}. Just called in. Recording: ${recordingUrl}\nCall back NOW.`
+  // Text the right person based on office hours
+  const primaryRecipient = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
+  const primaryName = isOfficeHours() ? 'Casey' : 'Ernest'
+  const urgentMsg = `🔥 INBOUND SELLER — ${from}. Just called in. Recording: ${recordingUrl}\nCall back NOW.`
   try {
-    await twilio.messages.create({ body: caseyMsg, from: TWILIO_PHONE, to: CASEY_PHONE })
-  } catch (e) { console.error('Casey text failed:', e) }
+    await twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: primaryRecipient })
+  } catch (e) { console.error('Alert text failed:', e) }
 
   // Create 3-min callback task for Casey
   const due3min = new Date(Date.now() + 3 * 60 * 1000).toISOString()
@@ -72,7 +83,7 @@ export async function POST(req: Request) {
       metadata: {
         task_type: 'callback',
         due_date: due3min,
-        assigned_to: 'Casey',
+        assigned_to: isOfficeHours() ? 'Casey' : 'Ernest',
         priority: 'critical',
         status: 'pending',
         escalate_after_minutes: 3,
@@ -99,17 +110,16 @@ export async function POST(req: Request) {
     }).eq('id', leadId)
   }
 
-  // Now dial Casey with whisper — "Inbound seller lead" before connecting
+  // Route based on office hours
+  const primaryPhone = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
+  const primaryLabel = isOfficeHours() ? 'Casey' : 'Ernest'
+
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&leadId=${leadId || ''}" method="POST" timeout="15" callerId="${TWILIO_PHONE}">
-    <Number>
-      <![CDATA[
-        ${CASEY_PHONE}
-      ]]>
-    </Number>
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&leadId=${leadId || ''}&primary=${encodeURIComponent(primaryLabel)}" method="POST" timeout="15" callerId="${TWILIO_PHONE}">
+    <Number>${primaryPhone}</Number>
   </Dial>
-  <!-- If Casey doesn't answer -->
+  <!-- If primary doesn't answer -->
   <Say voice="Polly.Joanna">Our team is helping another homeowner right now, but we want to talk to you. We'll call you back in the next few minutes — keep your phone close.</Say>
   <Hangup />
 </Response>`

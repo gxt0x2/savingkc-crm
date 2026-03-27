@@ -11,6 +11,14 @@ const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18413737722'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
+
+function isOfficeHours(): boolean {
+  const now = new Date()
+  const cst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }))
+  const hour = cst.getHours()
+  return hour >= 9 && hour < 17
+}
+
 export async function POST(req: Request) {
   const url = new URL(req.url)
   const from = url.searchParams.get('from') || ''
@@ -39,11 +47,18 @@ export async function POST(req: Request) {
     return new NextResponse('<Response></Response>', { headers: { 'Content-Type': 'text/xml' } })
   }
 
-  // Casey didn't answer — escalate to Ernest
-  const ernestMsg = `🚨 ESCALATION — Inbound seller ${from} called in, Casey didn't pick up. Call back NOW.\n${BASE_URL}/leads/${leadId}`
-  try {
-    await twilio.messages.create({ body: ernestMsg, from: TWILIO_PHONE, to: ERNEST_PHONE })
-  } catch (e) { console.error('Ernest escalation text failed:', e) }
+  // Primary didn't answer — escalate appropriately
+  const url2 = new URL(req.url)
+  const primary = url2.searchParams.get('primary') || 'Casey'
+
+  if (isOfficeHours() && primary === 'Casey') {
+    // Business hours: Casey missed it → escalate to Ernest
+    const ernestMsg = `🚨 ESCALATION — Inbound seller ${from} called in, Casey missed it. Call back NOW.\n${BASE_URL}/leads/${leadId}`
+    try {
+      await twilio.messages.create({ body: ernestMsg, from: TWILIO_PHONE, to: ERNEST_PHONE })
+    } catch (e) { console.error('Ernest escalation text failed:', e) }
+  }
+  // After hours: Ernest was already primary — Ari will text seller at 10 min (handled by task)
 
   // Schedule Ari text-back in 10 min if NEITHER calls back
   // (handled by a cron that checks pending IVR leads)
