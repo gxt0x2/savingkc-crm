@@ -148,7 +148,7 @@ export function FeedbackForm({ onClose, onSubmit }: Props) {
                 type === 'bug'
                   ? 'What happened? What were you trying to do? What did you expect to happen?'
                   : type === 'feature'
-                  ? 'Describe the feature you'd like to see. What problem does it solve?'
+                  ? "Describe the feature you'd like to see. What problem does it solve?"
                   : 'Share your thoughts, suggestions, or general feedback.'
               }
               className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"

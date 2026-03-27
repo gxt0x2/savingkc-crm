@@ -78,7 +78,7 @@ export function validateInput<T>(schema: z.ZodSchema<T>, data: unknown): { succe
     return { success: true, data: parsed }
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const errors = error.errors.map((err) => `${err.path.join('.')}: ${err.message}`)
+      const errors = error.issues.map((err) => `${err.path.join('.')}: ${err.message}`)
       return { success: false, errors }
     }
     return { success: false, errors: ['Validation failed'] }
