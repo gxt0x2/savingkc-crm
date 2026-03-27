@@ -120,7 +120,7 @@ export async function POST(req: Request) {
     <Number>${primaryPhone}</Number>
   </Dial>
   <!-- If primary doesn't answer -->
-  <Say voice="Polly.Joanna">Our team is helping another homeowner right now, but we want to talk to you. We'll call you back in the next few minutes — keep your phone close.</Say>
+  <Play>https://crm.savingkc.com/audio/ivr-no-answer.mp3</Play>
   <Hangup />
 </Response>`
 

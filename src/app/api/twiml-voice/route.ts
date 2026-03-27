@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&callSid=${encodeURIComponent(callSid)}" method="POST" timeout="8">
-    <Say voice="Polly.Joanna">Hey, thanks for calling Saving KC Homebuyers — we buy homes in any condition, and we can close in as little as seven days. If you're calling about selling a property, press 1. For anything else, press 2.</Say>
+    <Play>https://crm.savingkc.com/audio/ivr-greeting.mp3</Play>
   </Gather>
   <!-- No input fallback -->
   <Redirect method="POST">${BASE_URL}/api/ivr/no-input?from=${encodeURIComponent(from)}</Redirect>
