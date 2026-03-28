@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
           full_name: first_name.trim(),
           phone: normalizedPhone,
           ...(property_address?.trim() ? { property_address: property_address.trim() } : {}),
-          source: source || 'YouTube',
+          source: 'website_form',
           station: 'intake',
           priority: 'hot',
         })
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
         slot_time,
         slot_datetime,
         lead_id: leadId,
-        source: source || 'YouTube',
+        source: source === 'youtube' ? 'youtube' : 'website_form',
         landing_page: '/call',
       })
       .select('id')
