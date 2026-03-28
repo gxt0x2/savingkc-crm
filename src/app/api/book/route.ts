@@ -136,8 +136,8 @@ export async function POST(req: NextRequest) {
           booking_id: booking.id,
           slot_date,
           slot_time,
-          property_address: property_address.trim(),
-          source: 'YouTube landing page',
+          property_address: property_address?.trim() || '',
+          source: 'website_form',
         },
       })
     }
