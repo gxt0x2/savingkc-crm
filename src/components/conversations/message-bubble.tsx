@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
 
@@ -18,6 +19,9 @@ export interface Message {
   emailMeta?: string
   // call-specific
   callDuration?: string
+  recordingUrl?: string   // proxied URL like /api/recordings/RExxxxxxx
+  recordingSid?: string
+  transcript?: string
 }
 
 function SmsBubble({ message }: { message: Message }) {
@@ -87,26 +91,178 @@ function EmailCard({ message }: { message: Message }) {
   )
 }
 
-function CallPill({ message }: { message: Message }) {
+function CallCard({ message }: { message: Message }) {
   const isSent = message.direction === 'sent'
+  const [playing, setPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [speed, setSpeed] = useState(1)
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  function togglePlay() {
+    const audio = audioRef.current
+    if (!audio) return
+    if (playing) { audio.pause(); setPlaying(false) }
+    else { audio.play(); setPlaying(true) }
+  }
+
+  function handleTimeUpdate() {
+    setCurrentTime(audioRef.current?.currentTime || 0)
+  }
+
+  function handleLoadedMetadata() {
+    setDuration(audioRef.current?.duration || 0)
+  }
+
+  function handleEnded() {
+    setPlaying(false)
+    setCurrentTime(0)
+  }
+
+  function cycleSpeed() {
+    const speeds = [1, 1.5, 2]
+    const next = speeds[(speeds.indexOf(speed) + 1) % speeds.length]
+    setSpeed(next)
+    if (audioRef.current) audioRef.current.playbackRate = next
+  }
+
+  function handleDownload() {
+    if (!message.recordingUrl) return
+    const a = document.createElement('a')
+    a.href = message.recordingUrl
+    a.download = `call-${message.id}.mp3`
+    a.click()
+  }
+
+  function fmtTime(s: number) {
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0
 
   return (
-    <div className="flex justify-center">
-      <div className="bg-primary-container text-on-primary rounded-full px-6 py-3 flex items-center gap-4 shadow-lg">
-        <Icon
-          name={isSent ? 'call_made' : 'call_received'}
-          className="text-secondary-fixed"
-        />
-        <div className="text-xs">
-          <span className="font-bold">
-            {isSent ? 'Outgoing' : 'Incoming'} call ({message.callDuration})
-          </span>
-          <span className="opacity-50 mx-2">|</span>
-          <span>{message.timestamp}</span>
+    <div className={cn('flex', isSent ? 'justify-end' : 'justify-start')}>
+      <div className="max-w-[480px] w-full">
+        {/* Call header */}
+        <div className="flex items-center gap-2 mb-2 px-1">
+          <div className={cn(
+            'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold',
+            isSent ? 'bg-slate-800 text-white' : 'bg-slate-300 text-slate-800'
+          )}>
+            {message.senderInitials}
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-on-surface-variant font-medium">
+            <Icon name={isSent ? 'call_made' : 'call_received'} className="text-sm text-green-600" />
+            <span>Call {isSent ? 'outgoing' : 'completed'}</span>
+            <span className="text-on-surface-variant/40">·</span>
+            <span>{message.timestamp}</span>
+          </div>
         </div>
-        <button className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all">
-          <Icon name="play_arrow" className="text-white text-sm" filled />
-        </button>
+
+        {/* Audio player card */}
+        <div className={cn(
+          'rounded-2xl p-4 shadow-sm border',
+          isSent
+            ? 'bg-primary text-on-primary border-transparent'
+            : 'bg-surface-container-high text-on-surface border-outline-variant/10'
+        )}>
+          {message.recordingUrl ? (
+            <>
+              <audio
+                ref={audioRef}
+                src={message.recordingUrl}
+                onTimeUpdate={handleTimeUpdate}
+                onLoadedMetadata={handleLoadedMetadata}
+                onEnded={handleEnded}
+                preload="metadata"
+              />
+              {/* Player row */}
+              <div className="flex items-center gap-3">
+                {/* Play/pause */}
+                <button
+                  onClick={togglePlay}
+                  className={cn(
+                    'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
+                    isSent ? 'bg-white/20 hover:bg-white/30' : 'bg-primary hover:bg-primary/90'
+                  )}
+                >
+                  <Icon
+                    name={playing ? 'pause' : 'play_arrow'}
+                    className={cn('text-lg', isSent ? 'text-white' : 'text-on-primary')}
+                    filled
+                  />
+                </button>
+
+                {/* Waveform / progress bar */}
+                <div className="flex-1 flex flex-col gap-1">
+                  <div
+                    className={cn('w-full h-1.5 rounded-full cursor-pointer', isSent ? 'bg-white/20' : 'bg-slate-200')}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      const pct = (e.clientX - rect.left) / rect.width
+                      if (audioRef.current) {
+                        audioRef.current.currentTime = pct * (audioRef.current.duration || 0)
+                      }
+                    }}
+                  >
+                    <div
+                      className={cn('h-full rounded-full transition-all', isSent ? 'bg-white' : 'bg-primary')}
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <div className={cn('flex justify-between text-[10px]', isSent ? 'text-white/60' : 'text-on-surface-variant/50')}>
+                    <span>{fmtTime(currentTime)}</span>
+                    <span>{duration > 0 ? fmtTime(duration) : message.callDuration || '—'}</span>
+                  </div>
+                </div>
+
+                {/* Controls */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={cycleSpeed}
+                    className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded', isSent ? 'text-white/70 hover:text-white' : 'text-on-surface-variant hover:text-on-surface')}
+                  >
+                    {speed}x
+                  </button>
+                  <button
+                    onClick={handleDownload}
+                    className={cn('p-1 rounded hover:bg-black/5', isSent ? 'text-white/70 hover:text-white' : 'text-on-surface-variant')}
+                    title="Download"
+                  >
+                    <Icon name="download" className="text-base" />
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* No recording — just show call info */
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                'w-10 h-10 rounded-full flex items-center justify-center',
+                isSent ? 'bg-white/20' : 'bg-slate-200'
+              )}>
+                <Icon name="phone_missed" className={cn('text-lg', isSent ? 'text-white' : 'text-slate-500')} />
+              </div>
+              <div className="flex-1">
+                <p className={cn('text-sm font-semibold', isSent ? 'text-white' : 'text-on-surface')}>
+                  {message.content}
+                </p>
+                <p className={cn('text-xs mt-0.5', isSent ? 'text-white/60' : 'text-on-surface-variant/60')}>
+                  Duration: {message.callDuration || '—'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* View Transcript link */}
+        {message.transcript && (
+          <button className="mt-1.5 px-1 text-xs font-bold text-primary hover:underline">
+            View Transcript
+          </button>
+        )}
       </div>
     </div>
   )
@@ -117,7 +273,7 @@ export function MessageBubble({ message }: { message: Message }) {
     case 'email':
       return <EmailCard message={message} />
     case 'call':
-      return <CallPill message={message} />
+      return <CallCard message={message} />
     default:
       return <SmsBubble message={message} />
   }

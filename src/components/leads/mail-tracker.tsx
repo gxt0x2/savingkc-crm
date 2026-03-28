@@ -69,7 +69,7 @@ function getMailTypeLabel(type: MailType): string {
   const labels: Record<MailType, string> = {
     handwritten_note: '✍️ Handwritten Note',
     postcard: '🏞 Postcard',
-    letter: '✉️ Letter',
+    letter: 'Letter',
     package: '📦 Package',
   }
   return labels[type]

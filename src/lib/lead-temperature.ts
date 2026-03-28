@@ -45,8 +45,8 @@ export function calculateTemperature(lead: TemperatureInput): Temperature {
 }
 
 export const TEMPERATURE_CONFIG = {
-  hot:  { label: '🔥 Hot',  bg: 'bg-red-100',    text: 'text-red-700',    dot: 'bg-red-500' },
-  warm: { label: '🌤 Warm', bg: 'bg-orange-100',  text: 'text-orange-700', dot: 'bg-orange-500' },
-  cool: { label: '❄ Cool',  bg: 'bg-blue-100',    text: 'text-blue-700',   dot: 'bg-blue-500' },
-  cold: { label: '⬛ Cold', bg: 'bg-slate-100',   text: 'text-slate-500',  dot: 'bg-slate-400' },
+  hot:  { label: 'Hot',  bg: 'bg-red-100',    text: 'text-red-700',    dot: 'bg-red-500',    icon: 'local_fire_department' },
+  warm: { label: 'Warm', bg: 'bg-orange-100',  text: 'text-orange-700', dot: 'bg-orange-500', icon: 'wb_sunny' },
+  cool: { label: 'Cool',  bg: 'bg-blue-100',    text: 'text-blue-700',   dot: 'bg-blue-500',  icon: 'ac_unit' },
+  cold: { label: 'Cold', bg: 'bg-slate-100',   text: 'text-slate-500',  dot: 'bg-slate-400', icon: 'severe_cold' },
 }

@@ -15,6 +15,14 @@ const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18413737722'
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 
+// Internal team numbers — never trigger lead flows for these
+const TEAM_NUMBERS = new Set([
+  '+18167564943', // Casey cell
+  '+18163754666', // Casey alt
+  '+18166088588', // Ernest cell
+  '+18413737722', // Ernest alt
+])
+
 /**
  * StatusCallback handler — fires for ALL call status events
  * Logs every inbound call to the CRM, handles missed call flow
@@ -30,6 +38,11 @@ export async function POST(req: Request) {
     const direction = body.get('Direction') as string || 'inbound'
 
     if (!from) {
+      return new NextResponse('OK', { status: 200 })
+    }
+
+    // Skip all lead/auto-text flows for internal team numbers
+    if (TEAM_NUMBERS.has(from)) {
       return new NextResponse('OK', { status: 200 })
     }
 
@@ -66,7 +79,7 @@ export async function POST(req: Request) {
       await supabase.from('ari_briefing_events').insert({
         event_type: 'inbound_call',
         priority: callStatus === 'completed' ? 'medium' : 'high',
-        title: `📞 Inbound call from ${leadName || from} — ${callStatus}`,
+        title: `Inbound call from ${leadName || from} — ${callStatus}`,
         description: `Duration: ${duration}s. Status: ${callStatus}.`,
         lead_id: leadId,
         action_url: `/leads/${leadId}`
@@ -111,11 +124,15 @@ export async function POST(req: Request) {
         })
       } else if (!leadId) {
         // Unknown caller missed call — send generic text
+        const unknownSmsBody = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`
         try {
-          await twilio.messages.create({
-            body: 'Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we\'ll call you right back.',
-            from: TWILIO_PHONE,
-            to: from
+          await twilio.messages.create({ body: unknownSmsBody, from: TWILIO_PHONE, to: from })
+          await supabase.from('lead_activities').insert({
+            lead_id: null,
+            activity_type: 'sms',
+            description: unknownSmsBody,
+            agent: 'Ari',
+            metadata: { direction: 'outbound', from: TWILIO_PHONE, to: from, trigger: 'missed_call_unknown' }
           })
         } catch (e) { console.error('Unknown caller text failed:', e) }
       }

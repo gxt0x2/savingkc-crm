@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { KanbanColumn } from './kanban-column'
+import { toProperCase } from '@/lib/format'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import type { KanbanCardData } from './kanban-card'
 import type { DealStage } from '@/types'
@@ -136,7 +137,7 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
     cardsByStage[stage].push({
       id: lead.id,
       initials: getInitials(lead.full_name),
-      name: lead.full_name || '(no name)',
+      name: toProperCase(lead.full_name) || '(no name)',
       address: address || '(no address)',
       phone: lead.phone,
       email: lead.email,
@@ -144,7 +145,7 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
       stage,
       avatarBg: avatarColor(lead.id),
       timerUrgent: lead.priority === 'hot',
-      timerLabel: lead.priority === 'hot' ? '🔥 Hot' : undefined,
+      timerLabel: lead.priority === 'hot' ? 'Hot' : undefined,
       created_at: lead.created_at,
     })
   })

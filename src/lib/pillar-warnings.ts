@@ -80,7 +80,7 @@ export function generateCallbackDescription(
   })
 
   if (missingPillars.length === 0) {
-    return `Callback with ${name} at ${time}. All pillars captured ✓`
+    return `Callback with ${name} at ${time}. All pillars captured`
   }
 
   const pillarList = missingPillars.join(', ')

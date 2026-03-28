@@ -12,6 +12,8 @@ interface ThreadContact {
   county: string
   tags: string[]
   verified?: boolean
+  assignedAgent?: string | null
+  toPhone?: string
 }
 
 interface DateGroup {
@@ -19,14 +21,28 @@ interface DateGroup {
   messages: Message[]
 }
 
+function formatPhonePill(raw?: string): string {
+  if (!raw) return '(816) 307-7835'
+  const digits = raw.replace(/\D/g, '')
+  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+  if (local.length === 10) {
+    return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`
+  }
+  return raw
+}
+
 export function ThreadView({
   contact,
   dateGroups,
   leadId,
+  phone,
+  onSent,
 }: {
   contact: ThreadContact
   dateGroups: DateGroup[]
   leadId?: string
+  phone?: string
+  onSent?: () => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -74,6 +90,14 @@ export function ThreadView({
                     {tag}
                   </span>
                 ))}
+                {/* Receiving phone pill */}
+                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded border border-blue-100">
+                  {formatPhonePill(contact.toPhone)}
+                </span>
+                {/* Assigned agent pill */}
+                <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded border border-slate-200">
+                  👤 {contact.assignedAgent || 'Unassigned'}
+                </span>
               </div>
             </div>
           </div>
@@ -113,7 +137,7 @@ export function ThreadView({
       </div>
 
       {/* Compose Box */}
-      <ComposeBox />
+      <ComposeBox leadId={leadId} phone={phone} onSent={onSent} />
     </section>
   )
 }

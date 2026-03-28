@@ -53,17 +53,11 @@ export function TemperatureDot({ lead, className = '' }: { lead: TemperatureInpu
 // Icon version for compact spaces
 export function TemperatureIcon({ lead, className = '' }: { lead: TemperatureInput; className?: string }) {
   const temp = calculateTemperature(lead)
-
-  const iconMap: Record<Temperature, string> = {
-    hot: '🔥',
-    warm: '🌤',
-    cool: '❄️',
-    cold: '⬛',
-  }
+  const config = TEMPERATURE_CONFIG[temp]
 
   return (
-    <span className={`text-base ${className}`} title={`${temp} lead`}>
-      {iconMap[temp]}
+    <span className={`material-symbols-outlined text-base ${config.text} ${className}`} title={`${temp} lead`}>
+      {config.icon}
     </span>
   )
 }

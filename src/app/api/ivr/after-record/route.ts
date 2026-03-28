@@ -67,7 +67,7 @@ export async function POST(req: Request) {
   // Text the right person based on office hours
   const primaryRecipient = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
   const primaryName = isOfficeHours() ? 'Casey' : 'Ernest'
-  const urgentMsg = `🔥 INBOUND SELLER — ${from}. Just called in. Recording: ${recordingUrl}\nCall back NOW.`
+  const urgentMsg = `[URGENT] INBOUND SELLER — ${from}. Just called in. Recording: ${recordingUrl}\nCall back NOW.`
   try {
     await twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: primaryRecipient })
   } catch (e) { console.error('Alert text failed:', e) }
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     await supabase.from('ari_briefing_events').insert({
       event_type: 'inbound_seller_ivr',
       priority: 'critical',
-      title: `🔥 Inbound seller called in from ${from}`,
+      title: `[URGENT] Inbound seller called in from ${from}`,
       description: `Pressed 1, left recording. Casey notified. Callback task due in 3 min.`,
       lead_id: leadId,
       action_url: `/leads/${leadId}`

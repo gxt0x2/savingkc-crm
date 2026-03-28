@@ -37,11 +37,11 @@ export async function POST(req: Request) {
       .from('lead_activities')
       .insert({
         lead_id: leadId,
-        type: 'sms',
+        activity_type: 'sms',
         description: messageBody,
         agent: 'system',
         metadata: {
-          direction: 'inbound',
+          direction: 'received',
           from: from,
           to: to,
           message_sid: messageSid,
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
       }
 
       await twilio.messages.create({
-        body: `🔥 HOT — ${from} replied YES to sell. Call NOW.${yesLeadId ? ' ' + BASE_URL + '/leads/' + yesLeadId : ''}`,
+        body: `[URGENT] HOT — ${from} replied YES to sell. Call NOW.${yesLeadId ? ' ' + BASE_URL + '/leads/' + yesLeadId : ''}`,
         from: TWILIO_PHONE, to: CASEY_PHONE
       }).catch(console.error)
 
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
         })
         await supabase.from('ari_briefing_events').insert({
           event_type: 'yes_reply_seller', priority: 'critical',
-          title: `🔥 ${from} replied YES — wants to sell`,
+          title: `[URGENT] ${from} replied YES — wants to sell`,
           description: 'Replied YES to no-input text-back. Casey notified.',
           lead_id: yesLeadId, action_url: `/leads/${yesLeadId}`
         })

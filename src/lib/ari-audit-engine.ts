@@ -366,11 +366,11 @@ export async function verifySystemHealth() {
     if (lastSuccessMs && lastSuccessMs > expectedIntervalMs * 4) {
       status = 'down'
       severity = 'critical'
-      description = `⚠️ ${worker.name} hasn't run successfully in ${Math.floor(lastSuccessMs / 60000)} minutes (expected every ${worker.check_interval_minutes} min). Check connection.`
+      description = `${worker.name} hasn't run successfully in ${Math.floor(lastSuccessMs / 60000)} minutes (expected every ${worker.check_interval_minutes} min). Check connection.`
     } else if (lastSuccessMs && lastSuccessMs > expectedIntervalMs * 2) {
       status = 'degraded'
       severity = 'high'
-      description = `⚠️ ${worker.name} hasn't run in ${Math.floor(lastSuccessMs / 60000)} minutes (expected every ${worker.check_interval_minutes} min). Investigating.`
+      description = `${worker.name} hasn't run in ${Math.floor(lastSuccessMs / 60000)} minutes (expected every ${worker.check_interval_minutes} min). Investigating.`
     }
 
     if (status === 'down' || status === 'degraded') {

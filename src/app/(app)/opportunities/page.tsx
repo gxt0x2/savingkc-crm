@@ -7,6 +7,7 @@ import { OpportunityCard } from '@/components/opportunities/opportunity-card'
 import { ActivityTable } from '@/components/opportunities/activity-table'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import { Icon } from '@/components/ui/icon'
+import { toProperCase } from '@/lib/format'
 import type { Deal, Contact, DealStage } from '@/types'
 
 interface LeadRow {
@@ -26,7 +27,7 @@ interface LeadRow {
 }
 
 function leadToContact(lead: LeadRow): Contact {
-  const parts = (lead.full_name || 'Unknown').split(' ')
+  const parts = (toProperCase(lead.full_name) || 'Unknown').split(' ')
   return {
     id: lead.id,
     first_name: parts[0] || 'Unknown',
@@ -149,7 +150,7 @@ export default function OpportunitiesPage() {
           {hotDeals.length > 0 && (
             <section className="mb-10">
               <div className="flex items-center gap-3 mb-4">
-                <span className="text-lg font-black text-primary">🔥 Top Hot Deals</span>
+                <span className="text-lg font-black text-primary">Top Hot Deals</span>
                 <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs font-bold rounded-full">
                   {hotDeals.length} pinned
                 </span>

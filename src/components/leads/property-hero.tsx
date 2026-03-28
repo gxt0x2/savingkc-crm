@@ -1,3 +1,5 @@
+'use client'
+
 import { Icon } from '@/components/ui/icon'
 
 interface PropertyDetails {
@@ -16,53 +18,52 @@ interface PropertyDetails {
 
 interface PropertyHeroProps {
   property: PropertyDetails
+  detailsExpanded?: boolean
+  onToggleDetails?: () => void
 }
 
-const COUNTY_URLS: Record<string, string> = {
-  jackson: 'https://www.jacksongov.org/residents/assessment',
-  clay: 'https://www.claycountymo.gov/assessor',
-  platte: 'https://www.platteassessor.org',
-  wyandotte: 'https://www.wycokck.org/appraiser',
-  johnson: 'https://www.jocogov.org/appraiser',
+function getCountyUrl(county: string | undefined, city: string | undefined, address: string): string {
+  if (county) {
+    if (county.toLowerCase().includes('jackson')) {
+      return `https://www.jacksongov.org/services/property-tax/search?q=${encodeURIComponent(address)}`
+    }
+    if (county.toLowerCase().includes('wyandotte') || (city && city.toLowerCase().includes('kansas city, ks'))) {
+      return 'https://www.wycokck.org/departments/county-appraiser'
+    }
+  }
+  if (city && city.toLowerCase().includes('kansas city, ks')) {
+    return 'https://www.wycokck.org/departments/county-appraiser'
+  }
+  return `https://www.google.com/search?q=${encodeURIComponent(address + ' county records parcel')}`
 }
 
-function getCountyUrl(county: string | undefined): string {
-  if (!county) return 'https://www.jacksongov.org/residents/assessment'
-  const key = county.toLowerCase().replace(/\s*county\s*/i, '').trim()
-  return COUNTY_URLS[key] || 'https://www.jacksongov.org/residents/assessment'
-}
-
-export function PropertyHero({ property }: PropertyHeroProps) {
+export function PropertyHero({ property, detailsExpanded, onToggleDetails }: PropertyHeroProps) {
   const fullAddress = [property.address, property.city, property.state, property.zip]
     .filter(Boolean)
     .join(', ')
   const encodedAddress = encodeURIComponent(fullAddress || property.address)
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`
-  const redfinUrl = `https://www.redfin.com/query?q=${encodedAddress}`
-  const countyUrl = getCountyUrl(property.county)
+  const redfinUrl = `https://www.redfin.com/search#q=${encodeURIComponent(fullAddress || property.address)}`
+  const countyUrl = getCountyUrl(property.county, property.city, fullAddress || property.address)
+  const mapEmbedUrl = `https://www.google.com/maps?q=${encodedAddress}&output=embed`
 
   return (
     <div className="space-y-4">
-      {/* Street View Hero — links to Google Maps */}
-      <div className="relative h-80 rounded-2xl overflow-hidden shadow-sm bg-slate-800">
-        <a
-          href={googleMapsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute inset-0 flex flex-col items-center justify-center gap-3 group"
-          title="Open Street View on Google Maps"
-        >
-          <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
-            <Icon name="location_on" className="text-white !text-3xl" />
-          </div>
-          <span className="text-white/80 text-sm font-semibold group-hover:text-white transition-colors">
-            View on Google Maps ↗
-          </span>
-          <span className="text-white/50 text-xs px-4 text-center">{fullAddress || property.address}</span>
-        </a>
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
-        <div className="absolute bottom-6 left-6 text-white pointer-events-none">
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
+      {/* Map Embed Header */}
+      <div className="relative rounded-2xl overflow-hidden shadow-sm bg-slate-800">
+        <iframe
+          src={mapEmbedUrl}
+          width="100%"
+          height="200"
+          style={{ border: 0, display: 'block' }}
+          allowFullScreen
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+          title="Property location map"
+        />
+        {/* Address overlay */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none px-4 pb-3 pt-8">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
             {property.tags.map((tag) => (
               <span
                 key={tag}
@@ -72,40 +73,12 @@ export function PropertyHero({ property }: PropertyHeroProps) {
               </span>
             ))}
           </div>
-          <h3 className="text-2xl font-bold">{property.address}</h3>
-        </div>
-      </div>
-
-      {/* Property Details Bento Grid */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-surface-container-low p-4 rounded-xl">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Beds/Baths</p>
-          <p className="text-xl font-black text-primary">
-            {property.beds || '—'} / {property.baths || '—'}
-          </p>
-        </div>
-        <div className="bg-surface-container-low p-4 rounded-xl">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Total SF</p>
-          <p className="text-xl font-black text-primary">
-            {property.sqft ? property.sqft.toLocaleString() : '—'}
-          </p>
-        </div>
-        <div className="bg-surface-container-low p-4 rounded-xl">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Built</p>
-          <p className="text-xl font-black text-primary">{property.yearBuilt || '—'}</p>
-        </div>
-        <div className="bg-surface-container-low p-4 rounded-xl">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Lot Size</p>
-          <p className="text-xl font-black text-primary">
-            {property.lotSize && property.lotSize !== '—' ? (
-              <>{property.lotSize} <span className="text-xs font-medium opacity-60">AC</span></>
-            ) : '—'}
-          </p>
+          <p className="text-white font-bold text-sm">{fullAddress || property.address}</p>
         </div>
       </div>
 
       {/* Quick Links */}
-      <div className="flex gap-4">
+      <div className="flex gap-3">
         <a
           href={redfinUrl}
           target="_blank"
@@ -131,6 +104,42 @@ export function PropertyHero({ property }: PropertyHeroProps) {
           <Icon name="map" className="text-green-600" /> Maps
         </a>
       </div>
+
+      {/* Property Summary Row — click to expand */}
+      <button
+        onClick={onToggleDetails}
+        className="w-full grid grid-cols-4 gap-3 group"
+        title={detailsExpanded ? 'Collapse property details' : 'Expand property details'}
+      >
+        <div className="bg-surface-container-low p-4 rounded-xl text-left">
+          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Beds/Baths</p>
+          <p className="text-xl font-black text-primary">
+            {property.beds || '—'} / {property.baths || '—'}
+          </p>
+        </div>
+        <div className="bg-surface-container-low p-4 rounded-xl text-left">
+          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Total SF</p>
+          <p className="text-xl font-black text-primary">
+            {property.sqft ? property.sqft.toLocaleString() : '—'}
+          </p>
+        </div>
+        <div className="bg-surface-container-low p-4 rounded-xl text-left">
+          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Built</p>
+          <p className="text-xl font-black text-primary">{property.yearBuilt || '—'}</p>
+        </div>
+        <div className="bg-surface-container-low p-4 rounded-xl text-left relative">
+          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Lot Size</p>
+          <p className="text-xl font-black text-primary">
+            {property.lotSize && property.lotSize !== '—' ? (
+              <>{property.lotSize} <span className="text-xs font-medium opacity-60">AC</span></>
+            ) : '—'}
+          </p>
+          {/* Chevron indicator */}
+          <span className="absolute top-2 right-2 text-on-surface-variant group-hover:text-primary transition-colors">
+            <Icon name={detailsExpanded ? 'expand_less' : 'expand_more'} size="text-base" />
+          </span>
+        </div>
+      </button>
     </div>
   )
 }

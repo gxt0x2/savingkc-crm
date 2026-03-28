@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     }
 
     // SMS to Casey and Ernest
-    const smsBody = `📋 EOD from ${team_member || 'team'}: ${went_right || ''}`
+    const smsBody = `EOD from ${team_member || 'team'}: ${went_right || ''}`
     await Promise.allSettled([
       twilioClient.messages.create({
         body: smsBody,

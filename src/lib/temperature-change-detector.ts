@@ -33,16 +33,16 @@ function describeTempChange(old_temp: Temperature, new_temp: Temperature, reason
   if (newIdx > oldIdx) {
     // Heating up
     if (new_temp === 'hot') {
-      return `🔥 went HOT — ${reason}`
+      return `[HOT] went HOT — ${reason}`
     } else if (new_temp === 'warm') {
-      return `🌤 warming up — ${reason}`
+      return `[WARM] warming up — ${reason}`
     }
   } else if (newIdx < oldIdx) {
     // Cooling down
     if (new_temp === 'cold') {
-      return `❄️ went COLD — ${reason}`
+      return `[COLD] went COLD — ${reason}`
     } else if (new_temp === 'cool') {
-      return `❄️ cooling off — ${reason}`
+      return `[COLD] cooling off — ${reason}`
     }
   }
 
