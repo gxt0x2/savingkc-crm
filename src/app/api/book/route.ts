@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
+import { buildManifest } from '@/lib/manifest-builder'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -140,6 +141,38 @@ export async function POST(req: NextRequest) {
           source: 'website_form',
         },
       })
+    }
+
+    // Create manifest (don't fail booking if this fails)
+    if (leadId) {
+      try {
+        const manifest = buildManifest({
+          firstName: first_name.trim(),
+          phone: normalizedPhone,
+          propertyAddress: property_address?.trim(),
+          source: source === 'youtube' ? 'youtube' : 'website_form',
+          bookingId: booking.id,
+          leadId,
+          slotDate: slot_date,
+          slotTime: slot_time,
+          station: 'intake',
+          priority: 'hot',
+        })
+
+        await supabase.from('manifests').insert({
+          lead_id: leadId,
+          booking_id: booking.id,
+          version: manifest.version,
+          manifest: manifest,
+          current_station: manifest.currentStation,
+          priority: manifest.priority,
+          tier: manifest.tier,
+          qualification_score: manifest.qualificationScore,
+        })
+      } catch (manifestErr) {
+        console.error('Failed to create manifest (non-critical):', manifestErr)
+        // Don't fail the booking
+      }
     }
 
     // Format date/time for SMS

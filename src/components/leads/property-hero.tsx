@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 
 interface PropertyDetails {
@@ -45,22 +46,89 @@ export function PropertyHero({ property, detailsExpanded, onToggleDetails }: Pro
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`
   const redfinUrl = `https://www.redfin.com/search#q=${encodeURIComponent(fullAddress || property.address)}`
   const countyUrl = getCountyUrl(property.county, property.city, fullAddress || property.address)
-  const mapEmbedUrl = `https://www.google.com/maps?q=${encodedAddress}&output=embed`
+  const GMAPS_KEY = 'AIzaSyB0_wshDWSFFVuEiuUmhslBYcpWG3ooLPc'
+  const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x320&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
+  const [showStreetView, setShowStreetView] = useState(false)
+  const [streetViewEmbedUrl, setStreetViewEmbedUrl] = useState<string | null>(null)
+
+  async function openStreetView() {
+    setShowStreetView(true)
+    if (streetViewEmbedUrl) return
+    try {
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GMAPS_KEY}`
+      )
+      const data = await res.json()
+      const loc = data.results?.[0]?.geometry?.location
+      if (loc) {
+        setStreetViewEmbedUrl(
+          `https://www.google.com/maps/embed/v1/streetview?key=${GMAPS_KEY}&location=${loc.lat},${loc.lng}&fov=90&heading=0&pitch=0`
+        )
+      } else {
+        setStreetViewEmbedUrl(
+          `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
+        )
+      }
+    } catch {
+      setStreetViewEmbedUrl(
+        `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
+      )
+    }
+  }
 
   return (
     <div className="space-y-4">
-      {/* Map Embed Header */}
+      {/* Street View Modal */}
+      {showStreetView && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setShowStreetView(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowStreetView(false)}
+              className="absolute top-3 right-3 z-10 bg-black/60 text-white rounded-full w-9 h-9 flex items-center justify-center hover:bg-black/80 transition-colors"
+            >
+              <Icon name="close" />
+            </button>
+            {streetViewEmbedUrl ? (
+              <iframe
+                src={streetViewEmbedUrl}
+                width="100%"
+                height="500"
+                style={{ border: 0, display: 'block' }}
+                allowFullScreen
+                loading="lazy"
+                title="Street View"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[500px] bg-slate-900 text-slate-400 text-sm">
+                Loading…
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Street View Header — click to open inline Street View modal */}
       <div className="relative rounded-2xl overflow-hidden shadow-sm bg-slate-800">
-        <iframe
-          src={mapEmbedUrl}
-          width="100%"
-          height="200"
-          style={{ border: 0, display: 'block' }}
-          allowFullScreen
-          loading="lazy"
-          referrerPolicy="no-referrer-when-downgrade"
-          title="Property location map"
-        />
+        <button
+          onClick={openStreetView}
+          className="w-full block cursor-pointer"
+          title="Click to open Street View"
+          style={{ padding: 0, border: 'none', background: 'none' }}
+        >
+          <img
+            src={streetViewUrl}
+            alt={`Street view of ${fullAddress || property.address}`}
+            width="100%"
+            style={{ display: 'block', width: '100%', height: '200px', objectFit: 'cover' }}
+            loading="lazy"
+          />
+        </button>
         {/* Address overlay */}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none px-4 pb-3 pt-8">
           <div className="flex items-center gap-2 flex-wrap mb-1">

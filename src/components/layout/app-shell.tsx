@@ -59,6 +59,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               />
             </div>
             <div className="flex items-center gap-1">
+              <a
+                href="tel:+18164292900"
+                className="p-2 rounded-full transition-colors bg-green-500 hover:bg-green-600 flex items-center justify-center"
+                title="Call (816) 429-2900"
+              >
+                <Icon name="phone" className="text-white" />
+              </a>
               <button className="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
                 <Icon name="notifications" />
               </button>
@@ -114,12 +121,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 pb-28">
+      <main className="flex-1">
         {children}
       </main>
-
-      {/* Telephony Bar */}
-      <TelephonyBar />
     </div>
   )
 }

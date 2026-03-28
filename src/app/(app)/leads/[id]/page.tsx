@@ -315,6 +315,186 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
   )
 }
 
+// ─── Manifest Panel ────────────────────────────────────────────────────────────
+interface ManifestPanelProps {
+  leadId: string
+}
+
+function ManifestPanel({ leadId }: ManifestPanelProps) {
+  const [manifest, setManifest] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [showRaw, setShowRaw] = useState(false)
+  const [creating, setCreating] = useState(false)
+
+  useEffect(() => {
+    async function fetchManifest() {
+      setLoading(true)
+      try {
+        const res = await fetch(`/api/manifests?lead_id=${leadId}`)
+        const data = await res.json()
+        if (data.manifest) {
+          setManifest(data.manifest.manifest)
+        }
+      } catch (err) {
+        console.error('Failed to fetch manifest:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchManifest()
+  }, [leadId])
+
+  async function handleCreateManifest() {
+    setCreating(true)
+    try {
+      const res = await fetch('/api/manifests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: 'Unknown',
+          leadId,
+          station: 'intake',
+          priority: 'hot',
+        }),
+      })
+      const data = await res.json()
+      if (data.manifest) {
+        setManifest(data.manifest)
+      }
+    } catch (err) {
+      console.error('Failed to create manifest:', err)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-[#1B2A4A] rounded-2xl p-6">
+        <p className="text-sm text-slate-400">Loading manifest...</p>
+      </div>
+    )
+  }
+
+  if (!manifest) {
+    return (
+      <div className="bg-[#1B2A4A] rounded-2xl p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Icon name="description" className="!text-lg text-amber-400" />
+          <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
+            Lead Manifest
+          </h2>
+        </div>
+        <p className="text-sm text-slate-400 mb-4">No manifest created yet</p>
+        <button
+          onClick={handleCreateManifest}
+          disabled={creating}
+          className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+        >
+          {creating ? 'Creating...' : 'Create Manifest'}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-[#1B2A4A] rounded-2xl p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Icon name="description" className="!text-lg text-amber-400" />
+          <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
+            Lead Manifest V{manifest.version}
+          </h2>
+        </div>
+        <button
+          onClick={() => setShowRaw(!showRaw)}
+          className="text-xs text-slate-400 hover:text-amber-400 transition-colors"
+        >
+          {showRaw ? 'Hide JSON' : 'View Raw JSON'}
+        </button>
+      </div>
+
+      {showRaw ? (
+        <pre className="text-[10px] text-slate-300 bg-black/30 p-3 rounded-lg overflow-x-auto max-h-96 overflow-y-auto">
+          {JSON.stringify(manifest, null, 2)}
+        </pre>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 uppercase font-bold">ID:</span>
+            <span className="text-xs text-white font-mono">{manifest.manifestId}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 uppercase font-bold">Station:</span>
+            <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs font-bold">
+              {manifest.currentStation}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 uppercase font-bold">Priority:</span>
+            <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+              manifest.priority === 'hot' ? 'bg-red-500/20 text-red-300' :
+              manifest.priority === 'warm' ? 'bg-orange-500/20 text-orange-300' :
+              'bg-blue-500/20 text-blue-300'
+            }`}>
+              {manifest.priority}
+            </span>
+          </div>
+
+          {manifest.tier && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 uppercase font-bold">Tier:</span>
+              <span className="text-xs text-white font-bold">{manifest.tier}</span>
+            </div>
+          )}
+
+          <div className="border-t border-white/10 pt-3">
+            <p className="text-xs text-slate-500 uppercase font-bold mb-2">Owner:</p>
+            <p className="text-sm text-white">{manifest.owner.fullName}</p>
+            {manifest.owner.phones.length > 0 && (
+              <p className="text-xs text-slate-400">{manifest.owner.phones[0]}</p>
+            )}
+          </div>
+
+          {manifest.booking?.scheduledDate && (
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs text-slate-500 uppercase font-bold mb-2">Booking:</p>
+              <p className="text-sm text-white">
+                {manifest.booking.scheduledDate} at {manifest.booking.scheduledTime}
+              </p>
+              <p className="text-xs text-slate-400 capitalize">{manifest.booking.type}</p>
+            </div>
+          )}
+
+          {manifest.situation?.type?.length > 0 && (
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs text-slate-500 uppercase font-bold mb-2">Situation:</p>
+              <div className="flex flex-wrap gap-1">
+                {manifest.situation.type.map((t: string) => (
+                  <span key={t} className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded text-xs">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="border-t border-white/10 pt-3">
+            <p className="text-[9px] text-slate-500">
+              Created: {new Date(manifest.created).toLocaleDateString()}
+            </p>
+            <p className="text-[9px] text-slate-500">
+              Updated: {new Date(manifest.lastUpdated).toLocaleDateString()}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -738,6 +918,9 @@ export default function LeadDetailPage() {
             </ul>
             <p className="text-[10px] text-white/40 mt-4">Auto-updated as data is received</p>
           </div>
+
+          {/* Manifest Panel */}
+          <ManifestPanel leadId={id} />
         </div>
       </div>
 
