@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
       .insert({
         first_name: first_name.trim(),
         phone: normalizedPhone,
-        ...(property_address?.trim() ? { property_address: property_address.trim() } : {}),
+        property_address: property_address?.trim() || '',
         slot_date,
         slot_time,
         slot_datetime,
