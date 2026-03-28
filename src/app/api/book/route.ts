@@ -32,12 +32,12 @@ function normalizePhone(phone: string): string {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { first_name, phone, property_address, slot_date, slot_time, slot_datetime } = body
+    const { first_name, phone, property_address, slot_date, slot_time, slot_datetime, source } = body
 
-    // Validate required fields
-    if (!first_name?.trim() || !phone?.trim() || !property_address?.trim() || !slot_date || !slot_time || !slot_datetime) {
+    // Validate required fields — property_address is optional from /call page
+    if (!first_name?.trim() || !phone?.trim() || !slot_date || !slot_time || !slot_datetime) {
       return NextResponse.json(
-        { error: 'All fields are required.' },
+        { error: 'Please enter your name and phone number.' },
         { status: 400, headers: corsHeaders }
       )
     }
@@ -85,8 +85,8 @@ export async function POST(req: NextRequest) {
         .insert({
           full_name: first_name.trim(),
           phone: normalizedPhone,
-          property_address: property_address.trim(),
-          source: 'YouTube',
+          ...(property_address?.trim() ? { property_address: property_address.trim() } : {}),
+          source: source || 'YouTube',
           station: 'intake',
           priority: 'hot',
         })
@@ -106,12 +106,12 @@ export async function POST(req: NextRequest) {
       .insert({
         first_name: first_name.trim(),
         phone: normalizedPhone,
-        property_address: property_address.trim(),
+        ...(property_address?.trim() ? { property_address: property_address.trim() } : {}),
         slot_date,
         slot_time,
         slot_datetime,
         lead_id: leadId,
-        source: 'YouTube',
+        source: source || 'YouTube',
         landing_page: '/call',
       })
       .select('id')
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
     // Send alert SMS to Casey
     try {
       await twilioClient.messages.create({
-        body: `📅 New call booked: ${first_name.trim()} at ${property_address.trim()} — ${formattedDate} at ${displayTime}. Phone: ${normalizedPhone}`,
+        body: `📅 New call booked: ${first_name.trim()}${property_address?.trim() ? ` at ${property_address.trim()}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${normalizedPhone}`,
         from: process.env.TWILIO_PHONE_NUMBER!,
         to: process.env.CASEY_PHONE || '+18167564943',
       })
