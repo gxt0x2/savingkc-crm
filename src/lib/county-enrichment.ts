@@ -137,9 +137,44 @@ export class CountyEnrichmentService {
       const lat = parseFloat(getField('Latitude') || '0')
       const lng = parseFloat(getField('Longitude') || '0')
 
-      const taxStatus = numYearsPastDue > 0 || taxYearsPastDue
+      const isDelinquent = numYearsPastDue > 0 || !!taxYearsPastDue
+      const taxStatus = isDelinquent
         ? `delinquent — years past due: ${taxYearsPastDue || numYearsPastDue}`
         : 'current'
+
+      // Step 2: If delinquent + quickRef available, scrape total tax owed from taxbill.jocogov.org
+      let taxOwed: number | undefined = isDelinquent ? undefined : 0
+      let currentAmountDue: number | undefined
+      let pastYearsDue: number | undefined
+
+      if (isDelinquent && quickRef) {
+        try {
+          const taxHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            Referer: 'https://taxbill.jocogov.org/',
+          }
+          // Get session cookie
+          await fetch('https://taxbill.jocogov.org/', { headers: taxHeaders, signal: AbortSignal.timeout(8000) })
+          const taxRes = await fetch(
+            `https://taxbill.jocogov.org/Property-Detail?PropertyQuickRefID=${quickRef}&TaxYear=2025`,
+            { headers: taxHeaders, signal: AbortSignal.timeout(12000) }
+          )
+          if (taxRes.ok) {
+            const html = await taxRes.text()
+            // Extract: Current Amount Due | Past Years Due | Total Due
+            const lines = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').split(/(?=\$)/)
+            const dollarVal = (label: string): number | undefined => {
+              const m = html.match(new RegExp(label + '[^$]*\\$([\\d,]+\\.\\d{2})', 'i'))
+              return m ? parseFloat(m[1].replace(/,/g, '')) : undefined
+            }
+            currentAmountDue = dollarVal('Current Amount Due')
+            pastYearsDue = dollarVal('Past Years Due')
+            taxOwed = dollarVal('Total Due')
+          }
+        } catch (_) {
+          // Tax balance lookup failed — leave as undefined
+        }
+      }
 
       return {
         success: true,
@@ -151,7 +186,7 @@ export class CountyEnrichmentService {
         assessedValue: assessedValue || undefined,
         yearBuilt: yearBuilt || undefined,
         taxStatus,
-        taxOwed: numYearsPastDue > 0 ? undefined : 0, // exact amount not in this API
+        taxOwed,
         source: 'johnson_county_aims',
         fetchedAt: new Date().toISOString(),
         rawData: {
@@ -162,6 +197,8 @@ export class CountyEnrichmentService {
           situsZip,
           taxYearsPastDue,
           numYearsPastDue,
+          currentAmountDue,
+          pastYearsDue,
           lat,
           lng,
         },
