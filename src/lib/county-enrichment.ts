@@ -176,6 +176,75 @@ export class CountyEnrichmentService {
         }
       }
 
+      // Step 3: Get full dwelling detail from appraiser (aprdetail)
+      // Requires parcel ID with space (not +), POST to ajaxreq.aspx
+      let sqft: number | undefined
+      let bedrooms: number | undefined
+      let bathrooms: number | undefined
+      let propertyType: string | undefined
+      let propertyStyle: string | undefined
+      let basementDesc: string | undefined
+      let garageSize: number | undefined
+      let exterior: string | undefined
+      let roofType: string | undefined
+      let hvac: string | undefined
+      let hasFireplace: boolean | undefined
+      let totalRooms: number | undefined
+      let totalBasementSqft: number | undefined
+      let finishedBasementSqft: number | undefined
+      let deckSqft: number | undefined
+      let landValue: number | undefined
+      let improvementValue: number | undefined
+
+      if (parcelId) {
+        try {
+          const aprHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            Referer: 'https://ims.jocogov.org/locationservices/',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          }
+          // Use parcel ID with space (NP27700011 0027), not + encoded
+          const aprBody = new URLSearchParams({ type: 'aprdetail', id: parcelId }).toString()
+          const aprRes = await fetch('https://ims.jocogov.org/locationservices/ajaxreq.aspx', {
+            method: 'POST',
+            headers: aprHeaders,
+            body: aprBody,
+            signal: AbortSignal.timeout(12000),
+          })
+          if (aprRes.ok) {
+            const aprXml = await aprRes.text()
+            const getAPR = (tag: string): string => {
+              const m = aprXml.match(new RegExp(`<${tag}>([^<]*)</${tag}>`))
+              return m ? m[1].trim() : ''
+            }
+            sqft = parseInt(getAPR('sfla') || '0') || undefined
+            bedrooms = parseInt(getAPR('bedrooms') || '0') || undefined
+            bathrooms = parseInt(getAPR('full_baths') || '0') || undefined
+            propertyType = getAPR('PropTypeCode') || undefined  // SF, MH, etc.
+            propertyStyle = getAPR('Style_desc') || undefined
+            basementDesc = getAPR('basement_desc') || undefined
+            totalRooms = parseInt(getAPR('total_rooms') || '0') || undefined
+            finishedBasementSqft = parseInt(getAPR('fin_bsmt_num') || '0') || undefined
+
+            // Parse APRComponents for garage, roof, exterior, HVAC, fireplace
+            const compMatches = aprXml.matchAll(/<Description>([^<]+)<\/Description>[\s\S]*?(?:<Units>([\d.]+)<\/Units>)?/g)
+            for (const m of compMatches) {
+              const desc = m[1].trim()
+              const units = parseFloat(m[2] || '0')
+              if (desc.includes('Garage') && units > 0 && !garageSize) garageSize = units
+              if (desc.includes('Shake') || desc.includes('Shingle') || desc.includes('Metal') || desc.includes('Tile')) roofType = desc
+              if (desc.includes('Frame') || desc.includes('Brick') || desc.includes('Vinyl') || desc.includes('Stucco')) exterior = desc
+              if (desc.includes('Warmed') || desc.includes('Heated') || desc.includes('Forced') || desc.includes('Electric Baseboard')) hvac = desc
+              if (desc.includes('Fireplace')) hasFireplace = true
+              if (desc.includes('Total Basement') && units > 0) totalBasementSqft = units
+              if (desc.includes('Wood Deck') && units > 0) deckSqft = units
+            }
+          }
+        } catch (_) {
+          // APR detail lookup failed — continue without dwelling data
+        }
+      }
+
       return {
         success: true,
         county: 'Johnson',
@@ -185,6 +254,10 @@ export class CountyEnrichmentService {
         appraisedValue: totalValue || undefined,
         assessedValue: assessedValue || undefined,
         yearBuilt: yearBuilt || undefined,
+        sqft,
+        bedrooms,
+        bathrooms,
+        propertyType,
         taxStatus,
         taxOwed,
         source: 'johnson_county_aims',
@@ -199,6 +272,17 @@ export class CountyEnrichmentService {
           numYearsPastDue,
           currentAmountDue,
           pastYearsDue,
+          propertyStyle,
+          basementDesc,
+          garageSize,
+          exterior,
+          roofType,
+          hvac,
+          hasFireplace,
+          totalRooms,
+          totalBasementSqft,
+          finishedBasementSqft,
+          deckSqft,
           lat,
           lng,
         },
