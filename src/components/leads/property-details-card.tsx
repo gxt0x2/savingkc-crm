@@ -72,6 +72,14 @@ function getDataSourceBadge(source: string | null): { label: string; color: stri
       return { label: 'US First Check', color: 'bg-green-100 text-green-700' }
     case 'manual':
       return { label: 'Manual', color: 'bg-amber-100 text-amber-700' }
+    case 'johnson_county_assessor':
+      return { label: 'Johnson Co.', color: 'bg-blue-100 text-blue-700' }
+    case 'jackson_county_assessor':
+      return { label: 'Jackson Co.', color: 'bg-blue-100 text-blue-700' }
+    case 'clay_county_assessor':
+      return { label: 'Clay Co.', color: 'bg-blue-100 text-blue-700' }
+    case 'wyandotte_county_assessor':
+      return { label: 'Wyandotte Co.', color: 'bg-blue-100 text-blue-700' }
     default:
       return { label: source, color: 'bg-slate-100 text-slate-600' }
   }
