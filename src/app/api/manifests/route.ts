@@ -143,7 +143,30 @@ export async function POST(req: NextRequest) {
 
           if (updateError) {
             console.error('Manifest enrichment update error:', updateError)
-            // Don't fail the request, enrichment is optional
+          }
+
+          // Also write enrichment data back to leads table so the CRM UI shows it
+          if (input.leadId) {
+            const prop = manifest.property || {}
+            const dwell = prop.dwelling || {}
+            const assess = prop.assessment || {}
+            const tax = prop.taxCollector || {}
+
+            const leadUpdates: Record<string, any> = {}
+            if (dwell.bedrooms) leadUpdates.beds = dwell.bedrooms
+            if (dwell.bathrooms) leadUpdates.baths_full = dwell.bathrooms
+            if (dwell.sqft) leadUpdates.sqft = dwell.sqft
+            if (dwell.yearBuilt) leadUpdates.year_built = dwell.yearBuilt
+            if (assess.appraisedTotal) leadUpdates.arv = assess.appraisedTotal
+            if (assess.assessedTotal) leadUpdates.assessed_value = assess.assessedTotal
+            if (dwell.propertyType) leadUpdates.property_type = dwell.propertyType === 'SF' ? 'Single Family' : dwell.propertyType
+            if (dwell.basement) leadUpdates.basement_type = dwell.basement
+            if (propertyCounty) { leadUpdates.data_source = `${propertyCounty.toLowerCase()}_county_assessor`; leadUpdates.data_enriched_at = new Date().toISOString() }
+
+            if (Object.keys(leadUpdates).length > 0) {
+              const { error: leadErr } = await supabase.from('leads').update(leadUpdates).eq('id', input.leadId)
+              if (leadErr) console.error('Lead update failed:', leadErr)
+            }
           }
         } catch (enrichErr) {
           console.error('Manifest enrichment failed:', enrichErr)
