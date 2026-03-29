@@ -96,98 +96,78 @@ export class CountyEnrichmentService {
   private async enrichJohnsonCountyKS(
     input: EnrichmentInput
   ): Promise<EnrichmentResult> {
+    // Johnson County KS — AIMS portal XML API (no auth, no Playwright needed)
+    // GET https://ims.jocogov.org/locationservices/ajaxreq.aspx?id={address}&type=
     try {
-      // Step 1: Get parcel ID via API
-      const searchQuery = `${input.address}`.trim()
-      const apiUrl = 'https://apr-ieq.jocogov.org/WebServiceProxy.asmx/ValidateStringAjax'
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-        },
-        body: JSON.stringify({ prefixText: searchQuery }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Johnson County API returned ${response.status}`)
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        Referer: 'https://ims.jocogov.org/locationservices/',
       }
 
-      const data = await response.json()
-      const results = data.d || []
+      const url = `https://ims.jocogov.org/locationservices/ajaxreq.aspx?id=${encodeURIComponent(input.address)}&type=`
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
+      if (!res.ok) throw new Error(`Johnson County AIMS returned ${res.status}`)
 
-      if (results.length === 0) {
-        return {
-          success: false,
-          county: 'Johnson',
-          error: 'Address not found in Johnson County records',
-        }
+      const xml = await res.text()
+      if (!xml.includes('<Propinfo>') || !xml.includes('<Table>')) {
+        return { success: false, county: 'Johnson', error: 'Address not found in Johnson County records' }
       }
 
-      // Take the first match
-      const match = results[0]
-      const parcelId = match.Value
-
-      // Step 2: Try to get data from Johnson County GIS API
-      try {
-        const gisUrl = `https://imap.jocogov.org/arcgis/rest/services/Parcel_Viewer/MapServer/0/query`
-        const params = new URLSearchParams({
-          where: `PARCEL_ID='${parcelId}'`,
-          outFields: '*',
-          f: 'json'
-        })
-
-        const gisResponse = await fetch(`${gisUrl}?${params}`)
-
-        if (gisResponse.ok) {
-          const gisData = await gisResponse.json()
-
-          if (gisData.features && gisData.features.length > 0) {
-            const props = gisData.features[0].attributes
-
-            // Extract available fields from GIS data
-            return {
-              success: true,
-              county: 'Johnson',
-              parcelId,
-              ownerName: props.OWNERNAME || props.OWNER || undefined,
-              mailingAddress: props.MAIL_ADDRESS || undefined,
-              appraisedValue: props.APPRAISED_VALUE || props.MARKET_VALUE || undefined,
-              assessedValue: props.ASSESSED_VALUE || undefined,
-              yearBuilt: props.YEAR_BUILT || props.YEARBUILT || undefined,
-              sqft: props.SQFT || props.AREA || undefined,
-              bedrooms: props.BEDROOMS || undefined,
-              bathrooms: props.BATHROOMS || undefined,
-              propertyType: props.PROPTYPE || props.LAND_USE || undefined,
-              source: 'johnson_county_gis',
-              fetchedAt: new Date().toISOString(),
-              rawData: props,
-            }
-          }
-        }
-      } catch (gisErr) {
-        // GIS query failed, continue with partial result
-        console.warn('Johnson County GIS query failed:', gisErr)
+      // Parse XML fields
+      const getField = (tag: string): string => {
+        const m = xml.match(new RegExp(`<${tag}>([^<]*)</${tag}>`))
+        return m ? m[1].trim() : ''
       }
 
-      // If GIS fails, return partial success with just the parcel ID
+      const ownerName = getField('Owner1FullName')
+      const ownAddLine1 = getField('OwnAddLine1')
+      const ownAddLine2 = getField('OwnAddLine2')
+      const mailingAddress = [ownAddLine1, ownAddLine2].filter(Boolean).join(', ')
+      const totalValue = parseFloat(getField('TotalValue') || '0')
+      const assessedValue = parseFloat(getField('AssessedTotalValue') || '0')
+      const yearBuilt = parseInt(getField('YearBuilt') || '0')
+      const parcelId = getField('TaxPropertyID') || getField('GeoPropertyID')
+      const kupn = getField('KUPN')
+      const quickRef = getField('QuickRefID')
+      const taxYearsPastDue = getField('TaxYearsPastDue2')
+      const numYearsPastDue = parseInt(getField('NumYearsPastDue') || '0')
+      const legalDesc = getField('LegalDesc')
+      const situsCity = getField('SitusCity')
+      const situsZip = getField('SitusZipCode')
+      const lat = parseFloat(getField('Latitude') || '0')
+      const lng = parseFloat(getField('Longitude') || '0')
+
+      const taxStatus = numYearsPastDue > 0 || taxYearsPastDue
+        ? `delinquent — years past due: ${taxYearsPastDue || numYearsPastDue}`
+        : 'current'
+
       return {
         success: true,
         county: 'Johnson',
-        parcelId,
-        source: 'johnson_county_assessor',
+        parcelId: parcelId || undefined,
+        ownerName: ownerName || undefined,
+        mailingAddress: mailingAddress || undefined,
+        appraisedValue: totalValue || undefined,
+        assessedValue: assessedValue || undefined,
+        yearBuilt: yearBuilt || undefined,
+        taxStatus,
+        taxOwed: numYearsPastDue > 0 ? undefined : 0, // exact amount not in this API
+        source: 'johnson_county_aims',
         fetchedAt: new Date().toISOString(),
         rawData: {
-          note: 'Parcel ID found, but detailed property data requires manual verification. Johnson County redirects to questionnaire form.',
-          address: input.address,
+          kupn,
+          quickRef,
+          legalDesc,
+          situsCity,
+          situsZip,
+          taxYearsPastDue,
+          numYearsPastDue,
+          lat,
+          lng,
         },
       }
     } catch (err: any) {
-      return {
-        success: false,
-        county: 'Johnson',
-        error: err.message,
-      }
+      return { success: false, county: 'Johnson', error: err.message }
     }
   }
 
