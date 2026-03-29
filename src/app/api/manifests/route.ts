@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { buildManifest, type BuildManifestInput } from '@/lib/manifest-builder'
+import { detectCounty } from '@/lib/county-enrichment'
+import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,7 +57,7 @@ export async function GET(req: NextRequest) {
 // POST /api/manifests - Create new manifest
 export async function POST(req: NextRequest) {
   try {
-    const input: BuildManifestInput = await req.json()
+    const input: any = await req.json()
 
     // Validate required fields
     if (!input.firstName || (!input.phone && !input.email)) {
@@ -66,7 +68,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Build manifest object
-    const manifest = buildManifest(input)
+    let manifest = buildManifest(input)
 
     // Insert into Supabase
     const { data, error } = await supabase
@@ -92,10 +94,70 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Auto-enrich if property address is provided
+    const manifestId = data.id
+    const propertyAddress = input.propertyAddress
+    const propertyCity = input.propertyCity
+    const propertyState = input.propertyState
+    const propertyZip = input.propertyZip
+    let propertyCounty = input.propertyCounty
+
+    if (propertyAddress && propertyState) {
+      // Detect county if not provided
+      if (!propertyCounty) {
+        const detected = detectCounty(propertyCity, propertyState, propertyZip)
+        if (detected) {
+          propertyCounty = detected.county
+        }
+      }
+
+      // Enrich if county is available
+      if (propertyCounty) {
+        try {
+          // Enrich manifest with county data
+          manifest = await enrichManifestProperty(
+            manifest,
+            propertyAddress,
+            propertyCity,
+            propertyState,
+            propertyZip,
+            propertyCounty
+          )
+
+          // Score manifest
+          const { score, tier } = scoreManifest(manifest)
+
+          // Update manifest object with score and tier
+          manifest.qualificationScore = score
+          manifest.tier = tier as any
+
+          // Update manifest in Supabase
+          const { error: updateError } = await supabase
+            .from('manifests')
+            .update({
+              manifest: manifest,
+              qualification_score: score,
+              tier: tier,
+            })
+            .eq('id', manifestId)
+
+          if (updateError) {
+            console.error('Manifest enrichment update error:', updateError)
+            // Don't fail the request, enrichment is optional
+          }
+        } catch (enrichErr) {
+          console.error('Manifest enrichment failed:', enrichErr)
+          // Don't fail the request, enrichment is optional
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      manifest: data.manifest,
-      id: data.id,
+      manifest: manifest,
+      id: manifestId,
+      qualificationScore: manifest.qualificationScore,
+      tier: manifest.tier,
     })
   } catch (err) {
     console.error('Manifests POST error:', err)

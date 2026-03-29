@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
 import { buildManifest } from '@/lib/manifest-builder'
+import { detectCounty } from '@/lib/county-enrichment'
+import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -146,7 +148,7 @@ export async function POST(req: NextRequest) {
     // Create manifest (don't fail booking if this fails)
     if (leadId) {
       try {
-        const manifest = buildManifest({
+        let manifest = buildManifest({
           firstName: first_name.trim(),
           phone: normalizedPhone,
           propertyAddress: property_address?.trim(),
@@ -159,16 +161,67 @@ export async function POST(req: NextRequest) {
           priority: 'hot',
         })
 
-        await supabase.from('manifests').insert({
-          lead_id: leadId,
-          booking_id: booking.id,
-          version: manifest.version,
-          manifest: manifest,
-          current_station: manifest.currentStation,
-          priority: manifest.priority,
-          tier: manifest.tier,
-          qualification_score: manifest.qualificationScore,
-        })
+        const { data: manifestData } = await supabase
+          .from('manifests')
+          .insert({
+            lead_id: leadId,
+            booking_id: booking.id,
+            version: manifest.version,
+            manifest: manifest,
+            current_station: manifest.currentStation,
+            priority: manifest.priority,
+            tier: manifest.tier,
+            qualification_score: manifest.qualificationScore,
+          })
+          .select('id')
+          .single()
+
+        // Trigger enrichment if property_address is provided (non-blocking)
+        if (manifestData?.id && property_address?.trim()) {
+          try {
+            // Extract or detect county from address fields (if available from body)
+            const city = body.property_city
+            const state = body.property_state
+            const zip = body.property_zip
+            let county = body.property_county
+
+            // Detect county if not provided
+            if (!county && (city || state || zip)) {
+              const detected = detectCounty(city, state, zip)
+              if (detected) {
+                county = detected.county
+              }
+            }
+
+            // Enrich manifest if county is available
+            if (county && state) {
+              manifest = await enrichManifestProperty(
+                manifest,
+                property_address.trim(),
+                city,
+                state,
+                zip,
+                county
+              )
+
+              // Score manifest
+              const { score, tier } = scoreManifest(manifest)
+
+              // Update manifest in Supabase (background, non-blocking)
+              await supabase
+                .from('manifests')
+                .update({
+                  manifest: manifest,
+                  qualification_score: score,
+                  tier: tier,
+                })
+                .eq('id', manifestData.id)
+            }
+          } catch (enrichErr) {
+            console.error('Manifest enrichment failed (non-critical):', enrichErr)
+            // Don't fail the booking
+          }
+        }
       } catch (manifestErr) {
         console.error('Failed to create manifest (non-critical):', manifestErr)
         // Don't fail the booking

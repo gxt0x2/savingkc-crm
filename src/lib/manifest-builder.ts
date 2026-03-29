@@ -43,12 +43,25 @@ export interface ManifestProperty {
     landValue?: number
     improvementValue?: number
     totalValue?: number
+    appraisedTotal?: number
+    assessedTotal?: number
     year?: number
+    assessmentYear?: number
+    source?: string
+    fetchedAt?: string
   }
   taxCollector?: {
+    totalOwed?: number
     delinquentAmount?: number
     currentAmount?: number
+    currentAmountDue?: number
+    pastYearsDue?: number
     lastPaymentDate?: string
+    taxStatus?: string
+    delinquentYears?: string
+    yearsDelinquent?: number
+    source?: string
+    fetchedAt?: string
   }
   dwelling?: {
     sqft?: number
@@ -56,6 +69,18 @@ export interface ManifestProperty {
     bathrooms?: number
     yearBuilt?: number
     style?: string
+    propertyType?: string
+    basement?: string
+    finishedBasementSqft?: number
+    totalBasementSqft?: number
+    garageSize?: number
+    exterior?: string
+    roofType?: string
+    hvac?: string
+    hasFireplace?: boolean
+    totalRooms?: number
+    source?: string
+    fetchedAt?: string
   }
   condition?: {
     overall?: 'excellent' | 'good' | 'fair' | 'poor' | 'uninhabitable'

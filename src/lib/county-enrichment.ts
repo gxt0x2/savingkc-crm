@@ -589,3 +589,26 @@ export class CountyEnrichmentService {
     }
   }
 }
+
+/**
+ * Detect county from city, state, and zip code
+ */
+export function detectCounty(city?: string, state?: string, zip?: string): { county: string, state: string } | null {
+  const s = state?.toUpperCase()
+  const c = city?.toLowerCase()
+  if (s === 'MO') {
+    if (c?.includes('kansas city') || c?.includes('independence') || c?.includes('blue springs') || c?.includes('raytown') || c?.includes('grandview') || c?.includes('lee')) return { county: 'Jackson', state: 'MO' }
+    if (c?.includes('liberty') || c?.includes('kearney') || c?.includes('smithville') || c?.includes('excelsior') || c?.includes('north kansas city')) return { county: 'Clay', state: 'MO' }
+  }
+  if (s === 'KS') {
+    if (c?.includes('overland park') || c?.includes('olathe') || c?.includes('shawnee') || c?.includes('lenexa') || c?.includes('leawood') || c?.includes('prairie village') || c?.includes('merriam') || c?.includes('gardner')) return { county: 'Johnson', state: 'KS' }
+    if (c?.includes('kansas city') || c?.includes('bonner springs') || c?.includes('edwardsville')) return { county: 'Wyandotte', state: 'KS' }
+  }
+  if (zip) {
+    const z = parseInt(zip)
+    if (z >= 64101 && z <= 64199) return { county: 'Jackson', state: 'MO' }
+    if (z >= 66200 && z <= 66299) return { county: 'Johnson', state: 'KS' }
+    if (z >= 66100 && z <= 66119) return { county: 'Wyandotte', state: 'KS' }
+  }
+  return null
+}
