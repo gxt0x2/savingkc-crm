@@ -59,6 +59,35 @@ export function rateLimit(ip: string, config: RateLimitConfig): { allowed: boole
   return { allowed: true, remaining: config.maxRequests - store[key].count }
 }
 
+/**
+ * Phone-based rate limiting for auto-texts
+ * Default: max 3 auto-texts per phone per 24hrs
+ */
+export function phoneRateLimit(
+  phone: string,
+  max: number = 3,
+  windowMs: number = 24 * 60 * 60 * 1000
+): { allowed: boolean; remaining: number } {
+  const now = Date.now()
+  const key = `phone:${phone}:${windowMs}`
+
+  if (!store[key] || store[key].resetTime < now) {
+    store[key] = {
+      count: 1,
+      resetTime: now + windowMs,
+    }
+    return { allowed: true, remaining: max - 1 }
+  }
+
+  store[key].count++
+
+  if (store[key].count > max) {
+    return { allowed: false, remaining: 0 }
+  }
+
+  return { allowed: true, remaining: max - store[key].count }
+}
+
 export function getClientIp(request: Request): string {
   // Check common headers for client IP
   const headers = request.headers

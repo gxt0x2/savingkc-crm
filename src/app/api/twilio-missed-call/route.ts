@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isOptedOut } from '@/lib/sms-opt-out'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
+import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,6 +32,19 @@ const TEAM_NUMBERS = new Set([
  */
 export async function POST(req: Request) {
   try {
+    // Twilio signature validation
+    const isValid = await validateTwilioWebhook(req)
+    if (!isValid) {
+      return new NextResponse('Forbidden', { status: 403 })
+    }
+
+    // IP-based rate limiting
+    const ip = getClientIp(req)
+    const { allowed: ipAllowed } = rateLimit(ip, rateLimitConfigs.webhook)
+    if (!ipAllowed) {
+      return new NextResponse('Rate limited', { status: 429 })
+    }
+
     const body = await req.formData()
     const from = body.get('From') as string
     const to = body.get('To') as string
@@ -97,23 +113,28 @@ export async function POST(req: Request) {
         const firstName = leadName.split(' ')[0] || 'there'
         const smsBody = `Hey ${firstName}, this is Ernest with Saving KC — I just missed your call. I'm available now if you'd like to try again, or I can call you back at a better time.`
 
-        try {
-          await twilio.messages.create({ body: smsBody, from: TWILIO_PHONE, to: from })
-          await supabase.from('lead_activities').insert({
-            lead_id: leadId,
-            activity_type: 'sms',
-            description: smsBody,
-            agent: 'Ari',
-            metadata: { direction: 'outbound', from: TWILIO_PHONE, to: from, trigger: 'missed_call_auto' }
-          })
-        } catch (e) { console.error('Missed call SMS failed:', e) }
+        // Opt-out + rate limit check before auto-text
+        const optedOut = await isOptedOut(from)
+        const { allowed: phoneAllowed } = phoneRateLimit(from)
+        if (!optedOut && phoneAllowed) {
+          try {
+            await twilio.messages.create({ body: smsBody, from: TWILIO_PHONE, to: from })
+            await supabase.from('lead_activities').insert({
+              lead_id: leadId,
+              activity_type: 'sms',
+              description: smsBody,
+              agent: 'System',
+              metadata: { direction: 'outbound', from: TWILIO_PHONE, to: from, trigger: 'missed_call_auto' }
+            })
+          } catch (e) { console.error('Missed call SMS failed:', e) }
+        }
 
         // 5-min callback task
         await supabase.from('lead_activities').insert({
           lead_id: leadId,
           activity_type: 'task',
           description: `Callback: Missed call from ${leadName}`,
-          agent: 'Ari',
+          agent: 'System',
           metadata: {
             task_type: 'callback',
             due_date: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
@@ -125,16 +146,20 @@ export async function POST(req: Request) {
       } else if (!leadId) {
         // Unknown caller missed call — send generic text
         const unknownSmsBody = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`
-        try {
-          await twilio.messages.create({ body: unknownSmsBody, from: TWILIO_PHONE, to: from })
-          await supabase.from('lead_activities').insert({
-            lead_id: null,
-            activity_type: 'sms',
-            description: unknownSmsBody,
-            agent: 'Ari',
-            metadata: { direction: 'outbound', from: TWILIO_PHONE, to: from, trigger: 'missed_call_unknown' }
-          })
-        } catch (e) { console.error('Unknown caller text failed:', e) }
+        const unknownOptedOut = await isOptedOut(from)
+        const { allowed: unknownPhoneAllowed } = phoneRateLimit(from)
+        if (!unknownOptedOut && unknownPhoneAllowed) {
+          try {
+            await twilio.messages.create({ body: unknownSmsBody, from: TWILIO_PHONE, to: from })
+            await supabase.from('lead_activities').insert({
+              lead_id: null,
+              activity_type: 'sms',
+              description: unknownSmsBody,
+              agent: 'System',
+              metadata: { direction: 'outbound', from: TWILIO_PHONE, to: from, trigger: 'missed_call_unknown' }
+            })
+          } catch (e) { console.error('Unknown caller text failed:', e) }
+        }
       }
     }
 

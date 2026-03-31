@@ -193,24 +193,28 @@ async function createPhase1Tasks(leadId: string, enrollmentDate: Date) {
       type: 'sms',
       title: 'Ghost Protocol SMS (Day 1)',
       description: 'Send re-engagement SMS per Ghost Protocol Phase 1',
+      template_name: 'ghost_protocol_day1',
     },
     {
       day: 3,
       type: 'email',
       title: 'Ghost Protocol Email (Day 3)',
       description: 'Send re-engagement email per Ghost Protocol Phase 1',
+      template_name: null,
     },
     {
       day: 5,
       type: 'voicemail',
       title: 'Ghost Protocol Voicemail (Day 5)',
       description: 'Leave voicemail message per Ghost Protocol Phase 1',
+      template_name: null,
     },
     {
       day: 7,
       type: 'task',
       title: 'Ghost Protocol Note (Day 7)',
       description: 'Queue handwritten note per Ghost Protocol Phase 1',
+      template_name: null,
     },
   ]
 
@@ -232,6 +236,7 @@ async function createPhase1Tasks(leadId: string, enrollmentDate: Date) {
         status: 'pending',
         ghost_protocol_phase: 1,
         ghost_protocol_day: task.day,
+        ...(task.template_name ? { template_name: task.template_name } : {}),
       },
     })
   }
@@ -273,24 +278,28 @@ async function createPhase2Tasks(leadId: string, enrollmentDate: Date) {
       type: 'sms',
       title: 'Ghost Protocol SMS (Day 10)',
       description: 'Send Phase 2 re-engagement SMS (different angle)',
+      template_name: 'ghost_protocol_day10',
     },
     {
       day: 14,
       type: 'voicemail',
       title: 'Ghost Protocol Voicemail (Day 14)',
       description: 'Leave strategic voicemail - mention comp sale or benefit',
+      template_name: null,
     },
     {
       day: 18,
       type: 'task',
       title: 'Ghost Protocol Note (Day 18)',
       description: 'Queue second handwritten note',
+      template_name: null,
     },
     {
       day: 21,
       type: 'sms',
       title: 'Ghost Protocol Final SMS (Day 21)',
       description: 'Send final Phase 2 SMS - door always open',
+      template_name: 'ghost_protocol_day21',
     },
   ]
 
@@ -312,6 +321,7 @@ async function createPhase2Tasks(leadId: string, enrollmentDate: Date) {
         status: 'pending',
         ghost_protocol_phase: 2,
         ghost_protocol_day: task.day,
+        ...(task.template_name ? { template_name: task.template_name } : {}),
       },
     })
   }
@@ -381,10 +391,10 @@ export async function advanceGhostProtocolPhase(leadId: string, currentPhase: Gh
  */
 async function enterPhase3LongNurture(leadId: string, enrollmentDate: Date) {
   const touchpoints = [
-    { day: 52, type: 'sms', title: 'Long Nurture - 30 Day Check-in' },
-    { day: 82, type: 'task', title: 'Long Nurture - 60 Day Note' },
-    { day: 112, type: 'sms', title: 'Long Nurture - 90 Day Check-in' },
-    { day: 202, type: 'task', title: 'Long Nurture - Quarterly Note' },
+    { day: 52, type: 'sms', title: 'Long Nurture - 30 Day Check-in', template_name: 'nurture_30d' },
+    { day: 82, type: 'task', title: 'Long Nurture - 60 Day Note', template_name: null },
+    { day: 112, type: 'sms', title: 'Long Nurture - 90 Day Check-in', template_name: 'nurture_90d' },
+    { day: 202, type: 'task', title: 'Long Nurture - Quarterly Note', template_name: null },
   ]
 
   for (const touchpoint of touchpoints) {
@@ -405,6 +415,7 @@ async function enterPhase3LongNurture(leadId: string, enrollmentDate: Date) {
         status: 'pending',
         ghost_protocol_phase: 3,
         ghost_protocol_day: touchpoint.day,
+        ...(touchpoint.template_name ? { template_name: touchpoint.template_name } : {}),
       },
     })
   }

@@ -14,6 +14,7 @@ export interface FollowUpStep {
   delay_days: number
   delay_hours: number
   template_content?: string
+  template_name?: string
 }
 
 export interface FollowUpSequence {
@@ -35,7 +36,7 @@ export const DEFAULT_SEQUENCES: Omit<FollowUpSequence, 'id' | 'created_at'>[] = 
     stage: 'not_contacted',
     steps: [
       { step_number: 1, channel: 'call', delay_days: 0, delay_hours: 0 },
-      { step_number: 2, channel: 'sms', delay_days: 0, delay_hours: 2 },
+      { step_number: 2, channel: 'sms', delay_days: 0, delay_hours: 2, template_name: 'intro' },
       { step_number: 3, channel: 'email', delay_days: 2, delay_hours: 0 },
       { step_number: 4, channel: 'call', delay_days: 3, delay_hours: 0 },
       { step_number: 5, channel: 'mail', delay_days: 5, delay_hours: 0 },
@@ -58,7 +59,7 @@ export const DEFAULT_SEQUENCES: Omit<FollowUpSequence, 'id' | 'created_at'>[] = 
     disposition: 'no_answer',
     steps: [
       { step_number: 1, channel: 'call', delay_days: 1, delay_hours: 0 },
-      { step_number: 2, channel: 'sms', delay_days: 1, delay_hours: 0 },
+      { step_number: 2, channel: 'sms', delay_days: 1, delay_hours: 0, template_name: 'follow_up_general' },
     ],
   },
   {
@@ -72,7 +73,7 @@ export const DEFAULT_SEQUENCES: Omit<FollowUpSequence, 'id' | 'created_at'>[] = 
     name: 'Post-Disposition: Not Interested',
     disposition: 'not_interested',
     steps: [
-      { step_number: 1, channel: 'sms', delay_days: 90, delay_hours: 0, template_content: '90-day nurture check-in' },
+      { step_number: 1, channel: 'sms', delay_days: 90, delay_hours: 0, template_content: '90-day nurture check-in', template_name: 'nurture_90d' },
     ],
   },
 ]
@@ -161,6 +162,7 @@ export async function enrollInFollowUpSequence(
           sequence_name: sequenceName,
           step_number: step.step_number,
           template_content: step.template_content,
+          ...(step.template_name ? { template_name: step.template_name } : {}),
         },
       })
     }

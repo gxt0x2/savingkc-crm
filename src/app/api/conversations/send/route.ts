@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
+import { isOptedOut } from '@/lib/sms-opt-out'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,13 +18,18 @@ const TWILIO_MESSAGING_SERVICE = process.env.TWILIO_MESSAGING_SERVICE
 
 export async function POST(req: Request) {
   try {
-    const { leadId, phone, body, mode, fromPhone } = await req.json()
+    const { leadId, phone, body, mode, fromPhone, agent } = await req.json()
 
     if (!phone || !body?.trim()) {
       return NextResponse.json({ error: 'Missing phone or message body' }, { status: 400 })
     }
 
     if (mode === 'sms') {
+      // Check opt-out before sending
+      if (await isOptedOut(phone)) {
+        return NextResponse.json({ error: 'This number has opted out of SMS messages' }, { status: 400 })
+      }
+
       // If explicit fromPhone provided, use it directly (skip messagingServiceSid)
       const effectiveFrom = fromPhone || DEFAULT_TWILIO_PHONE
       const useMessagingService = !fromPhone && TWILIO_MESSAGING_SERVICE
@@ -40,7 +46,7 @@ export async function POST(req: Request) {
         lead_id: leadId || null,
         activity_type: 'sms',
         description: body.trim(),
-        agent: 'Ernest',
+        agent: agent || 'System',
         metadata: {
           direction: 'outbound',
           from: effectiveFrom,
@@ -58,7 +64,7 @@ export async function POST(req: Request) {
         lead_id: leadId || null,
         activity_type: 'email',
         description: body.trim(),
-        agent: 'Ernest',
+        agent: agent || 'System',
         metadata: {
           direction: 'outbound',
           to: phone,
@@ -74,7 +80,7 @@ export async function POST(req: Request) {
         lead_id: leadId || null,
         activity_type: 'call',
         description: body.trim(),
-        agent: 'Ernest',
+        agent: agent || 'System',
         metadata: {
           direction: 'outbound',
           to: phone,

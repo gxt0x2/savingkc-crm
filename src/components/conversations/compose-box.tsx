@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
 
@@ -42,6 +42,16 @@ export function ComposeBox({ leadId, phone, onSent }: ComposeBoxProps) {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fromPhone, setFromPhone] = useState('+18163077835')
+  const [templates, setTemplates] = useState<{id: string; name: string; category: string; body: string; merge_fields: string[]}[]>([])
+  const [showTemplates, setShowTemplates] = useState(false)
+
+  // Fetch templates on mount
+  useEffect(() => {
+    fetch('/api/sms-templates')
+      .then(r => r.json())
+      .then(data => setTemplates(data.templates || []))
+      .catch(() => {})
+  }, [])
 
   async function handleSend() {
     if (!message.trim()) return
@@ -60,6 +70,7 @@ export function ComposeBox({ leadId, phone, onSent }: ComposeBoxProps) {
           body: message.trim(),
           mode: activeMode,
           fromPhone: activeMode === 'sms' ? fromPhone : undefined,
+          agent: 'Ernest', // TODO: pass logged-in user name
         }),
       })
 
@@ -80,6 +91,15 @@ export function ComposeBox({ leadId, phone, onSent }: ComposeBoxProps) {
       e.preventDefault()
       handleSend()
     }
+  }
+
+  function handleTemplateSelect(template: typeof templates[0]) {
+    let body = template.body
+    // Simple merge field resolution with available data
+    body = body.replace(/\{firstName\}/g, 'there')
+    body = body.replace(/\{propertyAddress\}/g, 'your property')
+    setMessage(body)
+    setShowTemplates(false)
   }
 
   return (
@@ -150,10 +170,29 @@ export function ComposeBox({ leadId, phone, onSent }: ComposeBoxProps) {
               <button className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
                 <Icon name="attach_file" className="text-on-surface-variant text-lg" />
               </button>
-              <button className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
+              <button
+                onClick={() => setShowTemplates(!showTemplates)}
+                className="p-1.5 hover:bg-surface-container rounded-lg transition-all relative"
+                title="Templates"
+              >
                 <Icon name="bolt" className="text-on-surface-variant text-lg" />
               </button>
             </div>
+            {showTemplates && templates.length > 0 && (
+              <div className="absolute bottom-full left-0 mb-2 w-80 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50">
+                <div className="p-2 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wide">Templates</div>
+                {templates.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => handleTemplateSelect(t)}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-50 last:border-0"
+                  >
+                    <div className="text-xs font-semibold text-slate-700">{t.name.replace(/_/g, ' ')}</div>
+                    <div className="text-xs text-slate-400 truncate">{t.body}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <button
             onClick={handleSend}
