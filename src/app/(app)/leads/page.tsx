@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
@@ -28,6 +28,9 @@ interface Lead {
 type SortKey = 'full_name' | 'phone' | 'property_address' | 'source' | 'station' | 'priority' | 'created_at' | 'temperature'
 type SortDir = 'asc' | 'desc'
 
+const STATION_OPTIONS = ['new', 'contacted', 'qualified', 'offer_made', 'under_contract', 'disposition', 'closed', 'dead'] as const
+const PRIORITY_OPTIONS = ['hot', 'high', 'normal'] as const
+
 export default function LeadsPage() {
   const router = useRouter()
   const [leads, setLeads] = useState<Lead[]>([])
@@ -42,6 +45,16 @@ export default function LeadsPage() {
   const [filterTemp, setFilterTemp] = useState<string[]>([])
   const [filterSource, setFilterSource] = useState<string[]>([])
 
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [stationDropdownOpen, setStationDropdownOpen] = useState(false)
+  const [priorityDropdownOpen, setPriorityDropdownOpen] = useState(false)
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null)
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const stationRef = useRef<HTMLDivElement>(null)
+  const priorityRef = useRef<HTMLDivElement>(null)
+  const headerCheckboxRef = useRef<HTMLInputElement>(null)
+
   async function fetchLeads() {
     setLoading(true)
     const supabase = createClient()
@@ -55,6 +68,21 @@ export default function LeadsPage() {
   }
 
   useEffect(() => { fetchLeads() }, [])
+
+  // Clear selection when filters change
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [search, filterStage, filterTemp, filterSource])
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (stationRef.current && !stationRef.current.contains(e.target as Node)) setStationDropdownOpen(false)
+      if (priorityRef.current && !priorityRef.current.contains(e.target as Node)) setPriorityDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   // Available filter options
   const stageOptions = useMemo(() => [...new Set(leads.map(l => l.station || 'intake'))].sort(), [leads])
@@ -132,6 +160,111 @@ export default function LeadsPage() {
 
     return result
   }, [leads, search, sortKey, sortDir, filterStage, filterTemp, filterSource])
+
+  // Bulk selection helpers
+  const pageIds = processed.map(l => l.id)
+  const allSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id))
+  const someSelected = pageIds.some(id => selectedIds.has(id))
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = someSelected && !allSelected
+    }
+  }, [someSelected, allSelected])
+
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        pageIds.forEach(id => next.delete(id))
+        return next
+      })
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        pageIds.forEach(id => next.add(id))
+        return next
+      })
+    }
+  }
+
+  function showFeedback(msg: string) {
+    setActionFeedback(msg)
+    setTimeout(() => setActionFeedback(null), 2500)
+  }
+
+  async function handleBulkStation(station: string) {
+    setStationDropdownOpen(false)
+    setBulkLoading(true)
+    try {
+      const supabase = createClient()
+      const ids = Array.from(selectedIds)
+      const { error } = await supabase
+        .from('leads')
+        .update({ station })
+        .in('id', ids)
+      if (error) throw error
+      showFeedback(`Moved ${ids.length} lead${ids.length !== 1 ? 's' : ''} to "${station.replace(/_/g, ' ')}"`)
+      setSelectedIds(new Set())
+      fetchLeads()
+    } catch {
+      showFeedback('Failed to update leads')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  async function handleBulkPriority(priority: string) {
+    setPriorityDropdownOpen(false)
+    setBulkLoading(true)
+    try {
+      const supabase = createClient()
+      const ids = Array.from(selectedIds)
+      const { error } = await supabase
+        .from('leads')
+        .update({ priority })
+        .in('id', ids)
+      if (error) throw error
+      showFeedback(`Set ${ids.length} lead${ids.length !== 1 ? 's' : ''} to "${priority}" priority`)
+      setSelectedIds(new Set())
+      fetchLeads()
+    } catch {
+      showFeedback('Failed to update leads')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  async function handleBulkDelete() {
+    const count = selectedIds.size
+    if (!window.confirm(`Delete ${count} lead${count !== 1 ? 's' : ''}? This cannot be undone.`)) return
+    setBulkLoading(true)
+    try {
+      const supabase = createClient()
+      const ids = Array.from(selectedIds)
+      const { error } = await supabase
+        .from('leads')
+        .delete()
+        .in('id', ids)
+      if (error) throw error
+      showFeedback(`Deleted ${ids.length} lead${ids.length !== 1 ? 's' : ''}`)
+      setSelectedIds(new Set())
+      fetchLeads()
+    } catch {
+      showFeedback('Failed to delete leads')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -357,6 +490,15 @@ export default function LeadsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">
+                  <th className="w-10 px-3 py-3">
+                    <input
+                      ref={headerCheckboxRef}
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-300 cursor-pointer"
+                    />
+                  </th>
                   <SortHeader label="Name" sortKeyVal="full_name" />
                   <SortHeader label="Temp" sortKeyVal="temperature" className="hidden sm:table-cell" />
                   <SortHeader label="Phone" sortKeyVal="phone" className="hidden sm:table-cell" />
@@ -371,9 +513,17 @@ export default function LeadsPage() {
                 {processed.map((lead) => (
                   <tr
                     key={lead.id}
-                    className="border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer"
+                    className={`border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer ${selectedIds.has(lead.id) ? 'bg-primary/5' : ''}`}
                     onClick={() => router.push(`/leads/${lead.id}`)}
                   >
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(lead.id)}
+                        onChange={() => toggleSelect(lead.id)}
+                        className="rounded border-slate-300 cursor-pointer"
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium text-slate-900">
                       {toProperCase(lead.full_name) || '--'}
                     </td>
@@ -446,6 +596,92 @@ export default function LeadsPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Floating Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white rounded-xl shadow-2xl px-5 py-3 flex items-center gap-4">
+          <span className="text-sm font-semibold whitespace-nowrap">{selectedIds.size} selected</span>
+
+          <div className="h-5 w-px bg-slate-600" />
+
+          {/* Change Station dropdown */}
+          <div className="relative" ref={stationRef}>
+            <button
+              onClick={() => { setStationDropdownOpen(!stationDropdownOpen); setPriorityDropdownOpen(false) }}
+              disabled={bulkLoading}
+              className="text-sm px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition whitespace-nowrap disabled:opacity-50"
+            >
+              <Icon name="swap_horiz" size="text-sm" className="mr-1 align-middle" />
+              Stage
+            </button>
+            {stationDropdownOpen && (
+              <div className="absolute bottom-full mb-2 left-0 bg-white text-slate-900 rounded-lg shadow-xl border border-slate-200 py-1 min-w-[180px]">
+                {STATION_OPTIONS.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => handleBulkStation(s)}
+                    className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-100 capitalize"
+                  >
+                    {s.replace(/_/g, ' ')}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Change Priority dropdown */}
+          <div className="relative" ref={priorityRef}>
+            <button
+              onClick={() => { setPriorityDropdownOpen(!priorityDropdownOpen); setStationDropdownOpen(false) }}
+              disabled={bulkLoading}
+              className="text-sm px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition whitespace-nowrap disabled:opacity-50"
+            >
+              <Icon name="priority_high" size="text-sm" className="mr-1 align-middle" />
+              Priority
+            </button>
+            {priorityDropdownOpen && (
+              <div className="absolute bottom-full mb-2 left-0 bg-white text-slate-900 rounded-lg shadow-xl border border-slate-200 py-1 min-w-[130px]">
+                {PRIORITY_OPTIONS.map(p => (
+                  <button
+                    key={p}
+                    onClick={() => handleBulkPriority(p)}
+                    className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-100 capitalize"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Delete */}
+          <button
+            onClick={handleBulkDelete}
+            disabled={bulkLoading}
+            className="text-sm px-3 py-1.5 bg-red-600 hover:bg-red-500 rounded-lg transition flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50"
+          >
+            <Icon name="delete" size="text-sm" /> Delete
+          </button>
+
+          <div className="h-5 w-px bg-slate-600" />
+
+          {/* Clear Selection */}
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="p-1.5 hover:bg-slate-700 rounded-lg transition"
+            title="Clear selection"
+          >
+            <Icon name="close" size="text-sm" />
+          </button>
+        </div>
+      )}
+
+      {/* Feedback toast */}
+      {actionFeedback && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-lg">
+          {actionFeedback}
         </div>
       )}
     </div>
