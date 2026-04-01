@@ -5,7 +5,7 @@
  * POST /api/workers/sms-sender - Run worker (cron trigger)
  * GET /api/workers/sms-sender - Health/stats
  *
- * Cron: */5 * * * * curl -X POST https://crm.savingkc.com/api/workers/sms-sender -H "Authorization: Bearer $CRON_SECRET"
+ * Cron: every 5 min — curl -X POST https://crm.savingkc.com/api/workers/sms-sender -H "Authorization: Bearer $CRON_SECRET"
  */
 
 import { NextResponse } from 'next/server'

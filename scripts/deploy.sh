@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+
 DEPLOY_DIR="$HOME/savingkc-crm"
 LOG_FILE="$DEPLOY_DIR/deploy.log"
 
@@ -14,7 +16,7 @@ git pull origin main 2>&1 | tee -a "$LOG_FILE"
 
 # Install deps if lockfile changed
 echo "Installing dependencies..." | tee -a "$LOG_FILE"
-npm install --production=false 2>&1 | tee -a "$LOG_FILE"
+npm install --legacy-peer-deps 2>&1 | tee -a "$LOG_FILE"
 
 # Build
 echo "Building..." | tee -a "$LOG_FILE"
