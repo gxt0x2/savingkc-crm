@@ -77,13 +77,15 @@ export async function POST(req: Request) {
   ])
   // Log the alert
   if (leadId) {
-    await supabase.from('lead_activities').insert({
-      lead_id: leadId,
-      activity_type: 'sms',
-      description: urgentMsg,
-      agent: 'System',
-      metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'ivr_press1_alert' },
-    }).catch(() => {})
+    try {
+      await supabase.from('lead_activities').insert({
+        lead_id: leadId,
+        activity_type: 'sms',
+        description: urgentMsg,
+        agent: 'System',
+        metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'ivr_press1_alert' },
+      })
+    } catch {}
   }
 
   // Create 3-min callback task for Casey

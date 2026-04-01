@@ -58,13 +58,15 @@ export async function POST(req: Request) {
       await twilio.messages.create({ body: ernestMsg, from: TWILIO_PHONE, to: ERNEST_PHONE })
       // Log escalation
       if (leadId) {
-        await supabase.from('lead_activities').insert({
-          lead_id: leadId,
-          activity_type: 'sms',
-          description: ernestMsg,
-          agent: 'System',
-          metadata: { direction: 'outbound_alert', to: 'Ernest', trigger: 'escalation_casey_missed' },
-        }).catch(() => {})
+        try {
+          await supabase.from('lead_activities').insert({
+            lead_id: leadId,
+            activity_type: 'sms',
+            description: ernestMsg,
+            agent: 'System',
+            metadata: { direction: 'outbound_alert', to: 'Ernest', trigger: 'escalation_casey_missed' },
+          })
+        } catch {}
       }
     } catch (e) { console.error('Ernest escalation text failed:', e) }
   }

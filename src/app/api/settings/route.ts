@@ -11,11 +11,13 @@ const supabase = createClient(
 
 async function ensureTable() {
   // Create table if it doesn't exist (runs via service role)
-  await supabase.rpc('exec', {
-    query: `CREATE TABLE IF NOT EXISTS crm_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`
-  }).catch(() => {
+  try {
+    await supabase.rpc('exec', {
+      query: `CREATE TABLE IF NOT EXISTS crm_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`
+    })
+  } catch {
     // RPC might not exist — table may already exist or need manual creation
-  })
+  }
 }
 
 let tableChecked = false
