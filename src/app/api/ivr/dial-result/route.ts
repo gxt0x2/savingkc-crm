@@ -78,5 +78,12 @@ export async function POST(req: Request) {
     })
   }
 
-  return new NextResponse('<Response></Response>', { headers: { 'Content-Type': 'text/xml' } })
+  // Route caller to agent's voicemail instead of hanging up
+  const vmAgent = primary || (isOfficeHours() ? 'Casey' : 'Ernest')
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${BASE_URL}/api/ivr/voicemail?agent=${encodeURIComponent(vmAgent)}&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}</Redirect>
+</Response>`
+
+  return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
 }
