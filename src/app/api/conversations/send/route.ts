@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
-import { Resend } from 'resend'
 import { isOptedOut } from '@/lib/sms-opt-out'
 
 const supabase = createClient(
@@ -69,6 +68,7 @@ export async function POST(req: Request) {
       let sent = false
 
       if (process.env.RESEND_API_KEY) {
+        const { Resend } = await import('resend')
         const resend = new Resend(process.env.RESEND_API_KEY)
         const fromEmail = process.env.RESEND_FROM_EMAIL || 'ernest@savingkc.com'
         await resend.emails.send({
