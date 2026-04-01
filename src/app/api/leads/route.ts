@@ -77,6 +77,13 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'ids array required' }, { status: 400, headers: corsHeaders })
     }
 
+    // Delete related rows first (foreign key constraints)
+    await Promise.all([
+      supabase.from('bookings').delete().in('lead_id', ids),
+      supabase.from('activity_log').delete().in('lead_id', ids),
+      supabase.from('manifests').delete().in('lead_id', ids),
+    ])
+
     const { error } = await supabase
       .from('leads')
       .delete()
