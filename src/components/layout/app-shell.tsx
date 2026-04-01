@@ -1,15 +1,19 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { NavTabs } from './nav-tab'
 import { TelephonyBar } from '@/components/telephony/telephony-bar'
 import { DialerDrawer } from '@/components/dialer/dialer-drawer'
 import { Icon } from '@/components/ui/icon'
+import { useAuth } from '@/hooks/use-auth'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [dialerOpen, setDialerOpen] = useState(false)
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+  const { user, signOut } = useAuth()
 
   useEffect(() => {
     async function loadProfile() {
@@ -86,18 +90,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button className="hidden sm:flex p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors" onClick={() => window.location.href = '/settings'}>
                 <Icon name="settings" />
               </button>
-              {profilePhotoUrl ? (
-                <img
-                  src={profilePhotoUrl}
-                  alt="Profile"
-                  className="h-8 w-8 rounded-full object-cover border border-primary/20 ml-1 cursor-pointer"
-                  onClick={() => window.location.href = '/settings'}
-                />
-              ) : (
-                <div className="h-8 w-8 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold ml-1 cursor-pointer" onClick={() => window.location.href = '/settings'}>
-                  ED
-                </div>
-              )}
+              <div className="relative" ref={profileMenuRef}>
+                {profilePhotoUrl ? (
+                  <img
+                    src={profilePhotoUrl}
+                    alt="Profile"
+                    className="h-8 w-8 rounded-full object-cover border border-primary/20 ml-1 cursor-pointer"
+                    onClick={() => setShowProfileMenu(!showProfileMenu)}
+                  />
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold ml-1 cursor-pointer" onClick={() => setShowProfileMenu(!showProfileMenu)}>
+                    {user?.email?.substring(0, 2).toUpperCase() || 'ED'}
+                  </div>
+                )}
+                {showProfileMenu && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-2 z-50">
+                    {user && (
+                      <div className="px-4 py-2 border-b border-slate-100">
+                        <p className="text-xs font-bold text-primary truncate">{user.email}</p>
+                      </div>
+                    )}
+                    <button onClick={() => { setShowProfileMenu(false); window.location.href = '/settings' }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                      <Icon name="settings" size="text-lg" /> Settings
+                    </button>
+                    <button onClick={() => { setShowProfileMenu(false); signOut() }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                      <Icon name="logout" size="text-lg" /> Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
