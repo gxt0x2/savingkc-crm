@@ -12,13 +12,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('crm_settings')
-      if (stored) {
-        const settings = JSON.parse(stored)
-        setProfilePhotoUrl(settings.profilePhotoUrl || null)
-      }
-    } catch {}
+    async function loadProfile() {
+      // Try Supabase first, fall back to localStorage
+      try {
+        const res = await fetch('/api/settings')
+        const data = await res.json()
+        if (data.settings?.profilePhotoUrl) {
+          setProfilePhotoUrl(data.settings.profilePhotoUrl)
+          return
+        }
+      } catch {}
+      try {
+        const stored = localStorage.getItem('crm_settings')
+        if (stored) {
+          const settings = JSON.parse(stored)
+          setProfilePhotoUrl(settings.profilePhotoUrl || null)
+        }
+      } catch {}
+    }
+    loadProfile()
   }, [])
 
   return (

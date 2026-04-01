@@ -14,11 +14,10 @@ const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 
 // Internal team numbers — never send auto-texts to these
 const TEAM_NUMBERS = new Set([
-  '+18167564943', // Casey Davis cell
-  '+18163754666', // Casey Davis alt
-  '+18166088588', // Ernest cell
-  '+18413737722', // Ernest Telegram/cell
-  '+18168608588', // Ernest alt
+  '+18167564943', // Casey personal
+  '+18167277667', // Casey company
+  '+18166088588', // Ernest company
+  '+18162262552', // Ernest personal
 ])
 
 export async function POST(req: Request) {

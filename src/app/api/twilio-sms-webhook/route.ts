@@ -16,16 +16,16 @@ const twilioClient = twilio(
 )
 
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
-const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18413737722'
+const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
 // Team numbers — never trigger auto-reply flows for these
 const TEAM_NUMBERS = new Set([
-  '+18167564943', // Casey cell
-  '+18163754666', // Casey alt
-  '+18166088588', // Ernest cell
-  '+18413737722', // Ernest alt
+  '+18167564943', // Casey personal
+  '+18167277667', // Casey company
+  '+18166088588', // Ernest company
+  '+18162262552', // Ernest personal
 ])
 
 export async function POST(req: Request) {

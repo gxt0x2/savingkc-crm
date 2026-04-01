@@ -7,7 +7,7 @@ const supabase = createClient(
 )
 const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
 
-const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18413737722'
+const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 

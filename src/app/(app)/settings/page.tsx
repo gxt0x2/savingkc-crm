@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS: CrmSettings = {
   agentName: 'Ernest A. Dodson III',
   agentRole: 'owner',
   profilePhotoUrl: null,
-  forwardingNumber: '+18413737722',
+  forwardingNumber: '+18162262552',
   forwardingEmail: '',
   smsAlerts: true,
   emailAlerts: false,
@@ -55,10 +55,22 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('crm_settings')
-      if (stored) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(stored) })
-    } catch {}
+    async function loadSettings() {
+      // Try Supabase first, fall back to localStorage
+      try {
+        const res = await fetch('/api/settings')
+        const data = await res.json()
+        if (data.settings) {
+          setSettings({ ...DEFAULT_SETTINGS, ...data.settings })
+          return
+        }
+      } catch {}
+      try {
+        const stored = localStorage.getItem('crm_settings')
+        if (stored) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(stored) })
+      } catch {}
+    }
+    loadSettings()
   }, [])
 
   function update<K extends keyof CrmSettings>(key: K, value: CrmSettings[K]) {
@@ -80,7 +92,15 @@ export default function SettingsPage() {
     update('profilePhotoUrl', null)
   }
 
-  function save() {
+  async function save() {
+    // Save to both Supabase and localStorage
+    try {
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      })
+    } catch {}
     localStorage.setItem('crm_settings', JSON.stringify(settings))
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)

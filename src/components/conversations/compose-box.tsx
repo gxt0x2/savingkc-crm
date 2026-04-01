@@ -25,9 +25,9 @@ const TWILIO_NUMBERS = [
   { label: '(816) 640-4701', value: '+18166404701' },
   { label: '(816) 608-6648', value: '+18166086648' },
   { label: '(816) 608-6999', value: '+18166086999' },
-  { label: '(816) 608-8588 — Ernest Cell', value: '+18166088588' },
+  { label: '(816) 608-8588 — Ernest Company', value: '+18166088588' },
   { label: '(816) 476-1344', value: '+18164761344' },
-  { label: '(816) 375-4666 — Casey Cell', value: '+18163754666' },
+  { label: '(816) 727-7667 — Casey Company', value: '+18167277667' },
 ]
 
 interface ComposeBoxProps {
