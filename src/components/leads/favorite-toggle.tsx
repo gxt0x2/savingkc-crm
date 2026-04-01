@@ -32,16 +32,33 @@ export function FavoriteToggle({ leadId, isFavorite, onToggle, size = 'md' }: Fa
     const newValue = !favorite
 
     const supabase = createClient()
-    const { error } = await supabase
-      .from('leads')
-      .update({ is_favorite: newValue })
-      .eq('id', leadId)
 
-    if (!error) {
-      setFavorite(newValue)
-      onToggle?.(newValue)
+    // When starring: set is_favorite + priority=hot (do NOT touch station — has DB constraint)
+    if (newValue) {
+      const { error } = await supabase
+        .from('leads')
+        .update({ is_favorite: true, priority: 'hot' })
+        .eq('id', leadId)
+
+      if (!error) {
+        setFavorite(true)
+        onToggle?.(true)
+      } else {
+        console.error('Failed to star lead:', error)
+      }
     } else {
-      console.error('Failed to toggle favorite:', error)
+      // When unstarring, just remove favorite flag (keep priority/station)
+      const { error } = await supabase
+        .from('leads')
+        .update({ is_favorite: false })
+        .eq('id', leadId)
+
+      if (!error) {
+        setFavorite(false)
+        onToggle?.(false)
+      } else {
+        console.error('Failed to toggle favorite:', error)
+      }
     }
 
     setLoading(false)

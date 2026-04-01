@@ -24,6 +24,14 @@ interface LeadRow {
   priority: string | null
   notes: string | null
   created_at: string
+  updated_at: string
+  is_favorite: boolean | null
+  arv: number | null
+  offer_amount: number | null
+  repair_estimate: number | null
+  motivation_score: number | null
+  seller_situation: string | null
+  appointment_date: string | null
 }
 
 function leadToContact(lead: LeadRow): Contact {
@@ -49,21 +57,38 @@ function leadToContact(lead: LeadRow): Contact {
 }
 
 function leadToDeal(lead: LeadRow): Deal {
+  // Build insight from available data
+  const insightParts: string[] = []
+  if (lead.seller_situation) insightParts.push(lead.seller_situation)
+  if (lead.motivation_score) insightParts.push(`Motivation: ${lead.motivation_score}/10`)
+  if (lead.appointment_date) insightParts.push(`Appt: ${new Date(lead.appointment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`)
+  if (lead.notes && !lead.seller_situation) insightParts.push(lead.notes.slice(0, 120))
+
+  // Estimate equity if ARV and offer known
+  const equity = lead.arv && lead.offer_amount ? lead.arv - lead.offer_amount : null
+  const estAssignment = equity && equity > 0 ? Math.round(equity * 0.15) : null
+
+  const tags: string[] = []
+  if (lead.priority === 'hot') tags.push('Hot Lead')
+  if (lead.is_favorite) tags.push('⭐ Starred')
+  if (lead.appointment_date) tags.push('Appt Set')
+  if (lead.source) tags.push(lead.source.replace(/_/g, ' '))
+
   return {
     id: lead.id,
     contact_id: lead.id,
     property_address: lead.property_address,
     stage: (lead.station as DealStage) || 'qualifying',
-    arv: null,
-    as_is_value: null,
-    asking_price: null,
-    equity: null,
+    arv: lead.arv,
+    as_is_value: lead.arv ? Math.round(lead.arv * 0.75) : null,
+    asking_price: lead.offer_amount,
+    equity,
     debt_total: null,
-    est_assignment: null,
-    ari_insight: lead.notes || null,
-    ari_tags: lead.priority === 'hot' ? ['Hot Lead'] : lead.source ? [lead.source.replace(/_/g, ' ')] : [],
+    est_assignment: estAssignment,
+    ari_insight: insightParts.join(' · ') || 'No details yet — visit lead page to add info.',
+    ari_tags: tags,
     created_at: lead.created_at,
-    updated_at: lead.created_at,
+    updated_at: lead.updated_at || lead.created_at,
     contact: leadToContact(lead),
   }
 }
@@ -78,16 +103,12 @@ export default function OpportunitiesPage() {
   async function fetchLeads() {
     setLoading(true)
     const supabase = createClient()
-    // OPP-01: Include qualifying, appt_set (offers), and negotiations stages
-    // Stage 3: QUALIFIED = qualifying
-    // Stage 4: OFFER MADE = appt_set (repurposed) or negotiations
-    // Stage 5: UNDER CONTRACT = contract_signed (not shown here, different page)
+    // Fetch leads where priority = 'hot' OR is_favorite = true (regardless of station)
     const { data } = await supabase
       .from('leads')
-      .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at')
-      .in('station', ['qualifying', 'appt_set', 'negotiations'])
-      .order('priority', { ascending: false })
-      .order('created_at', { ascending: false })
+      .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at, updated_at, is_favorite, arv, offer_amount, repair_estimate, motivation_score, seller_situation, appointment_date')
+      .or('priority.eq.hot,is_favorite.eq.true')
+      .order('updated_at', { ascending: false })
     const rows = (data as LeadRow[]) || []
     setDeals(rows.map(leadToDeal))
     setLoading(false)
@@ -104,8 +125,8 @@ export default function OpportunitiesPage() {
     setPinning(null)
   }
 
-  const hotDeals = deals.filter((d) => d.contact?.smart_tags?.includes('Hot Lead'))
-  const otherDeals = deals.filter((d) => !d.contact?.smart_tags?.includes('Hot Lead'))
+  const hotDeals = deals.filter((d) => d.ari_tags?.includes('Hot Lead')).slice(0, 3)
+  const otherDeals = deals.filter((d) => !d.ari_tags?.includes('Hot Lead'))
 
   return (
     <div className="pt-6 pb-32 px-4 sm:px-6 lg:px-8 max-w-[1600px] mx-auto">

@@ -51,7 +51,7 @@ export function ActivityTable() {
   return (
     <section>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-primary">All Activity</h2>
+        <h2 className="text-xl font-bold text-primary">All Opportunities</h2>
         <div className="flex items-center gap-4">
           <div className="flex bg-surface-container rounded-lg p-1">
             <button

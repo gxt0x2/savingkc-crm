@@ -12,9 +12,9 @@ import { PropertyHero } from '@/components/leads/property-hero'
 import { ActivityFeed } from '@/components/leads/activity-feed'
 import { PropertyDetailsCard } from '@/components/leads/property-details-card'
 import { TemperatureBadge } from '@/components/leads/temperature-badge'
-import { TemperatureOverride } from '@/components/leads/temperature-override'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
 import { AddNote } from '@/components/leads/add-note'
+import { ThankYouCard } from '@/components/leads/thank-you-card'
 import { ContractModal } from '@/components/leads/contract-modal'
 import { AppointmentModal } from '@/components/leads/appointment-modal'
 import { createClient } from '@/lib/supabase/client'
@@ -101,15 +101,18 @@ interface NetProceedsCalcProps {
   initialRepairs: number | null
   initialAskingPrice: number | null
   initialAssignmentFee: number | null
+  initialBackTaxes?: number | null
+  initialMortgage?: number | null
+  initialLiens?: number | null
 }
 
-function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPrice, initialAssignmentFee }: NetProceedsCalcProps) {
+function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPrice, initialAssignmentFee, initialBackTaxes, initialMortgage, initialLiens }: NetProceedsCalcProps) {
   const [arv, setArv] = useState(initialArv ?? 0)
   const [asIsValue, setAsIsValue] = useState(initialAskingPrice ? Math.round(initialAskingPrice * 1.1) : 0)
   const [askingPrice, setAskingPrice] = useState(initialAskingPrice ?? 0)
-  const [mortgage, setMortgage] = useState(0)
-  const [liens, setLiens] = useState(0)
-  const [taxes, setTaxes] = useState(0)
+  const [mortgage, setMortgage] = useState(initialMortgage ?? 0)
+  const [liens, setLiens] = useState(initialLiens ?? 0)
+  const [taxes, setTaxes] = useState(initialBackTaxes ?? 0)
   const [editingField, setEditingField] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
 
@@ -130,10 +133,38 @@ function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPric
 
   async function saveField(key: string, val: number) {
     const supabase = createClient()
-    const fieldMap: Record<string, string> = { arv: 'arv', asking: 'offer_amount' }
+    // Direct DB columns
+    const fieldMap: Record<string, string> = {
+      arv: 'arv',
+      asking: 'offer_amount',
+      repairs: 'repair_estimate',
+      assignment: 'assignment_fee',
+    }
     const col = fieldMap[key]
-    if (!col) return
-    await supabase.from('leads').update({ [col]: val }).eq('id', leadId)
+    if (col) {
+      await supabase.from('leads').update({ [col]: val }).eq('id', leadId)
+      return
+    }
+    // For taxes/liens/mortgage — store in the notes as JSON supplement
+    // and update the manifest financials
+    if (key === 'taxes' || key === 'liens' || key === 'mortgage') {
+      const labelMap: Record<string, string> = { taxes: 'back_taxes', liens: 'liens_amount', mortgage: 'mortgage_balance' }
+      // Update via manifest if one exists
+      try {
+        const res = await fetch(`/api/manifests?lead_id=${leadId}`)
+        const data = await res.json()
+        if (data.manifest?.id) {
+          const manifest = data.manifest.manifest || {}
+          if (!manifest.financials) manifest.financials = { liens: [] }
+          manifest.financials[labelMap[key]] = val
+          await fetch(`/api/manifests/${data.manifest.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manifest }),
+          })
+        }
+      } catch { /* silent */ }
+    }
   }
 
   function startEdit(key: string, val: number) {
@@ -466,19 +497,41 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
   async function handleCreateManifest() {
     setCreating(true)
     try {
+      // First fetch the lead to get name/phone/email
+      const supabase = createClient()
+      const { data: leadData } = await supabase
+        .from('leads')
+        .select('full_name, phone, email, property_address, city, state, zip, station, priority, motivation_score, seller_situation, notes')
+        .eq('id', leadId)
+        .single()
+
+      const nameParts = (leadData?.full_name || 'Unknown').split(' ')
       const res = await fetch('/api/manifests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          firstName: 'Unknown',
           leadId,
-          station: 'intake',
-          priority: 'hot',
+          firstName: nameParts[0] || 'Unknown',
+          lastName: nameParts.slice(1).join(' ') || undefined,
+          phone: leadData?.phone || undefined,
+          email: leadData?.email || undefined,
+          propertyAddress: leadData?.property_address || undefined,
+          city: leadData?.city || undefined,
+          state: leadData?.state || undefined,
+          zip: leadData?.zip || undefined,
+          station: leadData?.station || 'intake',
+          priority: (leadData?.priority === 'hot' ? 'hot' : leadData?.priority === 'high' ? 'warm' : 'cold') as 'hot' | 'warm' | 'cold',
+          motivationScore: leadData?.motivation_score || undefined,
+          sellerSituation: leadData?.seller_situation || undefined,
+          notes: leadData?.notes || undefined,
+          source: 'crm_manual',
         }),
       })
       const data = await res.json()
       if (data.manifest) {
         setManifest(data.manifest)
+      } else {
+        console.error('Create manifest error:', data.error)
       }
     } catch (err) {
       console.error('Failed to create manifest:', err)
@@ -569,13 +622,15 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
             </div>
           )}
 
+          {manifest.owner && (
           <div className="border-t border-white/10 pt-3">
             <p className="text-xs text-slate-500 uppercase font-bold mb-2">Owner:</p>
             <p className="text-sm text-white">{manifest.owner.fullName}</p>
-            {manifest.owner.phones.length > 0 && (
+            {manifest.owner.phones?.length > 0 && (
               <p className="text-xs text-slate-400">{manifest.owner.phones[0]}</p>
             )}
           </div>
+          )}
 
           {manifest.booking?.scheduledDate && (
             <div className="border-t border-white/10 pt-3">
@@ -620,6 +675,8 @@ export default function LeadDetailPage() {
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
   const [activities, setActivities] = useState<ActivityRow[]>([])
+  const [manifestRowId, setManifestRowId] = useState<string | null>(null)
+  const [manifestFinancials, setManifestFinancials] = useState<Record<string, number | null>>({ back_taxes: null, liens_amount: null, mortgage_balance: null })
   const [ghostProtocolStatus, setGhostProtocolStatus] = useState<{ phase: number; status: string } | null>(null)
   const [detailsExpanded, setDetailsExpanded] = useState(false)
   const [thankYouSent, setThankYouSent] = useState(false)
@@ -627,6 +684,10 @@ export default function LeadDetailPage() {
   const [contractModalOpen, setContractModalOpen] = useState(false)
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
+  const [notesModalOpen, setNotesModalOpen] = useState(false)
+  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
+  const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
+  const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
 
   useEffect(() => {
     async function fetchLead() {
@@ -641,6 +702,25 @@ export default function LeadDetailPage() {
       setLoading(false)
     }
     if (id) fetchLead()
+  }, [id])
+
+  useEffect(() => {
+    async function fetchManifestId() {
+      try {
+        const res = await fetch(`/api/manifests?lead_id=${id}`)
+        const data = await res.json()
+        if (data.manifest?.id) {
+          setManifestRowId(data.manifest.id)
+          const fin = data.manifest.manifest?.financials || {}
+          setManifestFinancials({
+            back_taxes: fin.back_taxes ?? null,
+            liens_amount: fin.liens_amount ?? null,
+            mortgage_balance: fin.mortgage_balance ?? null,
+          })
+        }
+      } catch { /* silent */ }
+    }
+    if (id) fetchManifestId()
   }, [id])
 
   useEffect(() => {
@@ -722,8 +802,35 @@ export default function LeadDetailPage() {
     tags: [lead.station || 'intake', lead.priority || 'normal'].filter(Boolean),
   }
 
+  // Filter activities by date and type
+  const filteredActivities = activities.filter((a) => {
+    // Date filter
+    const activityDate = new Date(a.created_at)
+    const now = new Date()
+
+    if (activityDateFilter === 'today') {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      if (activityDate < today) return false
+    } else if (activityDateFilter === 'week') {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      if (activityDate < weekAgo) return false
+    } else if (activityDateFilter === 'month') {
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+      if (activityDate < monthAgo) return false
+    }
+
+    // Type filter
+    if (activityTypeFilter !== 'all') {
+      if (activityTypeFilter === 'note' && !['note', 'agent_note'].includes(a.activity_type)) return false
+      if (activityTypeFilter === 'appointment' && a.activity_type !== 'appointment') return false
+      if (activityTypeFilter !== 'note' && activityTypeFilter !== 'appointment' && a.activity_type !== activityTypeFilter) return false
+    }
+
+    return true
+  })
+
   // Build feed activities - include notes, appointments, call recordings
-  const feedActivities = activities
+  const feedActivities = filteredActivities
     .slice(0, 30)
     .map((a) => {
       let link: string | undefined
@@ -813,15 +920,25 @@ export default function LeadDetailPage() {
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-primary tracking-tight break-words">
               {formattedName || 'Unknown'}
             </h1>
-            <FavoriteToggle leadId={lead.id} isFavorite={lead.is_favorite ?? false} size="lg" />
+            <button
+              onClick={() => setEditPanelOpen(true)}
+              className="text-on-surface-variant/40 hover:text-primary transition-colors p-1"
+              title="Edit lead"
+            >
+              <Icon name="edit" size="text-lg" />
+            </button>
+            <FavoriteToggle
+              leadId={lead.id}
+              isFavorite={lead.is_favorite ?? false}
+              size="lg"
+              onToggle={(val) => setLead(prev => prev ? { ...prev, is_favorite: val, priority: val ? 'hot' : prev.priority } : prev)}
+            />
             <TemperatureBadge
               lead={{ priority: lead.priority, station: lead.station, created_at: lead.created_at }}
               size="lg"
-            />
-            <TemperatureOverride
               leadId={lead.id}
-              currentPriority={lead.priority}
               onChanged={(p) => setLead(prev => prev ? { ...prev, priority: p } : prev)}
+              clickable={true}
             />
             {ghostProtocolStatus && (
               <div className="px-3 py-1 bg-purple-100 border border-purple-300 rounded-full flex items-center gap-1.5">
@@ -833,19 +950,34 @@ export default function LeadDetailPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap ml-0 sm:ml-9">
-            <p className="text-on-surface-variant flex items-center gap-2 text-sm">
-              <Icon name="location_on" size="text-sm" />
-              <span className="break-words">{addressLine || '--'}</span>
-            </p>
+          <div className="ml-0 sm:ml-9 space-y-2">
+            {/* Address + Email row */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="text-on-surface-variant flex items-center gap-2 text-sm">
+                <Icon name="location_on" size="text-sm" />
+                <span className="break-words">{addressLine || '--'}</span>
+              </p>
+              {lead.email && (
+                <a
+                  href={`mailto:${lead.email}`}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-md text-sm font-bold transition-colors"
+                >
+                  <Icon name="email" size="text-sm" />
+                  {lead.email}
+                </a>
+              )}
+            </div>
+            {/* Phone numbers row */}
             {lead.phone && (
-              <a
-                href={`tel:${lead.phone}`}
-                className="flex items-center gap-1.5 px-3 py-1 bg-green-500 hover:bg-green-600 text-white rounded-full text-sm font-bold transition-colors"
-              >
-                <Icon name="phone" size="text-sm" />
-                {formattedPhone}
-              </a>
+              <div className="flex items-center gap-2 flex-wrap">
+                <a
+                  href={`tel:${lead.phone}`}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-md text-sm font-bold transition-colors"
+                >
+                  <Icon name="phone" size="text-sm" />
+                  {formattedPhone}
+                </a>
+              </div>
             )}
             {lead.email && (
               <button
@@ -865,13 +997,7 @@ export default function LeadDetailPage() {
             className="bg-surface-container-lowest border border-outline-variant/15 px-4 py-2.5 rounded-lg font-bold text-on-surface-variant hover:bg-surface-container-low transition-all text-sm flex items-center gap-1.5"
           >
             <Icon name="calendar_month" size="text-sm" />
-            Schedule
-          </button>
-          <button
-            onClick={() => setEditPanelOpen(true)}
-            className="bg-surface-container-lowest border border-outline-variant/15 px-4 sm:px-6 py-2.5 rounded-lg font-bold text-primary hover:bg-surface-container-low transition-all text-sm sm:text-base"
-          >
-            Edit Lead
+            Appointment
           </button>
           <button
             onClick={() => setContractModalOpen(true)}
@@ -884,50 +1010,14 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      {/* Thank You Letter + Quick Links */}
-      <div className="mb-6 flex flex-wrap gap-2">
-        <button
-          onClick={handleThankYouToggle}
-          disabled={thankYouSent}
-          className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold border transition-all ${
-            thankYouSent
-              ? 'bg-green-50 border-green-300 text-green-700 cursor-default'
-              : 'bg-surface-container-lowest border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-low'
-          }`}
-        >
-          <Icon name={thankYouSent ? 'check_circle' : 'mail'} size="text-base" className={thankYouSent ? 'text-green-500' : ''} />
-          <span>Thank you letter sent</span>
-        </button>
-        {zillowUrl && (
-          <a
-            href={zillowUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold border border-outline-variant/20 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low transition-all"
-          >
-            <Icon name="open_in_new" size="text-sm" />
-            View on Zillow
-          </a>
-        )}
-        {countyTaxUrl && (
-          <a
-            href={countyTaxUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold border border-outline-variant/20 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low transition-all"
-          >
-            <Icon name="account_balance" size="text-sm" />
-            County Tax Record
-          </a>
-        )}
-      </div>
 
       {/* 3-Column Layout */}
-      <div className="grid grid-cols-12 gap-4 sm:gap-6 lg:gap-8">
+      <div className="grid grid-cols-12 gap-4 sm:gap-6 lg:gap-8 lg:items-start">
         {/* LEFT COLUMN: Ari Briefing, Pain Points, Sellers Timeline */}
-        <div className="col-span-12 lg:col-span-3 space-y-6">
+        <div className="col-span-12 lg:col-span-3 space-y-6 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6">
           <AriBriefing
             leadId={lead.id}
+            manifestId={manifestRowId ?? undefined}
             personalityType={null}
             tacticalApproach={lead.notes || null}
             notes={lead.notes}
@@ -949,14 +1039,18 @@ export default function LeadDetailPage() {
             station={lead.station}
             activities={activities}
           />
+
+          <ThankYouCard leadId={lead.id} />
         </div>
 
         {/* CENTER COLUMN: Property, Notes, Activity */}
-        <div className="col-span-12 lg:col-span-6 space-y-6">
+        <div className="col-span-12 lg:col-span-6 space-y-6 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6">
           <PropertyHero
             property={property}
             detailsExpanded={detailsExpanded}
             onToggleDetails={() => setDetailsExpanded((v) => !v)}
+            arv={lead.arv}
+            onNotesClick={() => setNotesModalOpen(true)}
           />
 
           {detailsExpanded && (
@@ -988,12 +1082,91 @@ export default function LeadDetailPage() {
             />
           )}
 
-          {/* Add Note */}
-          <AddNote leadId={lead.id} onNoteAdded={handleNoteAdded} />
-
           {/* Activity Feed with recording support */}
           <div>
-            <ActivityFeed activities={feedActivities} />
+            {/* Activity Feed Header with Filter Button */}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-primary">Activity Feed</h3>
+              <div className="relative">
+                <button
+                  onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-lowest border border-outline-variant/20 rounded-lg text-sm font-bold text-on-surface-variant hover:bg-surface-container-low transition-all"
+                >
+                  <Icon name="filter_list" size="text-sm" />
+                  <span>Filter</span>
+                  {(activityDateFilter !== 'all' || activityTypeFilter !== 'all') && (
+                    <span className="ml-1 px-1.5 py-0.5 bg-primary text-white text-xs rounded-full">
+                      {(activityDateFilter !== 'all' ? 1 : 0) + (activityTypeFilter !== 'all' ? 1 : 0)}
+                    </span>
+                  )}
+                  <Icon name={filterDropdownOpen ? 'expand_less' : 'expand_more'} size="text-sm" />
+                </button>
+
+                {/* Filter Dropdown Panel */}
+                {filterDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setFilterDropdownOpen(false)} />
+                    <div className="absolute right-0 top-full mt-2 w-72 bg-surface-container-lowest border border-outline-variant/20 rounded-xl shadow-lg z-20 p-4 space-y-4">
+                      {/* Date Filter */}
+                      <div>
+                        <p className="text-xs font-bold text-on-surface-variant uppercase mb-2">Date</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(['today', 'week', 'month', 'all'] as const).map((filter) => (
+                            <button
+                              key={filter}
+                              onClick={() => setActivityDateFilter(filter)}
+                              className={`px-3 py-1 text-xs font-bold rounded-full transition-all ${
+                                activityDateFilter === filter
+                                  ? 'bg-primary text-white'
+                                  : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container'
+                              }`}
+                            >
+                              {filter === 'today' ? 'Today' : filter === 'week' ? 'This Week' : filter === 'month' ? 'This Month' : 'All Time'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Type Filter */}
+                      <div>
+                        <p className="text-xs font-bold text-on-surface-variant uppercase mb-2">Type</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(['all', 'call', 'sms', 'email', 'note', 'appointment'] as const).map((filter) => (
+                            <button
+                              key={filter}
+                              onClick={() => setActivityTypeFilter(filter)}
+                              className={`px-3 py-1 text-xs font-bold rounded-full transition-all ${
+                                activityTypeFilter === filter
+                                  ? 'bg-primary text-white'
+                                  : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container'
+                              }`}
+                            >
+                              {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <ActivityFeed
+              activities={feedActivities}
+              leadPhone={lead.phone ?? undefined}
+              leadEmail={lead.email ?? undefined}
+              leadId={id}
+              onCompose={(type) => {
+                if (type === 'call') {
+                  if (lead.phone) window.location.href = `tel:${lead.phone}`
+                } else if (type === 'sms') {
+                  window.location.href = `/conversations?lead=${id}`
+                } else if (type === 'email') {
+                  if (lead.email) window.location.href = `mailto:${lead.email}`
+                }
+              }}
+            />
             <div className="mt-3 text-right">
               <Link
                 href={`/conversations?lead=${id}`}
@@ -1006,9 +1179,10 @@ export default function LeadDetailPage() {
         </div>
 
         {/* RIGHT COLUMN: Favorite or Fool, Net Proceeds, File Checklist */}
-        <div className="col-span-12 lg:col-span-3 space-y-6">
+        <div className="col-span-12 lg:col-span-3 space-y-6 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6">
           <FavoriteOrFool
             leadId={lead.id}
+            manifestId={manifestRowId ?? undefined}
             motivationScore={lead.motivation_score}
             arv={lead.arv}
             offerAmount={lead.offer_amount}
@@ -1024,6 +1198,9 @@ export default function LeadDetailPage() {
             initialRepairs={lead.repair_estimate}
             initialAskingPrice={lead.offer_amount}
             initialAssignmentFee={lead.assignment_fee}
+            initialBackTaxes={manifestFinancials.back_taxes}
+            initialLiens={manifestFinancials.liens_amount}
+            initialMortgage={manifestFinancials.mortgage_balance}
           />
 
           {/* Missing Information Checklist */}
@@ -1111,6 +1288,36 @@ export default function LeadDetailPage() {
               .then(({ data }) => { if (data) setActivities(data as ActivityRow[]) })
           }}
         />
+      )}
+      {notesModalOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setNotesModalOpen(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-lg">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10">
+                <div className="flex items-center gap-2">
+                  <Icon name="edit_note" className="text-primary" />
+                  <h2 className="text-lg font-bold text-primary">Add Note</h2>
+                </div>
+                <button
+                  onClick={() => setNotesModalOpen(false)}
+                  className="text-on-surface-variant hover:text-primary transition-colors"
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+              <div className="p-6">
+                <AddNote
+                  leadId={lead.id}
+                  onNoteAdded={(note) => {
+                    handleNoteAdded(note)
+                    setNotesModalOpen(false)
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

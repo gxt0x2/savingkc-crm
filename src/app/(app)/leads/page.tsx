@@ -23,6 +23,7 @@ interface Lead {
   notes: string | null
   created_at: string
   updated_at?: string | null
+  last_activity_at?: string | null
 }
 
 type SortKey = 'full_name' | 'phone' | 'property_address' | 'source' | 'station' | 'priority' | 'created_at' | 'updated_at' | 'temperature'
@@ -152,13 +153,13 @@ export default function LeadsPage() {
           aVal = a.priority || 'normal'
           bVal = b.priority || 'normal'
           break
+        case 'updated_at':
+          aVal = new Date(a.updated_at || a.created_at).getTime()
+          bVal = new Date(b.updated_at || b.created_at).getTime()
+          break
         case 'created_at':
           aVal = new Date(a.created_at).getTime()
           bVal = new Date(b.created_at).getTime()
-          break
-        case 'updated_at':
-          aVal = a.updated_at ? new Date(a.updated_at).getTime() : 0
-          bVal = b.updated_at ? new Date(b.updated_at).getTime() : 0
           break
         case 'temperature':
           const temps = { hot: 4, warm: 3, cool: 2, cold: 1 }
@@ -595,12 +596,10 @@ export default function LeadsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                        lead.priority === 'hot'
-                          ? 'bg-red-100 text-red-600'
-                          : lead.priority === 'high'
-                          ? 'bg-orange-100 text-orange-600'
-                          : 'bg-slate-100 text-slate-500'
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${
+                        lead.priority === 'hot' ? 'bg-red-100 text-red-700' :
+                        lead.priority === 'high' ? 'bg-orange-100 text-orange-700' :
+                        'bg-slate-100 text-slate-600'
                       }`}>
                         {lead.priority || 'normal'}
                       </span>

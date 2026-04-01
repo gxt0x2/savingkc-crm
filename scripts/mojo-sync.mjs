@@ -154,6 +154,13 @@ function parseCallRecords(mojoResponse) {
           record.campaignName ||
           record.campaign ||
           '',
+        recording_url:
+          record.recording_url ||
+          record.recordingUrl ||
+          record.recording ||
+          record.audio_url ||
+          record.audioUrl ||
+          '',
       }
 
       // Only include calls with valid record_id and phone

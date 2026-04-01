@@ -293,13 +293,13 @@ export class CountyEnrichmentService {
   }
 
   /**
-   * Jackson County, MO — Playwright-based
+   * Jackson County, MO — Playwright-based iasWorld scraper
+   * Uses publicaccess.jacksongov.org with disclaimer acceptance
+   * Searches by PARID (preferred) or address, then scrapes profile/values/residential tabs
    */
   private async enrichJacksonCountyMO(
     input: EnrichmentInput
   ): Promise<EnrichmentResult> {
-    // Jackson County MO uses iasWorld portal at publicaccess.jacksongov.org
-    // Must accept disclaimer, then search by address
     try {
       if (!this.browser) throw new Error('Browser not initialized')
       const page = await this.browser.newPage()
@@ -308,15 +308,15 @@ export class CountyEnrichmentService {
       })
 
       try {
-        // Step 1: Accept disclaimer
+        // Step 1: Accept disclaimer (sets ASP.NET_SessionId + DISCLAIMER=1 cookies)
         await page.goto(
           'https://publicaccess.jacksongov.org/Search/Disclaimer.aspx?FromUrl=../search/commonsearch.aspx?mode=realprop',
           { waitUntil: 'domcontentloaded', timeout: this.timeout }
         )
         await page.waitForTimeout(500)
 
-        // Click "I Agree" or similar disclaimer button
-        const agreeBtn = page.locator('input[value*="Agree"], input[value*="agree"], a:has-text("Agree"), button:has-text("Agree")').first()
+        // POST disclaimer acceptance
+        const agreeBtn = page.locator('#btAgree, input[id*="Agree"]').first()
         if (await agreeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
           await agreeBtn.click()
           await page.waitForTimeout(1000)
@@ -329,73 +329,467 @@ export class CountyEnrichmentService {
         )
         await page.waitForTimeout(500)
 
-        // Step 3: Fill address search
-        const addressInput = page.locator('input[name*="Address"], input[id*="Address"], input[name*="street"], input[id*="street"]').first()
-        if (await addressInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await addressInput.fill(input.address)
-          await page.keyboard.press('Enter')
+        // Step 3: Try PARID search first if available
+        const paridInput = (input as any).parcelId
+        if (paridInput) {
+          const paridField = page.locator('#inpParid')
+          if (await paridField.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await paridField.fill(paridInput)
+            await page.locator('#btSearch').click()
+            await page.waitForTimeout(2000)
+          }
+        } else {
+          // Step 4: Address search — parse house number, street name, suffix
+          const addressParts = this.parseJacksonAddress(input.address)
+
+          if (addressParts.houseNumber) {
+            await page.locator('#inpNo').fill(addressParts.houseNumber)
+          }
+          if (addressParts.streetName) {
+            await page.locator('#inpStreet').fill(addressParts.streetName)
+          }
+          if (addressParts.suffix) {
+            // Select suffix from dropdown
+            await page.locator('#inpSuf').selectOption({ value: addressParts.suffix })
+          }
+
+          await page.locator('#btSearch').click()
           await page.waitForTimeout(2000)
         }
 
-        // Step 4: Click first result if on results page
-        const firstResult = page.locator('table.SearchResults tr td a, .SearchResults a').first()
-        if (await firstResult.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await firstResult.click()
-          await page.waitForTimeout(2000)
-        }
+        // Step 5: Wait for results in .WidgetBar
+        await page.waitForSelector('.WidgetBar', { timeout: 10000 })
 
-        // Step 5: Scrape detail page
-        const scrapedData = await page.evaluate(() => {
-          const getText = (label: string) => {
-            const els = Array.from(document.querySelectorAll('td, th, label, span'))
-            for (let i = 0; i < els.length; i++) {
-              if (els[i].textContent?.toLowerCase().includes(label.toLowerCase())) {
-                const next = els[i + 1] || els[i].nextElementSibling
-                if (next?.textContent?.trim()) return next.textContent.trim()
-              }
-            }
-            return ''
-          }
-          const bodyText = document.body.innerText
-          const dollarMatch = (label: string) => {
-            const m = bodyText.match(new RegExp(label + '[^\\d]*([\\d,]+)', 'i'))
-            return m ? parseInt(m[1].replace(/,/g, '')) : 0
-          }
-          const yearMatch = bodyText.match(/Year Built[:\s]*([0-9]{4})/i)
-          const sqftMatch = bodyText.match(/(?:Sq\.?\s*Ft\.?|Square Feet|Living Area)[:\s]*([0-9,]+)/i)
-          const parcelMatch = bodyText.match(/Parcel\s*(?:ID|Number|No\.?)[:\s]*([0-9\-]+)/i)
-
-          return {
-            ownerName: getText('Owner') || getText('Name'),
-            mailingAddress: getText('Mailing'),
-            appraisedValue: dollarMatch('Appraised') || dollarMatch('Market Value'),
-            assessedValue: dollarMatch('Assessed'),
-            parcelId: parcelMatch ? parcelMatch[1].trim() : '',
-            yearBuilt: yearMatch ? parseInt(yearMatch[1]) : 0,
-            sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
-            rawText: bodyText.substring(0, 500),
-          }
+        // Check for "no records found" message
+        const noRecordsMsg = await page.evaluate(() => {
+          const text = document.body.innerText
+          return text.includes('did not find any records') || text.includes('No records found')
         })
+        if (noRecordsMsg) {
+          return { success: false, county: 'Jackson', error: 'Address not found in Jackson County records' }
+        }
+
+        // Extract inline profile data from initial search results
+        const profileText = await page.evaluate(() => {
+          const widget = document.querySelector('.WidgetBar') as HTMLElement | null
+          return widget?.innerText || ''
+        })
+
+        // Step 6: Navigate to values tab
+        await page.goto(
+          'https://publicaccess.jacksongov.org/datalets/datalet.aspx?mode=valuesall&sIndex=0&idx=1&LMparent=20',
+          { waitUntil: 'domcontentloaded', timeout: this.timeout }
+        )
+        await page.waitForSelector('.WidgetBar', { timeout: 10000 })
+        const valuesText = await page.evaluate(() => {
+          const widget = document.querySelector('.WidgetBar') as HTMLElement | null
+          return widget?.innerText || ''
+        })
+
+        // Step 7: Navigate to residential tab
+        await page.goto(
+          'https://publicaccess.jacksongov.org/datalets/datalet.aspx?mode=residential&sIndex=0&idx=1&LMparent=20',
+          { waitUntil: 'domcontentloaded', timeout: this.timeout }
+        )
+        await page.waitForSelector('.WidgetBar', { timeout: 10000 })
+        const residentialText = await page.evaluate(() => {
+          const widget = document.querySelector('.WidgetBar') as HTMLElement | null
+          return widget?.innerText || ''
+        })
+
+        // Step 8: Parse all data
+        const parsed = this.parseJacksonCountyData(profileText, valuesText, residentialText)
+
+        // Step 9: Fetch tax collection data (delinquency, bankruptcy, payment history)
+        let taxData: any = {}
+        if (parsed.paridFormatted) {
+          taxData = await this.enrichJacksonCountyTaxCollection(parsed.paridFormatted)
+        }
+
+        // Step 10: Check out-of-state ownership
+        const outOfState = parsed.mailingState && parsed.mailingState !== 'MO'
 
         return {
           success: true,
           county: 'Jackson',
-          parcelId: scrapedData.parcelId || undefined,
-          ownerName: scrapedData.ownerName || undefined,
-          mailingAddress: scrapedData.mailingAddress || undefined,
-          appraisedValue: scrapedData.appraisedValue || undefined,
-          assessedValue: scrapedData.assessedValue || undefined,
-          yearBuilt: scrapedData.yearBuilt || undefined,
-          sqft: scrapedData.sqft || undefined,
+          parcelId: parsed.paridFormatted || undefined,
+          ownerName: parsed.ownerName || undefined,
+          mailingAddress: parsed.mailingAddress || undefined,
+          appraisedValue: parsed.appraisedValue || undefined,
+          assessedValue: parsed.assessedValue || undefined,
+          landValue: parsed.landValue || undefined,
+          improvementValue: parsed.improvementValue || undefined,
+          taxOwed: taxData.taxOwed || undefined,
+          taxStatus: taxData.taxStatus || undefined,
+          yearBuilt: parsed.yearBuilt || undefined,
+          sqft: parsed.sqft || undefined,
+          bedrooms: parsed.bedrooms || undefined,
+          bathrooms: parsed.bathrooms || undefined,
+          propertyType: parsed.propertyType || undefined,
           source: 'jackson_county_assessor',
           fetchedAt: new Date().toISOString(),
-          rawData: scrapedData,
+          rawData: {
+            ...parsed,
+            outOfState,
+            yearsDelinquent: taxData.yearsDelinquent,
+            lastPaymentDate: taxData.lastPaymentDate,
+            lastPaymentAmount: taxData.lastPaymentAmount,
+            delinquentBills: taxData.delinquentBills,
+            isBankruptcy: taxData.isBankruptcy,
+            taxCollectionError: taxData.error,
+            profileText: profileText.substring(0, 500),
+            valuesText: valuesText.substring(0, 500),
+            residentialText: residentialText.substring(0, 500),
+          },
         }
       } finally {
         await page.close()
       }
     } catch (err: any) {
       return { success: false, county: 'Jackson', error: err.message }
+    }
+  }
+
+  /**
+   * Parse Jackson County address into components for iasWorld search form
+   */
+  private parseJacksonAddress(address: string): {
+    houseNumber: string
+    streetName: string
+    suffix: string
+  } {
+    const parts = address.trim().split(/\s+/)
+    const houseNumber = parts[0] || ''
+
+    // Remove house number
+    let remaining = parts.slice(1)
+
+    // Remove direction prefix (N, S, E, W, NE, NW, SE, SW)
+    const directions = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW', 'NORTH', 'SOUTH', 'EAST', 'WEST']
+    if (remaining.length > 0 && directions.includes(remaining[0].toUpperCase().replace('.', ''))) {
+      remaining = remaining.slice(1)
+    }
+
+    // Extract suffix from end
+    const suffixMap: Record<string, string> = {
+      'AVE': 'AVE', 'AVENUE': 'AVE',
+      'BLVD': 'BLVD', 'BOULEVARD': 'BLVD',
+      'CIR': 'CIR', 'CIRCLE': 'CIR',
+      'CT': 'CT', 'COURT': 'CT',
+      'DR': 'DR', 'DRIVE': 'DR',
+      'HWY': 'HWY', 'HIGHWAY': 'HWY',
+      'LN': 'LN', 'LANE': 'LN',
+      'PKWY': 'PKWY', 'PARKWAY': 'PKWY',
+      'PL': 'PL', 'PLACE': 'PL',
+      'RD': 'RD', 'ROAD': 'RD',
+      'ST': 'ST', 'STREET': 'ST',
+      'TER': 'TER', 'TERRACE': 'TER',
+      'TRL': 'TRL', 'TRAIL': 'TRL',
+      'WAY': 'WAY',
+    }
+
+    let suffix = ''
+    if (remaining.length > 0) {
+      const lastWord = remaining[remaining.length - 1].toUpperCase().replace('.', '')
+      if (suffixMap[lastWord]) {
+        suffix = suffixMap[lastWord]
+        remaining = remaining.slice(0, -1)
+      }
+    }
+
+    const streetName = remaining.join(' ')
+
+    return { houseNumber, streetName, suffix }
+  }
+
+  /**
+   * Parse Jackson County data from profile, values, and residential tabs
+   */
+  private parseJacksonCountyData(
+    profileText: string,
+    valuesText: string,
+    residentialText: string
+  ): {
+    paridFormatted?: string
+    ownerName?: string
+    mailingAddress?: string
+    mailingState?: string
+    propertyType?: string
+    appraisedValue?: number
+    assessedValue?: number
+    landValue?: number
+    improvementValue?: number
+    yearBuilt?: number
+    sqft?: number
+    bedrooms?: number
+    bathrooms?: number
+    halfBaths?: number
+    condition?: string
+    exterior?: string
+    roofType?: string
+    style?: string
+    basement?: string
+    fireplaces?: number
+    physicalCondition?: string
+  } {
+    const result: any = {}
+
+    // Parse profile data
+    const paridMatch = profileText.match(/PARID:\s*([\d]+)/i)
+    if (paridMatch) result.paridFormatted = paridMatch[1]
+
+    // Owner name — usually at top of profile
+    const ownerMatch = profileText.match(/\n([A-Z][A-Z\s&,.']+)\n/m)
+    if (ownerMatch) result.ownerName = ownerMatch[1].trim()
+
+    // Property address
+    const addressMatch = profileText.match(/Address\s+([^\n]+)/i)
+    const cityMatch = profileText.match(/City, State, Zip\s+([^\n]+)/i)
+
+    // Mailing address (owner's address from Owners section)
+    const mailingMatch = profileText.match(/Owners[^]*?Address[^\n]*\n([^\n]+(?:\n[^\n]+)?)/i)
+    if (mailingMatch) {
+      result.mailingAddress = mailingMatch[1].replace(/\n/g, ', ').trim()
+      // Extract state from mailing address
+      const stateMatch = result.mailingAddress.match(/\b([A-Z]{2})\s+\d{5}/i)
+      if (stateMatch) result.mailingState = stateMatch[1].toUpperCase()
+    }
+
+    // Property type
+    const typeMatch = profileText.match(/Property Type\s+([^\n]+)/i) || profileText.match(/(R-RESIDENTIAL|SF RESIDENCE|CONDO)/i)
+    if (typeMatch) result.propertyType = typeMatch[1].trim()
+
+    // Parse values tab
+    const dollarValue = (pattern: RegExp): number | undefined => {
+      const m = valuesText.match(pattern)
+      return m ? parseFloat(m[1].replace(/,/g, '')) : undefined
+    }
+
+    result.appraisedValue = dollarValue(/Total Market\s+\$([0-9,]+)/i)
+    result.assessedValue = dollarValue(/Total Assessed\s+\$([0-9,]+)/i)
+    result.landValue = dollarValue(/Total Market Land\s+\$([0-9,]+)/i)
+    result.improvementValue = dollarValue(/Total Market Building\s+\$([0-9,]+)/i)
+
+    // Parse residential tab
+    const yearMatch = residentialText.match(/Year Built\s+(\d{4})/i)
+    if (yearMatch) result.yearBuilt = parseInt(yearMatch[1])
+
+    const sqftMatch = residentialText.match(/Living Area\s+([\d,]+)/i)
+    if (sqftMatch) result.sqft = parseInt(sqftMatch[1].replace(/,/g, ''))
+
+    const bedroomsMatch = residentialText.match(/Bedrooms\s+(\d+)/i)
+    if (bedroomsMatch) result.bedrooms = parseInt(bedroomsMatch[1])
+
+    const fullBathsMatch = residentialText.match(/Full Baths\s+(\d+)/i)
+    if (fullBathsMatch) result.bathrooms = parseInt(fullBathsMatch[1])
+
+    const halfBathsMatch = residentialText.match(/Half Baths\s+(\d+)/i)
+    if (halfBathsMatch) result.halfBaths = parseInt(halfBathsMatch[1])
+
+    const conditionMatch = residentialText.match(/Physical Condition\s+\d+-(\w+)/i)
+    if (conditionMatch) result.condition = conditionMatch[1]
+
+    const exteriorMatch = residentialText.match(/Exterior Wall\s+\d+-([^\n]+)/i)
+    if (exteriorMatch) result.exterior = exteriorMatch[1].trim()
+
+    const roofMatch = residentialText.match(/Roof Type\s+([A-Z]-[^\n]+)/i)
+    if (roofMatch) result.roofType = roofMatch[1].trim()
+
+    const styleMatch = residentialText.match(/Style\s+\d+-([^\n]+)/i)
+    if (styleMatch) result.style = styleMatch[1].trim()
+
+    const basementMatch = residentialText.match(/Basement\s+\d+-([^\n]+)/i)
+    if (basementMatch) result.basement = basementMatch[1].trim()
+
+    const fireplaceMatch = residentialText.match(/Fireplaces[^0-9]*(\d+)/i)
+    if (fireplaceMatch) result.fireplaces = parseInt(fireplaceMatch[1])
+
+    return result
+  }
+
+  /**
+   * Jackson County, MO — Tax Collection Portal
+   * Scrapes mo-jackson.publicaccessnow.com for tax delinquency data
+   */
+  private async enrichJacksonCountyTaxCollection(
+    parid: string
+  ): Promise<{
+    taxOwed?: number
+    taxStatus: string
+    yearsDelinquent?: number
+    lastPaymentDate?: string
+    lastPaymentAmount?: number
+    delinquentBills?: Array<{
+      taxYear: number
+      billNumber: string
+      totalCharges: number
+      totalPaid: number
+      principal: number
+      penalty: number
+      interest: number
+      status: string
+    }>
+    isBankruptcy?: boolean
+    error?: string
+  }> {
+    try {
+      if (!this.browser) throw new Error('Browser not initialized')
+      const page = await this.browser.newPage()
+
+      try {
+        // Step 1: Load tax search page to establish session
+        await page.goto('https://mo-jackson.publicaccessnow.com/Collector/TaxSearch.aspx', {
+          waitUntil: 'domcontentloaded',
+          timeout: this.timeout,
+        })
+        await page.waitForTimeout(1000)
+
+        // Step 2: Wait for Angular to mount
+        await page.waitForSelector('input[placeholder="Search..."]', { timeout: 10000 })
+
+        // Step 3: Fill search input with PARID and press Enter
+        const searchInput = page.locator('input[placeholder="Search..."]')
+        await searchInput.fill(parid)
+        await searchInput.press('Enter')
+
+        // Step 4: Wait for results to load or redirect to Account.aspx
+        // The site auto-redirects if there's only 1 result
+        await Promise.race([
+          page.waitForURL('**/Account.aspx**', { timeout: 10000 }),
+          page.waitForSelector('text=View Account', { timeout: 10000 }),
+        ]).catch(() => {})
+
+        // Step 5: If on search results, click "View Account" for the matching parcel
+        const currentUrl = page.url()
+        if (!currentUrl.includes('Account.aspx')) {
+          // Look for "View Account" link
+          const viewAccountBtn = page.locator('text=View Account').first()
+          if (await viewAccountBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await viewAccountBtn.click()
+            await page.waitForURL('**/Account.aspx**', { timeout: 8000 })
+          } else {
+            return {
+              taxStatus: 'unknown',
+              error: 'Could not find property in tax collection portal',
+            }
+          }
+        }
+
+        // Step 6: Wait for Angular to render the account detail
+        // Look for "Total Due" or "Tax Bills Due" text
+        await page.waitForFunction(
+          () => document.body.innerText.includes('Total Due') || document.body.innerText.includes('Tax Bills'),
+          { timeout: 10000 }
+        ).catch(() => {})
+
+        // Extra wait for Angular to finish rendering
+        await page.waitForTimeout(2000)
+
+        // Step 7: Extract all text from the page
+        const text = await page.evaluate(() => document.body.innerText)
+
+        // Step 8: Parse data using regex
+
+        // Total due
+        const totalDueMatch = text.match(/Total Due:\s*\$?([\d,]+\.?\d*)/)
+        const taxOwed = totalDueMatch ? parseFloat(totalDueMatch[1].replace(/,/g, '')) : 0
+
+        // Tax status
+        const isBankruptcy = text.includes('Bankruptcy')
+        const hasPastDue = text.includes('Past Due')
+        const taxStatus = taxOwed > 0
+          ? (isBankruptcy ? 'bankruptcy' : 'delinquent')
+          : 'current'
+
+        // Years delinquent (count unique years that show up in bills section)
+        const yearMatches = [...text.matchAll(/^(\d{4})\s*$/gm)]
+        const uniqueYears = new Set(
+          yearMatches
+            .map(m => parseInt(m[1]))
+            .filter(y => y >= 2000 && y <= new Date().getFullYear())
+        )
+        const yearsDelinquent = uniqueYears.size
+
+        // Parse bills - look for bill blocks
+        // Pattern: year on its own line, followed by bill data
+        const delinquentBills: Array<{
+          taxYear: number
+          billNumber: string
+          totalCharges: number
+          totalPaid: number
+          principal: number
+          penalty: number
+          interest: number
+          status: string
+        }> = []
+
+        // Simple approach: look for dollar amounts and years
+        const billSections = text.split(/\n(?=\d{4}\s*\n)/)
+        for (const section of billSections) {
+          const yearMatch = section.match(/^(\d{4})\s*\n/)
+          if (!yearMatch) continue
+
+          const taxYear = parseInt(yearMatch[1])
+          if (taxYear < 2000 || taxYear > new Date().getFullYear()) continue
+
+          // Extract amounts - look for patterns like "$17,700.00"
+          const amounts = [...section.matchAll(/\$?([\d,]+\.\d{2})/g)].map(m =>
+            parseFloat(m[1].replace(/,/g, ''))
+          )
+
+          // Determine status
+          const status = section.includes('Past Due')
+            ? 'Past Due'
+            : (section.includes('Current') ? 'Current' : 'Unknown')
+
+          if (amounts.length >= 4) {
+            delinquentBills.push({
+              taxYear,
+              billNumber: '1', // Default to 1 (real estate)
+              totalCharges: amounts[0] || 0,
+              totalPaid: amounts[amounts.length - 1] || 0,
+              principal: amounts[0] || 0,
+              penalty: amounts[1] || 0,
+              interest: amounts[2] || 0,
+              status,
+            })
+          }
+        }
+
+        // Last payment (most recent date in payment history section)
+        const paymentMatches = [...text.matchAll(/(\d{1,2}\/\d{1,2}\/\d{4})[^\$]*\$?([\d,]+\.\d{2})/g)]
+        let lastPaymentDate: string | undefined
+        let lastPaymentAmount: number | undefined
+
+        if (paymentMatches.length > 0) {
+          // Sort by date descending
+          const payments = paymentMatches.map(m => ({
+            date: m[1],
+            amount: parseFloat(m[2].replace(/,/g, '')),
+          }))
+          // Take the most recent (assuming they're in chronological order in the page)
+          const last = payments[payments.length - 1]
+          lastPaymentDate = last.date
+          lastPaymentAmount = last.amount
+        }
+
+        return {
+          taxOwed: taxOwed > 0 ? taxOwed : undefined,
+          taxStatus,
+          yearsDelinquent: yearsDelinquent > 0 ? yearsDelinquent : undefined,
+          lastPaymentDate,
+          lastPaymentAmount,
+          delinquentBills: delinquentBills.length > 0 ? delinquentBills : undefined,
+          isBankruptcy: isBankruptcy || undefined,
+        }
+      } finally {
+        await page.close()
+      }
+    } catch (err: any) {
+      return {
+        taxStatus: 'unknown',
+        error: err.message || 'Tax collection scrape failed',
+      }
     }
   }
 

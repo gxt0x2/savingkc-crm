@@ -4,7 +4,10 @@ import twilio from 'twilio'
 import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
-import type { ManifestV2, ManifestContact } from '@/lib/manifest-builder'
+import type { ManifestV2, ManifestContact, TranscriptEntry, ManifestAgentNote } from '@/lib/manifest-builder'
+import { downloadRecording } from '@/lib/mojo-recording-downloader'
+import { transcribeAudio } from '@/lib/mojo-transcriber'
+import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,6 +34,7 @@ interface MojoCallRecord {
   notes?: string
   list_name?: string
   campaign_name?: string
+  recording_url?: string
 }
 
 interface DispositionMapping {
@@ -122,6 +126,333 @@ async function sendAlert(name: string, address: string, disposition: string, sco
   } catch (err) {
     console.error('Failed to send alert:', err)
     return false
+  }
+}
+
+// Queue briefing regeneration
+function queueBriefingRegeneration(manifest: ManifestV2) {
+  const now = new Date().toISOString()
+
+  if (!manifest.ariIntelligence) {
+    manifest.ariIntelligence = {
+      sellerProfile: {},
+      dealIntelligence: {},
+      recommendedActions: [],
+      briefingStale: true,
+    }
+  } else {
+    manifest.ariIntelligence.briefingStale = true
+  }
+
+  manifest.auditTrail.push({
+    timestamp: now,
+    agent: 'system:mojo-sync-phase2',
+    action: 'briefing_queued',
+    details: { reason: 'new_call_analysis' },
+  })
+}
+
+// Merge arrays without duplicates
+function mergeArrays<T>(existing: T[] | undefined, newItems: T[] | undefined): T[] {
+  if (!newItems || newItems.length === 0) return existing || []
+  if (!existing || existing.length === 0) return newItems
+
+  const merged = [...existing]
+  for (const item of newItems) {
+    if (!merged.includes(item)) {
+      merged.push(item)
+    }
+  }
+  return merged
+}
+
+// Process Phase 2: Recording → Transcription → Analysis → Manifest Update
+async function processPhase2Intelligence(
+  call: MojoCallRecord,
+  manifest: ManifestV2,
+  manifestId: string
+): Promise<ManifestV2> {
+  const now = new Date().toISOString()
+
+  try {
+    // Initialize structures if missing
+    if (!manifest.agentNotes) manifest.agentNotes = []
+    if (!manifest.communications) manifest.communications = { transcripts: [] }
+    if (!manifest.ariIntelligence) {
+      manifest.ariIntelligence = {
+        sellerProfile: {},
+        dealIntelligence: {},
+        recommendedActions: [],
+        briefingStale: false,
+      }
+    }
+
+    // Handle agent notes from Mojo
+    if (call.notes) {
+      const agentNote: ManifestAgentNote = {
+        timestamp: call.call_date,
+        author: 'casey',
+        source: 'mojo',
+        content: call.notes,
+        callRecordId: call.record_id,
+      }
+      manifest.agentNotes.push(agentNote)
+
+      // Extract callback time from notes
+      const callbackMatch = call.notes.match(/callback.*?(\d{1,2}:\d{2}\s*(?:am|pm)?)/i)
+      if (callbackMatch) {
+        const action = {
+          action: `Call back at ${callbackMatch[1]}`,
+          reason: 'seller_requested',
+        }
+        if (!manifest.ariIntelligence.recommendedActions) {
+          manifest.ariIntelligence.recommendedActions = []
+        }
+        manifest.ariIntelligence.recommendedActions.push(action)
+      }
+    }
+
+    // Skip Phase 2 intelligence if no recording URL
+    if (!call.recording_url) {
+      console.log(`No recording URL for call ${call.record_id}`)
+      return manifest
+    }
+
+    // Step 1: Download recording
+    const audioPath = await downloadRecording(call.recording_url, call.record_id)
+
+    let transcriptText: string | null = null
+    let analysisResult: CallAnalysisResult | null = null
+
+    // Step 2: Transcribe
+    if (audioPath) {
+      transcriptText = await transcribeAudio(audioPath)
+
+      // Step 3: Analyze transcript
+      if (transcriptText) {
+        analysisResult = await analyzeCallTranscript(transcriptText, manifest)
+      }
+    }
+
+    // Step 4: Write transcript entry
+    const transcriptEntry: TranscriptEntry = {
+      id: `mojo-${call.record_id}-${Date.now()}`,
+      date: call.call_date,
+      duration: call.call_duration,
+      agent: call.agent_name,
+      recordingUrl: call.recording_url || null,
+      fullTranscript: transcriptText || null,
+      transcriptionPending: !transcriptText && !!call.recording_url,
+      analysisPending: !analysisResult && !!transcriptText,
+      aiSummary: analysisResult?.aiSummary || null,
+      extractedData: analysisResult ? {
+        motivationScore: analysisResult.motivationScore,
+        sentiment: analysisResult.sentiment,
+        rapportLevel: analysisResult.rapportLevel,
+        talkRatio: null,
+        verbatimQuotes: analysisResult.verbatimQuotes,
+        objectionResponses: analysisResult.objectionsRaised,
+        concessionSignals: analysisResult.keyLeverage,
+        agentCoaching: {
+          strengths: analysisResult.agentStrengths,
+          improvements: analysisResult.agentImprovements,
+        },
+      } : null,
+      agentNotes: call.notes,
+    }
+
+    manifest.communications.transcripts.push(transcriptEntry)
+
+    // Step 5: Update manifest fields from analysis (respecting write priority rules)
+    if (analysisResult) {
+      // Owner fields
+      if (analysisResult.bestTimeToContact && !manifest.owner.bestTimeToContact) {
+        manifest.owner.bestTimeToContact = analysisResult.bestTimeToContact
+      }
+      if (analysisResult.personalityType && !manifest.owner.personalityType) {
+        manifest.owner.personalityType = analysisResult.personalityType
+      }
+      if (analysisResult.coOwners && analysisResult.coOwners.length > 0) {
+        manifest.owner.coOwners = mergeArrays(manifest.owner.coOwners, analysisResult.coOwners)
+      }
+      if (analysisResult.outOfState !== undefined && analysisResult.outOfState !== null) {
+        manifest.owner.outOfState = analysisResult.outOfState
+      }
+      // Normalize and add alternate phones
+      if (analysisResult.alternatePhonesFound && analysisResult.alternatePhonesFound.length > 0) {
+        for (const phone of analysisResult.alternatePhonesFound) {
+          const normalized = normalizePhone(phone)
+          if (!manifest.owner.phones.includes(normalized)) {
+            manifest.owner.phones.push(normalized)
+          }
+        }
+      }
+
+      // Property fields
+      if (analysisResult.vacant !== undefined && analysisResult.vacant !== null) {
+        manifest.property.vacant = analysisResult.vacant
+      }
+      if (analysisResult.occupancy && !manifest.property.occupancy) {
+        manifest.property.occupancy = analysisResult.occupancy
+      }
+      if (analysisResult.conditionOverall && !manifest.property.condition) {
+        manifest.property.condition = { overall: analysisResult.conditionOverall }
+      } else if (analysisResult.conditionOverall && manifest.property.condition && !manifest.property.condition.overall) {
+        manifest.property.condition.overall = analysisResult.conditionOverall
+      }
+      if (analysisResult.repairsNotes && manifest.property.condition) {
+        if (!manifest.property.condition.notes) {
+          manifest.property.condition.notes = analysisResult.repairsNotes
+        }
+      }
+
+      // Situation fields
+      if (analysisResult.situationType && analysisResult.situationType.length > 0) {
+        manifest.situation.type = mergeArrays(manifest.situation.type, analysisResult.situationType)
+      }
+      if (analysisResult.motivationScore !== undefined && analysisResult.motivationScore !== null) {
+        if (!manifest.situation.motivation) manifest.situation.motivation = {}
+        manifest.situation.motivation.score = analysisResult.motivationScore
+      }
+      if (analysisResult.motivationSignals && analysisResult.motivationSignals.length > 0) {
+        if (!manifest.situation.motivation) manifest.situation.motivation = {}
+        manifest.situation.motivation.signals = mergeArrays(
+          manifest.situation.motivation.signals,
+          analysisResult.motivationSignals
+        )
+      }
+      if (analysisResult.urgency) {
+        if (!manifest.situation.timeline) manifest.situation.timeline = {}
+        manifest.situation.timeline.urgency = analysisResult.urgency
+      }
+      if (analysisResult.targetCloseDate) {
+        if (!manifest.situation.timeline) manifest.situation.timeline = {}
+        manifest.situation.timeline.targetCloseDate = analysisResult.targetCloseDate
+      }
+      if (analysisResult.hardDeadline !== undefined) {
+        if (!manifest.situation.timeline) manifest.situation.timeline = {}
+        manifest.situation.timeline.hardDeadline = analysisResult.hardDeadline
+      }
+      if (analysisResult.deadlineReason) {
+        if (!manifest.situation.timeline) manifest.situation.timeline = {}
+        manifest.situation.timeline.deadlineReason = analysisResult.deadlineReason
+      }
+      if (analysisResult.sellerAsking !== undefined && analysisResult.sellerAsking !== null) {
+        if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
+        manifest.situation.priceExpectations.sellerAsking = analysisResult.sellerAsking
+      }
+      if (analysisResult.sellerFloor !== undefined && analysisResult.sellerFloor !== null) {
+        if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
+        manifest.situation.priceExpectations.sellerFloor = analysisResult.sellerFloor
+      }
+      if (analysisResult.priceFlexibility) {
+        if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
+        manifest.situation.priceExpectations.priceFlexibility = analysisResult.priceFlexibility
+      }
+      if (analysisResult.priceAnchor) {
+        if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
+        manifest.situation.priceExpectations.priceAnchor = analysisResult.priceAnchor
+      }
+      if (analysisResult.blockers && analysisResult.blockers.length > 0) {
+        manifest.situation.blockers = mergeArrays(manifest.situation.blockers, analysisResult.blockers)
+      }
+      if (analysisResult.objectionsRaised && analysisResult.objectionsRaised.length > 0) {
+        manifest.situation.objections = mergeArrays(manifest.situation.objections, analysisResult.objectionsRaised)
+      }
+
+      // Ari Intelligence fields
+      if (analysisResult.personalityType) {
+        if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
+        manifest.ariIntelligence.sellerProfile.personalityType = analysisResult.personalityType
+      }
+      if (analysisResult.communicationStyle) {
+        if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
+        manifest.ariIntelligence.sellerProfile.communicationStyle = analysisResult.communicationStyle
+      }
+      if (analysisResult.decisionStyle) {
+        if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
+        manifest.ariIntelligence.sellerProfile.decisionStyle = analysisResult.decisionStyle
+      }
+      if (analysisResult.emotionalDrivers && analysisResult.emotionalDrivers.length > 0) {
+        if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
+        manifest.ariIntelligence.sellerProfile.emotionalDrivers = mergeArrays(
+          manifest.ariIntelligence.sellerProfile.emotionalDrivers,
+          analysisResult.emotionalDrivers
+        )
+      }
+      if (analysisResult.keyLeverage && analysisResult.keyLeverage.length > 0) {
+        if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
+        manifest.ariIntelligence.dealIntelligence.keyLeverage = mergeArrays(
+          manifest.ariIntelligence.dealIntelligence.keyLeverage,
+          analysisResult.keyLeverage
+        )
+      }
+      if (analysisResult.dealConfidenceScore !== undefined && analysisResult.dealConfidenceScore !== null) {
+        if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
+        manifest.ariIntelligence.dealIntelligence.confidenceScore = analysisResult.dealConfidenceScore
+      }
+      if (analysisResult.estimatedARV !== undefined && analysisResult.estimatedARV !== null) {
+        if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
+        manifest.ariIntelligence.dealIntelligence.estimatedARV = analysisResult.estimatedARV
+      }
+      if (analysisResult.estimatedRepairsNotes) {
+        if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
+        manifest.ariIntelligence.dealIntelligence.estimatedRepairs = analysisResult.estimatedRepairsNotes
+      }
+
+      // Recommended actions
+      if (analysisResult.followUpAction) {
+        if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
+        manifest.ariIntelligence.recommendedActions.push({
+          action: analysisResult.followUpAction,
+          dateTime: analysisResult.followUpDateTime || undefined,
+          reason: 'call_analysis',
+        })
+      }
+
+      // Pipeline appointment
+      if (analysisResult.appointmentDateTime) {
+        manifest.pipeline.appointment = {
+          dateTime: analysisResult.appointmentDateTime,
+          type: analysisResult.appointmentType || undefined,
+        }
+      }
+
+      // Queue briefing regeneration
+      queueBriefingRegeneration(manifest)
+    }
+
+    // Add audit entry
+    manifest.auditTrail.push({
+      timestamp: now,
+      agent: 'system:mojo-sync-phase2',
+      action: 'call_analyzed',
+      details: {
+        mojoRecordId: call.record_id,
+        hasRecording: !!audioPath,
+        hasTranscript: !!transcriptText,
+        hasAnalysis: !!analysisResult,
+        motivationScore: analysisResult?.motivationScore,
+        sentiment: analysisResult?.sentiment,
+      },
+    })
+
+    return manifest
+  } catch (err) {
+    console.error('Error processing Phase 2 intelligence:', err)
+
+    // Log error to audit trail
+    manifest.auditTrail.push({
+      timestamp: now,
+      agent: 'system:mojo-sync-phase2',
+      action: 'phase2_error',
+      details: {
+        mojoRecordId: call.record_id,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    })
+
+    return manifest
   }
 }
 
@@ -454,7 +785,22 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // F. Alerts
+        // F. Phase 2: Process intelligence (recording → transcription → analysis)
+        if (manifest && manifestId) {
+          manifest = await processPhase2Intelligence(call, manifest, manifestId)
+
+          // Update manifest with Phase 2 data
+          await supabase
+            .from('manifests')
+            .update({
+              manifest,
+              priority: manifest.priority,
+              current_station: manifest.currentStation,
+            })
+            .eq('id', manifestId)
+        }
+
+        // G. Alerts
         if (dispositionMap.alertErnest) {
           const score = manifest?.qualificationScore
           const sent = await sendAlert(
@@ -472,7 +818,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // G. Response
+    // H. Response
     return NextResponse.json({
       processed,
       created,

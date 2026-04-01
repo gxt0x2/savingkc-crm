@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 
 interface AriBriefingProps {
   leadId: string
+  manifestId?: string
   personalityType?: string | null
   tacticalApproach?: string | null
   notes?: string | null
@@ -24,18 +25,41 @@ interface BriefingData {
   strategy: string
 }
 
-export function AriBriefing({ leadId, personalityType, tacticalApproach, notes, sellerSituation, motivationScore, activities }: AriBriefingProps) {
+export function AriBriefing({ leadId, manifestId, personalityType, tacticalApproach, notes, sellerSituation, motivationScore, activities }: AriBriefingProps) {
   const [briefing, setBriefing] = useState<BriefingData | null>(null)
   const [loading, setLoading] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [cached, setCached] = useState(false)
+  const [expanded, setExpanded] = useState(false)
 
   // Build briefing from available data
   useEffect(() => {
     buildBriefing()
-  }, [leadId, notes, sellerSituation, motivationScore, activities])
+  }, [leadId, manifestId, notes, sellerSituation, motivationScore, activities])
 
   async function buildBriefing() {
-    // Collect all data points
+    // If manifestId provided, use manifest-based briefing
+    if (manifestId) {
+      try {
+        setLoading(true)
+        const res = await fetch(`/api/ari/generate-briefing?manifestId=${manifestId}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.situation || data.motivation || data.strategy) {
+            setBriefing(data)
+            setCached(data.cached || false)
+            setLoading(false)
+            return
+          }
+        }
+      } catch (err) {
+        console.error('Manifest briefing error:', err)
+      }
+      setLoading(false)
+      return
+    }
+
+    // Legacy mode: collect all data points
     const callActivities = activities?.filter(a => a.activity_type === 'call') || []
     const noteActivities = activities?.filter(a => a.activity_type === 'note' || a.activity_type === 'agent_note') || []
     const allNotes = [
@@ -69,6 +93,7 @@ export function AriBriefing({ leadId, personalityType, tacticalApproach, notes, 
         const data = await res.json()
         if (data.situation || data.motivation || data.strategy) {
           setBriefing(data)
+          setCached(false)
           setLoading(false)
           return
         }
@@ -98,12 +123,21 @@ export function AriBriefing({ leadId, personalityType, tacticalApproach, notes, 
     setLoading(false)
   }
 
+  // Helper to truncate situation to ~120 chars (first sentence)
+  const getCondensedSituation = (text: string): string => {
+    const firstSentence = text.split(/[.!?]/)[0]
+    if (firstSentence.length > 120) {
+      return firstSentence.slice(0, 120) + '...'
+    }
+    return firstSentence + '...'
+  }
+
   return (
     <>
       <section
         className="bg-[#1B2A4A] rounded-2xl p-6 relative overflow-hidden cursor-pointer"
-        onDoubleClick={() => setDrawerOpen(true)}
-        title="Double-click for full briefing"
+        onDoubleClick={() => setExpanded(!expanded)}
+        title={expanded ? "Double-click to collapse" : "Double-click to expand"}
       >
         {/* Subtle glow effect */}
         <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500 opacity-[0.04] blur-[80px]" />
@@ -113,15 +147,25 @@ export function AriBriefing({ leadId, personalityType, tacticalApproach, notes, 
           <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
             <Icon name="psychology" className="!text-lg text-amber-400" />
           </div>
-          <div>
+          <div className="flex-1">
             <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
               Ari Briefing
             </h2>
             <div className="flex items-center gap-1.5 mt-0.5">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]" />
-              <span className="text-[10px] text-green-400/80 font-medium">Live Analysis</span>
+              <span className="text-[10px] text-green-400/80 font-medium">
+                {cached ? 'Cached' : 'Live Analysis'}
+              </span>
             </div>
           </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); buildBriefing() }}
+            disabled={loading}
+            title="Refresh Ari briefing"
+            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 hover:text-amber-400 transition-all disabled:opacity-30"
+          >
+            <Icon name="refresh" className={`!text-sm ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
 
         {loading ? (
@@ -133,7 +177,7 @@ export function AriBriefing({ leadId, personalityType, tacticalApproach, notes, 
           <p className="text-sm text-slate-400 italic py-2">
             Waiting for more information. Add notes or log calls to generate Ari analysis.
           </p>
-        ) : (
+        ) : expanded ? (
           <div className="space-y-4">
             {/* Situation */}
             <div>
@@ -174,9 +218,17 @@ export function AriBriefing({ leadId, personalityType, tacticalApproach, notes, 
               </p>
             </div>
           </div>
+        ) : (
+          <div>
+            <p className="text-sm leading-relaxed text-slate-300">
+              {getCondensedSituation(briefing.situation)}
+            </p>
+          </div>
         )}
 
-        <p className="text-[9px] text-slate-500 mt-4">Double-click to expand full briefing</p>
+        <p className="text-[9px] text-slate-500 mt-4">
+          {expanded ? 'Double-click to collapse' : '→ full briefing'}
+        </p>
       </section>
 
       {/* Drawer */}

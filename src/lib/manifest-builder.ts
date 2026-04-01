@@ -12,6 +12,8 @@ export interface ManifestOwner {
   relationshipToProperty?: string
   deceased?: boolean
   outOfState?: boolean
+  personalityType?: 'accommodator' | 'assertive' | 'analyst' | null
+  coOwners?: string[]
 }
 
 export interface ManifestSituation {
@@ -21,16 +23,26 @@ export interface ManifestSituation {
     primary?: string
     secondary?: string[]
     urgencyLevel?: 'low' | 'medium' | 'high' | 'critical'
+    score?: number
+    signals?: string[]
   }
   timeline?: {
     preferredClosing?: string
     flexibility?: 'very_flexible' | 'flexible' | 'somewhat_flexible' | 'not_flexible'
     constraints?: string[]
+    urgency?: 'low' | 'medium' | 'high' | 'critical'
+    targetCloseDate?: string
+    hardDeadline?: boolean
+    deadlineReason?: string
   }
   priceExpectations?: {
     askingPrice?: number
     minimumAcceptable?: number
     basis?: string // e.g., "zillow estimate", "tax assessment", "recent appraisal"
+    sellerAsking?: number
+    sellerFloor?: number
+    priceFlexibility?: 'none' | 'low' | 'medium' | 'high'
+    priceAnchor?: string
   }
   objections?: string[]
   blockers?: string[]
@@ -39,6 +51,8 @@ export interface ManifestSituation {
 export interface ManifestProperty {
   address?: string
   parcel?: string
+  vacant?: boolean
+  occupancy?: 'owner' | 'tenant' | 'vacant' | null
   assessment?: {
     landValue?: number
     improvementValue?: number
@@ -123,6 +137,10 @@ export interface ManifestPipeline {
   closing_prep: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
   closing: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
   closed: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
+  appointment?: {
+    dateTime?: string
+    type?: string
+  }
 }
 
 export interface ManifestContact {
@@ -152,6 +170,78 @@ export interface ManifestAuditEntry {
   details?: any
 }
 
+export interface ManifestAgentNote {
+  timestamp: string
+  author: string
+  source: string
+  content: string
+  callRecordId?: string
+}
+
+export interface TranscriptEntry {
+  id: string
+  date: string
+  duration: number
+  agent: string
+  recordingUrl: string | null
+  fullTranscript: string | null
+  transcriptionPending?: boolean
+  analysisPending?: boolean
+  aiSummary: string | null
+  extractedData?: {
+    motivationScore?: number
+    sentiment?: 'positive' | 'neutral' | 'negative' | null
+    rapportLevel?: 'low' | 'medium' | 'high' | null
+    talkRatio?: number | null
+    verbatimQuotes?: string[]
+    objectionResponses?: string[]
+    concessionSignals?: string[]
+    agentCoaching?: {
+      strengths?: string[]
+      improvements?: string[]
+    }
+  } | null
+  agentNotes?: string
+}
+
+export interface ManifestCommunications {
+  transcripts: TranscriptEntry[]
+}
+
+export interface SellerProfile {
+  personalityType?: string
+  communicationStyle?: string
+  decisionStyle?: string
+  emotionalDrivers?: string[]
+}
+
+export interface DealIntelligence {
+  keyLeverage?: string[]
+  confidenceScore?: number
+  estimatedARV?: number | null
+  estimatedRepairs?: string | null
+}
+
+export interface RecommendedAction {
+  action: string
+  dateTime?: string
+  reason?: string
+}
+
+export interface ManifestAriIntelligence {
+  sellerProfile?: SellerProfile
+  dealIntelligence?: DealIntelligence
+  recommendedActions?: RecommendedAction[]
+  briefingStale?: boolean
+  lastBriefing?: {
+    situation: string
+    motivation: string
+    strategy: string
+    generatedAt: string
+    generatedFrom: string[]
+  }
+}
+
 export interface ManifestV2 {
   manifestId: string
   version: 2
@@ -173,6 +263,9 @@ export interface ManifestV2 {
   flags: ManifestFlags
   notes: ManifestNote[]
   auditTrail: ManifestAuditEntry[]
+  agentNotes?: ManifestAgentNote[]
+  communications?: ManifestCommunications
+  ariIntelligence?: ManifestAriIntelligence
 }
 
 export interface BuildManifestInput {
@@ -316,6 +409,19 @@ export function buildManifest(input: BuildManifestInput): ManifestV2 {
     },
 
     notes: [],
+
+    agentNotes: [],
+
+    communications: {
+      transcripts: [],
+    },
+
+    ariIntelligence: {
+      sellerProfile: {},
+      dealIntelligence: {},
+      recommendedActions: [],
+      briefingStale: false,
+    },
 
     auditTrail: [
       {

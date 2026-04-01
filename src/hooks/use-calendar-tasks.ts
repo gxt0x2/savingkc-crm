@@ -20,7 +20,7 @@ interface LeadRow {
 interface TaskActivityRow {
   id: string
   lead_id: string | null
-  type: string
+  activity_type: string
   description: string | null
   metadata: {
     title?: string
@@ -65,7 +65,7 @@ export function useCalendarTasks() {
       const { data: activities, error: activitiesError } = await supabase
         .from('lead_activities')
         .select('*')
-        .in('type', ['task', 'appointment', 'follow_up', 'callback', 'send_offer'])
+        .in('activity_type', ['task', 'appointment', 'follow_up', 'callback', 'send_offer'])
         .order('created_at', { ascending: false })
 
       if (activitiesError) throw activitiesError
@@ -101,7 +101,7 @@ export function useCalendarTasks() {
 
         return {
           id: row.id,
-          type: (meta.task_type || row.type) as any,
+          type: (meta.task_type || row.activity_type) as any,
           title: meta.title || row.description || 'Untitled Task',
           description: row.description,
           contact_id: row.lead_id,

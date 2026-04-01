@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 
 interface FavoriteOrFoolProps {
   leadId: string
+  manifestId?: string
   motivationScore: number | null
   arv: number | null
   offerAmount: number | null
@@ -61,7 +62,7 @@ function getGradientPercent(score: number): number {
   return (score / 10) * 100
 }
 
-export function FavoriteOrFool({ leadId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation }: FavoriteOrFoolProps) {
+export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation }: FavoriteOrFoolProps) {
   const [analysis, setAnalysis] = useState<string>('')
   const [loading, setLoading] = useState(false)
 
@@ -74,114 +75,70 @@ export function FavoriteOrFool({ leadId, motivationScore, arv, offerAmount, repa
   }, [leadId, score])
 
   async function generateAnalysis() {
-    // Try API
-    try {
-      setLoading(true)
-      const res = await fetch('/api/ari/deal-score-analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          score,
-          motivationScore,
-          arv,
-          offerAmount,
-          repairEstimate,
-          station,
-          notes: notes?.slice(0, 500),
-          sellerSituation,
-        }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.analysis) {
-          setAnalysis(data.analysis)
-          setLoading(false)
-          return
-        }
+    setLoading(true)
+
+    // Generate 2-sentence Chris Voss-based tactical insight
+    let sentence1 = ''
+    let sentence2 = ''
+
+    // Sentence 1: Personality type assessment (if no data, say so)
+    const hasPersonalityData = notes || sellerSituation
+    if (hasPersonalityData) {
+      // Try to infer personality from notes
+      const text = (notes || '') + ' ' + (sellerSituation || '')
+      const lowerText = text.toLowerCase()
+      if (lowerText.includes('data') || lowerText.includes('detail') || lowerText.includes('number')) {
+        sentence1 = 'Analyst personality detected — values data, details, and systematic thinking.'
+      } else if (lowerText.includes('relationship') || lowerText.includes('family') || lowerText.includes('feel')) {
+        sentence1 = 'Accommodator personality — relationship-focused, seeks harmony, values empathy.'
+      } else if (lowerText.includes('quick') || lowerText.includes('decision') || lowerText.includes('direct')) {
+        sentence1 = 'Assertive personality — direct, action-oriented, values efficiency and results.'
+      } else {
+        sentence1 = 'Personality profile building — continue gathering behavioral cues during interactions.'
       }
-    } catch {
-      // fallback
+    } else {
+      sentence1 = 'No personality data yet.'
     }
 
-    // Local fallback
-    if (score >= 8) {
-      setAnalysis('Strong deal indicators. High motivation combined with favorable equity position. This lead shows characteristics of a closeable deal.')
-    } else if (score >= 6) {
-      setAnalysis('Promising lead with room to work. Continue building rapport and verify financial details to strengthen the deal position.')
-    } else if (score >= 4) {
-      setAnalysis('Mixed signals on this one. Some positive indicators but gaps remain. Needs more discovery to determine viability.')
+    // Sentence 2: Specific Chris Voss tactic
+    if (!hasPersonalityData) {
+      sentence2 = 'Build rapport on first call using mirroring — repeat their last 3 words as a question.'
+    } else if (station === 'negotiations') {
+      sentence2 = 'Use labeling: "It seems like timing is important to you..." to uncover the Black Swan.'
+    } else if (station === 'qualifying' || station === 'appt_set') {
+      sentence2 = 'Deploy calibrated questions: "How am I supposed to do that?" to shift power dynamics.'
     } else {
-      setAnalysis('Challenging deal profile. Consider whether continued pursuit is the best use of resources or if nurturing is more appropriate.')
+      sentence2 = 'Use late-night FM DJ voice to build trust, then tactical empathy to surface pain points.'
     }
+
+    setAnalysis(`${sentence1} ${sentence2}`)
     setLoading(false)
   }
 
   return (
-    <section className="bg-[#1B2A4A] rounded-2xl p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Icon name="star_rate" className="!text-lg text-amber-400" />
-        <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
-          Favorite or Fool?
-        </h2>
-      </div>
-
-      {/* Score Display */}
-      <div className="flex items-end gap-3 mb-4">
-        <span className="text-5xl font-black leading-none" style={{ color }}>
+    <section className="bg-[#1B2A4A] rounded-2xl p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-2xl font-black leading-none" style={{ color }}>
           {score.toFixed(1)}
         </span>
-        <span className="text-sm text-slate-400 font-medium pb-1">/ 10</span>
+        <div className="flex-1">
+          <h2 className="text-xs font-black uppercase tracking-wider text-white">
+            Favorite or Fool?
+          </h2>
+        </div>
       </div>
 
-      {/* Gauge Bar */}
-      <div className="relative h-3 rounded-full overflow-hidden mb-4"
-        style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #84cc16, #22c55e)' }}
-      >
-        {/* Indicator */}
-        <div
-          className="absolute top-[-2px] w-4 h-4 rounded-full bg-white border-2 shadow-lg transition-all duration-500"
-          style={{
-            left: `calc(${pct}% - 8px)`,
-            borderColor: color,
-            boxShadow: `0 0 8px ${color}60`,
-          }}
-        />
-        {/* Darken the portion after the score */}
-        <div
-          className="absolute top-0 right-0 bottom-0 bg-[#1B2A4A]/60"
-          style={{ left: `${pct}%` }}
-        />
-      </div>
-
-      {/* Analysis Text */}
+      {/* Analysis Text - exactly 2 sentences */}
       {loading ? (
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-          <span className="text-xs text-slate-400">Analyzing deal...</span>
+          <span className="text-xs text-slate-400">Analyzing...</span>
         </div>
       ) : (
-        <p className="text-sm text-slate-300 leading-relaxed">
+        <p className="text-xs text-slate-300 leading-relaxed">
           {analysis}
         </p>
       )}
-
-      {/* Score Breakdown */}
-      <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-3 gap-2">
-        <div className="text-center">
-          <p className="text-[10px] text-slate-500 uppercase font-bold">Motivation</p>
-          <p className="text-sm font-bold text-white">{motivationScore ?? '--'}</p>
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] text-slate-500 uppercase font-bold">Equity</p>
-          <p className="text-sm font-bold text-white">
-            {arv && offerAmount ? `${Math.round(((arv - offerAmount) / arv) * 100)}%` : '--'}
-          </p>
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] text-slate-500 uppercase font-bold">Stage</p>
-          <p className="text-sm font-bold text-white capitalize">{(station || 'intake').replace(/_/g, ' ')}</p>
-        </div>
-      </div>
     </section>
   )
 }

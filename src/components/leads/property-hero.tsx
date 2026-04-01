@@ -21,6 +21,8 @@ interface PropertyHeroProps {
   property: PropertyDetails
   detailsExpanded?: boolean
   onToggleDetails?: () => void
+  arv?: number | null
+  onNotesClick?: () => void
 }
 
 function getCountyUrl(county: string | undefined, city: string | undefined, address: string): string {
@@ -38,13 +40,13 @@ function getCountyUrl(county: string | undefined, city: string | undefined, addr
   return `https://www.google.com/search?q=${encodeURIComponent(address + ' county records parcel')}`
 }
 
-export function PropertyHero({ property, detailsExpanded, onToggleDetails }: PropertyHeroProps) {
+export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, onNotesClick }: PropertyHeroProps) {
   const fullAddress = [property.address, property.city, property.state, property.zip]
     .filter(Boolean)
     .join(', ')
   const encodedAddress = encodeURIComponent(fullAddress || property.address)
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`
-  const redfinUrl = `https://www.redfin.com/search#q=${encodeURIComponent(fullAddress || property.address)}`
+  const zillowUrl = `https://www.zillow.com/homes/${encodeURIComponent(fullAddress || property.address)}`
   const countyUrl = getCountyUrl(property.county, property.city, fullAddress || property.address)
   const GMAPS_KEY = 'AIzaSyB0_wshDWSFFVuEiuUmhslBYcpWG3ooLPc'
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x320&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
@@ -147,14 +149,25 @@ export function PropertyHero({ property, detailsExpanded, onToggleDetails }: Pro
 
       {/* Quick Links */}
       <div className="flex gap-3">
-        <a
-          href={redfinUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2 text-sm font-bold text-primary hover:bg-surface-container-low transition-all"
-        >
-          <Icon name="open_in_new" className="text-red-600" /> Redfin
-        </a>
+        {/* Zestimate Display */}
+        <div className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2">
+          <span className="text-sm text-on-surface-variant font-medium">Zestimate:</span>
+          {arv ? (
+            <>
+              <span className="text-lg font-bold text-primary">${arv.toLocaleString()}</span>
+              <a
+                href={zillowUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              >
+                via Zillow <Icon name="open_in_new" size="text-xs" />
+              </a>
+            </>
+          ) : (
+            <span className="text-lg font-bold text-on-surface-variant">—</span>
+          )}
+        </div>
         <a
           href={countyUrl}
           target="_blank"
@@ -163,14 +176,12 @@ export function PropertyHero({ property, detailsExpanded, onToggleDetails }: Pro
         >
           <Icon name="description" className="text-blue-600" /> County Records
         </a>
-        <a
-          href={googleMapsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          onClick={onNotesClick}
           className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2 text-sm font-bold text-primary hover:bg-surface-container-low transition-all"
         >
-          <Icon name="map" className="text-green-600" /> Maps
-        </a>
+          <Icon name="edit_note" className="text-blue-600" /> Notes
+        </button>
       </div>
 
       {/* Property Summary Row — click to expand */}

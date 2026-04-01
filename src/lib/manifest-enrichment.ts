@@ -114,6 +114,27 @@ export async function enrichManifestProperty(
     }
   }
 
+  // Out-of-state flag: set on owner if mailing address is outside MO/KS
+  if (result.mailingAddress) {
+    const mailingStateMatch = result.mailingAddress.match(/\b([A-Z]{2})\s+\d{5}/i)
+    const mailingState = mailingStateMatch?.[1]?.toUpperCase()
+    const propertyState = state?.toUpperCase()
+    if (mailingState && mailingState !== propertyState && mailingState !== 'MO' && mailingState !== 'KS') {
+      manifest.owner.outOfState = true
+      manifest.flags.opportunityFlags = manifest.flags.opportunityFlags || []
+      if (!manifest.flags.opportunityFlags.includes('out_of_state_owner')) {
+        manifest.flags.opportunityFlags.push('out_of_state_owner')
+      }
+    }
+  } else if (result.rawData?.outOfState === true) {
+    // Jackson county enrichment already computed this
+    manifest.owner.outOfState = true
+    manifest.flags.opportunityFlags = manifest.flags.opportunityFlags || []
+    if (!manifest.flags.opportunityFlags.includes('out_of_state_owner')) {
+      manifest.flags.opportunityFlags.push('out_of_state_owner')
+    }
+  }
+
   // Add red flag if tax delinquent
   if (result.taxStatus?.toLowerCase().includes('delinquent')) {
     manifest.flags.redFlags = manifest.flags.redFlags || []
