@@ -52,6 +52,21 @@ function readSession() {
   }
 }
 
+// Push session to CRM for recording downloads
+async function pushSessionToCRM(sessionId) {
+  try {
+    await fetch(`${CRM_API_URL.replace('/mojo/sync', '/admin/mojo-session')}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+      signal: AbortSignal.timeout(10000),
+    })
+    log('Pushed Mojo session to CRM')
+  } catch {
+    // Best-effort, don't fail sync
+  }
+}
+
 // Mark session as expired
 function markSessionExpired() {
   try {
@@ -188,6 +203,9 @@ async function sync() {
     }
 
     log(`Using session: ${session.sessionId.substring(0, 20)}...`)
+
+    // Push session to CRM so recording downloads can use it
+    await pushSessionToCRM(session.sessionId)
 
     // Step 2: Fetch call records from Mojo
     const mojoUrl = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=[-2]&date_range=today`

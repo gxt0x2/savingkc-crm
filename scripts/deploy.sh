@@ -25,6 +25,20 @@ else
   echo ".env.local not found at $DEPLOY_DIR/.env.local — skipping MOJO_PASSWORD injection" | tee -a "$LOG_FILE"
 fi
 
+# One-time: create system_config table if it doesn't exist
+if [ -f "$DEPLOY_DIR/.env.local" ]; then
+  SUPABASE_URL=$(grep NEXT_PUBLIC_SUPABASE_URL "$DEPLOY_DIR/.env.local" | cut -d'=' -f2-)
+  SERVICE_KEY=$(grep SUPABASE_SERVICE_ROLE_KEY "$DEPLOY_DIR/.env.local" | cut -d'=' -f2-)
+  if [ -n "$SUPABASE_URL" ] && [ -n "$SERVICE_KEY" ]; then
+    curl -s -X POST "$SUPABASE_URL/rest/v1/rpc/exec_sql" \
+      -H "apikey: $SERVICE_KEY" \
+      -H "Authorization: Bearer $SERVICE_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"sql":"CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())"}' 2>/dev/null || true
+    echo "Ensured system_config table exists" | tee -a "$LOG_FILE"
+  fi
+fi
+
 # Install deps from lockfile
 echo "Installing dependencies..." | tee -a "$LOG_FILE"
 npm ci --legacy-peer-deps 2>&1 | tee -a "$LOG_FILE"

@@ -11,6 +11,8 @@ import { writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir, homedir } from 'os'
 
+import { createClient } from '@supabase/supabase-js'
+
 const MOJO_BASE = 'https://app71.mojosells.com'
 const SESSION_FILE_PATHS = [
   join(homedir(), '.openclaw/workspace/memory/mojo-session.json'),
@@ -20,49 +22,48 @@ const SESSION_FILE_PATHS = [
 // In-memory session cache (survives across requests within same process)
 let cachedSessionId: string | null = null
 
-async function loginToMojo(): Promise<string | null> {
-  const email = process.env.MOJO_EMAIL || 'savingkc@gmail.com'
-  // Fallback password from mojo-extract-session.mjs (already in repo)
-  const password = process.env.MOJO_PASSWORD || 'Onlykillerspickupthephoneandmakecalls'
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+}
 
+/** Try to get session from Supabase system_config table */
+async function getSessionFromSupabase(): Promise<string | null> {
   try {
-    // Step 1: Get login page (to collect any cookies/tokens)
-    const pageRes = await fetch(`${MOJO_BASE}/login/`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
-      redirect: 'manual',
-    })
-    const setCookies = pageRes.headers.getSetCookie?.() || []
-    const cookies = setCookies.map(c => c.split(';')[0]).join('; ')
-
-    // Step 2: POST login
-    const loginRes = await fetch(`${MOJO_BASE}/login/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        'Referer': `${MOJO_BASE}/login/`,
-        'Origin': MOJO_BASE,
-        'Cookie': cookies,
-      },
-      body: `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`,
-      redirect: 'manual',
-    })
-
-    // Extract sessionid from Set-Cookie
-    const loginCookies = loginRes.headers.getSetCookie?.() || []
-    for (const cookie of loginCookies) {
-      const match = cookie.match(/sessionid=([^;]+)/)
-      if (match) {
-        console.log('Mojo login successful, got session')
-        return match[1]
-      }
+    const supabase = getSupabase()
+    const { data } = await supabase
+      .from('system_config')
+      .select('value')
+      .eq('key', 'mojo_session_id')
+      .single()
+    if (data?.value && typeof data.value === 'string') {
+      return data.value
     }
+    // Also try JSONB value
+    if (data?.value?.sessionId) {
+      return data.value.sessionId
+    }
+  } catch {
+    // Table might not exist yet
+  }
+  return null
+}
 
-    console.log('Mojo login: no session cookie in response (status:', loginRes.status, ')')
-    return null
-  } catch (e) {
-    console.error('Mojo login failed:', e)
-    return null
+/** Store session in Supabase for persistence across restarts */
+async function saveSessionToSupabase(sessionId: string): Promise<void> {
+  try {
+    const supabase = getSupabase()
+    await supabase
+      .from('system_config')
+      .upsert({
+        key: 'mojo_session_id',
+        value: sessionId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' })
+  } catch {
+    // Best-effort, ignore if table doesn't exist
   }
 }
 
@@ -76,7 +77,15 @@ async function getMojoSessionId(): Promise<string | null> {
     return cachedSessionId
   }
 
-  // 3. Session files
+  // 3. Supabase (persists across deploys/restarts)
+  const dbSession = await getSessionFromSupabase()
+  if (dbSession) {
+    cachedSessionId = dbSession
+    console.log('Mojo session loaded from Supabase')
+    return cachedSessionId
+  }
+
+  // 4. Session files on disk
   const customPath = process.env.MOJO_SESSION_FILE
   const paths = customPath ? [customPath, ...SESSION_FILE_PATHS] : SESSION_FILE_PATHS
   for (const filePath of paths) {
@@ -86,18 +95,13 @@ async function getMojoSessionId(): Promise<string | null> {
       if (!session.expired && session.sessionId) {
         cachedSessionId = session.sessionId
         console.log(`Mojo session loaded from ${filePath}`)
+        // Also persist to Supabase for future use
+        await saveSessionToSupabase(session.sessionId)
         return cachedSessionId
       }
     } catch {
       // file doesn't exist or is invalid, try next
     }
-  }
-
-  // 4. Try fresh login
-  const freshSession = await loginToMojo()
-  if (freshSession) {
-    cachedSessionId = freshSession
-    return cachedSessionId
   }
 
   return null
@@ -121,7 +125,7 @@ export async function downloadRecording(url: string, recordId?: string): Promise
     // Mojo recordings require session cookie auth
     const sessionId = await getMojoSessionId()
     if (!sessionId) {
-      throw new Error('Mojo session not available. Set MOJO_SESSION_ID env var, MOJO_PASSWORD env var, or run mojo-extract-session.')
+      throw new Error('Mojo session not available. Set MOJO_SESSION_ID env var, store in Supabase system_config, or run mojo-extract-session on production Mac.')
     }
     headers['cookie'] = `sessionid=${sessionId}`
     headers['referer'] = `${MOJO_BASE}/`
@@ -143,30 +147,9 @@ export async function downloadRecording(url: string, recordId?: string): Promise
   if (contentType.includes('text/html') || contentType.includes('application/json')) {
     const body = await response.text()
     if ((body.includes('login') || body.includes('Login')) && url.includes('mojosells.com')) {
-      // Session expired — clear cache and try once more with fresh login
-      console.log('Mojo session expired, attempting re-login...')
+      // Session expired — clear cache so next attempt will re-fetch
       clearSessionCache()
-      const newSessionId = await getMojoSessionId()
-      if (newSessionId) {
-        headers['cookie'] = `sessionid=${newSessionId}`
-        const retryRes = await fetch(downloadUrl, { headers, redirect: 'follow' })
-        if (retryRes.ok) {
-          const retryType = retryRes.headers.get('content-type') || ''
-          if (!retryType.includes('text/html')) {
-            const retryBuffer = Buffer.from(await retryRes.arrayBuffer())
-            if (retryBuffer.length >= 1000) {
-              const dir = join(tmpdir(), 'savingkc-recordings')
-              await mkdir(dir, { recursive: true })
-              const filename = `recording-${recordId || Date.now()}.mp3`
-              const filePath = join(dir, filename)
-              await writeFile(filePath, retryBuffer)
-              console.log(`Downloaded recording (retry): ${filePath} (${(retryBuffer.length / 1024 / 1024).toFixed(1)} MB)`)
-              return filePath
-            }
-          }
-        }
-      }
-      throw new Error('Mojo session expired — re-login failed. Set MOJO_PASSWORD env var or run mojo-extract-session.')
+      throw new Error('Mojo session expired — run mojo-extract-session on production Mac to refresh.')
     }
     throw new Error(`Expected audio but got ${contentType}: ${body.slice(0, 200)}`)
   }
