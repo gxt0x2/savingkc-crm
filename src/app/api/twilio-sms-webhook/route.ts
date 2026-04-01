@@ -5,6 +5,7 @@ import { isOptedOut, handleOptOut, handleOptIn, isStopKeyword, isStartKeyword } 
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
 import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
+import { sendPushToAgents } from '@/lib/push-notifications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -170,6 +171,14 @@ export async function POST(req: Request) {
         twilioClient.messages.create({ body: yesAlertBody, from: TWILIO_PHONE, to: secondaryAgent }),
       ])
 
+      // Push notification
+      sendPushToAgents({
+        title: 'HOT: YES Reply',
+        body: `${leadName !== 'Unknown' ? leadName : from} replied YES to sell. Call NOW.`,
+        url: yesLeadId ? `/leads/${yesLeadId}` : '/',
+        tag: 'yes-reply',
+      }).catch(() => {})
+
       // Log the alert SMS
       if (yesLeadId) {
         await supabase.from('lead_activities').insert({
@@ -244,6 +253,12 @@ export async function POST(req: Request) {
         twilioClient.messages.create({ body: hotAlertBody, from: TWILIO_PHONE, to: CASEY_PHONE }),
         twilioClient.messages.create({ body: hotAlertBody, from: TWILIO_PHONE, to: ERNEST_PHONE }),
       ])
+      sendPushToAgents({
+        title: 'Hot Lead Texted',
+        body: `${leadName}: "${messageBody.slice(0, 80)}"`,
+        url: `/leads/${leadId}`,
+        tag: 'hot-lead-sms',
+      }).catch(() => {})
       // Log the alert
       await supabase.from('lead_activities').insert({
         lead_id: leadId,

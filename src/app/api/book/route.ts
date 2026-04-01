@@ -4,6 +4,7 @@ import twilio from 'twilio'
 import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
+import { sendPushToAgents } from '@/lib/push-notifications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -258,6 +259,14 @@ export async function POST(req: NextRequest) {
         to: normalizedPhone,
       })
     }, 15, 30)
+
+    // Push notification (instant)
+    sendPushToAgents({
+      title: 'New Booking',
+      body: `${first_name.trim()} booked for ${formattedDate} at ${displayTime}`,
+      url: leadId ? `/leads/${leadId}` : '/',
+      tag: 'booking',
+    }).catch(() => {})
 
     // Send alert SMS to Casey (delayed 30-60s)
     const alertBody = `📅 New call booked: ${first_name.trim()}${property_address?.trim() ? ` at ${property_address.trim()}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${normalizedPhone}`

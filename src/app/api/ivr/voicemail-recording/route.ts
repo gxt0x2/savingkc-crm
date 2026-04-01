@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sendPushToAgents } from '@/lib/push-notifications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -86,6 +87,14 @@ export async function POST(req: Request) {
       twilio.messages.create({ body: vmMsg, from: TWILIO_PHONE, to: ERNEST_PHONE }),
     ])
   }
+
+  // Push notification
+  sendPushToAgents({
+    title: 'New Voicemail',
+    body: `Voicemail from ${from} (${recordingDuration}s)`,
+    url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/',
+    tag: 'voicemail',
+  }).catch(() => {})
 
   // Ari briefing event — always create
   try {

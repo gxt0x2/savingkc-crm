@@ -4,6 +4,7 @@ import { isOptedOut } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
 import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
+import { sendPushToAgents } from '@/lib/push-notifications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -151,6 +152,12 @@ export async function POST(req: Request) {
           twilio.messages.create({ body: missedAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
           twilio.messages.create({ body: missedAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
         ])
+        sendPushToAgents({
+          title: 'Missed Call - Hot Lead',
+          body: `${leadName} called and got no answer. Auto-text sent.`,
+          url: `/leads/${leadId}`,
+          tag: 'missed-call',
+        }).catch(() => {})
 
         // 5-min callback task
         await supabase.from('lead_activities').insert({
@@ -215,6 +222,12 @@ export async function POST(req: Request) {
           twilio.messages.create({ body: agentAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
           twilio.messages.create({ body: agentAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
         ])
+        sendPushToAgents({
+          title: 'Missed Call - Unknown',
+          body: `Unknown number ${from} called. Auto-text sent.`,
+          url: newLeadId ? `/leads/${newLeadId}` : '/',
+          tag: 'missed-call-unknown',
+        }).catch(() => {})
 
         // Briefing event for unknown missed call (now with lead_id)
         try {

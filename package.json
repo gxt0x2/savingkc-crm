@@ -16,6 +16,7 @@
     "@supabase/supabase-js": "^2.100.0",
     "@tanstack/react-query": "^5.95.2",
     "@twilio/voice-sdk": "^2.18.1",
+    "@types/web-push": "^3.6.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "next": "16.2.1",
@@ -26,7 +27,8 @@
     "recharts": "^3.8.0",
     "resend": "^6.10.0",
     "tailwind-merge": "^3.5.0",
-    "twilio": "^5.13.1"
+    "twilio": "^5.13.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.16",

@@ -486,35 +486,66 @@ export async function POST(req: NextRequest) {
         }
 
         // B. Find or create manifest
-        const normalizedPhone = normalizePhone(call.phone_number)
-
-        // Search by phone in manifests
-        const { data: phoneManifests } = await supabase
-          .from('manifests')
-          .select('id, manifest, lead_id')
-          .contains('manifest->owner->phones', [normalizedPhone])
-          .limit(1)
+        const hasPhone = !!(call.phone_number && call.phone_number.trim())
+        const normalizedPhone = hasPhone ? normalizePhone(call.phone_number) : ''
 
         let manifestId: string | null = null
         let manifest: ManifestV2 | null = null
         let leadId: string | null = null
         let isNew = false
 
-        if (phoneManifests && phoneManifests.length > 0) {
-          // Found existing manifest by phone
-          manifestId = phoneManifests[0].id
-          manifest = phoneManifests[0].manifest as ManifestV2
-          leadId = phoneManifests[0].lead_id
-        } else {
-          // Search by phone in leads table
-          const { data: phoneLeads } = await supabase
-            .from('leads')
-            .select('id, phone')
-            .eq('phone', normalizedPhone)
+        if (hasPhone) {
+          // Search by phone in manifests
+          const { data: phoneManifests } = await supabase
+            .from('manifests')
+            .select('id, manifest, lead_id')
+            .contains('manifest->owner->phones', [normalizedPhone])
             .limit(1)
 
-          if (phoneLeads && phoneLeads.length > 0) {
-            leadId = phoneLeads[0].id
+          if (phoneManifests && phoneManifests.length > 0) {
+            // Found existing manifest by phone
+            manifestId = phoneManifests[0].id
+            manifest = phoneManifests[0].manifest as ManifestV2
+            leadId = phoneManifests[0].lead_id
+          } else {
+            // Search by phone in leads table
+            const { data: phoneLeads } = await supabase
+              .from('leads')
+              .select('id, phone')
+              .eq('phone', normalizedPhone)
+              .limit(1)
+
+            if (phoneLeads && phoneLeads.length > 0) {
+              leadId = phoneLeads[0].id
+
+              // Check if this lead has a manifest
+              const { data: leadManifests } = await supabase
+                .from('manifests')
+                .select('id, manifest')
+                .eq('lead_id', leadId)
+                .limit(1)
+
+              if (leadManifests && leadManifests.length > 0) {
+                manifestId = leadManifests[0].id
+                manifest = leadManifests[0].manifest as ManifestV2
+              }
+            }
+          }
+        }
+
+        // Fallback: if no phone but we have a contact name, match by name
+        if (!manifestId && !hasPhone && call.contact_name && call.contact_name.trim()) {
+          const trimmedName = call.contact_name.trim()
+
+          // Search leads by full_name (case-insensitive)
+          const { data: nameLeads } = await supabase
+            .from('leads')
+            .select('id')
+            .ilike('full_name', trimmedName)
+            .limit(1)
+
+          if (nameLeads && nameLeads.length > 0) {
+            leadId = nameLeads[0].id
 
             // Check if this lead has a manifest
             const { data: leadManifests } = await supabase
@@ -541,7 +572,7 @@ export async function POST(req: NextRequest) {
           // Update existing manifest
           // Add phone if not already there
           const phones = manifest.owner.phones || []
-          if (!phones.includes(normalizedPhone)) {
+          if (hasPhone && normalizedPhone && !phones.includes(normalizedPhone)) {
             phones.push(normalizedPhone)
           }
           manifest.owner.phones = phones
@@ -621,7 +652,7 @@ export async function POST(req: NextRequest) {
           const manifestInput = {
             firstName,
             lastName,
-            phone: normalizedPhone,
+            phone: hasPhone ? normalizedPhone : '',
             propertyAddress: call.property_address,
             propertyCity: call.city,
             propertyState: call.state,
@@ -686,7 +717,7 @@ export async function POST(req: NextRequest) {
               .insert({
                 full_name: call.contact_name,
                 property_address: call.property_address,
-                phone: normalizedPhone,
+                phone: hasPhone ? normalizedPhone : null,
                 city: call.city,
                 state: call.state,
                 zip: call.zip,

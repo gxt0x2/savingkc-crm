@@ -3,16 +3,15 @@
  * Mojo Backfill Script
  * Pulls ALL call records from Mojo API since Feb 1, 2026 and syncs to CRM.
  *
- * Strategy:
- *   1. Try date_range=custom with start_date/end_date for the full range
- *   2. If that fails or returns 0 records, fall back to weekly chunks
- *   3. Parse records using the same logic as mojo-sync.mjs
- *   4. POST to CRM in batches of 20
+ * Mojo API format:
+ *   GET /v2/rest/reports/call-recording-report-data/?agents=[-1]&date_range=custom&from=YYYY-MM-DD&to=YYYY-MM-DD
+ *   Response: { recordings: [{ record_id, contact: {id, name}, agent_name, duration, audio, result, date }] }
  *
  * Usage:
  *   node scripts/mojo-backfill.mjs
  *   node scripts/mojo-backfill.mjs --start 2026-02-01 --end 2026-04-01
  *   node scripts/mojo-backfill.mjs --session <session_id>
+ *   node scripts/mojo-backfill.mjs --min-duration 60   # Only sync calls >= 60 seconds
  */
 
 import fs from 'fs'
@@ -23,15 +22,13 @@ const MOJO_BASE_URL = 'https://app71.mojosells.com'
 const CRM_API_URL = 'https://crm.savingkc.com/api/mojo/sync'
 const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
 const HARDCODED_SESSION_ID = 'q5yf48bvcz0vx32ismobwicfbx71033w'
-const BATCH_SIZE = 20
-const REQUEST_TIMEOUT = 60000 // 60s for potentially large responses
-const CRM_TIMEOUT = 120000   // 120s — CRM does enrichment + transcription per call
-const DELAY_BETWEEN_BATCHES_MS = 2000  // Be gentle on the CRM
-const DELAY_BETWEEN_FETCHES_MS = 1500  // Be gentle on Mojo
+const BATCH_SIZE = 10
+const CRM_TIMEOUT = 180000   // 3 min — CRM does enrichment + transcription per call
+const DELAY_BETWEEN_BATCHES_MS = 5000  // 5s between batches
 
 // Date range defaults
 const DEFAULT_START = '2026-02-01'
-const DEFAULT_END = '2026-04-01'
+const DEFAULT_END = '2026-04-02'
 
 // ── Logging ─────────────────────────────────────────────────────────
 const LOG_DIR = path.join(process.env.HOME || '/tmp', '.savingkc-logs')
@@ -58,14 +55,12 @@ function logError(message, error) {
 
 // ── Session handling ────────────────────────────────────────────────
 function getSessionId() {
-  // 1. CLI argument
   const argIdx = process.argv.indexOf('--session')
   if (argIdx !== -1 && process.argv[argIdx + 1]) {
     log('Using session ID from --session argument')
     return process.argv[argIdx + 1]
   }
 
-  // 2. Session file
   try {
     if (fs.existsSync(SESSION_FILE)) {
       const content = fs.readFileSync(SESSION_FILE, 'utf8')
@@ -74,19 +69,15 @@ function getSessionId() {
         log(`Using session from file: ${SESSION_FILE}`)
         return session.sessionId
       }
-      log('Session file found but session is expired or missing sessionId')
     }
-  } catch (err) {
-    logError('Failed to read session file', err)
-  }
+  } catch {}
 
-  // 3. Hardcoded fallback
   log('Using hardcoded session ID')
   return HARDCODED_SESSION_ID
 }
 
 // ── CLI arg parsing ─────────────────────────────────────────────────
-function getCliDate(flag, defaultValue) {
+function getCliArg(flag, defaultValue) {
   const idx = process.argv.indexOf(flag)
   if (idx !== -1 && process.argv[idx + 1]) {
     return process.argv[idx + 1]
@@ -94,169 +85,90 @@ function getCliDate(flag, defaultValue) {
   return defaultValue
 }
 
-// ── Mojo API headers ────────────────────────────────────────────────
-function buildHeaders(sessionId) {
-  return {
-    accept: 'application/json, text/plain, */*',
-    cookie: `sessionid=${sessionId}`,
-    'user-agent':
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
-    referer: `${MOJO_BASE_URL}/`,
+// ── Parse duration string "MM:SS" to seconds ────────────────────────
+function parseDuration(durationStr) {
+  if (!durationStr || typeof durationStr !== 'string') return 0
+  const parts = durationStr.split(':')
+  if (parts.length === 2) {
+    return parseInt(parts[0]) * 60 + parseInt(parts[1])
   }
+  if (parts.length === 3) {
+    return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2])
+  }
+  return parseInt(durationStr) || 0
 }
 
-// ── Parse call records (same logic as mojo-sync.mjs) ────────────────
-function parseCallRecords(mojoResponse) {
+// ── Parse Mojo date "MM/DD/YYYY HH:MM AM/PM" to ISO ────────────────
+function parseMojoDate(dateStr) {
+  if (!dateStr) return new Date().toISOString()
+  try {
+    // "03/31/2026 01:25 PM" → Date
+    const d = new Date(dateStr)
+    if (!isNaN(d.getTime())) return d.toISOString()
+  } catch {}
+  return dateStr
+}
+
+// ── Parse Mojo recordings response ──────────────────────────────────
+function parseRecordings(mojoResponse) {
+  const recordings = mojoResponse.recordings || []
   const calls = []
 
-  let records = []
-  if (Array.isArray(mojoResponse)) {
-    records = mojoResponse
-  } else if (mojoResponse.results && Array.isArray(mojoResponse.results)) {
-    records = mojoResponse.results
-  } else if (mojoResponse.data && Array.isArray(mojoResponse.data)) {
-    records = mojoResponse.data
-  }
-
-  for (const record of records) {
+  for (const rec of recordings) {
     try {
+      const durationSec = parseDuration(rec.duration)
       const call = {
-        record_id: String(
-          record.record_id ||
-            record.recordId ||
-            record.id ||
-            record.call_id ||
-            record.callId ||
-            ''
-        ),
-        contact_name:
-          record.contact_name ||
-          record.contactName ||
-          record.name ||
-          record.contact?.name ||
-          'Unknown',
-        phone_number: String(
-          record.phone_number ||
-            record.phoneNumber ||
-            record.phone ||
-            record.contact?.phone ||
-            ''
-        ),
-        property_address:
-          record.property_address ||
-          record.propertyAddress ||
-          record.address ||
-          record.contact?.address ||
-          record.situs ||
-          '',
-        city: record.city || record.contact?.city || '',
-        state: record.state || record.contact?.state || '',
-        zip: record.zip || record.zipcode || record.contact?.zip || '',
-        call_date:
-          record.call_date ||
-          record.callDate ||
-          record.date ||
-          record.created_at ||
-          record.timestamp ||
-          new Date().toISOString(),
-        call_duration: parseInt(
-          record.call_duration ||
-            record.callDuration ||
-            record.duration ||
-            record.length ||
-            '0'
-        ),
-        disposition:
-          record.disposition ||
-          record.status ||
-          record.outcome ||
-          record.result ||
-          'Unknown',
-        agent_name:
-          record.agent_name ||
-          record.agentName ||
-          record.agent ||
-          record.user?.name ||
-          'Unknown',
-        notes: record.notes || record.note || record.comments || '',
-        list_name:
-          record.list_name ||
-          record.listName ||
-          record.list ||
-          record.campaign_list ||
-          '',
-        campaign_name:
-          record.campaign_name ||
-          record.campaignName ||
-          record.campaign ||
-          '',
-        recording_url:
-          record.recording_url ||
-          record.recordingUrl ||
-          record.recording ||
-          record.audio_url ||
-          record.audioUrl ||
-          '',
+        record_id: String(rec.record_id || ''),
+        contact_name: rec.contact?.name || 'Unknown',
+        phone_number: '', // Mojo recording API doesn't include phone — CRM will look up by contact name
+        property_address: '',
+        city: '',
+        state: '',
+        zip: '',
+        call_date: parseMojoDate(rec.date),
+        call_duration: durationSec,
+        disposition: rec.result || 'Unknown',
+        agent_name: rec.agent_name || 'Unknown',
+        notes: '',
+        list_name: '',
+        campaign_name: '',
+        recording_url: rec.audio || '',
+        mojo_contact_id: rec.contact?.id ? String(rec.contact.id) : '',
       }
 
-      // Only include calls with valid record_id and phone
-      if (call.record_id && call.phone_number) {
+      if (call.record_id) {
         calls.push(call)
       }
     } catch (err) {
-      logError('Failed to parse call record', err)
+      logError('Failed to parse recording', err)
     }
   }
 
   return calls
 }
 
-// ── Fetch from Mojo API ─────────────────────────────────────────────
-async function fetchMojoRecords(sessionId, startDate, endDate) {
-  const url =
-    `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/` +
-    `?agents=[-2]&date_range=custom&start_date=${startDate}&end_date=${endDate}`
-
-  log(`Fetching: ${url}`)
-  const headers = buildHeaders(sessionId)
-
-  const response = await fetch(url, {
-    method: 'GET',
-    headers,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-  })
-
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      throw new Error(`Session expired (HTTP ${response.status}). Re-extract session and retry.`)
+// ── Fetch contact details from Mojo to get phone number ─────────────
+async function fetchContactPhone(sessionId, contactId) {
+  if (!contactId) return ''
+  try {
+    const url = `${MOJO_BASE_URL}/v2/rest/contacts/${contactId}/`
+    const response = await fetch(url, {
+      headers: {
+        accept: 'application/json',
+        cookie: `sessionid=${sessionId}`,
+        referer: `${MOJO_BASE_URL}/`,
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (response.ok) {
+      const data = await response.json()
+      // Try various phone fields
+      return data.phone || data.phone_number || data.mobile || data.cell ||
+             data.primary_phone || data.phone1 || ''
     }
-    throw new Error(`Mojo API returned HTTP ${response.status}: ${response.statusText}`)
-  }
-
-  const data = await response.json()
-  const rawBytes = JSON.stringify(data).length
-  log(`Response received (${rawBytes} bytes)`)
-
-  return data
-}
-
-// ── Generate weekly chunks between two dates ────────────────────────
-function generateWeeklyChunks(startDate, endDate) {
-  const chunks = []
-  let current = new Date(startDate + 'T00:00:00Z')
-  const end = new Date(endDate + 'T00:00:00Z')
-
-  while (current < end) {
-    const chunkStart = current.toISOString().split('T')[0]
-    const nextWeek = new Date(current)
-    nextWeek.setDate(nextWeek.getDate() + 7)
-    const chunkEnd = nextWeek > end ? endDate : nextWeek.toISOString().split('T')[0]
-
-    chunks.push({ start: chunkStart, end: chunkEnd })
-    current = nextWeek
-  }
-
-  return chunks
+  } catch {}
+  return ''
 }
 
 // ── POST a batch to CRM ─────────────────────────────────────────────
@@ -286,7 +198,6 @@ async function postBatchToCRM(calls, batchNumber, totalBatches) {
   return result
 }
 
-// ── Sleep helper ────────────────────────────────────────────────────
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -298,99 +209,103 @@ async function main() {
   log('='.repeat(60))
 
   const sessionId = getSessionId()
-  const startDate = getCliDate('--start', DEFAULT_START)
-  const endDate = getCliDate('--end', DEFAULT_END)
+  const startDate = getCliArg('--start', DEFAULT_START)
+  const endDate = getCliArg('--end', DEFAULT_END)
+  const minDuration = parseInt(getCliArg('--min-duration', '0'))
 
   log(`Session ID: ${sessionId.substring(0, 12)}...`)
   log(`Date range: ${startDate} to ${endDate}`)
+  if (minDuration > 0) log(`Min duration filter: ${minDuration}s`)
 
-  let allCalls = []
+  // ── Fetch all recordings ────────────────────────────────────────
+  const url =
+    `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/` +
+    `?agents=[-1]&date_range=custom&from=${startDate}&to=${endDate}`
 
-  // ── Strategy 1: Full range in one request ─────────────────────────
-  log('')
-  log('Strategy 1: Fetching full date range in one request...')
-  try {
-    const data = await fetchMojoRecords(sessionId, startDate, endDate)
-    const parsed = parseCallRecords(data)
-    log(`Strategy 1 returned ${parsed.length} call records`)
+  log(`Fetching: ${url}`)
+  const response = await fetch(url, {
+    headers: {
+      accept: 'application/json',
+      cookie: `sessionid=${sessionId}`,
+      referer: `${MOJO_BASE_URL}/`,
+      'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+    },
+    signal: AbortSignal.timeout(60000),
+  })
 
-    if (parsed.length > 0) {
-      allCalls = parsed
-    }
-  } catch (err) {
-    logError('Strategy 1 failed', err)
-    // If session expired, bail immediately
-    if (err.message && err.message.includes('Session expired')) {
-      log('Cannot proceed without a valid session. Exiting.')
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      log('Session expired. Re-extract session and retry.')
       process.exit(1)
     }
+    throw new Error(`Mojo API returned HTTP ${response.status}: ${response.statusText}`)
   }
 
-  // ── Strategy 2: Weekly chunks (fallback) ──────────────────────────
+  const data = await response.json()
+  let allCalls = parseRecordings(data)
+  log(`Fetched ${allCalls.length} total recordings`)
+
+  // ── Apply duration filter ─────────────────────────────────────────
+  if (minDuration > 0) {
+    const before = allCalls.length
+    allCalls = allCalls.filter(c => c.call_duration >= minDuration)
+    log(`After duration filter (>=${minDuration}s): ${allCalls.length} calls (filtered ${before - allCalls.length})`)
+  }
+
+  // ── Duration stats ────────────────────────────────────────────────
+  const over1min = allCalls.filter(c => c.call_duration >= 60).length
+  const over5min = allCalls.filter(c => c.call_duration >= 300).length
+  const over10min = allCalls.filter(c => c.call_duration >= 600).length
+  log(`Duration breakdown: ${over1min} >= 1min, ${over5min} >= 5min, ${over10min} >= 10min`)
+
+  // ── Disposition stats ─────────────────────────────────────────────
+  const dispositions = {}
+  for (const c of allCalls) {
+    dispositions[c.disposition] = (dispositions[c.disposition] || 0) + 1
+  }
+  log(`Dispositions: ${JSON.stringify(dispositions)}`)
+
   if (allCalls.length === 0) {
-    log('')
-    log('Strategy 2: Falling back to weekly chunks...')
-    const chunks = generateWeeklyChunks(startDate, endDate)
-    log(`Generated ${chunks.length} weekly chunks`)
-
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i]
-      log(`  Chunk ${i + 1}/${chunks.length}: ${chunk.start} to ${chunk.end}`)
-
-      try {
-        const data = await fetchMojoRecords(sessionId, chunk.start, chunk.end)
-        const parsed = parseCallRecords(data)
-        log(`  → ${parsed.length} records`)
-        allCalls.push(...parsed)
-      } catch (err) {
-        logError(`  Chunk ${i + 1} failed`, err)
-        if (err.message && err.message.includes('Session expired')) {
-          log('Session expired during chunked fetch. Exiting.')
-          process.exit(1)
-        }
-      }
-
-      // Throttle between chunk requests
-      if (i < chunks.length - 1) {
-        await sleep(DELAY_BETWEEN_FETCHES_MS)
-      }
-    }
-  }
-
-  // ── Deduplicate by record_id ──────────────────────────────────────
-  const seen = new Set()
-  const uniqueCalls = []
-  for (const call of allCalls) {
-    if (!seen.has(call.record_id)) {
-      seen.add(call.record_id)
-      uniqueCalls.push(call)
-    }
-  }
-
-  log('')
-  log(`Total raw records: ${allCalls.length}`)
-  log(`Unique records (after dedup): ${uniqueCalls.length}`)
-
-  if (uniqueCalls.length === 0) {
-    log('No call records found. Nothing to sync.')
-    log('Backfill complete (0 records).')
+    log('No calls to sync.')
     return
   }
 
-  // ── Sort by call_date ascending so CRM processes in order ─────────
-  uniqueCalls.sort((a, b) => {
+  // ── Sort by date ascending ────────────────────────────────────────
+  allCalls.sort((a, b) => {
     const da = new Date(a.call_date).getTime() || 0
     const db = new Date(b.call_date).getTime() || 0
     return da - db
   })
 
-  log(`Earliest call: ${uniqueCalls[0].call_date}`)
-  log(`Latest call:   ${uniqueCalls[uniqueCalls.length - 1].call_date}`)
+  log(`Earliest: ${allCalls[0].call_date} (${allCalls[0].contact_name})`)
+  log(`Latest:   ${allCalls[allCalls.length - 1].call_date} (${allCalls[allCalls.length - 1].contact_name})`)
 
-  // ── POST to CRM in batches of BATCH_SIZE ──────────────────────────
-  const totalBatches = Math.ceil(uniqueCalls.length / BATCH_SIZE)
+  // ── Enrich with phone numbers from contact details ────────────────
   log('')
-  log(`Syncing ${uniqueCalls.length} calls in ${totalBatches} batches of up to ${BATCH_SIZE}...`)
+  log('Enriching calls with phone numbers from Mojo contacts...')
+  const contactPhoneCache = new Map()
+  let enriched = 0
+  for (const call of allCalls) {
+    if (call.mojo_contact_id && !call.phone_number) {
+      if (contactPhoneCache.has(call.mojo_contact_id)) {
+        call.phone_number = contactPhoneCache.get(call.mojo_contact_id)
+        if (call.phone_number) enriched++
+      } else {
+        const phone = await fetchContactPhone(sessionId, call.mojo_contact_id)
+        contactPhoneCache.set(call.mojo_contact_id, phone)
+        call.phone_number = phone
+        if (phone) enriched++
+        // Throttle contact API calls
+        await sleep(200)
+      }
+    }
+  }
+  log(`Enriched ${enriched}/${allCalls.length} calls with phone numbers (${contactPhoneCache.size} unique contacts)`)
+
+  // ── POST to CRM in batches ────────────────────────────────────────
+  const totalBatches = Math.ceil(allCalls.length / BATCH_SIZE)
+  log('')
+  log(`Syncing ${allCalls.length} calls in ${totalBatches} batches of ${BATCH_SIZE}...`)
 
   let totalProcessed = 0
   let totalCreated = 0
@@ -401,8 +316,8 @@ async function main() {
 
   for (let i = 0; i < totalBatches; i++) {
     const start = i * BATCH_SIZE
-    const end = Math.min(start + BATCH_SIZE, uniqueCalls.length)
-    const batch = uniqueCalls.slice(start, end)
+    const end = Math.min(start + BATCH_SIZE, allCalls.length)
+    const batch = allCalls.slice(start, end)
 
     try {
       const result = await postBatchToCRM(batch, i + 1, totalBatches)
@@ -416,7 +331,6 @@ async function main() {
       batchErrors++
     }
 
-    // Throttle between batches
     if (i < totalBatches - 1) {
       await sleep(DELAY_BETWEEN_BATCHES_MS)
     }
@@ -428,7 +342,7 @@ async function main() {
   log('Backfill Summary')
   log('='.repeat(60))
   log(`Date range:      ${startDate} to ${endDate}`)
-  log(`Total fetched:   ${uniqueCalls.length}`)
+  log(`Total fetched:   ${allCalls.length}`)
   log(`Batches sent:    ${totalBatches} (${batchErrors} failed)`)
   log(`CRM processed:   ${totalProcessed}`)
   log(`  Created:       ${totalCreated}`)
@@ -446,7 +360,6 @@ async function main() {
   log('Backfill complete.')
 }
 
-// ── Run ─────────────────────────────────────────────────────────────
 main().catch((err) => {
   logError('Unexpected fatal error', err)
   process.exit(1)
