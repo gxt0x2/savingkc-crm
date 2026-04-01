@@ -14,6 +14,12 @@ cd "$DEPLOY_DIR"
 echo "Pulling latest from main..." | tee -a "$LOG_FILE"
 git pull origin main 2>&1 | tee -a "$LOG_FILE"
 
+# One-time: ensure MOJO_PASSWORD in .env.local for recording downloads
+if [ -f "$DEPLOY_DIR/.env.local" ] && ! grep -q "MOJO_PASSWORD" "$DEPLOY_DIR/.env.local"; then
+  echo "MOJO_PASSWORD=Onlykillerspickupthephoneandmakecalls" >> "$DEPLOY_DIR/.env.local"
+  echo "Added MOJO_PASSWORD to .env.local" | tee -a "$LOG_FILE"
+fi
+
 # Install deps from lockfile
 echo "Installing dependencies..." | tee -a "$LOG_FILE"
 npm ci --legacy-peer-deps 2>&1 | tee -a "$LOG_FILE"
