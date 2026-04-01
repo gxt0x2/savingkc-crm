@@ -4,7 +4,7 @@ import twilio from 'twilio'
 import { isOptedOut, handleOptOut, handleOptIn, isStopKeyword, isStartKeyword } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
-import { onCommunicationEvent } from '@/lib/manifest-sync'
+import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -248,7 +248,7 @@ export async function POST(req: Request) {
       })
     }
 
-    // ── Unknown number — create lead so nothing gets lost ──
+    // ── Unknown number — create lead + manifest so nothing gets lost ──
     if (!lead) {
       const { data: newLead } = await supabase.from('leads').insert({
         full_name: `SMS Lead (${from})`,
@@ -264,6 +264,11 @@ export async function POST(req: Request) {
           .update({ lead_id: newLead.id })
           .eq('metadata->>message_sid', messageSid)
           .is('lead_id', null)
+
+        // Auto-create manifest + sync the inbound SMS event
+        ensureManifestExists(newLead.id).then(() => {
+          onCommunicationEvent(newLead.id, { type: 'inbound_sms', content: messageBody }).catch(() => {})
+        }).catch(() => {})
       }
     }
 

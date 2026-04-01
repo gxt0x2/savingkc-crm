@@ -6,6 +6,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from './manifest-builder'
+import { buildManifest } from './manifest-builder'
 
 function getSupabase() {
   return createClient(
@@ -197,8 +198,14 @@ export async function onCommunicationEvent(
     content?: string
   },
 ): Promise<void> {
-  const row = await getManifestForLead(leadId)
-  if (!row) return
+  let row = await getManifestForLead(leadId)
+
+  // Auto-create manifest if one doesn't exist yet
+  if (!row) {
+    await ensureManifestExists(leadId)
+    row = await getManifestForLead(leadId)
+    if (!row) return // Still no manifest (lead might not exist)
+  }
 
   const { manifest } = row
   if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
@@ -246,4 +253,63 @@ export async function onCommunicationEvent(
   }
 
   await saveManifest(row.rowId, manifest)
+}
+
+/**
+ * Ensure a manifest exists for a lead. Creates one if missing.
+ * Call this when new leads are created from inbound SMS, missed calls, YES replies,
+ * or any other source that doesn't go through /api/book or /api/manifests POST.
+ */
+export async function ensureManifestExists(leadId: string): Promise<string | null> {
+  const supabase = getSupabase()
+
+  // Check if manifest already exists
+  const { data: existing } = await supabase
+    .from('manifests')
+    .select('id')
+    .eq('lead_id', leadId)
+    .limit(1)
+    .single()
+
+  if (existing) return existing.id
+
+  // Fetch the lead to build a manifest
+  const { data: lead } = await supabase
+    .from('leads')
+    .select('id, full_name, phone, email, property_address, city, state, zip, station, priority, source')
+    .eq('id', leadId)
+    .single()
+
+  if (!lead) return null
+
+  const nameParts = (lead.full_name || 'Unknown').split(' ')
+  const manifest = buildManifest({
+    firstName: nameParts[0] || 'Unknown',
+    lastName: nameParts.slice(1).join(' ') || undefined,
+    phone: lead.phone || undefined,
+    email: lead.email || undefined,
+    propertyAddress: lead.property_address || undefined,
+    leadId: lead.id,
+    station: lead.station || 'intake',
+    priority: lead.priority === 'hot' ? 'hot' : lead.priority === 'high' ? 'warm' : 'cold',
+    source: lead.source || 'inbound',
+  })
+
+  const { data: inserted, error } = await supabase
+    .from('manifests')
+    .insert({
+      lead_id: leadId,
+      manifest,
+      current_station: manifest.currentStation,
+      priority: manifest.priority,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error('Failed to auto-create manifest for lead', leadId, error)
+    return null
+  }
+
+  return inserted?.id || null
 }

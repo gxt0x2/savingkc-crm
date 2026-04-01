@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
-import { onCommunicationEvent } from '@/lib/manifest-sync'
+import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -150,7 +150,30 @@ export async function POST(req: Request) {
           }
         })
       } else if (!leadId) {
-        // Unknown caller missed call — send generic text + ALERT AGENTS
+        // Unknown caller missed call — CREATE LEAD + MANIFEST, send text, alert agents
+        const { data: newLead } = await supabase.from('leads').insert({
+          full_name: `Missed Call (${from})`,
+          phone: from,
+          source: 'inbound_call',
+          station: 'intake',
+          priority: 'hot',
+        }).select('id').single()
+
+        const newLeadId = newLead?.id || null
+
+        // Re-link the already-logged call activity to the new lead
+        if (newLeadId) {
+          await supabase.from('lead_activities')
+            .update({ lead_id: newLeadId })
+            .eq('metadata->>callSid', callSid)
+            .is('lead_id', null)
+
+          // Auto-create manifest + sync missed call signal
+          ensureManifestExists(newLeadId).then(() => {
+            onCommunicationEvent(newLeadId, { type: 'missed_call' }).catch(() => {})
+          }).catch(() => {})
+        }
+
         const unknownSmsBody = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`
         const unknownReplyFrom = to || TWILIO_PHONE
         const unknownOptedOut = await isOptedOut(from)
@@ -159,7 +182,7 @@ export async function POST(req: Request) {
           try {
             await twilio.messages.create({ body: unknownSmsBody, from: unknownReplyFrom, to: from })
             await supabase.from('lead_activities').insert({
-              lead_id: null,
+              lead_id: newLeadId,
               activity_type: 'sms',
               description: unknownSmsBody,
               agent: 'System',
@@ -169,19 +192,21 @@ export async function POST(req: Request) {
         }
 
         // Alert both agents about unknown caller
-        const agentAlert = `📞 Missed call from unknown number ${from}. Auto-text sent. Watch for YES reply.`
+        const agentAlert = `📞 Missed call from unknown number ${from}. Auto-text sent. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
         await Promise.allSettled([
           twilio.messages.create({ body: agentAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
           twilio.messages.create({ body: agentAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
         ])
 
-        // Briefing event for unknown missed call
+        // Briefing event for unknown missed call (now with lead_id)
         try {
           await supabase.from('ari_briefing_events').insert({
             event_type: 'missed_call',
             priority: 'high',
             title: `Missed call from unknown: ${from}`,
             description: `Unknown caller, auto-text sent. Watch for YES reply.`,
+            lead_id: newLeadId,
+            action_url: newLeadId ? `/leads/${newLeadId}` : undefined,
           })
         } catch {}
       }
