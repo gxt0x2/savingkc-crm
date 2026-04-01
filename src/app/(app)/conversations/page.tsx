@@ -222,7 +222,7 @@ export default function ConversationsPage() {
         .from('lead_activities')
         .select('id, lead_id, activity_type, description, agent, metadata, created_at')
         .is('lead_id', null)
-        .in('activity_type', ['call', 'sms'])
+        .in('activity_type', ['call', 'sms', 'voicemail'])
         .order('created_at', { ascending: false })
         .limit(50)
       const unmatched = (unmatchedData || []) as unknown as ActivityRow[]

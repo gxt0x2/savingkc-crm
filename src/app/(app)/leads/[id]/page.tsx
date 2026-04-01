@@ -846,17 +846,19 @@ export default function LeadDetailPage() {
         }
       }
 
-      // Check for recording URL in call activities
-      if (a.activity_type === 'call' && a.metadata) {
+      // Check for recording URL in call/voicemail activities
+      if ((a.activity_type === 'call' || a.activity_type === 'voicemail') && a.metadata) {
         recordingUrl = (a.metadata.recordingUrl || a.metadata.recording_url || a.metadata.RecordingUrl) as string | undefined
       }
 
       const typeMap: Record<string, string> = {
         sms: 'SMS',
         call: 'Phone call',
+        voicemail: 'Voicemail',
         email: 'Email',
         note: 'Agent Note',
         agent_note: 'Agent Note',
+        task: 'Task',
         appointment: 'Appointment',
         contract_sent: 'Contract Sent',
         letter_tracking: 'Mail',
@@ -1131,7 +1133,7 @@ export default function LeadDetailPage() {
                       <div>
                         <p className="text-xs font-bold text-on-surface-variant uppercase mb-2">Type</p>
                         <div className="flex flex-wrap gap-2">
-                          {(['all', 'call', 'sms', 'email', 'note', 'appointment'] as const).map((filter) => (
+                          {(['all', 'call', 'voicemail', 'sms', 'email', 'task', 'note', 'appointment'] as const).map((filter) => (
                             <button
                               key={filter}
                               onClick={() => setActivityTypeFilter(filter)}

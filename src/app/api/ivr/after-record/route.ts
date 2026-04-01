@@ -66,13 +66,25 @@ export async function POST(req: Request) {
     })
   }
 
-  // Text the right person based on office hours
+  // Text the right person based on office hours + alert both
   const primaryRecipient = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
+  const secondaryRecipient = isOfficeHours() ? ERNEST_PHONE : CASEY_PHONE
   const primaryName = isOfficeHours() ? 'Casey' : 'Ernest'
   const urgentMsg = `[URGENT] INBOUND SELLER — ${from}. Just called in. Recording: ${recordingUrl}\nCall back NOW.`
-  try {
-    await twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: primaryRecipient })
-  } catch (e) { console.error('Alert text failed:', e) }
+  await Promise.allSettled([
+    twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: primaryRecipient }),
+    twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: secondaryRecipient }),
+  ])
+  // Log the alert
+  if (leadId) {
+    await supabase.from('lead_activities').insert({
+      lead_id: leadId,
+      activity_type: 'sms',
+      description: urgentMsg,
+      agent: 'System',
+      metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'ivr_press1_alert' },
+    }).catch(() => {})
+  }
 
   // Create 3-min callback task for Casey
   const due3min = new Date(Date.now() + 3 * 60 * 1000).toISOString()

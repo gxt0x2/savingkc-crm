@@ -104,6 +104,8 @@ export function TelephonyBar() {
     }
   }, [initDevice])
 
+  const callStartRef = useRef<number>(0)
+
   async function makeCall() {
     if (!deviceRef.current || !dialNumber.trim()) return
     setStatusLogged('calling')
@@ -115,8 +117,25 @@ export function TelephonyBar() {
         params: { To: dialNumber.trim() },
       })
       callRef.current = call
+      callStartRef.current = Date.now()
       setStatusLogged('on_call')
-      call.on('disconnect', () => { callRef.current = null; setStatusLogged('ready'); setMuted(false) })
+
+      // Log call started
+      fetch('/api/call-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: dialNumber.trim(), event: 'started', agent: 'Ernest' }),
+      }).catch(() => {})
+
+      call.on('disconnect', () => {
+        const duration = Math.round((Date.now() - callStartRef.current) / 1000)
+        fetch('/api/call-log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: dialNumber.trim(), event: 'ended', duration, agent: 'Ernest' }),
+        }).catch(() => {})
+        callRef.current = null; setStatusLogged('ready'); setMuted(false)
+      })
       call.on('cancel', () => { callRef.current = null; setStatusLogged('ready'); setMuted(false) })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

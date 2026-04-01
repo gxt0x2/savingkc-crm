@@ -38,8 +38,39 @@ export async function POST(req: Request) {
 
   const from = url.searchParams.get('from') || ''
 
-  // Send text-back if we have a number and it's not a team member
   if (from && !from.includes('anonymous') && !from.includes('blocked') && !TEAM_NUMBERS.has(from)) {
+    // Find or create lead so the call isn't orphaned
+    let noInputLeadId: string | null = null
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('phone', from)
+      .limit(1)
+      .single()
+
+    if (existingLead?.id) {
+      noInputLeadId = existingLead.id
+    } else {
+      const { data: newLead } = await supabase.from('leads').insert({
+        full_name: `Caller (${from})`,
+        phone: from,
+        source: 'inbound_ivr_no_input',
+        station: 'intake',
+        priority: 'normal',
+      }).select('id').single()
+      noInputLeadId = newLead?.id || null
+    }
+
+    // Log the original inbound call (was missing before)
+    await supabase.from('lead_activities').insert({
+      lead_id: noInputLeadId,
+      activity_type: 'call',
+      description: `Inbound call from ${from} — no IVR input, auto-text sent`,
+      agent: 'System',
+      metadata: { direction: 'inbound', from, tag: 'ivr_no_input' }
+    })
+
+    // Send text-back
     const optedOut = await isOptedOut(from)
     const { allowed: phoneAllowed } = phoneRateLimit(from)
     if (!optedOut && phoneAllowed) {
@@ -47,6 +78,7 @@ export async function POST(req: Request) {
       try {
         await twilio.messages.create({ body: msg, from: TWILIO_PHONE, to: from })
         await supabase.from('lead_activities').insert({
+          lead_id: noInputLeadId,
           activity_type: 'sms',
           description: msg,
           agent: 'System',

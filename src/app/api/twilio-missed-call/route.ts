@@ -144,7 +144,7 @@ export async function POST(req: Request) {
           }
         })
       } else if (!leadId) {
-        // Unknown caller missed call — send generic text
+        // Unknown caller missed call — send generic text + ALERT AGENTS
         const unknownSmsBody = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`
         const unknownOptedOut = await isOptedOut(from)
         const { allowed: unknownPhoneAllowed } = phoneRateLimit(from)
@@ -160,6 +160,21 @@ export async function POST(req: Request) {
             })
           } catch (e) { console.error('Unknown caller text failed:', e) }
         }
+
+        // Alert both agents about unknown caller
+        const agentAlert = `📞 Missed call from unknown number ${from}. Auto-text sent. Watch for YES reply.`
+        await Promise.allSettled([
+          twilio.messages.create({ body: agentAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
+          twilio.messages.create({ body: agentAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
+        ])
+
+        // Briefing event for unknown missed call
+        await supabase.from('ari_briefing_events').insert({
+          event_type: 'missed_call',
+          priority: 'high',
+          title: `Missed call from unknown: ${from}`,
+          description: `Unknown caller, auto-text sent. Watch for YES reply.`,
+        }).catch(() => {})
       }
     }
 

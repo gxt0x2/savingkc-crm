@@ -29,20 +29,43 @@ export async function POST(req: Request) {
   }
 
   if (digit === '2') {
-    // PRESS 2 — EVERYTHING ELSE: log and route to Casey
+    // PRESS 2 — EVERYTHING ELSE: find/create lead, log, route to Casey
+    let press2LeadId = ''
     if (from) {
+      // Try to match existing lead
+      const { data: existingLead } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('phone', from)
+        .limit(1)
+        .single()
+
+      if (existingLead?.id) {
+        press2LeadId = existingLead.id
+      } else {
+        const { data: newLead } = await supabase.from('leads').insert({
+          full_name: `Caller (${from})`,
+          phone: from,
+          source: 'inbound_ivr_press2',
+          station: 'intake',
+          priority: 'normal',
+        }).select('id').single()
+        press2LeadId = newLead?.id || ''
+      }
+
       await supabase.from('lead_activities').insert({
+        lead_id: press2LeadId || null,
         activity_type: 'call',
         description: `Inbound call (Press 2 — non-seller) from ${from}`,
         agent: 'System',
-        metadata: { direction: 'inbound', from, callSid, tag: 'non_seller', needs_review: true }
+        metadata: { direction: 'inbound', from, callSid, tag: 'non_seller' }
       })
     }
 
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-fallback?from=${encodeURIComponent(from)}" method="POST" timeout="20" callerId="${CASEY_COMPANY}">
-    <Number url="${BASE_URL}/api/ivr/whisper?type=non_seller&amp;from=${encodeURIComponent(from)}">${CASEY_PHONE}</Number>
+  <Dial action="${BASE_URL}/api/ivr/dial-fallback?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(press2LeadId)}" method="POST" timeout="20" callerId="${CASEY_COMPANY}">
+    <Number url="${BASE_URL}/api/ivr/whisper?type=non_seller&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(press2LeadId)}">${CASEY_PHONE}</Number>
   </Dial>
 </Response>`
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })

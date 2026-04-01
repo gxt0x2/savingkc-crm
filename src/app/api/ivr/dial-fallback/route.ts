@@ -6,6 +6,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 export async function POST(req: Request) {
   const url = new URL(req.url)
   const from = url.searchParams.get('from') || ''
+  const leadId = url.searchParams.get('leadId') || ''
 
   const body = await req.formData()
   const dialStatus = body.get('DialCallStatus') as string
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
   // Casey didn't answer — route to Casey's voicemail
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Redirect method="POST">${BASE_URL}/api/ivr/voicemail?agent=Casey&amp;from=${encodeURIComponent(from)}</Redirect>
+  <Redirect method="POST">${BASE_URL}/api/ivr/voicemail?agent=Casey&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}</Redirect>
 </Response>`
 
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })

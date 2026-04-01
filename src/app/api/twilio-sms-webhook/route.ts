@@ -20,6 +20,13 @@ const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
+function isOfficeHours(): boolean {
+  const now = new Date()
+  const cst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }))
+  const hour = cst.getHours()
+  return hour >= 9 && hour < 17
+}
+
 // Team numbers — never trigger auto-reply flows for these
 const TEAM_NUMBERS = new Set([
   '+18167564943', // Casey personal
@@ -142,14 +149,28 @@ export async function POST(req: Request) {
           .eq('id', yesLeadId)
       }
 
-      // Alert Casey — URGENT
-      await twilioClient.messages.create({
-        body: `🔥 HOT: ${leadName !== 'Unknown' ? leadName : from} replied YES to sell. Call NOW.${yesLeadId ? ' ' + BASE_URL + '/leads/' + yesLeadId : ''}`,
-        from: TWILIO_PHONE,
-        to: CASEY_PHONE,
-      }).catch(e => console.error('Casey alert failed:', e))
+      // Alert BOTH agents — primary based on office hours
+      const yesAlertBody = `🔥 HOT: ${leadName !== 'Unknown' ? leadName : from} replied YES to sell. Call NOW.${yesLeadId ? ' ' + BASE_URL + '/leads/' + yesLeadId : ''}`
+      const primaryAgent = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
+      const secondaryAgent = isOfficeHours() ? ERNEST_PHONE : CASEY_PHONE
+      await Promise.allSettled([
+        twilioClient.messages.create({ body: yesAlertBody, from: TWILIO_PHONE, to: primaryAgent }),
+        twilioClient.messages.create({ body: yesAlertBody, from: TWILIO_PHONE, to: secondaryAgent }),
+      ])
+
+      // Log the alert SMS
+      if (yesLeadId) {
+        await supabase.from('lead_activities').insert({
+          lead_id: yesLeadId,
+          activity_type: 'sms',
+          description: yesAlertBody,
+          agent: 'System',
+          metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'yes_reply_alert' },
+        }).catch(() => {})
+      }
 
       // Create callback task + Ari briefing event
+      const primaryName = isOfficeHours() ? 'Casey' : 'Ernest'
       if (yesLeadId) {
         await supabase.from('lead_activities').insert({
           lead_id: yesLeadId,
@@ -159,7 +180,7 @@ export async function POST(req: Request) {
           metadata: {
             task_type: 'callback',
             due_date: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-            assigned_to: 'Casey',
+            assigned_to: primaryName,
             priority: 'critical',
             status: 'pending',
           },
@@ -201,18 +222,25 @@ export async function POST(req: Request) {
       })
     }
 
-    // ── Known hot lead replies (any message from a hot lead = alert Casey) ──
+    // ── Known hot lead replies (any message = alert BOTH agents) ──
     if (lead && lead.priority === 'hot') {
-      await twilioClient.messages.create({
-        body: `📩 ${leadName} (hot lead) just texted: "${messageBody.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`,
-        from: TWILIO_PHONE,
-        to: CASEY_PHONE,
-      }).catch(e => console.error('Hot lead alert failed:', e))
+      const hotAlertBody = `📩 ${leadName} (hot lead) just texted: "${messageBody.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`
+      await Promise.allSettled([
+        twilioClient.messages.create({ body: hotAlertBody, from: TWILIO_PHONE, to: CASEY_PHONE }),
+        twilioClient.messages.create({ body: hotAlertBody, from: TWILIO_PHONE, to: ERNEST_PHONE }),
+      ])
+      // Log the alert
+      await supabase.from('lead_activities').insert({
+        lead_id: leadId,
+        activity_type: 'sms',
+        description: hotAlertBody,
+        agent: 'System',
+        metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'hot_lead_reply_alert' },
+      }).catch(() => {})
     }
 
-    // ── Unknown number with substance (not just "ok" or emoji) ──
-    if (!lead && messageBody.trim().length > 5) {
-      // Create a lead for tracking
+    // ── Unknown number — create lead so nothing gets lost ──
+    if (!lead) {
       const { data: newLead } = await supabase.from('leads').insert({
         full_name: `SMS Lead (${from})`,
         phone: from,
@@ -222,13 +250,11 @@ export async function POST(req: Request) {
       }).select('id').single()
 
       if (newLead?.id) {
-        await supabase.from('lead_activities').insert({
-          lead_id: newLead.id,
-          activity_type: 'sms',
-          description: messageBody,
-          agent: 'system',
-          metadata: { direction: 'received', from, to, message_sid: messageSid },
-        })
+        // Re-link the already-logged SMS to the new lead
+        await supabase.from('lead_activities')
+          .update({ lead_id: newLead.id })
+          .eq('metadata->>message_sid', messageSid)
+          .is('lead_id', null)
       }
     }
 

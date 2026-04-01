@@ -56,6 +56,16 @@ export async function POST(req: Request) {
     const ernestMsg = `🚨 ESCALATION — Inbound seller ${from} called in, Casey missed it. Call back NOW.\n${BASE_URL}/leads/${leadId}`
     try {
       await twilio.messages.create({ body: ernestMsg, from: TWILIO_PHONE, to: ERNEST_PHONE })
+      // Log escalation
+      if (leadId) {
+        await supabase.from('lead_activities').insert({
+          lead_id: leadId,
+          activity_type: 'sms',
+          description: ernestMsg,
+          agent: 'System',
+          metadata: { direction: 'outbound_alert', to: 'Ernest', trigger: 'escalation_casey_missed' },
+        }).catch(() => {})
+      }
     } catch (e) { console.error('Ernest escalation text failed:', e) }
   }
   // After hours: Ernest was already primary — Ari will text seller at 10 min (handled by task)
