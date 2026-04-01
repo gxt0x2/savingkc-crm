@@ -741,14 +741,15 @@ export default function LeadDetailPage() {
               </a>
             )}
             {lead.email && (
-              <button
-                onClick={() => { navigator.clipboard.writeText(lead.email!); alert('Email copied!') }}
-                className="flex items-center gap-1.5 px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded-full text-sm font-bold transition-colors cursor-pointer"
-                title="Click to copy email"
+              <a
+                href={`https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(lead.email)}&su=${encodeURIComponent(`${formattedName || 'Your'} Property – Saving KC`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded-full text-sm font-bold transition-colors"
               >
                 <Icon name="mail" size="text-sm" />
                 {lead.email}
-              </button>
+              </a>
             )}
           </div>
         </div>
