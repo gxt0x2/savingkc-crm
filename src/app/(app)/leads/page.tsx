@@ -249,13 +249,14 @@ export default function LeadsPage() {
     if (!window.confirm(`Delete ${count} lead${count !== 1 ? 's' : ''}? This cannot be undone.`)) return
     setBulkLoading(true)
     try {
-      const supabase = createClient()
       const ids = Array.from(selectedIds)
-      const { error } = await supabase
-        .from('leads')
-        .delete()
-        .in('id', ids)
-      if (error) throw error
+      const res = await fetch('/api/leads', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error(data.error || 'Delete failed')
       showFeedback(`Deleted ${ids.length} lead${ids.length !== 1 ? 's' : ''}`)
       setSelectedIds(new Set())
       fetchLeads()
@@ -307,6 +308,26 @@ export default function LeadsPage() {
     e.stopPropagation()
     if (!email) return
     window.location.href = `mailto:${email}`
+  }
+
+  const AVATAR_COLORS = [
+    'bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500',
+    'bg-rose-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-teal-500',
+    'bg-pink-500', 'bg-orange-500',
+  ]
+
+  function getInitials(name: string | null): string {
+    if (!name) return '?'
+    const parts = name.trim().split(/\s+/)
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    return (parts[0][0] || '?').toUpperCase()
+  }
+
+  function getAvatarColor(name: string | null): string {
+    if (!name) return AVATAR_COLORS[0]
+    let hash = 0
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
   }
 
   const hasActiveFilters = filterStage.length > 0 || filterTemp.length > 0 || filterSource.length > 0
@@ -524,8 +545,13 @@ export default function LeadsPage() {
                         className="rounded border-slate-300 cursor-pointer"
                       />
                     </td>
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      {toProperCase(lead.full_name) || '--'}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${getAvatarColor(lead.full_name)}`}>
+                          {getInitials(lead.full_name)}
+                        </span>
+                        <span className="font-medium text-slate-900">{toProperCase(lead.full_name) || '--'}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell">
                       {(() => {

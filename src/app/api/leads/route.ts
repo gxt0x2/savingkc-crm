@@ -14,7 +14,7 @@ const twilioClient = twilio(
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
@@ -64,6 +64,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, leadId: data.id }, { headers: corsHeaders })
   } catch (err) {
     console.error('leads route error:', err)
+    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500, headers: corsHeaders })
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { ids } = body
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ success: false, error: 'ids array required' }, { status: 400, headers: corsHeaders })
+    }
+
+    const { error } = await supabase
+      .from('leads')
+      .delete()
+      .in('id', ids)
+
+    if (error) {
+      console.error('Supabase delete error:', error)
+      return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+    }
+
+    return NextResponse.json({ success: true, deleted: ids.length }, { headers: corsHeaders })
+  } catch (err) {
+    console.error('leads DELETE error:', err)
     return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500, headers: corsHeaders })
   }
 }
