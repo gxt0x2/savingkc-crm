@@ -3,7 +3,7 @@ import { readFileSync } from 'fs'
 import path from 'path'
 
 const DEPLOY_LOG = path.join(process.env.HOME || '/root', 'savingkc-crm/deploy.log')
-const DEPLOY_VERSION = '2026-04-01-cron'
+const DEPLOY_VERSION = '2026-04-01-v2'
 
 // GET — check deploy status (reads last 5 lines of deploy.log)
 export async function GET() {
