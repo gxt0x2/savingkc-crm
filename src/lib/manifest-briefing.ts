@@ -222,13 +222,71 @@ export function buildManifestBriefingPrompt(
     }
   }
 
-  // ── Communication history (from manifest transcripts) ──
+  // ── Communication history (from manifest transcripts — Mojo call analysis) ──
   if (manifest.communications?.transcripts?.length) {
-    const recent = manifest.communications.transcripts.slice(-3)
-    sections.push(`\nCALL TRANSCRIPTS: ${manifest.communications.transcripts.length} calls logged`)
+    const allTranscripts = manifest.communications.transcripts
+    const recent = allTranscripts.slice(-5)
+    sections.push(`\nCALL TRANSCRIPTS: ${allTranscripts.length} calls logged, showing last ${recent.length}`)
+
     for (const t of recent) {
-      const summary = t.aiSummary || t.agentNotes || `${t.duration}s call with ${t.agent}`
-      sections.push(`  [${t.date}] ${summary}`)
+      const header = `[${t.date}] ${t.duration}s call with ${t.agent}`
+      sections.push(`\n  ${header}`)
+
+      // AI summary
+      if (t.aiSummary) {
+        sections.push(`  Summary: ${t.aiSummary}`)
+      }
+
+      // Agent notes from the call
+      if (t.agentNotes) {
+        sections.push(`  Agent notes: ${t.agentNotes}`)
+      }
+
+      // Extracted intelligence from call analysis
+      const ex = t.extractedData
+      if (ex) {
+        if (ex.motivationScore !== undefined && ex.motivationScore !== null) {
+          sections.push(`  Call motivation score: ${ex.motivationScore}/10`)
+        }
+        if (ex.sentiment) sections.push(`  Sentiment: ${ex.sentiment}`)
+        if (ex.rapportLevel) sections.push(`  Rapport: ${ex.rapportLevel}`)
+        if (ex.talkRatio !== undefined && ex.talkRatio !== null) {
+          sections.push(`  Talk ratio (agent/seller): ${Math.round(ex.talkRatio * 100)}%/${Math.round((1 - ex.talkRatio) * 100)}%`)
+        }
+
+        // Verbatim quotes from the seller — these are gold for briefings
+        if (ex.verbatimQuotes?.length) {
+          sections.push(`  SELLER QUOTES:`)
+          for (const q of ex.verbatimQuotes.slice(0, 5)) {
+            sections.push(`    "${q}"`)
+          }
+        }
+
+        // Objections they raised
+        if (ex.objectionResponses?.length) {
+          sections.push(`  OBJECTIONS RAISED:`)
+          for (const obj of ex.objectionResponses.slice(0, 3)) {
+            sections.push(`    - ${obj}`)
+          }
+        }
+
+        // Concession signals — signs they're ready to deal
+        if (ex.concessionSignals?.length) {
+          sections.push(`  CONCESSION SIGNALS:`)
+          for (const sig of ex.concessionSignals.slice(0, 3)) {
+            sections.push(`    + ${sig}`)
+          }
+        }
+      }
+
+      // Full transcript (truncated — include enough for context)
+      if (t.fullTranscript) {
+        const truncated = t.fullTranscript.length > 2000
+          ? t.fullTranscript.slice(0, 2000) + '... [truncated]'
+          : t.fullTranscript
+        sections.push(`  FULL TRANSCRIPT:`)
+        sections.push(`  ${truncated}`)
+      }
     }
   }
 
@@ -329,12 +387,25 @@ export function buildManifestBriefingPrompt(
       }
     }
 
-    // Voicemails
+    // Voicemails (recording URLs included — not yet transcribed)
     if (voicemails.length) {
       sections.push(`\nVOICEMAILS (${voicemails.length}):`)
       for (const v of voicemails.slice(-3)) {
         const time = new Date(v.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-        sections.push(`  [${time}] ${v.description?.slice(0, 200)}`)
+        const recording = v.metadata?.recordingUrl ? ` [has recording]` : ''
+        sections.push(`  [${time}] ${v.description?.slice(0, 200)}${recording}`)
+      }
+    }
+
+    // IVR recordings (inbound caller recordings — not transcribed yet)
+    const ivrRecordings = activities.filter(a =>
+      a.activity_type === 'call' && a.metadata?.recordingUrl
+    )
+    if (ivrRecordings.length) {
+      sections.push(`\nINBOUND RECORDINGS (${ivrRecordings.length} calls with recordings — audio not transcribed):`)
+      for (const r of ivrRecordings.slice(-3)) {
+        const time = new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        sections.push(`  [${time}] ${r.description?.slice(0, 150)}`)
       }
     }
 
