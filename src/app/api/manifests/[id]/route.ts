@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from '@/lib/manifest-builder'
+import { deepMerge } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -64,22 +65,23 @@ export async function PATCH(
 
     const currentManifest = existing.manifest as ManifestV2
 
-    // Merge updates into manifest
-    const updatedManifest: ManifestV2 = {
-      ...currentManifest,
-      ...updates,
-      lastUpdated: new Date().toISOString(),
-      lastUpdatedBy: updates.agent || 'system',
-      auditTrail: [
-        ...(currentManifest.auditTrail || []),
-        {
-          timestamp: new Date().toISOString(),
-          agent: updates.agent || 'system',
-          action: updates.action || 'manifest_updated',
-          details: updates.details,
-        },
-      ],
-    }
+    // Deep merge updates into manifest (preserves nested sibling keys)
+    const { agent: _agent, action: _action, details: _details, ...manifestUpdates } = updates
+    const updatedManifest: ManifestV2 = deepMerge(currentManifest, manifestUpdates)
+    updatedManifest.lastUpdated = new Date().toISOString()
+    updatedManifest.lastUpdatedBy = updates.agent || 'system'
+    updatedManifest.auditTrail = [
+      ...(currentManifest.auditTrail || []),
+      {
+        timestamp: new Date().toISOString(),
+        agent: updates.agent || 'system',
+        action: updates.action || 'manifest_updated',
+        details: updates.details,
+      },
+    ]
+    // Mark briefing stale on any manifest update
+    if (!updatedManifest.ariIntelligence) updatedManifest.ariIntelligence = {}
+    updatedManifest.ariIntelligence.briefingStale = true
 
     // Update in Supabase
     const { data, error } = await supabase

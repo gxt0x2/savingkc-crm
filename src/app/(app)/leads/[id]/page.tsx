@@ -569,13 +569,22 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
     )
   }
 
+  const m = manifest
+  const tierColor: Record<string, string> = {
+    cream: 'bg-yellow-500/20 text-yellow-300',
+    hot: 'bg-red-500/20 text-red-300',
+    warm: 'bg-orange-500/20 text-orange-300',
+    cool: 'bg-cyan-500/20 text-cyan-300',
+    dead: 'bg-slate-500/20 text-slate-400',
+  }
+
   return (
     <div className="bg-[#1B2A4A] rounded-2xl p-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Icon name="description" className="!text-lg text-amber-400" />
           <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
-            Lead Manifest V{manifest.version}
+            Lead Manifest V{m.version}
           </h2>
         </div>
         <button
@@ -588,80 +597,207 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
 
       {showRaw ? (
         <pre className="text-[10px] text-slate-300 bg-black/30 p-3 rounded-lg overflow-x-auto max-h-96 overflow-y-auto">
-          {JSON.stringify(manifest, null, 2)}
+          {JSON.stringify(m, null, 2)}
         </pre>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 uppercase font-bold">ID:</span>
-            <span className="text-xs text-white font-mono">{manifest.manifestId}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 uppercase font-bold">Station:</span>
+          {/* ── Header badges ── */}
+          <div className="flex flex-wrap items-center gap-2">
             <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs font-bold">
-              {manifest.currentStation}
+              {m.currentStation}
             </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 uppercase font-bold">Priority:</span>
             <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-              manifest.priority === 'hot' ? 'bg-red-500/20 text-red-300' :
-              manifest.priority === 'warm' ? 'bg-orange-500/20 text-orange-300' :
+              m.priority === 'hot' ? 'bg-red-500/20 text-red-300' :
+              m.priority === 'warm' ? 'bg-orange-500/20 text-orange-300' :
               'bg-blue-500/20 text-blue-300'
             }`}>
-              {manifest.priority}
+              {m.priority}
             </span>
-          </div>
-
-          {manifest.tier && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 uppercase font-bold">Tier:</span>
-              <span className="text-xs text-white font-bold">{manifest.tier}</span>
-            </div>
-          )}
-
-          {manifest.owner && (
-          <div className="border-t border-white/10 pt-3">
-            <p className="text-xs text-slate-500 uppercase font-bold mb-2">Owner:</p>
-            <p className="text-sm text-white">{manifest.owner.fullName}</p>
-            {manifest.owner.phones?.length > 0 && (
-              <p className="text-xs text-slate-400">{manifest.owner.phones[0]}</p>
+            {m.tier && (
+              <span className={`px-2 py-0.5 rounded text-xs font-bold ${tierColor[m.tier] || 'bg-slate-500/20 text-slate-300'}`}>
+                {m.tier}
+              </span>
+            )}
+            {m.qualificationScore && (
+              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded text-xs font-bold">
+                Score: {m.qualificationScore}
+              </span>
+            )}
+            {m.owner?.deceased && (
+              <span className="px-2 py-0.5 bg-red-500/30 text-red-300 rounded text-xs font-bold">DECEASED</span>
+            )}
+            {m.owner?.outOfState && (
+              <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded text-xs font-bold">OUT OF STATE</span>
             )}
           </div>
-          )}
 
-          {manifest.booking?.scheduledDate && (
+          {/* ── Owner ── */}
+          {m.owner && (
             <div className="border-t border-white/10 pt-3">
-              <p className="text-xs text-slate-500 uppercase font-bold mb-2">Booking:</p>
-              <p className="text-sm text-white">
-                {manifest.booking.scheduledDate} at {manifest.booking.scheduledTime}
-              </p>
-              <p className="text-xs text-slate-400 capitalize">{manifest.booking.type}</p>
+              <p className="text-xs text-slate-500 uppercase font-bold mb-1">Owner</p>
+              <p className="text-sm text-white font-medium">{m.owner.fullName}</p>
+              {m.owner.phones?.length > 0 && <p className="text-xs text-slate-400">{m.owner.phones.join(', ')}</p>}
+              {m.owner.emails?.length > 0 && <p className="text-xs text-slate-400">{m.owner.emails.join(', ')}</p>}
+              {m.owner.contactPreference && <p className="text-[10px] text-slate-500">Prefers: {m.owner.contactPreference}</p>}
+              {m.owner.personalityType && <p className="text-[10px] text-slate-500">Personality: {m.owner.personalityType}</p>}
+              {m.owner.coOwners?.length > 0 && <p className="text-[10px] text-slate-500">Co-owners: {m.owner.coOwners.join(', ')}</p>}
             </div>
           )}
 
-          {manifest.situation?.type?.length > 0 && (
+          {/* ── Property details ── */}
+          {m.property?.dwelling && (m.property.dwelling.sqft || m.property.dwelling.bedrooms || m.property.dwelling.yearBuilt) && (
             <div className="border-t border-white/10 pt-3">
-              <p className="text-xs text-slate-500 uppercase font-bold mb-2">Situation:</p>
-              <div className="flex flex-wrap gap-1">
-                {manifest.situation.type.map((t: string) => (
-                  <span key={t} className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded text-xs">
-                    {t}
-                  </span>
-                ))}
+              <p className="text-xs text-slate-500 uppercase font-bold mb-1">Property</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                {m.property.dwelling.bedrooms && <p className="text-slate-300"><span className="text-slate-500">Beds:</span> {m.property.dwelling.bedrooms}</p>}
+                {m.property.dwelling.bathrooms && <p className="text-slate-300"><span className="text-slate-500">Baths:</span> {m.property.dwelling.bathrooms}</p>}
+                {m.property.dwelling.sqft && <p className="text-slate-300"><span className="text-slate-500">Sqft:</span> {m.property.dwelling.sqft.toLocaleString()}</p>}
+                {m.property.dwelling.yearBuilt && <p className="text-slate-300"><span className="text-slate-500">Built:</span> {m.property.dwelling.yearBuilt}</p>}
+                {m.property.dwelling.propertyType && <p className="text-slate-300"><span className="text-slate-500">Type:</span> {m.property.dwelling.propertyType}</p>}
+                {m.property.dwelling.roofType && <p className="text-slate-300"><span className="text-slate-500">Roof:</span> {m.property.dwelling.roofType}</p>}
+                {m.property.dwelling.hvac && <p className="text-slate-300"><span className="text-slate-500">HVAC:</span> {m.property.dwelling.hvac}</p>}
+                {m.property.dwelling.basement && <p className="text-slate-300"><span className="text-slate-500">Basement:</span> {m.property.dwelling.basement}</p>}
+                {m.property.dwelling.exterior && <p className="text-slate-300"><span className="text-slate-500">Exterior:</span> {m.property.dwelling.exterior}</p>}
+                {m.property.dwelling.garageSize && <p className="text-slate-300"><span className="text-slate-500">Garage:</span> {m.property.dwelling.garageSize}-car</p>}
+              </div>
+              {m.property.vacant && <p className="text-xs text-amber-400 mt-1 font-bold">VACANT</p>}
+              {m.property.occupancy && <p className="text-[10px] text-slate-500">Occupancy: {m.property.occupancy}</p>}
+            </div>
+          )}
+
+          {/* ── Condition ── */}
+          {m.property?.condition?.overall && (
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs text-slate-500 uppercase font-bold mb-1">Condition</p>
+              <p className={`text-xs font-bold ${
+                m.property.condition.overall === 'poor' || m.property.condition.overall === 'uninhabitable' ? 'text-red-400' :
+                m.property.condition.overall === 'fair' ? 'text-amber-400' : 'text-green-400'
+              }`}>{m.property.condition.overall}</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] mt-1">
+                {m.property.condition.roof && <p className="text-slate-400">Roof: {m.property.condition.roof}</p>}
+                {m.property.condition.hvac && <p className="text-slate-400">HVAC: {m.property.condition.hvac}</p>}
+                {m.property.condition.foundation && <p className="text-slate-400">Foundation: {m.property.condition.foundation}</p>}
+                {m.property.condition.electrical && <p className="text-slate-400">Electrical: {m.property.condition.electrical}</p>}
+                {m.property.condition.plumbing && <p className="text-slate-400">Plumbing: {m.property.condition.plumbing}</p>}
+              </div>
+              {m.property.condition.notes && <p className="text-[10px] text-slate-500 mt-1">{m.property.condition.notes}</p>}
+            </div>
+          )}
+
+          {/* ── Assessment & Tax ── */}
+          {(m.property?.assessment?.totalValue || m.property?.assessment?.appraisedTotal || m.property?.taxCollector?.totalOwed) && (
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs text-slate-500 uppercase font-bold mb-1">Assessment & Tax</p>
+              <div className="space-y-1 text-xs">
+                {(m.property.assessment?.appraisedTotal || m.property.assessment?.totalValue) && (
+                  <p className="text-white font-medium">
+                    Appraised: ${(m.property.assessment.appraisedTotal || m.property.assessment.totalValue || 0).toLocaleString()}
+                  </p>
+                )}
+                {m.property.assessment?.landValue && (
+                  <p className="text-slate-400">Land: ${m.property.assessment.landValue.toLocaleString()}</p>
+                )}
+                {m.property.assessment?.improvementValue && (
+                  <p className="text-slate-400">Improvements: ${m.property.assessment.improvementValue.toLocaleString()}</p>
+                )}
+                {m.property.taxCollector?.totalOwed && (
+                  <p className="text-red-400 font-bold">Tax owed: ${m.property.taxCollector.totalOwed.toLocaleString()}</p>
+                )}
+                {m.property.taxCollector?.delinquentAmount && (
+                  <p className="text-red-400">Delinquent: ${m.property.taxCollector.delinquentAmount.toLocaleString()}</p>
+                )}
+                {m.property.taxCollector?.yearsDelinquent && (
+                  <p className="text-red-400 text-[10px]">{m.property.taxCollector.yearsDelinquent} years delinquent</p>
+                )}
+                {m.property.taxCollector?.taxStatus && (
+                  <p className="text-[10px] text-slate-500">Status: {m.property.taxCollector.taxStatus}</p>
+                )}
               </div>
             </div>
           )}
 
+          {/* ── Financials ── */}
+          {m.financials && (m.financials.arv || m.financials.as_is_value || m.financials.offer_amount || m.financials.mortgage_balance) && (
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs text-slate-500 uppercase font-bold mb-1">Financials</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                {m.financials.arv && <p className="text-green-400"><span className="text-slate-500">ARV:</span> ${m.financials.arv.toLocaleString()}</p>}
+                {m.financials.as_is_value && <p className="text-slate-300"><span className="text-slate-500">As-is:</span> ${m.financials.as_is_value.toLocaleString()}</p>}
+                {m.financials.repair_estimate && <p className="text-amber-400"><span className="text-slate-500">Repairs:</span> ${m.financials.repair_estimate.toLocaleString()}</p>}
+                {m.financials.mortgage_balance && <p className="text-slate-300"><span className="text-slate-500">Mortgage:</span> ${m.financials.mortgage_balance.toLocaleString()}</p>}
+                {m.financials.offer_amount && <p className="text-emerald-400 font-bold"><span className="text-slate-500">Offer:</span> ${m.financials.offer_amount.toLocaleString()}</p>}
+                {m.financials.equity && <p className="text-white"><span className="text-slate-500">Equity:</span> ${m.financials.equity.toLocaleString()}</p>}
+              </div>
+            </div>
+          )}
+
+          {/* ── Flags ── */}
+          {(m.flags?.redFlags?.length > 0 || m.flags?.opportunityFlags?.length > 0) && (
+            <div className="border-t border-white/10 pt-3">
+              {m.flags.redFlags?.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-1">
+                  {m.flags.redFlags.map((f: string) => (
+                    <span key={f} className="px-2 py-0.5 bg-red-500/20 text-red-300 rounded text-[10px] font-bold">{f}</span>
+                  ))}
+                </div>
+              )}
+              {m.flags.opportunityFlags?.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {m.flags.opportunityFlags.map((f: string) => (
+                    <span key={f} className="px-2 py-0.5 bg-green-500/20 text-green-300 rounded text-[10px] font-bold">{f}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Situation tags ── */}
+          {m.situation?.type?.length > 0 && (
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs text-slate-500 uppercase font-bold mb-1">Situation</p>
+              <div className="flex flex-wrap gap-1">
+                {m.situation.type.map((t: string) => (
+                  <span key={t} className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded text-xs">{t}</span>
+                ))}
+              </div>
+              {m.situation.summary && <p className="text-[10px] text-slate-400 mt-1">{m.situation.summary}</p>}
+              {m.situation.motivation?.primary && (
+                <p className="text-[10px] text-slate-400 mt-1">Motivation: {m.situation.motivation.primary}</p>
+              )}
+              {m.situation.motivation?.signals?.length > 0 && (
+                <p className="text-[10px] text-amber-400 mt-1">Signals: {m.situation.motivation.signals.join(', ')}</p>
+              )}
+            </div>
+          )}
+
+          {/* ── Booking ── */}
+          {m.booking?.scheduledDate && (
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs text-slate-500 uppercase font-bold mb-1">Booking</p>
+              <p className="text-sm text-white">
+                {m.booking.scheduledDate} at {m.booking.scheduledTime}
+              </p>
+              <p className="text-xs text-slate-400 capitalize">{m.booking.type}</p>
+            </div>
+          )}
+
+          {/* ── Contacts ── */}
+          {m.contacts?.length > 0 && (
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs text-slate-500 uppercase font-bold mb-1">Contacts</p>
+              {m.contacts.map((c: any, i: number) => (
+                <p key={i} className="text-[10px] text-slate-400">{c.name} ({c.role}){c.phone ? ` — ${c.phone}` : ''}</p>
+              ))}
+            </div>
+          )}
+
+          {/* ── Timestamps ── */}
           <div className="border-t border-white/10 pt-3">
+            <p className="text-[9px] text-slate-500 font-mono">{m.manifestId}</p>
             <p className="text-[9px] text-slate-500">
-              Created: {new Date(manifest.created).toLocaleDateString()}
+              Created: {new Date(m.created).toLocaleDateString()} | Updated: {new Date(m.lastUpdated).toLocaleDateString()}
             </p>
-            <p className="text-[9px] text-slate-500">
-              Updated: {new Date(manifest.lastUpdated).toLocaleDateString()}
-            </p>
+            {m.source && <p className="text-[9px] text-slate-500">Source: {m.source}</p>}
           </div>
         </div>
       )}

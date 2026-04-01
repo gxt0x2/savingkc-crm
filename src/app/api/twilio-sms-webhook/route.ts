@@ -4,6 +4,7 @@ import twilio from 'twilio'
 import { isOptedOut, handleOptOut, handleOptIn, isStopKeyword, isStartKeyword } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
+import { onCommunicationEvent } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -118,6 +119,10 @@ export async function POST(req: Request) {
       },
     })
 
+    // Sync to manifest (fire-and-forget)
+    if (leadId) {
+      onCommunicationEvent(leadId, { type: 'inbound_sms', content: messageBody }).catch(() => {})
+    }
 
     // ── Skip auto-reply for team numbers ────────────────────
     if (TEAM_NUMBERS.has(from)) {
@@ -195,6 +200,9 @@ export async function POST(req: Request) {
           lead_id: yesLeadId,
           action_url: `/leads/${yesLeadId}`,
         })
+
+        // Sync YES reply to manifest (high-intent signal)
+        onCommunicationEvent(yesLeadId, { type: 'yes_reply', content: messageBody }).catch(() => {})
       }
 
       // Reply to seller

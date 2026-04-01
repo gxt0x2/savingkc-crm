@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from '@/lib/manifest-builder'
-import { buildManifestBriefingPrompt, type BriefingResult } from '@/lib/manifest-briefing'
+import { buildManifestBriefingPrompt, type BriefingResult, type ActivityRow } from '@/lib/manifest-briefing'
+import { detectDeceasedSignals } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,8 +53,10 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Generate fresh briefing
-    const result = await generateBriefing(manifest, manifestId)
+    // Generate fresh briefing (with activity hydration)
+    const leadId = manifestRow.lead_id
+    const activities = leadId ? await fetchRecentActivities(leadId) : []
+    const result = await generateBriefing(manifest, manifestId, activities, leadId)
     return NextResponse.json({ ...result, cached: false })
   } catch (error) {
     console.error('GET briefing error:', error)
@@ -86,7 +89,9 @@ export async function POST(request: Request) {
       }
 
       const manifest = manifestRow.manifest as ManifestV2
-      const result = await generateBriefing(manifest, body.manifestId)
+      const leadId = manifestRow.lead_id
+      const activities = leadId ? await fetchRecentActivities(leadId) : []
+      const result = await generateBriefing(manifest, body.manifestId, activities, leadId)
       return NextResponse.json({ ...result, cached: false })
     }
 
@@ -109,35 +114,70 @@ export async function POST(request: Request) {
   }
 }
 
-// Generate briefing from manifest and save to DB
+/**
+ * Fetch recent activities for a lead from lead_activities.
+ * This is the key hydration step — brings in SMS, calls, notes, appointments,
+ * ghost protocol status, etc. that endpoints log but don't sync to manifests.
+ */
+async function fetchRecentActivities(leadId: string): Promise<ActivityRow[]> {
+  const { data } = await supabase
+    .from('lead_activities')
+    .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: true })
+    .limit(100)
+
+  return (data || []) as ActivityRow[]
+}
+
+// Generate briefing from manifest + activities and save to DB
 async function generateBriefing(
   manifest: ManifestV2,
-  manifestId: string
+  manifestId: string,
+  activities: ActivityRow[],
+  leadId?: string,
 ): Promise<BriefingResult> {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
     throw new Error('GROQ_API_KEY not configured')
   }
 
-  // Build rich prompt
-  const prompt = buildManifestBriefingPrompt(manifest)
+  // Auto-detect deceased from activity content before building prompt
+  if (leadId && !manifest.owner.deceased) {
+    const allText = activities
+      .map(a => a.description || '')
+      .join(' ')
+    if (detectDeceasedSignals(allText)) {
+      manifest.owner.deceased = true
+      if (!manifest.situation.type.includes('inherited')) {
+        manifest.situation.type.push('inherited')
+      }
+      if (!manifest.flags.opportunityFlags) manifest.flags.opportunityFlags = []
+      if (!manifest.flags.opportunityFlags.includes('deceased_owner')) {
+        manifest.flags.opportunityFlags.push('deceased_owner')
+      }
+    }
+  }
+
+  // Build rich prompt with live activity data
+  const prompt = buildManifestBriefingPrompt(manifest, activities)
 
   // Determine data sources used
   const dataSources: string[] = []
-  if (manifest.communications?.transcripts?.length) {
-    dataSources.push('transcripts')
-  }
-  if (manifest.agentNotes?.length) {
-    dataSources.push('agent_notes')
-  }
-  if (manifest.ariIntelligence?.dealIntelligence) {
-    dataSources.push('deal_math')
-  }
+  if (manifest.communications?.transcripts?.length) dataSources.push('transcripts')
+  if (manifest.agentNotes?.length) dataSources.push('agent_notes')
+  if (manifest.ariIntelligence?.dealIntelligence) dataSources.push('deal_math')
   if (manifest.property.assessment || manifest.property.taxCollector || manifest.property.dwelling) {
     dataSources.push('enrichment')
   }
+  if (activities.length) dataSources.push('lead_activities')
 
-  // Call Llama 3.3 70B via Groq (free tier, fast)
+  const smsCount = activities.filter(a => a.activity_type === 'sms').length
+  const callCount = activities.filter(a => a.activity_type === 'call').length
+  if (smsCount) dataSources.push(`${smsCount}_sms`)
+  if (callCount) dataSources.push(`${callCount}_calls`)
+
+  // Call Llama 3.3 70B via Groq
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -147,19 +187,19 @@ async function generateBriefing(
     body: JSON.stringify({
       model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 1000,
+      max_tokens: 1200,
       temperature: 0.7,
     }),
   })
 
   if (!res.ok) {
-    throw new Error(`OpenRouter API error: ${res.status}`)
+    throw new Error(`Groq API error: ${res.status}`)
   }
 
   const data = await res.json()
   const content = data.choices?.[0]?.message?.content || ''
 
-  // Parse JSON from response — handle various Groq/LLM wrapping quirks
+  // Parse JSON from response
   let briefing: BriefingResult
   const tryParseJSON = (str: string): any => {
     try { return JSON.parse(str) } catch { return null }
@@ -167,18 +207,15 @@ async function generateBriefing(
   const extractBriefing = (obj: any): BriefingResult | null => {
     if (!obj || typeof obj !== 'object') return null
     if (obj.situation && (obj.motivation || obj.strategy)) return obj
-    // Check if values are nested JSON strings
     const s = typeof obj.situation === 'string' ? tryParseJSON(obj.situation) : null
     if (s && s.situation) return s
     return null
   }
 
   try {
-    // First try: direct parse of content
     let parsed = tryParseJSON(content)
     let extracted = parsed ? extractBriefing(parsed) : null
 
-    // Second try: extract JSON block
     if (!extracted) {
       const jsonMatch = content.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
@@ -187,7 +224,6 @@ async function generateBriefing(
       }
     }
 
-    // Third try: the situation field itself might be the full briefing JSON
     if (!extracted && parsed?.situation) {
       const inner = tryParseJSON(parsed.situation)
       if (inner) extracted = extractBriefing(inner)
@@ -232,7 +268,7 @@ async function generateBriefing(
         timestamp: new Date().toISOString(),
         agent: 'system:ari',
         action: 'briefing_generated',
-        details: { dataSources },
+        details: { dataSources, activityCount: activities.length },
       },
     ],
   }

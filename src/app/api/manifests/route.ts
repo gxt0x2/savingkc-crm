@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { buildManifest, type BuildManifestInput } from '@/lib/manifest-builder'
+import { buildManifest, type BuildManifestInput, type ManifestV2 } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
 
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
 
           // Update manifest object with score and tier
           manifest.qualificationScore = score
-          manifest.tier = tier as any
+          manifest.tier = tier as ManifestV2['tier']
 
           // Update manifest in Supabase
           const { error: updateError } = await supabase

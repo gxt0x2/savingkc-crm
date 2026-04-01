@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
+import { onCommunicationEvent } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,9 +58,10 @@ export async function POST(req: Request) {
       })
     }
 
-    // Auto-advance pipeline on outbound call
+    // Auto-advance pipeline on outbound call + sync to manifest
     if (leadId && event === 'started') {
       checkAutoAdvance(leadId, 'outbound_contact').catch(() => {})
+      onCommunicationEvent(leadId, { type: 'outbound_call' }).catch(() => {})
     }
 
     return NextResponse.json({ success: true, leadId })

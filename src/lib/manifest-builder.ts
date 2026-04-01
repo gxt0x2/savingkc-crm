@@ -265,7 +265,7 @@ export interface ManifestV2 {
   source: string
   currentStation: string
   priority: 'hot' | 'warm' | 'cold'
-  tier?: 'A' | 'B' | 'C' | 'D'
+  tier?: 'cream' | 'hot' | 'warm' | 'cool' | 'dead'
   qualificationScore?: number
   owner: ManifestOwner
   situation: ManifestSituation

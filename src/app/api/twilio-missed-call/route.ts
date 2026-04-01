@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
+import { onCommunicationEvent } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -100,6 +101,10 @@ export async function POST(req: Request) {
         lead_id: leadId,
         action_url: `/leads/${leadId}`
       })
+
+      // Sync to manifest (stale briefing + motivation signal)
+      const eventType = (callStatus === 'no-answer' || callStatus === 'busy') ? 'missed_call' : 'inbound_call'
+      onCommunicationEvent(leadId, { type: eventType as any }).catch(() => {})
     }
 
     // Missed call specific handling (no-answer or busy)

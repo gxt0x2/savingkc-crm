@@ -740,7 +740,7 @@ export async function POST(req: NextRequest) {
               // Score manifest
               const { score, tier } = scoreManifest(manifest)
               manifest.qualificationScore = score
-              manifest.tier = tier as any
+              manifest.tier = tier as ManifestV2['tier']
 
               // Update manifest in database
               await supabase
