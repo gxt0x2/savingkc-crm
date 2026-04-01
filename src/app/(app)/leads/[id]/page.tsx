@@ -741,13 +741,14 @@ export default function LeadDetailPage() {
               </a>
             )}
             {lead.email && (
-              <a
-                href={`mailto:${lead.email}`}
-                className="flex items-center gap-1.5 px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded-full text-sm font-bold transition-colors"
+              <button
+                onClick={() => { navigator.clipboard.writeText(lead.email!); alert('Email copied!') }}
+                className="flex items-center gap-1.5 px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded-full text-sm font-bold transition-colors cursor-pointer"
+                title="Click to copy email"
               >
                 <Icon name="mail" size="text-sm" />
                 {lead.email}
-              </a>
+              </button>
             )}
           </div>
         </div>
