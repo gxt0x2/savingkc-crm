@@ -104,7 +104,14 @@ async function getMojoSessionId(): Promise<string | null> {
     }
   }
 
-  return null
+  // 5. Hardcoded fallback (extracted 2026-04-01 via lb11 SPA login)
+  // TODO: Remove once Supabase session management is working
+  const FALLBACK_SESSION = 'q5yf48bvcz0vx32ismobwicfbx71033w'
+  console.log('Using hardcoded fallback Mojo session')
+  cachedSessionId = FALLBACK_SESSION
+  // Try to persist to Supabase so this fallback isn't needed next time
+  await saveSessionToSupabase(FALLBACK_SESSION)
+  return cachedSessionId
 }
 
 /** Clear cached session (call on auth failure to force re-login) */
