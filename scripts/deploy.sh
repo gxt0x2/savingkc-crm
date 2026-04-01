@@ -18,12 +18,16 @@ git pull origin main 2>&1 | tee -a "$LOG_FILE"
 echo "Installing dependencies..." | tee -a "$LOG_FILE"
 npm install --legacy-peer-deps 2>&1 | tee -a "$LOG_FILE"
 
+# Stop PM2 before build so it doesn't crash-loop while .next is being rebuilt
+echo "Stopping PM2..." | tee -a "$LOG_FILE"
+pm2 stop savingkc-crm 2>&1 | tee -a "$LOG_FILE" || true
+
 # Build
 echo "Building..." | tee -a "$LOG_FILE"
 npm run build 2>&1 | tee -a "$LOG_FILE"
 
-# Restart
-echo "Restarting PM2..." | tee -a "$LOG_FILE"
-pm2 restart savingkc-crm --update-env 2>&1 | tee -a "$LOG_FILE"
+# Start PM2
+echo "Starting PM2..." | tee -a "$LOG_FILE"
+pm2 start savingkc-crm --update-env 2>&1 | tee -a "$LOG_FILE"
 
 echo "=== Deploy complete: $(date) ===" | tee -a "$LOG_FILE"
