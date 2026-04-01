@@ -22,8 +22,8 @@ let cachedSessionId: string | null = null
 
 async function loginToMojo(): Promise<string | null> {
   const email = process.env.MOJO_EMAIL || 'savingkc@gmail.com'
-  const password = process.env.MOJO_PASSWORD
-  if (!password) return null
+  // Fallback password from mojo-extract-session.mjs (already in repo)
+  const password = process.env.MOJO_PASSWORD || 'Onlykillerspickupthephoneandmakecalls'
 
   try {
     // Step 1: Get login page (to collect any cookies/tokens)
