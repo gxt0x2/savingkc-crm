@@ -9,6 +9,8 @@ const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWI
 
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
 const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
+const CASEY_COMPANY = '+18167277667'
+const ERNEST_COMPANY = '+18166088588'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
@@ -110,13 +112,14 @@ export async function POST(req: Request) {
     }).eq('id', leadId)
   }
 
-  // Route based on office hours
+  // Route based on office hours — caller ID shows the agent's company number
   const primaryPhone = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
   const primaryLabel = isOfficeHours() ? 'Casey' : 'Ernest'
+  const primaryCompanyNumber = isOfficeHours() ? CASEY_COMPANY : ERNEST_COMPANY
 
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${leadId || ''}&amp;primary=${encodeURIComponent(primaryLabel)}" method="POST" timeout="15" callerId="${TWILIO_PHONE}">
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${leadId || ''}&amp;primary=${encodeURIComponent(primaryLabel)}" method="POST" timeout="15" callerId="${primaryCompanyNumber}">
     <Number url="${BASE_URL}/api/ivr/whisper?type=seller&amp;from=${encodeURIComponent(from)}&amp;leadId=${leadId || ''}">${primaryPhone}</Number>
   </Dial>
 </Response>`
