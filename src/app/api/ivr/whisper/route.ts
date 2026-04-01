@@ -1,0 +1,80 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+function formatPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 11 && digits.startsWith('1')) {
+    const area = digits.slice(1, 4)
+    const prefix = digits.slice(4, 7)
+    const line = digits.slice(7)
+    return `${area}, ${prefix}, ${line}`
+  }
+  if (digits.length === 10) {
+    return `${digits.slice(0, 3)}, ${digits.slice(3, 6)}, ${digits.slice(6)}`
+  }
+  return digits.split('').join(', ')
+}
+
+export async function POST(req: Request) {
+  const url = new URL(req.url)
+  const from = url.searchParams.get('from') || ''
+  const leadId = url.searchParams.get('leadId') || ''
+  const type = url.searchParams.get('type') || 'call' // seller | non_seller | call
+
+  let name = ''
+  let address = ''
+
+  // Try to get lead info — by ID first, then by phone
+  if (leadId) {
+    const { data } = await supabase
+      .from('leads')
+      .select('full_name, property_address')
+      .eq('id', leadId)
+      .single()
+    if (data) {
+      if (data.full_name && data.full_name !== 'Inbound Seller') name = data.full_name
+      if (data.property_address) address = data.property_address
+    }
+  } else if (from) {
+    const { data } = await supabase
+      .from('leads')
+      .select('full_name, property_address')
+      .eq('phone', from)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    if (data) {
+      if (data.full_name && data.full_name !== 'Inbound Seller') name = data.full_name
+      if (data.property_address) address = data.property_address
+    }
+  }
+
+  // Build brief whisper
+  const parts: string[] = []
+
+  if (type === 'seller') {
+    parts.push('Inbound seller')
+  } else if (type === 'non_seller') {
+    parts.push('Inbound call')
+  } else {
+    parts.push('Incoming call')
+  }
+
+  if (name) parts.push(name)
+  if (address) parts.push(address)
+  if (from) parts.push(formatPhone(from))
+
+  const whisper = parts.join('. ') + '.'
+
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Matthew" rate="fast">${whisper}</Say>
+</Response>`
+
+  return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+}

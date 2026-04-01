@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial action="${BASE_URL}/api/ivr/dial-fallback?from=${encodeURIComponent(from)}" method="POST" timeout="20">
-    <Number>${CASEY_PHONE}</Number>
+    <Number url="${BASE_URL}/api/ivr/whisper?type=non_seller&amp;from=${encodeURIComponent(from)}">${CASEY_PHONE}</Number>
   </Dial>
 </Response>`
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
