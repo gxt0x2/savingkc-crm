@@ -87,6 +87,30 @@ export async function POST(req: Request) {
         })
       } catch (e) { console.error('No-input text-back failed:', e) }
     }
+
+    // Alert agents about missed IVR caller
+    const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
+    const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
+    const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+    const noInputAlert = `📞 Inbound call from ${from} — no IVR input. Auto-text sent.${noInputLeadId ? ' ' + BASE_URL + '/leads/' + noInputLeadId : ''}`
+    await Promise.allSettled([
+      twilio.messages.create({ body: noInputAlert, from: calledNumber, to: CASEY_PHONE }),
+      twilio.messages.create({ body: noInputAlert, from: calledNumber, to: ERNEST_PHONE }),
+    ])
+
+    // Ari briefing event
+    if (noInputLeadId) {
+      try {
+        await supabase.from('ari_briefing_events').insert({
+          event_type: 'ivr_no_input',
+          priority: 'medium',
+          title: `Inbound call — no IVR input: ${from}`,
+          description: `Caller didn't press any option. Auto-text sent. Watch for YES reply.`,
+          lead_id: noInputLeadId,
+          action_url: `/leads/${noInputLeadId}`,
+        })
+      } catch {}
+    }
   }
 
   return new NextResponse('<Response><Hangup /></Response>', { headers: { 'Content-Type': 'text/xml' } })

@@ -248,31 +248,88 @@ export async function POST(req: Request) {
       })
     }
 
-    // ── Unknown number — create lead + manifest so nothing gets lost ──
+    // ── Unknown number — full automation: lead, manifest, alerts, auto-reply, task ──
     if (!lead) {
       const { data: newLead } = await supabase.from('leads').insert({
         full_name: `SMS Lead (${from})`,
         phone: from,
         source: 'inbound_sms',
         station: 'intake',
-        priority: 'normal',
+        priority: 'warm',
       }).select('id').single()
 
-      if (newLead?.id) {
+      const newLeadId = newLead?.id || null
+
+      if (newLeadId) {
         // Re-link the already-logged SMS to the new lead
         await supabase.from('lead_activities')
-          .update({ lead_id: newLead.id })
+          .update({ lead_id: newLeadId })
           .eq('metadata->>message_sid', messageSid)
           .is('lead_id', null)
 
         // Auto-create manifest + sync the inbound SMS event
-        ensureManifestExists(newLead.id).then(() => {
-          onCommunicationEvent(newLead.id, { type: 'inbound_sms', content: messageBody }).catch(() => {})
+        ensureManifestExists(newLeadId).then(() => {
+          onCommunicationEvent(newLeadId, { type: 'inbound_sms', content: messageBody }).catch(() => {})
         }).catch(() => {})
+
+        // Alert both agents
+        const smsAlert = `📩 New text from unknown number ${from}: "${messageBody.slice(0, 80)}"${newLeadId ? ' ' + BASE_URL + '/leads/' + newLeadId : ''}`
+        await Promise.allSettled([
+          twilioClient.messages.create({ body: smsAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
+          twilioClient.messages.create({ body: smsAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
+        ])
+
+        // Log the alert
+        await supabase.from('lead_activities').insert({
+          lead_id: newLeadId,
+          activity_type: 'sms',
+          description: smsAlert,
+          agent: 'System',
+          metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'unknown_sms_alert' },
+        })
+
+        // Create callback task
+        const primaryAgent = isOfficeHours() ? 'Casey' : 'Ernest'
+        await supabase.from('lead_activities').insert({
+          lead_id: newLeadId,
+          activity_type: 'task',
+          description: `Follow up: Unknown number ${from} texted "${messageBody.slice(0, 60)}"`,
+          agent: 'System',
+          metadata: {
+            task_type: 'callback',
+            due_date: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+            assigned_to: primaryAgent,
+            priority: 'high',
+            status: 'pending',
+          },
+        })
+
+        // Ari briefing event
+        try {
+          await supabase.from('ari_briefing_events').insert({
+            event_type: 'unknown_sms',
+            priority: 'medium',
+            title: `New text from unknown: ${from}`,
+            description: `Message: "${messageBody.slice(0, 120)}". Lead created, agents notified.`,
+            lead_id: newLeadId,
+            action_url: `/leads/${newLeadId}`,
+          })
+        } catch {}
+      }
+
+      // Auto-reply to unknown sender
+      const optedOut = await isOptedOut(from)
+      const { allowed: phoneOk } = phoneRateLimit(from)
+      if (!optedOut && phoneOk) {
+        const replyFrom = to || TWILIO_PHONE
+        return new NextResponse(
+          `<?xml version="1.0" encoding="UTF-8"?><Response><Message>Thanks for reaching out to Saving KC Homebuyers! Are you looking to sell a property? Reply YES and we'll call you right back.</Message></Response>`,
+          { headers: { 'Content-Type': 'text/xml' } }
+        )
       }
     }
 
-    // No auto-reply for general messages — keep it human
+    // No auto-reply for general messages from known leads — keep it human
     return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
       headers: { 'Content-Type': 'text/xml' },
     })

@@ -66,7 +66,7 @@ export function useCalendarTasks() {
         .from('lead_activities')
         .select('*')
         .in('activity_type', ['task', 'appointment', 'follow_up', 'callback', 'send_offer'])
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: true })
 
       if (activitiesError) throw activitiesError
 
@@ -107,7 +107,7 @@ export function useCalendarTasks() {
           contact_id: row.lead_id,
           deal_id: null,
           property_address: meta.property_address || contact?.address || null,
-          due_date: meta.due_date || row.created_at,
+          due_date: meta.due_date || null,
           assigned_to: meta.assigned_to || null,
           status: (meta.status || 'pending') as any,
           created_at: row.created_at,

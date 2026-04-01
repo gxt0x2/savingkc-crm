@@ -135,6 +135,13 @@ export async function POST(req: Request) {
           } catch (e) { console.error('Missed call SMS failed:', e) }
         }
 
+        // Alert both agents about known lead missed call
+        const missedAlert = `🔥 Missed call from ${leadName} (hot lead). Auto-text sent. Callback in 5 min. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
+        await Promise.allSettled([
+          twilio.messages.create({ body: missedAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
+          twilio.messages.create({ body: missedAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
+        ])
+
         // 5-min callback task
         await supabase.from('lead_activities').insert({
           lead_id: leadId,
