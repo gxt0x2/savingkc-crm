@@ -296,9 +296,9 @@ async function processPhase2Intelligence(
         manifest.property.occupancy = analysisResult.occupancy as ManifestProperty['occupancy']
       }
       if (analysisResult.conditionOverall && !manifest.property.condition) {
-        manifest.property.condition = { overall: analysisResult.conditionOverall }
+        manifest.property.condition = { overall: analysisResult.conditionOverall as NonNullable<ManifestProperty['condition']>['overall'] }
       } else if (analysisResult.conditionOverall && manifest.property.condition && !manifest.property.condition.overall) {
-        manifest.property.condition.overall = analysisResult.conditionOverall
+        manifest.property.condition.overall = analysisResult.conditionOverall as NonNullable<ManifestProperty['condition']>['overall']
       }
       if (analysisResult.repairsNotes && manifest.property.condition) {
         if (!manifest.property.condition.notes) {
