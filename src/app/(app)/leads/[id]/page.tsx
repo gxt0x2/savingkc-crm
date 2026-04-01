@@ -220,6 +220,112 @@ function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPric
   )
 }
 
+// ─── Email Compose Modal ──────────────────────────────────────────────────────
+interface EmailComposeModalProps {
+  leadId: string
+  toEmail: string
+  leadName: string | null
+  onClose: () => void
+  onSent: () => void
+}
+
+function EmailComposeModal({ leadId, toEmail, leadName, onClose, onSent }: EmailComposeModalProps) {
+  const [to, setTo] = useState(toEmail)
+  const [subject, setSubject] = useState(`${toProperCase(leadName) || 'Your'} Property – Saving KC`)
+  const [body, setBody] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSend() {
+    if (!to || !body.trim()) { setError('Recipient and message are required'); return }
+    setSending(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/conversations/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, to, subject, body: body.trim(), mode: 'email', agent: 'User' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Send failed')
+      onSent()
+      onClose()
+    } catch (err: any) {
+      setError(err.message || 'Failed to send email')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-purple-50">
+            <div className="flex items-center gap-2">
+              <Icon name="mail" className="text-purple-600" />
+              <h2 className="text-lg font-bold text-gray-900">Send Email</h2>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+              <Icon name="close" />
+            </button>
+          </div>
+
+          {/* Form */}
+          <div className="px-6 py-4 space-y-3 flex-1">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">To</label>
+              <input
+                type="email"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Subject</label>
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Message</label>
+              <textarea
+                rows={8}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Type your message..."
+                autoFocus
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+              />
+            </div>
+            {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
+            <button onClick={onClose} className="flex-1 border border-gray-300 rounded-lg py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-50 transition-all">
+              Cancel
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={sending || !body.trim()}
+              className="flex-1 bg-purple-600 text-white rounded-lg py-2.5 text-sm font-bold hover:bg-purple-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+            >
+              {sending ? 'Sending...' : <><Icon name="send" size="text-sm" /> Send Email</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ─── Edit Lead Slide-Over ─────────────────────────────────────────────────────
 interface EditLeadPanelProps {
   lead: Lead
@@ -520,6 +626,7 @@ export default function LeadDetailPage() {
   const [editPanelOpen, setEditPanelOpen] = useState(false)
   const [contractModalOpen, setContractModalOpen] = useState(false)
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
+  const [emailModalOpen, setEmailModalOpen] = useState(false)
 
   useEffect(() => {
     async function fetchLead() {
@@ -741,15 +848,13 @@ export default function LeadDetailPage() {
               </a>
             )}
             {lead.email && (
-              <a
-                href={`https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(lead.email)}&su=${encodeURIComponent(`${formattedName || 'Your'} Property – Saving KC`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={() => setEmailModalOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded-full text-sm font-bold transition-colors"
               >
                 <Icon name="mail" size="text-sm" />
                 {lead.email}
-              </a>
+              </button>
             )}
           </div>
         </div>
@@ -949,6 +1054,24 @@ export default function LeadDetailPage() {
       </div>
 
       {/* Modals */}
+      {emailModalOpen && lead.email && (
+        <EmailComposeModal
+          leadId={lead.id}
+          toEmail={lead.email}
+          leadName={lead.full_name}
+          onClose={() => setEmailModalOpen(false)}
+          onSent={() => {
+            const supabase = createClient()
+            supabase
+              .from('lead_activities')
+              .select('id, activity_type, description, agent, metadata, created_at')
+              .eq('lead_id', id)
+              .order('created_at', { ascending: false })
+              .limit(50)
+              .then(({ data }) => { if (data) setActivities(data as ActivityRow[]) })
+          }}
+        />
+      )}
       {editPanelOpen && (
         <EditLeadPanel
           lead={lead}

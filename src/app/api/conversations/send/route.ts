@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
+import { Resend } from 'resend'
 import { isOptedOut } from '@/lib/sms-opt-out'
 
 const supabase = createClient(
@@ -18,9 +19,14 @@ const TWILIO_MESSAGING_SERVICE = process.env.TWILIO_MESSAGING_SERVICE
 
 export async function POST(req: Request) {
   try {
-    const { leadId, phone, body, mode, fromPhone, agent } = await req.json()
+    const json = await req.json()
+    const { leadId, phone, body, mode, fromPhone, agent, to, subject } = json
 
-    if (!phone || !body?.trim()) {
+    if (mode === 'email') {
+      if (!to || !body?.trim()) {
+        return NextResponse.json({ error: 'Missing email recipient or body' }, { status: 400 })
+      }
+    } else if (!phone || !body?.trim()) {
       return NextResponse.json({ error: 'Missing phone or message body' }, { status: 400 })
     }
 
@@ -59,7 +65,21 @@ export async function POST(req: Request) {
     }
 
     if (mode === 'email') {
-      // Log note for now — email send not yet wired
+      const emailSubject = subject || 'Message from Saving KC'
+      let sent = false
+
+      if (process.env.RESEND_API_KEY) {
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'ernest@savingkc.com'
+        await resend.emails.send({
+          from: `Saving KC <${fromEmail}>`,
+          to: [to],
+          subject: emailSubject,
+          text: body.trim(),
+        })
+        sent = true
+      }
+
       await supabase.from('lead_activities').insert({
         lead_id: leadId || null,
         activity_type: 'email',
@@ -67,11 +87,12 @@ export async function POST(req: Request) {
         agent: agent || 'System',
         metadata: {
           direction: 'outbound',
-          to: phone,
-          subject: 'Message from Saving KC',
+          to,
+          subject: emailSubject,
+          sent,
         },
       })
-      return NextResponse.json({ success: true, note: 'Email logged (SMTP not yet configured)' })
+      return NextResponse.json({ success: true, sent })
     }
 
     if (mode === 'call') {
