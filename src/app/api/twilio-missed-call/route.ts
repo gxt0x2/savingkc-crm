@@ -19,6 +19,16 @@ const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 
+// Random delay to make auto-texts feel human (not instant/robotic)
+function randomDelay(minSec: number, maxSec: number): number {
+  return (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
+}
+
+function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
+  const delay = randomDelay(minSec, maxSec)
+  setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
+}
+
 // Internal team numbers — never trigger lead flows for these
 const TEAM_NUMBERS = new Set([
   '+18167564943', // Casey personal
@@ -118,12 +128,12 @@ export async function POST(req: Request) {
         const firstName = leadName.split(' ')[0] || 'there'
         const smsBody = `Hey ${firstName}, this is Ernest with Saving KC — I just missed your call. I'm available now if you'd like to try again, or I can call you back at a better time.`
 
-        // Opt-out + rate limit check before auto-text
+        // Opt-out + rate limit check before auto-text (delayed 45-90s to feel natural)
         const optedOut = await isOptedOut(from)
         const { allowed: phoneAllowed } = phoneRateLimit(from)
         const replyFrom = to || TWILIO_PHONE // Reply from the number they called
         if (!optedOut && phoneAllowed) {
-          try {
+          sendDelayed(async () => {
             await twilio.messages.create({ body: smsBody, from: replyFrom, to: from })
             await supabase.from('lead_activities').insert({
               lead_id: leadId,
@@ -132,7 +142,7 @@ export async function POST(req: Request) {
               agent: 'System',
               metadata: { direction: 'outbound', from: replyFrom, to: from, trigger: 'missed_call_auto' }
             })
-          } catch (e) { console.error('Missed call SMS failed:', e) }
+          }, 45, 90)
         }
 
         // Alert both agents about known lead missed call
@@ -186,7 +196,8 @@ export async function POST(req: Request) {
         const unknownOptedOut = await isOptedOut(from)
         const { allowed: unknownPhoneAllowed } = phoneRateLimit(from)
         if (!unknownOptedOut && unknownPhoneAllowed) {
-          try {
+          // Delayed 60-120s so it doesn't feel robotic
+          sendDelayed(async () => {
             await twilio.messages.create({ body: unknownSmsBody, from: unknownReplyFrom, to: from })
             await supabase.from('lead_activities').insert({
               lead_id: newLeadId,
@@ -195,7 +206,7 @@ export async function POST(req: Request) {
               agent: 'System',
               metadata: { direction: 'outbound', from: unknownReplyFrom, to: from, trigger: 'missed_call_unknown' }
             })
-          } catch (e) { console.error('Unknown caller text failed:', e) }
+          }, 60, 120)
         }
 
         // Alert both agents about unknown caller

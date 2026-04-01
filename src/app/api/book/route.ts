@@ -15,6 +15,12 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN!
 )
 
+// Random delay to make auto-texts feel human
+function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
+  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
+  setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -243,28 +249,25 @@ export async function POST(req: NextRequest) {
     const displayHour = h > 12 ? h - 12 : h === 0 ? 12 : h
     const displayTime = `${displayHour}:${m.toString().padStart(2, '0')} ${period}`
 
-    // Send confirmation SMS to seller
-    try {
+    // Send confirmation SMS to seller (delayed 15-30s to feel natural, not robotic)
+    const confirmationBody = `Hi ${first_name.trim()}! Your call with Saving KC Homebuyers is confirmed for ${formattedDate} at ${displayTime} CT. We'll call you at ${normalizedPhone}. Questions? Call (816) 429-2900.`
+    sendDelayed(async () => {
       await twilioClient.messages.create({
-        body: `Hi ${first_name.trim()}! Your call with Saving KC Homebuyers is confirmed for ${formattedDate} at ${displayTime} CT. We'll call you at ${normalizedPhone}. Questions? Call (816) 429-2900.`,
+        body: confirmationBody,
         from: process.env.TWILIO_PHONE_NUMBER!,
         to: normalizedPhone,
       })
-    } catch (smsErr) {
-      console.error('Failed to send confirmation SMS:', smsErr)
-      // Don't fail the booking if SMS fails
-    }
+    }, 15, 30)
 
-    // Send alert SMS to Casey
-    try {
+    // Send alert SMS to Casey (delayed 30-60s)
+    const alertBody = `📅 New call booked: ${first_name.trim()}${property_address?.trim() ? ` at ${property_address.trim()}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${normalizedPhone}`
+    sendDelayed(async () => {
       await twilioClient.messages.create({
-        body: `📅 New call booked: ${first_name.trim()}${property_address?.trim() ? ` at ${property_address.trim()}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${normalizedPhone}`,
+        body: alertBody,
         from: process.env.TWILIO_PHONE_NUMBER!,
         to: process.env.CASEY_PHONE || '+18167564943',
       })
-    } catch (smsErr) {
-      console.error('Failed to send Casey alert SMS:', smsErr)
-    }
+    }, 30, 60)
 
     return NextResponse.json(
       {

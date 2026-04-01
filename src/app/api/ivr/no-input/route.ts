@@ -12,6 +12,16 @@ const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWI
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 
+// Random delay to make auto-texts feel human
+function randomDelay(minSec: number, maxSec: number): number {
+  return (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
+}
+
+function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
+  const delay = randomDelay(minSec, maxSec)
+  setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
+}
+
 // Internal team numbers — never send auto-texts to these
 const TEAM_NUMBERS = new Set([
   '+18167564943', // Casey personal
@@ -71,12 +81,12 @@ export async function POST(req: Request) {
       metadata: { direction: 'inbound', from, tag: 'ivr_no_input' }
     })
 
-    // Send text-back
+    // Send text-back (delayed 45-90s to feel natural)
     const optedOut = await isOptedOut(from)
     const { allowed: phoneAllowed } = phoneRateLimit(from)
     if (!optedOut && phoneAllowed) {
       const msg = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`
-      try {
+      sendDelayed(async () => {
         await twilio.messages.create({ body: msg, from: calledNumber, to: from })
         await supabase.from('lead_activities').insert({
           lead_id: noInputLeadId,
@@ -85,7 +95,7 @@ export async function POST(req: Request) {
           agent: 'System',
           metadata: { direction: 'outbound', to: from, trigger: 'ivr_no_input', awaiting_yes_reply: true }
         })
-      } catch (e) { console.error('No-input text-back failed:', e) }
+      }, 45, 90)
     }
 
     // Alert agents about missed IVR caller

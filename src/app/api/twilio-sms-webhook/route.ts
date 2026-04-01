@@ -21,6 +21,12 @@ const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
+// Random delay to make auto-texts feel human
+function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
+  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
+  setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
+}
+
 function isOfficeHours(): boolean {
   const now = new Date()
   const cst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }))
@@ -317,15 +323,24 @@ export async function POST(req: Request) {
         } catch {}
       }
 
-      // Auto-reply to unknown sender
+      // Auto-reply to unknown sender (delayed 30-60s to feel natural)
       const optedOut = await isOptedOut(from)
       const { allowed: phoneOk } = phoneRateLimit(from)
       if (!optedOut && phoneOk) {
         const replyFrom = to || TWILIO_PHONE
-        return new NextResponse(
-          `<?xml version="1.0" encoding="UTF-8"?><Response><Message>Thanks for reaching out to Saving KC Homebuyers! Are you looking to sell a property? Reply YES and we'll call you right back.</Message></Response>`,
-          { headers: { 'Content-Type': 'text/xml' } }
-        )
+        const autoReplyMsg = `Thanks for reaching out to Saving KC Homebuyers! Are you looking to sell a property? Reply YES and we'll call you right back.`
+        sendDelayed(async () => {
+          await twilioClient.messages.create({ body: autoReplyMsg, from: replyFrom, to: from })
+          if (newLeadId) {
+            await supabase.from('lead_activities').insert({
+              lead_id: newLeadId,
+              activity_type: 'sms',
+              description: autoReplyMsg,
+              agent: 'System',
+              metadata: { direction: 'outbound', from: replyFrom, to: from, trigger: 'unknown_sms_auto_reply' }
+            })
+          }
+        }, 30, 60)
       }
     }
 
