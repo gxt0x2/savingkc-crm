@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.npm-global/bin:$PATH"
 
 DEPLOY_DIR="$HOME/savingkc-crm"
 LOG_FILE="$DEPLOY_DIR/deploy.log"
