@@ -114,6 +114,20 @@ export interface ManifestBooking {
   confirmedAt?: string
 }
 
+export interface ManifestFinancials {
+  arv?: number               // After-repair value
+  as_is_value?: number       // Current as-is value
+  repair_estimate?: number   // Estimated repair cost
+  asking_price?: number      // What the seller wants
+  offer_amount?: number      // Our offer
+  assignment_fee?: number    // Wholesale spread
+  mortgage_balance?: number  // Remaining mortgage
+  back_taxes?: number        // Owed to county
+  liens_amount?: number      // Liens on property
+  equity?: number            // Computed: arv - total_debt
+  total_debt?: number        // Computed: mortgage + taxes + liens
+}
+
 export interface ManifestDeal {
   offerRange?: {
     min: number
@@ -258,6 +272,7 @@ export interface ManifestV2 {
   property: ManifestProperty
   booking: ManifestBooking
   deal: ManifestDeal
+  financials?: ManifestFinancials
   pipeline: ManifestPipeline
   contacts: ManifestContact[]
   flags: ManifestFlags
@@ -385,6 +400,8 @@ export function buildManifest(input: BuildManifestInput): ManifestV2 {
       contractPrice: undefined,
       status: 'none',
     },
+
+    financials: {},
 
     pipeline: {
       intake: { status: 'completed', completedAt: now, notes: 'Lead captured via booking' },

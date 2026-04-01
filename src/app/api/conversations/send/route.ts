@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
 import { isOptedOut } from '@/lib/sms-opt-out'
+import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -90,6 +91,11 @@ export async function POST(req: Request) {
         },
       })
 
+      // Auto-advance pipeline on first outbound contact
+      if (leadId) {
+        checkAutoAdvance(leadId, 'outbound_contact').catch(() => {})
+      }
+
       return NextResponse.json({ success: true, sid: msg.sid })
     }
 
@@ -122,6 +128,11 @@ export async function POST(req: Request) {
           sent,
         },
       })
+
+      if (leadId) {
+        checkAutoAdvance(leadId, 'outbound_contact').catch(() => {})
+      }
+
       return NextResponse.json({ success: true, sent })
     }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -54,6 +55,11 @@ export async function POST(req: Request) {
           source: 'telephony_bar',
         }
       })
+    }
+
+    // Auto-advance pipeline on outbound call
+    if (leadId && event === 'started') {
+      checkAutoAdvance(leadId, 'outbound_contact').catch(() => {})
     }
 
     return NextResponse.json({ success: true, leadId })
