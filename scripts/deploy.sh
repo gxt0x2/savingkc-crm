@@ -21,17 +21,21 @@ git pull origin main 2>&1 | tee -a "$LOG_FILE"
 # Clean build cache
 rm -rf .next
 
-# Install deps (clean if needed)
+# Install deps from lockfile (exact versions)
 echo "Installing dependencies..." | tee -a "$LOG_FILE"
-npm install --legacy-peer-deps 2>&1 | tee -a "$LOG_FILE" || {
-  echo "npm install failed, doing clean install..." | tee -a "$LOG_FILE"
-  rm -rf node_modules
-  npm install --legacy-peer-deps 2>&1 | tee -a "$LOG_FILE"
-}
+npm ci --legacy-peer-deps 2>&1 | tee -a "$LOG_FILE"
 
 # Build
 echo "Building..." | tee -a "$LOG_FILE"
 npm run build 2>&1 | tee -a "$LOG_FILE"
+
+# Verify build succeeded
+if [ ! -f "$DEPLOY_DIR/.next/BUILD_ID" ]; then
+  echo "ERROR: Build failed - no BUILD_ID found!" | tee -a "$LOG_FILE"
+  echo "Attempting to start PM2 with previous build..." | tee -a "$LOG_FILE"
+  pm2 start savingkc-crm --update-env 2>&1 | tee -a "$LOG_FILE" || true
+  exit 1
+fi
 
 # Start PM2
 echo "Starting PM2..." | tee -a "$LOG_FILE"
