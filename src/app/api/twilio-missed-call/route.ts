@@ -116,15 +116,16 @@ export async function POST(req: Request) {
         // Opt-out + rate limit check before auto-text
         const optedOut = await isOptedOut(from)
         const { allowed: phoneAllowed } = phoneRateLimit(from)
+        const replyFrom = to || TWILIO_PHONE // Reply from the number they called
         if (!optedOut && phoneAllowed) {
           try {
-            await twilio.messages.create({ body: smsBody, from: TWILIO_PHONE, to: from })
+            await twilio.messages.create({ body: smsBody, from: replyFrom, to: from })
             await supabase.from('lead_activities').insert({
               lead_id: leadId,
               activity_type: 'sms',
               description: smsBody,
               agent: 'System',
-              metadata: { direction: 'outbound', from: TWILIO_PHONE, to: from, trigger: 'missed_call_auto' }
+              metadata: { direction: 'outbound', from: replyFrom, to: from, trigger: 'missed_call_auto' }
             })
           } catch (e) { console.error('Missed call SMS failed:', e) }
         }
@@ -146,17 +147,18 @@ export async function POST(req: Request) {
       } else if (!leadId) {
         // Unknown caller missed call — send generic text + ALERT AGENTS
         const unknownSmsBody = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`
+        const unknownReplyFrom = to || TWILIO_PHONE
         const unknownOptedOut = await isOptedOut(from)
         const { allowed: unknownPhoneAllowed } = phoneRateLimit(from)
         if (!unknownOptedOut && unknownPhoneAllowed) {
           try {
-            await twilio.messages.create({ body: unknownSmsBody, from: TWILIO_PHONE, to: from })
+            await twilio.messages.create({ body: unknownSmsBody, from: unknownReplyFrom, to: from })
             await supabase.from('lead_activities').insert({
               lead_id: null,
               activity_type: 'sms',
               description: unknownSmsBody,
               agent: 'System',
-              metadata: { direction: 'outbound', from: TWILIO_PHONE, to: from, trigger: 'missed_call_unknown' }
+              metadata: { direction: 'outbound', from: unknownReplyFrom, to: from, trigger: 'missed_call_unknown' }
             })
           } catch (e) { console.error('Unknown caller text failed:', e) }
         }

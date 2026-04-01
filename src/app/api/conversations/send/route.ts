@@ -35,9 +35,39 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'This number has opted out of SMS messages' }, { status: 400 })
       }
 
-      // If explicit fromPhone provided, use it directly (skip messagingServiceSid)
-      const effectiveFrom = fromPhone || DEFAULT_TWILIO_PHONE
-      const useMessagingService = !fromPhone && TWILIO_MESSAGING_SERVICE
+      // Auto-detect the right "from" number: use the Twilio number this lead last contacted
+      let effectiveFrom = fromPhone || ''
+      if (!effectiveFrom && leadId) {
+        const { data: lastInbound } = await supabase
+          .from('lead_activities')
+          .select('metadata')
+          .eq('lead_id', leadId)
+          .eq('activity_type', 'sms')
+          .eq('metadata->>direction', 'received')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+        if (lastInbound?.metadata?.to) {
+          effectiveFrom = lastInbound.metadata.to as string
+        }
+      }
+      // Also try matching by phone if no leadId
+      if (!effectiveFrom && phone) {
+        const { data: lastInbound } = await supabase
+          .from('lead_activities')
+          .select('metadata')
+          .eq('activity_type', 'sms')
+          .eq('metadata->>direction', 'received')
+          .eq('metadata->>from', phone)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+        if (lastInbound?.metadata?.to) {
+          effectiveFrom = lastInbound.metadata.to as string
+        }
+      }
+      if (!effectiveFrom) effectiveFrom = DEFAULT_TWILIO_PHONE
+      const useMessagingService = false // Always use direct number for consistency
 
       const msg = await twilioClient.messages.create({
         body: body.trim(),

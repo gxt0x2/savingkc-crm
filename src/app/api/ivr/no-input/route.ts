@@ -37,6 +37,7 @@ export async function POST(req: Request) {
   }
 
   const from = url.searchParams.get('from') || ''
+  const calledNumber = url.searchParams.get('calledNumber') || TWILIO_PHONE
 
   if (from && !from.includes('anonymous') && !from.includes('blocked') && !TEAM_NUMBERS.has(from)) {
     // Find or create lead so the call isn't orphaned
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
     if (!optedOut && phoneAllowed) {
       const msg = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`
       try {
-        await twilio.messages.create({ body: msg, from: TWILIO_PHONE, to: from })
+        await twilio.messages.create({ body: msg, from: calledNumber, to: from })
         await supabase.from('lead_activities').insert({
           lead_id: noInputLeadId,
           activity_type: 'sms',

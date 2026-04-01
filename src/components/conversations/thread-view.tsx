@@ -136,8 +136,8 @@ export function ThreadView({
         ))}
       </div>
 
-      {/* Compose Box */}
-      <ComposeBox leadId={leadId} phone={phone} onSent={onSent} />
+      {/* Compose Box — reply from the same number the lead texted */}
+      <ComposeBox leadId={leadId} phone={phone} onSent={onSent} replyFromPhone={contact.toPhone} />
     </section>
   )
 }

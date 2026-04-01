@@ -34,14 +34,15 @@ interface ComposeBoxProps {
   leadId?: string
   phone?: string
   onSent?: () => void
+  replyFromPhone?: string // Auto-select the Twilio number the lead last texted
 }
 
-export function ComposeBox({ leadId, phone, onSent }: ComposeBoxProps) {
+export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBoxProps) {
   const [activeMode, setActiveMode] = useState<ComposeMode>('sms')
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [fromPhone, setFromPhone] = useState('+18163077835')
+  const [fromPhone, setFromPhone] = useState(replyFromPhone || '+18163077835')
   const [templates, setTemplates] = useState<{id: string; name: string; category: string; body: string; merge_fields: string[]}[]>([])
   const [showTemplates, setShowTemplates] = useState(false)
 
@@ -129,19 +130,25 @@ export function ComposeBox({ leadId, phone, onSent }: ComposeBoxProps) {
           <div className="px-6 pt-3 text-xs text-red-500 font-medium">{error}</div>
         )}
 
-        {/* From picker (SMS only) */}
+        {/* From number (SMS only) — auto-detected from conversation, manual only for new outreach */}
         {activeMode === 'sms' && (
           <div className="px-6 pt-3 flex items-center gap-2">
             <span className="text-xs text-on-surface-variant/60 font-medium">From:</span>
-            <select
-              value={fromPhone}
-              onChange={(e) => setFromPhone(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700"
-            >
-              {TWILIO_NUMBERS.map((n) => (
-                <option key={n.value} value={n.value}>{n.label}</option>
-              ))}
-            </select>
+            {replyFromPhone ? (
+              <span className="text-xs font-medium text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
+                {TWILIO_NUMBERS.find(n => n.value === replyFromPhone)?.label || replyFromPhone}
+              </span>
+            ) : (
+              <select
+                value={fromPhone}
+                onChange={(e) => setFromPhone(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700"
+              >
+                {TWILIO_NUMBERS.map((n) => (
+                  <option key={n.value} value={n.value}>{n.label}</option>
+                ))}
+              </select>
+            )}
           </div>
         )}
 
