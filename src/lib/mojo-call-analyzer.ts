@@ -6,6 +6,6 @@ export interface CallAnalysisResult {
   isHotLead: boolean
 }
 
-export async function analyzeCallTranscript(_transcript: string): Promise<CallAnalysisResult> {
+export async function analyzeCallTranscript(_transcript: string, _manifest?: unknown): Promise<CallAnalysisResult> {
   throw new Error('mojo-call-analyzer not yet implemented')
 }
