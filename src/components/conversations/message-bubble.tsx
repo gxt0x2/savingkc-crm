@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
+import { getAgentProfile } from '@/lib/agent-profiles'
 
 export type MessageType = 'sms' | 'email' | 'call'
 export type MessageDirection = 'sent' | 'received'
@@ -14,6 +15,7 @@ export interface Message {
   content: string
   timestamp: string
   senderInitials: string
+  agentName?: string     // Agent who performed the action (Ernest, Casey, System, etc.)
   // email-specific
   subject?: string
   emailMeta?: string
@@ -22,6 +24,19 @@ export interface Message {
   recordingUrl?: string   // proxied URL like /api/recordings/RExxxxxxx
   recordingSid?: string
   transcript?: string
+}
+
+function AgentAvatar({ agentName, fallbackInitials, size = 'w-8 h-8' }: { agentName?: string; fallbackInitials: string; size?: string }) {
+  const profile = agentName ? getAgentProfile(agentName) : null
+  const initials = profile?.initials || fallbackInitials
+  const bg = profile?.color || 'bg-slate-800'
+  const text = profile?.textColor || 'text-white'
+
+  return (
+    <div className={cn(size, 'rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold', bg, text)} title={profile?.name || agentName}>
+      {initials}
+    </div>
+  )
 }
 
 function SmsBubble({ message }: { message: Message }) {
@@ -52,13 +67,11 @@ function SmsBubble({ message }: { message: Message }) {
               isSent && 'text-right'
             )}
           >
-            {isSent ? 'Sent' : 'Received'} &bull; {message.timestamp}
+            {isSent ? `Sent by ${message.agentName || 'System'}` : 'Received'} &bull; {message.timestamp}
           </span>
         </div>
         {isSent && (
-          <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex-shrink-0 flex items-center justify-center text-[10px] font-bold mt-1">
-            ED
-          </div>
+          <AgentAvatar agentName={message.agentName} fallbackInitials={message.senderInitials} size="w-8 h-8 mt-1" />
         )}
       </div>
     </div>
@@ -66,18 +79,23 @@ function SmsBubble({ message }: { message: Message }) {
 }
 
 function EmailCard({ message }: { message: Message }) {
+  const isSent = message.direction === 'sent'
   return (
     <div className="flex justify-start">
       <div className="max-w-2xl w-full bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center">
-              <Icon name="mail" className="text-white text-sm" />
-            </div>
+            {isSent && message.agentName ? (
+              <AgentAvatar agentName={message.agentName} fallbackInitials="ED" size="w-8 h-8" />
+            ) : (
+              <div className="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center">
+                <Icon name="mail" className="text-white text-sm" />
+              </div>
+            )}
             <div>
               <h4 className="text-sm font-bold">{message.subject}</h4>
               <p className="text-[10px] text-on-surface-variant/60">
-                {message.emailMeta || `Sent via Outbound Sales Server`} &bull; {message.timestamp}
+                {isSent && message.agentName ? `Sent by ${message.agentName}` : message.emailMeta || 'Received'} &bull; {message.timestamp}
               </p>
             </div>
           </div>
@@ -147,15 +165,16 @@ function CallCard({ message }: { message: Message }) {
       <div className="max-w-[480px] w-full">
         {/* Call header */}
         <div className="flex items-center gap-2 mb-2 px-1">
-          <div className={cn(
-            'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold',
-            isSent ? 'bg-slate-800 text-white' : 'bg-slate-300 text-slate-800'
-          )}>
-            {message.senderInitials}
-          </div>
+          {isSent ? (
+            <AgentAvatar agentName={message.agentName} fallbackInitials={message.senderInitials} />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-slate-300 text-slate-800 flex-shrink-0 flex items-center justify-center text-[10px] font-bold">
+              {message.senderInitials}
+            </div>
+          )}
           <div className="flex items-center gap-1.5 text-xs text-on-surface-variant font-medium">
             <Icon name={isSent ? 'call_made' : 'call_received'} className="text-sm text-green-600" />
-            <span>Call {isSent ? 'outgoing' : 'completed'}</span>
+            <span>{isSent ? `Outgoing call${message.agentName ? ` by ${message.agentName}` : ''}` : 'Incoming call'}</span>
             <span className="text-on-surface-variant/40">·</span>
             <span>{message.timestamp}</span>
           </div>

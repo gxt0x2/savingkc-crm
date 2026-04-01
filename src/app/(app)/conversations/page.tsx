@@ -69,6 +69,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
     hour: '2-digit',
     minute: '2-digit',
   })
+  const agentName = activity.agent || undefined
 
   if (type === 'call') {
     const recordingSid = (meta.recordingSid as string) || undefined
@@ -83,6 +84,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
       callDuration: formatDuration((meta.duration as number) || 0),
       timestamp,
       senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+      agentName: direction === 'sent' ? agentName : undefined,
       recordingUrl,
       recordingSid,
       transcript,
@@ -99,6 +101,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
       content: activity.description || '',
       timestamp,
       senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+      agentName: direction === 'sent' ? agentName : undefined,
     }
   }
 
@@ -110,6 +113,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
       content: activity.description || '',
       timestamp,
       senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+      agentName: direction === 'sent' ? agentName : undefined,
     }
   }
 
@@ -121,6 +125,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
     content: `[${type.replace(/_/g, ' ').toUpperCase()}] ${activity.description || ''}`,
     timestamp,
     senderInitials: 'Ari',
+    agentName: agentName || 'System',
   }
 }
 

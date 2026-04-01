@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
 import Link from 'next/link'
 import type { ActivityType } from '@/types'
+import { getAgentProfile } from '@/lib/agent-profiles'
 
 interface FeedItem {
   id: string
@@ -16,6 +17,7 @@ interface FeedItem {
   linkLabel?: string
   recordingUrl?: string
   rawType?: string
+  agentName?: string   // Who performed this action
 }
 
 interface ActivityFeedProps {
@@ -167,6 +169,17 @@ function relTime(ts: string): string {
   } catch { return ts }
 }
 
+// ─── Agent Badge ────────────────────────────────────────────────────────────
+function AgentBadge({ name }: { name: string }) {
+  const profile = getAgentProfile(name)
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${profile.color} ${profile.textColor}`}>
+      {profile.initials}
+      <span className="opacity-80 font-medium">{profile.name}</span>
+    </span>
+  )
+}
+
 // ─── Comms Hub Quick-Action Bar ─────────────────────────────────────────────
 function CommsBar({ onAction }: { onAction: (type: 'call' | 'sms' | 'email') => void }) {
   return (
@@ -241,6 +254,7 @@ export function ActivityFeed({ activities, onCompose }: ActivityFeedProps) {
                     <div className="flex-1 bg-surface-container rounded-xl px-3 py-2.5 border border-outline-variant/10 min-w-0">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className="text-xs font-bold text-on-surface">{activity.title}</span>
+                        {activity.agentName && <AgentBadge name={activity.agentName} />}
                         {activity.statusBadge && (
                           <span className="text-[10px] px-2 py-0.5 bg-primary/10 text-primary rounded-full font-bold">
                             {activity.statusBadge}
@@ -255,9 +269,12 @@ export function ActivityFeed({ activities, onCompose }: ActivityFeedProps) {
                   ) : (
                     // Regular entry
                     <div className="flex-1 min-w-0 pb-1">
-                      <div className="flex items-baseline gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-semibold text-on-surface leading-snug">{activity.title}</span>
-                        <span className="text-[10px] text-on-surface-variant whitespace-nowrap">{relTime(activity.timestamp)}</span>
+                        {activity.agentName && (
+                          <AgentBadge name={activity.agentName} />
+                        )}
+                        <span className="text-[10px] text-on-surface-variant whitespace-nowrap ml-auto">{relTime(activity.timestamp)}</span>
                       </div>
                       {activity.content && (
                         <p className={`text-xs mt-0.5 ${activity.type === 'sms' ? 'text-blue-300 italic' : 'text-on-surface-variant'}`}>

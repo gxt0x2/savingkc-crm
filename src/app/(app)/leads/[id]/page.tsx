@@ -875,6 +875,7 @@ export default function LeadDetailPage() {
         linkLabel,
         recordingUrl,
         rawType: a.activity_type,
+        agentName: a.agent || undefined,
       }
     })
 
