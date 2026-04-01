@@ -4,7 +4,7 @@ import twilio from 'twilio'
 import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
-import type { ManifestV2, ManifestContact, TranscriptEntry, ManifestAgentNote } from '@/lib/manifest-builder'
+import type { ManifestV2, ManifestContact, TranscriptEntry, ManifestAgentNote, ManifestOwner, ManifestProperty, ManifestSituation } from '@/lib/manifest-builder'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
@@ -270,7 +270,7 @@ async function processPhase2Intelligence(
         manifest.owner.bestTimeToContact = analysisResult.bestTimeToContact
       }
       if (analysisResult.personalityType && !manifest.owner.personalityType) {
-        manifest.owner.personalityType = analysisResult.personalityType
+        manifest.owner.personalityType = analysisResult.personalityType as ManifestOwner['personalityType']
       }
       if (analysisResult.coOwners && analysisResult.coOwners.length > 0) {
         manifest.owner.coOwners = mergeArrays(manifest.owner.coOwners, analysisResult.coOwners)
@@ -293,7 +293,7 @@ async function processPhase2Intelligence(
         manifest.property.vacant = analysisResult.vacant
       }
       if (analysisResult.occupancy && !manifest.property.occupancy) {
-        manifest.property.occupancy = analysisResult.occupancy
+        manifest.property.occupancy = analysisResult.occupancy as ManifestProperty['occupancy']
       }
       if (analysisResult.conditionOverall && !manifest.property.condition) {
         manifest.property.condition = { overall: analysisResult.conditionOverall }
@@ -323,7 +323,7 @@ async function processPhase2Intelligence(
       }
       if (analysisResult.urgency) {
         if (!manifest.situation.timeline) manifest.situation.timeline = {}
-        manifest.situation.timeline.urgency = analysisResult.urgency
+        manifest.situation.timeline.urgency = analysisResult.urgency as NonNullable<ManifestSituation['timeline']>['urgency']
       }
       if (analysisResult.targetCloseDate) {
         if (!manifest.situation.timeline) manifest.situation.timeline = {}
@@ -347,7 +347,7 @@ async function processPhase2Intelligence(
       }
       if (analysisResult.priceFlexibility) {
         if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
-        manifest.situation.priceExpectations.priceFlexibility = analysisResult.priceFlexibility
+        manifest.situation.priceExpectations.priceFlexibility = analysisResult.priceFlexibility as NonNullable<ManifestSituation['priceExpectations']>['priceFlexibility']
       }
       if (analysisResult.priceAnchor) {
         if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
