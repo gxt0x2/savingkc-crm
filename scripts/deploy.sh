@@ -27,4 +27,3 @@ echo "Restarting PM2..." | tee -a "$LOG_FILE"
 pm2 restart savingkc-crm --update-env 2>&1 | tee -a "$LOG_FILE"
 
 echo "=== Deploy complete: $(date) ===" | tee -a "$LOG_FILE"
-# Auto-deploy enabled 2026-04-01
