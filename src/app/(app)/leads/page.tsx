@@ -22,10 +22,10 @@ interface Lead {
   priority: string | null
   notes: string | null
   created_at: string
-  last_activity_at?: string | null
+  updated_at?: string | null
 }
 
-type SortKey = 'full_name' | 'phone' | 'property_address' | 'source' | 'station' | 'priority' | 'created_at' | 'last_activity_at' | 'temperature'
+type SortKey = 'full_name' | 'phone' | 'property_address' | 'source' | 'station' | 'priority' | 'created_at' | 'updated_at' | 'temperature'
 type SortDir = 'asc' | 'desc'
 
 const STATION_OPTIONS = ['new', 'contacted', 'qualified', 'offer_made', 'under_contract', 'disposition', 'closed', 'dead'] as const
@@ -37,7 +37,7 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [search, setSearch] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('last_activity_at')
+  const [sortKey, setSortKey] = useState<SortKey>('updated_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   // Filters
@@ -60,8 +60,8 @@ export default function LeadsPage() {
     const supabase = createClient()
     const { data } = await supabase
       .from('leads')
-      .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at, last_activity_at')
-      .order('last_activity_at', { ascending: false, nullsFirst: false })
+      .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at, updated_at')
+      .order('updated_at', { ascending: false })
       .limit(500)
     setLeads((data as Lead[]) || [])
     setLoading(false)
@@ -146,9 +146,9 @@ export default function LeadsPage() {
           aVal = new Date(a.created_at).getTime()
           bVal = new Date(b.created_at).getTime()
           break
-        case 'last_activity_at':
-          aVal = a.last_activity_at ? new Date(a.last_activity_at).getTime() : 0
-          bVal = b.last_activity_at ? new Date(b.last_activity_at).getTime() : 0
+        case 'updated_at':
+          aVal = a.updated_at ? new Date(a.updated_at).getTime() : 0
+          bVal = b.updated_at ? new Date(b.updated_at).getTime() : 0
           break
         case 'temperature':
           const temps = { hot: 4, warm: 3, cool: 2, cold: 1 }
@@ -531,7 +531,7 @@ export default function LeadsPage() {
                   <SortHeader label="Source" sortKeyVal="source" className="hidden lg:table-cell" />
                   <SortHeader label="Station" sortKeyVal="station" />
                   <SortHeader label="Priority" sortKeyVal="priority" className="hidden sm:table-cell" />
-                  <SortHeader label="Activity" sortKeyVal="last_activity_at" className="hidden lg:table-cell" />
+                  <SortHeader label="Activity" sortKeyVal="updated_at" className="hidden lg:table-cell" />
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
@@ -596,8 +596,8 @@ export default function LeadsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs hidden lg:table-cell whitespace-nowrap">
-                      {lead.last_activity_at
-                        ? new Date(lead.last_activity_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      {lead.updated_at
+                        ? new Date(lead.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                         : '--'}
                     </td>
                     <td className="px-4 py-3">
