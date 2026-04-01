@@ -14,7 +14,7 @@ const twilioClient = twilio(
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
@@ -64,6 +64,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, leadId: data.id }, { headers: corsHeaders })
   } catch (err) {
     console.error('leads route error:', err)
+    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500, headers: corsHeaders })
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { id, ...fields } = body
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'id required' }, { status: 400, headers: corsHeaders })
+    }
+
+    const { data, error } = await supabase
+      .from('leads')
+      .update(fields)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Supabase update error:', error)
+      return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+    }
+
+    return NextResponse.json({ success: true, lead: data }, { headers: corsHeaders })
+  } catch (err) {
+    console.error('leads PATCH error:', err)
     return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500, headers: corsHeaders })
   }
 }

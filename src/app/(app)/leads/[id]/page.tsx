@@ -247,11 +247,24 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
 
   async function handleSave() {
     setSaving(true)
-    const supabase = createClient()
-    await supabase.from('leads').update(form).eq('id', lead.id)
-    onSaved(form)
-    setSaving(false)
-    onClose()
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: lead.id, ...form }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        console.error('Failed to save lead:', data.error)
+        return
+      }
+      onSaved(data.lead || form)
+    } catch (err) {
+      console.error('Failed to save lead:', err)
+    } finally {
+      setSaving(false)
+      onClose()
+    }
   }
 
   const fields: { key: keyof typeof form; label: string; type?: string; multiline?: boolean }[] = [
@@ -725,6 +738,15 @@ export default function LeadDetailPage() {
               >
                 <Icon name="phone" size="text-sm" />
                 {formattedPhone}
+              </a>
+            )}
+            {lead.email && (
+              <a
+                href={`mailto:${lead.email}`}
+                className="flex items-center gap-1.5 px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded-full text-sm font-bold transition-colors"
+              >
+                <Icon name="mail" size="text-sm" />
+                {lead.email}
               </a>
             )}
           </div>

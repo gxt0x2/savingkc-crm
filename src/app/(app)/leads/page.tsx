@@ -67,7 +67,17 @@ export default function LeadsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { fetchLeads() }, [])
+  useEffect(() => {
+    fetchLeads()
+    function handleFocus() { fetchLeads() }
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') fetchLeads()
+    })
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [])
 
   // Clear selection when filters change
   useEffect(() => {
