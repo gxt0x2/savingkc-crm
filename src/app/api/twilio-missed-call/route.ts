@@ -171,12 +171,14 @@ export async function POST(req: Request) {
         ])
 
         // Briefing event for unknown missed call
-        await supabase.from('ari_briefing_events').insert({
-          event_type: 'missed_call',
-          priority: 'high',
-          title: `Missed call from unknown: ${from}`,
-          description: `Unknown caller, auto-text sent. Watch for YES reply.`,
-        }).catch(() => {})
+        try {
+          await supabase.from('ari_briefing_events').insert({
+            event_type: 'missed_call',
+            priority: 'high',
+            title: `Missed call from unknown: ${from}`,
+            description: `Unknown caller, auto-text sent. Watch for YES reply.`,
+          })
+        } catch {}
       }
     }
 

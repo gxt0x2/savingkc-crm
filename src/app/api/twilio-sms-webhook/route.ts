@@ -118,6 +118,7 @@ export async function POST(req: Request) {
       },
     })
 
+
     // ── Skip auto-reply for team numbers ────────────────────
     if (TEAM_NUMBERS.has(from)) {
       return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
@@ -166,7 +167,7 @@ export async function POST(req: Request) {
           description: yesAlertBody,
           agent: 'System',
           metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'yes_reply_alert' },
-        }).catch(() => {})
+        })
       }
 
       // Create callback task + Ari briefing event
@@ -236,7 +237,7 @@ export async function POST(req: Request) {
         description: hotAlertBody,
         agent: 'System',
         metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'hot_lead_reply_alert' },
-      }).catch(() => {})
+      })
     }
 
     // ── Unknown number — create lead so nothing gets lost ──
