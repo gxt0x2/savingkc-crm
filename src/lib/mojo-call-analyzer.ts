@@ -2,11 +2,11 @@
 export interface CallAnalysisResult {
   summary?: string
   aiSummary?: string
-  sentiment?: string
+  sentiment?: 'positive' | 'neutral' | 'negative' | null
   nextSteps?: string[]
   isHotLead?: boolean
   motivationScore?: number
-  rapportLevel?: string
+  rapportLevel?: 'high' | 'medium' | 'low' | null
   verbatimQuotes?: string[]
   objectionsRaised?: string[]
   keyLeverage?: string[]
