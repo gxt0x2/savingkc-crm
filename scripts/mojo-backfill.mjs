@@ -147,9 +147,10 @@ function parseRecordings(mojoResponse) {
   return calls
 }
 
-// ── Fetch contact details from Mojo to get phone number ─────────────
-async function fetchContactPhone(sessionId, contactId) {
-  if (!contactId) return ''
+// ── Fetch contact details from Mojo (phone, notes, callbacks) ───────
+async function fetchContactDetails(sessionId, contactId) {
+  const result = { phone: '', notes: '', scheduledCallback: '', address: '', city: '', state: '', zip: '' }
+  if (!contactId) return result
   try {
     const url = `${MOJO_BASE_URL}/v2/rest/contacts/${contactId}/`
     const response = await fetch(url, {
@@ -163,12 +164,28 @@ async function fetchContactPhone(sessionId, contactId) {
     })
     if (response.ok) {
       const data = await response.json()
-      // Try various phone fields
-      return data.phone || data.phone_number || data.mobile || data.cell ||
+      // Phone
+      result.phone = data.phone || data.phone_number || data.mobile || data.cell ||
              data.primary_phone || data.phone1 || ''
+      // Notes — Mojo stores these in various fields
+      const notesParts = []
+      if (data.notes) notesParts.push(data.notes)
+      if (data.description) notesParts.push(data.description)
+      if (data.comment) notesParts.push(data.comment)
+      if (data.last_note) notesParts.push(data.last_note)
+      result.notes = notesParts.filter(Boolean).join('\n')
+      // Scheduled callback / follow-up
+      if (data.callback_date || data.scheduled_callback || data.next_call_date || data.follow_up_date) {
+        result.scheduledCallback = data.callback_date || data.scheduled_callback || data.next_call_date || data.follow_up_date || ''
+      }
+      // Address
+      result.address = data.address || data.property_address || data.street || ''
+      result.city = data.city || ''
+      result.state = data.state || ''
+      result.zip = data.zip || data.zipcode || ''
     }
   } catch {}
-  return ''
+  return result
 }
 
 // ── POST a batch to CRM ─────────────────────────────────────────────
@@ -280,27 +297,46 @@ async function main() {
   log(`Earliest: ${allCalls[0].call_date} (${allCalls[0].contact_name})`)
   log(`Latest:   ${allCalls[allCalls.length - 1].call_date} (${allCalls[allCalls.length - 1].contact_name})`)
 
-  // ── Enrich with phone numbers from contact details ────────────────
+  // ── Enrich with phone, notes, address, callbacks from Mojo contacts ─
   log('')
-  log('Enriching calls with phone numbers from Mojo contacts...')
-  const contactPhoneCache = new Map()
+  log('Enriching calls with contact details from Mojo (phone, notes, address, callbacks)...')
+  const contactCache = new Map()
   let enriched = 0
+  let notesFound = 0
+  let callbacksFound = 0
   for (const call of allCalls) {
-    if (call.mojo_contact_id && !call.phone_number) {
-      if (contactPhoneCache.has(call.mojo_contact_id)) {
-        call.phone_number = contactPhoneCache.get(call.mojo_contact_id)
-        if (call.phone_number) enriched++
+    if (call.mojo_contact_id) {
+      let details
+      if (contactCache.has(call.mojo_contact_id)) {
+        details = contactCache.get(call.mojo_contact_id)
       } else {
-        const phone = await fetchContactPhone(sessionId, call.mojo_contact_id)
-        contactPhoneCache.set(call.mojo_contact_id, phone)
-        call.phone_number = phone
-        if (phone) enriched++
+        details = await fetchContactDetails(sessionId, call.mojo_contact_id)
+        contactCache.set(call.mojo_contact_id, details)
         // Throttle contact API calls
         await sleep(200)
       }
+      if (details.phone && !call.phone_number) {
+        call.phone_number = details.phone
+        enriched++
+      }
+      if (details.notes) {
+        call.notes = details.notes
+        notesFound++
+      }
+      if (details.scheduledCallback) {
+        call.notes = (call.notes ? call.notes + '\n' : '') + `[Mojo Calendar] Scheduled follow-up: ${details.scheduledCallback}`
+        callbacksFound++
+      }
+      if (details.address && !call.property_address) {
+        call.property_address = details.address
+        call.city = details.city || call.city
+        call.state = details.state || call.state
+        call.zip = details.zip || call.zip
+      }
     }
   }
-  log(`Enriched ${enriched}/${allCalls.length} calls with phone numbers (${contactPhoneCache.size} unique contacts)`)
+  log(`Enriched ${enriched}/${allCalls.length} with phone numbers (${contactCache.size} unique contacts)`)
+  log(`Found ${notesFound} contacts with notes, ${callbacksFound} with scheduled callbacks`)
 
   // ── POST to CRM in batches ────────────────────────────────────────
   const totalBatches = Math.ceil(allCalls.length / BATCH_SIZE)
