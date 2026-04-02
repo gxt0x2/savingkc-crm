@@ -35,9 +35,12 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
   const [cached, setCached] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
+  // Only re-generate when manifestId or leadId changes (not on every activities change)
   useEffect(() => {
-    buildBriefing()
-  }, [leadId, manifestId, notes, sellerSituation, motivationScore, activities])
+    const controller = new AbortController()
+    buildBriefing(controller.signal)
+    return () => controller.abort()
+  }, [leadId, manifestId])
 
   function sanitizeBriefing(data: any): BriefingData | null {
     if (!data) return null
@@ -56,11 +59,11 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
     return { situation: situation || '', motivation: motivation || '', strategy: strategy || '' }
   }
 
-  async function buildBriefing() {
+  async function buildBriefing(signal?: AbortSignal) {
     if (manifestId) {
       try {
         setLoading(true)
-        const res = await fetch(`/api/ari/generate-briefing?manifestId=${manifestId}`)
+        const res = await fetch(`/api/ari/generate-briefing?manifestId=${manifestId}`, { signal })
         if (res.ok) {
           const raw = await res.json()
           const data = sanitizeBriefing(raw)
@@ -71,13 +74,15 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
             return
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return // cancelled — don't touch state
         console.error('Manifest briefing error:', err)
       }
       setLoading(false)
       return
     }
 
+    // No manifest yet — use notes/activities for legacy briefing
     const callActivities = activities?.filter(a => a.activity_type === 'call') || []
     const noteActivities = activities?.filter(a => a.activity_type === 'note' || a.activity_type === 'agent_note') || []
     const allNotes = [
@@ -97,14 +102,18 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadId, notes: allNotes, motivationScore, sellerSituation, callCount: callActivities.length }),
+        signal,
       })
       if (res.ok) {
         const raw = await res.json()
         const data = sanitizeBriefing(raw)
         if (data) { setBriefing(data); setCached(false); setLoading(false); return }
       }
-    } catch { /* fallback */ }
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return
+    }
 
+    // Offline fallback — build from local data
     const situation = sellerSituation || (notes ? notes.slice(0, 200) : 'No detailed situation data available yet.')
     const motivationText = motivationScore
       ? motivationScore >= 8 ? 'High motivation. Seller appears eager to move forward quickly.'
