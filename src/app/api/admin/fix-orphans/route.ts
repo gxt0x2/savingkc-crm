@@ -55,7 +55,7 @@ export async function GET() {
     // Try 'mojo_dialer' first, fall back to 'inbound_call' if constraint rejects it
     let leadId: string | null = null
 
-    for (const source of ['mojo_dialer', 'inbound_call']) {
+    for (const source of ['mojo_call', 'other']) {
       const { data: newLead, error: insertErr } = await supabase
         .from('leads')
         .insert({

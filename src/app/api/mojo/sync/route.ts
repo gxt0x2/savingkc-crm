@@ -657,7 +657,7 @@ export async function POST(req: NextRequest) {
             propertyCity: call.city,
             propertyState: call.state,
             propertyZip: call.zip,
-            source: `mojo:${call.list_name || 'unknown'}`,
+            source: 'mojo_call',
             station: call.property_address ? 'qualification' : 'intake',
             priority: dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm'),
           }
@@ -721,7 +721,7 @@ export async function POST(req: NextRequest) {
                 city: call.city,
                 state: call.state,
                 zip: call.zip,
-                source: 'mojo_dialer',
+                source: 'mojo_call',
                 station: call.property_address ? 'qualification' : 'intake',
                 priority: 'normal',
               })
