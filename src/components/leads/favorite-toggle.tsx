@@ -72,7 +72,8 @@ export function FavoriteToggle({ leadId, isFavorite, onToggle, size = 'md' }: Fa
       title={favorite ? 'Remove from favorites' : 'Add to favorites'}
     >
       <Icon
-        name={favorite ? 'star' : 'star_border'}
+        name="star"
+        filled={favorite}
         className={`${sizeClasses[size]} ${
           favorite ? 'text-yellow-500' : 'text-on-surface-variant/40 hover:text-yellow-400'
         }`}

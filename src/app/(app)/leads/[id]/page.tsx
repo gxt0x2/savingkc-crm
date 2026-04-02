@@ -1151,32 +1151,6 @@ export default function LeadDetailPage() {
       </div>
 
 
-      {/* Quick Links */}
-      <div className="mb-6 flex flex-wrap gap-2">
-        {zillowUrl && (
-          <a
-            href={zillowUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-colors"
-          >
-            <Icon name="open_in_new" size="text-sm" />
-            View on Zillow
-          </a>
-        )}
-        {countyTaxUrl && (
-          <a
-            href={countyTaxUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold transition-colors"
-          >
-            <Icon name="account_balance" size="text-sm" />
-            County Tax Record
-          </a>
-        )}
-      </div>
-
       {/* 3-Column Layout */}
       <div className="grid grid-cols-12 gap-4 sm:gap-6 lg:gap-8 lg:items-start">
         {/* LEFT COLUMN: Ari Briefing, Pain Points, Sellers Timeline */}
