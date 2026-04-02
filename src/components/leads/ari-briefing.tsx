@@ -1,3 +1,7 @@
+// Ari Briefing — AI intelligence summary for each lead
+// Collapsed: 1-2 sentence situation summary
+// Expanded (click): All 3 sections — Situation, Motivation, Strategy
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -25,13 +29,12 @@ interface BriefingData {
   strategy: string
 }
 
-export function AriBriefing({ leadId, manifestId, personalityType, tacticalApproach, notes, sellerSituation, motivationScore, activities }: AriBriefingProps) {
+export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motivationScore, activities }: AriBriefingProps) {
   const [briefing, setBriefing] = useState<BriefingData | null>(null)
   const [loading, setLoading] = useState(false)
   const [cached, setCached] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
-  // Build briefing from available data
   useEffect(() => {
     buildBriefing()
   }, [leadId, manifestId, notes, sellerSituation, motivationScore, activities])
@@ -41,7 +44,6 @@ export function AriBriefing({ leadId, manifestId, personalityType, tacticalAppro
     if (!data) return null
     let { situation, motivation, strategy } = data
 
-    // If situation is itself a JSON string containing the real briefing, parse it
     if (typeof situation === 'string' && situation.trimStart().startsWith('{')) {
       try {
         const inner = JSON.parse(situation)
@@ -62,7 +64,7 @@ export function AriBriefing({ leadId, manifestId, personalityType, tacticalAppro
   }
 
   async function buildBriefing() {
-    // If manifestId provided, use manifest-based briefing
+    // Manifest-based briefing (primary path)
     if (manifestId) {
       try {
         setLoading(true)
@@ -95,12 +97,10 @@ export function AriBriefing({ leadId, manifestId, personalityType, tacticalAppro
     ].filter(Boolean).join(' | ')
 
     if (!allNotes && !motivationScore) {
-      // No data yet - show waiting state
       setBriefing(null)
       return
     }
 
-    // Try API-based briefing generation
     try {
       setLoading(true)
       const res = await fetch('/api/ari/generate-briefing', {
@@ -128,135 +128,103 @@ export function AriBriefing({ leadId, manifestId, personalityType, tacticalAppro
       // Fall through to local generation
     }
 
-    // Local fallback: construct from available data
-    const situation = sellerSituation || (notes ? notes.slice(0, 200) : 'No detailed situation data available yet. More information will be gathered during follow-up conversations.')
-    
+    // Local fallback
+    const situation = sellerSituation || (notes ? notes.slice(0, 200) : 'No detailed situation data available yet.')
     const motivationText = motivationScore
-      ? motivationScore >= 8 ? 'Seller shows high motivation. They appear eager to move forward quickly and are likely facing time pressure or financial constraints.'
-        : motivationScore >= 5 ? 'Moderate motivation detected. Seller is interested but may be exploring options. Continued engagement recommended.'
-        : 'Low motivation at this time. Seller may not be ready to act. Consider nurturing through periodic follow-up.'
-      : 'Motivation level has not been assessed yet. Recommend direct conversation to gauge urgency.'
-
+      ? motivationScore >= 8 ? 'High motivation. Seller appears eager to move forward quickly.'
+        : motivationScore >= 5 ? 'Moderate motivation. Seller is interested but may be exploring options.'
+        : 'Low motivation at this time. Consider nurturing through periodic follow-up.'
+      : 'Motivation level has not been assessed yet.'
     const strategy = callActivities.length > 0
-      ? `${callActivities.length} call(s) logged. Continue building rapport and address seller concerns directly. Focus on understanding their timeline and pain points.`
-      : 'No calls recorded yet. Priority action: make initial contact to assess situation and build rapport.'
+      ? `${callActivities.length} call(s) logged. Continue building rapport and address seller concerns directly.`
+      : 'No calls recorded yet. Priority: make initial contact to assess situation.'
 
-    setBriefing({
-      situation,
-      motivation: motivationText,
-      strategy,
-    })
+    setBriefing({ situation, motivation: motivationText, strategy })
     setLoading(false)
   }
 
-  // Helper to truncate situation to ~120 chars (first sentence)
-  const getCondensedSituation = (text: string): string => {
-    const firstSentence = text.split(/[.!?]/)[0]
-    if (firstSentence.length > 120) {
-      return firstSentence.slice(0, 120) + '...'
-    }
-    return firstSentence + '...'
+  // Collapsed: first 1-2 sentences
+  function getCollapsedText(text: string): string {
+    // Get first two sentences
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text]
+    const preview = sentences.slice(0, 2).join(' ').trim()
+    if (preview.length > 180) return preview.slice(0, 180) + '...'
+    return preview || text.slice(0, 180) + '...'
   }
 
   return (
-    <>
-      <section
-        className="bg-[#1B2A4A] rounded-2xl p-6 relative overflow-hidden cursor-pointer"
-        onDoubleClick={() => setExpanded(!expanded)}
-        title={expanded ? "Double-click to collapse" : "Double-click to expand"}
-      >
-        {/* Subtle glow effect */}
-        <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500 opacity-[0.04] blur-[80px]" />
-
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
-            <Icon name="psychology" className="!text-lg text-amber-400" />
-          </div>
-          <div className="flex-1">
-            <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
-              Ari Briefing
-            </h2>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]" />
-              <span className="text-[10px] text-green-400/80 font-medium">
-                {cached ? 'Cached' : 'Live Analysis'}
-              </span>
-            </div>
+    <section className="bg-[#1B2A4A] rounded-2xl p-5 relative overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🧠</span>
+          <h2 className="text-sm font-black text-white">Ari Briefing</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]" />
+            <span className="text-[10px] text-green-400/80 font-medium">
+              {cached ? 'Cached' : 'Live'}
+            </span>
           </div>
           <button
-            onClick={(e) => { e.stopPropagation(); buildBriefing() }}
+            onClick={() => buildBriefing()}
             disabled={loading}
-            title="Refresh Ari briefing"
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 hover:text-amber-400 transition-all disabled:opacity-30"
+            title="Refresh"
+            className="p-1 rounded bg-white/5 hover:bg-white/10 text-white/40 hover:text-amber-400 transition-all disabled:opacity-30"
           >
-            <Icon name="refresh" className={`!text-sm ${loading ? 'animate-spin' : ''}`} />
+            <Icon name="refresh" className={`!text-xs ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
+      </div>
 
-        {loading ? (
-          <div className="flex items-center gap-2 py-4">
-            <div className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-            <span className="text-sm text-slate-400">Analyzing lead data...</span>
-          </div>
-        ) : !briefing ? (
-          <p className="text-sm text-slate-400 italic py-2">
-            Waiting for more information. Add notes or log calls to generate Ari analysis.
-          </p>
-        ) : expanded ? (
-          <div className="space-y-4">
-            {/* Situation */}
-            <div>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <Icon name="info" className="!text-xs text-blue-400" />
-                <p className="text-[10px] font-black uppercase tracking-wider text-blue-400">
-                  Situation
-                </p>
-              </div>
-              <p className="text-sm leading-relaxed text-slate-300">
-                {briefing.situation}
-              </p>
-            </div>
-
-            {/* Motivation */}
-            <div>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <Icon name="trending_up" className="!text-xs text-amber-400" />
-                <p className="text-[10px] font-black uppercase tracking-wider text-amber-400">
-                  Motivation
-                </p>
-              </div>
-              <p className="text-sm leading-relaxed text-slate-300">
-                {briefing.motivation}
-              </p>
-            </div>
-
-            {/* Strategy */}
-            <div>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <Icon name="target" className="!text-xs text-green-400" />
-                <p className="text-[10px] font-black uppercase tracking-wider text-green-400">
-                  Strategy
-                </p>
-              </div>
-              <p className="text-sm leading-relaxed text-slate-300">
-                {briefing.strategy}
-              </p>
-            </div>
-          </div>
-        ) : (
+      {loading ? (
+        <div className="flex items-center gap-2 py-3">
+          <div className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+          <span className="text-xs text-slate-400">Analyzing lead data...</span>
+        </div>
+      ) : !briefing ? (
+        <p className="text-sm text-slate-400 italic">
+          No data yet. Add notes or log calls to generate briefing.
+        </p>
+      ) : expanded ? (
+        /* ── Expanded: all 3 sections ── */
+        <div className="space-y-4">
           <div>
-            <p className="text-sm leading-relaxed text-slate-300">
-              {getCondensedSituation(briefing.situation)}
+            <p className="text-sm text-slate-200 leading-relaxed">
+              <span className="font-bold text-white">Situation: </span>
+              {briefing.situation}
             </p>
           </div>
-        )}
-
-        <p className="text-[9px] text-slate-500 mt-4">
-          {expanded ? 'Double-click to collapse' : '→ full briefing'}
+          <div>
+            <p className="text-sm text-slate-200 leading-relaxed">
+              <span className="font-bold text-amber-400">Motivation: </span>
+              {briefing.motivation}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-slate-200 leading-relaxed">
+              <span className="font-bold text-green-400">Strategy: </span>
+              {briefing.strategy}
+            </p>
+          </div>
+        </div>
+      ) : (
+        /* ── Collapsed: 1-2 sentence summary ── */
+        <p className="text-sm text-slate-300 leading-relaxed">
+          {getCollapsedText(briefing.situation)}
         </p>
-      </section>
+      )}
 
-    </>
+      {/* Toggle */}
+      {briefing && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-3 text-[10px] text-amber-400/70 hover:text-amber-400 font-bold uppercase tracking-wider transition-colors"
+        >
+          {expanded ? '← Collapse' : '→ Full briefing'}
+        </button>
+      )}
+    </section>
   )
 }

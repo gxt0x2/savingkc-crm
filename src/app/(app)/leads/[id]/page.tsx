@@ -18,6 +18,7 @@ import { ThankYouCard } from '@/components/leads/thank-you-card'
 import { MailTracker } from '@/components/leads/mail-tracker'
 import { ContractModal } from '@/components/leads/contract-modal'
 import { AppointmentModal } from '@/components/leads/appointment-modal'
+import { SellerGoals } from '@/components/leads/seller-goals'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 
@@ -1180,6 +1181,13 @@ export default function LeadDetailPage() {
             notes={lead.notes}
             sellerSituation={lead.seller_situation}
             motivationScore={lead.motivation_score}
+            activities={activities}
+          />
+
+          <SellerGoals
+            leadId={lead.id}
+            notes={lead.notes}
+            sellerSituation={lead.seller_situation}
             activities={activities}
           />
 
