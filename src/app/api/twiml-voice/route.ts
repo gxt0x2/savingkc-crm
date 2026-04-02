@@ -10,7 +10,6 @@ export async function POST(req: Request) {
   const to = body.get('To') as string
 
   // ── OUTBOUND: browser/SDK-initiated call ──
-  // When device.connect() is called from telephony bar, From starts with "client:"
   if (from && from.startsWith('client:')) {
     const sanitizedTo = to ? to.replace(/[^\d+]/g, '') : ''
     if (!sanitizedTo) {
@@ -28,12 +27,11 @@ export async function POST(req: Request) {
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   }
 
-  // ── INBOUND: ring for ~12 seconds, then IVR ──
+  // ── INBOUND: ~5s spoken greeting, 5s gather timeout, no ringback ──
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Play>${BASE_URL}/audio/us-ringback.wav</Play>
-  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}" method="POST" timeout="8">
-    <Play>${BASE_URL}/audio/ivr-greeting.mp3</Play>
+  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}" method="POST" timeout="5">
+    <Say voice="Polly.Matthew">Thanks for calling Saving K C. Press 1 to sell your property. Press 2 for anything else.</Say>
   </Gather>
   <Redirect method="POST">${BASE_URL}/api/ivr/no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
 </Response>`

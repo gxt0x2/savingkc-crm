@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushToAgents } from '@/lib/push-notifications'
+import { downloadRecording } from '@/lib/mojo-recording-downloader'
+import { transcribeAudio } from '@/lib/mojo-transcriber'
+import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,7 +32,7 @@ export async function POST(req: Request) {
   const recordingSid = body.get('RecordingSid') as string
   const recordingDuration = body.get('RecordingDuration') as string
 
-  // If no leadId, try to find or create lead by phone number
+  // If no leadId, find or create lead by phone number (dedup)
   if (!resolvedLeadId && from) {
     const { data: existingLead } = await supabase
       .from('leads')
@@ -42,7 +45,6 @@ export async function POST(req: Request) {
     if (existingLead?.id) {
       resolvedLeadId = existingLead.id
     } else {
-      // Create lead so voicemail isn't orphaned
       const { data: newLead } = await supabase.from('leads').insert({
         full_name: `Voicemail Caller (${from})`,
         phone: from,
@@ -54,7 +56,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // Log voicemail to lead_activities — always linked to a lead now
+  // Log voicemail to lead_activities
   await supabase.from('lead_activities').insert({
     lead_id: resolvedLeadId || null,
     activity_type: 'voicemail',
@@ -70,9 +72,9 @@ export async function POST(req: Request) {
     }
   })
 
-  // SMS notify the agent — if no specific agent, notify BOTH
+  // SMS notify the agent
   const agentPhone = AGENT_PHONES[agent]
-  const vmMsg = `📩 New voicemail from ${from} (${recordingDuration}s). Listen: ${recordingUrl}${resolvedLeadId ? `\n${BASE_URL}/leads/${resolvedLeadId}` : ''}`
+  const vmMsg = `New voicemail from ${from} (${recordingDuration}s). Listen: ${recordingUrl}${resolvedLeadId ? `\n${BASE_URL}/leads/${resolvedLeadId}` : ''}`
 
   if (agentPhone) {
     try {
@@ -81,7 +83,6 @@ export async function POST(req: Request) {
       console.error(`Voicemail SMS notification to ${agent} failed:`, e)
     }
   } else {
-    // No specific agent — notify both
     await Promise.allSettled([
       twilio.messages.create({ body: vmMsg, from: TWILIO_PHONE, to: CASEY_PHONE }),
       twilio.messages.create({ body: vmMsg, from: TWILIO_PHONE, to: ERNEST_PHONE }),
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
     tag: 'voicemail',
   }).catch(() => {})
 
-  // Ari briefing event — always create
+  // Ari briefing event
   try {
     await supabase.from('ari_briefing_events').insert({
       event_type: 'voicemail_received',
@@ -108,7 +109,7 @@ export async function POST(req: Request) {
     })
   } catch {}
 
-  // Create callback task for voicemail
+  // Create callback task
   if (resolvedLeadId) {
     await supabase.from('lead_activities').insert({
       lead_id: resolvedLeadId,
@@ -126,7 +127,69 @@ export async function POST(req: Request) {
     })
   }
 
+  // Async transcript analysis (fire-and-forget)
+  if (recordingUrl && resolvedLeadId) {
+    transcribeAndAnalyze(recordingUrl, recordingSid, resolvedLeadId).catch(err =>
+      console.error('Voicemail transcript analysis failed:', err)
+    )
+  }
+
   return new NextResponse('<Response><Say voice="Polly.Matthew">Thank you. Goodbye.</Say><Hangup /></Response>', {
     headers: { 'Content-Type': 'text/xml' }
   })
+}
+
+async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, leadId: string) {
+  const filePath = await downloadRecording(recordingUrl, recordingSid)
+  const transcript = await transcribeAudio(filePath)
+
+  if (!transcript || transcript.length < 10) return
+
+  // Save transcript
+  await supabase.from('lead_activities').insert({
+    lead_id: leadId,
+    activity_type: 'note',
+    description: `Voicemail transcript: ${transcript}`,
+    agent: 'AI',
+    metadata: { source: 'whisper_transcription', recordingSid }
+  })
+
+  // Analyze transcript
+  const analysis = await analyzeCallTranscript(transcript)
+
+  // Update lead with extracted fields
+  const leadUpdates: Record<string, any> = {}
+  if (analysis.motivationScore) leadUpdates.motivation_score = analysis.motivationScore
+  if (analysis.urgency) leadUpdates.urgency = analysis.urgency
+  if (analysis.conditionOverall) leadUpdates.property_condition = analysis.conditionOverall
+  if (analysis.sellerAsking) leadUpdates.asking_price = analysis.sellerAsking
+
+  if (Object.keys(leadUpdates).length > 0) {
+    try { await supabase.from('leads').update(leadUpdates).eq('id', leadId) } catch {}
+  }
+
+  // Save analysis
+  await supabase.from('lead_activities').insert({
+    lead_id: leadId,
+    activity_type: 'note',
+    description: `AI Analysis: ${analysis.aiSummary || analysis.summary || 'Analysis complete'}`,
+    agent: 'AI',
+    metadata: { source: 'call_analysis', analysis }
+  })
+
+  // Update manifest if exists
+  const { data: manifest } = await supabase
+    .from('manifests')
+    .select('id')
+    .eq('lead_id', leadId)
+    .single()
+
+  if (manifest?.id) {
+    try {
+      await supabase.from('manifests').update({
+        ai_call_analysis: analysis,
+        last_call_transcript: transcript,
+      }).eq('id', manifest.id)
+    } catch {}
+  }
 }

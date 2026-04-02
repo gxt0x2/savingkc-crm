@@ -31,10 +31,29 @@ export async function GET(req: NextRequest) {
         .eq('email', email)
         .single()
 
-      if (error) {
-        return NextResponse.json({ profile: null })
+      if (!error && data) {
+        return NextResponse.json({ profile: data })
       }
-      return NextResponse.json({ profile: data })
+
+      // Fallback: try matching by name from email prefix (e.g. ernest@... → Ernest)
+      const nameGuess = email.split('@')[0].replace(/[^a-zA-Z]/g, '')
+      if (nameGuess) {
+        const { data: allProfiles } = await supabase
+          .from('agent_profiles')
+          .select('*')
+
+        if (allProfiles) {
+          const match = allProfiles.find((p: any) => {
+            const profileName = (p.full_name || '').toLowerCase()
+            return profileName.includes(nameGuess.toLowerCase())
+          })
+          if (match) {
+            return NextResponse.json({ profile: match })
+          }
+        }
+      }
+
+      return NextResponse.json({ profile: null })
     }
 
     return NextResponse.json({ profile: null })

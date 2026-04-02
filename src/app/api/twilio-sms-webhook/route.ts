@@ -6,6 +6,7 @@ import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
 import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
 import { sendPushToAgents } from '@/lib/push-notifications'
+import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -338,24 +339,28 @@ export async function POST(req: Request) {
         } catch {}
       }
 
-      // Auto-reply to unknown sender (delayed 30-60s to feel natural)
+      // Auto-reply to unknown sender (delayed 30-60s, with dedup)
       const optedOut = await isOptedOut(from)
       const { allowed: phoneOk } = phoneRateLimit(from)
       if (!optedOut && phoneOk) {
         const replyFrom = to || TWILIO_PHONE
         const autoReplyMsg = `Thanks for reaching out to Saving KC Homebuyers! Are you looking to sell a property? Reply YES and we'll call you right back.`
-        sendDelayed(async () => {
-          await twilioClient.messages.create({ body: autoReplyMsg, from: replyFrom, to: from })
-          if (newLeadId) {
-            await supabase.from('lead_activities').insert({
-              lead_id: newLeadId,
-              activity_type: 'sms',
-              description: autoReplyMsg,
-              agent: 'System',
-              metadata: { direction: 'outbound', from: replyFrom, to: from, trigger: 'unknown_sms_auto_reply' }
-            })
-          }
-        }, 30, 60)
+        const isDupe = await isDuplicateSms(from, autoReplyMsg)
+        if (!isDupe) {
+          sendDelayed(async () => {
+            await twilioClient.messages.create({ body: autoReplyMsg, from: replyFrom, to: from })
+            await logSmsSend(from, autoReplyMsg, replyFrom, newLeadId || undefined)
+            if (newLeadId) {
+              await supabase.from('lead_activities').insert({
+                lead_id: newLeadId,
+                activity_type: 'sms',
+                description: autoReplyMsg,
+                agent: 'System',
+                metadata: { direction: 'outbound', from: replyFrom, to: from, trigger: 'unknown_sms_auto_reply' }
+              })
+            }
+          }, 30, 60)
+        }
       }
     }
 

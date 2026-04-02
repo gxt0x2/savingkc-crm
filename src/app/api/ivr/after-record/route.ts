@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getAgentRouting } from '@/lib/agent-routing'
+import { downloadRecording } from '@/lib/mojo-recording-downloader'
+import { transcribeAudio } from '@/lib/mojo-transcriber'
+import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,53 +11,57 @@ const supabase = createClient(
 )
 const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
 
-const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
-const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
-const CASEY_COMPANY = '+18167277667'
-const ERNEST_COMPANY = '+18166088588'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
-
-function isOfficeHours(): boolean {
-  // 9AM - 5PM CST (UTC-6, or UTC-5 during DST)
-  const now = new Date()
-  const cst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }))
-  const hour = cst.getHours()
-  return hour >= 9 && hour < 17
-}
-
+/**
+ * Voicemail handler — only triggered when BOTH agents miss the call.
+ * Creates/updates lead, alerts agents, triggers transcript analysis.
+ */
 export async function POST(req: Request) {
   const url = new URL(req.url)
   const from = url.searchParams.get('from') || ''
   const callSid = url.searchParams.get('callSid') || ''
+  const calledNumber = url.searchParams.get('calledNumber') || ''
 
   const body = await req.formData()
   const recordingUrl = body.get('RecordingUrl') as string
   const recordingSid = body.get('RecordingSid') as string
 
-  // Create lead immediately — caller ID is the phone number
-  const { data: newLead } = await supabase
-    .from('leads')
-    .insert({
-      full_name: 'Inbound Seller',
-      phone: from,
-      source: 'inbound_ivr',
-      station: 'intake',
-      priority: 'hot',
-      notes: `Inbound IVR call. Recording: ${recordingUrl}. CallSid: ${callSid}`
-    })
-    .select()
-    .single()
+  const routing = getAgentRouting(calledNumber)
 
-  const leadId = newLead?.id
+  // Find or create lead (dedup by phone)
+  let leadId = ''
+  if (from) {
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('phone', from)
+      .limit(1)
+      .single()
 
-  // Log the call + recording
+    if (existingLead?.id) {
+      leadId = existingLead.id
+      await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
+    } else {
+      const { data: newLead } = await supabase.from('leads').insert({
+        full_name: 'Inbound Seller',
+        phone: from,
+        source: 'inbound_ivr',
+        station: 'intake',
+        priority: 'hot',
+        notes: `Inbound IVR voicemail. Recording: ${recordingUrl}. CallSid: ${callSid}`
+      }).select('id').single()
+      leadId = newLead?.id || ''
+    }
+  }
+
+  // Log the voicemail recording
   if (leadId) {
     await supabase.from('lead_activities').insert({
       lead_id: leadId,
-      activity_type: 'call',
-      description: 'Inbound seller — pressed 1, left name/address recording',
+      activity_type: 'voicemail',
+      description: 'Voicemail left after both agents missed inbound seller call',
       agent: 'System',
       metadata: {
         direction: 'inbound',
@@ -61,82 +69,109 @@ export async function POST(req: Request) {
         callSid,
         recordingUrl,
         recordingSid,
-        source: 'ivr_press_1'
+        source: 'ivr_voicemail'
       }
     })
   }
 
-  // Text the right person based on office hours + alert both
-  const primaryRecipient = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
-  const secondaryRecipient = isOfficeHours() ? ERNEST_PHONE : CASEY_PHONE
-  const primaryName = isOfficeHours() ? 'Casey' : 'Ernest'
-  const urgentMsg = `[URGENT] INBOUND SELLER — ${from}. Just called in. Recording: ${recordingUrl}\nCall back NOW.`
+  // Alert both agents
+  const urgentMsg = `[URGENT] Inbound seller voicemail from ${from}. Recording: ${recordingUrl}${leadId ? '\n' + BASE_URL + '/leads/' + leadId : ''}\nCall back NOW.`
   await Promise.allSettled([
-    twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: primaryRecipient }),
-    twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: secondaryRecipient }),
+    twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
+    twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: routing.secondary.phone }),
   ])
-  // Log the alert
-  if (leadId) {
-    try {
-      await supabase.from('lead_activities').insert({
-        lead_id: leadId,
-        activity_type: 'sms',
-        description: urgentMsg,
-        agent: 'System',
-        metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'ivr_press1_alert' },
-      })
-    } catch {}
-  }
 
-  // Create 3-min callback task for Casey
-  const due3min = new Date(Date.now() + 3 * 60 * 1000).toISOString()
+  // Create callback task
   if (leadId) {
     await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'task',
-      description: `URGENT: Call back inbound seller at ${from}`,
+      description: `URGENT: Call back inbound seller at ${from} — voicemail left`,
       agent: 'Ari',
       metadata: {
         task_type: 'callback',
-        due_date: due3min,
-        assigned_to: isOfficeHours() ? 'Casey' : 'Ernest',
+        due_date: new Date(Date.now() + 3 * 60 * 1000).toISOString(),
+        assigned_to: routing.primary.name,
         priority: 'critical',
         status: 'pending',
         escalate_after_minutes: 3,
-        escalate_to: ERNEST_PHONE
+        escalate_to: routing.secondary.phone
       }
     })
 
-    // Ari briefing event
     await supabase.from('ari_briefing_events').insert({
-      event_type: 'inbound_seller_ivr',
+      event_type: 'inbound_seller_voicemail',
       priority: 'critical',
-      title: `[URGENT] Inbound seller called in from ${from}`,
-      description: `Pressed 1, left recording. Casey notified. Callback task due in 3 min.`,
+      title: `[URGENT] Inbound seller voicemail from ${from}`,
+      description: `Both agents missed. Voicemail left. Callback task created.`,
       lead_id: leadId,
       action_url: `/leads/${leadId}`
     })
   }
 
-  // Schedule 10-min Ari text-back if nobody calls (via separate cron check)
-  // Store the timestamp so the cron can check it
-  if (leadId) {
-    await supabase.from('leads').update({
-      notes: `Inbound IVR. Recording: ${recordingUrl}. Callback deadline: ${new Date(Date.now() + 10 * 60 * 1000).toISOString()}`
-    }).eq('id', leadId)
+  // Async transcript analysis (fire-and-forget)
+  if (recordingUrl && leadId) {
+    transcribeAndAnalyze(recordingUrl, recordingSid, leadId).catch(err =>
+      console.error('Voicemail transcript analysis failed:', err)
+    )
   }
 
-  // Route based on office hours — caller ID shows the agent's company number
-  const primaryPhone = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
-  const primaryLabel = isOfficeHours() ? 'Casey' : 'Ernest'
-  const primaryCompanyNumber = isOfficeHours() ? CASEY_COMPANY : ERNEST_COMPANY
+  return new NextResponse('<Response><Say voice="Polly.Matthew">Thank you. We\'ll call you back shortly.</Say><Hangup /></Response>', {
+    headers: { 'Content-Type': 'text/xml' }
+  })
+}
 
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${leadId || ''}&amp;primary=${encodeURIComponent(primaryLabel)}" method="POST" timeout="15" callerId="${primaryCompanyNumber}">
-    <Number url="${BASE_URL}/api/ivr/whisper?type=seller&amp;from=${encodeURIComponent(from)}&amp;leadId=${leadId || ''}">${primaryPhone}</Number>
-  </Dial>
-</Response>`
+async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, leadId: string) {
+  const filePath = await downloadRecording(recordingUrl, recordingSid)
+  const transcript = await transcribeAudio(filePath)
 
-  return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+  if (!transcript || transcript.length < 10) return
+
+  // Save transcript to lead activity
+  await supabase.from('lead_activities').insert({
+    lead_id: leadId,
+    activity_type: 'note',
+    description: `Voicemail transcript: ${transcript}`,
+    agent: 'AI',
+    metadata: { source: 'whisper_transcription', recordingSid }
+  })
+
+  // Analyze transcript
+  const analysis = await analyzeCallTranscript(transcript)
+
+  // Update lead with extracted fields
+  const leadUpdates: Record<string, any> = {}
+  if (analysis.motivationScore) leadUpdates.motivation_score = analysis.motivationScore
+  if (analysis.urgency) leadUpdates.urgency = analysis.urgency
+  if (analysis.conditionOverall) leadUpdates.property_condition = analysis.conditionOverall
+  if (analysis.sellerAsking) leadUpdates.asking_price = analysis.sellerAsking
+
+  if (Object.keys(leadUpdates).length > 0) {
+    try { await supabase.from('leads').update(leadUpdates).eq('id', leadId) } catch {}
+  }
+
+  // Save analysis to lead activity
+  await supabase.from('lead_activities').insert({
+    lead_id: leadId,
+    activity_type: 'note',
+    description: `AI Analysis: ${analysis.aiSummary || analysis.summary || 'Analysis complete'}`,
+    agent: 'AI',
+    metadata: { source: 'call_analysis', analysis }
+  })
+
+  // Update manifest with analysis if it exists
+  const { data: manifest } = await supabase
+    .from('manifests')
+    .select('id')
+    .eq('lead_id', leadId)
+    .single()
+
+  if (manifest?.id) {
+    try {
+      await supabase.from('manifests').update({
+        ai_call_analysis: analysis,
+        last_call_transcript: transcript,
+      }).eq('id', manifest.id)
+    } catch {}
+  }
 }

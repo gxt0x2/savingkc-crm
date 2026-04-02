@@ -13,7 +13,11 @@ export const metadata: Metadata = {
   title: 'Savings KC | Acquisitions CRM',
   description: 'SavingKC Real Estate Acquisitions CRM',
   icons: {
-    icon: '/favicon.ico',
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon.ico', sizes: '16x16' },
+    ],
   },
 }
 

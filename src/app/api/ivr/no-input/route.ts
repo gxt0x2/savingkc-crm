@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
+import { getAgentRouting } from '@/lib/agent-routing'
+import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,14 +13,11 @@ const supabase = createClient(
 const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
 // Random delay to make auto-texts feel human
-function randomDelay(minSec: number, maxSec: number): number {
-  return (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
-}
-
 function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
-  const delay = randomDelay(minSec, maxSec)
+  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
   setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
 }
 
@@ -32,25 +31,13 @@ const TEAM_NUMBERS = new Set([
 
 export async function POST(req: Request) {
   const url = new URL(req.url)
-
-  // Twilio signature validation
-  const isValid = await validateTwilioWebhook(req)
-  if (!isValid) {
-    return new NextResponse('Forbidden', { status: 403 })
-  }
-
-  // IP-based rate limiting
-  const ip = getClientIp(req)
-  const { allowed: ipAllowed } = rateLimit(ip, rateLimitConfigs.webhook)
-  if (!ipAllowed) {
-    return new NextResponse('Rate limited', { status: 429 })
-  }
-
   const from = url.searchParams.get('from') || ''
   const calledNumber = url.searchParams.get('calledNumber') || TWILIO_PHONE
 
+  const routing = getAgentRouting(calledNumber)
+
   if (from && !from.includes('anonymous') && !from.includes('blocked') && !TEAM_NUMBERS.has(from)) {
-    // Find or create lead so the call isn't orphaned
+    // Find or create lead (dedup by phone)
     let noInputLeadId: string | null = null
     const { data: existingLead } = await supabase
       .from('leads')
@@ -72,40 +59,41 @@ export async function POST(req: Request) {
       noInputLeadId = newLead?.id || null
     }
 
-    // Log the original inbound call (was missing before)
+    // Log the inbound call
     await supabase.from('lead_activities').insert({
       lead_id: noInputLeadId,
       activity_type: 'call',
-      description: `Inbound call from ${from} — no IVR input, auto-text sent`,
+      description: `Inbound call from ${from} — no IVR input, routing to agents`,
       agent: 'System',
       metadata: { direction: 'inbound', from, tag: 'ivr_no_input' }
     })
 
-    // Send text-back (delayed 45-90s to feel natural)
+    // Send auto-text as backup (delayed, with dedup)
     const optedOut = await isOptedOut(from)
     const { allowed: phoneAllowed } = phoneRateLimit(from)
     if (!optedOut && phoneAllowed) {
       const msg = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`
-      sendDelayed(async () => {
-        await twilio.messages.create({ body: msg, from: calledNumber, to: from })
-        await supabase.from('lead_activities').insert({
-          lead_id: noInputLeadId,
-          activity_type: 'sms',
-          description: msg,
-          agent: 'System',
-          metadata: { direction: 'outbound', to: from, trigger: 'ivr_no_input', awaiting_yes_reply: true }
-        })
-      }, 45, 90)
+      const isDupe = await isDuplicateSms(from, msg)
+      if (!isDupe) {
+        sendDelayed(async () => {
+          await twilio.messages.create({ body: msg, from: calledNumber, to: from })
+          await logSmsSend(from, msg, calledNumber, noInputLeadId || undefined)
+          await supabase.from('lead_activities').insert({
+            lead_id: noInputLeadId,
+            activity_type: 'sms',
+            description: msg,
+            agent: 'System',
+            metadata: { direction: 'outbound', to: from, trigger: 'ivr_no_input', awaiting_yes_reply: true }
+          })
+        }, 45, 90)
+      }
     }
 
-    // Alert agents about missed IVR caller
-    const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
-    const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
-    const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
-    const noInputAlert = `📞 Inbound call from ${from} — no IVR input. Auto-text sent.${noInputLeadId ? ' ' + BASE_URL + '/leads/' + noInputLeadId : ''}`
+    // Alert agents
+    const noInputAlert = `Inbound call from ${from} — no IVR input. Routing to agents now.${noInputLeadId ? ' ' + BASE_URL + '/leads/' + noInputLeadId : ''}`
     await Promise.allSettled([
-      twilio.messages.create({ body: noInputAlert, from: calledNumber, to: CASEY_PHONE }),
-      twilio.messages.create({ body: noInputAlert, from: calledNumber, to: ERNEST_PHONE }),
+      twilio.messages.create({ body: noInputAlert, from: calledNumber, to: routing.primary.phone }),
+      twilio.messages.create({ body: noInputAlert, from: calledNumber, to: routing.secondary.phone }),
     ])
 
     // Ari briefing event
@@ -115,13 +103,24 @@ export async function POST(req: Request) {
           event_type: 'ivr_no_input',
           priority: 'medium',
           title: `Inbound call — no IVR input: ${from}`,
-          description: `Caller didn't press any option. Auto-text sent. Watch for YES reply.`,
+          description: `Caller didn't press any option. Routing to agents. Auto-text sent as backup.`,
           lead_id: noInputLeadId,
           action_url: `/leads/${noInputLeadId}`,
         })
       } catch {}
     }
+
+    // Dial both agents instead of hanging up
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(noInputLeadId || '')}&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=no_input" method="POST" timeout="20" callerId="${routing.primary.companyNumber}">
+    <Number url="${BASE_URL}/api/ivr/whisper?type=call&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(noInputLeadId || '')}">${routing.primary.phone}</Number>
+    <Number url="${BASE_URL}/api/ivr/whisper?type=call&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(noInputLeadId || '')}">${routing.secondary.phone}</Number>
+  </Dial>
+</Response>`
+    return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   }
 
+  // Anonymous/blocked/team caller — just hang up
   return new NextResponse('<Response><Hangup /></Response>', { headers: { 'Content-Type': 'text/xml' } })
 }

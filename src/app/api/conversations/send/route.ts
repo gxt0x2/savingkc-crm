@@ -4,6 +4,7 @@ import twilio from 'twilio'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
+import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,6 +36,11 @@ export async function POST(req: Request) {
       // Check opt-out before sending
       if (await isOptedOut(phone)) {
         return NextResponse.json({ error: 'This number has opted out of SMS messages' }, { status: 400 })
+      }
+
+      // Check 24hr dedup
+      if (await isDuplicateSms(phone, body)) {
+        return NextResponse.json({ error: 'Duplicate SMS — same message sent to this number within 24 hours' }, { status: 409 })
       }
 
       // Auto-detect the right "from" number: use the Twilio number this lead last contacted
@@ -91,6 +97,9 @@ export async function POST(req: Request) {
           message_sid: msg.sid,
         },
       })
+
+      // Log to dedup table
+      logSmsSend(phone, body.trim(), effectiveFrom, leadId || undefined).catch(() => {})
 
       // Auto-advance pipeline on first outbound contact
       if (leadId) {

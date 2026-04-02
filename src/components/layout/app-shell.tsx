@@ -23,6 +23,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         const data = await res.json()
         if (data.profile?.profile_photo_url) {
           setProfilePhotoUrl(data.profile.profile_photo_url)
+        } else if (!data.profile) {
+          // Profile not found by email — try linking Google OAuth to existing agent_profile
+          const meta = (user as any).user_metadata || {}
+          const linkRes = await fetch('/api/auth/link-profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: user.email,
+              name: meta.full_name || meta.name || '',
+              phone: meta.phone || '',
+            }),
+          })
+          if (linkRes.ok) {
+            // Retry loading profile after linking
+            const res2 = await fetch(`/api/settings?email=${encodeURIComponent(user.email!)}`)
+            const data2 = await res2.json()
+            if (data2.profile?.profile_photo_url) {
+              setProfilePhotoUrl(data2.profile.profile_photo_url)
+            }
+          }
         }
       } catch {}
     }
