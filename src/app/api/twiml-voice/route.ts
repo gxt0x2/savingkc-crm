@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}&amp;coldcall=1" method="POST" timeout="4">
-    <Say voice="Polly.Matthew">Hey, we recently reached out about a property in your area. If you're interested in selling, press 1.</Say>
+    <Say voice="Polly.Matthew">Hey, we recently reached out about a property in your area. If you're interested in an offer, press 1.</Say>
   </Gather>
   <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
 </Response>`

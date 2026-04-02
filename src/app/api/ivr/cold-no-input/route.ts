@@ -61,7 +61,7 @@ export async function POST(req: Request) {
   const optedOut = await isOptedOut(from)
   const { allowed: phoneOk } = phoneRateLimit(from)
   if (!optedOut && phoneOk) {
-    const autoText = `Hey! We recently tried reaching you about a property in your area. If you've thought about selling, we'd love to make you a cash offer — no repairs, no fees. Reply YES if you're interested.`
+    const autoText = `Hey! We recently tried reaching you about a property in your area. If you've thought about selling, we'd love to make you a cash offer — no repairs, no fees. Just reply YES if you're interested.`
     const isDupe = await isDuplicateSms(from, autoText)
     if (!isDupe) {
       sendDelayed(async () => {
