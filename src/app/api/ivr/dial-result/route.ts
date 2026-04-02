@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAgentRouting } from '@/lib/agent-routing'
+import { isOptedOut } from '@/lib/sms-opt-out'
+import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
+import { phoneRateLimit } from '@/middleware/rate-limit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,6 +13,11 @@ const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWI
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+
+function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
+  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
+  setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
+}
 
 export async function POST(req: Request) {
   const url = new URL(req.url)
@@ -25,7 +33,7 @@ export async function POST(req: Request) {
   const routing = getAgentRouting(calledNumber)
 
   if (dialStatus === 'completed') {
-    // Agent answered — log it
+    // Agent answered — log it, no auto-text needed
     if (leadId) {
       await supabase.from('lead_activities').insert({
         lead_id: leadId,
@@ -35,7 +43,7 @@ export async function POST(req: Request) {
         metadata: { outcome: 'connected', direction: 'inbound', dialCallSid, type }
       })
 
-      // Mark any pending callback tasks done
+      // Mark pending callback tasks done
       const { data: pendingTasks } = await supabase
         .from('lead_activities')
         .select('id, metadata')
@@ -55,9 +63,10 @@ export async function POST(req: Request) {
     return new NextResponse('<Response></Response>', { headers: { 'Content-Type': 'text/xml' } })
   }
 
-  // Nobody answered — escalate
+  // ── Nobody answered ──
+
   if (leadId) {
-    // Alert both agents via SMS
+    // Alert both agents
     const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${from} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${leadId}`
     await Promise.allSettled([
       twilio.messages.create({ body: missedMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
@@ -73,7 +82,7 @@ export async function POST(req: Request) {
       metadata: { outcome: 'missed', direction: 'inbound', dialStatus, type }
     })
 
-    // Create urgent callback task
+    // Urgent callback task
     await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'task',
@@ -88,6 +97,31 @@ export async function POST(req: Request) {
         seller_phone: from
       }
     })
+  }
+
+  // Auto-text ONLY when both agents miss — delayed 3-5 min so it feels human
+  if (from && leadId) {
+    const optedOut = await isOptedOut(from)
+    const { allowed: phoneOk } = phoneRateLimit(from)
+    if (!optedOut && phoneOk) {
+      const autoText = type === 'seller'
+        ? `Hi, this is Saving KC Homebuyers. Sorry we missed your call! Are you still looking to sell your property? We'd love to chat — reply YES or call us back anytime.`
+        : `Hi, this is Saving KC Homebuyers. Sorry we missed your call! How can we help? Feel free to call back or reply to this text.`
+      const isDupe = await isDuplicateSms(from, autoText)
+      if (!isDupe) {
+        sendDelayed(async () => {
+          await twilio.messages.create({ body: autoText, from: calledNumber || TWILIO_PHONE, to: from })
+          await logSmsSend(from, autoText, calledNumber || TWILIO_PHONE, leadId)
+          await supabase.from('lead_activities').insert({
+            lead_id: leadId,
+            activity_type: 'sms',
+            description: autoText,
+            agent: 'System',
+            metadata: { direction: 'outbound', to: from, trigger: 'missed_call_followup' }
+          })
+        }, 180, 300) // 3-5 minutes
+      }
+    }
   }
 
   // Route caller to voicemail
