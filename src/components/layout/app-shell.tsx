@@ -95,6 +95,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               />
             </form>
             <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  const bar = document.querySelector('[data-telephony-dial]') as HTMLButtonElement | null
+                  if (bar) bar.click()
+                }}
+                className="p-2 rounded-full transition-colors bg-green-500 hover:bg-green-600 flex items-center justify-center"
+                title="New Call"
+              >
+                <Icon name="phone" className="text-white" />
+              </button>
               <button className="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
                 <Icon name="notifications" />
               </button>

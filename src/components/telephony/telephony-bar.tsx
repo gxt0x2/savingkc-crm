@@ -295,6 +295,7 @@ export function TelephonyBar() {
                   <Icon name="refresh" />
                 </button>
                 <button
+                  data-telephony-dial
                   onClick={() => setShowDial(true)}
                   disabled={status === 'connecting' || status === 'offline'}
                   className="px-4 sm:px-6 py-2.5 bg-secondary text-white rounded-full flex items-center gap-1.5 sm:gap-2 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"

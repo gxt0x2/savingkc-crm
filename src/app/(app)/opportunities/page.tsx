@@ -103,11 +103,11 @@ export default function OpportunitiesPage() {
   async function fetchLeads() {
     setLoading(true)
     const supabase = createClient()
-    // Fetch leads where priority = 'hot' OR is_favorite = true (regardless of station)
+    // Fetch leads in active pipeline stages, hot leads, or favorited leads
     const { data } = await supabase
       .from('leads')
       .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at, updated_at, is_favorite, arv, offer_amount, repair_estimate, motivation_score, seller_situation, appointment_date')
-      .or('priority.eq.hot,is_favorite.eq.true')
+      .or('priority.eq.hot,is_favorite.eq.true,station.in.(qualifying,appt_set,negotiations,contract_signed)')
       .order('updated_at', { ascending: false })
     const rows = (data as LeadRow[]) || []
     setDeals(rows.map(leadToDeal))
@@ -125,7 +125,7 @@ export default function OpportunitiesPage() {
     setPinning(null)
   }
 
-  const hotDeals = deals.filter((d) => d.ari_tags?.includes('Hot Lead')).slice(0, 3)
+  const hotDeals = deals.filter((d) => d.ari_tags?.includes('Hot Lead'))
   const otherDeals = deals.filter((d) => !d.ari_tags?.includes('Hot Lead'))
 
   return (

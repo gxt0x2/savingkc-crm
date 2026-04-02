@@ -705,6 +705,29 @@ export default function DashboardPage() {
                 <div className="text-[10px] text-slate-400">{leadCounts?.daysSinceLastContractSigned != null ? (leadCounts.daysSinceLastContractSigned > 14 ? 'Getting stale' : 'Looking good') : 'No contracts yet'}</div>
               </div>
             </div>
+            {/* Conversion Funnel */}
+            <div className="pt-2 border-t border-slate-100">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Conversion Funnel</div>
+              <div className="grid grid-cols-3 gap-2">
+                {(() => {
+                  const total = leadCounts?.total || 1
+                  const qualified = (leadCounts?.byStation?.qualifying ?? 0) + (leadCounts?.byStation?.qualified ?? 0) + (leadCounts?.byStation?.appt_set ?? 0) + (leadCounts?.byStation?.negotiations ?? 0) + (leadCounts?.byStation?.offer_made ?? 0) + (leadCounts?.byStation?.contract_signed ?? 0)
+                  const offered = (leadCounts?.byStation?.offer_made ?? 0) + (leadCounts?.byStation?.contract_signed ?? 0) + (leadCounts?.byStation?.negotiations ?? 0)
+                  const closed = leadCounts?.byStation?.contract_signed ?? 0
+                  return [
+                    { label: 'Lead→Qualified', rate: total > 0 ? Math.round((qualified / total) * 100) : 0 },
+                    { label: 'Qualified→Offer', rate: qualified > 0 ? Math.round((offered / qualified) * 100) : 0 },
+                    { label: 'Offer→Close', rate: offered > 0 ? Math.round((closed / offered) * 100) : 0 },
+                  ].map(({ label, rate }) => (
+                    <div key={label} className="text-center p-2 rounded-lg bg-slate-50/80">
+                      <div className={`text-lg font-black tabular-nums ${rate > 30 ? 'text-green-600' : rate > 15 ? 'text-amber-600' : 'text-slate-500'}`}>{rate}%</div>
+                      <div className="text-[9px] font-bold text-slate-400 uppercase leading-tight">{label}</div>
+                    </div>
+                  ))
+                })()}
+              </div>
+            </div>
+
             {/* Revenue */}
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="p-4 rounded-xl bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100/50">
