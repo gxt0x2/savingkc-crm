@@ -97,12 +97,9 @@ export default function LoginPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Brand */}
-        <div className="flex items-center justify-center gap-3 mb-8">
-          <img src="/logo.png" alt="Saving KC" className="w-12 h-12 rounded-xl" />
-          <div>
-            <h1 className="text-2xl font-black tracking-tight text-primary">Saving KC</h1>
-            <p className="text-[10px] font-bold text-secondary uppercase tracking-widest">Acquisitions CRM</p>
-          </div>
+        <div className="flex flex-col items-center mb-8">
+          <img src="/logo.svg" alt="Saving KC Homebuyers" className="h-14 w-auto mb-2" />
+          <p className="text-[10px] font-bold text-primary/40 uppercase tracking-[0.25em]">Acquisitions CRM</p>
         </div>
 
         {/* Login Card */}

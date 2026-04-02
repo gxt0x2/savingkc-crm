@@ -5,13 +5,15 @@ import { createClient } from '@/lib/supabase/client'
 import { Icon } from '@/components/ui/icon'
 
 const SOURCE_OPTIONS = [
-  'website_form',
   'cold_call',
+  'mojo_call',
   'referral',
-  'driving_for_dollars',
   'direct_mail',
+  'driving_for_dollars',
   'social_media',
-  'mojo_dialer',
+  'website_form',
+  'inbound_call',
+  'inbound_sms',
   'other',
 ]
 
@@ -45,6 +47,7 @@ export function AddLeadModal({ onClose, onSuccess }: AddLeadModalProps) {
     zip: '',
     county: '',
     source: 'cold_call',
+
     notes: '',
   })
   const [saving, setSaving] = useState(false)
