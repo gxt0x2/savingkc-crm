@@ -100,12 +100,38 @@ export function SellerGoals({ leadId, notes, sellerSituation, activities }: Sell
         }
       }
 
-      // Fallback: scan notes for goal-related keywords
-      if (extracted.length === 0) {
-        const allText = [notes, sellerSituation,
-          ...(activities?.map(a => a.description) || [])
-        ].filter(Boolean).join(' ').toLowerCase()
+      // Situation summary from manifest
+      const summary = m?.situation?.summary
+      if (summary && extracted.length === 0) {
+        extracted.push({ icon: 'info', label: 'Situation', value: summary })
+      }
 
+      // Situation types as goals context
+      const sitTypes: string[] = m?.situation?.type || []
+      const typeLabels: Record<string, string> = {
+        tax_delinquent: 'Needs to resolve tax debt',
+        inherited: 'Inherited property — wants to liquidate',
+        probate: 'Settle probate estate',
+        foreclosure: 'Avoid foreclosure',
+        divorce: 'Settle divorce assets',
+        vacant: 'Unload vacant property',
+        absentee: 'Remote owner — wants hassle-free sale',
+        relocation: 'Sell before relocating',
+        downsizing: 'Downsize to smaller home',
+      }
+      for (const st of sitTypes) {
+        const label = typeLabels[st]
+        if (label && !extracted.some(e => e.value.toLowerCase().includes(st))) {
+          extracted.push({ icon: 'flag', label: 'Goal', value: label })
+        }
+      }
+
+      // Scan all text for goal-related keywords
+      const allText = [notes, sellerSituation,
+        ...(activities?.map(a => a.description) || [])
+      ].filter(Boolean).join(' ').toLowerCase()
+
+      if (allText) {
         if (allText.includes('quick') || allText.includes('fast') || allText.includes('asap')) {
           extracted.push({ icon: 'bolt', label: 'Priority', value: 'Wants a fast close' })
         }
@@ -118,6 +144,11 @@ export function SellerGoals({ leadId, notes, sellerSituation, activities }: Sell
         if (allText.includes('repair') || allText.includes('as-is') || allText.includes('as is')) {
           extracted.push({ icon: 'handyman', label: 'Condition', value: 'Wants to sell as-is' })
         }
+      }
+
+      // Last resort: use seller_situation from lead record
+      if (extracted.length === 0 && sellerSituation) {
+        extracted.push({ icon: 'info', label: 'Situation', value: sellerSituation })
       }
 
       setGoals(extracted)

@@ -1129,15 +1129,6 @@ export default function LeadDetailPage() {
                 </a>
               </div>
             )}
-            {lead.email && (
-              <button
-                onClick={() => setEmailModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded-full text-sm font-bold transition-colors"
-              >
-                <Icon name="mail" size="text-sm" />
-                {lead.email}
-              </button>
-            )}
           </div>
         </div>
 

@@ -1,7 +1,11 @@
+// Seller Pain Points — Past / Present / Future timeline
+// Pulls structured data from manifest first, then falls back to keyword extraction
+
 'use client'
 
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { createClient } from '@/lib/supabase/client'
 
 interface PainPoint {
   period: 'past' | 'present' | 'future'
@@ -20,7 +24,7 @@ interface PainPointsProps {
   }>
 }
 
-// Keywords to extract pain points from text
+// Keywords for fallback extraction from raw text
 const PAIN_KEYWORDS: Record<string, { label: string; period: 'past' | 'present' | 'future' }> = {
   'behind on payments': { label: 'Behind on mortgage payments', period: 'present' },
   'late on mortgage': { label: 'Behind on mortgage payments', period: 'present' },
@@ -31,7 +35,7 @@ const PAIN_KEYWORDS: Record<string, { label: string; period: 'past' | 'present' 
   'inherited': { label: 'Inherited property', period: 'past' },
   'death': { label: 'Death in family', period: 'past' },
   'passed away': { label: 'Family member passed away', period: 'past' },
-  'can\'t afford': { label: 'Cannot afford property expenses', period: 'present' },
+  "can't afford": { label: 'Cannot afford property expenses', period: 'present' },
   'cant afford': { label: 'Cannot afford property expenses', period: 'present' },
   'repairs': { label: 'Property needs significant repairs', period: 'present' },
   'code violations': { label: 'Code violations on property', period: 'present' },
@@ -56,106 +60,169 @@ const PAIN_KEYWORDS: Record<string, { label: string; period: 'past' | 'present' 
   'hoa': { label: 'HOA issues or fees', period: 'present' },
 }
 
-function extractPainPoints(text: string): PainPoint[] {
+function extractFromText(text: string): PainPoint[] {
   const lower = text.toLowerCase()
   const found: Map<string, { label: string; period: 'past' | 'present' | 'future' }> = new Map()
-
   for (const [keyword, info] of Object.entries(PAIN_KEYWORDS)) {
-    if (lower.includes(keyword)) {
-      found.set(info.label, info)
-    }
+    if (lower.includes(keyword)) found.set(info.label, info)
   }
-
   const grouped: Record<string, string[]> = { past: [], present: [], future: [] }
-  for (const [, info] of found) {
-    grouped[info.period].push(info.label)
-  }
-
+  for (const [, info] of found) grouped[info.period].push(info.label)
   const result: PainPoint[] = []
-  if (grouped.past.length > 0) result.push({ period: 'past', items: grouped.past })
-  if (grouped.present.length > 0) result.push({ period: 'present', items: grouped.present })
-  if (grouped.future.length > 0) result.push({ period: 'future', items: grouped.future })
-
+  if (grouped.past.length) result.push({ period: 'past', items: grouped.past })
+  if (grouped.present.length) result.push({ period: 'present', items: grouped.present })
+  if (grouped.future.length) result.push({ period: 'future', items: grouped.future })
   return result
 }
 
-const PERIOD_CONFIG = {
-  past: { color: 'text-slate-400', dotBg: 'bg-slate-400', label: 'Past', icon: 'history' },
-  present: { color: 'text-amber-400', dotBg: 'bg-amber-400', label: 'Present', icon: 'radio_button_checked' },
-  future: { color: 'text-blue-400', dotBg: 'bg-blue-400', label: 'Future', icon: 'schedule' },
+// Map manifest situation types to pain points
+const SITUATION_TYPE_MAP: Record<string, { label: string; period: 'past' | 'present' | 'future' }> = {
+  tax_delinquent: { label: 'Tax delinquent', period: 'present' },
+  inherited: { label: 'Inherited property', period: 'past' },
+  probate: { label: 'Property in probate', period: 'present' },
+  foreclosure: { label: 'Facing foreclosure', period: 'future' },
+  pre_foreclosure: { label: 'In pre-foreclosure', period: 'present' },
+  divorce: { label: 'Going through divorce', period: 'present' },
+  vacant: { label: 'Property is vacant', period: 'present' },
+  absentee: { label: 'Absentee owner', period: 'present' },
+  code_violation: { label: 'Code violations', period: 'present' },
+  distressed: { label: 'Distressed property', period: 'present' },
+  behind_on_payments: { label: 'Behind on payments', period: 'present' },
+  relocation: { label: 'Needs to relocate', period: 'future' },
+  deceased_owner: { label: 'Owner deceased', period: 'past' },
+  tired_landlord: { label: 'Tired of being landlord', period: 'present' },
+  downsizing: { label: 'Looking to downsize', period: 'future' },
 }
 
 export function PainPoints({ leadId, notes, sellerSituation, motivationScore, activities }: PainPointsProps) {
   const [painPoints, setPainPoints] = useState<PainPoint[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Collect all text for analysis
-    const texts: string[] = []
-    if (notes) texts.push(notes)
-    if (sellerSituation) texts.push(sellerSituation)
-    activities?.forEach(a => {
-      if (a.description) texts.push(a.description)
-    })
-
-    const allText = texts.join(' ')
-
-    if (!allText) {
-      setPainPoints([])
-      return
-    }
-
-    // Try API extraction first
-    tryApiExtraction(allText)
-  }, [leadId, notes, sellerSituation, activities])
-
-  async function tryApiExtraction(text: string) {
-    // Local extraction first (instant)
-    const local = extractPainPoints(text)
-
-    // Try API for richer extraction
-    try {
+    async function analyze() {
       setLoading(true)
-      const res = await fetch('/api/ari/extract-pain-points', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, motivationScore }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.painPoints && data.painPoints.length > 0) {
-          setPainPoints(data.painPoints)
-          setLoading(false)
-          return
+      const grouped: Record<string, Set<string>> = { past: new Set(), present: new Set(), future: new Set() }
+
+      // 1. Pull from manifest (structured data — most reliable)
+      try {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('manifests')
+          .select('manifest')
+          .eq('lead_id', leadId)
+          .limit(1)
+          .maybeSingle()
+
+        const m = data?.manifest as any
+        if (m) {
+          // Situation types
+          const types: string[] = m.situation?.type || []
+          for (const t of types) {
+            const mapped = SITUATION_TYPE_MAP[t]
+            if (mapped) grouped[mapped.period].add(mapped.label)
+          }
+
+          // Motivation signals
+          const signals: string[] = m.situation?.motivation?.signals || []
+          for (const sig of signals) {
+            grouped.present.add(sig)
+          }
+
+          // Secondary motivations
+          const secondary: string[] = m.situation?.motivation?.secondary || []
+          for (const sec of secondary) {
+            grouped.present.add(sec)
+          }
+
+          // Red flags
+          const redFlags: string[] = m.flags?.redFlags || []
+          for (const rf of redFlags) {
+            grouped.present.add(rf)
+          }
+
+          // Opportunity flags
+          const oppFlags: string[] = m.flags?.opportunityFlags || []
+          for (const of_ of oppFlags) {
+            const mapped = SITUATION_TYPE_MAP[of_]
+            if (mapped) grouped[mapped.period].add(mapped.label)
+          }
+
+          // Deceased owner
+          if (m.owner?.deceased) grouped.past.add('Owner deceased')
+
+          // Vacant
+          if (m.property?.vacant) grouped.present.add('Property is vacant')
+
+          // Out of state
+          if (m.owner?.outOfState) grouped.present.add('Absentee / out-of-state owner')
+
+          // Tax delinquent
+          if (m.property?.taxCollector?.delinquentAmount) {
+            const amt = m.property.taxCollector.delinquentAmount
+            grouped.present.add(`Tax delinquent ($${Number(amt).toLocaleString()} owed)`)
+          }
+
+          // Objections
+          const objections: string[] = m.situation?.objections || []
+          for (const obj of objections) {
+            grouped.present.add(`Objection: ${obj}`)
+          }
+
+          // Blockers
+          const blockers: string[] = m.situation?.blockers || []
+          for (const b of blockers) {
+            grouped.future.add(`Blocker: ${b}`)
+          }
+
+          // Call transcript pain points
+          const transcripts = m.communications?.transcripts || []
+          for (const t of transcripts) {
+            const painPts: string[] = t.extractedData?.painPoints || t.extractedData?.pain_points || []
+            for (const pp of painPts) {
+              grouped.present.add(pp)
+            }
+          }
+        }
+      } catch { /* silent */ }
+
+      // 2. Keyword extraction from notes/activities (fallback)
+      const texts: string[] = []
+      if (notes) texts.push(notes)
+      if (sellerSituation) texts.push(sellerSituation)
+      activities?.forEach(a => { if (a.description) texts.push(a.description) })
+      const allText = texts.join(' ')
+
+      if (allText) {
+        const textPoints = extractFromText(allText)
+        for (const tp of textPoints) {
+          for (const item of tp.items) {
+            grouped[tp.period].add(item)
+          }
         }
       }
-    } catch {
-      // Fall through to local
+
+      // Build final list
+      const result: PainPoint[] = []
+      if (grouped.past.size) result.push({ period: 'past', items: [...grouped.past] })
+      if (grouped.present.size) result.push({ period: 'present', items: [...grouped.present] })
+      if (grouped.future.size) result.push({ period: 'future', items: [...grouped.future] })
+
+      setPainPoints(result)
+      setLoading(false)
     }
 
-    // Use local extraction
-    setPainPoints(local.length > 0 ? local : generateDefaultPainPoints(text))
-    setLoading(false)
-  }
+    if (leadId) analyze()
+  }, [leadId, notes, sellerSituation, motivationScore, activities])
 
-  function generateDefaultPainPoints(text: string): PainPoint[] {
-    // If we have text but no keyword matches, create generic entries
-    if (!text) return []
-    const result: PainPoint[] = []
-    
-    if (motivationScore && motivationScore >= 7) {
-      result.push({ period: 'present', items: ['High motivation detected - seller appears ready to act'] })
-    }
-    if (text.length > 20) {
-      result.push({ period: 'present', items: ['Situation details available - review notes for specifics'] })
-    }
-    
-    return result
+  const PERIOD_CONFIG = {
+    past: { color: 'text-slate-400', dotBg: 'bg-slate-400', label: 'Past', icon: 'history' },
+    present: { color: 'text-amber-400', dotBg: 'bg-amber-400', label: 'Present', icon: 'radio_button_checked' },
+    future: { color: 'text-blue-400', dotBg: 'bg-blue-400', label: 'Future', icon: 'schedule' },
   }
 
   return (
-    <section className="bg-[#1B2A4A] rounded-2xl p-6">
-      <div className="flex items-center gap-2 mb-5">
+    <section className="bg-[#1B2A4A] rounded-2xl p-5">
+      <div className="flex items-center gap-2 mb-4">
         <Icon name="psychology_alt" className="!text-lg text-rose-400" />
         <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
           Seller Pain Points
@@ -172,7 +239,7 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
           No pain points identified yet. Add notes or log calls to detect seller motivations.
         </p>
       ) : (
-        <div className="space-y-5 relative">
+        <div className="space-y-4 relative">
           {/* Timeline line */}
           <div className="absolute left-[11px] top-3 bottom-3 w-[2px] bg-white/10" />
 
@@ -180,11 +247,9 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
             const config = PERIOD_CONFIG[point.period]
             return (
               <div key={point.period} className="relative pl-8">
-                {/* Timeline dot */}
                 <div className={`absolute left-0 top-1 w-6 h-6 rounded-full border-2 border-[#1B2A4A] flex items-center justify-center ${config.dotBg}`}>
                   <div className="w-2 h-2 rounded-full bg-[#1B2A4A]" />
                 </div>
-
                 <p className={`text-[10px] font-black uppercase tracking-wider mb-1.5 ${config.color}`}>
                   {config.label}
                 </p>
