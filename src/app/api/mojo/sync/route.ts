@@ -829,6 +829,38 @@ export async function POST(req: NextRequest) {
               current_station: manifest.currentStation,
             })
             .eq('id', manifestId)
+
+          // G. Backfill lead from manifest data (fixes empty "Mojo Lead" / "Unknown" records)
+          if (leadId) {
+            const leadBackfill: Record<string, any> = {}
+            const currentLead = await supabase.from('leads').select('full_name, phone, property_address').eq('id', leadId).single()
+            const ld = currentLead?.data
+
+            // Backfill name from manifest owner
+            const manifestName = manifest.owner?.fullName
+            if (manifestName && ld?.full_name && ['Unknown', 'Mojo Lead', ''].includes(ld.full_name)) {
+              leadBackfill.full_name = manifestName
+            }
+
+            // Backfill phone from manifest owner phones
+            if (!ld?.phone && manifest.owner?.phones?.length > 0) {
+              leadBackfill.phone = manifest.owner.phones[0]
+            }
+
+            // Backfill address from manifest property
+            if (!ld?.property_address && manifest.property?.address) {
+              leadBackfill.property_address = manifest.property.address
+            }
+
+            // Backfill priority from manifest
+            if (manifest.priority && manifest.priority !== 'cold') {
+              leadBackfill.priority = manifest.priority
+            }
+
+            if (Object.keys(leadBackfill).length > 0) {
+              await supabase.from('leads').update(leadBackfill).eq('id', leadId)
+            }
+          }
         }
 
         // G. Alerts
