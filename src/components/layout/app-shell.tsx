@@ -17,25 +17,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function loadProfile() {
-      // Try Supabase first, fall back to localStorage
+      if (!user?.email) return
       try {
-        const res = await fetch('/api/settings')
+        const res = await fetch(`/api/settings?email=${encodeURIComponent(user.email)}`)
         const data = await res.json()
-        if (data.settings?.profilePhotoUrl) {
-          setProfilePhotoUrl(data.settings.profilePhotoUrl)
-          return
-        }
-      } catch {}
-      try {
-        const stored = localStorage.getItem('crm_settings')
-        if (stored) {
-          const settings = JSON.parse(stored)
-          setProfilePhotoUrl(settings.profilePhotoUrl || null)
+        if (data.profile?.profile_photo_url) {
+          setProfilePhotoUrl(data.profile.profile_photo_url)
         }
       } catch {}
     }
     loadProfile()
-  }, [])
+  }, [user?.email])
 
   return (
     <div className="min-h-screen flex flex-col">

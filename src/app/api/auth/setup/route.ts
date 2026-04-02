@@ -17,6 +17,7 @@ const AGENTS = [
     name: 'Ernest A. Dodson III',
     role: 'owner',
     phone: '+18162262552',
+    assigned_twilio_number: '+18166088588',
   },
   {
     email: 'casey@savingkc.com',
@@ -24,6 +25,7 @@ const AGENTS = [
     name: 'Casey Davis',
     role: 'agent',
     phone: '+18167564943',
+    assigned_twilio_number: '+18167277667',
   },
 ]
 
@@ -72,6 +74,7 @@ export async function POST(req: Request) {
       full_name: agent.name,
       role: agent.role,
       phone: agent.phone,
+      assigned_twilio_number: agent.assigned_twilio_number,
       notification_prefs: { sms: true, push: true, email: false },
       office_hours: { start: '08:00', end: '17:00', timezone: 'America/Chicago' },
     }, { onConflict: 'email' })

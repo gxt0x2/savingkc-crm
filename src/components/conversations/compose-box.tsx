@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
+import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
 type ComposeMode = 'sms' | 'email' | 'call'
 
@@ -10,24 +11,6 @@ const modes: { key: ComposeMode; label: string; icon: string }[] = [
   { key: 'sms', label: 'SMS', icon: 'sms' },
   { key: 'email', label: 'Email', icon: 'mail' },
   { key: 'call', label: 'Call', icon: 'call' },
-]
-
-const TWILIO_NUMBERS = [
-  { label: '(816) 307-7835 — Main', value: '+18163077835' },
-  { label: '(816) 429-2900 — SKC Business', value: '+18164292900' },
-  { label: '(816) 608-8858', value: '+18166088858' },
-  { label: '(816) 608-8770', value: '+18166088770' },
-  { label: '(816) 608-8808', value: '+18166088808' },
-  { label: '(816) 608-8552', value: '+18166088552' },
-  { label: '(816) 608-8559', value: '+18166088559' },
-  { label: '(816) 608-6699', value: '+18166086699' },
-  { label: '(816) 310-0845', value: '+18163100845' },
-  { label: '(816) 640-4701', value: '+18166404701' },
-  { label: '(816) 608-6648', value: '+18166086648' },
-  { label: '(816) 608-6999', value: '+18166086999' },
-  { label: '(816) 608-8588 — Ernest Company', value: '+18166088588' },
-  { label: '(816) 476-1344', value: '+18164761344' },
-  { label: '(816) 727-7667 — Casey Company', value: '+18167277667' },
 ]
 
 interface ComposeBoxProps {

@@ -2,11 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { KpiCard, MetricCard } from '@/components/dashboard/kpi-card'
-import { TrendChart } from '@/components/dashboard/trend-chart'
-import { PipelineFunnel } from '@/components/dashboard/pipeline-funnel'
-import { ColdCallStats } from '@/components/dashboard/cold-call-stats'
-import { ConversionHealth } from '@/components/dashboard/conversion-health'
 import { createClient } from '@/lib/supabase/client'
 import { useFinancials } from '@/hooks/use-financials'
 
@@ -24,6 +19,32 @@ interface MojoKpis {
   avgMotivation: number
   hotLeads: number
   date?: string
+}
+
+interface ActivityCounts {
+  calls: number
+  sms_sent: number
+  sms_received: number
+  voicemails: number
+}
+
+interface Task {
+  id: string
+  title: string
+  due_date: string | null
+  priority: string
+  status: string
+  lead_id: string | null
+}
+
+interface HotLead {
+  id: string
+  first_name: string | null
+  last_name: string | null
+  phone: string | null
+  source: string | null
+  created_at: string
+  station: string | null
 }
 
 function daysSince(dateStr: string | null): number | null {
@@ -80,10 +101,58 @@ function useMojoKpis() {
   return data
 }
 
+function useActivity() {
+  const [data, setData] = useState<ActivityCounts | null>(null)
+  useEffect(() => {
+    fetch('/api/dashboard/activity')
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => {})
+  }, [])
+  return data
+}
+
+function useTasks() {
+  const [data, setData] = useState<Task[]>([])
+  useEffect(() => {
+    fetch('/api/dashboard/tasks')
+      .then((r) => r.json())
+      .then((d) => setData(d.tasks || []))
+      .catch(() => {})
+  }, [])
+  return data
+}
+
+function useHotLeads() {
+  const [data, setData] = useState<HotLead[]>([])
+  useEffect(() => {
+    fetch('/api/dashboard/hot-leads')
+      .then((r) => r.json())
+      .then((d) => setData(d.leads || []))
+      .catch(() => {})
+  }, [])
+  return data
+}
+
+function formatPhone(phone: string | null) {
+  if (!phone) return '—'
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 11 && digits[0] === '1') {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  }
+  return phone
+}
+
 export default function DashboardPage() {
   const leadCounts = useLeadCounts()
   const mojoKpis = useMojoKpis()
   const { data: financials } = useFinancials()
+  const activity = useActivity()
+  const tasks = useTasks()
+  const hotLeads = useHotLeads()
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-[1440px] mx-auto w-full space-y-6 pb-32">
@@ -91,21 +160,48 @@ export default function DashboardPage() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <span className="text-[10px] font-bold text-secondary uppercase tracking-[0.2em] mb-1 block">
-            Executive Intelligence
+            Operations Dashboard
           </span>
           <h2 className="text-3xl font-extrabold tracking-tight text-primary">
-            Portfolio Performance
+            Today&apos;s Overview
           </h2>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <button className="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-semibold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
-            <Icon name="calendar_today" className="text-lg" />
-            Today
-          </button>
-          <button className="px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-slate-800 transition-colors flex items-center gap-2">
-            <Icon name="download" className="text-lg" />
-            Export Report
-          </button>
+      </div>
+
+      {/* Today's Activity */}
+      <div>
+        <h3 className="text-xs font-black text-secondary uppercase tracking-[0.2em] mb-3">
+          Today&apos;s Activity
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <Icon name="call" className="text-sm text-blue-500" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Calls</span>
+            </div>
+            <div className="text-3xl font-black text-primary">{activity?.calls ?? '—'}</div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <Icon name="send" className="text-sm text-green-500" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SMS Sent</span>
+            </div>
+            <div className="text-3xl font-black text-secondary">{activity?.sms_sent ?? '—'}</div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <Icon name="inbox" className="text-sm text-purple-500" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SMS Received</span>
+            </div>
+            <div className="text-3xl font-black text-primary">{activity?.sms_received ?? '—'}</div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <Icon name="voicemail" className="text-sm text-orange-500" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Voicemails</span>
+            </div>
+            <div className="text-3xl font-black text-orange-500">{activity?.voicemails ?? '—'}</div>
+          </div>
         </div>
       </div>
 
@@ -113,7 +209,7 @@ export default function DashboardPage() {
       {mojoKpis !== null && (
         <div>
           <h3 className="text-xs font-black text-secondary uppercase tracking-[0.2em] mb-3">
-            Mojo Dialer — {mojoKpis.date || 'Mar 20'}
+            Mojo Dialer — {mojoKpis.date || 'Today'}
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
@@ -136,7 +232,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Live Lead Counts */}
+      {/* Live Lead Pipeline */}
       <div>
         <h3 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-3">
           Live Lead Pipeline
@@ -161,7 +257,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Operational Metrics — DSH-01, DSH-02, DSH-06, DSH-07 */}
+      {/* Operational Pulse */}
       <div>
         <h3 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-3">
           Operational Pulse
@@ -206,51 +302,72 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        <KpiCard
-          label="Revenue"
-          value="$1.07M"
-          subtitle="127 deals closed"
-          trendValue="23%"
-          trendDirection="up"
-        />
-        <KpiCard
-          label="Expense"
-          value="$42K"
-          subtitle="Revenue per day"
-          trendValue="11%"
-          trendDirection="up"
-        />
-        <KpiCard
-          label="Profit Margin"
-          value="23.5%"
-          subtitle="Net margin maintained"
-          trendValue="3%"
-          trendDirection="up"
-        />
-      </div>
-
-      {/* Metric Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <MetricCard value="$45" label="Cost Per Lead" change="12% QoQ" changeDirection="down" />
-        <MetricCard value="$8,420" label="Avg. Assignment" change="15% QoQ" changeDirection="up" />
-        <MetricCard value="$3,740" label="Acquisition Cost" change="5% QoQ" changeDirection="down" />
-        <MetricCard value="6.8:1" label="LTV to CAC Ratio" change="22% QoQ" changeDirection="up" />
-        <MetricCard value="45" label="Cash Conversion (Days)" change="18% QoQ" changeDirection="down" />
-      </div>
-
-      {/* Trend Analysis */}
-      <TrendChart />
-
-      {/* Bottom Section: Cold Call + Funnel/Health */}
+      {/* Bottom Section: Tasks + Hot Leads */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ColdCallStats />
+        {/* Upcoming Tasks */}
+        <div>
+          <h3 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-3">
+            Upcoming Tasks
+          </h3>
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            {tasks.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-400">No pending tasks</div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {tasks.map((task) => (
+                  <div key={task.id} className="px-4 py-3 flex items-center gap-3">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                      task.status === 'overdue' ? 'bg-red-500' :
+                      task.priority === 'high' ? 'bg-orange-500' : 'bg-blue-400'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-slate-700 truncate">{task.title}</div>
+                      <div className="text-[10px] text-slate-400">
+                        {task.due_date ? new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No due date'}
+                        {task.status === 'overdue' && <span className="ml-1 text-red-500 font-bold">OVERDUE</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
-        <div className="space-y-6">
-          <h4 className="text-xs font-black text-primary uppercase tracking-[0.2em]">Flow & Health</h4>
-          <PipelineFunnel />
-          <ConversionHealth />
+        {/* Recent Hot Leads */}
+        <div>
+          <h3 className="text-xs font-black text-red-500 uppercase tracking-[0.2em] mb-3">
+            Recent Hot Leads
+          </h3>
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            {hotLeads.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-400">No hot leads</div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {hotLeads.map((lead) => (
+                  <a
+                    key={lead.id}
+                    href={`/leads/${lead.id}`}
+                    className="px-4 py-3 flex items-center gap-3 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-black flex-shrink-0">
+                      {(lead.first_name?.[0] || '?').toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-slate-700 truncate">
+                        {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown'}
+                      </div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                        <span>{formatPhone(lead.phone)}</span>
+                        {lead.source && <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[9px] font-medium">{lead.source}</span>}
+                      </div>
+                    </div>
+                    <Icon name="chevron_right" className="text-slate-300 text-sm" />
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

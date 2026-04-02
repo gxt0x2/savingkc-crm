@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -6,59 +6,56 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Settings stored in a simple key-value table
-// Uses upsert on key='crm_settings' for the single-tenant CRM
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const email = searchParams.get('email')
+  const all = searchParams.get('all')
 
-async function ensureTable() {
-  // Create table if it doesn't exist (runs via service role)
   try {
-    await supabase.rpc('exec', {
-      query: `CREATE TABLE IF NOT EXISTS crm_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`
-    })
+    if (all === 'true') {
+      const { data, error } = await supabase
+        .from('agent_profiles')
+        .select('*')
+        .order('role', { ascending: true })
+
+      if (error) {
+        return NextResponse.json({ profiles: [] })
+      }
+      return NextResponse.json({ profiles: data || [] })
+    }
+
+    if (email) {
+      const { data, error } = await supabase
+        .from('agent_profiles')
+        .select('*')
+        .eq('email', email)
+        .single()
+
+      if (error) {
+        return NextResponse.json({ profile: null })
+      }
+      return NextResponse.json({ profile: data })
+    }
+
+    return NextResponse.json({ profile: null })
   } catch {
-    // RPC might not exist — table may already exist or need manual creation
+    return NextResponse.json({ profile: null })
   }
 }
 
-let tableChecked = false
-
-export async function GET() {
+export async function POST(req: NextRequest) {
   try {
-    if (!tableChecked) {
-      await ensureTable()
-      tableChecked = true
+    const body = await req.json()
+    const { email, ...updates } = body
+
+    if (!email) {
+      return NextResponse.json({ success: false, error: 'Email required' }, { status: 400 })
     }
-
-    const { data, error } = await supabase
-      .from('crm_settings')
-      .select('value')
-      .eq('key', 'agent_profile')
-      .single()
-
-    if (error && error.code === '42P01') {
-      // Table doesn't exist — fall back gracefully
-      return NextResponse.json({ settings: null })
-    }
-
-    if (data?.value) {
-      return NextResponse.json({ settings: data.value })
-    }
-    return NextResponse.json({ settings: null })
-  } catch {
-    return NextResponse.json({ settings: null })
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    const settings = await req.json()
 
     const { error } = await supabase
-      .from('crm_settings')
-      .upsert(
-        { key: 'agent_profile', value: settings, updated_at: new Date().toISOString() },
-        { onConflict: 'key' }
-      )
+      .from('agent_profiles')
+      .update(updates)
+      .eq('email', email)
 
     if (error) {
       console.error('Settings save error:', error)

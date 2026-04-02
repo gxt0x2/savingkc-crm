@@ -2,35 +2,44 @@
 
 import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { useAuth } from '@/hooks/use-auth'
+import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
-interface CrmSettings {
-  agentName: string
-  agentRole: 'owner' | 'agent'
-  profilePhotoUrl: string | null
-  forwardingNumber: string
-  forwardingEmail: string
-  smsAlerts: boolean
-  emailAlerts: boolean
-  newLeadNotification: boolean
-  missedCallAlert: boolean
-  officeHoursEnabled: boolean
-  officeStart: string
-  officeEnd: string
+interface AgentProfile {
+  email: string
+  full_name: string
+  role: 'owner' | 'agent'
+  phone: string
+  assigned_twilio_number: string | null
+  profile_photo_url: string | null
+  voicemail_greeting: string | null
+  after_hours_behavior: string
+  notification_prefs: {
+    sms: boolean
+    push: boolean
+    email: boolean
+    new_lead: boolean
+    missed_call: boolean
+  }
+  office_hours: {
+    enabled: boolean
+    start: string
+    end: string
+    timezone: string
+  }
 }
 
-const DEFAULT_SETTINGS: CrmSettings = {
-  agentName: 'Ernest A. Dodson III',
-  agentRole: 'owner',
-  profilePhotoUrl: null,
-  forwardingNumber: '+18162262552',
-  forwardingEmail: '',
-  smsAlerts: true,
-  emailAlerts: false,
-  newLeadNotification: true,
-  missedCallAlert: true,
-  officeHoursEnabled: true,
-  officeStart: '08:00',
-  officeEnd: '17:00',
+const DEFAULT_PROFILE: AgentProfile = {
+  email: '',
+  full_name: '',
+  role: 'agent',
+  phone: '',
+  assigned_twilio_number: null,
+  profile_photo_url: null,
+  voicemail_greeting: '',
+  after_hours_behavior: 'both',
+  notification_prefs: { sms: true, push: true, email: false, new_lead: true, missed_call: true },
+  office_hours: { enabled: true, start: '08:00', end: '17:00', timezone: 'America/Chicago' },
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -51,30 +60,95 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<CrmSettings>(DEFAULT_SETTINGS)
+  const { user } = useAuth()
+  const [profile, setProfile] = useState<AgentProfile>(DEFAULT_PROFILE)
+  const [allProfiles, setAllProfiles] = useState<AgentProfile[]>([])
+  const [selectedEmail, setSelectedEmail] = useState<string>('')
   const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(true)
 
+  // Load all profiles (for owner agent-switcher) and current user profile
   useEffect(() => {
-    async function loadSettings() {
-      // Try Supabase first, fall back to localStorage
+    if (!user?.email) return
+
+    async function load() {
+      setLoading(true)
       try {
-        const res = await fetch('/api/settings')
+        // Fetch all profiles
+        const allRes = await fetch('/api/settings?all=true')
+        const allData = await allRes.json()
+        if (allData.profiles?.length) {
+          setAllProfiles(allData.profiles)
+        }
+
+        // Fetch current user profile
+        const res = await fetch(`/api/settings?email=${encodeURIComponent(user!.email!)}`)
         const data = await res.json()
-        if (data.settings) {
-          setSettings({ ...DEFAULT_SETTINGS, ...data.settings })
-          return
+        if (data.profile) {
+          setProfile({ ...DEFAULT_PROFILE, ...data.profile })
+          setSelectedEmail(user!.email!)
+        } else {
+          setProfile({ ...DEFAULT_PROFILE, email: user!.email! })
+          setSelectedEmail(user!.email!)
         }
       } catch {}
-      try {
-        const stored = localStorage.getItem('crm_settings')
-        if (stored) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(stored) })
-      } catch {}
+      setLoading(false)
     }
-    loadSettings()
-  }, [])
+    load()
+  }, [user?.email])
 
-  function update<K extends keyof CrmSettings>(key: K, value: CrmSettings[K]) {
-    setSettings((prev) => ({ ...prev, [key]: value }))
+  // Switch to a different agent's profile
+  async function switchAgent(email: string) {
+    setSelectedEmail(email)
+    try {
+      const res = await fetch(`/api/settings?email=${encodeURIComponent(email)}`)
+      const data = await res.json()
+      if (data.profile) {
+        setProfile({ ...DEFAULT_PROFILE, ...data.profile })
+      }
+    } catch {}
+  }
+
+  function updateProfile<K extends keyof AgentProfile>(key: K, value: AgentProfile[K]) {
+    setProfile((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function updateNotifPref(key: string, value: boolean) {
+    setProfile((prev) => ({
+      ...prev,
+      notification_prefs: { ...prev.notification_prefs, [key]: value },
+    }))
+  }
+
+  function updateOfficeHours(key: string, value: string | boolean) {
+    setProfile((prev) => ({
+      ...prev,
+      office_hours: { ...prev.office_hours, [key]: value },
+    }))
+  }
+
+  async function save() {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: selectedEmail,
+          full_name: profile.full_name,
+          phone: profile.phone,
+          assigned_twilio_number: profile.assigned_twilio_number,
+          profile_photo_url: profile.profile_photo_url,
+          voicemail_greeting: profile.voicemail_greeting,
+          after_hours_behavior: profile.after_hours_behavior,
+          notification_prefs: profile.notification_prefs,
+          office_hours: profile.office_hours,
+        }),
+      })
+      if (res.ok) {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 2000)
+      }
+    } catch {}
   }
 
   function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -82,36 +156,33 @@ export default function SettingsPage() {
     if (file) {
       const reader = new FileReader()
       reader.onloadend = () => {
-        update('profilePhotoUrl', reader.result as string)
+        updateProfile('profile_photo_url', reader.result as string)
       }
       reader.readAsDataURL(file)
     }
   }
 
-  function removePhoto() {
-    update('profilePhotoUrl', null)
-  }
+  const isOwner = allProfiles.find((p) => p.email === user?.email)?.role === 'owner'
 
-  async function save() {
-    // Save to both Supabase and localStorage
-    try {
-      await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      })
-    } catch {}
-    localStorage.setItem('crm_settings', JSON.stringify(settings))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
+  const initials = profile.full_name
+    ? profile.full_name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase()
+    : 'NA'
 
-  const initials = settings.agentName
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 bg-slate-200 rounded w-48" />
+          <div className="h-64 bg-slate-100 rounded-2xl" />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
@@ -121,6 +192,31 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-8">
+        {/* Agent Switcher (Owner only) */}
+        {isOwner && allProfiles.length > 1 && (
+          <section className="bg-amber-50 border border-amber-200/40 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <Icon name="admin_panel_settings" size="text-lg" className="text-amber-600" />
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-amber-700 uppercase tracking-wider mb-1">
+                  Viewing Agent Profile
+                </label>
+                <select
+                  value={selectedEmail}
+                  onChange={(e) => switchAgent(e.target.value)}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm font-semibold bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                >
+                  {allProfiles.map((p) => (
+                    <option key={p.email} value={p.email}>
+                      {p.full_name} ({p.email}) — {p.role}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Agent Profile */}
         <section className="bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-6 shadow-sm">
           <h2 className="text-sm font-black uppercase tracking-widest text-primary mb-5 flex items-center gap-2">
@@ -128,9 +224,9 @@ export default function SettingsPage() {
           </h2>
           <div className="flex flex-col sm:flex-row items-start gap-4 sm:gap-6 mb-6">
             <div className="relative shrink-0 mx-auto sm:mx-0">
-              {settings.profilePhotoUrl ? (
+              {profile.profile_photo_url ? (
                 <img
-                  src={settings.profilePhotoUrl}
+                  src={profile.profile_photo_url}
                   alt="Profile"
                   className="w-20 h-20 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-primary/20"
                 />
@@ -152,9 +248,9 @@ export default function SettingsPage() {
                 onChange={handlePhotoUpload}
                 className="hidden"
               />
-              {settings.profilePhotoUrl && (
+              {profile.profile_photo_url && (
                 <button
-                  onClick={removePhoto}
+                  onClick={() => updateProfile('profile_photo_url', null)}
                   className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-md"
                   title="Remove photo"
                 >
@@ -169,8 +265,8 @@ export default function SettingsPage() {
                 </label>
                 <input
                   type="text"
-                  value={settings.agentName}
-                  onChange={(e) => update('agentName', e.target.value)}
+                  value={profile.full_name}
+                  onChange={(e) => updateProfile('full_name', e.target.value)}
                   className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
@@ -178,14 +274,12 @@ export default function SettingsPage() {
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
                   Role
                 </label>
-                <select
-                  value={settings.agentRole}
-                  onChange={(e) => update('agentRole', e.target.value as 'owner' | 'agent')}
-                  className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
-                >
-                  <option value="owner">Owner</option>
-                  <option value="agent">Agent</option>
-                </select>
+                <input
+                  type="text"
+                  value={profile.role}
+                  readOnly
+                  className="w-full border border-outline-variant/10 rounded-lg px-3 py-2 text-sm bg-surface-container text-on-surface-variant cursor-not-allowed capitalize"
+                />
               </div>
             </div>
           </div>
@@ -199,41 +293,15 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
-                Forwarding Number
-              </label>
-              <input
-                type="tel"
-                value={settings.forwardingNumber}
-                onChange={(e) => update('forwardingNumber', e.target.value)}
-                className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="+1 (816) 555-0100"
-              />
-              <p className="text-[10px] text-on-surface-variant mt-1">Inbound calls will be forwarded to this number when you&apos;re unavailable.</p>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
                 Assigned Twilio Number
               </label>
               <input
                 type="text"
-                value="+1 (816) 307-7835"
+                value={TWILIO_NUMBERS.find((n) => n.value === profile.assigned_twilio_number)?.label || profile.assigned_twilio_number || 'Not assigned'}
                 readOnly
                 className="w-full border border-outline-variant/10 rounded-lg px-3 py-2 text-sm bg-surface-container text-on-surface-variant cursor-not-allowed"
               />
-              <p className="text-[10px] text-on-surface-variant mt-1">Your outbound calling number shown to leads.</p>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
-                Forwarding Email
-              </label>
-              <input
-                type="email"
-                value={settings.forwardingEmail}
-                onChange={(e) => update('forwardingEmail', e.target.value)}
-                className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="you@example.com"
-              />
-              <p className="text-[10px] text-on-surface-variant mt-1">Email notifications will be sent here.</p>
+              <p className="text-[10px] text-on-surface-variant mt-1">Your outbound calling number shown to leads. Contact admin to change.</p>
             </div>
             <div>
               <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
@@ -241,11 +309,24 @@ export default function SettingsPage() {
               </label>
               <input
                 type="email"
-                value="ernest@savingkc.com"
+                value={selectedEmail}
                 readOnly
                 className="w-full border border-outline-variant/10 rounded-lg px-3 py-2 text-sm bg-surface-container text-on-surface-variant cursor-not-allowed"
               />
               <p className="text-[10px] text-on-surface-variant mt-1">Your outbound email address shown to leads.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
+                Forwarding Number
+              </label>
+              <input
+                type="tel"
+                value={profile.phone}
+                onChange={(e) => updateProfile('phone', e.target.value)}
+                className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="+1 (816) 555-0100"
+              />
+              <p className="text-[10px] text-on-surface-variant mt-1">Inbound calls will be forwarded to this number when you&apos;re unavailable.</p>
             </div>
           </div>
         </section>
@@ -256,22 +337,20 @@ export default function SettingsPage() {
             <Icon name="notifications" size="text-base" /> Notifications
           </h2>
           <div className="space-y-4">
-            {(
-              [
-                { key: 'smsAlerts', label: 'SMS Alerts', desc: 'Receive SMS when important events occur' },
-                { key: 'emailAlerts', label: 'Email Alerts', desc: 'Receive email digests and alerts' },
-                { key: 'newLeadNotification', label: 'New Lead Notification', desc: 'Alert when a new lead is added via website form' },
-                { key: 'missedCallAlert', label: 'Missed Call Alert', desc: 'Immediate SMS when a call is missed' },
-              ] as const
-            ).map(({ key, label, desc }) => (
+            {([
+              { key: 'sms', label: 'SMS Alerts', desc: 'Receive SMS when important events occur' },
+              { key: 'email', label: 'Email Alerts', desc: 'Receive email digests and alerts' },
+              { key: 'new_lead', label: 'New Lead Notification', desc: 'Alert when a new lead is added via website form' },
+              { key: 'missed_call', label: 'Missed Call Alert', desc: 'Immediate SMS when a call is missed' },
+            ] as const).map(({ key, label, desc }) => (
               <div key={key} className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold">{label}</div>
                   <div className="text-xs text-on-surface-variant">{desc}</div>
                 </div>
                 <Toggle
-                  checked={settings[key] as boolean}
-                  onChange={(v) => update(key, v)}
+                  checked={!!profile.notification_prefs?.[key]}
+                  onChange={(v) => updateNotifPref(key, v)}
                 />
               </div>
             ))}
@@ -285,11 +364,11 @@ export default function SettingsPage() {
               <Icon name="schedule" size="text-base" /> Office Hours
             </h2>
             <Toggle
-              checked={settings.officeHoursEnabled}
-              onChange={(v) => update('officeHoursEnabled', v)}
+              checked={!!profile.office_hours?.enabled}
+              onChange={(v) => updateOfficeHours('enabled', v)}
             />
           </div>
-          {settings.officeHoursEnabled && (
+          {profile.office_hours?.enabled && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
@@ -297,8 +376,8 @@ export default function SettingsPage() {
                 </label>
                 <input
                   type="time"
-                  value={settings.officeStart}
-                  onChange={(e) => update('officeStart', e.target.value)}
+                  value={profile.office_hours?.start || '08:00'}
+                  onChange={(e) => updateOfficeHours('start', e.target.value)}
                   className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
@@ -308,8 +387,8 @@ export default function SettingsPage() {
                 </label>
                 <input
                   type="time"
-                  value={settings.officeEnd}
-                  onChange={(e) => update('officeEnd', e.target.value)}
+                  value={profile.office_hours?.end || '17:00'}
+                  onChange={(e) => updateOfficeHours('end', e.target.value)}
                   className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
@@ -332,24 +411,20 @@ export default function SettingsPage() {
               </label>
               <textarea
                 rows={3}
-                defaultValue="You've reached Ernest Dodson with Saving KC Homebuyers. I'm either on another call or away from the phone. Leave your name and number, and I'll get back to you within the hour."
+                value={profile.voicemail_greeting || ''}
+                onChange={(e) => updateProfile('voicemail_greeting', e.target.value)}
                 className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="You've reached [Name] with Saving KC Homebuyers..."
               />
               <p className="text-[10px] text-on-surface-variant mt-1">This is stored for reference. Actual Twilio voicemail configuration is external.</p>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-semibold">Voicemail Transcription</div>
-                <div className="text-xs text-on-surface-variant">Auto-transcribe voicemails (requires Twilio config)</div>
-              </div>
-              <Toggle checked={true} onChange={() => {}} />
             </div>
             <div>
               <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
                 After-Hours Behavior
               </label>
               <select
-                defaultValue="both"
+                value={profile.after_hours_behavior || 'both'}
+                onChange={(e) => updateProfile('after_hours_behavior', e.target.value)}
                 className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
               >
                 <option value="voicemail">Send to voicemail only</option>
@@ -368,7 +443,7 @@ export default function SettingsPage() {
           <div className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-on-surface-variant">CRM Version</span>
-              <span className="font-semibold">3.0.0 (Phase 3)</span>
+              <span className="font-semibold">3.1.0 (Settings Overhaul)</span>
             </div>
             <div className="flex justify-between">
               <span className="text-on-surface-variant">Database</span>
