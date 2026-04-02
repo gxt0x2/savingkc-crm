@@ -58,16 +58,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Right side */}
           <div className="flex items-center gap-2 md:gap-4">
-            <div className="relative hidden sm:block">
+            <form
+              className="relative hidden sm:block"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const q = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value.trim()
+                if (q) window.location.href = `/leads?q=${encodeURIComponent(q)}`
+              }}
+            >
               <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
                 <Icon name="search" size="text-lg" />
               </span>
               <input
+                name="q"
                 type="text"
                 className="bg-slate-100 border-none rounded-full pl-10 pr-4 py-1.5 text-sm w-48 md:w-64 focus:ring-2 focus:ring-slate-200 transition-all"
-                placeholder="Search data..."
+                placeholder="Search leads..."
               />
-            </div>
+            </form>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setDialerOpen(true)}

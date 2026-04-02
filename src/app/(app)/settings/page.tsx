@@ -13,6 +13,7 @@ interface AgentProfile {
   assigned_twilio_number: string | null
   profile_photo_url: string | null
   voicemail_greeting: string | null
+  voicemail_recording_url: string | null
   after_hours_behavior: string
   notification_prefs: {
     sms: boolean
@@ -37,6 +38,7 @@ const DEFAULT_PROFILE: AgentProfile = {
   assigned_twilio_number: null,
   profile_photo_url: null,
   voicemail_greeting: '',
+  voicemail_recording_url: null,
   after_hours_behavior: 'both',
   notification_prefs: { sms: true, push: true, email: false, new_lead: true, missed_call: true },
   office_hours: { enabled: true, start: '08:00', end: '17:00', timezone: 'America/Chicago' },
@@ -139,6 +141,7 @@ export default function SettingsPage() {
           assigned_twilio_number: profile.assigned_twilio_number,
           profile_photo_url: profile.profile_photo_url,
           voicemail_greeting: profile.voicemail_greeting,
+          voicemail_recording_url: profile.voicemail_recording_url,
           after_hours_behavior: profile.after_hours_behavior,
           notification_prefs: profile.notification_prefs,
           office_hours: profile.office_hours,
@@ -194,17 +197,17 @@ export default function SettingsPage() {
       <div className="space-y-8">
         {/* Agent Switcher (Owner only) */}
         {isOwner && allProfiles.length > 1 && (
-          <section className="bg-amber-50 border border-amber-200/40 rounded-2xl p-4 shadow-sm">
+          <section className="bg-red-50 border border-red-200/40 rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-3">
-              <Icon name="admin_panel_settings" size="text-lg" className="text-amber-600" />
+              <Icon name="admin_panel_settings" size="text-lg" className="text-red-600" />
               <div className="flex-1">
-                <label className="block text-xs font-bold text-amber-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-red-700 uppercase tracking-wider mb-1">
                   Viewing Agent Profile
                 </label>
                 <select
                   value={selectedEmail}
                   onChange={(e) => switchAgent(e.target.value)}
-                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm font-semibold bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm font-semibold bg-white focus:outline-none focus:ring-2 focus:ring-red-300"
                 >
                   {allProfiles.map((p) => (
                     <option key={p.email} value={p.email}>
@@ -407,7 +410,7 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
-                Voicemail Greeting
+                Voicemail Greeting (Text)
               </label>
               <textarea
                 rows={3}
@@ -416,7 +419,51 @@ export default function SettingsPage() {
                 className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 placeholder="You've reached [Name] with Saving KC Homebuyers..."
               />
-              <p className="text-[10px] text-on-surface-variant mt-1">This is stored for reference. Actual Twilio voicemail configuration is external.</p>
+              <p className="text-[10px] text-on-surface-variant mt-1">Text version of your greeting, stored for reference.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
+                Voicemail Recording
+              </label>
+              {profile.voicemail_recording_url ? (
+                <div className="flex items-center gap-3 p-3 bg-slate-50 border border-outline-variant/10 rounded-lg">
+                  <audio controls className="flex-1 h-10">
+                    <source src={profile.voicemail_recording_url} />
+                  </audio>
+                  <button
+                    onClick={() => updateProfile('voicemail_recording_url', null)}
+                    className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <label className="flex items-center gap-3 p-4 border-2 border-dashed border-outline-variant/20 rounded-lg cursor-pointer hover:border-primary/30 hover:bg-primary/[0.02] transition-all">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <Icon name="mic" className="text-primary" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-700">Upload voicemail recording</div>
+                    <div className="text-[10px] text-on-surface-variant">MP3, WAV, or M4A up to 5MB</div>
+                  </div>
+                  <input
+                    type="file"
+                    accept="audio/mpeg,audio/wav,audio/mp4,audio/x-m4a,.mp3,.wav,.m4a"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file && file.size <= 5 * 1024 * 1024) {
+                        const reader = new FileReader()
+                        reader.onloadend = () => {
+                          updateProfile('voicemail_recording_url', reader.result as string)
+                        }
+                        reader.readAsDataURL(file)
+                      }
+                    }}
+                  />
+                </label>
+              )}
+              <p className="text-[10px] text-on-surface-variant mt-1">Upload your custom voicemail greeting audio file.</p>
             </div>
             <div>
               <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">
