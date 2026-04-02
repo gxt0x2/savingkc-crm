@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const { data, error } = await supabase
       .from('leads')
-      .select('id, first_name, last_name, phone, source, created_at, station')
+      .select('id, full_name, phone, source, created_at, station')
       .eq('priority', 'hot')
       .order('created_at', { ascending: false })
       .limit(5)

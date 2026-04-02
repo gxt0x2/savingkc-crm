@@ -52,12 +52,26 @@ interface Task {
 
 interface HotLead {
   id: string
-  first_name: string | null
-  last_name: string | null
+  full_name: string | null
   phone: string | null
   source: string | null
   created_at: string
   station: string | null
+}
+
+interface TrendBucket {
+  label: string
+  calls: number
+  sms_sent: number
+  sms_received: number
+  leads_created: number
+  tasks_completed: number
+}
+
+interface TrendsData {
+  period: string
+  days: number
+  buckets: TrendBucket[]
 }
 
 /* ── Animated number counter ── */
@@ -178,6 +192,17 @@ function useHotLeads() {
   return data
 }
 
+function useTrends(period: string, days: number) {
+  const [data, setData] = useState<TrendsData | null>(null)
+  useEffect(() => {
+    fetch(`/api/dashboard/trends?period=${period}&days=${days}`)
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => {})
+  }, [period, days])
+  return data
+}
+
 function formatPhone(phone: string | null) {
   if (!phone) return '\u2014'
   const digits = phone.replace(/\D/g, '')
@@ -194,6 +219,11 @@ export default function DashboardPage() {
   const tasks = useTasks()
   const hotLeads = useHotLeads()
   const ytdKpis = useYtdKpis()
+
+  const [trendPeriod, setTrendPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily')
+  const [trendDays, setTrendDays] = useState(30)
+  const [trendMetrics, setTrendMetrics] = useState<string[]>(['calls', 'leads_created'])
+  const trends = useTrends(trendPeriod, trendDays)
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-[1440px] mx-auto w-full space-y-8 pb-32">
@@ -441,6 +471,148 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ═══ ACTIVITY TRENDS — compare over time ═══ */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-black text-primary uppercase tracking-[0.2em] flex items-center gap-2">
+            <Icon name="trending_up" className="text-sm" /> Activity Trends
+          </h3>
+          <div className="flex items-center gap-2">
+            {/* Period selector */}
+            <div className="flex bg-slate-100 rounded-lg p-0.5">
+              {(['daily', 'weekly', 'monthly'] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => {
+                    setTrendPeriod(p)
+                    setTrendDays(p === 'monthly' ? 180 : p === 'weekly' ? 90 : 30)
+                  }}
+                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${
+                    trendPeriod === p ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            {/* Metric toggles */}
+            <div className="hidden sm:flex gap-1">
+              {[
+                { key: 'calls', label: 'Calls', color: 'bg-blue-500' },
+                { key: 'sms_sent', label: 'SMS', color: 'bg-emerald-500' },
+                { key: 'leads_created', label: 'Leads', color: 'bg-amber-500' },
+              ].map(({ key, label, color }) => (
+                <button
+                  key={key}
+                  onClick={() =>
+                    setTrendMetrics((prev) =>
+                      prev.includes(key) ? prev.filter((m) => m !== key) : [...prev, key]
+                    )
+                  }
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                    trendMetrics.includes(key)
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-slate-50 text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+          {!trends || trends.buckets.length === 0 ? (
+            <div className="h-48 flex items-center justify-center text-sm text-slate-300">
+              <Icon name="show_chart" className="text-3xl mr-2 text-slate-200" />
+              No activity data yet for this period
+            </div>
+          ) : (
+            <div>
+              {/* Bar chart */}
+              <div className="flex items-end gap-[2px] h-48">
+                {trends.buckets.map((b, i) => {
+                  const metricColors: Record<string, string> = {
+                    calls: 'bg-blue-500',
+                    sms_sent: 'bg-emerald-500',
+                    sms_received: 'bg-violet-400',
+                    leads_created: 'bg-amber-500',
+                    tasks_completed: 'bg-green-500',
+                  }
+                  const maxVal = Math.max(
+                    ...trends.buckets.map((bb) =>
+                      trendMetrics.reduce((sum, m) => sum + ((bb as unknown as Record<string, number>)[m] || 0), 0)
+                    ),
+                    1
+                  )
+                  const total = trendMetrics.reduce((sum, m) => sum + ((b as unknown as Record<string, number>)[m] || 0), 0)
+                  const pct = Math.max((total / maxVal) * 100, total > 0 ? 4 : 0)
+
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative min-w-0">
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full mb-2 hidden group-hover:block z-10 pointer-events-none">
+                        <div className="bg-slate-900 text-white px-3 py-2 rounded-lg text-[10px] whitespace-nowrap shadow-xl">
+                          <div className="font-bold mb-1">{b.label}</div>
+                          {trendMetrics.map((m) => (
+                            <div key={m} className="flex items-center gap-1.5">
+                              <span className={`w-1.5 h-1.5 rounded-full ${metricColors[m]}`} />
+                              <span className="capitalize">{m.replace('_', ' ')}: </span>
+                              <span className="font-bold">{(b as unknown as Record<string, number>)[m] || 0}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Stacked bars */}
+                      <div className="w-full flex flex-col justify-end" style={{ height: '100%' }}>
+                        {trendMetrics.map((m) => {
+                          const val = (b as unknown as Record<string, number>)[m] || 0
+                          const segPct = maxVal > 0 ? (val / maxVal) * 100 : 0
+                          return (
+                            <div
+                              key={m}
+                              className={`w-full ${metricColors[m]} first:rounded-t transition-all duration-500 ease-out`}
+                              style={{ height: `${segPct}%`, minHeight: val > 0 ? '2px' : '0' }}
+                            />
+                          )
+                        })}
+                      </div>
+                      {/* Label (show every few) */}
+                      {(trends.buckets.length <= 14 || i % Math.ceil(trends.buckets.length / 12) === 0) && (
+                        <div className="text-[8px] text-slate-300 font-bold truncate w-full text-center mt-1">
+                          {b.label.replace(' 2026', '')}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              {/* Legend */}
+              <div className="flex items-center justify-center gap-4 mt-4 pt-3 border-t border-slate-50">
+                {trendMetrics.map((m) => {
+                  const colors: Record<string, string> = {
+                    calls: 'bg-blue-500',
+                    sms_sent: 'bg-emerald-500',
+                    sms_received: 'bg-violet-400',
+                    leads_created: 'bg-amber-500',
+                    tasks_completed: 'bg-green-500',
+                  }
+                  const total = trends.buckets.reduce((sum, bb) => sum + ((bb as unknown as Record<string, number>)[m] || 0), 0)
+                  return (
+                    <div key={m} className="flex items-center gap-1.5 text-[10px]">
+                      <span className={`w-2 h-2 rounded-full ${colors[m]}`} />
+                      <span className="text-slate-500 font-bold capitalize">{m.replace('_', ' ')}</span>
+                      <span className="text-slate-800 font-black">{total}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ═══ PIPELINE + OPERATIONAL — side by side ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Lead Pipeline */}
@@ -616,11 +788,11 @@ export default function DashboardPage() {
                     className="px-5 py-4 flex items-center gap-3 hover:bg-red-50/30 transition-colors group"
                   >
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 text-white flex items-center justify-center text-sm font-black flex-shrink-0 shadow-md shadow-red-500/20">
-                      {(lead.first_name?.[0] || '?').toUpperCase()}
+                      {(lead.full_name?.[0] || '?').toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-slate-700 truncate group-hover:text-red-600 transition-colors">
-                        {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown'}
+                        {lead.full_name || 'Unknown'}
                       </div>
                       <div className="text-[10px] text-slate-400 flex items-center gap-2">
                         <span>{formatPhone(lead.phone)}</span>

@@ -721,7 +721,7 @@ export async function POST(req: NextRequest) {
                 city: call.city,
                 state: call.state,
                 zip: call.zip,
-                source: `mojo:${call.list_name || 'unknown'}`,
+                source: 'mojo_dialer',
                 station: call.property_address ? 'qualification' : 'intake',
                 priority: 'normal',
               })

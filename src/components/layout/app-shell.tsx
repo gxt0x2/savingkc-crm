@@ -87,9 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button className="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
                 <Icon name="notifications" />
               </button>
-              <button className="hidden sm:flex p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors" onClick={() => window.location.href = '/settings'}>
-                <Icon name="settings" />
-              </button>
+{/* gear icon removed — settings now in profile menu only */}
               <div className="relative" ref={profileMenuRef}>
                 {profilePhotoUrl ? (
                   <img
@@ -110,6 +108,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <p className="text-xs font-bold text-primary truncate">{user.email}</p>
                       </div>
                     )}
+                    <button onClick={() => { setShowProfileMenu(false); window.location.href = '/checklist' }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                      <Icon name="checklist" size="text-lg" /> SOD / EOD
+                    </button>
                     <button onClick={() => { setShowProfileMenu(false); window.location.href = '/settings' }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                       <Icon name="settings" size="text-lg" /> Settings
                     </button>

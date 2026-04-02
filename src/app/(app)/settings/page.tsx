@@ -156,13 +156,22 @@ export default function SettingsPage() {
 
   function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        updateProfile('profile_photo_url', reader.result as string)
-      }
-      reader.readAsDataURL(file)
+    if (!file) return
+    const img = new Image()
+    img.onload = () => {
+      const MAX = 200
+      let w = img.width, h = img.height
+      if (w > h) { h = Math.round(h * MAX / w); w = MAX }
+      else { w = Math.round(w * MAX / h); h = MAX }
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0, w, h)
+      const compressed = canvas.toDataURL('image/jpeg', 0.8)
+      updateProfile('profile_photo_url', compressed)
     }
+    img.src = URL.createObjectURL(file)
   }
 
   const isOwner = allProfiles.find((p) => p.email === user?.email)?.role === 'owner'
