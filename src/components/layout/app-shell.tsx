@@ -3,13 +3,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavTabs } from './nav-tab'
 import { TelephonyBar } from '@/components/telephony/telephony-bar'
-import { DialerDrawer } from '@/components/dialer/dialer-drawer'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [dialerOpen, setDialerOpen] = useState(false)
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
@@ -97,13 +95,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               />
             </form>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => setDialerOpen(true)}
-                className="p-2 rounded-full transition-colors bg-green-500 hover:bg-green-600 flex items-center justify-center"
-                title="Open Dialer"
-              >
-                <Icon name="phone" className="text-white" />
-              </button>
               <button className="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
                 <Icon name="notifications" />
               </button>
@@ -176,13 +167,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Dialer Drawer */}
-      <DialerDrawer isOpen={dialerOpen} onClose={() => setDialerOpen(false)} />
-
       {/* Main Content */}
-      <main className="flex-1">
+      <main className="flex-1 pb-24">
         {children}
       </main>
+
+      {/* Telephony Bar (bottom) */}
+      <TelephonyBar />
     </div>
   )
 }

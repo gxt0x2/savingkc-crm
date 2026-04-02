@@ -30,16 +30,13 @@ export function NetProceeds({
   leadId,
 }: NetProceedsProps) {
   const [arv, setArv] = useState(initialArv)
-  const [repairs, setRepairs] = useState(0)
-  const [holdingCosts, setHoldingCosts] = useState(0)
   const [askingPrice, setAskingPrice] = useState(initialAsking)
   const [totalDebt, setTotalDebt] = useState(initialDebt)
   const [assignmentFee, setAssignmentFee] = useState(10000)
 
-  // 70% Rule: MAO = (ARV × 0.70) - Repairs
-  const mao = Math.max(0, arv * 0.7 - repairs)
-  const profit = mao - askingPrice - holdingCosts - assignmentFee
-  const isViable = profit > 0 && mao > askingPrice
+  const equity = arv - totalDebt
+  const sellerNet = askingPrice - totalDebt
+  const isViable = equity > 0 && sellerNet >= 0
 
   function NumInput({ label, value, onChange, hint }: {
     label: string
@@ -71,7 +68,7 @@ export function NetProceeds({
     <section className="bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-6 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-on-surface-variant">
-          Deal Math (70% Rule)
+          Net Proceeds
         </h2>
         <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
           arv === 0 ? 'bg-slate-100 text-slate-400' :
@@ -83,30 +80,24 @@ export function NetProceeds({
 
       {/* Inputs */}
       <div className="space-y-3 mb-5">
-        <NumInput label="After Repair Value (ARV)" value={arv} onChange={setArv} hint="Estimated value after full rehab" />
-        <NumInput label="Repair Estimate" value={repairs} onChange={setRepairs} />
+        <NumInput label="After Repair Value (ARV)" value={arv} onChange={setArv} />
         <NumInput label="Asking / Offer Price" value={askingPrice} onChange={setAskingPrice} />
-        <NumInput label="Total Debt (Mortgage + Liens)" value={totalDebt} onChange={setTotalDebt} />
+        <NumInput label="Total Debt (Mortgage + Liens + Taxes)" value={totalDebt} onChange={setTotalDebt} />
         <NumInput label="Assignment Fee Target" value={assignmentFee} onChange={setAssignmentFee} />
-        <NumInput label="Holding Costs" value={holdingCosts} onChange={setHoldingCosts} hint="Finance, taxes, insurance, utilities" />
       </div>
 
       {/* Results */}
       {arv > 0 && (
         <div className="border-t border-outline-variant/10 pt-4 space-y-2">
           <div className="flex justify-between text-sm">
-            <span className="text-on-surface-variant">MAO (70% Rule)</span>
-            <span className="font-black text-primary">{formatMoney(mao)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-on-surface-variant">Offer vs MAO Gap</span>
-            <span className={`font-bold ${mao >= askingPrice ? 'text-secondary' : 'text-error'}`}>
-              {mao >= askingPrice ? `+${formatMoney(mao - askingPrice)} room` : `${formatMoney(mao - askingPrice)} over`}
-            </span>
-          </div>
-          <div className="flex justify-between text-sm">
             <span className="text-on-surface-variant">Equity (ARV - Debt)</span>
-            <span className="font-bold text-primary">{formatMoney(arv - totalDebt)}</span>
+            <span className={`font-black ${equity >= 0 ? 'text-primary' : 'text-error'}`}>{formatMoney(equity)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-on-surface-variant">Seller Net (Offer - Debt)</span>
+            <span className={`font-bold ${sellerNet >= 0 ? 'text-secondary' : 'text-error'}`}>
+              {sellerNet >= 0 ? formatMoney(sellerNet) : `-${formatMoney(sellerNet)}`}
+            </span>
           </div>
         </div>
       )}
@@ -118,13 +109,6 @@ export function NetProceeds({
         <p className={`text-3xl font-black leading-none ${isViable && arv > 0 ? 'text-secondary' : 'text-on-surface-variant/40'}`}>
           {formatMoney(assignmentFee)}
         </p>
-        {arv > 0 && (
-          <p className={`text-xs mt-1 font-semibold ${isViable ? 'text-secondary' : 'text-error'}`}>
-            {isViable
-              ? `~${formatMoney(profit)} profit margin`
-              : `Deal needs ${formatMoney(Math.abs(profit))} more room`}
-          </p>
-        )}
       </div>
     </section>
   )

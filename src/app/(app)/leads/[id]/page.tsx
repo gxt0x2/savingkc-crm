@@ -118,7 +118,7 @@ function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPric
 
   const totalDebt = mortgage + liens + taxes
   const equitySurplus = asIsValue - totalDebt
-  const estimatedAssignment = initialAssignmentFee ?? Math.max(0, Math.round(arv * 0.7 - askingPrice - (initialRepairs || 0)))
+  const estimatedAssignment = initialAssignmentFee ?? 0
 
   type FieldConfig = { key: string; label: string; value: number; editable: boolean; color?: string }
 
