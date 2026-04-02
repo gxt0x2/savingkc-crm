@@ -15,6 +15,7 @@ import { TemperatureBadge } from '@/components/leads/temperature-badge'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
 import { AddNote } from '@/components/leads/add-note'
 import { ThankYouCard } from '@/components/leads/thank-you-card'
+import { MailTracker } from '@/components/leads/mail-tracker'
 import { ContractModal } from '@/components/leads/contract-modal'
 import { AppointmentModal } from '@/components/leads/appointment-modal'
 import { createClient } from '@/lib/supabase/client'
@@ -1180,6 +1181,8 @@ export default function LeadDetailPage() {
           />
 
           <ThankYouCard leadId={lead.id} />
+
+          <MailTracker leadId={lead.id} leadName={lead.full_name ?? undefined} />
         </div>
 
         {/* CENTER COLUMN: Property, Notes, Activity */}
