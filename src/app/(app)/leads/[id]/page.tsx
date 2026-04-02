@@ -893,6 +893,31 @@ export default function LeadDetailPage() {
     if (id) fetchActivities()
   }, [id, refreshTick])
 
+  // ── Lightweight poll: detect external events (calls, voicemails, SMS) ──
+  // Only checks latest activity timestamp every 15s. No refetch unless new data exists.
+  useEffect(() => {
+    if (!id) return
+    let lastSeen = activities[0]?.created_at || ''
+    const interval = setInterval(async () => {
+      try {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('lead_activities')
+          .select('created_at')
+          .eq('lead_id', id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const latest = data?.created_at || ''
+        if (latest && latest !== lastSeen) {
+          lastSeen = latest
+          refreshAll()
+        }
+      } catch { /* silent */ }
+    }, 15000)
+    return () => clearInterval(interval)
+  }, [id]) // intentionally no refreshTick dep — runs independently
+
   async function handleThankYouToggle() {
     if (thankYouSent) return
     const supabase = createClient()
