@@ -173,8 +173,8 @@ export function buildManifestBriefingPrompt(
 
   // ── Flags ──
   const flags = manifest.flags
-  if (flags.redFlags?.length) sections.push(`\nRED FLAGS: ${flags.redFlags.join(', ')}`)
-  if (flags.opportunityFlags?.length) sections.push(`OPPORTUNITIES: ${flags.opportunityFlags.join(', ')}`)
+  if (flags?.redFlags?.length) sections.push(`\nRED FLAGS: ${flags.redFlags.join(', ')}`)
+  if (flags?.opportunityFlags?.length) sections.push(`OPPORTUNITIES: ${flags.opportunityFlags.join(', ')}`)
 
   // ── Contacts (attorneys, family, tenants) ──
   if (manifest.contacts?.length) {
