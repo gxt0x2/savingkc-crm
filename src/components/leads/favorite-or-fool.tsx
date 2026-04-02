@@ -1,3 +1,8 @@
+// Favorite or Fool — Chris Voss Negotiation Diagnostic
+// Diagnoses whether we are the seller's FAVORITE (they want to work with us)
+// or the FOOL (they're shopping us for leverage / price comparison).
+// Based on manifest call analyzer output + communication signals.
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -17,137 +22,308 @@ interface FavoriteOrFoolProps {
 }
 
 interface ManifestData {
+  source?: string
   owner?: {
     fullName?: string
-    motivation?: string
-    timeline?: string
-    reasonForSelling?: string
+    personalityType?: string
+    contactPreference?: string
   }
-  property?: {
-    condition?: string
-    occupancyStatus?: string
-  }
-  financials?: {
-    mortgage_balance?: number
-    liens_amount?: number
-    back_taxes?: number
-    asking_price?: number
-  }
-  ai_call_analysis?: {
-    motivation_score?: number
-    urgency?: string
-    property_condition?: string
-    asking_price?: number
-    concessions?: string[]
+  situation?: {
+    motivation?: {
+      primary?: string
+      signals?: string[]
+      score?: number
+    }
+    timeline?: {
+      urgency?: string
+      preferredClosing?: string
+      flexibility?: string
+    }
+    priceExpectations?: {
+      sellerAsking?: number
+      sellerFloor?: number
+      priceFlexibility?: string
+      askingPrice?: number
+      minimumAcceptable?: number
+    }
     objections?: string[]
-    pain_points?: string[]
-    rapport_level?: string
+    blockers?: string[]
   }
-  qualification?: {
-    timeline?: string
-    condition?: string
-    motivation?: string
-    price?: string
+  communications?: {
+    transcripts?: Array<{
+      date?: string
+      aiSummary?: string
+      agentNotes?: string
+      extractedData?: {
+        motivationScore?: number
+        sentiment?: string
+        rapportLevel?: string
+        verbatimQuotes?: string[]
+        objectionsRaised?: string[]
+        concessionSignals?: string[]
+        keyLeverage?: string[]
+        personalityType?: string
+      }
+    }>
   }
+  ariIntelligence?: {
+    sellerProfile?: {
+      personalityType?: string
+      communicationStyle?: string
+      emotionalDrivers?: string[]
+    }
+    dealIntelligence?: {
+      confidenceScore?: number
+    }
+  }
+  agentNotes?: Array<{
+    content?: string
+    source?: string
+  }>
 }
 
-function analyzeManifest(manifest: ManifestData, props: FavoriteOrFoolProps): {
-  score: number
-  verdict: string
-  reasons: string[]
-  color: string
-} {
-  let score = 5
-  const reasons: string[] = []
+type Diagnosis = 'favorite' | 'likely_favorite' | 'unknown' | 'likely_fool' | 'fool'
 
-  // Motivation (from AI analysis or manifest)
-  const motivation = manifest.ai_call_analysis?.motivation_score ?? props.motivationScore
-  if (motivation != null) {
-    if (motivation >= 8) { score += 2; reasons.push(`High motivation (${motivation}/10)`) }
-    else if (motivation >= 6) { score += 1; reasons.push(`Moderate motivation (${motivation}/10)`) }
-    else if (motivation <= 3) { score -= 2; reasons.push(`Low motivation (${motivation}/10) — unlikely seller`) }
+interface DiagnosisResult {
+  diagnosis: Diagnosis
+  confidence: number // 0–100
+  proofOfLife: string[]    // Signals they WANT to work with us
+  foolSignals: string[]    // Signals they're shopping us
+  recommendation: string
+}
+
+/**
+ * Analyze manifest for Chris Voss "Favorite or Fool" signals.
+ *
+ * FAVORITE signals (Proof of Life):
+ * - They called us / responded to our marketing
+ * - They explained WHY they want to work with us
+ * - They referenced our mailer / marketing piece
+ * - They described a future that includes us
+ * - They shared personal information freely
+ * - They set or kept an appointment
+ * - They responded quickly to follow-ups
+ * - High rapport level from call analyzer
+ * - Concession signals detected
+ *
+ * FOOL signals:
+ * - They just asked for a number / price
+ * - Won't commit to timeline or appointment
+ * - Shopping multiple buyers
+ * - Asking "what's your best offer?"
+ * - Low rapport, transactional tone
+ * - Ghosting after getting our number
+ * - Price-only objections with no personal info shared
+ */
+function diagnose(manifest: ManifestData, props: FavoriteOrFoolProps): DiagnosisResult {
+  const proofOfLife: string[] = []
+  const foolSignals: string[] = []
+
+  // ── Lead source analysis ──
+  const source = (manifest.source || '').toLowerCase()
+  if (source.includes('inbound') || source === 'inbound_call' || source === 'inbound_text' || source === 'web_form') {
+    proofOfLife.push('They reached out to us first')
   }
 
-  // Urgency/Timeline
-  const timeline = manifest.qualification?.timeline || manifest.owner?.timeline || manifest.ai_call_analysis?.urgency
+  // ── Call transcript signals ──
+  const transcripts = manifest.communications?.transcripts || []
+  for (const t of transcripts) {
+    const ex = t.extractedData
+    if (!ex) continue
+
+    // Rapport level
+    const rapport = (ex.rapportLevel || '').toLowerCase()
+    if (rapport.includes('high') || rapport.includes('strong') || rapport.includes('excellent')) {
+      proofOfLife.push('Strong rapport built during call')
+    } else if (rapport.includes('low') || rapport.includes('poor') || rapport.includes('hostile')) {
+      foolSignals.push('Low rapport — transactional tone')
+    }
+
+    // Sentiment
+    if (ex.sentiment === 'positive') {
+      proofOfLife.push('Positive sentiment in conversation')
+    } else if (ex.sentiment === 'negative') {
+      foolSignals.push('Negative sentiment — resistant or guarded')
+    }
+
+    // Concession signals = they're moving toward us
+    if (ex.concessionSignals?.length) {
+      proofOfLife.push(`Concession signals: ${ex.concessionSignals.slice(0, 2).join('; ')}`)
+    }
+
+    // Verbatim quotes — look for proof of life language
+    if (ex.verbatimQuotes?.length) {
+      for (const q of ex.verbatimQuotes) {
+        const ql = q.toLowerCase()
+        // Proof of life: references to our marketing, wanting to work with us, describing future with us
+        if (ql.includes('got your') || ql.includes('your letter') || ql.includes('your card') ||
+            ql.includes('your mailer') || ql.includes('postcard') || ql.includes('saw your')) {
+          proofOfLife.push(`Referenced our marketing: "${q.slice(0, 80)}"`)
+        }
+        if (ql.includes('want to work with') || ql.includes('heard good things') ||
+            ql.includes('trust') || ql.includes('recommend')) {
+          proofOfLife.push(`Expressed trust: "${q.slice(0, 80)}"`)
+        }
+        // Fool: just wants a number, shopping
+        if (ql.includes('best offer') || ql.includes('what can you give') ||
+            ql.includes('how much') || ql.includes('just give me a number')) {
+          foolSignals.push(`Price shopping: "${q.slice(0, 80)}"`)
+        }
+        if (ql.includes('other buyer') || ql.includes('someone else') ||
+            ql.includes('another offer') || ql.includes('shopping around')) {
+          foolSignals.push(`Shopping multiple buyers: "${q.slice(0, 80)}"`)
+        }
+      }
+    }
+
+    // Objections — lots of price-only objections = fool signal
+    if (ex.objectionsRaised?.length) {
+      const priceObj = ex.objectionsRaised.filter(o => {
+        const ol = o.toLowerCase()
+        return ol.includes('price') || ol.includes('too low') || ol.includes('more money') || ol.includes('not enough')
+      })
+      if (priceObj.length >= 2) {
+        foolSignals.push('Multiple price-only objections — no emotional engagement')
+      }
+    }
+
+    // Key leverage = they gave us something to work with
+    if (ex.keyLeverage?.length) {
+      proofOfLife.push(`Shared leverage: ${ex.keyLeverage.slice(0, 2).join('; ')}`)
+    }
+  }
+
+  // ── Motivation signals ──
+  const motivationSignals = manifest.situation?.motivation?.signals || []
+  for (const sig of motivationSignals) {
+    const sl = sig.toLowerCase()
+    if (sl.includes('called us') || sl.includes('reached out') || sl.includes('inbound')) {
+      if (!proofOfLife.some(p => p.includes('reached out'))) {
+        proofOfLife.push('Seller initiated contact')
+      }
+    }
+  }
+
+  // ── Timeline commitment ──
+  const timeline = manifest.situation?.timeline
   if (timeline) {
-    const t = timeline.toLowerCase()
-    if (t.includes('immediate') || t.includes('asap') || t.includes('urgent') || t.includes('30 day')) {
-      score += 1.5; reasons.push('Urgent timeline — wants to move fast')
-    } else if (t.includes('6 month') || t.includes('year') || t.includes('not sure')) {
-      score -= 1; reasons.push('Long timeline — not urgent')
+    const urgency = (timeline.urgency || '').toLowerCase()
+    const flexibility = (timeline.flexibility || '').toLowerCase()
+    if (urgency.includes('immediate') || urgency.includes('urgent') || urgency.includes('asap')) {
+      proofOfLife.push('Committed to urgent timeline')
+    }
+    if (flexibility.includes('flexible') || flexibility.includes('open')) {
+      proofOfLife.push('Flexible on terms — willing to work with us')
+    }
+    if (urgency.includes('not sure') || urgency.includes('no rush') || urgency.includes('just looking')) {
+      foolSignals.push('No timeline commitment — "just looking"')
     }
   }
 
-  // Equity check
-  const arv = props.arv
-  const totalDebt = (manifest.financials?.mortgage_balance ?? 0) + (manifest.financials?.liens_amount ?? 0) + (manifest.financials?.back_taxes ?? 0)
-  if (arv && arv > 0 && totalDebt > 0) {
-    const equity = arv - totalDebt
-    const equityPct = (equity / arv) * 100
-    if (equityPct > 40) { score += 2; reasons.push(`Strong equity (${Math.round(equityPct)}%)`) }
-    else if (equityPct > 20) { score += 1; reasons.push(`Decent equity (${Math.round(equityPct)}%)`) }
-    else if (equityPct < 5) { score -= 2; reasons.push(`Little/no equity (${Math.round(equityPct)}%) — hard to make a deal`) }
-  } else if (arv && props.offerAmount && arv > 0) {
-    const spread = arv - props.offerAmount
-    if (spread > arv * 0.3) { score += 1.5; reasons.push('Good spread between ARV and offer') }
-    else if (spread < 0) { score -= 2; reasons.push('Offer exceeds ARV — no deal here') }
-  }
-
-  // Property condition
-  const condition = manifest.property?.condition || manifest.ai_call_analysis?.property_condition || manifest.qualification?.condition
-  if (condition) {
-    const c = condition.toLowerCase()
-    if (c.includes('poor') || c.includes('bad') || c.includes('needs work') || c.includes('distress')) {
-      score += 0.5; reasons.push('Distressed property — motivated to sell')
+  // ── Price flexibility ──
+  const priceExpectations = manifest.situation?.priceExpectations
+  if (priceExpectations) {
+    const flex = (priceExpectations.priceFlexibility || '').toLowerCase()
+    if (flex.includes('flexible') || flex.includes('negotiable') || flex.includes('open')) {
+      proofOfLife.push('Price flexible — willing to negotiate')
+    }
+    if (flex.includes('firm') || flex.includes('non-negotiable') || flex.includes('won\'t budge')) {
+      foolSignals.push('Price firm — no flexibility')
     }
   }
 
-  // Pain points from AI analysis
-  const painPoints = manifest.ai_call_analysis?.pain_points
-  if (painPoints && painPoints.length >= 2) {
-    score += 1; reasons.push(`Multiple pain points identified (${painPoints.length})`)
+  // ── Station progression = engagement proof ──
+  const stationSignals: Record<string, { type: 'proof' | 'fool'; text: string }> = {
+    appt_set: { type: 'proof', text: 'Agreed to appointment — committed time to us' },
+    negotiations: { type: 'proof', text: 'In active negotiations — invested in deal' },
+    contract_signed: { type: 'proof', text: 'Contract signed — we are clearly the favorite' },
+    dead: { type: 'fool', text: 'Deal went dead — likely chose someone else' },
+  }
+  const stationSig = stationSignals[props.station || '']
+  if (stationSig) {
+    if (stationSig.type === 'proof') proofOfLife.push(stationSig.text)
+    else foolSignals.push(stationSig.text)
   }
 
-  // Reason for selling
-  const reason = manifest.owner?.reasonForSelling || manifest.ai_call_analysis?.concessions?.join(', ')
-  if (reason) {
-    const r = reason.toLowerCase()
-    if (r.includes('foreclose') || r.includes('divorce') || r.includes('death') || r.includes('relocat') || r.includes('behind on')) {
-      score += 1; reasons.push('Life event driving sale — likely flexible')
+  // ── Agent notes scan for key phrases ──
+  const allNotes = [
+    ...(manifest.agentNotes || []).map(n => n.content || ''),
+    props.notes || '',
+    props.sellerSituation || '',
+  ].join(' ').toLowerCase()
+
+  if (allNotes.includes('called back') || allNotes.includes('returned call') || allNotes.includes('replied')) {
+    proofOfLife.push('Seller returned our contact — engaged')
+  }
+  if (allNotes.includes('ghosting') || allNotes.includes('no response') || allNotes.includes('won\'t answer')) {
+    foolSignals.push('Ghosting — not responding to follow-ups')
+  }
+  if (allNotes.includes('got another offer') || allNotes.includes('talking to other') || allNotes.includes('realtor')) {
+    foolSignals.push('Talking to other buyers/realtors')
+  }
+
+  // ── Personality type from Black Swan framework ──
+  const personality = manifest.ariIntelligence?.sellerProfile?.personalityType ||
+    manifest.owner?.personalityType || ''
+  if (personality.toLowerCase().includes('accommodator')) {
+    proofOfLife.push('Accommodator personality — relationship-driven, likely loyal')
+  }
+  if (personality.toLowerCase().includes('assertive')) {
+    foolSignals.push('Assertive personality — may push for best price from multiple buyers')
+  }
+
+  // ── Deduplicate ──
+  const uniqueProof = [...new Set(proofOfLife)]
+  const uniqueFool = [...new Set(foolSignals)]
+
+  // ── Calculate diagnosis ──
+  const proofWeight = uniqueProof.length
+  const foolWeight = uniqueFool.length
+  const total = proofWeight + foolWeight
+
+  let diagnosis: Diagnosis
+  let confidence: number
+  let recommendation: string
+
+  if (total === 0) {
+    diagnosis = 'unknown'
+    confidence = 0
+    recommendation = 'Not enough data yet. Ask the Proof of Life question: "Why would you want to work with us?" Their answer tells you everything.'
+  } else {
+    const favoriteRatio = proofWeight / total
+
+    if (favoriteRatio >= 0.8) {
+      diagnosis = 'favorite'
+      confidence = Math.min(95, 60 + proofWeight * 8)
+      recommendation = 'We are the favorite. Hold firm on price — they want to work with US specifically. Don\'t negotiate against yourself.'
+    } else if (favoriteRatio >= 0.6) {
+      diagnosis = 'likely_favorite'
+      confidence = Math.min(80, 40 + proofWeight * 7)
+      recommendation = 'Leaning favorite but not locked in. Reinforce the relationship. Ask: "What would it take for you to feel comfortable moving forward with us?"'
+    } else if (favoriteRatio >= 0.4) {
+      diagnosis = 'unknown'
+      confidence = Math.min(50, 20 + total * 5)
+      recommendation = 'Could go either way. Time for the Proof of Life question: "It seems like you have a lot of options — why are you talking to us?" Their answer reveals everything.'
+    } else if (favoriteRatio >= 0.2) {
+      diagnosis = 'likely_fool'
+      confidence = Math.min(80, 40 + foolWeight * 7)
+      recommendation = 'We\'re likely being shopped. Don\'t give a number yet. Ask: "What would make you choose us over the other options you\'re exploring?" If they can\'t answer, move on.'
+    } else {
+      diagnosis = 'fool'
+      confidence = Math.min(95, 60 + foolWeight * 8)
+      recommendation = 'We are the fool on this one. They\'re using our offer as leverage. Stop chasing — your time is better spent on leads where we\'re the favorite.'
     }
   }
 
-  // Stage advancement
-  const stageBonus: Record<string, number> = {
-    contract_signed: 1.5, negotiations: 1, appt_set: 0.5, qualifying: 0.2, dead: -3,
-  }
-  score += stageBonus[props.station || ''] ?? 0
+  return { diagnosis, confidence, proofOfLife: uniqueProof, foolSignals: uniqueFool, recommendation }
+}
 
-  // Rapport
-  const rapport = manifest.ai_call_analysis?.rapport_level
-  if (rapport) {
-    const r = rapport.toLowerCase()
-    if (r.includes('strong') || r.includes('high') || r.includes('excellent')) {
-      score += 0.5; reasons.push('Strong rapport built')
-    } else if (r.includes('hostile') || r.includes('cold') || r.includes('poor')) {
-      score -= 1; reasons.push('Poor rapport — may not work with us')
-    }
-  }
-
-  score = Math.round(Math.min(10, Math.max(0, score)) * 10) / 10
-
-  let verdict: string
-  let color: string
-  if (score >= 8) { verdict = 'FAVORITE — Strong deal, high confidence'; color = '#22c55e' }
-  else if (score >= 6) { verdict = 'PROMISING — Deal potential, keep pushing'; color = '#84cc16' }
-  else if (score >= 4) { verdict = 'MAYBE — Needs more qualification'; color = '#eab308' }
-  else if (score >= 2) { verdict = 'UNLIKELY — Low equity or motivation'; color = '#f97316' }
-  else { verdict = 'FOOL — No deal here, move on'; color = '#ef4444' }
-
-  if (reasons.length === 0) reasons.push('Not enough manifest data to assess — gather more info')
-
-  return { score, verdict, reasons, color }
+const DIAGNOSIS_CONFIG: Record<Diagnosis, { label: string; textClass: string; bg: string; barBg: string; icon: string }> = {
+  favorite:       { label: 'THE FAVORITE',     textClass: 'text-green-500',  bg: 'bg-green-500/10',  barBg: 'bg-green-500',  icon: 'verified' },
+  likely_favorite: { label: 'LIKELY FAVORITE', textClass: 'text-lime-500',   bg: 'bg-lime-500/10',   barBg: 'bg-lime-500',   icon: 'thumb_up' },
+  unknown:        { label: 'UNDETERMINED',      textClass: 'text-yellow-500', bg: 'bg-yellow-500/10', barBg: 'bg-yellow-500', icon: 'help' },
+  likely_fool:    { label: 'LIKELY THE FOOL',  textClass: 'text-orange-500', bg: 'bg-orange-500/10', barBg: 'bg-orange-500', icon: 'warning' },
+  fool:           { label: 'THE FOOL',          textClass: 'text-red-500',    bg: 'bg-red-500/10',    barBg: 'bg-red-500',    icon: 'block' },
 }
 
 export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation }: FavoriteOrFoolProps) {
@@ -170,17 +346,18 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
     fetchManifest()
   }, [leadId])
 
-  const { score, verdict, reasons, color } = analyzeManifest(manifest, {
+  const result = diagnose(manifest, {
     leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation,
   })
-  const pct = (score / 10) * 100
+
+  const config = DIAGNOSIS_CONFIG[result.diagnosis]
 
   if (loading) {
     return (
       <section className="bg-[#1B2A4A] rounded-2xl p-6">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-          <span className="text-xs text-slate-400">Analyzing deal...</span>
+          <span className="text-xs text-slate-400">Diagnosing seller intent...</span>
         </div>
       </section>
     )
@@ -188,44 +365,77 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
 
   return (
     <section className="bg-[#1B2A4A] rounded-2xl p-6">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2 mb-4">
+        <Icon name="psychology" className="!text-lg text-amber-400" />
         <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
           Favorite or Fool?
         </h2>
       </div>
 
-      {/* Score */}
-      <div className="flex items-end gap-2 mb-3">
-        <span className="text-5xl font-black leading-none" style={{ color }}>
-          {score.toFixed(1)}
-        </span>
-        <span className="text-sm text-slate-400 mb-1">/ 10</span>
+      {/* Diagnosis Badge */}
+      <div className={`${config.bg} border border-white/5 rounded-xl px-4 py-3 mb-4`}>
+        <div className="flex items-center gap-2 mb-1">
+          <Icon name={config.icon} className={`!text-xl ${config.textClass}`} />
+          <span className={`text-lg font-black tracking-wide ${config.textClass}`}>
+            {config.label}
+          </span>
+        </div>
+        {result.confidence > 0 && (
+          <div className="flex items-center gap-2 mt-1">
+            <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ${config.barBg}`}
+                style={{ width: `${result.confidence}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-slate-400 font-bold">{result.confidence}%</span>
+          </div>
+        )}
       </div>
 
-      {/* Gauge Bar */}
-      <div className="relative h-3 rounded-full bg-gradient-to-r from-red-500 via-yellow-400 to-green-500 mb-3 overflow-visible">
-        <div
-          className="absolute top-1/2 w-4 h-4 rounded-full border-2 border-white shadow-lg transition-all duration-700"
-          style={{ left: `${pct}%`, backgroundColor: color, transform: 'translate(-50%, -50%)' }}
-        />
+      {/* Proof of Life signals */}
+      {result.proofOfLife.length > 0 && (
+        <div className="mb-3">
+          <p className="text-[10px] font-black uppercase tracking-wider text-green-400 mb-1.5">
+            Proof of Life
+          </p>
+          <ul className="space-y-1">
+            {result.proofOfLife.map((s, i) => (
+              <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
+                <span className="text-green-400 mt-0.5 shrink-0">+</span>
+                {s}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Fool signals */}
+      {result.foolSignals.length > 0 && (
+        <div className="mb-3">
+          <p className="text-[10px] font-black uppercase tracking-wider text-red-400 mb-1.5">
+            Fool Signals
+          </p>
+          <ul className="space-y-1">
+            {result.foolSignals.map((s, i) => (
+              <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
+                <span className="text-red-400 mt-0.5 shrink-0">-</span>
+                {s}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Recommendation */}
+      <div className="bg-white/5 rounded-lg px-3 py-2.5 mt-3">
+        <p className="text-xs text-slate-300 leading-relaxed">
+          {result.recommendation}
+        </p>
       </div>
 
-      {/* Verdict */}
-      <p className="text-sm font-bold mb-3" style={{ color }}>{verdict}</p>
-
-      {/* Reasons from manifest analysis */}
-      <ul className="space-y-1.5 mb-3">
-        {reasons.map((r, i) => (
-          <li key={i} className="text-xs text-slate-300 flex items-start gap-2">
-            <span className="text-slate-500 mt-0.5">•</span>
-            {r}
-          </li>
-        ))}
-      </ul>
-
-      {/* Data source indicator */}
-      <p className="text-[9px] text-slate-500">
-        Based on manifest data, call analysis, and lead financials
+      <p className="text-[9px] text-slate-500 mt-3">
+        Based on manifest call analysis, communication patterns, and seller behavior
       </p>
     </section>
   )

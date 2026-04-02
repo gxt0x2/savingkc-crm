@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
@@ -826,65 +826,105 @@ export default function LeadDetailPage() {
   const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
 
-  useEffect(() => {
-    async function fetchLead() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('id', id)
-        .limit(1)
-        .single()
-      setLead(data as Lead)
-      setLoading(false)
-    }
-    if (id) fetchLead()
+  // ── Data fetching functions (reusable for initial load + realtime refresh) ──
+  const fetchLead = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('leads')
+      .select('*')
+      .eq('id', id)
+      .limit(1)
+      .single()
+    if (data) setLead(data as Lead)
+    setLoading(false)
   }, [id])
 
-  useEffect(() => {
-    async function fetchManifestId() {
-      try {
-        const res = await fetch(`/api/manifests?lead_id=${id}`)
-        const data = await res.json()
-        if (data.manifest?.id) {
-          setManifestRowId(data.manifest.id)
-          const fin = data.manifest.manifest?.financials || {}
-          setManifestFinancials({
-            back_taxes: fin.back_taxes ?? null,
-            liens_amount: fin.liens_amount ?? null,
-            mortgage_balance: fin.mortgage_balance ?? null,
-          })
-        }
-      } catch { /* silent */ }
-    }
-    if (id) fetchManifestId()
-  }, [id])
-
-  useEffect(() => {
-    async function fetchActivities() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('lead_activities')
-        .select('id, activity_type, description, agent, metadata, created_at')
-        .eq('lead_id', id)
-        .order('created_at', { ascending: false })
-        .limit(50)
-      const rows = (data as ActivityRow[]) || []
-      setActivities(rows)
-      const ghostRow = rows.find((r) => r.activity_type === 'ghost_protocol_enrollment')
-      if (ghostRow?.metadata?.status === 'active') {
-        setGhostProtocolStatus({
-          phase: ghostRow.metadata.current_phase as number,
-          status: ghostRow.metadata.status as string,
+  const fetchManifest = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/manifests?lead_id=${id}`)
+      const data = await res.json()
+      if (data.manifest?.id) {
+        setManifestRowId(data.manifest.id)
+        const fin = data.manifest.manifest?.financials || {}
+        setManifestFinancials({
+          back_taxes: fin.back_taxes ?? null,
+          liens_amount: fin.liens_amount ?? null,
+          mortgage_balance: fin.mortgage_balance ?? null,
         })
       }
-      const letterRow = rows.find(
-        (r) => r.activity_type === 'letter_tracking' && (r.metadata as Record<string, unknown>)?.letter_type === 'thank_you'
-      )
-      if (letterRow) setThankYouSent(true)
-    }
-    if (id) fetchActivities()
+    } catch { /* silent */ }
   }, [id])
+
+  const fetchActivities = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('lead_activities')
+      .select('id, activity_type, description, agent, metadata, created_at')
+      .eq('lead_id', id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    const rows = (data as ActivityRow[]) || []
+    setActivities(rows)
+    const ghostRow = rows.find((r) => r.activity_type === 'ghost_protocol_enrollment')
+    if (ghostRow?.metadata?.status === 'active') {
+      setGhostProtocolStatus({
+        phase: ghostRow.metadata.current_phase as number,
+        status: ghostRow.metadata.status as string,
+      })
+    }
+    const letterRow = rows.find(
+      (r) => r.activity_type === 'letter_tracking' && (r.metadata as Record<string, unknown>)?.letter_type === 'thank_you'
+    )
+    if (letterRow) setThankYouSent(true)
+  }, [id])
+
+  // ── Initial data load ──
+  useEffect(() => {
+    if (id) {
+      fetchLead()
+      fetchManifest()
+      fetchActivities()
+    }
+  }, [id, fetchLead, fetchManifest, fetchActivities])
+
+  // ── Realtime subscriptions — auto-refresh when data changes ──
+  useEffect(() => {
+    if (!id) return
+    const supabase = createClient()
+
+    // Subscribe to changes on this lead's record
+    const leadChannel = supabase
+      .channel(`lead-${id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'leads',
+        filter: `id=eq.${id}`,
+      }, () => {
+        fetchLead()
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'lead_activities',
+        filter: `lead_id=eq.${id}`,
+      }, () => {
+        fetchActivities()
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'manifests',
+        filter: `lead_id=eq.${id}`,
+      }, () => {
+        fetchManifest()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(leadChannel)
+    }
+  }, [id, fetchLead, fetchActivities, fetchManifest])
 
   async function handleThankYouToggle() {
     if (thankYouSent) return

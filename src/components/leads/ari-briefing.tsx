@@ -28,7 +28,6 @@ interface BriefingData {
 export function AriBriefing({ leadId, manifestId, personalityType, tacticalApproach, notes, sellerSituation, motivationScore, activities }: AriBriefingProps) {
   const [briefing, setBriefing] = useState<BriefingData | null>(null)
   const [loading, setLoading] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [cached, setCached] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
@@ -37,6 +36,31 @@ export function AriBriefing({ leadId, manifestId, personalityType, tacticalAppro
     buildBriefing()
   }, [leadId, manifestId, notes, sellerSituation, motivationScore, activities])
 
+  // Parse briefing fields that may contain raw JSON strings (LLM quirk)
+  function sanitizeBriefing(data: any): BriefingData | null {
+    if (!data) return null
+    let { situation, motivation, strategy } = data
+
+    // If situation is itself a JSON string containing the real briefing, parse it
+    if (typeof situation === 'string' && situation.trimStart().startsWith('{')) {
+      try {
+        const inner = JSON.parse(situation)
+        if (inner.situation) {
+          situation = inner.situation
+          motivation = inner.motivation || motivation
+          strategy = inner.strategy || strategy
+        }
+      } catch { /* not JSON, use as-is */ }
+    }
+
+    if (!situation && !motivation && !strategy) return null
+    return {
+      situation: situation || '',
+      motivation: motivation || '',
+      strategy: strategy || '',
+    }
+  }
+
   async function buildBriefing() {
     // If manifestId provided, use manifest-based briefing
     if (manifestId) {
@@ -44,10 +68,11 @@ export function AriBriefing({ leadId, manifestId, personalityType, tacticalAppro
         setLoading(true)
         const res = await fetch(`/api/ari/generate-briefing?manifestId=${manifestId}`)
         if (res.ok) {
-          const data = await res.json()
-          if (data.situation || data.motivation || data.strategy) {
+          const raw = await res.json()
+          const data = sanitizeBriefing(raw)
+          if (data) {
             setBriefing(data)
-            setCached(data.cached || false)
+            setCached(raw.cached || false)
             setLoading(false)
             return
           }
@@ -90,8 +115,9 @@ export function AriBriefing({ leadId, manifestId, personalityType, tacticalAppro
         }),
       })
       if (res.ok) {
-        const data = await res.json()
-        if (data.situation || data.motivation || data.strategy) {
+        const raw = await res.json()
+        const data = sanitizeBriefing(raw)
+        if (data) {
           setBriefing(data)
           setCached(false)
           setLoading(false)
@@ -231,59 +257,6 @@ export function AriBriefing({ leadId, manifestId, personalityType, tacticalAppro
         </p>
       </section>
 
-      {/* Drawer */}
-      {drawerOpen && (
-        <>
-          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setDrawerOpen(false)} />
-          <div className="fixed right-0 top-0 bottom-0 w-[480px] max-w-full bg-[#1B2A4A] shadow-2xl z-50 flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <Icon name="psychology" className="text-amber-400" />
-                <h2 className="text-lg font-bold text-white">Full Ari Briefing</h2>
-              </div>
-              <button onClick={() => setDrawerOpen(false)} className="text-slate-400 hover:text-white transition-colors">
-                <Icon name="close" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-              {briefing && (
-                <>
-                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-wider text-blue-400 mb-2">Situation</h3>
-                    <p className="text-sm text-slate-300 leading-relaxed">{briefing.situation}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-wider text-amber-400 mb-2">Motivation</h3>
-                    <p className="text-sm text-slate-300 leading-relaxed">{briefing.motivation}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-wider text-green-400 mb-2">Strategy</h3>
-                    <p className="text-sm text-slate-300 leading-relaxed">{briefing.strategy}</p>
-                  </div>
-                </>
-              )}
-
-              {/* All notes/activities */}
-              <div className="border-t border-white/10 pt-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3">Activity History</h3>
-                <div className="space-y-3">
-                  {activities && activities.length > 0 ? activities.map((a, i) => (
-                    <div key={i} className="text-sm">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">{a.activity_type}</span>
-                        <span className="text-[10px] text-slate-600">{new Date(a.created_at).toLocaleDateString()}</span>
-                      </div>
-                      <p className="text-slate-300">{a.description || 'No description'}</p>
-                    </div>
-                  )) : (
-                    <p className="text-sm text-slate-500 italic">No activities recorded yet</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
     </>
   )
 }

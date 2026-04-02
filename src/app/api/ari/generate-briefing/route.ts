@@ -44,10 +44,22 @@ export async function GET(request: NextRequest) {
     const isStale = manifest.ariIntelligence?.briefingStale === true
 
     if (cached && !isStale) {
+      // Sanitize: if situation field contains raw JSON, parse it
+      let { situation, motivation, strategy } = cached
+      if (typeof situation === 'string' && situation.trimStart().startsWith('{')) {
+        try {
+          const inner = JSON.parse(situation)
+          if (inner.situation) {
+            situation = inner.situation
+            motivation = inner.motivation || motivation
+            strategy = inner.strategy || strategy
+          }
+        } catch { /* use as-is */ }
+      }
       return NextResponse.json({
-        situation: cached.situation,
-        motivation: cached.motivation,
-        strategy: cached.strategy,
+        situation,
+        motivation,
+        strategy,
         cached: true,
         generatedAt: cached.generatedAt,
       })
@@ -206,9 +218,12 @@ async function generateBriefing(
   }
   const extractBriefing = (obj: any): BriefingResult | null => {
     if (!obj || typeof obj !== 'object') return null
+    // If situation is itself a JSON string, parse and use its contents
+    if (typeof obj.situation === 'string' && obj.situation.trimStart().startsWith('{')) {
+      const inner = tryParseJSON(obj.situation)
+      if (inner?.situation) return inner
+    }
     if (obj.situation && (obj.motivation || obj.strategy)) return obj
-    const s = typeof obj.situation === 'string' ? tryParseJSON(obj.situation) : null
-    if (s && s.situation) return s
     return null
   }
 
