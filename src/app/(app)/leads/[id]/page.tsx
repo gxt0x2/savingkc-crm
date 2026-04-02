@@ -827,8 +827,11 @@ export default function LeadDetailPage() {
   const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
 
-  // Auto-refresh counter — incrementing triggers all fetch effects
+  // ── Data fetching (runs on mount + after user actions) ──
   const [refreshTick, setRefreshTick] = useState(0)
+
+  // Call this after any user action that changes data (note, call, edit, email, etc.)
+  function refreshAll() { setRefreshTick(t => t + 1) }
 
   useEffect(() => {
     async function fetchLead() {
@@ -890,12 +893,6 @@ export default function LeadDetailPage() {
     if (id) fetchActivities()
   }, [id, refreshTick])
 
-  // Auto-refresh every 30s so pain points, briefings, etc. stay current
-  useEffect(() => {
-    const interval = setInterval(() => setRefreshTick(t => t + 1), 30000)
-    return () => clearInterval(interval)
-  }, [])
-
   async function handleThankYouToggle() {
     if (thankYouSent) return
     const supabase = createClient()
@@ -908,10 +905,12 @@ export default function LeadDetailPage() {
     }).select('id, activity_type, description, agent, metadata, created_at').single()
     setThankYouSent(true)
     if (data) setActivities(prev => [data as ActivityRow, ...prev])
+    refreshAll()
   }
 
   function handleNoteAdded(note: ActivityRow) {
     setActivities(prev => [note, ...prev])
+    refreshAll()
   }
 
   if (loading) {
@@ -1388,14 +1387,7 @@ export default function LeadDetailPage() {
           leadName={lead.full_name}
           onClose={() => setEmailModalOpen(false)}
           onSent={() => {
-            const supabase = createClient()
-            supabase
-              .from('lead_activities')
-              .select('id, activity_type, description, agent, metadata, created_at')
-              .eq('lead_id', id)
-              .order('created_at', { ascending: false })
-              .limit(50)
-              .then(({ data }) => { if (data) setActivities(data as ActivityRow[]) })
+            refreshAll()
           }}
         />
       )}
@@ -1403,40 +1395,24 @@ export default function LeadDetailPage() {
         <EditLeadPanel
           lead={lead}
           onClose={() => setEditPanelOpen(false)}
-          onSaved={(updated) => setLead((prev) => prev ? { ...prev, ...updated } : prev)}
+          onSaved={(updated) => {
+            setLead((prev) => prev ? { ...prev, ...updated } : prev)
+            refreshAll()
+          }}
         />
       )}
       {contractModalOpen && (
         <ContractModal
           lead={lead}
           onClose={() => setContractModalOpen(false)}
-          onSuccess={() => {
-            // Refresh activities
-            const supabase = createClient()
-            supabase
-              .from('lead_activities')
-              .select('id, activity_type, description, agent, metadata, created_at')
-              .eq('lead_id', id)
-              .order('created_at', { ascending: false })
-              .limit(50)
-              .then(({ data }) => { if (data) setActivities(data as ActivityRow[]) })
-          }}
+          onSuccess={() => { refreshAll() }}
         />
       )}
       {appointmentModalOpen && (
         <AppointmentModal
           lead={lead}
           onClose={() => setAppointmentModalOpen(false)}
-          onSuccess={() => {
-            const supabase = createClient()
-            supabase
-              .from('lead_activities')
-              .select('id, activity_type, description, agent, metadata, created_at')
-              .eq('lead_id', id)
-              .order('created_at', { ascending: false })
-              .limit(50)
-              .then(({ data }) => { if (data) setActivities(data as ActivityRow[]) })
-          }}
+          onSuccess={() => { refreshAll() }}
         />
       )}
       {notesModalOpen && (
