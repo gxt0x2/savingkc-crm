@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isOptedOut } from '@/lib/sms-opt-out'
-import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
@@ -15,19 +14,30 @@ const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWI
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
-// Random delay to make auto-texts feel human
 function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
   const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
   setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
 }
 
-// Internal team numbers — never send auto-texts to these
 const TEAM_NUMBERS = new Set([
-  '+18167564943', // Casey personal
-  '+18167277667', // Casey company
-  '+18166088588', // Ernest company
-  '+18162262552', // Ernest personal
+  '+18167564943', '+18167277667', '+18166088588', '+18162262552',
 ])
+
+/**
+ * Spam check: count how many no-input calls this number made in the last 7 days.
+ * 3+ = likely robocall/spam. Skip lead creation, auto-text, and agent alerts.
+ */
+async function isLikelySpam(phone: string): Promise<boolean> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const { count } = await supabase
+    .from('lead_activities')
+    .select('id', { count: 'exact', head: true })
+    .eq('metadata->>tag', 'ivr_no_input')
+    .eq('metadata->>from', phone)
+    .gte('created_at', sevenDaysAgo)
+
+  return (count ?? 0) >= 3
+}
 
 export async function POST(req: Request) {
   const url = new URL(req.url)
@@ -37,6 +47,21 @@ export async function POST(req: Request) {
   const routing = getAgentRouting(calledNumber)
 
   if (from && !from.includes('anonymous') && !from.includes('blocked') && !TEAM_NUMBERS.has(from)) {
+
+    // Spam detection: 3+ no-input calls in 7 days = silently hang up
+    const spam = await isLikelySpam(from)
+    if (spam) {
+      // Still log it for auditing, but don't create leads or bother agents
+      await supabase.from('lead_activities').insert({
+        lead_id: null,
+        activity_type: 'call',
+        description: `Spam filtered: repeat no-input caller ${from} (3+ in 7 days)`,
+        agent: 'System',
+        metadata: { direction: 'inbound', from, tag: 'ivr_no_input', spam: true }
+      })
+      return new NextResponse('<Response><Hangup /></Response>', { headers: { 'Content-Type': 'text/xml' } })
+    }
+
     // Find or create lead (dedup by phone)
     let noInputLeadId: string | null = null
     const { data: existingLead } = await supabase
@@ -59,7 +84,7 @@ export async function POST(req: Request) {
       noInputLeadId = newLead?.id || null
     }
 
-    // Log the inbound call
+    // Log the inbound call (also feeds the spam counter for future calls)
     await supabase.from('lead_activities').insert({
       lead_id: noInputLeadId,
       activity_type: 'call',
