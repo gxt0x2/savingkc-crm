@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { NavTabs } from './nav-tab'
-import { TelephonyBar } from '@/components/telephony/telephony-bar'
+import { DialerPanel, CallStatus } from '@/components/telephony/telephony-bar'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 
@@ -10,8 +10,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [showDialer, setShowDialer] = useState(false)
+  const [dialerStatus, setDialerStatus] = useState<CallStatus>('offline')
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
+
+  // Auto-open dialer on incoming call
+  useEffect(() => {
+    if (dialerStatus === 'incoming') setShowDialer(true)
+  }, [dialerStatus])
 
   useEffect(() => {
     async function loadProfile() {
@@ -95,6 +102,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               />
             </form>
             <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowDialer(!showDialer)}
+                className="relative p-2 text-white bg-emerald-500 hover:bg-emerald-600 rounded-full transition-colors shadow-sm"
+                aria-label="Open dialer"
+              >
+                <Icon name="call" size="text-lg" />
+                <span className={`absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                  dialerStatus === 'ready' || dialerStatus === 'on_call' ? 'bg-emerald-400' :
+                  dialerStatus === 'connecting' || dialerStatus === 'calling' ? 'bg-yellow-400' :
+                  dialerStatus === 'incoming' ? 'bg-orange-400' :
+                  'bg-slate-400'
+                }`} />
+              </button>
               <button className="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
                 <Icon name="notifications" />
               </button>
@@ -168,12 +188,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 pb-28">
+      <main className="flex-1">
         {children}
       </main>
 
-      {/* Telephony Bar — Twilio softphone */}
-      <TelephonyBar />
+      {/* Dialer Panel — Twilio softphone */}
+      <DialerPanel
+        open={showDialer}
+        onClose={() => setShowDialer(false)}
+        onStatusChange={setDialerStatus}
+      />
     </div>
   )
 }
