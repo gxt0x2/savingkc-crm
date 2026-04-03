@@ -34,6 +34,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
             <Link
               key={tab.label}
               href={tab.href}
+              prefetch={false}
               onClick={onNavigate}
               className={cn(
                 'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all',
@@ -63,6 +64,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
           <Link
             key={tab.label}
             href={tab.href}
+            prefetch={false}
             onClick={onNavigate}
             className={cn(
               'relative px-3 py-3 text-sm font-semibold transition-all border-b-2 whitespace-nowrap',
