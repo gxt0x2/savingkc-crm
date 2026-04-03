@@ -2,13 +2,12 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { NavTabs } from './nav-tab'
+import { TelephonyBar } from '@/components/telephony/telephony-bar'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [showDialer, setShowDialer] = useState(false)
-  const [dialNumber, setDialNumber] = useState('')
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
@@ -96,13 +95,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               />
             </form>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => setShowDialer(true)}
-                className="p-2 rounded-full transition-colors bg-green-500 hover:bg-green-600 flex items-center justify-center"
-                title="New Call"
-              >
-                <Icon name="phone" className="text-white" />
-              </button>
               <button className="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
                 <Icon name="notifications" />
               </button>
@@ -175,50 +167,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Dialer Modal */}
-      {showDialer && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/30" onClick={() => setShowDialer(false)}>
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-primary mb-3">New Call</h3>
-            <input
-              type="tel"
-              autoFocus
-              value={dialNumber}
-              onChange={(e) => setDialNumber(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && dialNumber.trim()) {
-                  window.location.href = `tel:${dialNumber.trim()}`
-                  setShowDialer(false)
-                }
-              }}
-              className="w-full border border-slate-200 rounded-lg px-4 py-3 text-lg font-mono tracking-widest mb-4 focus:outline-none focus:ring-2 focus:ring-primary/20"
-              placeholder="+1 (816) 555-0000"
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  if (dialNumber.trim()) {
-                    window.location.href = `tel:${dialNumber.trim()}`
-                    setShowDialer(false)
-                  }
-                }}
-                className="flex-1 bg-green-500 text-white font-bold py-2.5 rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
-              >
-                <Icon name="call" size="text-sm" />
-                Call
-              </button>
-              <button onClick={() => setShowDialer(false)} className="px-4 py-2.5 text-sm text-slate-500 hover:bg-slate-50 rounded-lg transition-colors">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Content */}
-      <main className="flex-1">
+      <main className="flex-1 pb-28">
         {children}
       </main>
+
+      {/* Telephony Bar — Twilio softphone */}
+      <TelephonyBar />
     </div>
   )
 }
