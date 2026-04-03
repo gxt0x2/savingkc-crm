@@ -40,3 +40,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 savingkc-dialer
+
+# QA test artifacts
+test-results/
+deploy.log
+query-sharion.js

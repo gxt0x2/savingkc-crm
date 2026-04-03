@@ -32,7 +32,7 @@ Only include periods that have actual data. Keep items brief (under 10 words eac
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-3.5-haiku',
+        model: 'anthropic/claude-3-5-haiku-20241022',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 300,
         temperature: 0.5,

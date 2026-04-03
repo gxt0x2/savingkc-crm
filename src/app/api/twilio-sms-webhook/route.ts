@@ -132,8 +132,41 @@ export async function POST(req: Request) {
       onCommunicationEvent(leadId, { type: 'inbound_sms', content: messageBody }).catch(() => {})
     }
 
-    // ── Skip auto-reply for team numbers ────────────────────
+    // ── Team numbers: log + notify, but skip auto-reply/lead creation ──
     if (TEAM_NUMBERS.has(from)) {
+      // Still notify — team messages shouldn't be silently swallowed
+      const teamMember = from === CASEY_PHONE ? 'Casey' :
+                         from === ERNEST_PHONE ? 'Ernest' :
+                         from === '+18166088588' ? 'Ernest (co)' :
+                         from === '+18167277667' ? 'Casey (co)' : 'Team'
+      const teamAlert = `📩 ${teamMember} texted ${to}: "${messageBody.slice(0, 100)}"`
+
+      // Push notification to CRM
+      sendPushToAgents({
+        title: `Team SMS: ${teamMember}`,
+        body: messageBody.slice(0, 80),
+        url: '/conversations',
+        tag: 'team-sms',
+      }).catch(() => {})
+
+      // Log to activities so it shows in Conversations
+      try {
+        await supabase.from('lead_activities').insert({
+          lead_id: null,
+          activity_type: 'sms',
+          description: teamAlert,
+          agent: 'system',
+          metadata: {
+            direction: 'received',
+            from,
+            to,
+            message_sid: messageSid,
+            team_member: teamMember,
+            is_team: true,
+          },
+        })
+      } catch {}
+
       return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
         headers: { 'Content-Type': 'text/xml' },
       })

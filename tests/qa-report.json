@@ -1,0 +1,839 @@
+{
+  "timestamp": "2026-04-03T02:01:35.900Z",
+  "totalFindings": 85,
+  "findingsByType": {
+    "network-failure": 33,
+    "dead-link": 52
+  },
+  "findingsBySeverity": {
+    "high": 33,
+    "low": 52
+  },
+  "findings": [
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/pipeline?_rsc=18t7j",
+      "details": {
+        "url": "http://localhost:3002/pipeline?_rsc=18t7j",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/pipeline?_rsc=18t7j",
+      "details": {
+        "url": "http://localhost:3002/pipeline?_rsc=18t7j",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/conversations?_rsc=18t7j",
+      "details": {
+        "url": "http://localhost:3002/conversations?_rsc=18t7j",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/conversations?_rsc=18t7j",
+      "details": {
+        "url": "http://localhost:3002/conversations?_rsc=18t7j",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/calendar?_rsc=18t7j",
+      "details": {
+        "url": "http://localhost:3002/calendar?_rsc=18t7j",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/calendar?_rsc=18t7j",
+      "details": {
+        "url": "http://localhost:3002/calendar?_rsc=18t7j",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads?_rsc=18t7j",
+      "details": {
+        "url": "http://localhost:3002/leads?_rsc=18t7j",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads?_rsc=18t7j",
+      "details": {
+        "url": "http://localhost:3002/leads?_rsc=18t7j",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/api/dashboard/hot-leads",
+      "details": {
+        "url": "http://localhost:3002/api/dashboard/hot-leads",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/api/dashboard/hot-leads",
+      "details": {
+        "url": "http://localhost:3002/api/dashboard/hot-leads",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/api/dashboard/trends?period=daily&days=30",
+      "details": {
+        "url": "http://localhost:3002/api/dashboard/trends?period=daily&days=30",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/api/dashboard/trends?period=daily&days=30",
+      "details": {
+        "url": "http://localhost:3002/api/dashboard/trends?period=daily&days=30",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"notifications\"",
+      "details": {
+        "text": "notifications"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"daily\"",
+      "details": {
+        "text": "daily"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"weekly\"",
+      "details": {
+        "text": "weekly"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"monthly\"",
+      "details": {
+        "text": "monthly"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Calls\"",
+      "details": {
+        "text": "Calls"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"SMS\"",
+      "details": {
+        "text": "SMS"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Leads\"",
+      "details": {
+        "text": "Leads"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"close\"",
+      "details": {
+        "text": "close"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "details": {
+        "text": "callCall (Phone)"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"refreshConnect Twilio\"",
+      "details": {
+        "text": "refreshConnect Twilio"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+      "details": {
+        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+      "details": {
+        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+      "details": {
+        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+      "details": {
+        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+      "details": {
+        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+      "details": {
+        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+      "details": {
+        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+      "details": {
+        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+      "details": {
+        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
+      "details": {
+        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
+      "details": {
+        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
+      "details": {
+        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
+      "details": {
+        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
+      "details": {
+        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
+      "details": {
+        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
+      "details": {
+        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
+      "details": {
+        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
+      "details": {
+        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"notifications\"",
+      "details": {
+        "text": "notifications"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"addAdd Lead\"",
+      "details": {
+        "text": "addAdd Lead"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"list\"",
+      "details": {
+        "text": "list"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"grid_view\"",
+      "details": {
+        "text": "grid_view"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"filter_listFilter\"",
+      "details": {
+        "text": "filter_listFilter"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"close\"",
+      "details": {
+        "text": "close"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "details": {
+        "text": "callCall (Phone)"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"refreshConnect Twilio\"",
+      "details": {
+        "text": "refreshConnect Twilio"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"notifications\"",
+      "details": {
+        "text": "notifications"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"addAdd Lead\"",
+      "details": {
+        "text": "addAdd Lead"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"filter_listStage\"",
+      "details": {
+        "text": "filter_listStage"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"thermostatTemp\"",
+      "details": {
+        "text": "thermostatTemp"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"sourceSource\"",
+      "details": {
+        "text": "sourceSource"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"close\"",
+      "details": {
+        "text": "close"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "details": {
+        "text": "callCall (Phone)"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"refreshConnect Twilio\"",
+      "details": {
+        "text": "refreshConnect Twilio"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"notifications\"",
+      "details": {
+        "text": "notifications"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"edit_square\"",
+      "details": {
+        "text": "edit_square"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"All\"",
+      "details": {
+        "text": "All"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Unread\"",
+      "details": {
+        "text": "Unread"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Recents\"",
+      "details": {
+        "text": "Recents"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Starred\"",
+      "details": {
+        "text": "Starred"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"smsSMS\"",
+      "details": {
+        "text": "smsSMS"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"mailEmail\"",
+      "details": {
+        "text": "mailEmail"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callCall\"",
+      "details": {
+        "text": "callCall"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"mood\"",
+      "details": {
+        "text": "mood"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"attach_file\"",
+      "details": {
+        "text": "attach_file"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"send\"",
+      "details": {
+        "text": "send"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"close\"",
+      "details": {
+        "text": "close"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "details": {
+        "text": "callCall (Phone)"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"refreshConnect Twilio\"",
+      "details": {
+        "text": "refreshConnect Twilio"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"notifications\"",
+      "details": {
+        "text": "notifications"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"chevron_left\"",
+      "details": {
+        "text": "chevron_left"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"chevron_right\"",
+      "details": {
+        "text": "chevron_right"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"addNew TaskTask\"",
+      "details": {
+        "text": "addNew TaskTask"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"close\"",
+      "details": {
+        "text": "close"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "details": {
+        "text": "callCall (Phone)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"refreshConnect Twilio\"",
+      "details": {
+        "text": "refreshConnect Twilio"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Failed to load page: Error: page.waitForTimeout: Test timeout of 30000ms exceeded.",
+      "details": {
+        "error": "Error: page.waitForTimeout: Test timeout of 30000ms exceeded."
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Failed to load page: Error: page.goto: Target page, context or browser has been closed",
+      "details": {
+        "error": "Error: page.goto: Target page, context or browser has been closed"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Failed to load page: Error: page.goto: Target page, context or browser has been closed",
+      "details": {
+        "error": "Error: page.goto: Target page, context or browser has been closed"
+      }
+    }
+  ]
+}
