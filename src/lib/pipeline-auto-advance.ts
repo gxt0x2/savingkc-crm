@@ -80,13 +80,75 @@ export async function checkAutoAdvance(
     return { advanced: false }
   }
 
-  // Advance
-  await supabase
-    .from('leads')
-    .update({ station: newStation })
-    .eq('id', leadId)
+  // Write to MANIFEST first (single source of truth)
+  // The manifest saveManifest() cascade will sync to leads table automatically.
+  const { data: manifestRow } = await supabase
+    .from('manifests')
+    .select('id, manifest')
+    .eq('lead_id', leadId)
+    .limit(1)
+    .single()
 
-  // Log the transition
+  if (manifestRow?.manifest) {
+    const manifest = manifestRow.manifest as any
+    manifest.currentStation = newStation
+    manifest.lastUpdated = new Date().toISOString()
+    manifest.lastUpdatedBy = 'system:pipeline'
+
+    // Mark the manifest pipeline stage as completed
+    const stageMap: Record<string, string> = {
+      contacted: 'qualifying',
+      qualified: 'discovery',
+      offer_made: 'offer',
+      under_contract: 'contract',
+      closed: 'closed',
+    }
+    const manifestStage = stageMap[newStation]
+    if (manifestStage && manifest.pipeline?.[manifestStage]) {
+      manifest.pipeline[manifestStage].status = 'completed'
+      manifest.pipeline[manifestStage].completedAt = new Date().toISOString()
+    }
+
+    // Mark briefing as stale so Ari regenerates
+    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+    manifest.ariIntelligence.briefingStale = true
+
+    // Audit trail
+    if (!manifest.auditTrail) manifest.auditTrail = []
+    manifest.auditTrail.push({
+      timestamp: new Date().toISOString(),
+      agent: 'system:pipeline',
+      action: 'station_advanced',
+      details: { from: current, to: newStation, trigger },
+    })
+
+    // Save manifest — this cascades station/priority to leads table
+    await supabase
+      .from('manifests')
+      .update({
+        manifest,
+        current_station: manifest.currentStation,
+        priority: manifest.priority,
+        tier: manifest.tier,
+        qualification_score: manifest.qualificationScore,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', manifestRow.id)
+
+    // Cascade: sync derived fields to leads table
+    await supabase
+      .from('leads')
+      .update({ station: newStation })
+      .eq('id', leadId)
+  } else {
+    // No manifest exists — fall back to direct leads update
+    await supabase
+      .from('leads')
+      .update({ station: newStation })
+      .eq('id', leadId)
+  }
+
+  // Log the transition as activity
   await supabase.from('lead_activities').insert({
     lead_id: leadId,
     activity_type: 'status_change',
@@ -100,47 +162,6 @@ export async function checkAutoAdvance(
       new_station: newStation,
     },
   })
-
-  // Also update manifest pipeline if one exists
-  try {
-    const { data: manifestRow } = await supabase
-      .from('manifests')
-      .select('id, manifest')
-      .eq('lead_id', leadId)
-      .limit(1)
-      .single()
-
-    if (manifestRow?.manifest) {
-      const manifest = manifestRow.manifest as any
-      manifest.currentStation = newStation
-      manifest.lastUpdated = new Date().toISOString()
-      manifest.lastUpdatedBy = 'system:pipeline'
-
-      // Mark the manifest pipeline stage as completed
-      const stageMap: Record<string, string> = {
-        contacted: 'qualifying',
-        qualified: 'discovery',
-        offer_made: 'offer',
-        under_contract: 'contract',
-        closed: 'closed',
-      }
-      const manifestStage = stageMap[newStation]
-      if (manifestStage && manifest.pipeline?.[manifestStage]) {
-        manifest.pipeline[manifestStage].status = 'completed'
-        manifest.pipeline[manifestStage].completedAt = new Date().toISOString()
-      }
-
-      // Mark briefing as stale so Ari regenerates
-      if (manifest.ariIntelligence) {
-        manifest.ariIntelligence.briefingStale = true
-      }
-
-      await supabase
-        .from('manifests')
-        .update({ manifest, updated_at: new Date().toISOString() })
-        .eq('id', manifestRow.id)
-    }
-  } catch {} // Non-critical — manifest sync is best-effort
 
   return { advanced: true, from: current, to: newStation }
 }

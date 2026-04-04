@@ -7,6 +7,9 @@ import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/midd
 import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
+import { lookupProspectByPhone } from '@/lib/prospect-lookup'
+import { createEnrichedLeadFromProspect, formatProspectAlert } from '@/lib/prospect-to-lead'
+import type { ProspectMatch } from '@/lib/prospect-lookup'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -112,6 +115,13 @@ export async function POST(req: Request) {
     const leadId = lead?.id || null
     const leadName = lead?.full_name || 'Unknown'
 
+    // Prospect lookup for unknown senders
+    let prospectMatch: ProspectMatch | null = null
+    if (!lead) {
+      const matches = await lookupProspectByPhone(from)
+      prospectMatch = matches.length > 0 ? matches[0] : null
+    }
+
     // Log the inbound SMS to lead_activities
     await supabase.from('lead_activities').insert({
       lead_id: leadId,
@@ -181,23 +191,38 @@ export async function POST(req: Request) {
 
       // Create lead if unknown caller
       if (!yesLeadId) {
-        const { data: newLead } = await supabase.from('leads').insert({
-          full_name: 'Inbound Seller (YES reply)',
-          phone: from,
-          source: 'sms_yes_reply',
-          station: 'intake',
-          priority: 'hot',
-        }).select('id').single()
-        yesLeadId = newLead?.id
+        if (prospectMatch) {
+          // Tax delinquent prospect — create enriched lead
+          yesLeadId = await createEnrichedLeadFromProspect(prospectMatch, from, 'tax_delinquent_inbound_sms', 'hot') || undefined
+        } else {
+          const { data: newLead } = await supabase.from('leads').insert({
+            full_name: 'Inbound Seller (YES reply)',
+            phone: from,
+            source: 'sms_yes_reply',
+            station: 'intake',
+            priority: 'hot',
+          }).select('id').single()
+          yesLeadId = newLead?.id
+        }
       } else {
-        // Bump existing lead to hot
-        await supabase.from('leads')
-          .update({ priority: 'hot' })
-          .eq('id', yesLeadId)
+        // Bump existing lead to hot — manifest is source of truth, cascade handles leads
+        const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
+        const cascaded = await updateManifestAndCascade(yesLeadId, (m) => {
+          m.priority = 'hot'
+        }, 'system:sms_yes_reply')
+        if (!cascaded) {
+          // No manifest yet — fall back to direct update
+          await supabase.from('leads')
+            .update({ priority: 'hot' })
+            .eq('id', yesLeadId)
+        }
       }
 
       // Alert BOTH agents — primary based on office hours
-      const yesAlertBody = `🔥 HOT: ${leadName !== 'Unknown' ? leadName : from} replied YES to sell. Call NOW.${yesLeadId ? ' ' + BASE_URL + '/leads/' + yesLeadId : ''}`
+      const prospectCtx = prospectMatch ? `\n🏠 ${formatProspectAlert(prospectMatch)}` : ''
+      const yesAlertBody = prospectMatch
+        ? `🔥 TAX PROSPECT replied YES! ${prospectMatch.owner_1 || from}${prospectCtx}${yesLeadId ? '\n' + BASE_URL + '/leads/' + yesLeadId : ''}`
+        : `🔥 HOT: ${leadName !== 'Unknown' ? leadName : from} replied YES to sell. Call NOW.${yesLeadId ? ' ' + BASE_URL + '/leads/' + yesLeadId : ''}`
       const primaryAgent = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
       const secondaryAgent = isOfficeHours() ? ERNEST_PHONE : CASEY_PHONE
       await Promise.allSettled([
@@ -305,15 +330,28 @@ export async function POST(req: Request) {
 
     // ── Unknown number — full automation: lead, manifest, alerts, auto-reply, task ──
     if (!lead) {
-      const { data: newLead } = await supabase.from('leads').insert({
-        full_name: `SMS Lead (${from})`,
-        phone: from,
-        source: 'inbound_sms',
-        station: 'intake',
-        priority: 'warm',
-      }).select('id').single()
+      let newLeadId: string | null = null
 
-      const newLeadId = newLead?.id || null
+      if (prospectMatch) {
+        // Tax delinquent prospect — create enriched lead
+        newLeadId = await createEnrichedLeadFromProspect(prospectMatch, from, 'tax_delinquent_inbound_sms', 'warm')
+      } else {
+        // Generic unknown SMS — create basic lead
+        const { data: newLead } = await supabase.from('leads').insert({
+          full_name: `SMS Lead (${from})`,
+          phone: from,
+          source: 'inbound_sms',
+          station: 'intake',
+          priority: 'warm',
+        }).select('id').single()
+        newLeadId = newLead?.id || null
+
+        if (newLeadId) {
+          ensureManifestExists(newLeadId).then(() => {
+            onCommunicationEvent(newLeadId!, { type: 'inbound_sms', content: messageBody }).catch(() => {})
+          }).catch(() => {})
+        }
+      }
 
       if (newLeadId) {
         // Re-link the already-logged SMS to the new lead
@@ -322,13 +360,11 @@ export async function POST(req: Request) {
           .eq('metadata->>message_sid', messageSid)
           .is('lead_id', null)
 
-        // Auto-create manifest + sync the inbound SMS event
-        ensureManifestExists(newLeadId).then(() => {
-          onCommunicationEvent(newLeadId, { type: 'inbound_sms', content: messageBody }).catch(() => {})
-        }).catch(() => {})
-
-        // Alert both agents
-        const smsAlert = `📩 New text from unknown number ${from}: "${messageBody.slice(0, 80)}"${newLeadId ? ' ' + BASE_URL + '/leads/' + newLeadId : ''}`
+        // Alert both agents — include prospect context if matched
+        const unknownProspectCtx = prospectMatch ? `\n🏠 ${formatProspectAlert(prospectMatch)}` : ''
+        const smsAlert = prospectMatch
+          ? `🔥 TAX PROSPECT texted! ${prospectMatch.owner_1 || from}: "${messageBody.slice(0, 60)}"${unknownProspectCtx}\n${BASE_URL}/leads/${newLeadId}`
+          : `📩 New text from unknown number ${from}: "${messageBody.slice(0, 80)}" ${BASE_URL}/leads/${newLeadId}`
         await Promise.allSettled([
           twilioClient.messages.create({ body: smsAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
           twilioClient.messages.create({ body: smsAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
@@ -340,7 +376,7 @@ export async function POST(req: Request) {
           activity_type: 'sms',
           description: smsAlert,
           agent: 'System',
-          metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'unknown_sms_alert' },
+          metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: prospectMatch ? 'prospect_sms_alert' : 'unknown_sms_alert' },
         })
 
         // Create callback task
@@ -348,26 +384,49 @@ export async function POST(req: Request) {
         await supabase.from('lead_activities').insert({
           lead_id: newLeadId,
           activity_type: 'task',
-          description: `Follow up: Unknown number ${from} texted "${messageBody.slice(0, 60)}"`,
+          description: prospectMatch
+            ? `TAX PROSPECT: ${prospectMatch.owner_1 || from} texted. ${formatProspectAlert(prospectMatch)}`
+            : `Follow up: Unknown number ${from} texted "${messageBody.slice(0, 60)}"`,
           agent: 'System',
           metadata: {
             task_type: 'callback',
-            due_date: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+            due_date: new Date(Date.now() + (prospectMatch ? 5 : 15) * 60 * 1000).toISOString(),
             assigned_to: primaryAgent,
-            priority: 'high',
+            priority: prospectMatch ? 'critical' : 'high',
             status: 'pending',
           },
         })
 
-        // Ari briefing event
+        // Push notification
+        sendPushToAgents({
+          title: prospectMatch ? 'Tax Prospect Texted!' : 'Unknown SMS',
+          body: prospectMatch
+            ? `${prospectMatch.owner_1 || from}: "${messageBody.slice(0, 60)}"`
+            : `${from}: "${messageBody.slice(0, 60)}"`,
+          url: `/leads/${newLeadId}`,
+          tag: prospectMatch ? 'prospect-sms' : 'unknown-sms',
+        }).catch(() => {})
+
+        // Ari briefing event — include prospect metadata
         try {
           await supabase.from('ari_briefing_events').insert({
-            event_type: 'unknown_sms',
-            priority: 'medium',
-            title: `New text from unknown: ${from}`,
-            description: `Message: "${messageBody.slice(0, 120)}". Lead created, agents notified.`,
+            event_type: prospectMatch ? 'prospect_inbound_sms' : 'unknown_sms',
+            priority: prospectMatch ? 'critical' : 'medium',
+            title: prospectMatch
+              ? `Tax prospect texted: ${prospectMatch.owner_1 || from}`
+              : `New text from unknown: ${from}`,
+            description: prospectMatch
+              ? `Message: "${messageBody.slice(0, 120)}". ${formatProspectAlert(prospectMatch)}`
+              : `Message: "${messageBody.slice(0, 120)}". Lead created, agents notified.`,
             lead_id: newLeadId,
             action_url: `/leads/${newLeadId}`,
+            metadata: prospectMatch ? {
+              parcel_id: prospectMatch.parcel_id,
+              county: prospectMatch.county,
+              cumulative_due: prospectMatch.cumulative_due,
+              is_deceased: prospectMatch.is_deceased,
+              property_address: prospectMatch.situs_street || prospectMatch.situs_address,
+            } : undefined,
           })
         } catch {}
       }

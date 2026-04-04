@@ -1,7 +1,15 @@
 /**
- * Manifest Sync Helper
- * Lightweight functions to sync critical data from endpoints into manifests.
- * Used by: twilio-sms-webhook, twilio-missed-call, conversations/send, call-log, ghost-protocol
+ * Manifest Sync — Single Source of Truth
+ *
+ * ARCHITECTURE: The manifest is the ONLY source of truth for lead state.
+ * All derived fields (leads.station, leads.priority, leads.motivation_score)
+ * are cascaded FROM the manifest via saveManifest(). No other code should
+ * write these fields to the leads table directly.
+ *
+ * Flow: event → update manifest → saveManifest() → cascade to leads table
+ *
+ * Used by: twilio-sms-webhook, twilio-missed-call, conversations/send,
+ *          call-log, ghost-protocol, pipeline-auto-advance, mojo/reprocess
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -40,22 +48,29 @@ export function deepMerge<T extends Record<string, any>>(target: T, source: Part
 }
 
 /** Get manifest for a lead (returns null if none exists) */
-async function getManifestForLead(leadId: string): Promise<{ rowId: string; manifest: ManifestV2 } | null> {
+async function getManifestForLead(leadId: string): Promise<{ rowId: string; leadId: string; manifest: ManifestV2 } | null> {
   const supabase = getSupabase()
   const { data } = await supabase
     .from('manifests')
-    .select('id, manifest')
+    .select('id, lead_id, manifest')
     .eq('lead_id', leadId)
     .limit(1)
     .single()
 
   if (!data?.manifest) return null
-  return { rowId: data.id, manifest: data.manifest as ManifestV2 }
+  return { rowId: data.id, leadId: data.lead_id, manifest: data.manifest as ManifestV2 }
 }
 
-/** Save manifest back to DB */
-async function saveManifest(rowId: string, manifest: ManifestV2) {
+/**
+ * Save manifest back to DB AND sync derived fields to leads table.
+ * This is the SINGLE chokepoint — all manifest writes go through here,
+ * and the leads table is always kept in sync. No other code should
+ * write station/priority/motivation_score to leads directly.
+ */
+async function saveManifest(rowId: string, manifest: ManifestV2, leadId?: string) {
   const supabase = getSupabase()
+
+  // 1. Save manifest to manifests table
   await supabase
     .from('manifests')
     .update({
@@ -67,6 +82,38 @@ async function saveManifest(rowId: string, manifest: ManifestV2) {
       updated_at: new Date().toISOString(),
     })
     .eq('id', rowId)
+
+  // 2. Sync derived fields to leads table (manifest → leads, never the reverse)
+  const resolvedLeadId = leadId || await getLeadIdForManifest(rowId)
+  if (resolvedLeadId) {
+    const leadUpdate: Record<string, any> = {}
+
+    if (manifest.currentStation) leadUpdate.station = manifest.currentStation
+    if (manifest.priority) leadUpdate.priority = manifest.priority
+
+    const motivationScore = manifest.situation?.motivation?.score
+    if (motivationScore && motivationScore >= 1) {
+      leadUpdate.motivation_score = motivationScore
+    }
+
+    if (Object.keys(leadUpdate).length > 0) {
+      await supabase
+        .from('leads')
+        .update(leadUpdate)
+        .eq('id', resolvedLeadId)
+    }
+  }
+}
+
+/** Look up lead_id from manifest row ID */
+async function getLeadIdForManifest(rowId: string): Promise<string | null> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('manifests')
+    .select('lead_id')
+    .eq('id', rowId)
+    .single()
+  return (data as any)?.lead_id || null
 }
 
 /** Mark briefing as stale so Ari regenerates on next view */
@@ -81,17 +128,17 @@ export async function markBriefingStale(leadId: string): Promise<void> {
   manifest.ariIntelligence.briefingStale = true
   manifest.lastUpdated = new Date().toISOString()
 
-  await saveManifest(row.rowId, manifest)
+  await saveManifest(row.rowId, manifest, leadId)
 }
 
-/** Sync priority from leads table to manifest */
+/** Sync priority to manifest (manifest is source of truth, leads table updates via cascade) */
 export async function syncPriority(leadId: string, priority: 'hot' | 'warm' | 'cold'): Promise<void> {
   const row = await getManifestForLead(leadId)
   if (!row) return
 
   row.manifest.priority = priority
   row.manifest.lastUpdated = new Date().toISOString()
-  await saveManifest(row.rowId, row.manifest)
+  await saveManifest(row.rowId, row.manifest, leadId)
 }
 
 /** Add a motivation signal to the manifest */
@@ -111,7 +158,7 @@ export async function addMotivationSignal(leadId: string, signal: string): Promi
     manifest.lastUpdated = new Date().toISOString()
     if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
     manifest.ariIntelligence.briefingStale = true
-    await saveManifest(row.rowId, manifest)
+    await saveManifest(row.rowId, manifest, leadId)
   }
 }
 
@@ -131,7 +178,7 @@ export async function addFlag(
   if (!manifest.flags[type]!.includes(flag)) {
     manifest.flags[type]!.push(flag)
     manifest.lastUpdated = new Date().toISOString()
-    await saveManifest(row.rowId, manifest)
+    await saveManifest(row.rowId, manifest, leadId)
   }
 }
 
@@ -143,7 +190,7 @@ export async function addSituationType(leadId: string, tag: string): Promise<voi
   if (!row.manifest.situation.type.includes(tag)) {
     row.manifest.situation.type.push(tag)
     row.manifest.lastUpdated = new Date().toISOString()
-    await saveManifest(row.rowId, row.manifest)
+    await saveManifest(row.rowId, row.manifest, leadId)
   }
 }
 
@@ -167,7 +214,7 @@ export async function flagDeceased(leadId: string): Promise<void> {
   row.manifest.lastUpdated = new Date().toISOString()
   row.manifest.lastUpdatedBy = 'system:deceased_detection'
 
-  await saveManifest(row.rowId, row.manifest)
+  await saveManifest(row.rowId, row.manifest, leadId)
 }
 
 /**
@@ -252,7 +299,7 @@ export async function onCommunicationEvent(
     }
   }
 
-  await saveManifest(row.rowId, manifest)
+  await saveManifest(row.rowId, manifest, leadId)
 }
 
 /**
@@ -312,4 +359,40 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
   }
 
   return inserted?.id || null
+}
+
+/**
+ * Public API: Update manifest with partial data and cascade all derived fields.
+ * This is the RECOMMENDED way for any endpoint to modify a manifest.
+ *
+ * Usage:
+ *   await updateManifestAndCascade(leadId, (manifest) => {
+ *     manifest.situation.motivation.score = 8
+ *     manifest.currentStation = 'appointment'
+ *     manifest.priority = 'hot'
+ *   })
+ *
+ * The callback mutates the manifest in place. After it runs, saveManifest()
+ * persists the change AND syncs derived fields to the leads table.
+ */
+export async function updateManifestAndCascade(
+  leadId: string,
+  updater: (manifest: ManifestV2) => void,
+  source?: string,
+): Promise<boolean> {
+  const row = await getManifestForLead(leadId)
+  if (!row) return false
+
+  const { manifest } = row
+
+  // Apply the caller's mutations
+  updater(manifest)
+
+  // Stamp metadata
+  manifest.lastUpdated = new Date().toISOString()
+  if (source) manifest.lastUpdatedBy = source
+
+  // Save + cascade to leads table
+  await saveManifest(row.rowId, manifest, leadId)
+  return true
 }
