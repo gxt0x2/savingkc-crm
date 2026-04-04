@@ -4,6 +4,7 @@ import { sendPushToAgents } from '@/lib/push-notifications'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
+import { ensureManifestExists } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,6 +56,9 @@ export async function POST(req: Request) {
       resolvedLeadId = newLead?.id || ''
     }
   }
+
+  // Ensure manifest exists (fire-and-forget)
+  if (resolvedLeadId) ensureManifestExists(resolvedLeadId).catch(() => {})
 
   // Log voicemail to lead_activities
   await supabase.from('lead_activities').insert({

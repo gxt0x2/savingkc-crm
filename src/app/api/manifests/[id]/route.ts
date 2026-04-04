@@ -3,10 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from '@/lib/manifest-builder'
 import { deepMerge } from '@/lib/manifest-sync'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 // GET /api/manifests/[id]
 export async function GET(
@@ -15,6 +17,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    const supabase = getSupabase()
 
     const { data, error } = await supabase
       .from('manifests')
@@ -48,11 +51,12 @@ export async function PATCH(
   try {
     const { id } = await params
     const updates = await req.json()
+    const supabase = getSupabase()
 
-    // Fetch existing manifest
+    // Fetch existing manifest + lead_id for cascade
     const { data: existing, error: fetchError } = await supabase
       .from('manifests')
-      .select('manifest')
+      .select('manifest, lead_id')
       .eq('id', id)
       .single()
 
@@ -64,6 +68,7 @@ export async function PATCH(
     }
 
     const currentManifest = existing.manifest as ManifestV2
+    const leadId = (existing as any).lead_id as string | null
 
     // Deep merge updates into manifest (preserves nested sibling keys)
     const { agent: _agent, action: _action, details: _details, ...manifestUpdates } = updates
@@ -83,7 +88,7 @@ export async function PATCH(
     if (!updatedManifest.ariIntelligence) updatedManifest.ariIntelligence = {}
     updatedManifest.ariIntelligence.briefingStale = true
 
-    // Update in Supabase
+    // Save manifest to manifests table
     const { data, error } = await supabase
       .from('manifests')
       .update({
@@ -104,6 +109,18 @@ export async function PATCH(
         { error: 'Failed to update manifest' },
         { status: 500 }
       )
+    }
+
+    // CASCADE: Sync derived fields to leads table (manifest → leads)
+    if (leadId) {
+      const leadUpdate: Record<string, any> = {}
+      if (updatedManifest.currentStation) leadUpdate.station = updatedManifest.currentStation
+      if (updatedManifest.priority) leadUpdate.priority = updatedManifest.priority
+      const motivationScore = updatedManifest.situation?.motivation?.score
+      if (motivationScore && motivationScore >= 1) leadUpdate.motivation_score = motivationScore
+      if (Object.keys(leadUpdate).length > 0) {
+        await supabase.from('leads').update(leadUpdate).eq('id', leadId)
+      }
     }
 
     return NextResponse.json({

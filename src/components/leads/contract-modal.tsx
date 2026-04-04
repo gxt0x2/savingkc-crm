@@ -75,11 +75,16 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
         },
       })
 
-      // Update lead stage to negotiations if not already past it
-      await supabase.from('leads').update({
-        station: 'negotiations',
-        offer_amount: form.purchasePrice,
-      }).eq('id', lead.id)
+      // Update lead stage via API — cascades station through manifest → leads
+      await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: lead.id,
+          station: 'negotiations',
+          offer_amount: form.purchasePrice,
+        }),
+      })
 
       // Send SMS notification if enabled
       if (form.sendSms && lead.phone) {

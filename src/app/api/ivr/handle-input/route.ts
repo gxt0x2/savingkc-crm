@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAgentRouting } from '@/lib/agent-routing'
+import { ensureManifestExists } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,6 +57,9 @@ export async function POST(req: Request) {
         agent: 'System',
         metadata: { direction: 'inbound', from, callSid, source: isColdCall ? 'cold_callback_press_1' : 'ivr_press_1' }
       })
+
+      // Ensure manifest exists (fire-and-forget)
+      if (leadId) ensureManifestExists(leadId).catch(() => {})
     }
 
     // Sim-ring both agents — first to answer gets connected

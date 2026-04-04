@@ -31,7 +31,12 @@ export function TemperatureOverride({ leadId, currentPriority, onChanged }: Temp
     setSaving(true)
     const supabase = createClient()
 
-    await supabase.from('leads').update({ priority }).eq('id', leadId)
+    // Update via API — cascades through manifest → leads
+    await fetch('/api/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: leadId, priority }),
+    })
 
     // Log the change
     await supabase.from('lead_activities').insert({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
+import { ensureManifestExists } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,6 +47,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
     }
 
+    // Create manifest (fire-and-forget)
+    if (data?.id) ensureManifestExists(data.id).catch(() => {})
+
     const smsText = `🔔 New website lead: ${name} | ${address} | ${phone}`
 
     await Promise.allSettled([
@@ -77,16 +81,59 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'id required' }, { status: 400, headers: corsHeaders })
     }
 
-    const { data, error } = await supabase
+    // Manifest-owned fields must cascade through manifest → leads
+    const MANIFEST_OWNED = ['station', 'priority', 'motivation_score'] as const
+    const manifestFields: Record<string, any> = {}
+    const directFields: Record<string, any> = {}
+
+    for (const [key, val] of Object.entries(fields)) {
+      if ((MANIFEST_OWNED as readonly string[]).includes(key)) {
+        manifestFields[key] = val
+      } else {
+        directFields[key] = val
+      }
+    }
+
+    // If manifest-owned fields are being updated, go through manifest cascade
+    if (Object.keys(manifestFields).length > 0) {
+      const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
+      const cascaded = await updateManifestAndCascade(id, (manifest) => {
+        if (manifestFields.station) manifest.currentStation = manifestFields.station
+        if (manifestFields.priority) manifest.priority = manifestFields.priority
+        if (manifestFields.motivation_score) {
+          if (!manifest.situation.motivation) manifest.situation.motivation = {}
+          manifest.situation.motivation.score = manifestFields.motivation_score
+        }
+      }, 'api:leads_patch')
+
+      // Fallback to direct write if no manifest exists
+      if (!cascaded) {
+        Object.assign(directFields, manifestFields)
+      }
+    }
+
+    // Write non-manifest fields directly to leads table
+    if (Object.keys(directFields).length > 0) {
+      const { error } = await supabase
+        .from('leads')
+        .update(directFields)
+        .eq('id', id)
+
+      if (error) {
+        console.error('Supabase update error:', error)
+        return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+      }
+    }
+
+    // Return updated lead
+    const { data, error: fetchError } = await supabase
       .from('leads')
-      .update(fields)
-      .eq('id', id)
       .select()
+      .eq('id', id)
       .single()
 
-    if (error) {
-      console.error('Supabase update error:', error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+    if (fetchError) {
+      return NextResponse.json({ success: false, error: fetchError.message }, { status: 500, headers: corsHeaders })
     }
 
     return NextResponse.json({ success: true, lead: data }, { headers: corsHeaders })

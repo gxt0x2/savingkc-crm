@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAgentRouting } from '@/lib/agent-routing'
+import { ensureManifestExists } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -72,6 +73,9 @@ export async function POST(req: Request) {
       }).select('id').single()
       noInputLeadId = newLead?.id || null
     }
+
+    // Ensure manifest exists (fire-and-forget)
+    if (noInputLeadId) ensureManifestExists(noInputLeadId).catch(() => {})
 
     // Log call (feeds spam counter for future calls)
     await supabase.from('lead_activities').insert({

@@ -4,6 +4,7 @@ import { getAgentRouting } from '@/lib/agent-routing'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
+import { ensureManifestExists } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,6 +56,9 @@ export async function POST(req: Request) {
       leadId = newLead?.id || ''
     }
   }
+
+  // Ensure manifest exists (fire-and-forget)
+  if (leadId) ensureManifestExists(leadId).catch(() => {})
 
   // Log the voicemail recording
   if (leadId) {
