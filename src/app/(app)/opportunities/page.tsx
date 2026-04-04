@@ -118,9 +118,12 @@ export default function OpportunitiesPage() {
 
   async function togglePin(dealId: string, currentPriority: string | null) {
     setPinning(dealId)
-    const supabase = createClient()
     const newPriority = currentPriority === 'hot' ? 'normal' : 'hot'
-    await supabase.from('leads').update({ priority: newPriority }).eq('id', dealId)
+    await fetch('/api/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: dealId, priority: newPriority }),
+    })
     await fetchLeads()
     setPinning(null)
   }

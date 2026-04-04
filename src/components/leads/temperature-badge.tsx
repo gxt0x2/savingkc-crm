@@ -5,7 +5,7 @@
 
 import { useState } from 'react'
 import { calculateTemperature, TEMPERATURE_CONFIG, type Temperature, type TemperatureInput } from '@/lib/lead-temperature'
-import { createClient } from '@/lib/supabase/client'
+
 
 interface TemperatureBadgeProps {
   lead: TemperatureInput
@@ -58,8 +58,11 @@ export function TemperatureBadge({ lead, size = 'md', showLabel = true, classNam
     const nextTemp = TEMP_CYCLE[nextIndex]
     const nextPriority = TEMP_TO_PRIORITY[nextTemp]
 
-    const supabase = createClient()
-    await supabase.from('leads').update({ priority: nextPriority }).eq('id', leadId)
+    await fetch('/api/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: leadId, priority: nextPriority }),
+    })
 
     onChanged?.(nextPriority)
     setUpdating(false)

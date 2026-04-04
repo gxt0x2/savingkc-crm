@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
+import { updateManifestAndCascade } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -53,7 +54,12 @@ export async function POST(req: Request) {
   if (leadId) {
     const currentPriority = existingLead?.priority
     if (!currentPriority || currentPriority === 'normal' || currentPriority === 'low') {
-      await supabase.from('leads').update({ priority: 'warm' }).eq('id', leadId)
+      const cascaded = await updateManifestAndCascade(leadId, (m) => {
+        m.priority = 'warm'
+      }, 'system:cold_callback')
+      if (!cascaded) {
+        await supabase.from('leads').update({ priority: 'warm' }).eq('id', leadId)
+      }
     }
   }
 
