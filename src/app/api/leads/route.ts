@@ -75,10 +75,91 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json()
-    const { id, ...fields } = body
+    const { id, activity, ...fields } = body
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'id required' }, { status: 400, headers: corsHeaders })
+    }
+
+    // CRITICAL: Handle appointment_set disposition → manifest write
+    if (activity?.disposition === 'appointment_set') {
+      const { updateManifestAndCascade, ensureManifestExists } = await import('@/lib/manifest-sync')
+      const { checkAutoAdvance } = await import('@/lib/pipeline-auto-advance')
+      const { randomUUID } = await import('crypto')
+
+      // 0. Ensure manifest exists
+      await ensureManifestExists(id)
+
+      // 1. Update manifest with appointment object
+      await updateManifestAndCascade(id, (manifest) => {
+        // Create appointment object with all required fields
+        manifest.pipeline.appointment = {
+          appointmentId: randomUUID(),
+          type: 'phone_call', // Default from disposition - can be changed via modal
+          scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Default: tomorrow same time
+          createdAt: new Date().toISOString(),
+          status: 'scheduled',
+          confirmationCount: 0,
+          lastSellerResponse: null,
+          ghostRiskScore: 0,
+          ghostProtocolActive: false,
+          automationLog: [],
+          assignedTo: 'casey', // Default assignee
+          address: null,
+          notes: activity.notes || null,
+        }
+
+        // Set station to qualified
+        manifest.currentStation = 'qualified'
+
+        // Mark briefing as stale
+        if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+        manifest.ariIntelligence.briefingStale = true
+
+        // Add to audit trail
+        if (!manifest.auditTrail) manifest.auditTrail = []
+        manifest.auditTrail.push({
+          timestamp: new Date().toISOString(),
+          agent: 'disposition:appointment_set',
+          action: 'appointment_created',
+          details: {
+            source: 'call_disposition',
+            notes: activity.notes,
+          },
+        })
+      }, 'disposition:appointment_set')
+
+      // 2. Fire appointment_set auto-advance trigger
+      await checkAutoAdvance(id, 'appointment_set')
+
+      // 3. Log to lead_activities for timeline/calendar display
+      const scheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      await supabase.from('lead_activities').insert({
+        lead_id: id,
+        activity_type: 'appointment',
+        description: `Appointment scheduled during call${activity.notes ? ': ' + activity.notes : ''}`,
+        agent: 'Casey',
+        metadata: {
+          source: 'call_disposition',
+          disposition: activity.disposition,
+          scheduled_at: scheduledAt,
+          due_date: scheduledAt, // Calendar reads due_date
+          status: 'scheduled',
+        },
+      })
+    } else if (activity) {
+      // Log other call dispositions as call activities
+      await supabase.from('lead_activities').insert({
+        lead_id: id,
+        activity_type: 'call',
+        description: `Call: ${activity.disposition?.replace(/_/g, ' ') || 'completed'}${activity.notes ? ' - ' + activity.notes : ''}`,
+        agent: 'Casey',
+        metadata: {
+          disposition: activity.disposition,
+          phone: activity.phone,
+          notes: activity.notes,
+        },
+      })
     }
 
     // Manifest-owned fields must cascade through manifest → leads

@@ -23,6 +23,10 @@ const WEBHOOK_PREFIXES = [
   '/api/setup-twilio',
   '/api/error',
   '/api/auth/setup',
+  '/api/leads/ensure-manifest',
+  '/api/leads/create-appointment',
+  '/api/leads/appointment-outcome',
+  '/api/dashboard/appointment-stats',
 ]
 
 export async function middleware(request: NextRequest) {

@@ -78,25 +78,51 @@ interface Lead {
   created_at: string
 }
 
+interface ManifestRow {
+  lead_id: string
+  manifest: {
+    pipeline?: {
+      appointment?: {
+        ghostRiskScore?: number
+        status?: string
+      }
+      ghostProtocol?: {
+        status?: string
+      }
+    }
+  }
+}
+
 export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
   onNewLead?: () => void
   showFilters?: boolean
   filterPriority?: string
 }) {
   const [leads, setLeads] = useState<Lead[]>([])
+  const [manifestMap, setManifestMap] = useState<Record<string, ManifestRow['manifest']>>({})
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
 
   async function fetchLeads() {
     setLoading(true)
     const supabase = createClient()
-    const { data } = await supabase
-      .from('leads')
-      .select('id, full_name, phone, email, property_address, city, station, priority, created_at')
-      .not('station', 'eq', 'dead')
-      .order('created_at', { ascending: false })
-      .limit(500)
-    setLeads((data as Lead[]) || [])
+    const [leadsRes, manifestsRes] = await Promise.all([
+      supabase
+        .from('leads')
+        .select('id, full_name, phone, email, property_address, city, station, priority, created_at')
+        .not('station', 'eq', 'dead')
+        .order('created_at', { ascending: false })
+        .limit(500),
+      supabase
+        .from('manifests')
+        .select('lead_id, manifest')
+    ])
+    setLeads((leadsRes.data as Lead[]) || [])
+    const mMap: Record<string, ManifestRow['manifest']> = {}
+    for (const row of (manifestsRes.data as ManifestRow[]) || []) {
+      if (row.lead_id) mMap[row.lead_id] = row.manifest
+    }
+    setManifestMap(mMap)
     setLoading(false)
   }
 
@@ -134,6 +160,9 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
     const stage = stationToStage(lead.station)
     if (!stage) return
     const address = [lead.property_address, lead.city].filter(Boolean).join(', ')
+    const m = manifestMap[lead.id]
+    const ghostRiskScore = m?.pipeline?.appointment?.ghostRiskScore ?? 0
+    const ghostProtocolActive = m?.pipeline?.ghostProtocol?.status === 'active'
     cardsByStage[stage].push({
       id: lead.id,
       initials: getInitials(lead.full_name),
@@ -147,6 +176,8 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
       timerUrgent: lead.priority === 'hot',
       timerLabel: lead.priority === 'hot' ? 'Hot' : undefined,
       created_at: lead.created_at,
+      ghostRiskScore,
+      ghostProtocolActive,
     })
   })
 

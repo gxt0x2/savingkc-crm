@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getGhostProtocolStats } from '@/lib/ghost-protocol'
+import { getGhostProtocolStats } from '@/lib/ghost-protocol-pipeline'
 
 /**
  * GET /api/ghost-protocol/stats

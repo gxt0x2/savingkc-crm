@@ -1,3 +1,11 @@
+/**
+ * Ghost Protocol — Pipeline (re-engagement for cold/ghosted leads in the pipeline)
+ *
+ * NOTE: Activity types stored in the DB still use 'ghost_protocol_enrollment'
+ * and template_names still use 'ghost_protocol_day1', 'ghost_protocol_day10', etc.
+ * These were NOT renamed to 'ghost_pipeline_*' to avoid breaking existing data.
+ * If you add new template_names, prefer the 'ghost_pipeline_*' prefix.
+ */
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(

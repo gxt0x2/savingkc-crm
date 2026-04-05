@@ -235,6 +235,69 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 🚨 CRITICAL: Populate pipeline.appointment in manifest (Sprint 1 - S1-03)
+    if (leadId) {
+      try {
+        const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
+        const { randomUUID } = await import('crypto')
+
+        // Update manifest with appointment object
+        await updateManifestAndCascade(leadId, (manifest) => {
+          manifest.pipeline.appointment = {
+            appointmentId: randomUUID(),
+            type: 'phone_call', // /call bookings are always phone calls
+            scheduledAt: slot_datetime,
+            createdAt: new Date().toISOString(),
+            status: 'scheduled',
+            confirmationCount: 0,
+            lastSellerResponse: null,
+            ghostRiskScore: 0,
+            ghostProtocolActive: false,
+            automationLog: [],
+            assignedTo: 'casey', // Default for website bookings
+            address: null, // Phone calls don't need address
+            notes: `Booked via ${source === 'youtube' ? 'YouTube' : 'website'} /call widget`,
+          }
+
+          // Mark briefing as stale
+          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+          manifest.ariIntelligence.briefingStale = true
+
+          // Add to audit trail
+          if (!manifest.auditTrail) manifest.auditTrail = []
+          manifest.auditTrail.push({
+            timestamp: new Date().toISOString(),
+            agent: 'booking:call_widget',
+            action: 'appointment_created',
+            details: {
+              source: source === 'youtube' ? 'youtube' : 'website_form',
+              scheduledAt: slot_datetime,
+              bookingId: booking.id,
+            },
+          })
+        }, 'booking:call_widget')
+
+        // Create lead_activities record for calendar display
+        await supabase.from('lead_activities').insert({
+          lead_id: leadId,
+          activity_type: 'appointment',
+          description: `Call appointment scheduled via ${source === 'youtube' ? 'YouTube' : 'website'} widget`,
+          agent: 'System',
+          metadata: {
+            type: 'phone_call',
+            scheduled_at: slot_datetime,
+            due_date: slot_datetime, // Calendar reads due_date
+            booking_id: booking.id,
+            source: source === 'youtube' ? 'youtube' : 'website_form',
+            status: 'scheduled',
+          },
+        })
+      } catch (apptErr) {
+        console.error('Failed to populate appointment in manifest (non-critical):', apptErr)
+        // Don't fail the booking
+      }
+    }
+
     // Format date/time for SMS
     const dateObj = new Date(slot_datetime)
     const formattedDate = dateObj.toLocaleDateString('en-US', {

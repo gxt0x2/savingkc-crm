@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { resumeGhostProtocol } from '@/lib/ghost-protocol'
+import { resumeGhostProtocol } from '@/lib/ghost-protocol-pipeline'
 
 /**
  * POST /api/ghost-protocol/resume

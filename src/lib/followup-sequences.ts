@@ -76,6 +76,27 @@ export const DEFAULT_SEQUENCES: Omit<FollowUpSequence, 'id' | 'created_at'>[] = 
       { step_number: 1, channel: 'sms', delay_days: 90, delay_hours: 0, template_content: '90-day nurture check-in', template_name: 'nurture_90d' },
     ],
   },
+  {
+    name: 'Appointment Set: Phone',
+    disposition: 'appointment_set_phone',
+    steps: [
+      { step_number: 1, channel: 'sms', delay_days: 0, delay_hours: 0, template_name: 'appt_confirm_phone' },
+      { step_number: 2, channel: 'sms', delay_days: 0, delay_hours: 0, template_name: 'appt_value_add_phone' }, // T-24h (handled by reminder worker)
+      { step_number: 3, channel: 'sms', delay_days: 0, delay_hours: 0, template_name: 'appt_morning_confirm' }, // T-3h
+      { step_number: 4, channel: 'sms', delay_days: 0, delay_hours: 0, template_name: 'appt_lockin_30min' }, // T-30min
+    ],
+  },
+  {
+    name: 'Appointment Set: In-Person',
+    disposition: 'appointment_set_inperson',
+    steps: [
+      { step_number: 1, channel: 'sms', delay_days: 0, delay_hours: 0, template_name: 'appt_confirm_inperson' },
+      { step_number: 2, channel: 'sms', delay_days: 0, delay_hours: 0, template_name: 'appt_value_add_inperson' }, // T-24h
+      { step_number: 3, channel: 'call', delay_days: 0, delay_hours: 0 }, // T-16h evening call
+      { step_number: 4, channel: 'sms', delay_days: 0, delay_hours: 0, template_name: 'appt_morning_confirm' }, // T-3h
+      { step_number: 5, channel: 'sms', delay_days: 0, delay_hours: 0, template_name: 'appt_enroute_15min' }, // T-15min
+    ],
+  },
 ]
 
 /**

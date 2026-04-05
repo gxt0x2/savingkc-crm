@@ -208,8 +208,47 @@ export function buildManifestBriefingPrompt(
       if (completedStages.length) sections.push(`  Completed: ${completedStages.join(' → ')}`)
       if (inProgressStages.length) sections.push(`  In progress: ${inProgressStages.join(', ')}`)
     }
-    if (manifest.pipeline.appointment?.dateTime) {
-      sections.push(`  Next appointment: ${manifest.pipeline.appointment.dateTime}${manifest.pipeline.appointment.type ? ` (${manifest.pipeline.appointment.type})` : ''}`)
+    const appt = manifest.pipeline.appointment
+    if (appt?.scheduledAt) {
+      sections.push(`\nAPPOINTMENT:`)
+      const typeLabel = appt.type === 'in_person' ? 'In-Person' : appt.type === 'google_meet' ? 'Google Meet' : appt.type === 'phone_call' ? 'Phone Call' : appt.type ?? 'Unknown'
+      sections.push(`  Type: ${typeLabel}`)
+      sections.push(`  Scheduled: ${appt.scheduledAt}`)
+      if (appt.status) sections.push(`  Status: ${appt.status.toUpperCase()}`)
+      if (appt.assignedTo) sections.push(`  Assigned to: ${appt.assignedTo}`)
+
+      // Confirmation count
+      const cc = appt.confirmationCount ?? 0
+      const confirmLabel = cc === 0 ? '0 confirmations — GHOST RISK' : cc === 1 ? '1 confirmation — watch' : `Confirmed ${cc}x — solid`
+      sections.push(`  Confirmations: ${confirmLabel}`)
+
+      // Ghost risk score
+      const grs = appt.ghostRiskScore ?? 0
+      const ghostColor = grs >= 50 ? 'RED' : grs >= 31 ? 'YELLOW' : 'GREEN'
+      sections.push(`  Ghost risk: ${grs}/100 [${ghostColor}]${appt.ghostProtocolActive ? ' — Ghost Protocol ACTIVE' : ''}`)
+
+      // Notes
+      if (appt.notes) sections.push(`  Notes: ${appt.notes}`)
+
+      // Last seller response
+      if (appt.lastSellerResponse) {
+        const responseDate = new Date(appt.lastSellerResponse)
+        const now = new Date()
+        const diffMs = now.getTime() - responseDate.getTime()
+        const diffHrs = Math.floor(diffMs / (1000 * 60 * 60))
+        const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+        const agoLabel = diffHrs > 24 ? `${Math.floor(diffHrs / 24)}d ${diffHrs % 24}h ago` : diffHrs > 0 ? `${diffHrs}h ${diffMins}m ago` : `${diffMins}m ago`
+        sections.push(`  Last seller response: ${appt.lastSellerResponse} (${agoLabel})`)
+      } else {
+        sections.push(`  Last seller response: NONE`)
+      }
+
+      // Automation log summary
+      if (appt.automationLog?.length) {
+        const totalTouches = appt.automationLog.length
+        const replies = appt.automationLog.filter((e: any) => e.sellerResponded).length
+        sections.push(`  Automation: ${totalTouches} touches sent, ${replies} got replies`)
+      }
     }
   }
 

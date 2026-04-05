@@ -152,8 +152,25 @@ export interface ManifestPipeline {
   closing: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
   closed: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
   appointment?: {
-    dateTime?: string
-    type?: string
+    appointmentId: string           // UUID, generated on creation
+    type: 'phone_call' | 'in_person' | 'google_meet'
+    scheduledAt: string             // ISO 8601 datetime
+    createdAt: string               // ISO 8601
+    status: 'scheduled' | 'confirmed' | 'reconfirmed' | 'completed' | 'no_show' | 'cancelled' | 'rescheduled'
+    confirmationCount: number       // default 0
+    lastSellerResponse: string | null  // ISO 8601 or null
+    ghostRiskScore: number          // 0-100, default 0
+    ghostProtocolActive: boolean    // default false
+    automationLog: Array<{
+      timestamp: string
+      action: string
+      channel: 'sms' | 'voice' | 'email'
+      sellerResponded: boolean
+    }>
+    assignedTo: string              // 'casey' | 'ernest' | agent ID
+    address: string | null          // required for in_person
+    notes: string | null            // context from booking call
+    calendarEventId?: string        // Google Calendar event ID (Sprint 2)
   }
 }
 

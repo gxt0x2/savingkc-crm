@@ -1,5 +1,6 @@
 import { Icon } from '@/components/ui/icon'
 import { PersonalityBadge } from '@/components/ui/personality-badge'
+import { GhostRiskBadge } from '@/components/leads/ghost-risk-badge'
 import { cn, formatCurrency } from '@/lib/utils'
 import { calculateTemperature, TEMPERATURE_CONFIG } from '@/lib/lead-temperature'
 import type { PersonalityType, DealStage } from '@/types'
@@ -25,6 +26,8 @@ export interface KanbanCardData {
   contractLocked?: boolean
   avatarBg?: string
   created_at?: string
+  ghostRiskScore?: number
+  ghostProtocolActive?: boolean
 }
 
 const showFeeStages: DealStage[] = ['qualifying', 'appt_set', 'negotiations', 'contract_signed']
@@ -78,8 +81,13 @@ export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: 
         )}
       </div>
 
-      {/* Name */}
-      <h4 className="font-bold text-primary mb-1">{card.name}</h4>
+      {/* Name + Ghost Risk */}
+      <div className="flex items-center gap-2 mb-1">
+        <h4 className="font-bold text-primary">{card.name}</h4>
+        {(card.ghostRiskScore != null && card.ghostRiskScore > 0 || card.ghostProtocolActive) && (
+          <GhostRiskBadge ghostRiskScore={card.ghostRiskScore || 0} ghostProtocolActive={card.ghostProtocolActive} />
+        )}
+      </div>
 
       {/* Status note (qualifying) */}
       {card.statusNote && (

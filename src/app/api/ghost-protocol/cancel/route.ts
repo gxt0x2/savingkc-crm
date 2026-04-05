@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cancelGhostProtocol } from '@/lib/ghost-protocol'
+import { cancelGhostProtocol } from '@/lib/ghost-protocol-pipeline'
 
 /**
  * POST /api/ghost-protocol/cancel

@@ -291,6 +291,160 @@ export async function generateAccountabilityTimeline(leadId: string): Promise<Ti
   return timeline
 }
 
+// ---------------------------------------------------------------------------
+// Ghost Risk Score Model Validation (READ-only)
+// ---------------------------------------------------------------------------
+
+export interface GhostRiskValidation {
+  avgScoreAtShow: number          // Average ghostRiskScore at appointment time for completed
+  avgScoreAtNoShow: number        // Average ghostRiskScore at appointment time for no_shows
+  spread: number                  // Difference (should be > 15 to be predictive)
+  isPredictive: boolean           // spread >= 15
+  sampleSize: number              // Total appointments with outcomes
+  topFactors: Array<{             // Which factors correlate most with no-shows
+    factor: string
+    correlation: 'strong' | 'moderate' | 'weak'
+  }>
+}
+
+/**
+ * Analyzes historical appointment outcomes to validate ghost risk score model.
+ * READ-only — queries manifests table, computes stats, returns validation object.
+ */
+export async function getGhostRiskValidation(): Promise<GhostRiskValidation> {
+  // Fetch all manifests that have an appointment with a terminal outcome
+  const { data: rows, error } = await supabase
+    .from('manifests')
+    .select('manifest')
+
+  if (error) {
+    console.error('[ghost-risk-validation] Query error:', error)
+    return emptyValidation()
+  }
+
+  if (!rows || rows.length === 0) {
+    return emptyValidation()
+  }
+
+  // Filter to manifests with appointment outcomes
+  const completed: { score: number; log: any[] }[] = []
+  const noShows: { score: number; log: any[] }[] = []
+
+  for (const row of rows) {
+    const m = row.manifest as any
+    const appt = m?.pipeline?.appointment
+    if (!appt) continue
+
+    const status = appt.status
+    if (status !== 'completed' && status !== 'no_show') continue
+
+    const score = appt.ghostRiskScore ?? 0
+    const log = appt.automationLog || []
+
+    if (status === 'completed') {
+      completed.push({ score, log })
+    } else {
+      noShows.push({ score, log })
+    }
+  }
+
+  const sampleSize = completed.length + noShows.length
+  if (sampleSize === 0) {
+    return emptyValidation()
+  }
+
+  const avgScoreAtShow = completed.length > 0
+    ? completed.reduce((sum, c) => sum + c.score, 0) / completed.length
+    : 0
+  const avgScoreAtNoShow = noShows.length > 0
+    ? noShows.reduce((sum, c) => sum + c.score, 0) / noShows.length
+    : 0
+
+  const spread = avgScoreAtNoShow - avgScoreAtShow
+
+  // Analyze which factors appear more in no-shows vs completed
+  const topFactors = analyzeFactorCorrelations(completed, noShows)
+
+  return {
+    avgScoreAtShow: Math.round(avgScoreAtShow * 10) / 10,
+    avgScoreAtNoShow: Math.round(avgScoreAtNoShow * 10) / 10,
+    spread: Math.round(spread * 10) / 10,
+    isPredictive: spread >= 15,
+    sampleSize,
+    topFactors,
+  }
+}
+
+function emptyValidation(): GhostRiskValidation {
+  return {
+    avgScoreAtShow: 0,
+    avgScoreAtNoShow: 0,
+    spread: 0,
+    isPredictive: false,
+    sampleSize: 0,
+    topFactors: [],
+  }
+}
+
+/**
+ * Checks each ghost risk factor's prevalence in no-shows vs completed.
+ * A factor is "strong" if it appears 2x+ more in no-shows, "moderate" if 1.3-2x, "weak" otherwise.
+ */
+function analyzeFactorCorrelations(
+  completed: { score: number; log: any[] }[],
+  noShows: { score: number; log: any[] }[],
+): GhostRiskValidation['topFactors'] {
+  // Factor definitions matching ghost-risk-calculator.ts
+  const factors = [
+    {
+      name: 'unanswered_confirmations',
+      detect: (log: any[]) => log.some((e: any) => e.action?.includes('confirm') && !e.sellerResponded),
+    },
+    {
+      name: 'no_seller_response',
+      detect: (log: any[]) => log.length > 0 && log.every((e: any) => !e.sellerResponded),
+    },
+    {
+      name: 'ambiguous_reply',
+      detect: (log: any[]) => log.some((e: any) => e.sellerResponded && e.action?.includes('ambiguous')),
+    },
+    {
+      name: 'ghost_protocol_activated',
+      detect: (log: any[]) => log.some((e: any) => e.action?.startsWith('ghost_step_')),
+    },
+    {
+      name: 'multiple_reminders_ignored',
+      detect: (log: any[]) => log.filter((e: any) => e.action?.includes('confirm') && !e.sellerResponded).length >= 2,
+    },
+  ]
+
+  const results: GhostRiskValidation['topFactors'] = []
+  const completedTotal = completed.length || 1 // avoid division by zero
+  const noShowTotal = noShows.length || 1
+
+  for (const factor of factors) {
+    const completedRate = completed.filter(c => factor.detect(c.log)).length / completedTotal
+    const noShowRate = noShows.filter(c => factor.detect(c.log)).length / noShowTotal
+
+    // Skip if neither group has this factor
+    if (completedRate === 0 && noShowRate === 0) continue
+
+    const ratio = completedRate > 0 ? noShowRate / completedRate : noShowRate > 0 ? 3 : 0
+    let correlation: 'strong' | 'moderate' | 'weak'
+    if (ratio >= 2) correlation = 'strong'
+    else if (ratio >= 1.3) correlation = 'moderate'
+    else correlation = 'weak'
+
+    results.push({ factor: factor.name, correlation })
+  }
+
+  // Sort strong first, then moderate, then weak
+  const order = { strong: 0, moderate: 1, weak: 2 }
+  results.sort((a, b) => order[a.correlation] - order[b.correlation])
+
+  return results
+}
+
 function getExpectedTasksForSequence(
   sequenceType: string,
   startDate: Date

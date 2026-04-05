@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { pauseGhostProtocol } from '@/lib/ghost-protocol'
+import { pauseGhostProtocol } from '@/lib/ghost-protocol-pipeline'
 
 /**
  * POST /api/ghost-protocol/pause

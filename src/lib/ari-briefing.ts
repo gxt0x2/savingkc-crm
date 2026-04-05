@@ -27,6 +27,7 @@ export type BriefingEventType =
   | 'stage_timeout'
   | 'temperature_change'
   | 'closing_event'
+  | 'show_rate_alert'
 
 export type BriefingPriority = 'critical' | 'high' | 'medium' | 'low'
 

@@ -79,6 +79,8 @@ async function saveManifest(rowId: string, manifest: ManifestV2, leadId?: string
       priority: manifest.priority,
       tier: manifest.tier,
       qualification_score: manifest.qualificationScore,
+      next_appointment_at: manifest.pipeline?.appointment?.scheduledAt ?? null,
+      appointment_status: manifest.pipeline?.appointment?.status ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', rowId)
@@ -310,15 +312,14 @@ export async function onCommunicationEvent(
 export async function ensureManifestExists(leadId: string): Promise<string | null> {
   const supabase = getSupabase()
 
-  // Check if manifest already exists
+  // Check if manifest already exists (use maybeSingle to avoid error on 0 rows)
   const { data: existing } = await supabase
     .from('manifests')
     .select('id')
     .eq('lead_id', leadId)
     .limit(1)
-    .single()
 
-  if (existing) return existing.id
+  if (existing && existing.length > 0) return existing[0].id
 
   // Fetch the lead to build a manifest
   const { data: lead } = await supabase

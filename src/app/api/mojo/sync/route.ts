@@ -412,9 +412,21 @@ async function processPhase2Intelligence(
 
       // Pipeline appointment
       if (analysisResult.appointmentDateTime) {
+        const { randomUUID } = await import('crypto')
         manifest.pipeline.appointment = {
-          dateTime: analysisResult.appointmentDateTime,
-          type: analysisResult.appointmentType || undefined,
+          appointmentId: randomUUID(),
+          type: (analysisResult.appointmentType as 'phone_call' | 'in_person' | 'google_meet') || 'phone_call',
+          scheduledAt: analysisResult.appointmentDateTime,
+          createdAt: now,
+          status: 'scheduled',
+          confirmationCount: 0,
+          lastSellerResponse: null,
+          ghostRiskScore: 0,
+          ghostProtocolActive: false,
+          automationLog: [],
+          assignedTo: 'casey',
+          address: null,
+          notes: 'Extracted from Mojo call analysis',
         }
       }
 

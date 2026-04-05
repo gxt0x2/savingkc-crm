@@ -37,45 +37,39 @@ export function AppointmentModal({ lead, onClose, onSuccess }: AppointmentModalP
     if (!form.date || !form.time) return
     setSaving(true)
 
-    const supabase = createClient()
     const appointmentDate = `${form.date}T${form.time}:00`
-    const typeLabel = typeOptions.find(t => t.value === form.type)?.label || form.type
+    const assignedTo = form.agent.toLowerCase().includes('casey') ? 'casey' : 'ernest'
 
-    await supabase.from('lead_activities').insert({
-      lead_id: lead.id,
-      activity_type: 'appointment',
-      description: `Appointment scheduled: ${typeLabel} on ${new Date(appointmentDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at ${form.time} with ${form.agent}${form.notes ? `. Notes: ${form.notes}` : ''}`,
-      agent: form.agent,
-      metadata: {
-        type: form.type,
-        date: form.date,
-        time: form.time,
-        agent: form.agent,
-        notes: form.notes,
-        status: 'scheduled',
-      },
-    })
+    try {
+      // Server-side appointment creation (bypasses RLS on manifests table)
+      const res = await fetch('/api/leads/create-appointment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: lead.id,
+          type: form.type,
+          scheduledAt: appointmentDate,
+          assignedTo,
+          address: form.type === 'in_person' ? (lead.property_address || null) : null,
+          notes: form.notes || null,
+          sendReminder: form.sendReminder,
+          phone: lead.phone,
+          leadName: toProperCase(lead.full_name),
+        }),
+      })
 
-    // Send SMS reminder if enabled
-    if (form.sendReminder && lead.phone) {
-      try {
-        await fetch('/api/conversations/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            leadId: lead.id,
-            to: lead.phone,
-            message: `Hi ${toProperCase(lead.full_name)}, your appointment with Saving KC is confirmed for ${new Date(appointmentDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at ${form.time}. We look forward to speaking with you!`,
-          }),
-        })
-      } catch {
-        console.error('SMS failed')
+      if (!res.ok) {
+        const err = await res.json()
+        console.error('Appointment creation failed:', err)
       }
-    }
 
-    setSaving(false)
-    onSuccess()
-    onClose()
+      setSaving(false)
+      onSuccess()
+      onClose()
+    } catch (error) {
+      console.error('Failed to create appointment:', error)
+      setSaving(false)
+    }
   }
 
   return (

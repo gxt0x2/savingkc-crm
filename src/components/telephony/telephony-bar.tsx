@@ -134,6 +134,19 @@ export function DialerPanel({ open, onClose, onStatusChange }: DialerPanelProps)
 
       device.on('registered', () => setStatusLogged('ready'))
       device.on('unregistered', () => setStatusLogged('offline'))
+      device.on('tokenWillExpire', async () => {
+        log('token expiring, refreshing...')
+        try {
+          const refreshRes = await fetch('/api/twilio-token')
+          const refreshData = await refreshRes.json()
+          if (refreshData.token) {
+            device.updateToken(refreshData.token)
+            log('token refreshed')
+          }
+        } catch (e) {
+          log('token refresh failed')
+        }
+      })
       device.on('error', (err: Error) => {
         log(`device error: ${err?.message}`)
         setError(err?.message || 'Device error')
@@ -246,7 +259,15 @@ export function DialerPanel({ open, onClose, onStatusChange }: DialerPanelProps)
       })
       callRef.current = call
       callStartRef.current = Date.now()
-      setStatusLogged('on_call')
+
+      call.on('ringing', () => {
+        log('ringing...')
+        setStatusLogged('calling')
+      })
+      call.on('accept', () => {
+        log('call accepted')
+        setStatusLogged('on_call')
+      })
 
       fetch('/api/call-log', {
         method: 'POST',
@@ -394,10 +415,14 @@ export function DialerPanel({ open, onClose, onStatusChange }: DialerPanelProps)
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
           <div className="flex items-center gap-3">
             <h2 className="text-white font-black text-lg tracking-tight">Dialer</h2>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
+            <button
+              onClick={() => { deviceInitialized.current = false; initDevice() }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+              title="Click to reconnect"
+            >
               <div className={`w-2 h-2 rounded-full ${statusDotColor[status]} ${status === 'connecting' ? 'animate-pulse' : ''}`} />
               <span className="text-[10px] font-bold text-white/70 uppercase tracking-wider">{statusLabel[status]}</span>
-            </div>
+            </button>
           </div>
           <button
             onClick={onClose}

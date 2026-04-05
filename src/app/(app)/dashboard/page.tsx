@@ -59,6 +59,20 @@ interface HotLead {
   station: string | null
 }
 
+interface AppointmentStats {
+  showRate30Day: number
+  showRateByType: { phone: number; inPerson: number }
+  confirmationRate: number
+  ghostProtocolActivationRate: number
+  ghostProtocolRecoveryRate: number
+  avgConfirmationCount: number
+  totalAppointments: number
+  completed: number
+  noShows: number
+  cancelled: number
+  rescheduled: number
+}
+
 interface TrendBucket {
   label: string
   calls: number
@@ -192,6 +206,14 @@ function useHotLeads() {
   return data
 }
 
+function useAppointmentStats() {
+  const [data, setData] = useState<AppointmentStats | null>(null)
+  useEffect(() => {
+    fetch('/api/dashboard/appointment-stats').then((r) => r.json()).then(setData).catch(() => {})
+  }, [])
+  return data
+}
+
 function useTrends(period: string, days: number) {
   const [data, setData] = useState<TrendsData | null>(null)
   useEffect(() => {
@@ -219,6 +241,8 @@ export default function DashboardPage() {
   const tasks = useTasks()
   const hotLeads = useHotLeads()
   const ytdKpis = useYtdKpis()
+
+  const apptStats = useAppointmentStats()
 
   const [trendPeriod, setTrendPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily')
   const [trendDays, setTrendDays] = useState(30)
@@ -612,6 +636,133 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* ═══ APPOINTMENT SHOW RATE ═══ */}
+      {apptStats !== null && (
+        <div>
+          <h3 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+            <Icon name="event_available" className="text-sm" /> Appointment Show Rate — 30 Day
+          </h3>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Show Rate — Hero Card */}
+            <div className={`relative overflow-hidden rounded-2xl p-6 shadow-lg col-span-1 lg:col-span-1 ${
+              apptStats.showRate30Day >= 90
+                ? 'bg-gradient-to-br from-green-500 to-emerald-600 shadow-green-500/20'
+                : apptStats.showRate30Day >= 85
+                  ? 'bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/20'
+                  : apptStats.totalAppointments === 0
+                    ? 'bg-gradient-to-br from-slate-500 to-slate-700'
+                    : 'bg-gradient-to-br from-red-500 to-red-700 shadow-red-500/20'
+            }`}>
+              <div className="absolute top-4 right-4 w-12 h-12 rounded-full bg-white/10 flex items-center justify-center">
+                <Icon name="percent" className="text-white/80 text-xl" />
+              </div>
+              <div className="text-white/80 text-[10px] font-bold uppercase tracking-wider mb-1">Show Rate</div>
+              <div className="text-5xl font-black text-white tabular-nums">
+                {apptStats.totalAppointments > 0 ? (
+                  <><AnimatedNumber value={apptStats.showRate30Day} /><span className="text-2xl text-white/60">%</span></>
+                ) : (
+                  <span className="text-2xl">No data</span>
+                )}
+              </div>
+              <div className="text-[10px] text-white/60 mt-2">
+                Target: 90%+ {apptStats.showRate30Day >= 90 && apptStats.totalAppointments > 0 ? '-- On target' : ''}
+              </div>
+              {/* Completed vs No-Show */}
+              <div className="flex gap-4 mt-4 pt-3 border-t border-white/10">
+                <div>
+                  <div className="text-2xl font-black text-white tabular-nums"><AnimatedNumber value={apptStats.completed} /></div>
+                  <div className="text-[10px] text-white/60 font-bold uppercase">Completed</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-white tabular-nums"><AnimatedNumber value={apptStats.noShows} /></div>
+                  <div className="text-[10px] text-white/60 font-bold uppercase">No-Shows</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-white tabular-nums"><AnimatedNumber value={apptStats.cancelled} /></div>
+                  <div className="text-[10px] text-white/60 font-bold uppercase">Cancelled</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Confirmation Stats */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-4">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Confirmation Stats</div>
+              <div className="flex items-center gap-4">
+                <div className="relative flex items-center justify-center">
+                  <ProgressRing value={apptStats.confirmationRate} max={100} size={56} stroke={5} color={apptStats.confirmationRate >= 80 ? '#16a34a' : apptStats.confirmationRate >= 50 ? '#f59e0b' : '#ef4444'} />
+                  <span className="absolute text-xs font-black text-primary">{apptStats.confirmationRate}%</span>
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-slate-700">Confirmation Rate</div>
+                  <div className="text-[10px] text-slate-400">Leads with 1+ confirmation</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-50/80">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                  <Icon name="mark_email_read" className="text-blue-500 text-sm" />
+                </div>
+                <div>
+                  <div className="text-lg font-black text-primary tabular-nums">{apptStats.avgConfirmationCount}</div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase">Avg Confirmations</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-50">
+                <div className="text-center p-2 rounded-lg bg-blue-50/50">
+                  <div className="text-lg font-black text-blue-600 tabular-nums">{apptStats.showRateByType.phone}%</div>
+                  <div className="text-[9px] font-bold text-blue-400 uppercase">Phone Show</div>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-emerald-50/50">
+                  <div className="text-lg font-black text-emerald-600 tabular-nums">{apptStats.showRateByType.inPerson}%</div>
+                  <div className="text-[9px] font-bold text-emerald-400 uppercase">In-Person Show</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Ghost Protocol Stats */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-4">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Icon name="visibility_off" className="text-xs text-slate-300" /> Ghost Protocol
+              </div>
+              <div className="flex items-center gap-4">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-md ${
+                  apptStats.ghostProtocolActivationRate <= 10
+                    ? 'bg-gradient-to-br from-green-500 to-green-600 shadow-green-500/20'
+                    : apptStats.ghostProtocolActivationRate <= 25
+                      ? 'bg-gradient-to-br from-amber-500 to-amber-600 shadow-amber-500/20'
+                      : 'bg-gradient-to-br from-red-500 to-red-600 shadow-red-500/20'
+                }`}>
+                  {apptStats.ghostProtocolActivationRate}%
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-slate-700">Activation Rate</div>
+                  <div className="text-[10px] text-slate-400">% of appts triggering ghost protocol</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-50/80">
+                <div className="relative flex items-center justify-center">
+                  <ProgressRing value={apptStats.ghostProtocolRecoveryRate} max={100} size={48} stroke={4} color={apptStats.ghostProtocolRecoveryRate >= 50 ? '#16a34a' : '#ef4444'} />
+                  <span className="absolute text-[10px] font-black text-primary">{apptStats.ghostProtocolRecoveryRate}%</span>
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-slate-700">Recovery Rate</div>
+                  <div className="text-[10px] text-slate-400">Ghost-triggered that still showed</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-50">
+                <div className="text-center p-2 rounded-lg bg-slate-50/80">
+                  <div className="text-lg font-black text-slate-600 tabular-nums"><AnimatedNumber value={apptStats.totalAppointments} /></div>
+                  <div className="text-[9px] font-bold text-slate-400 uppercase">Total Appts</div>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-violet-50/50">
+                  <div className="text-lg font-black text-violet-600 tabular-nums"><AnimatedNumber value={apptStats.rescheduled} /></div>
+                  <div className="text-[9px] font-bold text-violet-400 uppercase">Rescheduled</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ PIPELINE + OPERATIONAL — side by side ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
