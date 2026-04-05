@@ -58,6 +58,10 @@ export interface Deal {
   created_at: string
   updated_at: string
   contact?: Contact
+  // Manifest-sourced fields for Opportunities page
+  _nextAction?: string | null
+  _qualificationScore?: number | null
+  _motivationScore?: number | null
 }
 
 export interface Activity {

@@ -9,6 +9,7 @@ import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import { Icon } from '@/components/ui/icon'
 import { toProperCase } from '@/lib/format'
 import type { Deal, Contact, DealStage } from '@/types'
+import type { ManifestV2 } from '@/lib/manifest-builder'
 
 interface LeadRow {
   id: string
@@ -56,22 +57,40 @@ function leadToContact(lead: LeadRow): Contact {
   }
 }
 
-function leadToDeal(lead: LeadRow): Deal {
-  // Build insight from available data
-  const insightParts: string[] = []
-  if (lead.seller_situation) insightParts.push(lead.seller_situation)
-  if (lead.motivation_score) insightParts.push(`Motivation: ${lead.motivation_score}/10`)
-  if (lead.appointment_date) insightParts.push(`Appt: ${new Date(lead.appointment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`)
-  if (lead.notes && !lead.seller_situation) insightParts.push(lead.notes.slice(0, 120))
+function leadToDeal(lead: LeadRow, manifest?: ManifestV2): Deal {
+  // REAL financials from manifest (not fabricated)
+  const fin = manifest?.financials || {}
+  const arv = fin.arv ?? lead.arv ?? null
+  const asIs = fin.as_is_value ?? null  // NO MORE fake 0.75 multiplier
+  const asking = fin.asking_price ?? manifest?.situation?.priceExpectations?.askingPrice ?? lead.offer_amount ?? null
+  const equity = fin.equity ?? null
+  const estAssignment = fin.assignment_fee ?? null
+  const debtTotal = fin.total_debt ?? null
 
-  // Estimate equity if ARV and offer known
-  const equity = lead.arv && lead.offer_amount ? lead.arv - lead.offer_amount : null
-  const estAssignment = equity && equity > 0 ? Math.round(equity * 0.15) : null
+  // REAL next action from manifest
+  const nextAppointment = manifest?.pipeline?.appointment?.scheduledAt ?? null
+  const recommendedActions = manifest?.ariIntelligence?.recommendedActions ?? []
+  const nextAction = nextAppointment
+    ? new Date(nextAppointment).toISOString()
+    : recommendedActions[0]?.dateTime ?? null
 
+  // REAL Ari insight from manifest
+  const ariInsight = manifest?.ariIntelligence?.lastBriefing?.situation
+    ?? manifest?.situation?.summary
+    ?? lead.seller_situation
+    ?? 'No details yet — visit lead page to add info.'
+
+  // REAL tags from manifest
   const tags: string[] = []
   if (lead.priority === 'hot') tags.push('Hot Lead')
   if (lead.is_favorite) tags.push('⭐ Starred')
-  if (lead.appointment_date) tags.push('Appt Set')
+  if (manifest?.pipeline?.appointment?.status === 'scheduled' ||
+      manifest?.pipeline?.appointment?.status === 'confirmed') {
+    tags.push('Appt Set')
+  }
+  if (manifest?.situation?.type?.length) {
+    manifest.situation.type.forEach(t => tags.push(t.replace(/_/g, ' ')))
+  }
   if (lead.source) tags.push(lead.source.replace(/_/g, ' '))
 
   return {
@@ -79,23 +98,28 @@ function leadToDeal(lead: LeadRow): Deal {
     contact_id: lead.id,
     property_address: lead.property_address,
     stage: (lead.station as DealStage) || 'qualifying',
-    arv: lead.arv,
-    as_is_value: lead.arv ? Math.round(lead.arv * 0.75) : null,
-    asking_price: lead.offer_amount,
+    arv,
+    as_is_value: asIs,
+    asking_price: asking,
     equity,
-    debt_total: null,
+    debt_total: debtTotal,
     est_assignment: estAssignment,
-    ari_insight: insightParts.join(' · ') || 'No details yet — visit lead page to add info.',
+    ari_insight: ariInsight,
     ari_tags: tags,
     created_at: lead.created_at,
     updated_at: lead.updated_at || lead.created_at,
     contact: leadToContact(lead),
+    // NEW: pass through for the card to use
+    _nextAction: nextAction,
+    _qualificationScore: manifest?.qualificationScore ?? null,
+    _motivationScore: manifest?.situation?.motivation?.score ?? lead.motivation_score ?? null,
   }
 }
 
 export default function OpportunitiesPage() {
   const router = useRouter()
-  const [deals, setDeals] = useState<Deal[]>([])
+  const [hotDeals, setHotDeals] = useState<Deal[]>([])
+  const [otherDeals, setOtherDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [pinning, setPinning] = useState<string | null>(null)
@@ -103,22 +127,60 @@ export default function OpportunitiesPage() {
   async function fetchLeads() {
     setLoading(true)
     const supabase = createClient()
-    // Fetch leads in active pipeline stages, hot leads, or favorited leads
-    const { data } = await supabase
+
+    // Fetch 1: Hot Opportunities (max 4, pinned by user)
+    const { data: hotData } = await supabase
       .from('leads')
       .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at, updated_at, is_favorite, arv, offer_amount, repair_estimate, motivation_score, seller_situation, appointment_date')
-      .or('priority.eq.hot,is_favorite.eq.true,station.in.(qualifying,appt_set,negotiations,contract_signed)')
+      .eq('priority', 'hot')
       .order('updated_at', { ascending: false })
-    const rows = (data as LeadRow[]) || []
-    setDeals(rows.map(leadToDeal))
+      .limit(4)
+
+    // Fetch 2: All Opportunities (active pipeline, NOT hot)
+    const { data: oppData } = await supabase
+      .from('leads')
+      .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at, updated_at, is_favorite, arv, offer_amount, repair_estimate, motivation_score, seller_situation, appointment_date')
+      .in('station', ['qualifying', 'appt_set', 'negotiations', 'offer_made', 'contract_signed'])
+      .neq('priority', 'hot')
+      .order('updated_at', { ascending: false })
+
+    // Fetch 3: Manifests for ALL of the above leads
+    const allLeadIds = [...(hotData || []), ...(oppData || [])].map(l => l.id)
+    const { data: allManifests } = await supabase
+      .from('manifests')
+      .select('lead_id, manifest')
+      .in('lead_id', allLeadIds)
+
+    // Build a map for quick lookup
+    const manifestMap = new Map<string, ManifestV2>()
+    for (const m of (allManifests || [])) {
+      manifestMap.set(m.lead_id, m.manifest as ManifestV2)
+    }
+
+    // Build deals with real manifest data
+    const hot = (hotData || []).map(l => leadToDeal(l, manifestMap.get(l.id)))
+    const other = (oppData || []).map(l => leadToDeal(l, manifestMap.get(l.id)))
+
+    setHotDeals(hot)
+    setOtherDeals(other)
     setLoading(false)
   }
 
   useEffect(() => { fetchLeads() }, [])
 
   async function togglePin(dealId: string, currentPriority: string | null) {
+    const isPinning = currentPriority !== 'hot'
+
+    // Block pinning if already at capacity
+    if (isPinning && hotDeals.length >= 4) {
+      alert('Hot Opportunities is full (4/4). Unpin an existing deal first.')
+      return
+    }
+
     setPinning(dealId)
-    const newPriority = currentPriority === 'hot' ? 'normal' : 'hot'
+    const newPriority = currentPriority === 'hot' ? 'warm' : 'hot'
+
+    // Call API endpoint to update priority through manifest-sync
     await fetch('/api/leads', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -128,8 +190,23 @@ export default function OpportunitiesPage() {
     setPinning(null)
   }
 
-  const hotDeals = deals.filter((d) => d.ari_tags?.includes('Hot Lead'))
-  const otherDeals = deals.filter((d) => !d.ari_tags?.includes('Hot Lead'))
+  // Sort otherDeals by qualification score (highest first)
+  const sortedOtherDeals = [...otherDeals].sort((a, b) => {
+    // Primary: qualification score (highest first)
+    const qA = a._qualificationScore ?? 0
+    const qB = b._qualificationScore ?? 0
+    if (qB !== qA) return qB - qA
+
+    // Secondary: motivation score (highest first)
+    const mA = a._motivationScore ?? 0
+    const mB = b._motivationScore ?? 0
+    if (mB !== mA) return mB - mA
+
+    // Tertiary: most recently updated
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  })
+
+  const totalDeals = hotDeals.length + otherDeals.length
 
   return (
     <div className="pt-6 pb-32 px-4 sm:px-6 lg:px-8 max-w-[1600px] mx-auto">
@@ -143,9 +220,9 @@ export default function OpportunitiesPage() {
       {/* Header */}
       <header className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-primary mb-2">Hot Opportunities</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-primary mb-2">Opportunities</h1>
           <p className="text-on-surface-variant text-sm">
-            Leads in qualifying &amp; negotiations. Double-click any card for full details. Use the pin button to mark Top Hot deals.
+            Deals in active qualifying, negotiation, or closing. Double-click any card for full details. Pin up to 4 hot deals closing this week.
           </p>
         </div>
         <button
@@ -159,7 +236,7 @@ export default function OpportunitiesPage() {
 
       {loading ? (
         <div className="text-slate-400 py-16 text-center">Loading opportunities...</div>
-      ) : deals.length === 0 ? (
+      ) : totalDeals === 0 ? (
         <div className="text-center py-16">
           <Icon name="work" className="text-4xl text-slate-300 mb-3" />
           <p className="text-slate-400 font-medium">No active opportunities</p>
@@ -171,15 +248,23 @@ export default function OpportunitiesPage() {
       ) : (
         <>
           {/* Top Hot Deals section */}
-          {hotDeals.length > 0 && (
-            <section className="mb-10">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-lg font-black text-primary">Top Hot Deals</span>
-                <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs font-bold rounded-full">
-                  {hotDeals.length} pinned
-                </span>
+          <section className="mb-10">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-lg font-black text-primary">🔥 Hot Opportunities</span>
+              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${hotDeals.length >= 4 ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}`}>
+                {hotDeals.length}/4 slots
+              </span>
+            </div>
+            {hotDeals.length === 0 ? (
+              <div className="bg-surface-container-lowest rounded-xl p-12 text-center border border-outline-variant/20">
+                <div className="text-4xl mb-4">🔥</div>
+                <h3 className="text-lg font-bold text-primary mb-2">No Hot Opportunities pinned</h3>
+                <p className="text-on-surface-variant text-sm max-w-md mx-auto">
+                  Pin up to 4 deals that are closing this week from All Opportunities below.
+                </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(380px,1fr))] gap-6">
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {hotDeals.map((deal) => (
                   <div
                     key={deal.id}
@@ -198,8 +283,8 @@ export default function OpportunitiesPage() {
                   </div>
                 ))}
               </div>
-            </section>
-          )}
+            )}
+          </section>
 
           {/* All Other Opportunities */}
           <section className="mb-16">
@@ -232,7 +317,11 @@ export default function OpportunitiesPage() {
       )}
 
       {/* Activity Table */}
-      <ActivityTable />
+      <ActivityTable
+        deals={sortedOtherDeals}
+        onPinToHot={(id) => togglePin(id, null)}
+        hotCount={hotDeals.length}
+      />
     </div>
   )
 }

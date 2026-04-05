@@ -11,6 +11,23 @@ function dollars(amount: number | null): string {
   return '$' + amount.toLocaleString('en-US')
 }
 
+function isWithin24Hours(dateStr: string): boolean {
+  const target = new Date(dateStr)
+  const now = new Date()
+  const diffMs = target.getTime() - now.getTime()
+  const diffHours = diffMs / (1000 * 60 * 60)
+  return diffHours >= 0 && diffHours <= 24
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+}
+
 export function OpportunityCard({ deal }: { deal: Deal }) {
   const contact = deal.contact
   if (!contact) return null
@@ -33,10 +50,21 @@ export function OpportunityCard({ deal }: { deal: Deal }) {
           </p>
         </div>
         <div className="text-right shrink-0">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Next Step</div>
-          <div className="text-sm font-bold text-primary">
-            {new Date(deal.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-          </div>
+          {deal._nextAction ? (
+            <>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Next Step</div>
+              <div className={`text-sm font-bold ${isWithin24Hours(deal._nextAction) ? 'text-error' : 'text-primary'}`}>
+                {formatDate(deal._nextAction)}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Last Updated</div>
+              <div className="text-sm font-bold text-primary">
+                {formatDate(deal.updated_at)}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
