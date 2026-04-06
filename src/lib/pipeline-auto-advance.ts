@@ -107,6 +107,7 @@ export async function checkAutoAdvance(
     if (manifestStage && manifest.pipeline?.[manifestStage]) {
       manifest.pipeline[manifestStage].status = 'completed'
       manifest.pipeline[manifestStage].completedAt = new Date().toISOString()
+      manifest.pipeline[manifestStage].enteredAt = manifest.pipeline[manifestStage].enteredAt || new Date().toISOString()
     }
 
     // Mark briefing as stale so Ari regenerates

@@ -4,10 +4,12 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { OpportunityCard } from '@/components/opportunities/opportunity-card'
+import { HotOpportunityCard } from '@/components/opportunities/hot-opportunity-card'
 import { ActivityTable } from '@/components/opportunities/activity-table'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import { Icon } from '@/components/ui/icon'
 import { toProperCase } from '@/lib/format'
+import { useHotOpportunities, useRefreshHotList } from '@/hooks/use-hot-opportunities'
 import type { Deal, Contact, DealStage } from '@/types'
 import type { ManifestV2 } from '@/lib/manifest-builder'
 
@@ -123,6 +125,8 @@ export default function OpportunitiesPage() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [pinning, setPinning] = useState<string | null>(null)
+  const { data: hotData, isLoading: hotLoading } = useHotOpportunities()
+  const refreshHotList = useRefreshHotList()
 
   async function fetchLeads() {
     setLoading(true)
@@ -233,6 +237,60 @@ export default function OpportunitiesPage() {
           <span>Add Lead</span>
         </button>
       </header>
+
+      {/* Hot Opportunities — Ari's curated shortlist */}
+      <section className="mb-10">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-black text-primary">Hot Opportunities</span>
+            {hotData?.items && hotData.items.length > 0 && (
+              <span className="px-2 py-0.5 bg-orange-100 text-orange-600 text-xs font-bold rounded-full">
+                {hotData.items.length} ranked
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {hotData?.lastRankedAt && (
+              <span className="text-[11px] text-on-surface-variant/50">
+                Last ranked: {new Date(hotData.lastRankedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              </span>
+            )}
+            <button
+              onClick={() => refreshHotList(true)}
+              className="p-1.5 rounded-lg hover:bg-surface-container-high transition-colors text-on-surface-variant"
+              title="Refresh rankings"
+            >
+              <Icon name="refresh" size="text-sm" />
+            </button>
+          </div>
+        </div>
+        {hotLoading ? (
+          <div className="text-slate-400 py-8 text-center text-sm">Scoring opportunities...</div>
+        ) : hotData?.items && hotData.items.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(380px,1fr))] gap-6">
+            {hotData.items.map((opp) => (
+              <HotOpportunityCard
+                key={opp.leadId}
+                opp={opp}
+                onCall={(phone, leadId) => {
+                  // Dispatch dialer event
+                  window.dispatchEvent(new CustomEvent('crm:dial', { detail: { phone, leadId } }))
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 bg-surface-container-low rounded-xl">
+            <p className="text-slate-400 text-sm">No scored opportunities yet. Rankings will appear after leads are scored.</p>
+            <button
+              onClick={() => refreshHotList(true)}
+              className="mt-2 px-3 py-1.5 bg-primary text-on-primary text-xs font-semibold rounded-lg"
+            >
+              Run Full Ranking
+            </button>
+          </div>
+        )}
+      </section>
 
       {loading ? (
         <div className="text-slate-400 py-16 text-center">Loading opportunities...</div>

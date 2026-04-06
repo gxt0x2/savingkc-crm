@@ -34,6 +34,14 @@ export interface ManifestSituation {
     targetCloseDate?: string
     hardDeadline?: boolean
     deadlineReason?: string
+    sellerDeadline?: string
+    sellerDeadlineVerified?: boolean
+    foreclosureWindowDays?: number
+    competingOffersPresent?: boolean
+    competingOfferSpecificity?: 'specific' | 'vague'
+    competingOfferDetails?: string
+    lifeEventType?: 'divorce' | 'probate' | 'relocation' | 'health' | 'other'
+    lifeEventStage?: 'mentioned' | 'active_resolution'
   }
   priceExpectations?: {
     askingPrice?: number
@@ -126,6 +134,12 @@ export interface ManifestFinancials {
   liens_amount?: number      // Liens on property
   equity?: number            // Computed: arv - total_debt
   total_debt?: number        // Computed: mortgage + taxes + liens
+  arv_source?: 'comps' | 'zestimate' | 'desktop' | 'agent_opinion'
+  arv_date?: string
+  as_is_value_source?: 'comps' | 'zestimate' | 'agent_opinion'
+  repair_estimate_source?: 'contractor_bid' | 'desktop'
+  offer_status?: 'pending_send' | 'submitted' | 'tbd' | 'needs_walkthrough'
+  spread?: number            // Computed: arv - offer_amount - repair_estimate
 }
 
 export interface ManifestDeal {
@@ -138,19 +152,26 @@ export interface ManifestDeal {
   status?: 'none' | 'verbal' | 'written' | 'signed' | 'closed'
 }
 
+export interface PipelineStage {
+  status: 'pending' | 'in_progress' | 'completed'
+  completedAt?: string
+  notes?: string
+  enteredAt?: string
+}
+
 export interface ManifestPipeline {
-  intake: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  qualifying: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  discovery: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  research: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  valuation: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  offer: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  negotiations: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  contract: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  inspection: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  closing_prep: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  closing: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
-  closed: { status: 'pending' | 'in_progress' | 'completed'; completedAt?: string; notes?: string }
+  intake: PipelineStage
+  qualifying: PipelineStage
+  discovery: PipelineStage
+  research: PipelineStage
+  valuation: PipelineStage
+  offer: PipelineStage
+  negotiations: PipelineStage
+  contract: PipelineStage
+  inspection: PipelineStage
+  closing_prep: PipelineStage
+  closing: PipelineStage
+  closed: PipelineStage
   appointment?: {
     appointmentId: string           // UUID, generated on creation
     type: 'phone_call' | 'in_person' | 'google_meet'
@@ -237,6 +258,17 @@ export interface TranscriptEntry {
 
 export interface ManifestCommunications {
   transcripts: TranscriptEntry[]
+  lastSellerContactDate?: string
+  lastInboundDate?: string
+  lastOutboundDate?: string
+  responsePending?: boolean
+  lastConversationCloser?: 'agent' | 'seller'
+  conversationCloseType?: 'sign_off' | 'question' | 'request' | 'initial_outreach'
+  totalInboundContacts?: number
+  totalTouchpoints?: number
+  cadenceGapDetected?: boolean
+  outreachAttemptsSinceLastResponse?: number
+  daysSinceLastSellerResponse?: number
 }
 
 export interface SellerProfile {
@@ -271,6 +303,9 @@ export interface ManifestAriIntelligence {
     generatedAt: string
     generatedFrom: string[]
   }
+  hotSignal?: string
+  hotNextMove?: string
+  hotSignalGeneratedAt?: string
 }
 
 export interface ManifestV2 {
@@ -298,6 +333,15 @@ export interface ManifestV2 {
   agentNotes?: ManifestAgentNote[]
   communications?: ManifestCommunications
   ariIntelligence?: ManifestAriIntelligence
+  assignedAgent?: string
+  leadSource?: string
+  leadCreatedDate?: string
+  motivationHistory?: Array<{ callDate: string; level: 'cold' | 'warm' | 'hot'; callId?: string }>
+  lastCallDate?: string
+  lastTextDate?: string
+  lastEmailDate?: string
+  lastMailDate?: string
+  dispositionTier?: number
 }
 
 export interface BuildManifestInput {

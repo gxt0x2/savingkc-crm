@@ -15,6 +15,7 @@
 import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from './manifest-builder'
 import { buildManifest } from './manifest-builder'
+import { classifyManifestChange, processHotEngineEvent } from './hot-engine/event-bus'
 
 function getSupabase() {
   return createClient(
@@ -67,7 +68,12 @@ async function getManifestForLead(leadId: string): Promise<{ rowId: string; lead
  * and the leads table is always kept in sync. No other code should
  * write station/priority/motivation_score to leads directly.
  */
-async function saveManifest(rowId: string, manifest: ManifestV2, leadId?: string) {
+async function saveManifest(
+  rowId: string,
+  manifest: ManifestV2,
+  leadId?: string,
+  previousManifest?: ManifestV2 | null,
+) {
   const supabase = getSupabase()
 
   // 1. Save manifest to manifests table
@@ -103,6 +109,17 @@ async function saveManifest(rowId: string, manifest: ManifestV2, leadId?: string
         .from('leads')
         .update(leadUpdate)
         .eq('id', resolvedLeadId)
+    }
+
+    // 3. Hot Engine event bus — classify change and fire rescore if invalidating
+    const diff = classifyManifestChange(previousManifest ?? null, manifest, manifest.lastUpdatedBy || 'unknown')
+    if (diff?.invalidating) {
+      processHotEngineEvent({
+        type: diff.eventType,
+        leadId: resolvedLeadId,
+        source: manifest.lastUpdatedBy || 'unknown',
+        tier1: diff.tier1,
+      }).catch(err => console.error('[hot-engine] Event processing failed:', err))
     }
   }
 }
@@ -257,11 +274,57 @@ export async function onCommunicationEvent(
   }
 
   const { manifest } = row
+  const previousManifest = JSON.parse(JSON.stringify(manifest)) as ManifestV2
+
   if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
   manifest.ariIntelligence.briefingStale = true
   manifest.lastUpdated = new Date().toISOString()
 
-  // Add motivation signals for high-intent events
+  // ─── Stamp communication metadata ───
+  if (!manifest.communications) manifest.communications = { transcripts: [] }
+  const comms = manifest.communications
+  const now = new Date().toISOString()
+  const isInbound = ['inbound_sms', 'inbound_call', 'yes_reply', 'missed_call'].includes(event.type)
+  const isOutbound = ['outbound_sms', 'outbound_call'].includes(event.type)
+
+  // Track touchpoints
+  comms.totalTouchpoints = (comms.totalTouchpoints ?? 0) + 1
+
+  if (isInbound) {
+    comms.lastInboundDate = now
+    comms.lastSellerContactDate = now
+    comms.totalInboundContacts = (comms.totalInboundContacts ?? 0) + 1
+    comms.lastConversationCloser = 'seller'
+    comms.responsePending = false
+    comms.outreachAttemptsSinceLastResponse = 0
+    comms.daysSinceLastSellerResponse = 0
+  }
+
+  if (isOutbound) {
+    comms.lastOutboundDate = now
+    comms.lastConversationCloser = 'agent'
+    comms.responsePending = true
+    comms.outreachAttemptsSinceLastResponse = (comms.outreachAttemptsSinceLastResponse ?? 0) + 1
+  }
+
+  // Update channel-specific last dates
+  if (event.type === 'inbound_call' || event.type === 'outbound_call' || event.type === 'missed_call') {
+    manifest.lastCallDate = now
+  } else if (event.type === 'inbound_sms' || event.type === 'outbound_sms' || event.type === 'yes_reply') {
+    manifest.lastTextDate = now
+  } else if (event.type === 'email') {
+    manifest.lastEmailDate = now
+  }
+
+  // Detect cadence gap (>7 days between outbound with no response)
+  if (comms.lastOutboundDate && comms.lastInboundDate) {
+    const outDate = new Date(comms.lastOutboundDate).getTime()
+    const inDate = new Date(comms.lastInboundDate).getTime()
+    const daysBetween = Math.floor((outDate - inDate) / (1000 * 60 * 60 * 24))
+    comms.cadenceGapDetected = daysBetween > 7
+  }
+
+  // ─── Add motivation signals for high-intent events ───
   if (!manifest.situation.motivation) manifest.situation.motivation = {}
   if (!manifest.situation.motivation.signals) manifest.situation.motivation.signals = []
 
@@ -301,7 +364,7 @@ export async function onCommunicationEvent(
     }
   }
 
-  await saveManifest(row.rowId, manifest, leadId)
+  await saveManifest(row.rowId, manifest, leadId, previousManifest)
 }
 
 /**
@@ -385,6 +448,7 @@ export async function updateManifestAndCascade(
   if (!row) return false
 
   const { manifest } = row
+  const previousManifest = JSON.parse(JSON.stringify(manifest)) as ManifestV2
 
   // Apply the caller's mutations
   updater(manifest)
@@ -393,7 +457,7 @@ export async function updateManifestAndCascade(
   manifest.lastUpdated = new Date().toISOString()
   if (source) manifest.lastUpdatedBy = source
 
-  // Save + cascade to leads table
-  await saveManifest(row.rowId, manifest, leadId)
+  // Save + cascade to leads table + hot engine event bus
+  await saveManifest(row.rowId, manifest, leadId, previousManifest)
   return true
 }
