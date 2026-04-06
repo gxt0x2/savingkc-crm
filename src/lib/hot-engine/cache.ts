@@ -359,8 +359,10 @@ async function rerankTopN(overrideCooldown?: boolean): Promise<number> {
     return true
   })
 
-  // Assign ranks 1-7
-  const topN = eligible.slice(0, HOT_LIST_SIZE)
+  // Favorites get priority slots — user starred them for a reason
+  const favorites = eligible.filter((row: CacheRow) => row.raw_inputs?.isFavorite)
+  const nonFavorites = eligible.filter((row: CacheRow) => !row.raw_inputs?.isFavorite)
+  const topN = [...favorites, ...nonFavorites].slice(0, HOT_LIST_SIZE)
   for (let i = 0; i < topN.length; i++) {
     const entry = topN[i] as CacheRow
     const wasOnList = entry.on_hot_list
