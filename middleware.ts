@@ -49,7 +49,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/sw.js') ||
     pathname.startsWith('/logo') ||
     pathname.startsWith('/favicon') ||
-    pathname.match(/\.(ico|png|jpg|jpeg|svg|css|js|woff|woff2)$/)
+    pathname.startsWith('/audio') ||
+    pathname.match(/\.(ico|png|jpg|jpeg|svg|css|js|woff|woff2|mp3|wav)$/)
   ) {
     return NextResponse.next()
   }
