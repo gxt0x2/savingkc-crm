@@ -120,7 +120,7 @@ function scoreVelocity(m: ManifestV2): { score: number; inputs: Record<string, a
   const stationToPipeline: Record<string, string> = {
     intake: 'intake', new: 'intake', contacted: 'qualifying',
     qualifying: 'qualifying', qualified: 'discovery', appt_set: 'discovery',
-    discovery: 'discovery', research: 'research', valuation: 'valuation',
+    appointment: 'discovery', discovery: 'discovery', research: 'research', valuation: 'valuation',
     offer: 'offer', offer_made: 'offer', negotiations: 'negotiations',
     contract: 'contract', under_contract: 'contract',
     inspection: 'inspection', closing_prep: 'closing_prep',
@@ -138,7 +138,7 @@ function scoreVelocity(m: ManifestV2): { score: number; inputs: Record<string, a
 
   let score: number
   if (daysSinceAdvance === null) {
-    score = 5
+    score = 8
     inputs.velocityTier = 'no_data'
   } else if (daysSinceAdvance <= 3) {
     score = 25
