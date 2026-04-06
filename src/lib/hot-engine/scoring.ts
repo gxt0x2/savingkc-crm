@@ -128,7 +128,7 @@ function scoreVelocity(m: ManifestV2): { score: number; inputs: Record<string, a
   }
 
   const pipelineKey = stationToPipeline[station]
-  if (pipelineKey && pipeline[pipelineKey]) {
+  if (pipelineKey && pipeline && pipeline[pipelineKey]) {
     enteredAt = pipeline[pipelineKey].enteredAt || pipeline[pipelineKey].completedAt
   }
 
