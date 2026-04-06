@@ -283,8 +283,8 @@ async function rerankTopN(overrideCooldown?: boolean): Promise<number> {
 
   // Apply cooldown and quality gates
   const eligible = allCache.filter((row: CacheRow) => {
-    // Must have score >= 35 (meaningful data threshold)
-    if (row.composite_score < 35) return false
+    // Must have score >= 33 (meaningful data threshold)
+    if (row.composite_score < 33) return false
 
     // Quality gate: intake leads with no financials or priority=hot don't belong on hot list
     const ri = row.raw_inputs || {}
