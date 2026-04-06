@@ -138,7 +138,7 @@ function scoreVelocity(m: ManifestV2): { score: number; inputs: Record<string, a
 
   let score: number
   if (daysSinceAdvance === null) {
-    score = 15
+    score = 5
     inputs.velocityTier = 'no_data'
   } else if (daysSinceAdvance <= 3) {
     score = 25

@@ -281,10 +281,16 @@ async function rerankTopN(overrideCooldown?: boolean): Promise<number> {
     .update({ rank: null, on_hot_list: false })
     .eq('on_hot_list', true)
 
-  // Apply cooldown: recently demoted leads can't re-enter unless tier 1 override
+  // Apply cooldown and quality gates
   const eligible = allCache.filter((row: CacheRow) => {
     // Must have score >= 35 (meaningful data threshold)
     if (row.composite_score < 35) return false
+
+    // Quality gate: intake leads with no financials or priority=hot don't belong on hot list
+    const ri = row.raw_inputs || {}
+    const station = ri.velocity?.currentStation || ''
+    const hasFinancials = ri.dealQuality?.arv || ri.dealQuality?.spread
+    if (['intake', 'new'].includes(station) && !hasFinancials && !ri.priorityHot) return false
 
     // Check cooldown
     if (!overrideCooldown && row.cooldown_until) {
