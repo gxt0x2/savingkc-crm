@@ -20,6 +20,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (dialerStatus === 'incoming') setShowDialer(true)
   }, [dialerStatus])
 
+  // Listen for open-dialer custom events (from ARI page click-to-call)
+  const [pendingDialLead, setPendingDialLead] = useState<{ phone: string; name: string; leadId: string } | null>(null)
+
+  useEffect(() => {
+    function handleOpenDialer(e: Event) {
+      const detail = (e as CustomEvent).detail
+      if (detail?.phone) {
+        setPendingDialLead({ phone: detail.phone, name: detail.name || '', leadId: detail.leadId || '' })
+        setShowDialer(true)
+      }
+    }
+    window.addEventListener('open-dialer', handleOpenDialer)
+    return () => window.removeEventListener('open-dialer', handleOpenDialer)
+  }, [])
+
   useEffect(() => {
     async function loadProfile() {
       if (!user?.email) return
@@ -195,8 +210,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Dialer Panel — Twilio softphone */}
       <DialerPanel
         open={showDialer}
-        onClose={() => setShowDialer(false)}
+        onClose={() => { setShowDialer(false); setPendingDialLead(null) }}
         onStatusChange={setDialerStatus}
+        pendingDial={pendingDialLead}
       />
     </div>
   )

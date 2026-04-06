@@ -33,6 +33,7 @@ interface DialerPanelProps {
   open: boolean
   onClose: () => void
   onStatusChange?: (status: CallStatus) => void
+  pendingDial?: { phone: string; name: string; leadId: string } | null
 }
 
 function useCallTimer(active: boolean) {
@@ -81,7 +82,7 @@ const priorityColors: Record<string, string> = {
   cold: 'bg-cyan-500/20 text-cyan-300',
 }
 
-export function DialerPanel({ open, onClose, onStatusChange }: DialerPanelProps) {
+export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: DialerPanelProps) {
   const [status, setStatus] = useState<CallStatus>('offline')
   const [dialNumber, setDialNumber] = useState('')
   const [muted, setMuted] = useState(false)
@@ -104,6 +105,25 @@ export function DialerPanel({ open, onClose, onStatusChange }: DialerPanelProps)
   // Disposition
   const [showDisposition, setShowDisposition] = useState(false)
   const lastCallPhoneRef = useRef<string>('')
+
+  // Handle pendingDial from ARI page click-to-call
+  useEffect(() => {
+    if (open && pendingDial?.phone) {
+      setSelectedLead({
+        id: pendingDial.leadId,
+        full_name: pendingDial.name,
+        phone: pendingDial.phone,
+        property_address: null,
+        city: null,
+        station: null,
+        priority: null,
+        updated_at: new Date().toISOString(),
+      })
+      setDialNumber(pendingDial.phone)
+      setSearchQuery('')
+      setSearchResults([])
+    }
+  }, [open, pendingDial])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
