@@ -78,16 +78,18 @@ export async function GET(req: NextRequest) {
     }
 
     // EOD mode
-    const { data: completedToday } = await supabase
+    const { count: completedToday } = await supabase
       .from('tasks')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'completed')
       .gte('due_date', todayStart.toISOString())
 
+    const completedCount = completedToday ?? 0
+
     const eodResult = {
       mode: 'eod',
-      stats: { calls, smsSent, smsReceived, tasksCompleted: completedToday || 0, totalTasks: todayTasks + (completedToday || 0) },
-      wrapUp: buildEodWrapUp(agent, calls, smsSent, completedToday || 0, todayTasks),
+      stats: { calls, smsSent, smsReceived, tasksCompleted: completedCount, totalTasks: todayTasks + completedCount },
+      wrapUp: buildEodWrapUp(agent, calls, smsSent, completedCount, todayTasks),
     }
     cache = { key: cacheKey, data: eodResult, ts: Date.now() }
     return NextResponse.json(eodResult)
