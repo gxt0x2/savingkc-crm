@@ -459,10 +459,10 @@ export async function getHotList(): Promise<{
     if (row.manifest) manifestMap.set(row.lead_id, row.manifest as ManifestV2)
   }
 
-  // Also fetch lead source/county from leads table
+  // Also fetch lead data from leads table (including financials for hydration)
   const { data: leadRows } = await supabase
     .from('leads')
-    .select('id, source, county, created_at, phone')
+    .select('id, source, county, city, created_at, phone, arv, offer_amount, repair_estimate, motivation_score, priority, station, full_name, property_address')
     .in('id', leadIds)
 
   const leadMap = new Map<string, any>()
@@ -474,6 +474,23 @@ export async function getHotList(): Promise<{
   const items: HotOpportunityData[] = cacheRows.map((cache: any) => {
     const m = manifestMap.get(cache.lead_id)
     const lead = leadMap.get(cache.lead_id)
+
+    // Hydrate manifest financials from leads table (same as scoring does)
+    if (m && lead) {
+      if (!m.financials) m.financials = {} as any
+      if (!m.financials!.arv && lead.arv) m.financials!.arv = lead.arv
+      if (!m.financials!.offer_amount && lead.offer_amount) m.financials!.offer_amount = lead.offer_amount
+      if (!m.financials!.repair_estimate && lead.repair_estimate) m.financials!.repair_estimate = lead.repair_estimate
+      if (!m.owner) m.owner = {} as any
+      if (!m.owner.fullName && lead.full_name) m.owner.fullName = lead.full_name
+      if (!m.owner.phones?.length && lead.phone) m.owner.phones = [lead.phone]
+      if (!m.property?.address && lead.property_address) {
+        if (!m.property) m.property = {} as any
+        m.property.address = lead.property_address
+      }
+      if (lead.station && !m.currentStation) m.currentStation = lead.station
+    }
+
     const timeline = m?.situation?.timeline
     const financials = m?.financials
 
@@ -524,11 +541,11 @@ export async function getHotList(): Promise<{
       lastScoredAt: cache.last_scored_at,
       triggerEvent: cache.last_trigger_event,
 
-      address: m?.property?.address,
+      address: m?.property?.address || lead?.property_address,
       city: lead?.city,
       county: lead?.county,
-      sellerName: m?.owner?.fullName,
-      currentStation: m?.currentStation || 'unknown',
+      sellerName: m?.owner?.fullName || lead?.full_name,
+      currentStation: m?.currentStation || lead?.station || 'unknown',
       leadSource: m?.leadSource || lead?.source,
       leadAge,
       assignedAgent: m?.assignedAgent,
