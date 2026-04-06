@@ -115,13 +115,56 @@ function buildPromptContext(manifest: ManifestV2, score: HotScoreResult): string
  */
 function generateRuleBasedSignal(manifest: ManifestV2, score: HotScoreResult): AriSignalResult {
   const parts: string[] = []
+  const station = manifest.currentStation
+  const financials = manifest.financials
+  const comms = manifest.communications
+  const timeline = manifest.situation?.timeline
+  const priority = (manifest as any).priority
 
-  // Signal
-  if (score.factors.engagement >= 25) {
-    parts.push('Seller is actively engaged')
+  // Lead identity context
+  const sellerName = manifest.owner?.firstName || manifest.owner?.fullName?.split(' ')[0]
+
+  // Signal — build a narrative about WHY this lead matters right now
+  if (priority === 'hot') {
+    parts.push('Marked as high-priority lead')
   }
+
+  if (['appointment', 'appt_set'].includes(station)) {
+    parts.push('appointment is set — seller agreed to talk')
+  } else if (['discovery', 'qualified'].includes(station)) {
+    parts.push('in active discovery — gathering deal details')
+  } else if (['offer', 'offer_made', 'valuation'].includes(station)) {
+    parts.push('approaching offer stage')
+  } else if (['negotiations'].includes(station)) {
+    parts.push('in active negotiations')
+  } else if (['contract', 'under_contract'].includes(station)) {
+    parts.push('under contract — heading to close')
+  }
+
+  if (score.factors.engagement >= 25) {
+    const daysSince = score.rawInputs?.engagement?.daysSinceContact
+    if (daysSince !== null && daysSince !== undefined && daysSince <= 2) {
+      parts.push(`seller was in contact within ${daysSince === 0 ? 'the last 24hrs' : daysSince + ' days'}`)
+    } else {
+      parts.push('seller is actively engaged')
+    }
+  }
+
+  if (financials?.arv) {
+    const arvK = Math.round(financials.arv / 1000)
+    if (financials.repair_estimate) {
+      const repairK = Math.round(financials.repair_estimate / 1000)
+      parts.push(`ARV $${arvK}k with $${repairK}k in repairs`)
+    } else {
+      parts.push(`ARV $${arvK}k`)
+    }
+  }
+
+  if (score.factors.dealQuality >= 18 && financials?.spread) {
+    parts.push(`$${Math.round(financials.spread / 1000)}k spread`)
+  }
+
   if (score.factors.timePressure >= 11) {
-    const timeline = manifest.situation?.timeline
     if (timeline?.sellerDeadline) {
       parts.push(`deadline approaching (${timeline.sellerDeadline})`)
     } else if (timeline?.competingOffersPresent) {
@@ -130,34 +173,66 @@ function generateRuleBasedSignal(manifest: ManifestV2, score: HotScoreResult): A
       parts.push(`foreclosure in ${timeline.foreclosureWindowDays} days`)
     }
   }
-  if (score.factors.dealQuality >= 18 && manifest.financials?.spread) {
-    parts.push(`$${(manifest.financials.spread / 1000).toFixed(0)}k spread`)
+
+  if (manifest.situation?.motivation?.score && manifest.situation.motivation.score >= 7) {
+    parts.push('high motivation detected')
   }
-  if (score.factors.velocity >= 20) {
-    parts.push('fast-moving through pipeline')
+
+  if (manifest.owner?.deceased) {
+    parts.push('deceased owner — potential probate deal')
+  }
+
+  if (manifest.property?.taxCollector?.delinquentAmount) {
+    const taxK = Math.round(manifest.property.taxCollector.delinquentAmount / 1000)
+    if (taxK >= 1) parts.push(`$${taxK}k in back taxes`)
+  }
+
+  if (comms?.cadenceGapDetected) {
+    parts.push('but cadence gap detected — needs follow-up')
   }
 
   const signal = parts.length > 0
     ? parts.join(', ') + '.'
-    : `Score ${score.composite}/100 — ${score.tierLabel} tier.`
+    : `Score ${score.composite}/100. Needs more data to assess opportunity.`
 
-  // Next move
+  // Next move — specific, actionable directive
   let nextMove: string
-  const station = manifest.currentStation
+  const missingData = score.missingFields
+
   if (['intake', 'new'].includes(station)) {
-    nextMove = 'Make initial contact — call or send intro text.'
+    if (sellerName) {
+      nextMove = `Call ${sellerName} to introduce yourself and gauge motivation.`
+    } else {
+      nextMove = 'Make initial contact — call or send intro text.'
+    }
   } else if (['contacted', 'qualifying'].includes(station)) {
-    nextMove = 'Schedule discovery call to capture all 4 pillars.'
-  } else if (['qualified', 'appt_set', 'discovery'].includes(station)) {
-    nextMove = 'Complete walkthrough and pull comps for offer.'
-  } else if (['valuation', 'offer', 'offer_made'].includes(station)) {
-    nextMove = manifest.financials?.offer_amount
-      ? 'Follow up on submitted offer — ask for decision timeline.'
-      : 'Finalize offer amount and send contract.'
+    if (missingData.includes('ARV')) {
+      nextMove = 'Get the property address confirmed and pull comps for ARV.'
+    } else {
+      nextMove = 'Schedule a discovery call to understand their situation and timeline.'
+    }
+  } else if (['appointment', 'appt_set'].includes(station)) {
+    nextMove = 'Prepare for appointment — review property details and pull comps before the call.'
+  } else if (['discovery'].includes(station)) {
+    if (!financials?.arv) {
+      nextMove = 'Pull comps and determine ARV — need numbers to make an offer.'
+    } else if (!financials?.repair_estimate) {
+      nextMove = 'Get repair estimate — schedule walkthrough or use desktop estimate.'
+    } else {
+      nextMove = 'Run the numbers and prepare offer. All key data points are in.'
+    }
+  } else if (['valuation', 'research'].includes(station)) {
+    nextMove = financials?.arv
+      ? 'Finalize offer amount based on comps and repair estimate.'
+      : 'Complete valuation — pull comps and calculate max offer.'
+  } else if (['offer', 'offer_made'].includes(station)) {
+    nextMove = financials?.offer_amount
+      ? `Follow up on the $${Math.round((financials.offer_amount || 0) / 1000)}k offer — ask for their decision timeline.`
+      : 'Calculate and submit your offer.'
   } else if (['negotiations'].includes(station)) {
-    nextMove = 'Push for signed contract — address remaining objections.'
+    nextMove = 'Address remaining objections and push for a signed contract.'
   } else if (['contract', 'under_contract'].includes(station)) {
-    nextMove = 'Coordinate inspection and begin disposition marketing.'
+    nextMove = 'Schedule inspection and begin marketing to buyers.'
   } else {
     nextMove = 'Review lead status and determine next action.'
   }
