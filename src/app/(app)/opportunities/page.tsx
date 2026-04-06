@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { OpportunityCard } from '@/components/opportunities/opportunity-card'
 import { HotOpportunityCard } from '@/components/opportunities/hot-opportunity-card'
 import { ActivityTable } from '@/components/opportunities/activity-table'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
@@ -161,22 +160,6 @@ export default function OpportunitiesPage() {
 
   useEffect(() => { fetchLeads() }, [])
 
-  // Sort deals by qualification score (highest first)
-  const sortedDeals = [...allDeals].sort((a, b) => {
-    // Primary: qualification score (highest first)
-    const qA = a._qualificationScore ?? 0
-    const qB = b._qualificationScore ?? 0
-    if (qB !== qA) return qB - qA
-
-    // Secondary: motivation score (highest first)
-    const mA = a._motivationScore ?? 0
-    const mB = b._motivationScore ?? 0
-    if (mB !== mA) return mB - mA
-
-    // Tertiary: most recently updated
-    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-  })
-
   const totalDeals = allDeals.length
 
   return (
@@ -259,35 +242,10 @@ export default function OpportunitiesPage() {
         )}
       </section>
 
-      {/* All Opportunities */}
-      {loading ? (
-        <div className="text-slate-400 py-16 text-center">Loading opportunities...</div>
-      ) : totalDeals === 0 ? (
-        <div className="text-center py-16">
-          <Icon name="work" className="text-4xl text-slate-300 mb-3" />
-          <p className="text-slate-400 font-medium">No active opportunities</p>
-          <p className="text-slate-400 text-sm mt-1">Move leads to qualifying or negotiations stage to see them here.</p>
-          <button onClick={() => setShowAdd(true)} className="mt-4 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg">
-            Add a lead
-          </button>
-        </div>
-      ) : (
-        <section className="mb-16">
-          <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(380px,1fr))] gap-6">
-            {sortedDeals.map((deal) => (
-              <div
-                key={deal.id}
-                onDoubleClick={() => router.push(`/leads/${deal.contact?.id}`)}
-              >
-                <OpportunityCard deal={deal} />
-              </div>
-            ))}
-          </div>
-        </section>
+      {/* Activity Table — recent activity for hot list leads */}
+      {hotData?.items && hotData.items.length > 0 && !loading && (
+        <ActivityTable deals={allDeals.filter(d => hotData.items!.some(h => h.leadId === d.id))} />
       )}
-
-      {/* Activity Table */}
-      <ActivityTable deals={sortedDeals} />
     </div>
   )
 }
