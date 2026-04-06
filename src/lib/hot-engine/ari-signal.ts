@@ -124,9 +124,16 @@ function generateRuleBasedSignal(manifest: ManifestV2, score: HotScoreResult): A
   // Lead identity context
   const sellerName = manifest.owner?.firstName || manifest.owner?.fullName?.split(' ')[0]
 
+  const isFavorite = (manifest as any).is_favorite
+
   // Signal — build a narrative about WHY this lead matters right now
+  if (isFavorite) {
+    parts.push('Starred as a priority lead')
+  }
   if (priority === 'hot') {
-    parts.push('Marked as high-priority lead')
+    parts.push('marked high-priority')
+  } else if (priority === 'warm') {
+    parts.push('warm lead with active interest')
   }
 
   if (['appointment', 'appt_set'].includes(station)) {

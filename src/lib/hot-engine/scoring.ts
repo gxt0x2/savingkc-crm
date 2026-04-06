@@ -386,10 +386,14 @@ export function scoreOpportunity(manifest: ManifestV2): HotScoreResult {
 
   const rawSum = eng.score + vel.score + dq.score + tp.score
 
-  // Priority and pipeline progress bonus
+  // Priority, favorites, and pipeline progress bonus
   let bonus = 0
+  // User starred as favorite = strong manual signal, they know this lead matters
+  if ((manifest as any).is_favorite) bonus += 12
   // User marked as hot = significant boost
   if ((manifest as any).priority === 'hot') bonus += 12
+  // User marked as warm = moderate boost
+  else if ((manifest as any).priority === 'warm') bonus += 6
   // Appointment set = real engagement
   if (['appointment', 'appt_set'].includes(manifest.currentStation)) bonus += 8
   // Past intake = at least we've made contact
@@ -426,7 +430,9 @@ export function scoreOpportunity(manifest: ManifestV2): HotScoreResult {
     timePressure: tp.inputs,
     multiplier: mult,
     bonus,
+    isFavorite: !!(manifest as any).is_favorite,
     priorityHot: (manifest as any).priority === 'hot',
+    priorityWarm: (manifest as any).priority === 'warm',
     stationBonus: ['appointment', 'appt_set'].includes(manifest.currentStation) ? 8 : !['intake', 'new'].includes(manifest.currentStation) ? 5 : 0,
     motivationBonus: (manifest.situation?.motivation?.score && manifest.situation.motivation.score > 5) ? 5 : 0,
   }

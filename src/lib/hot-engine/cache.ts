@@ -67,11 +67,11 @@ export async function surgicalRescore(
   // Also fetch leads table data to hydrate empty manifest fields
   const { data: leadRow } = await supabase
     .from('leads')
-    .select('arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at')
+    .select('arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at, is_favorite, updated_at')
     .eq('id', leadId)
     .single()
 
-  // Hydrate manifest financials from leads table if manifest is empty
+  // Hydrate manifest from leads table if fields are empty
   if (leadRow && manifest) {
     if (!manifest.financials) manifest.financials = {} as any
     if (!manifest.financials!.arv && leadRow.arv) manifest.financials!.arv = leadRow.arv
@@ -86,8 +86,32 @@ export async function surgicalRescore(
     if (!manifest.owner!.phones?.length && leadRow.phone) manifest.owner!.phones = [leadRow.phone]
     // Use leads table station if manifest station is wrong
     if (leadRow.station && leadRow.station !== manifest.currentStation) manifest.currentStation = leadRow.station
-    // Carry priority onto manifest for scoring bonus
+    // Carry priority + favorite onto manifest for scoring bonus
     if (leadRow.priority) (manifest as any).priority = leadRow.priority
+    if (leadRow.is_favorite) (manifest as any).is_favorite = true
+  }
+
+  // Hydrate engagement from lead_activities if manifest has no contact data
+  if (!manifest.communications?.lastSellerContactDate && !manifest.communications?.lastInboundDate) {
+    const { data: lastActivity } = await supabase
+      .from('lead_activities')
+      .select('created_at, activity_type, metadata')
+      .eq('lead_id', leadId)
+      .in('activity_type', ['call', 'sms', 'voicemail'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (lastActivity?.created_at) {
+      if (!manifest.communications) manifest.communications = { transcripts: [] } as any
+      manifest.communications!.lastSellerContactDate = lastActivity.created_at
+      // Check if seller-initiated (inbound)
+      const meta = lastActivity.metadata || {}
+      if (meta.direction === 'inbound' || meta.direction === 'in') {
+        manifest.communications!.lastInboundDate = lastActivity.created_at
+        manifest.communications!.totalInboundContacts = (manifest.communications!.totalInboundContacts || 0) + 1
+      }
+    }
   }
 
   // Skip dead/closed leads
@@ -173,12 +197,29 @@ export async function fullRerank(): Promise<{ scored: number; hotList: number }>
   const allLeadIds = rows.map(r => r.lead_id).filter(Boolean) as string[]
   const { data: allLeadRows } = await supabase
     .from('leads')
-    .select('id, arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at')
+    .select('id, arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at, is_favorite, updated_at')
     .in('id', allLeadIds)
 
   const leadRowMap = new Map<string, any>()
   for (const lr of allLeadRows || []) {
     leadRowMap.set(lr.id, lr)
+  }
+
+  // Batch fetch last activity per lead for engagement hydration
+  // Use a single query: get recent call/sms/voicemail per lead
+  const { data: lastActivities } = await supabase
+    .from('lead_activities')
+    .select('lead_id, created_at, activity_type, metadata')
+    .in('lead_id', allLeadIds)
+    .in('activity_type', ['call', 'sms', 'voicemail'])
+    .order('created_at', { ascending: false })
+
+  // Build map: lead_id → most recent activity
+  const lastActivityMap = new Map<string, any>()
+  for (const act of lastActivities || []) {
+    if (!lastActivityMap.has(act.lead_id)) {
+      lastActivityMap.set(act.lead_id, act)
+    }
   }
 
   for (const row of rows) {
@@ -201,8 +242,23 @@ export async function fullRerank(): Promise<{ scored: number; hotList: number }>
       if (!manifest.owner!.phones?.length && leadRow.phone) manifest.owner!.phones = [leadRow.phone]
       // Use leads table station if manifest station is wrong
       if (leadRow.station && leadRow.station !== manifest.currentStation) manifest.currentStation = leadRow.station
-      // Carry priority onto manifest for scoring bonus
+      // Carry priority + favorite onto manifest for scoring bonus
       if (leadRow.priority) (manifest as any).priority = leadRow.priority
+      if (leadRow.is_favorite) (manifest as any).is_favorite = true
+    }
+
+    // Hydrate engagement from lead_activities if manifest has no contact data
+    if (!manifest.communications?.lastSellerContactDate && !manifest.communications?.lastInboundDate) {
+      const lastAct = lastActivityMap.get(row.lead_id)
+      if (lastAct?.created_at) {
+        if (!manifest.communications) manifest.communications = { transcripts: [] } as any
+        manifest.communications!.lastSellerContactDate = lastAct.created_at
+        const meta = lastAct.metadata || {}
+        if (meta.direction === 'inbound' || meta.direction === 'in') {
+          manifest.communications!.lastInboundDate = lastAct.created_at
+          manifest.communications!.totalInboundContacts = 1
+        }
+      }
     }
 
     const result = scoreOpportunity(manifest)
@@ -286,14 +342,16 @@ async function rerankTopN(overrideCooldown?: boolean): Promise<number> {
     // Must have score >= 33 (meaningful data threshold)
     if (row.composite_score < 33) return false
 
-    // Quality gate: intake leads with no financials or priority=hot don't belong on hot list
+    // Quality gate: intake leads need SOME signal of value to be on hot list
+    // Favorited, warm/hot priority, or financials all qualify
     const ri = row.raw_inputs || {}
     const station = ri.velocity?.currentStation || ''
     const hasFinancials = ri.dealQuality?.arv || ri.dealQuality?.spread
-    if (['intake', 'new'].includes(station) && !hasFinancials && !ri.priorityHot) return false
+    const hasUserSignal = ri.isFavorite || ri.priorityHot || ri.priorityWarm
+    if (['intake', 'new'].includes(station) && !hasFinancials && !hasUserSignal) return false
 
-    // Check cooldown
-    if (!overrideCooldown && row.cooldown_until) {
+    // Check cooldown (favorites override cooldown — user starred means they want to see it)
+    if (!overrideCooldown && !ri.isFavorite && row.cooldown_until) {
       const cooldownEnd = new Date(row.cooldown_until)
       if (cooldownEnd > now) return false
     }
