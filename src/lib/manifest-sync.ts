@@ -16,6 +16,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from './manifest-builder'
 import { buildManifest } from './manifest-builder'
 import { classifyManifestChange, processHotEngineEvent } from './hot-engine/event-bus'
+import { autoEnrichLead } from './auto-enrich'
 
 function getSupabase() {
   return createClient(
@@ -421,6 +422,11 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
     console.error('Failed to auto-create manifest for lead', leadId, error)
     return null
   }
+
+  // Fire-and-forget: auto-enrich from prospect lookup + county assessor
+  autoEnrichLead(leadId).catch(err =>
+    console.error('[auto-enrich] Background enrichment failed for lead', leadId, err)
+  )
 
   return inserted?.id || null
 }

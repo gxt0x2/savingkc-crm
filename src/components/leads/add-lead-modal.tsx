@@ -78,6 +78,16 @@ export function AddLeadModal({ onClose, onSuccess }: AddLeadModalProps) {
       }).select().single()
 
       if (dbErr) { setError(dbErr.message); setSaving(false); return }
+
+      // Fire-and-forget: create manifest + auto-enrich (prospect lookup + county assessor)
+      if (data?.id) {
+        fetch('/api/leads/ensure-manifest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leadId: data.id }),
+        }).catch(() => {})
+      }
+
       onSuccess(data as NewLead)
     } catch (e) {
       setError(String(e))
