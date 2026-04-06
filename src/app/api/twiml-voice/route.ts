@@ -44,18 +44,18 @@ export async function POST(req: Request) {
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}&amp;coldcall=1" method="POST" timeout="4">
-    <Say voice="Polly.Matthew">Hey, we recently reached out about a property in your area. If you're interested in an offer, press 1.</Say>
+    <Play>${BASE_URL}/audio/ivr-press1.mp3</Play>
   </Gather>
   <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
 </Response>`
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   }
 
-  // ── STANDARD INBOUND: ~5s spoken greeting, 5s gather timeout ──
+  // ── STANDARD INBOUND: ElevenLabs Jessica greeting ──
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}" method="POST" timeout="5">
-    <Say voice="Polly.Matthew">Thanks for calling Saving K C. Press 1 to sell your property. Press 2 for anything else.</Say>
+    <Play>${BASE_URL}/audio/ivr-greeting.mp3</Play>
   </Gather>
   <Redirect method="POST">${BASE_URL}/api/ivr/no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
 </Response>`
