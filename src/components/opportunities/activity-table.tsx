@@ -6,8 +6,8 @@ import type { Deal } from '@/types'
 
 interface ActivityTableProps {
   deals: Deal[]
-  onPinToHot: (dealId: string) => void
-  hotCount: number
+  onPinToHot?: (dealId: string) => void
+  hotCount?: number
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -54,7 +54,7 @@ function dollars(amount: number | null): string {
   return '$' + amount.toLocaleString('en-US')
 }
 
-export function ActivityTable({ deals, onPinToHot, hotCount }: ActivityTableProps) {
+export function ActivityTable({ deals, onPinToHot, hotCount = 0 }: ActivityTableProps) {
   const [view, setView] = useState<'list' | 'grid'>('list')
   const [showAll, setShowAll] = useState(false)
 
@@ -144,19 +144,21 @@ export function ActivityTable({ deals, onPinToHot, hotCount }: ActivityTableProp
                       <td className="px-6 py-5 text-sm text-on-surface-variant">{formatRelativeTime(deal.updated_at)}</td>
                       <td className="px-6 py-5 text-right">
                         <div className="relative">
-                          <button
-                            onClick={() => {
-                              if (hotCount >= 4) {
-                                alert('Hot Opportunities is full (4/4). Unpin an existing deal first.')
-                              } else {
-                                onPinToHot(deal.id)
-                              }
-                            }}
-                            className="text-on-surface-variant hover:text-primary transition-colors"
-                            title="Pin to Hot"
-                          >
-                            <Icon name="push_pin" />
-                          </button>
+                          {onPinToHot && (
+                            <button
+                              onClick={() => {
+                                if (hotCount >= 4) {
+                                  alert('Hot Opportunities is full (4/4). Unpin an existing deal first.')
+                                } else {
+                                  onPinToHot(deal.id)
+                                }
+                              }}
+                              className="text-on-surface-variant hover:text-primary transition-colors"
+                              title="Pin to Hot"
+                            >
+                              <Icon name="push_pin" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -64,6 +64,32 @@ export async function surgicalRescore(
 
   const manifest = manifestRow.manifest as ManifestV2
 
+  // Also fetch leads table data to hydrate empty manifest fields
+  const { data: leadRow } = await supabase
+    .from('leads')
+    .select('arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at')
+    .eq('id', leadId)
+    .single()
+
+  // Hydrate manifest financials from leads table if manifest is empty
+  if (leadRow && manifest) {
+    if (!manifest.financials) manifest.financials = {} as any
+    if (!manifest.financials!.arv && leadRow.arv) manifest.financials!.arv = leadRow.arv
+    if (!manifest.financials!.offer_amount && leadRow.offer_amount) manifest.financials!.offer_amount = leadRow.offer_amount
+    if (!manifest.financials!.repair_estimate && leadRow.repair_estimate) manifest.financials!.repair_estimate = leadRow.repair_estimate
+    if (!manifest.situation) manifest.situation = { type: [] } as any
+    if (!manifest.situation!.motivation) manifest.situation!.motivation = {} as any
+    if (!manifest.situation!.motivation!.score && leadRow.motivation_score) manifest.situation!.motivation!.score = leadRow.motivation_score
+    if (!manifest.leadSource && leadRow.source) manifest.leadSource = leadRow.source
+    if (!manifest.leadCreatedDate && leadRow.created_at) manifest.leadCreatedDate = leadRow.created_at
+    if (!manifest.owner) manifest.owner = {} as any
+    if (!manifest.owner!.phones?.length && leadRow.phone) manifest.owner!.phones = [leadRow.phone]
+    // Use leads table station if manifest station is wrong
+    if (leadRow.station && leadRow.station !== manifest.currentStation) manifest.currentStation = leadRow.station
+    // Carry priority onto manifest for scoring bonus
+    if (leadRow.priority) (manifest as any).priority = leadRow.priority
+  }
+
   // Skip dead/closed leads
   if (DEAD_STATIONS.includes(manifest.currentStation)) return
 
@@ -143,9 +169,42 @@ export async function fullRerank(): Promise<{ scored: number; hotList: number }>
   const now = new Date().toISOString()
   let scored = 0
 
+  // Fetch all leads table data for hydration (batch query)
+  const allLeadIds = rows.map(r => r.lead_id).filter(Boolean) as string[]
+  const { data: allLeadRows } = await supabase
+    .from('leads')
+    .select('id, arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at')
+    .in('id', allLeadIds)
+
+  const leadRowMap = new Map<string, any>()
+  for (const lr of allLeadRows || []) {
+    leadRowMap.set(lr.id, lr)
+  }
+
   for (const row of rows) {
     if (!row.manifest || !row.lead_id) continue
     const manifest = row.manifest as ManifestV2
+
+    // Hydrate manifest from leads table if fields are empty
+    const leadRow = leadRowMap.get(row.lead_id)
+    if (leadRow) {
+      if (!manifest.financials) manifest.financials = {} as any
+      if (!manifest.financials!.arv && leadRow.arv) manifest.financials!.arv = leadRow.arv
+      if (!manifest.financials!.offer_amount && leadRow.offer_amount) manifest.financials!.offer_amount = leadRow.offer_amount
+      if (!manifest.financials!.repair_estimate && leadRow.repair_estimate) manifest.financials!.repair_estimate = leadRow.repair_estimate
+      if (!manifest.situation) manifest.situation = { type: [] } as any
+      if (!manifest.situation!.motivation) manifest.situation!.motivation = {} as any
+      if (!manifest.situation!.motivation!.score && leadRow.motivation_score) manifest.situation!.motivation!.score = leadRow.motivation_score
+      if (!manifest.leadSource && leadRow.source) manifest.leadSource = leadRow.source
+      if (!manifest.leadCreatedDate && leadRow.created_at) manifest.leadCreatedDate = leadRow.created_at
+      if (!manifest.owner) manifest.owner = {} as any
+      if (!manifest.owner!.phones?.length && leadRow.phone) manifest.owner!.phones = [leadRow.phone]
+      // Use leads table station if manifest station is wrong
+      if (leadRow.station && leadRow.station !== manifest.currentStation) manifest.currentStation = leadRow.station
+      // Carry priority onto manifest for scoring bonus
+      if (leadRow.priority) (manifest as any).priority = leadRow.priority
+    }
+
     const result = scoreOpportunity(manifest)
 
     // Upsert cache
@@ -224,8 +283,8 @@ async function rerankTopN(overrideCooldown?: boolean): Promise<number> {
 
   // Apply cooldown: recently demoted leads can't re-enter unless tier 1 override
   const eligible = allCache.filter((row: CacheRow) => {
-    // Must have score >= 25 (not 'not_scored')
-    if (row.composite_score < 25) return false
+    // Must have score >= 35 (meaningful data threshold)
+    if (row.composite_score < 35) return false
 
     // Check cooldown
     if (!overrideCooldown && row.cooldown_until) {

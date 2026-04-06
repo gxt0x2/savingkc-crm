@@ -385,7 +385,19 @@ export function scoreOpportunity(manifest: ManifestV2): HotScoreResult {
   }
 
   const rawSum = eng.score + vel.score + dq.score + tp.score
-  const composite = Math.min(100, Math.round(rawSum * mult.multiplier))
+
+  // Priority and pipeline progress bonus
+  let bonus = 0
+  // User marked as hot = significant boost
+  if ((manifest as any).priority === 'hot') bonus += 12
+  // Appointment set = real engagement
+  if (['appointment', 'appt_set'].includes(manifest.currentStation)) bonus += 8
+  // Past intake = at least we've made contact
+  if (!['intake', 'new'].includes(manifest.currentStation)) bonus += 5
+  // Has motivation score > 5 = seller showed interest
+  if (manifest.situation?.motivation?.score && manifest.situation.motivation.score > 5) bonus += 5
+
+  const composite = Math.min(100, Math.round((rawSum + bonus) * mult.multiplier))
 
   // Determine tier
   let tierLabel: HotScoreResult['tierLabel']
@@ -413,6 +425,10 @@ export function scoreOpportunity(manifest: ManifestV2): HotScoreResult {
     dealQuality: dq.inputs,
     timePressure: tp.inputs,
     multiplier: mult,
+    bonus,
+    priorityHot: (manifest as any).priority === 'hot',
+    stationBonus: ['appointment', 'appt_set'].includes(manifest.currentStation) ? 8 : !['intake', 'new'].includes(manifest.currentStation) ? 5 : 0,
+    motivationBonus: (manifest.situation?.motivation?.score && manifest.situation.motivation.score > 5) ? 5 : 0,
   }
 
   return {

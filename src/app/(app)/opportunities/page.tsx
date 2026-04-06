@@ -120,11 +120,9 @@ function leadToDeal(lead: LeadRow, manifest?: ManifestV2): Deal {
 
 export default function OpportunitiesPage() {
   const router = useRouter()
-  const [hotDeals, setHotDeals] = useState<Deal[]>([])
-  const [otherDeals, setOtherDeals] = useState<Deal[]>([])
+  const [allDeals, setAllDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
-  const [pinning, setPinning] = useState<string | null>(null)
   const { data: hotData, isLoading: hotLoading } = useHotOpportunities()
   const refreshHotList = useRefreshHotList()
 
@@ -132,28 +130,21 @@ export default function OpportunitiesPage() {
     setLoading(true)
     const supabase = createClient()
 
-    // Fetch 1: Hot Opportunities (max 4, pinned by user)
-    const { data: hotData } = await supabase
-      .from('leads')
-      .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at, updated_at, is_favorite, arv, offer_amount, repair_estimate, motivation_score, seller_situation, appointment_date')
-      .eq('priority', 'hot')
-      .order('updated_at', { ascending: false })
-      .limit(4)
-
-    // Fetch 2: All Opportunities (active pipeline, NOT hot)
+    // Fetch ALL active leads (not dead/closed)
     const { data: oppData } = await supabase
       .from('leads')
       .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at, updated_at, is_favorite, arv, offer_amount, repair_estimate, motivation_score, seller_situation, appointment_date')
-      .in('station', ['qualifying', 'appt_set', 'negotiations', 'offer_made', 'contract_signed'])
-      .neq('priority', 'hot')
+      .not('station', 'in', '(dead,closed,disposition)')
       .order('updated_at', { ascending: false })
 
-    // Fetch 3: Manifests for ALL of the above leads
-    const allLeadIds = [...(hotData || []), ...(oppData || [])].map(l => l.id)
-    const { data: allManifests } = await supabase
-      .from('manifests')
-      .select('lead_id, manifest')
-      .in('lead_id', allLeadIds)
+    // Fetch manifests for all leads
+    const allLeadIds = (oppData || []).map(l => l.id)
+    const { data: allManifests } = allLeadIds.length > 0
+      ? await supabase
+          .from('manifests')
+          .select('lead_id, manifest')
+          .in('lead_id', allLeadIds)
+      : { data: [] }
 
     // Build a map for quick lookup
     const manifestMap = new Map<string, ManifestV2>()
@@ -162,40 +153,16 @@ export default function OpportunitiesPage() {
     }
 
     // Build deals with real manifest data
-    const hot = (hotData || []).map(l => leadToDeal(l, manifestMap.get(l.id)))
-    const other = (oppData || []).map(l => leadToDeal(l, manifestMap.get(l.id)))
+    const deals = (oppData || []).map(l => leadToDeal(l, manifestMap.get(l.id)))
 
-    setHotDeals(hot)
-    setOtherDeals(other)
+    setAllDeals(deals)
     setLoading(false)
   }
 
   useEffect(() => { fetchLeads() }, [])
 
-  async function togglePin(dealId: string, currentPriority: string | null) {
-    const isPinning = currentPriority !== 'hot'
-
-    // Block pinning if already at capacity
-    if (isPinning && hotDeals.length >= 4) {
-      alert('Hot Opportunities is full (4/4). Unpin an existing deal first.')
-      return
-    }
-
-    setPinning(dealId)
-    const newPriority = currentPriority === 'hot' ? 'warm' : 'hot'
-
-    // Call API endpoint to update priority through manifest-sync
-    await fetch('/api/leads', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: dealId, priority: newPriority }),
-    })
-    await fetchLeads()
-    setPinning(null)
-  }
-
-  // Sort otherDeals by qualification score (highest first)
-  const sortedOtherDeals = [...otherDeals].sort((a, b) => {
+  // Sort deals by qualification score (highest first)
+  const sortedDeals = [...allDeals].sort((a, b) => {
     // Primary: qualification score (highest first)
     const qA = a._qualificationScore ?? 0
     const qB = b._qualificationScore ?? 0
@@ -210,7 +177,7 @@ export default function OpportunitiesPage() {
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   })
 
-  const totalDeals = hotDeals.length + otherDeals.length
+  const totalDeals = allDeals.length
 
   return (
     <div className="pt-6 pb-32 px-4 sm:px-6 lg:px-8 max-w-[1600px] mx-auto">
@@ -226,7 +193,7 @@ export default function OpportunitiesPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-primary mb-2">Opportunities</h1>
           <p className="text-on-surface-variant text-sm">
-            Deals in active qualifying, negotiation, or closing. Double-click any card for full details. Pin up to 4 hot deals closing this week.
+            Deals in active qualifying, negotiation, or closing. Double-click any card for full details.
           </p>
         </div>
         <button
@@ -292,6 +259,7 @@ export default function OpportunitiesPage() {
         )}
       </section>
 
+      {/* All Opportunities */}
       {loading ? (
         <div className="text-slate-400 py-16 text-center">Loading opportunities...</div>
       ) : totalDeals === 0 ? (
@@ -304,82 +272,22 @@ export default function OpportunitiesPage() {
           </button>
         </div>
       ) : (
-        <>
-          {/* Top Hot Deals section */}
-          <section className="mb-10">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-lg font-black text-primary">🔥 Hot Opportunities</span>
-              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${hotDeals.length >= 4 ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}`}>
-                {hotDeals.length}/4 slots
-              </span>
-            </div>
-            {hotDeals.length === 0 ? (
-              <div className="bg-surface-container-lowest rounded-xl p-12 text-center border border-outline-variant/20">
-                <div className="text-4xl mb-4">🔥</div>
-                <h3 className="text-lg font-bold text-primary mb-2">No Hot Opportunities pinned</h3>
-                <p className="text-on-surface-variant text-sm max-w-md mx-auto">
-                  Pin up to 4 deals that are closing this week from All Opportunities below.
-                </p>
+        <section className="mb-16">
+          <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(380px,1fr))] gap-6">
+            {sortedDeals.map((deal) => (
+              <div
+                key={deal.id}
+                onDoubleClick={() => router.push(`/leads/${deal.contact?.id}`)}
+              >
+                <OpportunityCard deal={deal} />
               </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {hotDeals.map((deal) => (
-                  <div
-                    key={deal.id}
-                    onDoubleClick={() => router.push(`/leads/${deal.contact?.id}`)}
-                    className="relative group"
-                  >
-                    <button
-                      onClick={() => togglePin(deal.id, 'hot')}
-                      disabled={pinning === deal.id}
-                      title="Unpin from Top Hot Deals"
-                      className="absolute top-3 right-3 z-10 p-1.5 bg-red-50 hover:bg-red-100 rounded-lg transition-colors text-red-500 opacity-0 group-hover:opacity-100"
-                    >
-                      <Icon name="push_pin" size="text-sm" />
-                    </button>
-                    <OpportunityCard deal={deal} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* All Other Opportunities */}
-          <section className="mb-16">
-            {hotDeals.length > 0 && otherDeals.length > 0 && (
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-base font-bold text-on-surface-variant">All Opportunities</span>
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(380px,1fr))] gap-6">
-              {otherDeals.map((deal) => (
-                <div
-                  key={deal.id}
-                  onDoubleClick={() => router.push(`/leads/${deal.contact?.id}`)}
-                  className="relative group"
-                >
-                  <button
-                    onClick={() => togglePin(deal.id, null)}
-                    disabled={pinning === deal.id}
-                    title="Pin to Top Hot Deals"
-                    className="absolute top-3 right-3 z-10 p-1.5 bg-white hover:bg-orange-50 rounded-lg transition-colors text-slate-300 hover:text-orange-500 shadow-sm opacity-0 group-hover:opacity-100"
-                  >
-                    <Icon name="push_pin" size="text-sm" />
-                  </button>
-                  <OpportunityCard deal={deal} />
-                </div>
-              ))}
-            </div>
-          </section>
-        </>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Activity Table */}
-      <ActivityTable
-        deals={sortedOtherDeals}
-        onPinToHot={(id) => togglePin(id, null)}
-        hotCount={hotDeals.length}
-      />
+      <ActivityTable deals={sortedDeals} />
     </div>
   )
 }
