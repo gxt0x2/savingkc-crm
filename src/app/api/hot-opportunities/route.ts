@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getHotList, fullRerank, surgicalRescore } from '@/lib/hot-engine'
+import { autoEnrichLead } from '@/lib/auto-enrich'
 
 /**
  * GET  — Returns hot list (from cache). If first load of day or cache >2hrs old
@@ -107,6 +108,19 @@ export async function POST(request: NextRequest) {
     if (body.leadId) {
       await surgicalRescore(body.leadId, 'manual_rescore')
       return NextResponse.json({ ok: true })
+    }
+
+    // Backfill enrichment for all hot list leads
+    if (body.enrich_hot_list) {
+      const { items } = await getHotList()
+      const enriched: string[] = []
+      await Promise.allSettled(
+        items.map(async (item) => {
+          await autoEnrichLead(item.leadId)
+          enriched.push(item.leadId)
+        })
+      )
+      return NextResponse.json({ ok: true, enriched: enriched.length })
     }
 
     return NextResponse.json({ error: 'Invalid request — provide leadId or full: true' }, { status: 400 })
