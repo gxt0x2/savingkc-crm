@@ -425,11 +425,19 @@ async function refreshAriSignalsForHotList(): Promise<void> {
 
   const leadIds = hotCache.map((r: any) => r.lead_id)
 
-  // Fetch manifests
+  // Fetch manifests + leads table data for hydration
   const { data: manifestRows } = await supabase
     .from('manifests')
     .select('id, lead_id, manifest')
     .in('lead_id', leadIds)
+
+  const { data: leadRows } = await supabase
+    .from('leads')
+    .select('id, priority, is_favorite, motivation_score, station, arv, offer_amount, repair_estimate, phone, source, created_at')
+    .in('id', leadIds)
+
+  const leadMap = new Map<string, any>()
+  for (const lr of leadRows || []) leadMap.set(lr.id, lr)
 
   if (!manifestRows) return
 
@@ -440,7 +448,22 @@ async function refreshAriSignalsForHotList(): Promise<void> {
     // Only regenerate if signal is stale or missing
     if (!isSignalStale(manifest)) continue
 
-    // Score for context
+    // Hydrate manifest from leads table for signal generation context
+    const leadRow = leadMap.get(row.lead_id)
+    if (leadRow) {
+      if (leadRow.priority) (manifest as any).priority = leadRow.priority
+      if (leadRow.is_favorite) (manifest as any).is_favorite = true
+      if (!manifest.financials) manifest.financials = {} as any
+      if (!manifest.financials!.arv && leadRow.arv) manifest.financials!.arv = leadRow.arv
+      if (!manifest.financials!.offer_amount && leadRow.offer_amount) manifest.financials!.offer_amount = leadRow.offer_amount
+      if (!manifest.financials!.repair_estimate && leadRow.repair_estimate) manifest.financials!.repair_estimate = leadRow.repair_estimate
+      if (!manifest.situation) manifest.situation = { type: [] } as any
+      if (!manifest.situation!.motivation) manifest.situation!.motivation = {} as any
+      if (!manifest.situation!.motivation!.score && leadRow.motivation_score) manifest.situation!.motivation!.score = leadRow.motivation_score
+      if (leadRow.station && leadRow.station !== manifest.currentStation) manifest.currentStation = leadRow.station
+    }
+
+    // Score for context (with hydrated data)
     const score = scoreOpportunity(manifest)
 
     // Generate signal (fire-and-forget per lead)
