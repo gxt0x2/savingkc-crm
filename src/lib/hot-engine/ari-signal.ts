@@ -148,6 +148,12 @@ function generateRuleBasedSignal(manifest: ManifestV2, score: HotScoreResult): A
     parts.push('under contract — heading to close')
   }
 
+  // Touchpoint context
+  const touchpoints = comms?.totalTouchpoints
+  if (touchpoints && touchpoints >= 5) {
+    parts.push(`${touchpoints} touchpoints logged`)
+  }
+
   if (score.factors.engagement >= 25) {
     const daysSince = score.rawInputs?.engagement?.daysSinceContact
     if (daysSince !== null && daysSince !== undefined && daysSince <= 2) {
@@ -155,6 +161,8 @@ function generateRuleBasedSignal(manifest: ManifestV2, score: HotScoreResult): A
     } else {
       parts.push('seller is actively engaged')
     }
+  } else if (comms?.outreachAttemptsSinceLastResponse && comms.outreachAttemptsSinceLastResponse >= 3) {
+    parts.push(`${comms.outreachAttemptsSinceLastResponse} outreach attempts without response`)
   }
 
   if (financials?.arv) {
@@ -213,10 +221,20 @@ function generateRuleBasedSignal(manifest: ManifestV2, score: HotScoreResult): A
       nextMove = 'Make initial contact — call or send intro text.'
     }
   } else if (['contacted', 'qualifying'].includes(station)) {
-    if (missingData.includes('ARV')) {
-      nextMove = 'Get the property address confirmed and pull comps for ARV.'
+    const attempts = comms?.outreachAttemptsSinceLastResponse || 0
+    const agent = manifest.assignedAgent
+    if (attempts >= 3) {
+      nextMove = agent
+        ? `${agent}: try a different approach — text or different time of day. ${attempts} calls without pickup.`
+        : `Try a different approach — text or different time of day. ${attempts} calls without pickup.`
+    } else if (missingData.includes('ARV')) {
+      nextMove = agent
+        ? `${agent}: get the property address confirmed and pull comps for ARV.`
+        : 'Get the property address confirmed and pull comps for ARV.'
     } else {
-      nextMove = 'Schedule a discovery call to understand their situation and timeline.'
+      nextMove = agent
+        ? `${agent}: schedule a discovery call to understand their situation and timeline.`
+        : 'Schedule a discovery call to understand their situation and timeline.'
     }
   } else if (['appointment', 'appt_set'].includes(station)) {
     nextMove = 'Prepare for appointment — review property details and pull comps before the call.'
