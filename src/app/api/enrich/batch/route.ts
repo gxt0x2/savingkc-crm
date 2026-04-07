@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET
   const authHeader = req.headers.get('authorization')
   if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    console.error('[enrich/batch] Auth failed. Has secret:', !!cronSecret, 'Header prefix:', authHeader?.slice(0, 15))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
