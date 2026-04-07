@@ -68,7 +68,7 @@ export async function PATCH(
     }
 
     const currentManifest = existing.manifest as ManifestV2
-    const leadId = (existing as any).lead_id as string | null
+    const leadId = (existing as any).lead_id as string
 
     // Deep merge updates and use updateManifestAndCascade
     const { agent: _agent, action: _action, details: _details, ...manifestUpdates } = updates
