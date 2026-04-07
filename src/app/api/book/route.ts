@@ -172,12 +172,13 @@ export async function POST(req: NextRequest) {
     if (leadId) {
       try {
         // Check if manifest already exists (from prospect-to-lead or existing lead)
-        const { data: existingManifest } = await supabase
+        const { data: existingManifests } = await supabase
           .from('manifests')
           .select('id')
           .eq('lead_id', leadId)
           .limit(1)
-          .single()
+
+        const existingManifest = existingManifests && existingManifests.length > 0 ? existingManifests[0] : null
 
         // Only create manifest if one doesn't exist
         let manifestData = existingManifest
