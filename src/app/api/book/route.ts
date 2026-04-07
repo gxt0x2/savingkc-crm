@@ -171,7 +171,9 @@ export async function POST(req: NextRequest) {
     // Ensure manifest exists (will find enriched one from prospect-to-lead if it exists)
     if (leadId) {
       try {
+        console.log('[BOOK] Calling ensureManifestExists for lead:', leadId)
         const manifestId = await ensureManifestExists(leadId)
+        console.log('[BOOK] ensureManifestExists returned:', manifestId)
         if (!manifestId) {
           console.error('[BOOK] Failed to ensure manifest for lead:', leadId)
         }
@@ -204,50 +206,19 @@ export async function POST(req: NextRequest) {
                 ...(county ? { county } : {}),
               }).eq('id', leadId)
             }
-
-            // Enrich manifest if county is available
-            if (county && state) {
-              manifest = await enrichManifestProperty(
-                manifest,
-                property_address.trim(),
-                city,
-                state,
-                zip,
-                county
-              )
-
-              // Score manifest
-              const { score, tier } = scoreManifest(manifest)
-
-              // Update manifest in Supabase (background, non-blocking)
-              await supabase
-                .from('manifests')
-                .update({
-                  manifest: manifest,
-                  qualification_score: score,
-                  tier: tier,
-                })
-                .eq('id', manifestData.id)
-            }
+            // Note: County enrichment now handled by auto-enrich.ts
           } catch (enrichErr) {
-            console.error('Manifest enrichment failed (non-critical):', enrichErr)
-            // Don't fail the booking
+            console.error('Address parsing failed (non-critical):', enrichErr)
           }
         }
-      } catch (manifestErr) {
-        console.error('Failed to create manifest (non-critical):', manifestErr)
-        // Don't fail the booking
-      }
-    }
-
-    // 🚨 CRITICAL: Populate pipeline.appointment in manifest (Sprint 1 - S1-03)
-    if (leadId) {
-      try {
+        // 🚨 CRITICAL: Populate pipeline.appointment in manifest (Sprint 1 - S1-03)
+        // This must run AFTER ensureManifestExists to avoid race condition
         const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
         const { randomUUID } = await import('crypto')
 
+        console.log('[BOOK] Calling updateManifestAndCascade for lead:', leadId)
         // Update manifest with appointment object
-        await updateManifestAndCascade(leadId, (manifest) => {
+        const updated = await updateManifestAndCascade(leadId, (manifest) => {
           manifest.pipeline.appointment = {
             appointmentId: randomUUID(),
             type: 'phone_call', // /call bookings are always phone calls
@@ -281,6 +252,7 @@ export async function POST(req: NextRequest) {
             },
           })
         }, 'booking:call_widget')
+        console.log('[BOOK] updateManifestAndCascade returned:', updated)
 
         // Create lead_activities record for calendar display
         await supabase.from('lead_activities').insert({
@@ -297,8 +269,8 @@ export async function POST(req: NextRequest) {
             status: 'scheduled',
           },
         })
-      } catch (apptErr) {
-        console.error('Failed to populate appointment in manifest (non-critical):', apptErr)
+      } catch (manifestErr) {
+        console.error('Failed to create/update manifest (non-critical):', manifestErr)
         // Don't fail the booking
       }
     }

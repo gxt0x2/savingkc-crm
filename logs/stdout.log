@@ -47,3 +47,25 @@ No recording URL for call mojo-activity-3645-17278486
 ✓ Ready in 132ms
 [push] Sent 4/4 notifications
 [push] Sent 4/4 notifications
+[push] Sent 6/6 notifications
+[push] Removing expired subscription: https://fcm.googleapis.com/fcm/send/fPpCViWwOEE:APA91bH5Q7qJ...
+[push] Sent 5/6 notifications
+[push] Sent 5/5 notifications
+[push] Sent 5/5 notifications
+▲ Next.js 16.2.1
+- Local:         http://localhost:3002
+- Network:       http://100.96.152.30:3002
+✓ Ready in 144ms
+[push] Sent 5/5 notifications
+[push] Sent 5/5 notifications
+▲ Next.js 16.2.1
+- Local:         http://localhost:3002
+- Network:       http://100.96.152.30:3002
+✓ Ready in 141ms
+[push] Sent 5/5 notifications
+▲ Next.js 16.2.1
+- Local:         http://localhost:3002
+- Network:       http://100.96.152.30:3002
+✓ Ready in 149ms
+[push] Sent 5/5 notifications
+[push] Sent 5/5 notifications

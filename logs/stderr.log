@@ -15,3 +15,48 @@ Error processing call: mojo-activity-1422-17278540 TypeError: Cannot read proper
     at async c (.next/server/chunks/_13row.m._.js:5:6446)
     at async s (.next/server/chunks/_13row.m._.js:5:7487)
     at async Module.I [as handler] (.next/server/chunks/_13row.m._.js:5:8594)
+Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
+    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
+    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
+    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
+  status: 400,
+  code: 21211,
+  moreInfo: 'https://www.twilio.com/docs/errors/21211',
+  details: undefined
+}
+Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
+    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
+    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
+    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
+  status: 400,
+  code: 21211,
+  moreInfo: 'https://www.twilio.com/docs/errors/21211',
+  details: undefined
+}
+Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
+    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
+    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
+    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
+  status: 400,
+  code: 21211,
+  moreInfo: 'https://www.twilio.com/docs/errors/21211',
+  details: undefined
+}
+Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
+    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
+    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
+    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
+  status: 400,
+  code: 21211,
+  moreInfo: 'https://www.twilio.com/docs/errors/21211',
+  details: undefined
+}
+Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
+    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
+    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
+    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
+  status: 400,
+  code: 21211,
+  moreInfo: 'https://www.twilio.com/docs/errors/21211',
+  details: undefined
+}

@@ -419,6 +419,16 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
     .single()
 
   if (error) {
+    // If duplicate key error (code 23505), another process created it - fetch and return
+    if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
+      console.log('[ensureManifestExists] Manifest already exists for lead', leadId, '- returning existing')
+      const { data: existing } = await supabase
+        .from('manifests')
+        .select('id')
+        .eq('lead_id', leadId)
+        .limit(1)
+      return existing && existing.length > 0 ? existing[0].id : null
+    }
     console.error('Failed to auto-create manifest for lead', leadId, error)
     return null
   }
