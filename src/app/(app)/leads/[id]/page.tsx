@@ -18,6 +18,7 @@ import { ThankYouCard } from '@/components/leads/thank-you-card'
 import { MailTracker } from '@/components/leads/mail-tracker'
 import { ContractModal } from '@/components/leads/contract-modal'
 import { AppointmentModal } from '@/components/leads/appointment-modal'
+import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { SellerGoals } from '@/components/leads/seller-goals'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
@@ -823,6 +824,7 @@ export default function LeadDetailPage() {
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [notesModalOpen, setNotesModalOpen] = useState(false)
+  const [smsModalOpen, setSmsModalOpen] = useState(false)
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
@@ -1335,7 +1337,7 @@ export default function LeadDetailPage() {
                 if (type === 'call') {
                   if (lead.phone) window.location.href = `tel:${lead.phone}`
                 } else if (type === 'sms') {
-                  window.location.href = `/conversations?lead=${id}`
+                  setSmsModalOpen(true)
                 } else if (type === 'email') {
                   if (lead.email) window.location.href = `mailto:${lead.email}`
                 }
@@ -1438,6 +1440,13 @@ export default function LeadDetailPage() {
           lead={lead}
           onClose={() => setAppointmentModalOpen(false)}
           onSuccess={() => { refreshAll() }}
+        />
+      )}
+      {smsModalOpen && lead.phone && (
+        <SmsComposeModal
+          lead={lead}
+          onClose={() => setSmsModalOpen(false)}
+          onSent={() => { refreshAll() }}
         />
       )}
       {notesModalOpen && (
