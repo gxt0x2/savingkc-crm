@@ -58,7 +58,7 @@ export async function POST(req: Request) {
   }
 
   // Ensure manifest exists (fire-and-forget)
-  if (resolvedLeadId) ensureManifestExists(resolvedLeadId).catch(() => {})
+  if (resolvedLeadId) ensureManifestExists(resolvedLeadId).catch(err => console.error('[MANIFEST] Failed:', err))
 
   // Log voicemail to lead_activities
   await supabase.from('lead_activities').insert({

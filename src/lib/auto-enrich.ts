@@ -54,17 +54,34 @@ export async function autoEnrichLead(leadId: string): Promise<void> {
 
     // 2. County enrichment by address
     if (lead.property_address) {
-      const county = lead.county
-        ? { county: lead.county, state: lead.state || 'MO' }
-        : detectCounty(lead.city, lead.state, lead.zip)
+      let city = lead.city
+      let state = lead.state
+      let zip = lead.zip
+      let county = lead.county
 
-      if (county) {
+      // Parse address for missing fields
+      if (!county || !state) {
+        const { parseAddressForCounty } = await import('./county-enrichment')
+        const parsed = parseAddressForCounty(lead.property_address)
+        if (parsed) {
+          city = city || parsed.city
+          state = state || parsed.state
+          zip = zip || parsed.zip
+          county = county || parsed.county
+        }
+      }
+
+      const countyObj = county
+        ? { county, state: state || 'MO' }
+        : detectCounty(city, state, zip)
+
+      if (countyObj) {
         promises.push(enrichFromCounty(leadId, {
           address: lead.property_address,
-          city: lead.city || undefined,
-          state: county.state,
-          zip: lead.zip || undefined,
-          county: county.county,
+          city: city || undefined,
+          state: countyObj.state,
+          zip: zip || undefined,
+          county: countyObj.county,
         }))
       }
     }

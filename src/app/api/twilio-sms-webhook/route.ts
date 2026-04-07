@@ -139,7 +139,7 @@ export async function POST(req: Request) {
 
     // Sync to manifest (fire-and-forget)
     if (leadId) {
-      onCommunicationEvent(leadId, { type: 'inbound_sms', content: messageBody }).catch(() => {})
+      onCommunicationEvent(leadId, { type: 'inbound_sms', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
     }
 
     // ── Team numbers: log + notify, but skip auto-reply/lead creation ──
@@ -276,7 +276,7 @@ export async function POST(req: Request) {
         })
 
         // Sync YES reply to manifest (high-intent signal)
-        onCommunicationEvent(yesLeadId, { type: 'yes_reply', content: messageBody }).catch(() => {})
+        onCommunicationEvent(yesLeadId, { type: 'yes_reply', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
       }
 
       // Reply to seller
@@ -511,8 +511,8 @@ export async function POST(req: Request) {
 
         if (newLeadId) {
           ensureManifestExists(newLeadId).then(() => {
-            onCommunicationEvent(newLeadId!, { type: 'inbound_sms', content: messageBody }).catch(() => {})
-          }).catch(() => {})
+            onCommunicationEvent(newLeadId!, { type: 'inbound_sms', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
+          }).catch(err => console.error('[MANIFEST] Failed:', err))
         }
       }
 

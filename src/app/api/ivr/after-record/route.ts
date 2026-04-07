@@ -58,7 +58,7 @@ export async function POST(req: Request) {
   }
 
   // Ensure manifest exists (fire-and-forget)
-  if (leadId) ensureManifestExists(leadId).catch(() => {})
+  if (leadId) ensureManifestExists(leadId).catch(err => console.error('[MANIFEST] Failed:', err))
 
   // Log the voicemail recording
   if (leadId) {

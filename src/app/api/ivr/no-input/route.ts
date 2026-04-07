@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     }
 
     // Ensure manifest exists (fire-and-forget)
-    if (noInputLeadId) ensureManifestExists(noInputLeadId).catch(() => {})
+    if (noInputLeadId) ensureManifestExists(noInputLeadId).catch(err => console.error('[MANIFEST] Failed:', err))
 
     // Log call (feeds spam counter for future calls)
     await supabase.from('lead_activities').insert({

@@ -1006,3 +1006,49 @@ export function detectCounty(city?: string, state?: string, zip?: string): { cou
   }
   return null
 }
+
+/**
+ * Parse a full address string to extract city, state, zip and detect county.
+ * Used when forms send a single address field without separate city/state/zip.
+ */
+export function parseAddressForCounty(address: string): {
+  city?: string; state?: string; zip?: string; county?: string;
+} | null {
+  if (!address) return null
+
+  let city: string | undefined
+  let state: string | undefined
+  let zip: string | undefined
+
+  // Match "City, ST 12345" or "City ST 12345" at end of address
+  const fullMatch = address.match(/,?\s*([A-Za-z\s]+?),?\s*(MO|KS|mo|ks)\s*(\d{5})?\s*$/)
+  if (fullMatch) {
+    city = fullMatch[1]?.trim()
+    state = fullMatch[2]?.toUpperCase()
+    zip = fullMatch[3]
+  } else {
+    const zipMatch = address.match(/(\d{5})\s*$/)
+    if (zipMatch) zip = zipMatch[1]
+    const stateMatch = address.match(/\b(MO|KS)\b/i)
+    if (stateMatch) state = stateMatch[1].toUpperCase()
+  }
+
+  // Fallback: detect known KC metro city names embedded in address
+  if (!city) {
+    const knownCities = [
+      'kansas city', 'independence', 'blue springs', 'raytown',
+      'grandview', 'liberty', 'kearney', 'smithville', 'excelsior springs',
+      'north kansas city', 'overland park', 'olathe', 'shawnee',
+      'lenexa', 'leawood', 'prairie village', 'merriam', 'gardner',
+      'bonner springs', 'edwardsville', "lee's summit", 'lees summit',
+      'gladstone', 'belton', 'raymore', 'peculiar', 'pleasant hill',
+    ]
+    const lower = address.toLowerCase()
+    for (const c of knownCities) {
+      if (lower.includes(c)) { city = c; break }
+    }
+  }
+
+  const detected = detectCounty(city, state, zip)
+  return { city, state: state || detected?.state, zip, county: detected?.county }
+}

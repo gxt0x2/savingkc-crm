@@ -115,7 +115,7 @@ export async function POST(req: Request) {
 
       // Sync to manifest (stale briefing + motivation signal)
       const eventType = (callStatus === 'no-answer' || callStatus === 'busy') ? 'missed_call' : 'inbound_call'
-      onCommunicationEvent(leadId, { type: eventType as any }).catch(() => {})
+      onCommunicationEvent(leadId, { type: eventType as any }).catch(err => console.error('[MANIFEST] Failed:', err))
     }
 
     // Missed call specific handling (no-answer or busy)
@@ -174,16 +174,33 @@ export async function POST(req: Request) {
           }
         })
       } else if (!leadId) {
-        // Unknown caller missed call — CREATE LEAD + MANIFEST, send text, alert agents
-        const { data: newLead } = await supabase.from('leads').insert({
-          full_name: `Missed Call (${from})`,
-          phone: from,
-          source: 'inbound_call',
-          station: 'intake',
-          priority: 'hot',
-        }).select('id').single()
+        // Unknown caller missed call — check prospects first
+        let newLeadId: string | null = null
 
-        const newLeadId = newLead?.id || null
+        const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
+        const { createEnrichedLeadFromProspect } = await import('@/lib/prospect-to-lead')
+
+        const prospectMatches = await lookupProspectByPhone(from)
+        if (prospectMatches.length > 0) {
+          newLeadId = await createEnrichedLeadFromProspect(
+            prospectMatches[0],
+            from,
+            'inbound_call',
+            'hot'
+          )
+        }
+
+        // If no prospect match, create bare lead
+        if (!newLeadId) {
+          const { data: newLead } = await supabase.from('leads').insert({
+            full_name: `Missed Call (${from})`,
+            phone: from,
+            source: 'inbound_call',
+            station: 'intake',
+            priority: 'hot',
+          }).select('id').single()
+          newLeadId = newLead?.id || null
+        }
 
         // Re-link the already-logged call activity to the new lead
         if (newLeadId) {
@@ -194,8 +211,8 @@ export async function POST(req: Request) {
 
           // Auto-create manifest + sync missed call signal
           ensureManifestExists(newLeadId).then(() => {
-            onCommunicationEvent(newLeadId, { type: 'missed_call' }).catch(() => {})
-          }).catch(() => {})
+            onCommunicationEvent(newLeadId, { type: 'missed_call' }).catch(err => console.error('[MANIFEST] Failed:', err))
+          }).catch(err => console.error('[MANIFEST] Failed:', err))
         }
 
         const unknownSmsBody = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`

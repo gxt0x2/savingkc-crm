@@ -38,14 +38,32 @@ export async function POST(req: Request) {
         leadId = existingLead.id
         await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
       } else {
-        const { data: newLead } = await supabase.from('leads').insert({
-          full_name: isColdCall ? `Cold Callback (${from})` : 'Inbound Seller',
-          phone: from,
-          source,
-          station: 'intake',
-          priority: 'hot',
-        }).select('id').single()
-        leadId = newLead?.id || ''
+        // Check prospects before creating bare lead
+        const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
+        const { createEnrichedLeadFromProspect } = await import('@/lib/prospect-to-lead')
+
+        const prospectMatches = await lookupProspectByPhone(from)
+        if (prospectMatches.length > 0) {
+          const createdId = await createEnrichedLeadFromProspect(
+            prospectMatches[0],
+            from,
+            isColdCall ? 'cold_call_callback' : 'inbound_ivr',
+            'hot'
+          )
+          if (createdId) leadId = createdId
+        }
+
+        // If no prospect match, create bare lead
+        if (!leadId) {
+          const { data: newLead } = await supabase.from('leads').insert({
+            full_name: isColdCall ? `Cold Callback (${from})` : 'Inbound Seller',
+            phone: from,
+            source,
+            station: 'intake',
+            priority: 'hot',
+          }).select('id').single()
+          leadId = newLead?.id || ''
+        }
       }
 
       await supabase.from('lead_activities').insert({
@@ -59,7 +77,7 @@ export async function POST(req: Request) {
       })
 
       // Ensure manifest exists (fire-and-forget)
-      if (leadId) ensureManifestExists(leadId).catch(() => {})
+      if (leadId) ensureManifestExists(leadId).catch(err => console.error('[MANIFEST] Failed:', err))
     }
 
     // Sim-ring both agents — first to answer gets connected

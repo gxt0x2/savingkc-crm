@@ -18,7 +18,7 @@ function getSupabase() {
 export async function createEnrichedLeadFromProspect(
   match: ProspectMatch,
   inboundPhone: string,
-  source: 'tax_delinquent_inbound_call' | 'tax_delinquent_inbound_sms',
+  source: 'tax_delinquent_inbound_call' | 'tax_delinquent_inbound_sms' | 'website_form' | 'youtube' | 'inbound_ivr' | 'cold_call_callback' | 'inbound_call',
   priority: 'hot' | 'warm',
 ): Promise<string | null> {
   const supabase = getSupabase()
@@ -180,7 +180,7 @@ export async function createEnrichedLeadFromProspect(
 
   // Fire communication event (async, non-blocking)
   const eventType = source.includes('call') ? 'inbound_call' : 'inbound_sms'
-  onCommunicationEvent(leadId, { type: eventType as any }).catch(() => {})
+  onCommunicationEvent(leadId, { type: eventType as any }).catch(err => console.error('[MANIFEST] Failed:', err))
 
   return leadId
 }

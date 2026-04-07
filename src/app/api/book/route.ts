@@ -89,24 +89,40 @@ export async function POST(req: NextRequest) {
     if (existingLead && existingLead.length > 0) {
       leadId = existingLead[0].id
     } else {
-      // Create new lead
-      const { data: newLead, error: leadError } = await supabase
-        .from('leads')
-        .insert({
-          full_name: first_name.trim(),
-          phone: normalizedPhone,
-          ...(property_address?.trim() ? { property_address: property_address.trim() } : {}),
-          source: 'website_form',
-          station: 'intake',
-          priority: 'hot',
-        })
-        .select('id')
-        .single()
+      // Check prospects before creating bare lead
+      const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
+      const { createEnrichedLeadFromProspect } = await import('@/lib/prospect-to-lead')
 
-      if (!leadError && newLead) {
-        leadId = newLead.id
-      } else {
-        console.error('Failed to create lead:', leadError)
+      const prospectMatches = await lookupProspectByPhone(normalizedPhone)
+      if (prospectMatches.length > 0) {
+        leadId = await createEnrichedLeadFromProspect(
+          prospectMatches[0],
+          normalizedPhone,
+          source === 'youtube' ? 'youtube' : 'website_form',
+          'hot'
+        )
+      }
+
+      // If no prospect match, create bare lead
+      if (!leadId) {
+        const { data: newLead, error: leadError } = await supabase
+          .from('leads')
+          .insert({
+            full_name: first_name.trim(),
+            phone: normalizedPhone,
+            ...(property_address?.trim() ? { property_address: property_address.trim() } : {}),
+            source: 'website_form',
+            station: 'intake',
+            priority: 'hot',
+          })
+          .select('id')
+          .single()
+
+        if (!leadError && newLead) {
+          leadId = newLead.id
+        } else {
+          console.error('Failed to create lead:', leadError)
+        }
       }
     }
 
@@ -186,18 +202,28 @@ export async function POST(req: NextRequest) {
         // Trigger enrichment if property_address is provided (non-blocking)
         if (manifestData?.id && property_address?.trim()) {
           try {
-            // Extract or detect county from address fields (if available from body)
-            const city = body.property_city
-            const state = body.property_state
-            const zip = body.property_zip
-            let county = body.property_county
+            // Parse address for county detection
+            const { parseAddressForCounty } = await import('@/lib/county-enrichment')
+            const parsed = parseAddressForCounty(property_address.trim())
 
-            // Detect county if not provided
+            const city = body.property_city || parsed?.city
+            const state = body.property_state || parsed?.state
+            const zip = body.property_zip || parsed?.zip
+            let county = body.property_county || parsed?.county
+
             if (!county && (city || state || zip)) {
               const detected = detectCounty(city, state, zip)
-              if (detected) {
-                county = detected.county
-              }
+              if (detected) county = detected.county
+            }
+
+            // Backfill city/state/zip/county on the lead record
+            if (leadId && (city || state || zip)) {
+              await supabase.from('leads').update({
+                ...(city ? { city } : {}),
+                ...(state ? { state } : {}),
+                ...(zip ? { zip } : {}),
+                ...(county ? { county } : {}),
+              }).eq('id', leadId)
             }
 
             // Enrich manifest if county is available

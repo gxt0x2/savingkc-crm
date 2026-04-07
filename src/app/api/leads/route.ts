@@ -28,27 +28,78 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { name, address, phone, email, source } = body
 
-    const { data, error } = await supabase
-      .from('leads')
-      .insert({
-        full_name: name,
-        property_address: address,
-        phone,
-        email,
-        source: source || 'website_form',
-        station: 'intake',
-        priority: 'normal',
-      })
-      .select('id')
-      .single()
+    let leadId: string | null = null
 
-    if (error) {
-      console.error('Supabase insert error:', error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+    // Normalize phone
+    const normalizedPhone = phone ? phone.replace(/\D/g, '').replace(/^1/, '') : null
+
+    // Check if lead already exists by phone
+    if (normalizedPhone) {
+      const { data: existingLead } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('phone', `+1${normalizedPhone}`)
+        .single()
+
+      if (existingLead) {
+        leadId = existingLead.id
+      }
+    }
+
+    // If no existing lead, check prospects
+    if (!leadId && normalizedPhone) {
+      const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
+      const { createEnrichedLeadFromProspect } = await import('@/lib/prospect-to-lead')
+
+      const prospectMatches = await lookupProspectByPhone(`+1${normalizedPhone}`)
+      if (prospectMatches.length > 0) {
+        leadId = await createEnrichedLeadFromProspect(
+          prospectMatches[0],
+          `+1${normalizedPhone}`,
+          source || 'website_form',
+          'warm'
+        )
+      }
+    }
+
+    // If still no lead, create bare lead
+    if (!leadId) {
+      // Parse address for county detection
+      let city, state, zip, county
+      if (address) {
+        const { parseAddressForCounty } = await import('@/lib/county-enrichment')
+        const parsed = parseAddressForCounty(address)
+        if (parsed) { city = parsed.city; state = parsed.state; zip = parsed.zip; county = parsed.county }
+      }
+
+      const { data, error } = await supabase
+        .from('leads')
+        .insert({
+          full_name: name,
+          property_address: address,
+          phone: normalizedPhone ? `+1${normalizedPhone}` : null,
+          email,
+          source: source || 'website_form',
+          station: 'intake',
+          priority: 'normal',
+          ...(city ? { city } : {}),
+          ...(state ? { state } : {}),
+          ...(zip ? { zip } : {}),
+          ...(county ? { county } : {}),
+        })
+        .select('id')
+        .single()
+
+      if (error) {
+        console.error('Supabase insert error:', error)
+        return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+      }
+
+      leadId = data.id
     }
 
     // Create manifest (fire-and-forget)
-    if (data?.id) ensureManifestExists(data.id).catch(() => {})
+    if (leadId) ensureManifestExists(leadId).catch(err => console.error('[MANIFEST] Failed:', err))
 
     const smsText = `🔔 New website lead: ${name} | ${address} | ${phone}`
 
@@ -65,7 +116,7 @@ export async function POST(req: NextRequest) {
       }),
     ])
 
-    return NextResponse.json({ success: true, leadId: data.id }, { headers: corsHeaders })
+    return NextResponse.json({ success: true, leadId }, { headers: corsHeaders })
   } catch (err) {
     console.error('leads route error:', err)
     return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500, headers: corsHeaders })
