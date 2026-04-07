@@ -342,13 +342,24 @@ async function rerankTopN(overrideCooldown?: boolean): Promise<number> {
     // Must have score >= 33 (meaningful data threshold)
     if (row.composite_score < 33) return false
 
-    // Quality gate: intake leads need SOME signal of value to be on hot list
-    // Favorited, warm/hot priority, or financials all qualify
     const ri = row.raw_inputs || {}
+    const hasUserSignal = ri.isFavorite || ri.priorityHot || ri.priorityWarm
+
+    // Long-shot and not-scored leads don't belong on the hot list
+    // unless the user explicitly marked them (favorite/hot/warm)
+    if (['long_shot', 'not_scored'].includes(row.tier_label) && !hasUserSignal) return false
+
+    // Quality gate: intake leads need SOME signal of value to be on hot list
     const station = ri.velocity?.currentStation || ''
     const hasFinancials = ri.dealQuality?.arv || ri.dealQuality?.spread
-    const hasUserSignal = ri.isFavorite || ri.priorityHot || ri.priorityWarm
     if (['intake', 'new'].includes(station) && !hasFinancials && !hasUserSignal) return false
+
+    // Require at least SOME real engagement or user signal — don't fill slots with bare leads
+    const hasEngagement = row.engagement_score > 5
+    const hasTimePressure = row.time_pressure_score > 5
+    const hasDealQuality = row.deal_quality_score > 8
+    const hasRealSignal = hasEngagement || hasTimePressure || hasDealQuality || hasUserSignal
+    if (!hasRealSignal) return false
 
     // Check cooldown (favorites override cooldown — user starred means they want to see it)
     if (!overrideCooldown && !ri.isFavorite && row.cooldown_until) {
