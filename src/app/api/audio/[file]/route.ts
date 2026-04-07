@@ -4,8 +4,8 @@ import path from 'path'
 
 const ALLOWED = new Set(['ivr-greeting.mp3', 'ivr-press1.mp3', 'ivr-no-answer.mp3', 'ivr-voicemail.mp3', 'us-ringback.wav'])
 
-export async function GET(req: Request, { params }: { params: { file: string } }) {
-  const file = params.file
+export async function GET(req: Request, { params }: { params: Promise<{ file: string }> }) {
+  const { file } = await params
   if (!ALLOWED.has(file)) {
     return new NextResponse('Not found', { status: 404 })
   }
