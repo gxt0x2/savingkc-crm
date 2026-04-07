@@ -168,51 +168,15 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Create manifest (don't fail booking if this fails)
+    // Ensure manifest exists (will find enriched one from prospect-to-lead if it exists)
     if (leadId) {
       try {
-        // Check if manifest already exists (from prospect-to-lead or existing lead)
-        const { data: existingManifests } = await supabase
-          .from('manifests')
-          .select('id')
-          .eq('lead_id', leadId)
-          .limit(1)
-
-        const existingManifest = existingManifests && existingManifests.length > 0 ? existingManifests[0] : null
-
-        // Only create manifest if one doesn't exist
-        let manifestData = existingManifest
-        if (!existingManifest) {
-          let manifest = buildManifest({
-            firstName: first_name.trim(),
-            phone: normalizedPhone,
-            propertyAddress: property_address?.trim(),
-            source: source === 'youtube' ? 'youtube' : 'website_form',
-            bookingId: booking.id,
-            leadId,
-            slotDate: slot_date,
-            slotTime: slot_time,
-            station: 'intake',
-            priority: 'hot',
-          })
-
-          const { data: newManifest } = await supabase
-            .from('manifests')
-            .insert({
-              lead_id: leadId,
-              booking_id: booking.id,
-              version: manifest.version,
-              manifest: manifest,
-              current_station: manifest.currentStation,
-            priority: manifest.priority,
-            tier: manifest.tier,
-            qualification_score: manifest.qualificationScore,
-          })
-          .select('id')
-          .single()
-
-          manifestData = newManifest
+        const manifestId = await ensureManifestExists(leadId)
+        if (!manifestId) {
+          console.error('[BOOK] Failed to ensure manifest for lead:', leadId)
         }
+
+        const manifestData = manifestId ? { id: manifestId } : null
 
         // Trigger enrichment if property_address is provided (non-blocking)
         if (manifestData?.id && property_address?.trim()) {
