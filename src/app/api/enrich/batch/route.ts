@@ -8,8 +8,6 @@ const supabase = createClient(
 )
 
 const BATCH_SIZE = 3 // concurrent leads per batch (county scrapers are slow)
-const CRON_SECRET = process.env.CRON_SECRET
-
 /**
  * POST /api/enrich/batch — Force re-enrich all leads
  *
@@ -26,8 +24,9 @@ const CRON_SECRET = process.env.CRON_SECRET
  */
 export async function POST(req: NextRequest) {
   // Auth check
+  const cronSecret = process.env.CRON_SECRET
   const authHeader = req.headers.get('authorization')
-  if (!CRON_SECRET || authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
