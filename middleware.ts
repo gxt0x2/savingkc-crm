@@ -10,6 +10,7 @@ const WEBHOOK_PREFIXES = [
   '/api/twilio-missed-call',
   '/api/twiml-voice',
   '/api/ivr/',
+  '/api/audio/',
   '/api/mojo/',
   '/api/deploy',
   '/api/book',
