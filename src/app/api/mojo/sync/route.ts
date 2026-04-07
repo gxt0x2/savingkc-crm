@@ -660,6 +660,17 @@ export async function POST(req: NextRequest) {
 
           updated++
         } else {
+          // Guard: only create NEW leads for meaningful dispositions
+          // No answer, voicemail, hung up, dead, not interested = skip new lead creation
+          const meaningfulOutcomes = new Set([
+            'callback_scheduled', 'meaningful_conversation', 'appointment_set',
+          ])
+          if (!meaningfulOutcomes.has(dispositionMap.outcome)) {
+            // Non-meaningful call to unknown contact — skip, don't pollute the CRM
+            skipped++
+            continue
+          }
+
           // Create new manifest
           const manifestInput = {
             firstName,

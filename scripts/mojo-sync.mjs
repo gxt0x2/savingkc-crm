@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 /**
- * Mojo Sync Script v2
- * Pulls call activity from Mojo's activity-stream API, syncs to CRM manifests.
- * Runs every 15 minutes (8am-5pm M-F) via cron.
+ * Mojo Sync Script v3
+ * Pulls call activity from Mojo's activity-stream API, syncs ONLY meaningful
+ * conversations to CRM manifests.
  *
- * v1 used call-recording-report-data (only returned recorded calls — always empty).
- * v2 uses home/activity-stream which captures all call notes, dispositions, and lead qualifications.
+ * MEANINGFUL = Casey had a real conversation and dispositioned to:
+ *   - "Follow Up" (group 7)
+ *   - "Appointment Set" (group 4)
+ *   - Qualified as lead (type 30)
+ *   - Notes with substantial seller intel (timeline, price, motivation, condition)
+ *
+ * NON-MEANINGFUL (skipped — no lead created):
+ *   - No answer, voicemail, hung up, dead lead, not yet interested, trash, busy
+ *
+ * Runs every 15 minutes (8am-5pm M-F) via cron.
  */
 
 import fs from 'fs'
@@ -19,19 +27,12 @@ const LOG_DIR = '/Users/ernestdodson/.openclaw/workspace/memory/logs'
 const LOG_FILE = path.join(LOG_DIR, 'mojo-sync.log')
 
 // Mojo activity type codes
-const ACTIVITY_NOTE = 3         // "created note on" — call notes with phone + outcome
-const ACTIVITY_DIAL_SESSION = 8 // "ended dial session" — session summary stats
-const ACTIVITY_GROUP = 11       // "assigned contact to group" — disposition
-const ACTIVITY_LEAD = 30        // "qualified as lead" — lead qualification
+const ACTIVITY_NOTE = 3
+const ACTIVITY_GROUP = 11
+const ACTIVITY_LEAD = 30
 
-// Mojo group → CRM disposition mapping
-const GROUP_DISPOSITION = {
-  'appointment set': { outcome: 'appointment_set', priority: 'hot', alertErnest: true },
-  'follow up':       { outcome: 'callback_scheduled', priority: 'warm' },
-  'not yet interested': { outcome: 'not_interested', priority: 'cold' },
-  'dead lead':       { outcome: 'not_interested', priority: 'cold', isDead: true },
-  'trash':           { outcome: 'dead', priority: 'cold', isDead: true },
-}
+// Groups that indicate a meaningful conversation happened
+const MEANINGFUL_GROUPS = new Set(['follow up', 'appointment set'])
 
 // Ensure log directory exists
 if (!fs.existsSync(LOG_DIR)) {
@@ -133,65 +134,66 @@ async function fetchActivityStream(sessionId, page = 1) {
   return data.activities || []
 }
 
-// --- Parse activities into call records ---
+// --- Parse helpers ---
 
 /**
- * Extract phone number from the first line of Casey's notes.
- * Pattern: "816-547-6163\ncontact and hung up 04/06"
+ * Extract phone number from Casey's notes.
+ * Casey puts the phone on the first line: "816-547-6163\ncontact and hung up"
+ * Also check anywhere in the note for phone patterns.
  */
 function extractPhone(noteContent) {
   if (!noteContent) return ''
-  const match = noteContent.match(/^(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})/)
-  return match ? match[1].replace(/[-.\s]/g, '') : ''
+  // First line phone pattern
+  const firstLine = noteContent.match(/^(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})/)
+  if (firstLine) return firstLine[1].replace(/[-.\s]/g, '')
+  // Anywhere in content
+  const anywhere = noteContent.match(/(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})/)
+  if (anywhere) return anywhere[1].replace(/[-.\s]/g, '')
+  return ''
 }
 
 /**
- * Infer disposition from note content when no group assignment exists.
+ * Check if notes contain meaningful seller intel.
+ * Casey writes structured notes for real conversations:
+ *   Timeline: 30-60 days
+ *   Condition: good shape, some flooding
+ *   Price: 160-185k
+ *   Motivation: wants a clean slate
  */
-function inferDisposition(noteContent) {
-  if (!noteContent) return 'Unknown'
+function hasSellerIntel(noteContent) {
+  if (!noteContent) return false
   const lower = noteContent.toLowerCase()
 
-  // Meaningful conversation indicators (detailed notes with structured info)
+  // Structured intel keywords Casey uses
   if (lower.includes('timeline:') || lower.includes('motivation:') ||
       lower.includes('price:') || lower.includes('condition:') ||
-      lower.includes('wants to sell') || lower.includes('asking price') ||
-      lower.includes('appointment') || lower.includes('follow up') ||
-      lower.includes('callback')) {
-    return 'Interested'
+      lower.includes('asking price') || lower.includes('wants to sell') ||
+      lower.includes('appointment set') || lower.includes('rent back') ||
+      lower.includes('equity') || lower.includes('foreclosure') ||
+      lower.includes('inherited') || lower.includes('probate')) {
+    return true
   }
 
-  if (lower.includes('wrong number')) return 'Wrong Number'
-  if (lower.includes('disconnected')) return 'Disconnected'
-  if (lower.includes('do not call') || lower.includes('dnc')) return 'DNC Request'
-  if (lower.includes('already sold') || lower.includes('sold')) return 'Already Sold'
-  if (lower.includes('listed') || lower.includes('with agent') || lower.includes('realtor')) return 'Listed'
-  if (lower.includes('not interested') || lower.includes('hung up')) return 'Not Interested'
-  if (lower.includes('left message') || lower.includes('left vm') || lower.includes('voicemail')) return 'Voicemail'
-  if (lower.includes('no contact') || lower.includes('no answer')) return 'No Answer'
-  if (lower.includes('busy')) return 'Busy'
-
-  // If there's substantial text (more than just phone + short note), it's likely meaningful
+  // Substantial free-form notes (not just "no contact 04/06")
   const lines = noteContent.split('\n').filter(l => l.trim())
-  if (lines.length > 2 && noteContent.length > 100) {
-    return 'Interested'
+  const textLength = noteContent.replace(/^\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n?/, '').trim().length
+  if (lines.length >= 3 && textLength > 80) {
+    return true
   }
 
-  return 'Contact Made'
+  return false
 }
 
 /**
- * Parse the Mojo activity timestamp "04/06/2026 01:40 PM" into ISO string
+ * Parse Mojo timestamp "04/06/2026 01:40 PM" to ISO string
  */
 function parseMojoTimestamp(ts) {
   try {
-    // "MM/DD/YYYY HH:MM AM/PM" → Date
     const [datePart, timePart, ampm] = ts.split(' ')
     const [month, day, year] = datePart.split('/')
     let [hours, minutes] = timePart.split(':').map(Number)
     if (ampm === 'PM' && hours !== 12) hours += 12
     if (ampm === 'AM' && hours === 12) hours = 0
-    // Mojo times are in Central time
     const d = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00-05:00`)
     return d.toISOString()
   } catch {
@@ -200,16 +202,14 @@ function parseMojoTimestamp(ts) {
 }
 
 /**
- * Process raw activity entries into grouped call records per contact.
- * Returns MojoCallRecord-compatible objects.
+ * Process activities into MEANINGFUL call records only.
  */
 function buildCallRecords(activities, lastActivityId) {
-  // Filter to only new activities (newer than last processed)
   const newActivities = activities
     .filter(a => a[0] > lastActivityId)
-    .sort((a, b) => a[0] - b[0]) // oldest first
+    .sort((a, b) => a[0] - b[0])
 
-  if (newActivities.length === 0) return { calls: [], maxId: lastActivityId }
+  if (newActivities.length === 0) return { calls: [], skippedCount: 0, maxId: lastActivityId }
 
   // Group by contact_id
   const contactMap = new Map()
@@ -217,7 +217,7 @@ function buildCallRecords(activities, lastActivityId) {
   for (const activity of newActivities) {
     const [activityId, type, agentName, timestamp, details] = activity
     const contactId = details?.contact_id
-    if (!contactId) continue // skip dial-session summaries without contact
+    if (!contactId) continue
 
     if (!contactMap.has(contactId)) {
       contactMap.set(contactId, {
@@ -228,7 +228,6 @@ function buildCallRecords(activities, lastActivityId) {
         activityIds: [],
         phone: '',
         notes: '',
-        disposition: '',
         groupName: '',
         isQualifiedLead: false,
       })
@@ -236,23 +235,13 @@ function buildCallRecords(activities, lastActivityId) {
 
     const entry = contactMap.get(contactId)
     entry.activityIds.push(activityId)
-
-    // Use the most recent timestamp
-    if (activityId > Math.max(...entry.activityIds.slice(0, -1), 0)) {
-      entry.timestamp = timestamp
-    }
+    entry.timestamp = timestamp
 
     switch (type) {
       case ACTIVITY_NOTE: {
         const content = details.contents || ''
-        // Extract phone from first line if we don't have one
-        if (!entry.phone) {
-          entry.phone = extractPhone(content)
-        }
-        // Append notes (keep the most detailed one)
-        if (content.length > entry.notes.length) {
-          entry.notes = content
-        }
+        if (!entry.phone) entry.phone = extractPhone(content)
+        if (content.length > entry.notes.length) entry.notes = content
         break
       }
       case ACTIVITY_GROUP: {
@@ -267,49 +256,44 @@ function buildCallRecords(activities, lastActivityId) {
     }
   }
 
-  // Convert grouped entries to MojoCallRecord format
+  // Filter to MEANINGFUL only, then convert to call records
   const calls = []
+  let skippedCount = 0
+
   for (const [contactId, entry] of contactMap) {
-    // Determine disposition: group assignment takes priority, then infer from notes
-    let disposition = 'Unknown'
-    if (entry.groupName) {
-      // Use group name directly — the CRM's mapDisposition handles matching
-      const groupLower = entry.groupName.toLowerCase()
-      if (groupLower.includes('appointment')) disposition = 'Appointment Set'
-      else if (groupLower.includes('follow up')) disposition = 'Callback Requested'
-      else if (groupLower.includes('not yet interested')) disposition = 'Not Interested'
-      else if (groupLower.includes('dead')) disposition = 'Not Interested'
-      else if (groupLower.includes('trash')) disposition = 'Not Interested'
-      else disposition = entry.groupName
-    } else {
-      disposition = inferDisposition(entry.notes)
+    const groupLower = entry.groupName.toLowerCase()
+
+    // === MEANINGFUL CHECK ===
+    const isMeaningfulGroup = MEANINGFUL_GROUPS.has(groupLower)
+    const isMeaningfulNotes = hasSellerIntel(entry.notes)
+    const isMeaningful = entry.isQualifiedLead || isMeaningfulGroup || isMeaningfulNotes
+
+    if (!isMeaningful) {
+      skippedCount++
+      continue
     }
 
-    // Strip phone number from notes (it's redundant — just the first line)
+    // Map disposition
+    let disposition = 'Interested'
+    if (groupLower.includes('appointment')) disposition = 'Appointment Set'
+    else if (groupLower.includes('follow up')) disposition = 'Callback Requested'
+
+    // Clean notes — strip phone from first line
     let cleanNotes = entry.notes
-    const phoneInNotes = extractPhone(entry.notes)
-    if (phoneInNotes) {
+    if (extractPhone(entry.notes)) {
       cleanNotes = entry.notes.replace(/^\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n?/, '').trim()
-    }
-
-    // If this was qualified as a lead AND has substantial notes, treat as meaningful
-    if (entry.isQualifiedLead && disposition === 'Callback Requested') {
-      // Keep as callback but ensure it gets flagged
-    }
-    if (entry.isQualifiedLead && disposition === 'Unknown') {
-      disposition = 'Interested'
     }
 
     const call = {
       record_id: `mojo-activity-${contactId}-${entry.activityIds[0]}`,
       contact_name: entry.contactName,
       phone_number: entry.phone,
-      property_address: '', // Not available from activity stream — CRM matches by phone
+      property_address: '',
       city: '',
       state: '',
       zip: '',
       call_date: parseMojoTimestamp(entry.timestamp),
-      call_duration: 0, // Not available from activity stream
+      call_duration: 0,
       disposition,
       agent_name: entry.agentName,
       notes: cleanNotes,
@@ -318,23 +302,19 @@ function buildCallRecords(activities, lastActivityId) {
       recording_url: '',
     }
 
-    // Only include entries that have a phone OR are meaningful (qualified lead / group assigned)
-    if (call.phone_number || entry.isQualifiedLead || entry.groupName) {
-      calls.push(call)
-    }
+    calls.push(call)
   }
 
   const maxId = Math.max(...newActivities.map(a => a[0]), lastActivityId)
-  return { calls, maxId }
+  return { calls, skippedCount, maxId }
 }
 
 // --- Main sync ---
 
 async function sync() {
-  log('Starting Mojo sync (v2 — activity-stream)...')
+  log('Starting Mojo sync (v3 — meaningful only)...')
 
   try {
-    // Step 1: Session
     const session = readSession()
     if (!session?.sessionId) {
       log('No valid session found. Run session extraction first.')
@@ -344,19 +324,18 @@ async function sync() {
     log(`Using session: ${session.sessionId.substring(0, 20)}...`)
     await pushSessionToCRM(session.sessionId)
 
-    // Step 2: Read last-processed state
     const state = readState()
     log(`Last processed activity ID: ${state.lastActivityId}`)
 
-    // Step 3: Fetch activity stream (page 1 covers recent activity)
+    // Fetch activity stream
     log('Fetching activity stream page 1...')
     let activities = await fetchActivityStream(session.sessionId, 1)
     log(`Got ${activities.length} activities from page 1`)
 
-    // If all activities are new (we might need page 2 for catch-up)
-    if (activities.length > 0) {
+    // Catch-up: if all page 1 activities are new, also fetch page 2
+    if (activities.length > 0 && state.lastActivityId > 0) {
       const oldestOnPage = Math.min(...activities.map(a => a[0]))
-      if (oldestOnPage > state.lastActivityId && state.lastActivityId > 0) {
+      if (oldestOnPage > state.lastActivityId) {
         log('All page 1 activities are new — fetching page 2 for catch-up...')
         try {
           const page2 = await fetchActivityStream(session.sessionId, 2)
@@ -370,39 +349,35 @@ async function sync() {
       }
     }
 
-    // Step 4: Build call records from new activities
-    const { calls, maxId } = buildCallRecords(activities, state.lastActivityId)
-    log(`Built ${calls.length} call records from new activities`)
+    // Build MEANINGFUL call records only
+    const { calls, skippedCount, maxId } = buildCallRecords(activities, state.lastActivityId)
+    log(`Built ${calls.length} meaningful calls, skipped ${skippedCount} non-meaningful`)
 
     if (calls.length === 0) {
-      // Still update state even if no calls — so we track position
       if (maxId > state.lastActivityId) {
         writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })
-        log(`Updated state: lastActivityId=${maxId} (no calls to sync)`)
+        log(`Updated state: lastActivityId=${maxId}`)
       }
-      log('No new calls to sync')
+      log('No meaningful calls to sync')
       return { ok: true, processed: 0 }
     }
 
-    // Log meaningful conversations for visibility
-    const meaningful = calls.filter(c =>
-      ['Interested', 'Appointment Set', 'Callback Requested'].includes(c.disposition) ||
-      c.notes.length > 100
-    )
-    if (meaningful.length > 0) {
-      log(`🔥 ${meaningful.length} meaningful conversation(s):`)
-      for (const c of meaningful) {
-        log(`   → ${c.contact_name} (${c.phone_number || 'no phone'}) — ${c.disposition}`)
+    // Log what we're syncing
+    for (const c of calls) {
+      log(`  → ${c.contact_name} (${c.phone_number || 'no phone'}) — ${c.disposition}`)
+      if (c.notes) {
+        const preview = c.notes.substring(0, 120).replace(/\n/g, ' ')
+        log(`    Notes: ${preview}${c.notes.length > 120 ? '...' : ''}`)
       }
     }
 
-    // Step 5: POST to CRM
-    log(`Posting ${calls.length} calls to CRM...`)
+    // POST to CRM
+    log(`Posting ${calls.length} meaningful calls to CRM...`)
     const crmResponse = await fetch(CRM_API_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ calls }),
-      signal: AbortSignal.timeout(120000), // 2 min — Phase 2 intelligence takes time
+      signal: AbortSignal.timeout(120000),
     })
 
     if (!crmResponse.ok) {
@@ -413,7 +388,7 @@ async function sync() {
     const crmResult = await crmResponse.json()
     log(`CRM sync: processed=${crmResult.processed}, created=${crmResult.created}, updated=${crmResult.updated}, skipped=${crmResult.skipped}, alerts=${crmResult.alerts_sent}`)
 
-    // Step 6: Update state
+    // Update state
     writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })
     log(`Updated state: lastActivityId=${maxId}`)
 
@@ -424,7 +399,6 @@ async function sync() {
   }
 }
 
-// Run
 sync()
   .then((result) => {
     if (result.ok) {
