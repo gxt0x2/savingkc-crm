@@ -80,41 +80,27 @@ export async function checkAutoAdvance(
     return { advanced: false }
   }
 
-  // Write to MANIFEST first (single source of truth)
-  // The manifest saveManifest() cascade will sync to leads table automatically.
-  const { data: manifestRow } = await supabase
-    .from('manifests')
-    .select('id, manifest')
-    .eq('lead_id', leadId)
-    .limit(1)
-    .single()
+  // Use updateManifestAndCascade for proper Hot Engine sync
+  const { updateManifestAndCascade } = await import('./manifest-sync')
 
-  if (manifestRow?.manifest) {
-    const manifest = manifestRow.manifest as any
+  const cascaded = await updateManifestAndCascade(leadId, (manifest: any) => {
     manifest.currentStation = newStation
-    manifest.lastUpdated = new Date().toISOString()
-    manifest.lastUpdatedBy = 'system:pipeline'
 
-    // Mark the manifest pipeline stage as completed
     const stageMap: Record<string, string> = {
-      contacted: 'qualifying',
-      qualified: 'discovery',
-      offer_made: 'offer',
-      under_contract: 'contract',
-      closed: 'closed',
+      contacted: 'qualifying', qualified: 'discovery',
+      offer_made: 'offer', under_contract: 'contract', closed: 'closed',
     }
     const manifestStage = stageMap[newStation]
     if (manifestStage && manifest.pipeline?.[manifestStage]) {
       manifest.pipeline[manifestStage].status = 'completed'
       manifest.pipeline[manifestStage].completedAt = new Date().toISOString()
-      manifest.pipeline[manifestStage].enteredAt = manifest.pipeline[manifestStage].enteredAt || new Date().toISOString()
+      manifest.pipeline[manifestStage].enteredAt =
+        manifest.pipeline[manifestStage].enteredAt || new Date().toISOString()
     }
 
-    // Mark briefing as stale so Ari regenerates
     if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
     manifest.ariIntelligence.briefingStale = true
 
-    // Audit trail
     if (!manifest.auditTrail) manifest.auditTrail = []
     manifest.auditTrail.push({
       timestamp: new Date().toISOString(),
@@ -122,31 +108,11 @@ export async function checkAutoAdvance(
       action: 'station_advanced',
       details: { from: current, to: newStation, trigger },
     })
+  }, 'system:pipeline')
 
-    // Save manifest — this cascades station/priority to leads table
-    await supabase
-      .from('manifests')
-      .update({
-        manifest,
-        current_station: manifest.currentStation,
-        priority: manifest.priority,
-        tier: manifest.tier,
-        qualification_score: manifest.qualificationScore,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', manifestRow.id)
-
-    // Cascade: sync derived fields to leads table
-    await supabase
-      .from('leads')
-      .update({ station: newStation })
-      .eq('id', leadId)
-  } else {
-    // No manifest exists — fall back to direct leads update
-    await supabase
-      .from('leads')
-      .update({ station: newStation })
-      .eq('id', leadId)
+  if (!cascaded) {
+    // No manifest exists — fallback to direct leads update
+    await supabase.from('leads').update({ station: newStation }).eq('id', leadId)
   }
 
   // Log the transition as activity

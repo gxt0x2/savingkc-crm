@@ -190,10 +190,27 @@ async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, 
 
   if (manifest?.id) {
     try {
-      await supabase.from('manifests').update({
-        ai_call_analysis: analysis,
-        last_call_transcript: transcript,
-      }).eq('id', manifest.id)
-    } catch {}
+      const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
+      await updateManifestAndCascade(leadId, (manifest: any) => {
+        if (!manifest.communications) manifest.communications = { transcripts: [] }
+        manifest.communications.transcripts.push({
+          id: `call-${Date.now()}`,
+          date: new Date().toISOString(),
+          duration: 0,
+          agent: 'System',
+          recordingUrl: null,
+          fullTranscript: transcript,
+          aiSummary: analysis?.summary || analysis?.aiSummary || null,
+          extractedData: analysis ? {
+            motivationScore: analysis.motivation_score,
+            sentiment: analysis.sentiment,
+          } : null,
+        })
+        if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+        manifest.ariIntelligence.briefingStale = true
+      }, 'ivr:call_analysis')
+    } catch (err) {
+      console.error('[ivr/voicemail-recording] Manifest cascade failed:', err)
+    }
   }
 }

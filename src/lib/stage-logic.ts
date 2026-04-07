@@ -498,6 +498,25 @@ export async function advanceLeadStage(
     return { success: false, errors: [updateError.message] }
   }
 
+  // Cascade to manifest
+  try {
+    const { updateManifestAndCascade } = await import('./manifest-sync')
+    await updateManifestAndCascade(leadId, (manifest: any) => {
+      manifest.currentStation = targetStage
+      if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+      manifest.ariIntelligence.briefingStale = true
+      if (!manifest.auditTrail) manifest.auditTrail = []
+      manifest.auditTrail.push({
+        timestamp: new Date().toISOString(),
+        agent: changedBy,
+        action: 'station_changed',
+        details: { from: fromStage, to: targetStage, method, reason },
+      })
+    }, `stage_logic:${method}`)
+  } catch (err) {
+    console.error('[stage-logic] Manifest cascade failed:', err)
+  }
+
   // Log transition in stage_transitions table (we'll create this)
   await supabase.from('stage_transitions').insert({
     lead_id: leadId,
@@ -545,6 +564,25 @@ async function executeStageAutoActions(leadId: string, stage: StageId) {
         .from('leads')
         .update({ priority: 'hot' })
         .eq('id', leadId)
+
+      // Cascade to manifest
+      try {
+        const { updateManifestAndCascade } = await import('./manifest-sync')
+        await updateManifestAndCascade(leadId, (manifest: any) => {
+          manifest.priority = 'hot'
+          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+          manifest.ariIntelligence.briefingStale = true
+          if (!manifest.auditTrail) manifest.auditTrail = []
+          manifest.auditTrail.push({
+            timestamp: new Date().toISOString(),
+            agent: 'stage_logic:auto_action',
+            action: 'priority_changed',
+            details: { reason: 'offer_made_stage' },
+          })
+        }, 'stage_logic:offer_made')
+      } catch (err) {
+        console.error('[stage-logic] Manifest cascade failed:', err)
+      }
       break
 
     case 'closed':
@@ -596,6 +634,27 @@ export async function migrateLeadsWithoutStage(): Promise<{
 
   if (error) {
     return { updated: 0, errors: [error.message] }
+  }
+
+  // Cascade to manifests for all updated leads
+  try {
+    const { updateManifestAndCascade } = await import('./manifest-sync')
+    for (const lead of leadsWithoutStage) {
+      await updateManifestAndCascade(lead.id, (manifest: any) => {
+        manifest.currentStation = 'new'
+        if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+        manifest.ariIntelligence.briefingStale = true
+        if (!manifest.auditTrail) manifest.auditTrail = []
+        manifest.auditTrail.push({
+          timestamp: new Date().toISOString(),
+          agent: 'stage_logic:migration',
+          action: 'station_initialized',
+          details: { reason: 'migration_without_stage' },
+        })
+      }, 'stage_logic:migration')
+    }
+  } catch (err) {
+    console.error('[stage-logic] Manifest cascade failed during migration:', err)
   }
 
   return { updated: leadsWithoutStage.length, errors: [] }

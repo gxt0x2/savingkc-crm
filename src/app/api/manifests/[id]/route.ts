@@ -70,63 +70,40 @@ export async function PATCH(
     const currentManifest = existing.manifest as ManifestV2
     const leadId = (existing as any).lead_id as string | null
 
-    // Deep merge updates into manifest (preserves nested sibling keys)
+    // Deep merge updates and use updateManifestAndCascade
     const { agent: _agent, action: _action, details: _details, ...manifestUpdates } = updates
-    const updatedManifest: ManifestV2 = deepMerge(currentManifest, manifestUpdates)
-    updatedManifest.lastUpdated = new Date().toISOString()
-    updatedManifest.lastUpdatedBy = updates.agent || 'system'
-    updatedManifest.auditTrail = [
-      ...(currentManifest.auditTrail || []),
-      {
+
+    const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
+
+    const cascaded = await updateManifestAndCascade(leadId, (manifest: any) => {
+      // Apply deep merge
+      const merged = deepMerge(manifest, manifestUpdates)
+      Object.assign(manifest, merged)
+
+      manifest.lastUpdated = new Date().toISOString()
+      manifest.lastUpdatedBy = updates.agent || 'system'
+
+      if (!manifest.auditTrail) manifest.auditTrail = []
+      manifest.auditTrail.push({
         timestamp: new Date().toISOString(),
         agent: updates.agent || 'system',
         action: updates.action || 'manifest_updated',
         details: updates.details,
-      },
-    ]
-    // Mark briefing stale on any manifest update
-    if (!updatedManifest.ariIntelligence) updatedManifest.ariIntelligence = {}
-    updatedManifest.ariIntelligence.briefingStale = true
-
-    // Save manifest to manifests table
-    const { data, error } = await supabase
-      .from('manifests')
-      .update({
-        manifest: updatedManifest,
-        current_station: updatedManifest.currentStation,
-        priority: updatedManifest.priority,
-        tier: updatedManifest.tier,
-        qualification_score: updatedManifest.qualificationScore,
-        updated_at: new Date().toISOString(),
       })
-      .eq('id', id)
-      .select('id, manifest')
-      .single()
 
-    if (error) {
-      console.error('Manifest update error:', error)
-      return NextResponse.json(
-        { error: 'Failed to update manifest' },
-        { status: 500 }
-      )
+      if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+      manifest.ariIntelligence.briefingStale = true
+    }, updates.agent || 'api:manifests_patch')
+
+    if (!cascaded) {
+      return NextResponse.json({ error: 'Manifest not found' }, { status: 404 })
     }
 
-    // CASCADE: Sync derived fields to leads table (manifest → leads)
-    if (leadId) {
-      const leadUpdate: Record<string, any> = {}
-      if (updatedManifest.currentStation) leadUpdate.station = updatedManifest.currentStation
-      if (updatedManifest.priority) leadUpdate.priority = updatedManifest.priority
-      const motivationScore = updatedManifest.situation?.motivation?.score
-      if (motivationScore && motivationScore >= 1) leadUpdate.motivation_score = motivationScore
-      if (Object.keys(leadUpdate).length > 0) {
-        await supabase.from('leads').update(leadUpdate).eq('id', leadId)
-      }
-    }
+    // Fetch and return updated manifest
+    const { data: result } = await supabase
+      .from('manifests').select('manifest').eq('id', id).single()
 
-    return NextResponse.json({
-      success: true,
-      manifest: data.manifest,
-    })
+    return NextResponse.json({ success: true, manifest: result?.manifest })
   } catch (err) {
     console.error('Manifest PATCH error:', err)
     return NextResponse.json(

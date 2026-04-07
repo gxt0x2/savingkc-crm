@@ -462,13 +462,28 @@ export async function checkTriggerEventsForPhase3Leads(): Promise<string[]> {
         triggeredLeads.push(enrollment.lead_id)
 
         // Move lead back to Stage 1 (New) with "Recycled" source
-        await supabase
-          .from('leads')
-          .update({
-            station: 'new',
-            source: 'Ghost Protocol - Trigger Event',
-          })
-          .eq('id', enrollment.lead_id)
+        try {
+          const { updateManifestAndCascade } = await import('./manifest-sync')
+          const cascaded = await updateManifestAndCascade(enrollment.lead_id, (manifest: any) => {
+            manifest.currentStation = 'new'
+            manifest.lastUpdatedBy = 'ghost_protocol:trigger_event'
+            if (!manifest.auditTrail) manifest.auditTrail = []
+            manifest.auditTrail.push({
+              timestamp: new Date().toISOString(), agent: 'ghost_protocol',
+              action: 'lead_recycled', details: { reason: 'trigger_event_detected' },
+            })
+            if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+            manifest.ariIntelligence.briefingStale = true
+          }, 'ghost_protocol:recycle')
+
+          if (!cascaded) {
+            await supabase.from('leads')
+              .update({ station: 'new', source: 'Ghost Protocol - Trigger Event' })
+              .eq('id', enrollment.lead_id)
+          }
+        } catch (err) {
+          console.error('[ghost-protocol] Manifest cascade failed:', err)
+        }
 
         // Cancel ghost protocol
         await supabase

@@ -56,91 +56,44 @@ export async function POST(req: NextRequest) {
  * Update manifest with enrichment data
  */
 async function updateManifest(manifestId: string, enrichment: any) {
-  // Fetch existing manifest
-  const { data: existing, error: fetchError } = await supabase
-    .from('manifests')
-    .select('manifest')
-    .eq('id', manifestId)
-    .single()
+  const { data: row } = await supabase
+    .from('manifests').select('lead_id').eq('id', manifestId).single()
+  if (!row?.lead_id) throw new Error('Manifest not found or has no lead_id')
 
-  if (fetchError || !existing) {
-    throw new Error('Manifest not found')
-  }
-
-  const currentManifest = existing.manifest as ManifestV2
-
-  // Build updated property section
-  const updatedProperty = {
-    ...currentManifest.property,
-  }
-
-  // Update assessment
-  if (enrichment.appraisedValue || enrichment.assessedValue || enrichment.landValue || enrichment.improvementValue) {
-    updatedProperty.assessment = {
-      ...currentManifest.property.assessment,
-      totalValue: enrichment.appraisedValue || currentManifest.property.assessment?.totalValue,
-      landValue: enrichment.landValue || currentManifest.property.assessment?.landValue,
-      improvementValue: enrichment.improvementValue || currentManifest.property.assessment?.improvementValue,
+  const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
+  const cascaded = await updateManifestAndCascade(row.lead_id, (manifest: any) => {
+    if (enrichment.appraisedValue || enrichment.assessedValue || enrichment.landValue || enrichment.improvementValue) {
+      manifest.property.assessment = {
+        ...manifest.property.assessment,
+        totalValue: enrichment.appraisedValue || manifest.property.assessment?.totalValue,
+        landValue: enrichment.landValue || manifest.property.assessment?.landValue,
+        improvementValue: enrichment.improvementValue || manifest.property.assessment?.improvementValue,
+      }
     }
-  }
-
-  // Update dwelling
-  if (enrichment.sqft || enrichment.bedrooms || enrichment.bathrooms || enrichment.yearBuilt) {
-    updatedProperty.dwelling = {
-      ...currentManifest.property.dwelling,
-      sqft: enrichment.sqft || currentManifest.property.dwelling?.sqft,
-      bedrooms: enrichment.bedrooms || currentManifest.property.dwelling?.bedrooms,
-      bathrooms: enrichment.bathrooms || currentManifest.property.dwelling?.bathrooms,
-      yearBuilt: enrichment.yearBuilt || currentManifest.property.dwelling?.yearBuilt,
-      style: enrichment.propertyType || currentManifest.property.dwelling?.style,
+    if (enrichment.sqft || enrichment.bedrooms || enrichment.bathrooms || enrichment.yearBuilt) {
+      manifest.property.dwelling = {
+        ...manifest.property.dwelling,
+        sqft: enrichment.sqft || manifest.property.dwelling?.sqft,
+        bedrooms: enrichment.bedrooms || manifest.property.dwelling?.bedrooms,
+        bathrooms: enrichment.bathrooms || manifest.property.dwelling?.bathrooms,
+        yearBuilt: enrichment.yearBuilt || manifest.property.dwelling?.yearBuilt,
+        style: enrichment.propertyType || manifest.property.dwelling?.style,
+      }
     }
-  }
-
-  // Update parcel
-  if (enrichment.parcelId) {
-    updatedProperty.parcel = enrichment.parcelId
-  }
-
-  // Update taxCollector (if we have tax data)
-  if (enrichment.taxOwed !== undefined) {
-    updatedProperty.taxCollector = {
-      ...currentManifest.property.taxCollector,
-      delinquentAmount: enrichment.taxOwed,
+    if (enrichment.parcelId) manifest.property.parcel = enrichment.parcelId
+    if (enrichment.taxOwed !== undefined) {
+      manifest.property.taxCollector = {
+        ...manifest.property.taxCollector, delinquentAmount: enrichment.taxOwed,
+      }
     }
-  }
-
-  // Build updated manifest
-  const now = new Date().toISOString()
-  const updatedManifest: ManifestV2 = {
-    ...currentManifest,
-    property: updatedProperty,
-    lastUpdated: now,
-    lastUpdatedBy: 'system:enrichment',
-    auditTrail: [
-      ...(currentManifest.auditTrail || []),
-      {
-        timestamp: now,
-        agent: 'system:enrichment',
-        action: 'county_enrichment_complete',
-        details: {
-          county: enrichment.county,
-          source: enrichment.source,
-          result: 'success',
-        },
-      },
-    ],
-  }
-
-  // Update in Supabase
-  const { error: updateError } = await supabase
-    .from('manifests')
-    .update({
-      manifest: updatedManifest,
-      updated_at: now,
+    manifest.auditTrail.push({
+      timestamp: new Date().toISOString(), agent: 'system:enrichment',
+      action: 'county_enrichment_complete',
+      details: { county: enrichment.county, source: enrichment.source, result: 'success' },
     })
-    .eq('id', manifestId)
+    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+    manifest.ariIntelligence.briefingStale = true
+  }, 'api:enrich')
 
-  if (updateError) {
-    throw new Error(`Manifest update failed: ${updateError.message}`)
-  }
+  if (!cascaded) throw new Error('Manifest cascade failed')
 }
