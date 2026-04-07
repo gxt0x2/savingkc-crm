@@ -171,33 +171,47 @@ export async function POST(req: NextRequest) {
     // Create manifest (don't fail booking if this fails)
     if (leadId) {
       try {
-        let manifest = buildManifest({
-          firstName: first_name.trim(),
-          phone: normalizedPhone,
-          propertyAddress: property_address?.trim(),
-          source: source === 'youtube' ? 'youtube' : 'website_form',
-          bookingId: booking.id,
-          leadId,
-          slotDate: slot_date,
-          slotTime: slot_time,
-          station: 'intake',
-          priority: 'hot',
-        })
-
-        const { data: manifestData } = await supabase
+        // Check if manifest already exists (from prospect-to-lead or existing lead)
+        const { data: existingManifest } = await supabase
           .from('manifests')
-          .insert({
-            lead_id: leadId,
-            booking_id: booking.id,
-            version: manifest.version,
-            manifest: manifest,
-            current_station: manifest.currentStation,
+          .select('id')
+          .eq('lead_id', leadId)
+          .limit(1)
+          .single()
+
+        // Only create manifest if one doesn't exist
+        let manifestData = existingManifest
+        if (!existingManifest) {
+          let manifest = buildManifest({
+            firstName: first_name.trim(),
+            phone: normalizedPhone,
+            propertyAddress: property_address?.trim(),
+            source: source === 'youtube' ? 'youtube' : 'website_form',
+            bookingId: booking.id,
+            leadId,
+            slotDate: slot_date,
+            slotTime: slot_time,
+            station: 'intake',
+            priority: 'hot',
+          })
+
+          const { data: newManifest } = await supabase
+            .from('manifests')
+            .insert({
+              lead_id: leadId,
+              booking_id: booking.id,
+              version: manifest.version,
+              manifest: manifest,
+              current_station: manifest.currentStation,
             priority: manifest.priority,
             tier: manifest.tier,
             qualification_score: manifest.qualificationScore,
           })
           .select('id')
           .single()
+
+          manifestData = newManifest
+        }
 
         // Trigger enrichment if property_address is provided (non-blocking)
         if (manifestData?.id && property_address?.trim()) {
