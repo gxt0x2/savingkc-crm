@@ -825,6 +825,7 @@ export default function LeadDetailPage() {
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [notesModalOpen, setNotesModalOpen] = useState(false)
   const [smsModalOpen, setSmsModalOpen] = useState(false)
+  const [composeTab, setComposeTab] = useState<'sms' | 'email'>('sms')
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
@@ -1337,9 +1338,11 @@ export default function LeadDetailPage() {
                 if (type === 'call') {
                   if (lead.phone) window.location.href = `tel:${lead.phone}`
                 } else if (type === 'sms') {
+                  setComposeTab('sms')
                   setSmsModalOpen(true)
                 } else if (type === 'email') {
-                  if (lead.email) window.location.href = `mailto:${lead.email}`
+                  setComposeTab('email')
+                  setSmsModalOpen(true)
                 }
               }}
             />
@@ -1442,11 +1445,12 @@ export default function LeadDetailPage() {
           onSuccess={() => { refreshAll() }}
         />
       )}
-      {smsModalOpen && lead.phone && (
+      {smsModalOpen && (lead.phone || lead.email) && (
         <SmsComposeModal
           lead={lead}
           onClose={() => setSmsModalOpen(false)}
           onSent={() => { refreshAll() }}
+          initialTab={composeTab}
         />
       )}
       {notesModalOpen && (
