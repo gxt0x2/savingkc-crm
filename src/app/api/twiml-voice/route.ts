@@ -3,6 +3,12 @@ import { NextResponse } from 'next/server'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
+// Outbound caller ID per agent identity
+const AGENT_CALLER_IDS: Record<string, string> = {
+  ernest: '+18166088588',
+  casey:  '+18167277667',
+}
+
 // Cold call outbound dialing numbers — callbacks get a different IVR
 const COLD_CALL_NUMBERS = new Set([
   '+18163100845',
@@ -30,9 +36,13 @@ export async function POST(req: Request) {
       return new NextResponse(errorTwiml, { headers: { 'Content-Type': 'text/xml' } })
     }
 
+    // Use agent's company number as caller ID (from=client:ernest or client:casey)
+    const identity = from.replace('client:', '').toLowerCase()
+    const callerId = AGENT_CALLER_IDS[identity] || TWILIO_PHONE
+
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${TWILIO_PHONE}" timeout="15" record="record-from-answer-dual">
+  <Dial callerId="${callerId}" timeout="15" record="record-from-answer-dual">
     <Number>${sanitizedTo}</Number>
   </Dial>
 </Response>`
