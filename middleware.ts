@@ -29,6 +29,7 @@ const WEBHOOK_PREFIXES = [
   '/api/leads/appointment-outcome',
   '/api/dashboard/appointment-stats',
   '/api/hot-opportunities',
+  '/api/enrich/',
 ]
 
 export async function middleware(request: NextRequest) {

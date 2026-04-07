@@ -8,9 +8,12 @@ const supabase = createClient(
 )
 
 const BATCH_SIZE = 3 // concurrent leads per batch (county scrapers are slow)
+const CRON_SECRET = process.env.CRON_SECRET
 
 /**
  * POST /api/enrich/batch — Force re-enrich all leads
+ *
+ * Auth: Bearer $CRON_SECRET
  *
  * Runs prospect lookup + county assessor on every lead with an address or phone,
  * OVERWRITING existing data. Updates manifests, re-scores, marks ARI stale,
@@ -22,6 +25,12 @@ const BATCH_SIZE = 3 // concurrent leads per batch (county scrapers are slow)
  *   { "dry_run": true }        — just return count of leads that would be processed
  */
 export async function POST(req: NextRequest) {
+  // Auth check
+  const authHeader = req.headers.get('authorization')
+  if (!CRON_SECRET || authHeader !== `Bearer ${CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const body = await req.json()
 
