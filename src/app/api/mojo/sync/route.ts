@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import twilio from 'twilio'
 import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
@@ -8,15 +7,11 @@ import type { ManifestV2, ManifestContact, TranscriptEntry, ManifestAgentNote, M
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID!,
-  process.env.TWILIO_AUTH_TOKEN!
 )
 
 interface MojoCallRecord {
@@ -117,7 +112,7 @@ async function sendAlert(name: string, address: string, disposition: string, sco
   const smsText = `🔥 Hot lead from Casey: ${name} at ${address} — ${disposition}.${scoreText}`
 
   try {
-    await twilioClient.messages.create({
+    await safeSendSMS({
       body: smsText,
       from: process.env.TWILIO_PHONE_NUMBER!,
       to: process.env.ERNEST_PHONE!,

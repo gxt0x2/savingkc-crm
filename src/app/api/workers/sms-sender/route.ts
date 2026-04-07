@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { getTemplate, resolveTemplate, incrementUsage } from '@/lib/sms-templates'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const CRON_SECRET = process.env.CRON_SECRET
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
@@ -50,10 +51,6 @@ export async function POST(request: Request) {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    const twilio = require('twilio')(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
     )
 
     // Query pending SMS tasks that are due
@@ -125,7 +122,7 @@ export async function POST(request: Request) {
 
       // Send SMS
       try {
-        const msg = await twilio.messages.create({
+        const msg = await safeSendSMS({
           body: smsBody,
           from: TWILIO_PHONE,
           to: phone,

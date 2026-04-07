@@ -1,19 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import twilio from 'twilio'
 import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
 import { sendPushToAgents } from '@/lib/push-notifications'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID!,
-  process.env.TWILIO_AUTH_TOKEN!
 )
 
 // Random delay to make auto-texts feel human
@@ -293,7 +288,7 @@ export async function POST(req: NextRequest) {
     // Send confirmation SMS to seller (delayed 15-30s to feel natural, not robotic)
     const confirmationBody = `Hi ${first_name.trim()}! Your call with Saving KC Homebuyers is confirmed for ${formattedDate} at ${displayTime} CT. We'll call you at ${normalizedPhone}. Questions? Call (816) 429-2900.`
     sendDelayed(async () => {
-      await twilioClient.messages.create({
+      await safeSendSMS({
         body: confirmationBody,
         from: process.env.TWILIO_PHONE_NUMBER!,
         to: normalizedPhone,
@@ -311,7 +306,7 @@ export async function POST(req: NextRequest) {
     // Send alert SMS to Casey (delayed 30-60s)
     const alertBody = `📅 New call booked: ${first_name.trim()}${property_address?.trim() ? ` at ${property_address.trim()}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${normalizedPhone}`
     sendDelayed(async () => {
-      await twilioClient.messages.create({
+      await safeSendSMS({
         body: alertBody,
         from: process.env.TWILIO_PHONE_NUMBER!,
         to: process.env.CASEY_PHONE || '+18167564943',

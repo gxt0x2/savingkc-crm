@@ -4,12 +4,12 @@ import { getAgentRouting } from '@/lib/agent-routing'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
@@ -69,8 +69,8 @@ export async function POST(req: Request) {
     // Alert both agents
     const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${from} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${leadId}`
     await Promise.allSettled([
-      twilio.messages.create({ body: missedMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
-      twilio.messages.create({ body: missedMsg, from: TWILIO_PHONE, to: routing.secondary.phone }),
+      safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
+      safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.secondary.phone }),
     ])
 
     // Log missed call
@@ -113,7 +113,7 @@ export async function POST(req: Request) {
       const isDupe = await isDuplicateSms(from, autoText)
       if (!isDupe) {
         sendDelayed(async () => {
-          await twilio.messages.create({ body: autoText, from: calledNumber || TWILIO_PHONE, to: from })
+          await safeSendSMS({ body: autoText, from: calledNumber || TWILIO_PHONE, to: from })
           await logSmsSend(from, autoText, calledNumber || TWILIO_PHONE, leadId)
           await supabase.from('lead_activities').insert({
             lead_id: leadId,

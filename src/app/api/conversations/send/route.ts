@@ -1,19 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import twilio from 'twilio'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID!,
-  process.env.TWILIO_AUTH_TOKEN!
 )
 
 const DEFAULT_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
@@ -75,12 +70,10 @@ export async function POST(req: Request) {
         }
       }
       if (!effectiveFrom) effectiveFrom = DEFAULT_TWILIO_PHONE
-      const useMessagingService = false // Always use direct number for consistency
 
-      const msg = await twilioClient.messages.create({
+      const msg = await safeSendSMS({
         body: body.trim(),
-        from: useMessagingService ? undefined : effectiveFrom,
-        messagingServiceSid: useMessagingService ? TWILIO_MESSAGING_SERVICE : undefined,
+        from: effectiveFrom,
         to: phone,
       })
 

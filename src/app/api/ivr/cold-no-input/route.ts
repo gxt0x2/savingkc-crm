@@ -4,12 +4,12 @@ import { isOptedOut } from '@/lib/sms-opt-out'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
 import { updateManifestAndCascade } from '@/lib/manifest-sync'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
     const isDupe = await isDuplicateSms(from, autoText)
     if (!isDupe) {
       sendDelayed(async () => {
-        await twilio.messages.create({ body: autoText, from: calledNumber, to: from })
+        await safeSendSMS({ body: autoText, from: calledNumber, to: from })
         await logSmsSend(from, autoText, calledNumber, leadId || undefined)
         if (leadId) {
           await supabase.from('lead_activities').insert({

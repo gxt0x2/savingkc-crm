@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import twilio from 'twilio'
 import { isOptedOut, handleOptOut, handleOptIn, isStopKeyword, isStartKeyword } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
@@ -10,15 +9,11 @@ import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect, formatProspectAlert } from '@/lib/prospect-to-lead'
 import type { ProspectMatch } from '@/lib/prospect-lookup'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID!,
-  process.env.TWILIO_AUTH_TOKEN!
 )
 
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
@@ -226,8 +221,8 @@ export async function POST(req: Request) {
       const primaryAgent = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
       const secondaryAgent = isOfficeHours() ? ERNEST_PHONE : CASEY_PHONE
       await Promise.allSettled([
-        twilioClient.messages.create({ body: yesAlertBody, from: TWILIO_PHONE, to: primaryAgent }),
-        twilioClient.messages.create({ body: yesAlertBody, from: TWILIO_PHONE, to: secondaryAgent }),
+        safeSendSMS({ body: yesAlertBody, from: TWILIO_PHONE, to: primaryAgent }),
+        safeSendSMS({ body: yesAlertBody, from: TWILIO_PHONE, to: secondaryAgent }),
       ])
 
       // Push notification
@@ -472,8 +467,8 @@ export async function POST(req: Request) {
     if (lead && lead.priority === 'hot') {
       const hotAlertBody = `📩 ${leadName} (hot lead) just texted: "${messageBody.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`
       await Promise.allSettled([
-        twilioClient.messages.create({ body: hotAlertBody, from: TWILIO_PHONE, to: CASEY_PHONE }),
-        twilioClient.messages.create({ body: hotAlertBody, from: TWILIO_PHONE, to: ERNEST_PHONE }),
+        safeSendSMS({ body: hotAlertBody, from: TWILIO_PHONE, to: CASEY_PHONE }),
+        safeSendSMS({ body: hotAlertBody, from: TWILIO_PHONE, to: ERNEST_PHONE }),
       ])
       sendPushToAgents({
         title: 'Hot Lead Texted',
@@ -529,8 +524,8 @@ export async function POST(req: Request) {
           ? `🔥 TAX PROSPECT texted! ${prospectMatch.owner_1 || from}: "${messageBody.slice(0, 60)}"${unknownProspectCtx}\n${BASE_URL}/leads/${newLeadId}`
           : `📩 New text from unknown number ${from}: "${messageBody.slice(0, 80)}" ${BASE_URL}/leads/${newLeadId}`
         await Promise.allSettled([
-          twilioClient.messages.create({ body: smsAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
-          twilioClient.messages.create({ body: smsAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
+          safeSendSMS({ body: smsAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
+          safeSendSMS({ body: smsAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
         ])
 
         // Log the alert
@@ -603,7 +598,7 @@ export async function POST(req: Request) {
         const isDupe = await isDuplicateSms(from, autoReplyMsg)
         if (!isDupe) {
           sendDelayed(async () => {
-            await twilioClient.messages.create({ body: autoReplyMsg, from: replyFrom, to: from })
+            await safeSendSMS({ body: autoReplyMsg, from: replyFrom, to: from })
             await logSmsSend(from, autoReplyMsg, replyFrom, newLeadId || undefined)
             if (newLeadId) {
               await supabase.from('lead_activities').insert({

@@ -5,12 +5,12 @@ import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { ensureManifestExists } from '@/lib/manifest-sync'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
@@ -81,8 +81,8 @@ export async function POST(req: Request) {
   // Alert both agents
   const urgentMsg = `[URGENT] Inbound seller voicemail from ${from}. Recording: ${recordingUrl}${leadId ? '\n' + BASE_URL + '/leads/' + leadId : ''}\nCall back NOW.`
   await Promise.allSettled([
-    twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
-    twilio.messages.create({ body: urgentMsg, from: TWILIO_PHONE, to: routing.secondary.phone }),
+    safeSendSMS({ body: urgentMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
+    safeSendSMS({ body: urgentMsg, from: TWILIO_PHONE, to: routing.secondary.phone }),
   ])
 
   // Create callback task

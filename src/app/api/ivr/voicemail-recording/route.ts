@@ -5,12 +5,12 @@ import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { ensureManifestExists } from '@/lib/manifest-sync'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
 
 const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
@@ -82,14 +82,14 @@ export async function POST(req: Request) {
 
   if (agentPhone) {
     try {
-      await twilio.messages.create({ body: vmMsg, from: TWILIO_PHONE, to: agentPhone })
+      await safeSendSMS({ body: vmMsg, from: TWILIO_PHONE, to: agentPhone })
     } catch (e) {
       console.error(`Voicemail SMS notification to ${agent} failed:`, e)
     }
   } else {
     await Promise.allSettled([
-      twilio.messages.create({ body: vmMsg, from: TWILIO_PHONE, to: CASEY_PHONE }),
-      twilio.messages.create({ body: vmMsg, from: TWILIO_PHONE, to: ERNEST_PHONE }),
+      safeSendSMS({ body: vmMsg, from: TWILIO_PHONE, to: CASEY_PHONE }),
+      safeSendSMS({ body: vmMsg, from: TWILIO_PHONE, to: ERNEST_PHONE }),
     ])
   }
 
