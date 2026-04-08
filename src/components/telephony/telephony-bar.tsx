@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { formatPhone } from '@/lib/format'
+import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { DispositionModal, DispositionType } from './disposition-modal'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
@@ -102,6 +104,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
   // Recent calls
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
 
+  // Caller ID display
+  const [callerIdDisplay, setCallerIdDisplay] = useState<string>('')
+
   // Disposition
   const [showDisposition, setShowDisposition] = useState(false)
   const lastCallPhoneRef = useRef<string>('')
@@ -146,7 +151,8 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
       const res = await fetch('/api/twilio-token')
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      const { token } = data
+      const { token, callerId: cid } = data
+      if (cid) setCallerIdDisplay(cid)
       log('token received')
 
       const device = new Device(token, { logLevel: 1 })
@@ -161,6 +167,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
           const refreshData = await refreshRes.json()
           if (refreshData.token) {
             device.updateToken(refreshData.token)
+            if (refreshData.callerId) setCallerIdDisplay(refreshData.callerId)
             log('token refreshed')
           }
         } catch (e) {
@@ -646,6 +653,12 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
                   className="w-full bg-white/5 text-white placeholder-white/30 rounded-lg pl-10 pr-4 py-3 text-lg font-mono tracking-wider border border-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all"
                 />
               </div>
+              {callerIdDisplay && (
+                <div className="flex items-center justify-center gap-1.5 text-[10px] text-white/40 font-medium">
+                  <Icon name="phone_forwarded" size="text-xs" />
+                  <span>Calling from: {TWILIO_NUMBERS.find(n => n.value === callerIdDisplay)?.label || formatPhone(callerIdDisplay)}</span>
+                </div>
+              )}
               <button
                 onClick={makeCall}
                 disabled={!dialNumber.trim() || status === 'connecting'}

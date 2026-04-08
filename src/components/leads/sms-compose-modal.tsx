@@ -61,13 +61,19 @@ interface ComposeModalProps {
 export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: ComposeModalProps) {
   const { user } = useAuth()
   const agentName = getAgentFromEmail(user?.email)
-  const agentDefaultPhone = getDefaultFromPhone(user?.email)
 
   const [activeTab, setActiveTab] = useState<'sms' | 'email'>(initialTab)
   const [messages, setMessages] = useState<Activity[]>([])
   const [message, setMessage] = useState('')
-  const [fromPhone, setFromPhone] = useState<string>(agentDefaultPhone)
+  const [fromPhone, setFromPhone] = useState<string>(AGENT_DEFAULT_NUMBERS.ernest)
   const [fromPhoneOverridden, setFromPhoneOverridden] = useState(false)
+
+  // ── Set default from-number once auth loads ──
+  useEffect(() => {
+    if (user?.email && !fromPhoneOverridden) {
+      setFromPhone(getDefaultFromPhone(user.email))
+    }
+  }, [user?.email, fromPhoneOverridden])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
