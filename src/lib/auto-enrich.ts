@@ -118,8 +118,14 @@ export async function autoEnrichLead(leadId: string): Promise<void> {
         }
       }
 
+      // Determine correct state — Kansas counties need 'KS', not default 'MO'
+      const kansasCounties = ['johnson', 'wyandotte', 'leavenworth', 'miami', 'douglas']
+      const inferredState = state
+        || (county && kansasCounties.includes(county.toLowerCase()) ? 'KS' : null)
+        || 'MO'
+
       const countyObj = county
-        ? { county, state: state || 'MO' }
+        ? { county, state: inferredState }
         : detectCounty(city, state, zip)
 
       if (countyObj) {
