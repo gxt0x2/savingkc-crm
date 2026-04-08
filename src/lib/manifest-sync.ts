@@ -383,7 +383,14 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
     .eq('lead_id', leadId)
     .limit(1)
 
-  if (existing && existing.length > 0) return existing[0].id
+  if (existing && existing.length > 0) {
+    // Manifest exists - trigger auto-enrich in case it hasn't run yet
+    console.log('[ensureManifestExists] Manifest exists, triggering autoEnrichLead for lead', leadId)
+    autoEnrichLead(leadId).catch(err =>
+      console.error('[auto-enrich] Background enrichment failed for lead', leadId, err)
+    )
+    return existing[0].id
+  }
 
   // Fetch the lead to build a manifest
   const { data: lead } = await supabase
@@ -434,6 +441,7 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
   }
 
   // Fire-and-forget: auto-enrich from prospect lookup + county assessor
+  console.log('[ensureManifestExists] Triggering autoEnrichLead for lead', leadId)
   autoEnrichLead(leadId).catch(err =>
     console.error('[auto-enrich] Background enrichment failed for lead', leadId, err)
   )

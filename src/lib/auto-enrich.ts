@@ -29,6 +29,7 @@ function getSupabase() {
  * Runs prospect lookup + county enrichment, updates manifest with results.
  */
 export async function autoEnrichLead(leadId: string): Promise<void> {
+  console.log('[auto-enrich] Starting for lead', leadId)
   try {
     const supabase = getSupabase()
 
@@ -39,21 +40,56 @@ export async function autoEnrichLead(leadId: string): Promise<void> {
       .eq('id', leadId)
       .single()
 
-    if (!lead) return
+    if (!lead) {
+      console.log('[auto-enrich] Lead not found:', leadId)
+      return
+    }
+    console.log('[auto-enrich] Lead data:', { phone: lead.phone, address: lead.property_address, source: lead.source })
 
     // Skip if lead came from prospect path (already enriched)
-    if (lead.source?.startsWith('tax_delinquent_')) return
+    if (lead.source?.startsWith('tax_delinquent_')) {
+      console.log('[auto-enrich] Skipping - lead from prospect path (already enriched)')
+      return
+    }
+
+    // Check if already enriched by looking at manifest audit trail
+    const { data: manifest } = await supabase
+      .from('manifests')
+      .select('manifest')
+      .eq('lead_id', leadId)
+      .single()
+
+    if (manifest?.manifest?.auditTrail) {
+      const hasProspectEnrichment = manifest.manifest.auditTrail.some((e: any) =>
+        e.action === 'prospect_enrichment_complete' || e.agent === 'system:auto_enrich_prospect'
+      )
+      const hasCountyEnrichment = manifest.manifest.auditTrail.some((e: any) =>
+        e.action === 'county_enrichment_complete' || e.agent === 'system:auto_enrich_county'
+      )
+
+      if (hasProspectEnrichment && hasCountyEnrichment) {
+        console.log('[auto-enrich] Skipping - already enriched (found both prospect and county in audit trail)')
+        return
+      }
+      if (hasProspectEnrichment || hasCountyEnrichment) {
+        console.log('[auto-enrich] Partial enrichment detected, will run missing enrichments')
+      }
+    }
 
     // Run enrichments in parallel
     const promises: Promise<void>[] = []
 
     // 1. Prospect lookup by phone
     if (lead.phone) {
+      console.log('[auto-enrich] Queuing prospect enrichment for phone:', lead.phone)
       promises.push(enrichFromProspect(leadId, lead.phone))
+    } else {
+      console.log('[auto-enrich] Skipping prospect enrichment - no phone')
     }
 
     // 2. County enrichment by address
     if (lead.property_address) {
+      console.log('[auto-enrich] Queuing county enrichment for address:', lead.property_address)
       let city = lead.city
       let state = lead.state
       let zip = lead.zip
@@ -99,8 +135,13 @@ export async function autoEnrichLead(leadId: string): Promise<void> {
  * Adds zestimate (as ARV), tax data, deceased flag, opportunity flags.
  */
 async function enrichFromProspect(leadId: string, phone: string): Promise<void> {
+  console.log('[auto-enrich] enrichFromProspect starting for lead', leadId, 'phone', phone)
   const matches = await lookupProspectByPhone(phone)
-  if (matches.length === 0) return
+  console.log('[auto-enrich] Prospect lookup returned', matches.length, 'matches')
+  if (matches.length === 0) {
+    console.log('[auto-enrich] No prospect matches found')
+    return
+  }
 
   const match = matches[0] // Best match (sorted: owner first, 3yr+, highest debt)
 
@@ -207,8 +248,10 @@ async function enrichFromCounty(
   leadId: string,
   input: { address: string; city?: string; state: string; zip?: string; county: string },
 ): Promise<void> {
+  console.log('[auto-enrich] enrichFromCounty starting for lead', leadId, 'county', input.county, 'address', input.address)
   const service = new CountyEnrichmentService()
   const result = await service.enrich(input)
+  console.log('[auto-enrich] County enrichment result:', result.success ? 'SUCCESS' : 'FAILED', result.error || '')
 
   if (!result.success) {
     console.warn('[auto-enrich] County enrichment failed for lead', leadId, result.error)

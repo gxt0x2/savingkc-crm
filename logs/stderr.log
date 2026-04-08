@@ -1,111 +1,14 @@
-Manifest query error: {
-  code: '22P02',
-  details: null,
-  hint: null,
-  message: 'invalid input syntax for type uuid: "unmatched:+18166866554"'
+⨯ Failed to start server
+Error: listen EADDRINUSE: address already in use :::3002
+    at <unknown> (Error: listen EADDRINUSE: address already in use :::3002)
+    at new Promise (<anonymous>) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3002
 }
-Manifest query error: {
-  code: '22P02',
-  details: null,
-  hint: null,
-  message: 'invalid input syntax for type uuid: "unmatched:+18166866554"'
-}
-Error processing call: mojo-activity-1422-17278540 TypeError: Cannot read properties of undefined (reading 'push')
-    at h (.next/server/chunks/_13row.m._.js:3:35)
-    at async c (.next/server/chunks/_13row.m._.js:5:6446)
-    at async s (.next/server/chunks/_13row.m._.js:5:7487)
-    at async Module.I [as handler] (.next/server/chunks/_13row.m._.js:5:8594)
-Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
-    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
-    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
-    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
-  status: 400,
-  code: 21211,
-  moreInfo: 'https://www.twilio.com/docs/errors/21211',
-  details: undefined
-}
-Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
-    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
-    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
-    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
-  status: 400,
-  code: 21211,
-  moreInfo: 'https://www.twilio.com/docs/errors/21211',
-  details: undefined
-}
-Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
-    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
-    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
-    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
-  status: 400,
-  code: 21211,
-  moreInfo: 'https://www.twilio.com/docs/errors/21211',
-  details: undefined
-}
-Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
-    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
-    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
-    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
-  status: 400,
-  code: 21211,
-  moreInfo: 'https://www.twilio.com/docs/errors/21211',
-  details: undefined
-}
-Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
-    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
-    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
-    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
-  status: 400,
-  code: 21211,
-  moreInfo: 'https://www.twilio.com/docs/errors/21211',
-  details: undefined
-}
-SMS send failed for +15555550123: Invalid 'To' Phone Number: +1555555XXXX
-Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
-    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
-    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
-    at async (.next/server/chunks/_0gz_~ly._.js:1:5397) {
-  status: 400,
-  code: 21211,
-  moreInfo: 'https://www.twilio.com/docs/errors/21211',
-  details: undefined
-}
-Error: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id
-    at ignore-listed frames
-Error: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id
-    at ignore-listed frames
-Error: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id
-    at ignore-listed frames
-Error: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id
-    at ignore-listed frames
-Error: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id
-    at ignore-listed frames
-Error: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id
-    at ignore-listed frames
-Error: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id
-    at ignore-listed frames
-Error: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id
-    at ignore-listed frames
-Error: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id
-    at ignore-listed frames
-Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
-    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
-    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
-    at async s (.next/server/chunks/[root-of-the-server]__0rmt755._.js:35:2026)
-    at async (.next/server/chunks/_0gz_~ly._.js:1:4949) {
-  status: 400,
-  code: 21211,
-  moreInfo: 'https://www.twilio.com/docs/errors/21211',
-  details: undefined
-}
-Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
-    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
-    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
-    at async s (.next/server/chunks/[root-of-the-server]__0rmt755._.js:35:2026)
-    at async (.next/server/chunks/_0gz_~ly._.js:1:4949) {
-  status: 400,
-  code: 21211,
-  moreInfo: 'https://www.twilio.com/docs/errors/21211',
-  details: undefined
-}
-[enrich/batch] Auth failed. Has secret: true Header prefix: Bearer
+[auto-enrich] County enrichment failed for lead a039bf39-5621-410c-bd38-1688ac8cc9fd page.waitForSelector: Timeout 10000ms exceeded.
+Call log:
+  - waiting for locator('.WidgetBar') to be visible
+
