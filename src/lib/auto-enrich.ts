@@ -611,7 +611,16 @@ async function forceEnrichFromCounty(
 
   if (!result.success) {
     console.warn('[force-reenrich] County enrichment failed for lead', leadId, result.error)
-    return false
+
+    // FALLBACK: Try Zillow enrichment
+    console.log('[force-reenrich] Attempting Zillow fallback for lead', leadId)
+    await enrichFromZillow(leadId, {
+      address: input.address,
+      city: input.city,
+      state: input.state,
+      zip: input.zip,
+    })
+    return false // Still return false for countyEnriched metric
   }
 
   await updateManifestAndCascade(leadId, (manifest) => {

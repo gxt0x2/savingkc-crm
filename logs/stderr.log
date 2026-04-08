@@ -98,3 +98,14 @@ Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
   moreInfo: 'https://www.twilio.com/docs/errors/21211',
   details: undefined
 }
+Delayed send failed: Error: Invalid 'To' Phone Number: +1555555XXXX
+    at r.throwException (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:55875)
+    at <unknown> (.next/server/chunks/[root-of-the-server]__0.ewysw._.js:12:56303)
+    at async s (.next/server/chunks/[root-of-the-server]__0rmt755._.js:35:2026)
+    at async (.next/server/chunks/_0gz_~ly._.js:1:4949) {
+  status: 400,
+  code: 21211,
+  moreInfo: 'https://www.twilio.com/docs/errors/21211',
+  details: undefined
+}
+[enrich/batch] Auth failed. Has secret: true Header prefix: Bearer

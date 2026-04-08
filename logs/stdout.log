@@ -152,3 +152,8 @@ No recording URL for call mojo-activity-3645-17278486
 [BOOK] updateManifestAndCascade returned: true
 [push] Removing expired subscription: https://fcm.googleapis.com/fcm/send/dLGs7L74NTw:APA91bG7pfjY...
 [push] Sent 6/7 notifications
+[BOOK] Calling ensureManifestExists for lead: 5ad019ea-8a71-428b-b848-874f906a0fd9
+[BOOK] ensureManifestExists returned: 72be58d2-af7f-4ec6-8062-3772687e1c20
+[BOOK] Calling updateManifestAndCascade for lead: 5ad019ea-8a71-428b-b848-874f906a0fd9
+[BOOK] updateManifestAndCascade returned: true
+[push] Sent 6/6 notifications
