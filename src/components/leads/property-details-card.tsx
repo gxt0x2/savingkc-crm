@@ -93,7 +93,6 @@ function getDataSourceBadge(source: string | null): { label: string; color: stri
 }
 
 export function PropertyDetailsCard({ details, address, city, state, zip, leadId, onEdit }: PropertyDetailsCardProps) {
-  const [enriching, setEnriching] = useState(false)
   const sourceBadge = getDataSourceBadge(details.data_source)
 
   // Calculate completeness
@@ -122,39 +121,11 @@ export function PropertyDetailsCard({ details, address, city, state, zip, leadId
   const completenessPercent = Math.round((filledFields / totalFields) * 100)
   const isIncomplete = completenessPercent <= 70 // Show Zillow button if 70% or less complete
 
-  const handleZillowEnrich = async () => {
-    if (enriching) return
-    if (!leadId && (!address || !city || !state)) {
-      alert('❌ Missing address information for enrichment')
-      return
-    }
-
-    setEnriching(true)
-    try {
-      const res = await fetch('/api/enrich-zillow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          leadId,
-          address,
-          city,
-          state,
-          zip
-        })
-      })
-
-      const result = await res.json()
-
-      if (result.success) {
-        alert(`✅ Zillow enrichment complete!\n\nAdded:\n${result.lotSizeSqft ? `• Lot size: ${Math.round(result.lotSizeAcres * 100) / 100} acres\n` : ''}${result.lastSalePrice ? `• Last sale: $${result.lastSalePrice.toLocaleString()} on ${result.lastSaleDate}\n` : ''}${result.taxAssessment ? `• Tax assessment: $${result.taxAssessment.toLocaleString()}\n` : ''}\nRefresh the page to see updates.`)
-      } else {
-        alert(`⚠️ Zillow enrichment failed:\n${result.error || 'Unknown error'}`)
-      }
-    } catch (err: any) {
-      alert(`❌ Error: ${err.message}`)
-    } finally {
-      setEnriching(false)
-    }
+  const getZillowUrl = () => {
+    if (!address || !city || !state) return null
+    const searchAddress = `${address}, ${city}, ${state}${zip ? ' ' + zip : ''}`
+    const slug = searchAddress.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-')
+    return `https://www.zillow.com/homes/${slug}_rb/`
   }
 
   return (
@@ -183,16 +154,17 @@ export function PropertyDetailsCard({ details, address, city, state, zip, leadId
               {filledFields}/{totalFields}
             </span>
           </div>
-          {leadId && isIncomplete && (
-            <button
-              onClick={handleZillowEnrich}
-              disabled={enriching}
-              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors"
-              title="Supplement with Zillow data"
+          {isIncomplete && getZillowUrl() && (
+            <a
+              href={getZillowUrl()!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors"
+              title="View on Zillow to get missing data"
             >
-              <Icon name={enriching ? 'sync' : 'home_work'} size="text-sm" className={enriching ? 'animate-spin' : ''} />
-              {enriching ? 'Enriching...' : 'Zillow'}
-            </button>
+              <Icon name="open_in_new" size="text-sm" />
+              View on Zillow
+            </a>
           )}
           {onEdit && (
             <button

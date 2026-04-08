@@ -1,12 +1,14 @@
 /**
  * Auto-Enrichment — runs fire-and-forget after lead/manifest creation.
  *
- * Two enrichment paths:
+ * Three enrichment paths:
  * 1. Prospect lookup (fast, DB query) — matches phone to tax delinquent prospects
  * 2. County enrichment (slow, scraper) — fetches assessor data by address
+ * 3. Zillow enrichment (fallback) — supplements when county data is missing/incomplete
  *
- * Both can run. Prospect gives quick data (zestimate, tax owed, deceased flag).
+ * All can run in parallel. Prospect gives quick data (zestimate, tax owed, deceased flag).
  * County adds fresh assessor data (appraised value, dwelling specs, parcel ID).
+ * Zillow fills gaps when county scraper fails (lot size, sale history, Zestimate).
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -76,7 +78,7 @@ export async function autoEnrichLead(leadId: string): Promise<void> {
         : detectCounty(city, state, zip)
 
       if (countyObj) {
-        promises.push(enrichFromCounty(leadId, {
+        promises.push(enrichFromCountyWithZillowFallback(leadId, {
           address: lead.property_address,
           city: city || undefined,
           state: countyObj.state,
@@ -201,10 +203,13 @@ async function enrichFromProspect(leadId: string, phone: string): Promise<void> 
 }
 
 /**
- * Enrich from county assessor — slow (scraper/API).
- * Adds appraised value, dwelling specs, parcel ID, tax status.
+ * Enrich from county assessor with Zillow fallback.
+ * 1. Try county scraper first (most complete data)
+ * 2. If county fails OR returns incomplete data, try Zillow
+ *
+ * This maximizes enrichment success rate while keeping county as primary source.
  */
-async function enrichFromCounty(
+async function enrichFromCountyWithZillowFallback(
   leadId: string,
   input: { address: string; city?: string; state: string; zip?: string; county: string },
 ): Promise<void> {
@@ -213,8 +218,46 @@ async function enrichFromCounty(
 
   if (!result.success) {
     console.warn('[auto-enrich] County enrichment failed for lead', leadId, result.error)
+
+    // FALLBACK: Try Zillow enrichment
+    console.log('[auto-enrich] Attempting Zillow fallback for lead', leadId)
+    await enrichFromZillow(leadId, {
+      address: input.address,
+      city: input.city,
+      state: input.state,
+      zip: input.zip,
+    })
     return
   }
+
+  // County succeeded - check if data is complete
+  const isIncomplete = !result.appraisedValue && !result.sqft && !result.yearBuilt
+
+  if (isIncomplete) {
+    console.log('[auto-enrich] County data incomplete, supplementing with Zillow for lead', leadId)
+
+    // First apply county data (even if incomplete)
+    await applyCountyData(leadId, result)
+
+    // Then supplement with Zillow
+    await enrichFromZillow(leadId, {
+      address: input.address,
+      city: input.city,
+      state: input.state,
+      zip: input.zip,
+    })
+    return
+  }
+
+  // County data is complete - apply it
+  await applyCountyData(leadId, result)
+}
+
+/**
+ * Apply county enrichment data to manifest.
+ * Extracted from enrichFromCounty to allow composition with Zillow.
+ */
+async function applyCountyData(leadId: string, result: any): Promise<void> {
 
   await updateManifestAndCascade(leadId, (manifest) => {
     // Assessment data (prefer county assessor over existing)
@@ -277,6 +320,90 @@ async function enrichFromCounty(
       },
     })
   }, 'system:auto_enrich')
+}
+
+/**
+ * Enrich from Zillow — fallback when county data is missing/incomplete.
+ * Adds lot size, sale history, Zestimate, tax assessment.
+ */
+async function enrichFromZillow(
+  leadId: string,
+  input: { address: string; city?: string; state: string; zip?: string },
+): Promise<void> {
+  try {
+    const { enrichFromZillow: zillowEnrich } = await import('./zillow-enrichment')
+
+    const result = await zillowEnrich({
+      address: input.address,
+      city: input.city || '',
+      state: input.state,
+      zip: input.zip,
+    })
+
+    if (!result.success) {
+      console.warn('[auto-enrich] Zillow enrichment failed for lead', leadId, result.error)
+      return
+    }
+
+    await updateManifestAndCascade(leadId, (manifest) => {
+      const prop = manifest.property as any
+
+      // Lot size (only if missing)
+      if (result.lotSizeSqft && !prop.lot?.sizeSqft) {
+        if (!prop.lot) prop.lot = {}
+        prop.lot.sizeSqft = result.lotSizeSqft
+        prop.lot.sizeAcres = result.lotSizeAcres || result.lotSizeSqft / 43560
+      }
+
+      // Last sale data (only if missing)
+      if ((result.lastSaleDate || result.lastSalePrice) && !prop.sales?.lastSaleDate) {
+        if (!prop.sales) prop.sales = {}
+        prop.sales.lastSaleDate = result.lastSaleDate
+        prop.sales.lastSalePrice = result.lastSalePrice
+      }
+
+      // Tax assessment (only if missing)
+      if (result.taxAssessment && !manifest.property.assessment?.totalValue) {
+        if (!manifest.property.assessment) manifest.property.assessment = {}
+        manifest.property.assessment.totalValue = result.taxAssessment
+      }
+
+      // Zestimate as ARV (only if missing)
+      if (result.zestimate && !manifest.financials?.arv) {
+        if (!manifest.financials) manifest.financials = {} as any
+        manifest.financials.arv = result.zestimate
+        manifest.financials.arv_source = 'zestimate' as any
+      }
+
+      // Year built (only if missing)
+      if (result.yearBuilt && !manifest.property.dwelling?.yearBuilt) {
+        if (!manifest.property.dwelling) manifest.property.dwelling = {}
+        manifest.property.dwelling.yearBuilt = result.yearBuilt
+      }
+
+      // Audit trail
+      manifest.auditTrail.push({
+        timestamp: new Date().toISOString(),
+        agent: 'system:auto_enrich_zillow',
+        action: 'zillow_enrichment_complete',
+        details: {
+          source: 'zillow',
+          lotSizeSqft: result.lotSizeSqft,
+          lastSalePrice: result.lastSalePrice,
+          zestimate: result.zestimate,
+          yearBuilt: result.yearBuilt,
+        },
+      })
+
+      // Mark briefing stale
+      if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+      manifest.ariIntelligence.briefingStale = true
+    }, 'system:auto_enrich')
+
+    console.log('[auto-enrich] Zillow enrichment successful for lead', leadId)
+  } catch (err) {
+    console.error('[auto-enrich] Zillow enrichment error for lead', leadId, err)
+  }
 }
 
 /**
@@ -633,9 +760,10 @@ async function cascadeHousingToLead(leadId: string): Promise<void> {
 
   if (!row?.manifest) return
   const m = row.manifest as ManifestV2
-  const d = m.property.dwelling
-  const a = m.property.assessment
-  const t = m.property.taxCollector
+  const prop = m.property as any
+  const d = prop.dwelling
+  const a = prop.assessment
+  const t = prop.taxCollector
   const now = new Date().toISOString()
 
   const leadUpdate: Record<string, any> = {}
@@ -651,11 +779,18 @@ async function cascadeHousingToLead(leadId: string): Promise<void> {
   if (d?.roofType) leadUpdate.roof_type = d.roofType
   if (d?.hvac) leadUpdate.heating = d.hvac
 
+  // Lot size (from Zillow or county)
+  if (prop.lot?.sizeSqft) leadUpdate.lot_size = prop.lot.sizeSqft
+
   // Assessment
   if (a?.totalValue) leadUpdate.tax_assessment = a.totalValue
 
-  // ARV from financials
+  // ARV from financials (could be from Zestimate via Zillow)
   if (m.financials?.arv) leadUpdate.arv = m.financials.arv
+
+  // Last sale data (from Zillow)
+  if (prop.sales?.lastSaleDate) leadUpdate.last_sale_date = prop.sales.lastSaleDate
+  if (prop.sales?.lastSalePrice) leadUpdate.last_sale_price = prop.sales.lastSalePrice
 
   // County from property
   if (a?.source) leadUpdate.data_source = a.source
