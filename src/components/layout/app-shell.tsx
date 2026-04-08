@@ -38,12 +38,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function loadProfile() {
       if (!user?.email) return
+      console.log('[AppShell] Loading profile for email:', user.email)
       try {
         const res = await fetch(`/api/settings?email=${encodeURIComponent(user.email)}`)
         const data = await res.json()
+        console.log('[AppShell] Profile loaded:', data.profile ? 'Found' : 'Not found')
+        console.log('[AppShell] Has photo URL:', !!data.profile?.profile_photo_url)
+
         if (data.profile?.profile_photo_url) {
+          console.log('[AppShell] Setting profile photo URL')
           setProfilePhotoUrl(data.profile.profile_photo_url)
         } else if (!data.profile) {
+          console.log('[AppShell] Profile not found, attempting to link')
           // Profile not found by email — try linking Google OAuth to existing agent_profile
           const meta = (user as any).user_metadata || {}
           const linkRes = await fetch('/api/auth/link-profile', {
@@ -56,15 +62,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             }),
           })
           if (linkRes.ok) {
+            console.log('[AppShell] Profile linked, retrying load')
             // Retry loading profile after linking
             const res2 = await fetch(`/api/settings?email=${encodeURIComponent(user.email!)}`)
             const data2 = await res2.json()
             if (data2.profile?.profile_photo_url) {
+              console.log('[AppShell] Setting profile photo URL after linking')
               setProfilePhotoUrl(data2.profile.profile_photo_url)
             }
+          } else {
+            console.log('[AppShell] Profile linking failed')
           }
+        } else {
+          console.log('[AppShell] Profile found but no photo URL')
         }
-      } catch {}
+      } catch (err) {
+        console.error('[AppShell] Error loading profile:', err)
+      }
     }
     loadProfile()
   }, [user?.email])

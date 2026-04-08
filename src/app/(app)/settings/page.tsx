@@ -147,11 +147,19 @@ export default function SettingsPage() {
           office_hours: profile.office_hours,
         }),
       })
-      if (res.ok) {
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
         setSaved(true)
-        setTimeout(() => setSaved(false), 2000)
+        // Reload page after 500ms to show updated profile photo in header
+        setTimeout(() => window.location.reload(), 500)
+      } else {
+        alert(`Failed to save settings: ${data.error || 'Unknown error'}`)
       }
-    } catch {}
+    } catch (err: any) {
+      alert(`Error saving settings: ${err.message || 'Network error'}`)
+    }
   }
 
   function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {

@@ -71,19 +71,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Email required' }, { status: 400 })
     }
 
-    const { error } = await supabase
+    console.log('[Settings] Saving profile for:', email)
+    console.log('[Settings] Updates:', Object.keys(updates))
+
+    const { data, error } = await supabase
       .from('agent_profiles')
       .update(updates)
       .eq('email', email)
+      .select()
 
     if (error) {
-      console.error('Settings save error:', error)
+      console.error('[Settings] Save error:', error)
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
     }
 
+    if (!data || data.length === 0) {
+      console.error('[Settings] No rows updated - profile not found for email:', email)
+      return NextResponse.json({ success: false, error: `Profile not found for ${email}` }, { status: 404 })
+    }
+
+    console.log('[Settings] Successfully updated profile for:', email)
     return NextResponse.json({ success: true })
   } catch (err) {
-    console.error('Settings POST error:', err)
+    console.error('[Settings] POST error:', err)
     return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500 })
   }
 }
