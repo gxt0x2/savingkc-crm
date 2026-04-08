@@ -52,29 +52,40 @@ export async function autoEnrichLead(leadId: string): Promise<void> {
       return
     }
 
+    console.log('[auto-enrich] Checking manifest for existing enrichment...')
     // Check if already enriched by looking at manifest audit trail
-    const { data: manifest } = await supabase
-      .from('manifests')
-      .select('manifest')
-      .eq('lead_id', leadId)
-      .single()
+    try {
+      const { data: manifest, error: manifestError } = await supabase
+        .from('manifests')
+        .select('manifest')
+        .eq('lead_id', leadId)
+        .single()
 
-    if (manifest?.manifest?.auditTrail) {
-      const hasProspectEnrichment = manifest.manifest.auditTrail.some((e: any) =>
-        e.action === 'prospect_enrichment_complete' || e.agent === 'system:auto_enrich_prospect'
-      )
-      const hasCountyEnrichment = manifest.manifest.auditTrail.some((e: any) =>
-        e.action === 'county_enrichment_complete' || e.agent === 'system:auto_enrich_county'
-      )
+      if (manifestError) {
+        console.log('[auto-enrich] Manifest query error (will continue anyway):', manifestError.message)
+      }
 
-      if (hasProspectEnrichment && hasCountyEnrichment) {
-        console.log('[auto-enrich] Skipping - already enriched (found both prospect and county in audit trail)')
-        return
+      if (manifest?.manifest?.auditTrail) {
+        const hasProspectEnrichment = manifest.manifest.auditTrail.some((e: any) =>
+          e.action === 'prospect_enrichment_complete' || e.agent === 'system:auto_enrich_prospect'
+        )
+        const hasCountyEnrichment = manifest.manifest.auditTrail.some((e: any) =>
+          e.action === 'county_enrichment_complete' || e.agent === 'system:auto_enrich_county'
+        )
+
+        if (hasProspectEnrichment && hasCountyEnrichment) {
+          console.log('[auto-enrich] Skipping - already enriched (found both prospect and county in audit trail)')
+          return
+        }
+        if (hasProspectEnrichment || hasCountyEnrichment) {
+          console.log('[auto-enrich] Partial enrichment detected, will run missing enrichments')
+        }
       }
-      if (hasProspectEnrichment || hasCountyEnrichment) {
-        console.log('[auto-enrich] Partial enrichment detected, will run missing enrichments')
-      }
+    } catch (err) {
+      console.error('[auto-enrich] Error checking manifest enrichment status:', err)
+      // Continue anyway - better to try enriching than skip
     }
+    console.log('[auto-enrich] Dedup check complete, proceeding with enrichment...')
 
     // Run enrichments in parallel
     const promises: Promise<void>[] = []
@@ -122,9 +133,21 @@ export async function autoEnrichLead(leadId: string): Promise<void> {
       }
     }
 
+    console.log('[auto-enrich] Queued', promises.length, 'enrichment(s), awaiting completion...')
     if (promises.length > 0) {
-      await Promise.allSettled(promises)
+      const results = await Promise.allSettled(promises)
+      console.log('[auto-enrich] Enrichments completed. Results:', results.map(r => r.status))
+
+      // Log any rejections
+      results.forEach((result, idx) => {
+        if (result.status === 'rejected') {
+          console.error(`[auto-enrich] Enrichment ${idx} rejected:`, result.reason)
+        }
+      })
+    } else {
+      console.log('[auto-enrich] No enrichments queued - nothing to do')
     }
+    console.log('[auto-enrich] Finished for lead', leadId)
   } catch (err) {
     console.error('[auto-enrich] Failed for lead', leadId, err)
   }
@@ -221,13 +244,14 @@ async function enrichFromProspect(leadId: string, phone: string): Promise<void> 
     manifest.auditTrail.push({
       timestamp: new Date().toISOString(),
       agent: 'system:auto_enrich_prospect',
-      action: 'enriched_from_prospect',
+      action: 'prospect_enrichment_complete',
       details: {
         parcel_id: match.parcel_id,
         county: match.county,
         cumulative_due: match.cumulative_due,
         zestimate: match.zestimate,
         is_deceased: match.is_deceased,
+        matched: true,
       },
     })
   }, 'system:auto_enrich')
@@ -239,6 +263,7 @@ async function enrichFromProspect(leadId: string, phone: string): Promise<void> 
       .update({ lead_id: leadId })
       .eq('id', match.prospect_id)
   }
+  console.log('[auto-enrich] enrichFromProspect COMPLETED for lead', leadId)
 }
 
 /**

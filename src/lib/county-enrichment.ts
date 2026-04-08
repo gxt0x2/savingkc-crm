@@ -357,8 +357,24 @@ export class CountyEnrichmentService {
           await page.waitForTimeout(2000)
         }
 
-        // Step 5: Wait for results in .WidgetBar
-        await page.waitForSelector('.WidgetBar', { timeout: 10000 })
+        // Step 5: Wait for either .WidgetBar (results) or a "no records" indicator
+        // The search may redirect to datalet (1 result), show results list, or show "no records"
+        try {
+          await Promise.race([
+            page.waitForSelector('.WidgetBar', { timeout: 15000 }),
+            page.waitForSelector('.SearchResults', { timeout: 15000 }),
+            page.locator('text=did not find any records').waitFor({ timeout: 15000 }),
+            page.locator('text=No records found').waitFor({ timeout: 15000 }),
+          ])
+        } catch {
+          // None of the expected elements appeared — check page content
+          const bodyText = await page.evaluate(() => document.body.innerText)
+          if (bodyText.includes('did not find') || bodyText.includes('No records')) {
+            return { success: false, county: 'Jackson', error: 'Address not found in Jackson County records' }
+          }
+          // Try waiting a bit longer for slow loads
+          await page.waitForSelector('.WidgetBar', { timeout: 10000 })
+        }
 
         // Check for "no records found" message
         const noRecordsMsg = await page.evaluate(() => {
@@ -367,6 +383,17 @@ export class CountyEnrichmentService {
         })
         if (noRecordsMsg) {
           return { success: false, county: 'Jackson', error: 'Address not found in Jackson County records' }
+        }
+
+        // If we're on a search results list (multiple results), click the first result
+        const isOnDatalet = page.url().includes('/Datalets/') || page.url().includes('/datalets/')
+        if (!isOnDatalet) {
+          const firstResultLink = page.locator('a[href*="Datalet"], a[href*="datalet"]').first()
+          if (await firstResultLink.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await firstResultLink.click()
+            await page.waitForTimeout(2000)
+            await page.waitForSelector('.WidgetBar', { timeout: 10000 })
+          }
         }
 
         // Extract inline profile data from initial search results
@@ -380,7 +407,7 @@ export class CountyEnrichmentService {
           'https://publicaccess.jacksongov.org/datalets/datalet.aspx?mode=valuesall&sIndex=0&idx=1&LMparent=20',
           { waitUntil: 'domcontentloaded', timeout: this.timeout }
         )
-        await page.waitForSelector('.WidgetBar', { timeout: 10000 })
+        await page.waitForSelector('.WidgetBar', { timeout: 15000 })
         const valuesText = await page.evaluate(() => {
           const widget = document.querySelector('.WidgetBar') as HTMLElement | null
           return widget?.innerText || ''
@@ -391,7 +418,7 @@ export class CountyEnrichmentService {
           'https://publicaccess.jacksongov.org/datalets/datalet.aspx?mode=residential&sIndex=0&idx=1&LMparent=20',
           { waitUntil: 'domcontentloaded', timeout: this.timeout }
         )
-        await page.waitForSelector('.WidgetBar', { timeout: 10000 })
+        await page.waitForSelector('.WidgetBar', { timeout: 15000 })
         const residentialText = await page.evaluate(() => {
           const widget = document.querySelector('.WidgetBar') as HTMLElement | null
           return widget?.innerText || ''
@@ -458,19 +485,9 @@ export class CountyEnrichmentService {
     streetName: string
     suffix: string
   } {
-    const parts = address.trim().split(/\s+/)
-    const houseNumber = parts[0] || ''
+    // Strip city/state/zip — only keep the street portion before the first comma
+    let streetOnly = address.split(',')[0].trim()
 
-    // Remove house number
-    let remaining = parts.slice(1)
-
-    // Remove direction prefix (N, S, E, W, NE, NW, SE, SW)
-    const directions = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW', 'NORTH', 'SOUTH', 'EAST', 'WEST']
-    if (remaining.length > 0 && directions.includes(remaining[0].toUpperCase().replace('.', ''))) {
-      remaining = remaining.slice(1)
-    }
-
-    // Extract suffix from end
     const suffixMap: Record<string, string> = {
       'AVE': 'AVE', 'AVENUE': 'AVE',
       'BLVD': 'BLVD', 'BOULEVARD': 'BLVD',
@@ -488,16 +505,50 @@ export class CountyEnrichmentService {
       'WAY': 'WAY',
     }
 
+    const parts = streetOnly.split(/\s+/)
+    const houseNumber = parts[0] || ''
+
+    // Remove house number
+    let remaining = parts.slice(1)
+
+    // Remove direction prefix (N, S, E, W, NE, NW, SE, SW)
+    const directions = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW', 'NORTH', 'SOUTH', 'EAST', 'WEST']
+    if (remaining.length > 0 && directions.includes(remaining[0].toUpperCase().replace('.', ''))) {
+      remaining = remaining.slice(1)
+    }
+
+    // Find suffix ANYWHERE in the remaining parts (not just the last word)
+    // This handles "MAYWOOD AVE RAYTOWN" → street="MAYWOOD", suffix="AVE" (strips city)
     let suffix = ''
-    if (remaining.length > 0) {
-      const lastWord = remaining[remaining.length - 1].toUpperCase().replace('.', '')
-      if (suffixMap[lastWord]) {
-        suffix = suffixMap[lastWord]
-        remaining = remaining.slice(0, -1)
+    let suffixIdx = -1
+    for (let i = 0; i < remaining.length; i++) {
+      const word = remaining[i].toUpperCase().replace(/[.,]/g, '')
+      if (suffixMap[word]) {
+        suffix = suffixMap[word]
+        suffixIdx = i
+        break // Use first suffix found (e.g., AVE in "MAYWOOD AVE RAYTOWN")
       }
     }
 
-    const streetName = remaining.join(' ')
+    let streetName: string
+    if (suffixIdx >= 0) {
+      // Take only the words BEFORE the suffix as street name
+      streetName = remaining.slice(0, suffixIdx).join(' ')
+    } else {
+      // No suffix found — use all remaining words but strip common city names
+      const commonCities = ['KANSAS CITY', 'INDEPENDENCE', 'RAYTOWN', 'BLUE SPRINGS', 'LEES SUMMIT',
+        'GRANDVIEW', 'LIBERTY', 'GLADSTONE', 'EXCELSIOR SPRINGS', 'GRAIN VALLEY', 'OAK GROVE',
+        'PLEASANT HILL', 'RAYMORE', 'BELTON', 'HARRISONVILLE', 'PECULIAR', 'OLATHE', 'OVERLAND PARK',
+        'SHAWNEE', 'LENEXA', 'LEAWOOD', 'MERRIAM', 'MISSION', 'PRAIRIE VILLAGE']
+      const remainingStr = remaining.join(' ').toUpperCase()
+      for (const city of commonCities) {
+        if (remainingStr.endsWith(city)) {
+          streetName = remaining.join(' ').slice(0, -(city.length)).trim()
+          return { houseNumber, streetName, suffix }
+        }
+      }
+      streetName = remaining.join(' ')
+    }
 
     return { houseNumber, streetName, suffix }
   }
