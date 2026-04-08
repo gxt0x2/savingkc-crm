@@ -1162,11 +1162,22 @@ export class CountyEnrichmentService {
 
       try {
         const beaconPage = await this.browser!.newPage()
+        await beaconPage.setExtraHTTPHeaders({
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        })
         await beaconPage.goto(
           `https://beacon.schneidercorp.com/Application.aspx?AppID=589&LayerID=17697&PageTypeID=4&PageID=7914&KeyValue=${encodeURIComponent(parcelId)}`,
           { waitUntil: 'domcontentloaded', timeout: this.timeout }
         )
-        await beaconPage.waitForTimeout(5000)
+        await beaconPage.waitForTimeout(8000)
+
+        // Check if Cloudflare blocked us
+        const title = await beaconPage.title()
+        if (title.includes('moment') || title.includes('Cloudflare')) {
+          console.warn('[Platte] Beacon blocked by Cloudflare — using collector data only')
+          await beaconPage.close()
+          throw new Error('Cloudflare challenge')
+        }
 
         // Extract dwelling data from Beacon
         const beaconData = await beaconPage.evaluate(() => {
