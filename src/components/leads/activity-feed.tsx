@@ -154,19 +154,32 @@ const typeConfig: Record<string, { icon: string; dotColor: string; label: string
 // ─── Milestone types (bigger cards) ────────────────────────────────────────
 const MILESTONES = new Set(['status_change', 'appointment'])
 
-// ─── Relative time ──────────────────────────────────────────────────────────
+// ─── Format timestamp ───────────────────────────────────────────────────────
 function relTime(ts: string): string {
+  if (!ts) return 'No date'
+
   try {
-    const diff = Date.now() - new Date(ts).getTime()
-    const m = Math.floor(diff / 60000)
-    if (m < 1) return 'just now'
-    if (m < 60) return `${m}m ago`
-    const h = Math.floor(m / 60)
-    if (h < 24) return `${h}h ago`
-    const d = Math.floor(h / 24)
-    if (d < 7) return `${d}d ago`
-    return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  } catch { return ts }
+    const date = new Date(ts)
+
+    // Validate date
+    if (isNaN(date.getTime())) {
+      return 'Invalid date'
+    }
+
+    // Format as: MM/DD/YY, HH:MMam/pm
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const year = String(date.getFullYear()).slice(-2)
+
+    let hours = date.getHours()
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const ampm = hours >= 12 ? 'pm' : 'am'
+    hours = hours % 12 || 12
+
+    return `${month}/${day}/${year}, ${hours}:${minutes}${ampm}`
+  } catch {
+    return 'Invalid date'
+  }
 }
 
 // ─── Agent Badge ────────────────────────────────────────────────────────────
@@ -277,7 +290,7 @@ export function ActivityFeed({ activities, onCompose }: ActivityFeedProps) {
                         <span className="text-[10px] text-on-surface-variant whitespace-nowrap ml-auto">{relTime(activity.timestamp)}</span>
                       </div>
                       {activity.content && (
-                        <p className={`text-xs mt-0.5 ${activity.type === 'sms' ? 'text-blue-300 italic' : 'text-on-surface-variant'}`}>
+                        <p className={`text-xs mt-0.5 ${activity.type === 'sms' ? 'text-blue-200 italic font-medium' : 'text-on-surface-variant'}`}>
                           {activity.content}
                         </p>
                       )}

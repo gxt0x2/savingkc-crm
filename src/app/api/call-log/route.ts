@@ -60,8 +60,8 @@ export async function POST(req: Request) {
 
     // Auto-advance pipeline on outbound call + sync to manifest
     if (leadId && event === 'started') {
-      checkAutoAdvance(leadId, 'outbound_contact').catch(() => {})
-      onCommunicationEvent(leadId, { type: 'outbound_call' }).catch(() => {})
+      checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+      onCommunicationEvent(leadId, { type: 'outbound_call' }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
     }
 
     return NextResponse.json({ success: true, leadId })

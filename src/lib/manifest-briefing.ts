@@ -517,12 +517,15 @@ Here's everything we know about this lead:
 
 ${dataBlock}
 
-Respond in JSON with exactly three fields:
+YOU MUST respond with valid JSON containing ALL THREE required fields. Do not omit any field.
+
 {
-  "situation": "2-4 sentences. Paint the picture — who is this person, what's going on with the property, what's their deal. Mention specific numbers (tax owed, year built, sqft, assessment value) when available. If they're out of state, tax delinquent, inherited, vacant — weave it in naturally. Reference their SMS messages or call history if available — what did they say? How did they respond?",
-  "motivation": "2-3 sentences. How urgent is this? What's driving them? Are they price-sensitive or speed-sensitive? If we have a motivation score or signals, reference them. Look at their communication pattern — did they reply YES? Did they call in? Are they ghosting us? Be honest about unknowns — 'We don't have a read on their urgency yet' is fine.",
-  "strategy": "2-3 sentences. Concrete tactical advice. Reference specific leverage points from the data. Suggest an opening approach, mention if we should lead with speed/cash/convenience. If we have pricing data, suggest a rough offer range. If there's an upcoming appointment, prep for it. If they're in Ghost Protocol, factor that in. If they have a personality type, adjust approach."
+  "situation": "2-4 sentences. Paint the picture — who is this person, what's going on with the property, what's their deal. Mention specific numbers (tax owed, year built, sqft, assessment value) when available. If they're out of state, tax delinquent, inherited, vacant — weave it in naturally. Reference their SMS messages or call history if available — what did they say? How did they respond? REQUIRED - never leave empty.",
+  "motivation": "2-3 sentences. How urgent is this? What's driving them? Are they price-sensitive or speed-sensitive? If we have a motivation score or signals, reference them. Look at their communication pattern — did they reply YES? Did they call in? Are they ghosting us? Be honest about unknowns — 'We don't have a read on their urgency yet' is fine. REQUIRED - never leave empty.",
+  "strategy": "2-3 sentences. Concrete tactical advice. Reference specific leverage points from the data. Suggest an opening approach, mention if we should lead with speed/cash/convenience. If we have pricing data, suggest a rough offer range. If there's an upcoming appointment, prep for it. If they're in Ghost Protocol, factor that in. If they have a personality type, adjust approach. REQUIRED - never leave empty."
 }
+
+CRITICAL: All three fields (situation, motivation, strategy) MUST be filled with meaningful content. Empty strings or null values are not acceptable.
 
 Important:
 - Use the owner's first name naturally in conversation

@@ -5,6 +5,7 @@ import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { ensureManifestExists } from '@/lib/manifest-sync'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

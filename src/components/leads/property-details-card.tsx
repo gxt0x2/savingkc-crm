@@ -1,7 +1,10 @@
+'use client'
+
 // LED-05 + LED-06: Housing Detail Card with 18 Data Points
 // Night 4 Phase 1: Complete Property Dossier
 
 import { Icon } from '@/components/ui/icon'
+import { useState } from 'react'
 
 export interface PropertyHousingDetails {
   // Core specs
@@ -38,6 +41,10 @@ export interface PropertyHousingDetails {
 interface PropertyDetailsCardProps {
   details: PropertyHousingDetails
   address?: string
+  city?: string
+  state?: string
+  zip?: string
+  leadId?: string
   onEdit?: () => void
 }
 
@@ -85,7 +92,8 @@ function getDataSourceBadge(source: string | null): { label: string; color: stri
   }
 }
 
-export function PropertyDetailsCard({ details, address, onEdit }: PropertyDetailsCardProps) {
+export function PropertyDetailsCard({ details, address, city, state, zip, leadId, onEdit }: PropertyDetailsCardProps) {
+  const [enriching, setEnriching] = useState(false)
   const sourceBadge = getDataSourceBadge(details.data_source)
 
   // Calculate completeness
@@ -112,7 +120,42 @@ export function PropertyDetailsCard({ details, address, onEdit }: PropertyDetail
   ].filter(v => v !== null && v !== undefined).length
 
   const completenessPercent = Math.round((filledFields / totalFields) * 100)
-  const isIncomplete = completenessPercent < 50
+  const isIncomplete = completenessPercent <= 70 // Show Zillow button if 70% or less complete
+
+  const handleZillowEnrich = async () => {
+    if (enriching) return
+    if (!leadId && (!address || !city || !state)) {
+      alert('❌ Missing address information for enrichment')
+      return
+    }
+
+    setEnriching(true)
+    try {
+      const res = await fetch('/api/enrich-zillow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          address,
+          city,
+          state,
+          zip
+        })
+      })
+
+      const result = await res.json()
+
+      if (result.success) {
+        alert(`✅ Zillow enrichment complete!\n\nAdded:\n${result.lotSizeSqft ? `• Lot size: ${Math.round(result.lotSizeAcres * 100) / 100} acres\n` : ''}${result.lastSalePrice ? `• Last sale: $${result.lastSalePrice.toLocaleString()} on ${result.lastSaleDate}\n` : ''}${result.taxAssessment ? `• Tax assessment: $${result.taxAssessment.toLocaleString()}\n` : ''}\nRefresh the page to see updates.`)
+      } else {
+        alert(`⚠️ Zillow enrichment failed:\n${result.error || 'Unknown error'}`)
+      }
+    } catch (err: any) {
+      alert(`❌ Error: ${err.message}`)
+    } finally {
+      setEnriching(false)
+    }
+  }
 
   return (
     <section className="bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-6 shadow-sm">
@@ -140,6 +183,17 @@ export function PropertyDetailsCard({ details, address, onEdit }: PropertyDetail
               {filledFields}/{totalFields}
             </span>
           </div>
+          {leadId && isIncomplete && (
+            <button
+              onClick={handleZillowEnrich}
+              disabled={enriching}
+              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors"
+              title="Supplement with Zillow data"
+            >
+              <Icon name={enriching ? 'sync' : 'home_work'} size="text-sm" className={enriching ? 'animate-spin' : ''} />
+              {enriching ? 'Enriching...' : 'Zillow'}
+            </button>
+          )}
           {onEdit && (
             <button
               onClick={onEdit}

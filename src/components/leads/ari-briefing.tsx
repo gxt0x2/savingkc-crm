@@ -45,18 +45,36 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
   function sanitizeBriefing(data: any): BriefingData | null {
     if (!data) return null
     let { situation, motivation, strategy } = data
-    if (typeof situation === 'string' && situation.trimStart().startsWith('{')) {
-      try {
-        const inner = JSON.parse(situation)
-        if (inner.situation) {
-          situation = inner.situation
-          motivation = inner.motivation || motivation
-          strategy = inner.strategy || strategy
-        }
-      } catch { /* not JSON */ }
+
+    // Helper to clean a field value
+    const cleanField = (value: any): string => {
+      if (!value) return ''
+      let str = String(value).trim()
+
+      // If it's stringified JSON, try to extract the inner value
+      if (str.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(str)
+          // If it's a nested object with the same key, unwrap it
+          const keys = Object.keys(parsed)
+          if (keys.length === 1 && typeof parsed[keys[0]] === 'string') {
+            return parsed[keys[0]]
+          }
+        } catch { /* not valid JSON, use as-is */ }
+      }
+
+      // Remove common JSON artifacts that slip through
+      str = str.replace(/^\{"[^"]+"\s*:\s*"/, '').replace(/"\}$/, '')
+
+      return str
     }
+
+    situation = cleanField(situation)
+    motivation = cleanField(motivation)
+    strategy = cleanField(strategy)
+
     if (!situation && !motivation && !strategy) return null
-    return { situation: situation || '', motivation: motivation || '', strategy: strategy || '' }
+    return { situation, motivation, strategy }
   }
 
   async function buildBriefing(signal?: AbortSignal) {

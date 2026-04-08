@@ -223,7 +223,8 @@ async function generateBriefing(
       const inner = tryParseJSON(obj.situation)
       if (inner?.situation) return inner
     }
-    if (obj.situation && (obj.motivation || obj.strategy)) return obj
+    // Accept if we have at least situation - the others are optional
+    if (obj.situation) return obj
     return null
   }
 
@@ -245,10 +246,15 @@ async function generateBriefing(
     }
 
     if (extracted) {
+      // Check if fields are truly empty (null, undefined, or empty string after trimming)
+      const hasSituation = extracted.situation?.trim()
+      const hasMotivation = extracted.motivation?.trim()
+      const hasStrategy = extracted.strategy?.trim()
+
       briefing = {
-        situation: String(extracted.situation || 'No situation data'),
-        motivation: String(extracted.motivation || 'Motivation assessment unavailable'),
-        strategy: String(extracted.strategy || 'Strategy unavailable'),
+        situation: hasSituation || 'Lead data insufficient for situation assessment',
+        motivation: hasMotivation || 'Contact needed to gauge motivation level',
+        strategy: hasStrategy || 'Schedule call to assess opportunity and build rapport',
       }
     } else {
       throw new Error('Could not extract briefing from response')
@@ -261,6 +267,36 @@ async function generateBriefing(
     }
   }
 
+  // Final sanitization: ensure no nested JSON in fields
+  const cleanField = (value: string, fieldName: string): string => {
+    let cleaned = String(value || '').trim()
+
+    // Check if the entire value is a JSON object with the same field name
+    if (cleaned.startsWith('{') && cleaned.includes(`"${fieldName}"`)) {
+      try {
+        const parsed = JSON.parse(cleaned)
+        if (parsed[fieldName] && typeof parsed[fieldName] === 'string') {
+          cleaned = parsed[fieldName]
+        }
+      } catch {
+        // Not valid JSON, strip common artifacts manually
+        const pattern = new RegExp(`^\\{"${fieldName}"\\s*:\\s*"(.*)"}$`, 's')
+        const match = cleaned.match(pattern)
+        if (match) {
+          cleaned = match[1]
+        }
+      }
+    }
+
+    return cleaned
+  }
+
+  const sanitizedBriefing = {
+    situation: cleanField(briefing.situation, 'situation'),
+    motivation: cleanField(briefing.motivation, 'motivation'),
+    strategy: cleanField(briefing.strategy, 'strategy'),
+  }
+
   // Save briefing to manifest
   const updatedManifest: ManifestV2 = {
     ...manifest,
@@ -270,9 +306,9 @@ async function generateBriefing(
       ...manifest.ariIntelligence,
       briefingStale: false,
       lastBriefing: {
-        situation: briefing.situation,
-        motivation: briefing.motivation,
-        strategy: briefing.strategy,
+        situation: sanitizedBriefing.situation,
+        motivation: sanitizedBriefing.motivation,
+        strategy: sanitizedBriefing.strategy,
         generatedAt: new Date().toISOString(),
         generatedFrom: dataSources,
       },
@@ -297,7 +333,7 @@ async function generateBriefing(
     })
     .eq('id', manifestId)
 
-  return briefing
+  return sanitizedBriefing
 }
 
 // Legacy briefing generation (for backward compatibility)

@@ -78,16 +78,28 @@ interface ActivityRow {
 }
 
 function formatActivityTimestamp(ts: string): string {
-  const d = new Date(ts)
-  const now = new Date()
-  const diffMs = now.getTime() - d.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  if (diffMins < 60) return `${diffMins}m ago`
-  const diffHrs = Math.floor(diffMins / 60)
-  if (diffHrs < 24) return `${diffHrs}h ago`
-  const diffDays = Math.floor(diffHrs / 24)
-  if (diffDays < 7) return `${diffDays}d ago`
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  try {
+    const d = new Date(ts)
+    // Check if date is valid
+    if (isNaN(d.getTime())) {
+      return 'Unknown date'
+    }
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+
+    // For recent items, show relative time with actual time
+    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+
+    if (diffMins < 60) return `${diffMins}m ago · ${timeStr}`
+    const diffHrs = Math.floor(diffMins / 60)
+    if (diffHrs < 24) return `${diffHrs}h ago · ${timeStr}`
+    const diffDays = Math.floor(diffHrs / 24)
+    if (diffDays < 7) return `${diffDays}d ago · ${timeStr}`
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` · ${timeStr}`
+  } catch {
+    return 'Unknown date'
+  }
 }
 
 function activityTypeToFeedType(type: string): 'sms' | 'call' | 'email' | 'status_change' {
@@ -1039,12 +1051,36 @@ export default function LeadDetailPage() {
         status_change: 'Status update',
       }
 
+      // Determine direction for calls/SMS
+      let title = typeMap[a.activity_type] || a.activity_type.replace(/_/g, ' ')
+      const direction = a.metadata?.direction as string | undefined
+      const status = a.metadata?.status as string | undefined
+
+      if (a.activity_type === 'call') {
+        if (direction === 'inbound') {
+          title = `Phone call — Inbound from ${a.description?.split('—')[0]?.trim() || 'contact'}`
+        } else if (direction === 'outbound') {
+          title = 'Phone call — Outbound'
+        }
+        if (status) {
+          title += ` — ${status}`
+        }
+      } else if (a.activity_type === 'sms') {
+        if (direction === 'inbound') {
+          title = 'SMS — Inbound'
+        } else if (direction === 'outbound') {
+          title = 'SMS — Outbound'
+        }
+      } else if (a.activity_type === 'voicemail') {
+        title = 'Voicemail — Inbound'
+      }
+
       return {
         id: a.id,
         type: activityTypeToFeedType(a.activity_type),
-        title: typeMap[a.activity_type] || a.activity_type.replace(/_/g, ' '),
+        title,
         content: a.description || undefined,
-        timestamp: formatActivityTimestamp(a.created_at),
+        timestamp: a.created_at, // Pass raw ISO timestamp, let ActivityFeed format it
         link,
         linkLabel,
         recordingUrl,
@@ -1254,7 +1290,11 @@ export default function LeadDetailPage() {
                 data_source: lead.data_source,
                 data_enriched_at: lead.data_enriched_at,
               }}
-              address={addressLine}
+              address={lead.property_address || undefined}
+              city={lead.city || undefined}
+              state={lead.state || undefined}
+              zip={lead.zip || undefined}
+              leadId={id}
               onEdit={() => setEditPanelOpen(true)}
             />
           )}

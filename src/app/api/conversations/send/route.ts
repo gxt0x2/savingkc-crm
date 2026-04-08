@@ -92,12 +92,12 @@ export async function POST(req: Request) {
       })
 
       // Log to dedup table
-      logSmsSend(phone, body.trim(), effectiveFrom, leadId || undefined).catch(() => {})
+      logSmsSend(phone, body.trim(), effectiveFrom, leadId || undefined).catch(err => console.error('[SMS-DEDUP] Failed:', err))
 
       // Auto-advance pipeline on first outbound contact
       if (leadId) {
-        checkAutoAdvance(leadId, 'outbound_contact').catch(() => {})
-        onCommunicationEvent(leadId, { type: 'outbound_sms', content: body.trim() }).catch(() => {})
+        checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+        onCommunicationEvent(leadId, { type: 'outbound_sms', content: body.trim() }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
       }
 
       return NextResponse.json({ success: true, sid: msg.sid })
@@ -134,8 +134,8 @@ export async function POST(req: Request) {
       })
 
       if (leadId) {
-        checkAutoAdvance(leadId, 'outbound_contact').catch(() => {})
-        onCommunicationEvent(leadId, { type: 'email', content: body.trim() }).catch(() => {})
+        checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+        onCommunicationEvent(leadId, { type: 'email', content: body.trim() }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
       }
 
       return NextResponse.json({ success: true, sent })
