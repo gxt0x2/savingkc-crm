@@ -28,6 +28,7 @@ const LOG_FILE = path.join(LOG_DIR, 'mojo-sync.log')
 
 // Mojo activity type codes
 const ACTIVITY_NOTE = 3
+const ACTIVITY_FOLLOWUP = 6
 const ACTIVITY_GROUP = 11
 const ACTIVITY_LEAD = 30
 
@@ -117,39 +118,116 @@ function mojoHeaders(sessionId) {
 
 /**
  * Fetch full contact details from Mojo (address, phone, notes, etc.)
- * Endpoint: /v2/rest/contacts/{contactId}/
+ * CORRECT endpoint: /v2/rest/contacts/data/{contactId}/
+ * (NOT /v2/rest/contacts/{id}/ — that's a SPA route that returns HTML)
  */
 async function fetchContactDetails(sessionId, contactId) {
-  const result = { phone: '', notes: '', address: '', city: '', state: '', zip: '', email: '' }
+  const result = { phone: '', notes: '', address: '', city: '', state: '', zip: '', email: '', followUpDate: '' }
   if (!contactId) return result
   try {
-    const url = `${MOJO_BASE_URL}/v2/rest/contacts/${contactId}/`
+    const url = `${MOJO_BASE_URL}/v2/rest/contacts/data/${contactId}/`
     const response = await fetch(url, {
       headers: mojoHeaders(sessionId),
       signal: AbortSignal.timeout(10000),
     })
-    if (response.ok) {
-      const data = await response.json()
-      result.phone = data.phone || data.phone_number || data.mobile || data.cell ||
-             data.primary_phone || data.phone1 || ''
-      result.email = data.email || data.email_address || ''
-      result.address = data.address || data.property_address || data.street || ''
-      result.city = data.city || ''
-      result.state = data.state || ''
-      result.zip = data.zip || data.zipcode || ''
-      const notesParts = []
-      if (data.notes) notesParts.push(data.notes)
-      if (data.description) notesParts.push(data.description)
-      if (data.last_note) notesParts.push(data.last_note)
-      result.notes = notesParts.filter(Boolean).join('\n')
-      log(`  Contact ${contactId} details: addr="${result.address}", city="${result.city}", state="${result.state}", zip="${result.zip}"`)
-    } else {
+    if (!response.ok) {
       log(`  Contact ${contactId} fetch failed: ${response.status}`)
+      return result
     }
+
+    const contentType = response.headers.get('content-type') || ''
+    if (!contentType.includes('json')) {
+      log(`  Contact ${contactId} returned non-JSON (${contentType}) — likely SPA redirect`)
+      return result
+    }
+
+    const data = await response.json()
+
+    // Address fields
+    result.address = data.address || data.full_address || ''
+    result.city = data.city || ''
+    result.state = data.state || ''
+    result.zip = data.zip_code || data.zip || ''
+
+    // Phone from mediainfo_set (type 3 = primary phone, type 2 = secondary)
+    if (data.mediainfo_set && Array.isArray(data.mediainfo_set)) {
+      const primaryPhone = data.mediainfo_set.find(m => m.type === 3 && m.value)
+      const anyPhone = data.mediainfo_set.find(m => (m.type === 2 || m.type === 3) && m.value)
+      const emailEntry = data.mediainfo_set.find(m => m.type === 4 && m.value)
+      result.phone = (primaryPhone || anyPhone)?.value || ''
+      result.email = emailEntry?.value || ''
+    }
+
+    // Notes from contactnote_set
+    if (data.contactnote_set && Array.isArray(data.contactnote_set)) {
+      const noteTexts = data.contactnote_set
+        .sort((a, b) => new Date(b.create_date).getTime() - new Date(a.create_date).getTime())
+        .map(n => n.contents)
+        .filter(Boolean)
+      result.notes = noteTexts.join('\n')
+    }
+
+    // Follow-up from event_set
+    if (data.event_set && Array.isArray(data.event_set)) {
+      const upcoming = data.event_set
+        .filter(e => new Date(e.datetime || e.date) > new Date())
+        .sort((a, b) => new Date(a.datetime || a.date).getTime() - new Date(b.datetime || b.date).getTime())
+      if (upcoming.length > 0) {
+        result.followUpDate = upcoming[0].datetime || upcoming[0].date || ''
+      }
+    }
+
+    log(`  Contact ${contactId} details: addr="${result.address}", city="${result.city}", state="${result.state}", zip="${result.zip}", phone="${result.phone}", followUp="${result.followUpDate}"`)
   } catch (err) {
     logError(`Failed to fetch contact ${contactId}`, err)
   }
   return result
+}
+
+/**
+ * Fetch today's call recordings from Mojo.
+ * Returns a map of contactId → recording URL.
+ */
+async function fetchTodayRecordings(sessionId) {
+  const recordingMap = new Map() // contactId → { audio, duration, recordId }
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    const url = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=%5B-1%5D&date_range=custom&from=${today}&to=${today}`
+    const response = await fetch(url, {
+      headers: mojoHeaders(sessionId),
+      signal: AbortSignal.timeout(20000),
+    })
+    if (!response.ok) {
+      log(`Recording API returned ${response.status}`)
+      return recordingMap
+    }
+    const data = await response.json()
+    const recordings = data.recordings || []
+    log(`Fetched ${recordings.length} recordings for ${today}`)
+
+    for (const rec of recordings) {
+      const contactId = rec.contact?.id
+      if (contactId && rec.audio) {
+        // Keep longest recording per contact
+        const existing = recordingMap.get(contactId)
+        const durParts = (rec.duration || '0:00').split(':').map(Number)
+        const durSec = durParts.length === 3
+          ? durParts[0] * 3600 + durParts[1] * 60 + durParts[2]
+          : durParts[0] * 60 + (durParts[1] || 0)
+
+        if (!existing || durSec > existing.duration) {
+          recordingMap.set(contactId, {
+            audio: rec.audio,
+            duration: durSec,
+            recordId: rec.record_id,
+          })
+        }
+      }
+    }
+  } catch (err) {
+    logError('Failed to fetch recordings', err)
+  }
+  return recordingMap
 }
 
 async function fetchActivityStream(sessionId, page = 1) {
@@ -242,7 +320,7 @@ function parseMojoTimestamp(ts) {
  * Process activities into MEANINGFUL call records only.
  * Now fetches contact details (address, phone) from Mojo for each meaningful contact.
  */
-async function buildCallRecords(activities, lastActivityId, sessionId) {
+async function buildCallRecords(activities, lastActivityId, sessionId, recordingMap) {
   const newActivities = activities
     .filter(a => a[0] > lastActivityId)
     .sort((a, b) => a[0] - b[0])
@@ -268,6 +346,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId) {
         notes: '',
         groupName: '',
         isQualifiedLead: false,
+        followUpDate: '',
       })
     }
 
@@ -280,6 +359,12 @@ async function buildCallRecords(activities, lastActivityId, sessionId) {
         const content = details.contents || ''
         if (!entry.phone) entry.phone = extractPhone(content)
         if (content.length > entry.notes.length) entry.notes = content
+        break
+      }
+      case ACTIVITY_FOLLOWUP: {
+        // Casey set a follow-up call — details.datetime is the scheduled time
+        entry.followUpDate = details.datetime || ''
+        log(`  Follow-up scheduled for ${entry.contactName}: ${entry.followUpDate}`)
         break
       }
       case ACTIVITY_GROUP: {
@@ -326,6 +411,15 @@ async function buildCallRecords(activities, lastActivityId, sessionId) {
     log(`  Fetching contact details for ${entry.contactName} (${contactId})...`)
     const contactDetails = await fetchContactDetails(sessionId, contactId)
 
+    // Check for recording from today's recording report
+    const recording = recordingMap?.get(Number(contactId))
+    if (recording) {
+      log(`  Found recording for ${entry.contactName}: ${recording.duration}s (record_id: ${recording.recordId})`)
+    }
+
+    // Use follow-up date from activity stream or contact details
+    const followUpDate = entry.followUpDate || contactDetails.followUpDate || ''
+
     const call = {
       record_id: `mojo-activity-${contactId}-${entry.activityIds[0]}`,
       contact_name: entry.contactName,
@@ -335,13 +429,15 @@ async function buildCallRecords(activities, lastActivityId, sessionId) {
       state: contactDetails.state,
       zip: contactDetails.zip,
       call_date: parseMojoTimestamp(entry.timestamp),
-      call_duration: 0,
+      call_duration: recording?.duration || 0,
       disposition,
       agent_name: entry.agentName,
       notes: cleanNotes || contactDetails.notes,
       list_name: '',
       campaign_name: '',
-      recording_url: '',
+      recording_url: recording?.audio || '',
+      follow_up_date: followUpDate,
+      email: contactDetails.email,
     }
 
     calls.push(call)
@@ -391,8 +487,12 @@ async function sync() {
       }
     }
 
+    // Fetch today's recordings (for matching to contacts)
+    log('Fetching today\'s call recordings...')
+    const recordingMap = await fetchTodayRecordings(session.sessionId)
+
     // Build MEANINGFUL call records only
-    const { calls, skippedCount, maxId } = await buildCallRecords(activities, state.lastActivityId, session.sessionId)
+    const { calls, skippedCount, maxId } = await buildCallRecords(activities, state.lastActivityId, session.sessionId, recordingMap)
     log(`Built ${calls.length} meaningful calls, skipped ${skippedCount} non-meaningful`)
 
     if (calls.length === 0) {

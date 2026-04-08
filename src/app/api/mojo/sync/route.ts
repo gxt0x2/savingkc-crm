@@ -30,6 +30,8 @@ interface MojoCallRecord {
   list_name?: string
   campaign_name?: string
   recording_url?: string
+  follow_up_date?: string
+  email?: string
 }
 
 interface DispositionMapping {
@@ -204,6 +206,23 @@ async function processPhase2Intelligence(
           manifest.ariIntelligence.recommendedActions = []
         }
         manifest.ariIntelligence.recommendedActions.push(action)
+      }
+
+      // Handle follow-up date from Mojo
+      if (call.follow_up_date) {
+        if (!manifest.situation.timeline) manifest.situation.timeline = {}
+        manifest.situation.timeline.targetCloseDate = call.follow_up_date
+        if (!manifest.ariIntelligence.recommendedActions) {
+          manifest.ariIntelligence.recommendedActions = []
+        }
+        const followUpTime = new Date(call.follow_up_date).toLocaleString('en-US', {
+          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+        })
+        manifest.ariIntelligence.recommendedActions.push({
+          action: `Follow-up call scheduled: ${followUpTime}`,
+          reason: 'agent_scheduled',
+        })
+        console.log(`[mojo/sync] Follow-up set for ${call.contact_name}: ${followUpTime}`)
       }
 
       // === Extract structured seller intel from Casey's notes ===
@@ -813,12 +832,14 @@ export async function POST(req: NextRequest) {
                 full_name: call.contact_name,
                 property_address: call.property_address,
                 phone: hasPhone ? normalizedPhone : null,
+                email: call.email || null,
                 city: call.city,
                 state: call.state,
                 zip: call.zip,
                 source: 'mojo_call',
-                station: call.property_address ? 'qualification' : 'intake',
+                station: call.property_address ? 'qualifying' : 'intake',
                 priority: 'normal',
+                appointment_date: call.follow_up_date || null,
               })
               .select('id')
               .single()
