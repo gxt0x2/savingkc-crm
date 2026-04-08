@@ -282,7 +282,7 @@ export async function DELETE(req: NextRequest) {
     // Delete related rows first (foreign key constraints)
     await Promise.all([
       supabase.from('bookings').delete().in('lead_id', ids),
-      supabase.from('activity_log').delete().in('lead_id', ids),
+      supabase.from('lead_activities').delete().in('lead_id', ids),
       supabase.from('manifests').delete().in('lead_id', ids),
     ])
 
