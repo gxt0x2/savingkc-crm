@@ -56,7 +56,7 @@ export class ZillowEnrichmentService {
   async enrich(input: ZillowInput): Promise<ZillowResult> {
     const { address, city, state, zip } = input
 
-    console.log('[Zillow] Enriching:', address, city, state)
+    console.log('[Zillow] Enriching:', address, city, state, zip)
 
     if (!this.browser) {
       await this.init()
@@ -66,7 +66,16 @@ export class ZillowEnrichmentService {
 
     try {
       // Build Zillow search URL
-      const searchAddress = `${address}, ${city}, ${state}${zip ? ' ' + zip : ''}`
+      // If address already contains city/state/zip (e.g., "123 Main St, Kansas City, MO 64110"),
+      // use it as-is. Otherwise, build the full address.
+      let searchAddress = address
+      const hasFullAddress = address.match(/,.*[A-Z]{2}\s*\d{5}/)
+
+      if (!hasFullAddress) {
+        // Address is just street (e.g., "123 Main St"), append city/state/zip
+        searchAddress = `${address}, ${city}, ${state}${zip ? ' ' + zip : ''}`
+      }
+
       const encodedAddress = encodeURIComponent(searchAddress)
       const searchUrl = `https://www.zillow.com/homes/${encodedAddress.replace(/%20/g, '-')}_rb/`
 
