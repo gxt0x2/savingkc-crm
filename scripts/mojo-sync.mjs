@@ -115,6 +115,43 @@ function mojoHeaders(sessionId) {
   }
 }
 
+/**
+ * Fetch full contact details from Mojo (address, phone, notes, etc.)
+ * Endpoint: /v2/rest/contacts/{contactId}/
+ */
+async function fetchContactDetails(sessionId, contactId) {
+  const result = { phone: '', notes: '', address: '', city: '', state: '', zip: '', email: '' }
+  if (!contactId) return result
+  try {
+    const url = `${MOJO_BASE_URL}/v2/rest/contacts/${contactId}/`
+    const response = await fetch(url, {
+      headers: mojoHeaders(sessionId),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (response.ok) {
+      const data = await response.json()
+      result.phone = data.phone || data.phone_number || data.mobile || data.cell ||
+             data.primary_phone || data.phone1 || ''
+      result.email = data.email || data.email_address || ''
+      result.address = data.address || data.property_address || data.street || ''
+      result.city = data.city || ''
+      result.state = data.state || ''
+      result.zip = data.zip || data.zipcode || ''
+      const notesParts = []
+      if (data.notes) notesParts.push(data.notes)
+      if (data.description) notesParts.push(data.description)
+      if (data.last_note) notesParts.push(data.last_note)
+      result.notes = notesParts.filter(Boolean).join('\n')
+      log(`  Contact ${contactId} details: addr="${result.address}", city="${result.city}", state="${result.state}", zip="${result.zip}"`)
+    } else {
+      log(`  Contact ${contactId} fetch failed: ${response.status}`)
+    }
+  } catch (err) {
+    logError(`Failed to fetch contact ${contactId}`, err)
+  }
+  return result
+}
+
 async function fetchActivityStream(sessionId, page = 1) {
   const url = `${MOJO_BASE_URL}/v2/rest/home/activity-stream/?page=${page}`
   const resp = await fetch(url, {
@@ -203,8 +240,9 @@ function parseMojoTimestamp(ts) {
 
 /**
  * Process activities into MEANINGFUL call records only.
+ * Now fetches contact details (address, phone) from Mojo for each meaningful contact.
  */
-function buildCallRecords(activities, lastActivityId) {
+async function buildCallRecords(activities, lastActivityId, sessionId) {
   const newActivities = activities
     .filter(a => a[0] > lastActivityId)
     .sort((a, b) => a[0] - b[0])
@@ -284,19 +322,23 @@ function buildCallRecords(activities, lastActivityId) {
       cleanNotes = entry.notes.replace(/^\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n?/, '').trim()
     }
 
+    // Fetch full contact details from Mojo (address, phone, email)
+    log(`  Fetching contact details for ${entry.contactName} (${contactId})...`)
+    const contactDetails = await fetchContactDetails(sessionId, contactId)
+
     const call = {
       record_id: `mojo-activity-${contactId}-${entry.activityIds[0]}`,
       contact_name: entry.contactName,
-      phone_number: entry.phone,
-      property_address: '',
-      city: '',
-      state: '',
-      zip: '',
+      phone_number: entry.phone || contactDetails.phone,
+      property_address: contactDetails.address,
+      city: contactDetails.city,
+      state: contactDetails.state,
+      zip: contactDetails.zip,
       call_date: parseMojoTimestamp(entry.timestamp),
       call_duration: 0,
       disposition,
       agent_name: entry.agentName,
-      notes: cleanNotes,
+      notes: cleanNotes || contactDetails.notes,
       list_name: '',
       campaign_name: '',
       recording_url: '',
@@ -350,7 +392,7 @@ async function sync() {
     }
 
     // Build MEANINGFUL call records only
-    const { calls, skippedCount, maxId } = buildCallRecords(activities, state.lastActivityId)
+    const { calls, skippedCount, maxId } = await buildCallRecords(activities, state.lastActivityId, session.sessionId)
     log(`Built ${calls.length} meaningful calls, skipped ${skippedCount} non-meaningful`)
 
     if (calls.length === 0) {

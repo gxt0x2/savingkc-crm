@@ -471,6 +471,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'calls array required' }, { status: 400 })
     }
 
+    // Log raw incoming data for debugging
+    console.log(`[mojo/sync] Received ${calls.length} call(s)`)
+    for (const c of calls) {
+      const missing: string[] = []
+      if (!c.property_address) missing.push('property_address')
+      if (!c.recording_url) missing.push('recording_url')
+      if (!c.city) missing.push('city')
+      if (!c.state) missing.push('state')
+      if (!c.zip) missing.push('zip')
+      console.log(`[mojo/sync] Call ${c.record_id}: ${c.contact_name} | phone=${c.phone_number} | addr="${c.property_address || 'MISSING'}" | recording=${c.recording_url ? 'YES' : 'MISSING'} | disposition=${c.disposition}`)
+      if (missing.length > 0) {
+        console.warn(`[mojo/sync] ⚠️ MISSING FIELDS for ${c.contact_name}: ${missing.join(', ')}`)
+      }
+    }
+
     let processed = 0
     let created = 0
     let updated = 0
