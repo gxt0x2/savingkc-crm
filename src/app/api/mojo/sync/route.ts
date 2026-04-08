@@ -205,11 +205,73 @@ async function processPhase2Intelligence(
         }
         manifest.ariIntelligence.recommendedActions.push(action)
       }
+
+      // === Extract structured seller intel from Casey's notes ===
+      // Casey writes: "Timeline: ...\nCondition: ...\nPrice: ...\nMotivation: ..."
+      const notes = call.notes
+      const timelineMatch = notes.match(/Timeline:\s*(.+?)(?:\n|$)/i)
+      const conditionMatch = notes.match(/Condition:\s*(.+?)(?:\n|$)/i)
+      const priceMatch = notes.match(/Price:\s*(.+?)(?:\n|$)/i)
+      const motivationMatch = notes.match(/Motivation:\s*(.+?)(?:\n|$)/i)
+
+      if (timelineMatch || conditionMatch || priceMatch || motivationMatch) {
+        console.log(`[mojo/sync] Extracting seller intel from agent notes for ${call.contact_name}`)
+
+        if (timelineMatch) {
+          if (!manifest.situation.timeline) manifest.situation.timeline = {}
+          ;(manifest.situation.timeline as any).notes = timelineMatch[1].trim()
+          // Detect urgency from keywords
+          const tl = timelineMatch[1].toLowerCase()
+          if (tl.includes('asap') || tl.includes('immediate') || tl.includes('urgent')) {
+            manifest.situation.timeline.urgency = 'high'
+          } else if (tl.includes('30') || tl.includes('60') || tl.includes('soon')) {
+            manifest.situation.timeline.urgency = 'medium'
+          }
+        }
+
+        if (conditionMatch) {
+          if (!manifest.property.condition) manifest.property.condition = {} as any
+          manifest.property.condition!.notes = conditionMatch[1].trim()
+        }
+
+        if (priceMatch) {
+          if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
+          ;(manifest.situation.priceExpectations as any).notes = priceMatch[1].trim()
+          // Extract dollar amounts
+          const amounts = priceMatch[1].match(/\$?([\d,]+)k?/gi)
+          if (amounts) {
+            const nums = amounts.map(a => {
+              const n = parseFloat(a.replace(/[$,]/g, ''))
+              return a.toLowerCase().includes('k') ? n * 1000 : (n < 1000 ? n * 1000 : n)
+            }).sort((a, b) => b - a)
+            if (nums.length >= 1) manifest.situation.priceExpectations.sellerAsking = nums[0]
+            if (nums.length >= 2) manifest.situation.priceExpectations.sellerFloor = nums[nums.length - 1]
+          }
+        }
+
+        if (motivationMatch) {
+          if (!manifest.situation.motivation) manifest.situation.motivation = {}
+          ;(manifest.situation.motivation as any).notes = motivationMatch[1].trim()
+        }
+
+        // Add audit trail entry for note intel extraction
+        manifest.auditTrail.push({
+          timestamp: new Date().toISOString(),
+          agent: 'system:mojo_note_parser',
+          action: 'seller_intel_extracted_from_notes',
+          details: {
+            hasTimeline: !!timelineMatch,
+            hasCondition: !!conditionMatch,
+            hasPrice: !!priceMatch,
+            hasMotivation: !!motivationMatch,
+          },
+        })
+      }
     }
 
     // Skip Phase 2 intelligence if no recording URL
     if (!call.recording_url) {
-      console.log(`No recording URL for call ${call.record_id}`)
+      console.log(`[mojo/sync] No recording URL for call ${call.record_id} — using note-extracted intel only`)
       return manifest
     }
 
