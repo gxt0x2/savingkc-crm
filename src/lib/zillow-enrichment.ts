@@ -1,7 +1,19 @@
 // Zillow Property Enrichment Service
 // Supplements county data with lot size, sale history, tax info
 
-import { chromium, Browser, Page } from 'playwright'
+// Dynamic import to handle optional Playwright dependency (not available on Vercel)
+let chromium: any
+let Browser: any
+let Page: any
+
+try {
+  const playwright = require('playwright')
+  chromium = playwright.chromium
+  Browser = playwright.Browser
+  Page = playwright.Page
+} catch (e) {
+  console.warn('[Zillow] Playwright not available - Zillow enrichment disabled')
+}
 
 export interface ZillowInput {
   address: string
@@ -40,6 +52,9 @@ export class ZillowEnrichmentService {
   private readonly timeout = 60000 // Increased to 60 seconds
 
   async init() {
+    if (!chromium) {
+      throw new Error('Playwright not available - Zillow enrichment disabled on this platform')
+    }
     this.browser = await chromium.launch({
       headless: true,
       timeout: this.timeout,
