@@ -1170,18 +1170,19 @@ export class CountyEnrichmentService {
           // ScraperAPI: renders JS + bypasses Cloudflare
           const scraperUrl = `https://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(beaconUrl)}&render=true&country_code=us`
 
-          const res = await fetch(scraperUrl, { signal: AbortSignal.timeout(45000) })
+          const res = await fetch(scraperUrl, { signal: AbortSignal.timeout(90000) })
           if (!res.ok) throw new Error(`ScraperAPI returned ${res.status}`)
 
           const html = await res.text()
 
           // Check if we got real Beacon data (not a Cloudflare page)
           if (html.includes('Year Built') || html.includes('Gross Living Area')) {
-            // Parse dt/dd pairs from HTML
-            const dtDdPattern = /<dt[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/dt>\s*<dd[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/dd>/gi
+            // Parse th/td pairs from HTML (Beacon uses <th>Label</th><td>Value</td>)
+            // th may contain nested <strong> or <span> tags
+            const thTdPattern = /<th[^>]*>([\s\S]*?)<\/th>\s*<td[^>]*>([\s\S]*?)<\/td>/gi
             const fields: Record<string, string> = {}
             let match
-            while ((match = dtDdPattern.exec(html)) !== null) {
+            while ((match = thTdPattern.exec(html)) !== null) {
               const label = match[1].replace(/<[^>]*>/g, '').trim()
               const value = match[2].replace(/<[^>]*>/g, '').trim()
               if (label && value) fields[label] = value
