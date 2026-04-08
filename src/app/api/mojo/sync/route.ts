@@ -772,7 +772,7 @@ export async function POST(req: NextRequest) {
             propertyState: call.state,
             propertyZip: call.zip,
             source: 'mojo_call',
-            station: call.property_address ? 'qualification' : 'intake',
+            station: call.property_address ? 'qualifying' : 'intake',
             priority: dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm'),
           }
 
@@ -780,7 +780,7 @@ export async function POST(req: NextRequest) {
 
           // Override default values with Mojo data
           manifest.property.address = call.property_address
-          manifest.currentStation = call.property_address ? 'qualification' : 'intake'
+          manifest.currentStation = call.property_address ? 'qualifying' : 'intake'
           manifest.priority = dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm')
 
           // Add contact entry
@@ -849,23 +849,55 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Insert manifest
-          const { data: newManifest } = await supabase
-            .from('manifests')
-            .insert({
-              lead_id: leadId,
-              version: manifest.version,
-              manifest,
-              current_station: manifest.currentStation,
-              priority: manifest.priority,
-            })
-            .select('id')
-            .single()
+          // Insert manifest — or update if ensureManifestExists already created one
+          // (the manifests_lead_id_unique constraint prevents duplicates)
+          let newManifest: any = null
 
-          if (newManifest) {
-            manifestId = newManifest.id
+          // Check if a manifest was already auto-created for this lead
+          const { data: existingForLead } = await supabase
+            .from('manifests')
+            .select('id, manifest')
+            .eq('lead_id', leadId)
+            .limit(1)
+
+          if (existingForLead && existingForLead.length > 0) {
+            // Manifest already exists (auto-created) — merge our data into it
+            const existing = existingForLead[0]
+            const merged = { ...existing.manifest, ...manifest }
+            // Preserve any audit trail entries from auto-creation
+            merged.auditTrail = [
+              ...(existing.manifest.auditTrail || []),
+              ...(manifest.auditTrail || []).filter((e: any) => e.action !== 'manifest_created'),
+            ]
+            await supabase
+              .from('manifests')
+              .update({ manifest: merged, current_station: manifest.currentStation, priority: manifest.priority })
+              .eq('id', existing.id)
+            manifestId = existing.id
+            manifest = merged
             created++
             isNew = true
+            console.log(`[mojo/sync] Merged into existing manifest ${manifestId}`)
+          } else {
+            // No existing manifest — insert new
+            const { data } = await supabase
+              .from('manifests')
+              .insert({
+                lead_id: leadId,
+                version: manifest.version,
+                manifest,
+                current_station: manifest.currentStation,
+                priority: manifest.priority,
+              })
+              .select('id')
+              .single()
+            newManifest = data
+
+            if (newManifest) {
+              manifestId = newManifest.id
+              created++
+              isNew = true
+            }
           }
         }
 
@@ -934,10 +966,12 @@ export async function POST(req: NextRequest) {
 
         // F. Phase 2: Process intelligence (recording → transcription → analysis)
         if (manifest && manifestId) {
+          console.log(`[mojo/sync] PRE-Phase2: agentNotes=${manifest.agentNotes?.length}, timeline=${!!manifest.situation?.timeline}, priceExp=${!!manifest.situation?.priceExpectations}`)
           manifest = await processPhase2Intelligence(call, manifest, manifestId)
+          console.log(`[mojo/sync] POST-Phase2: agentNotes=${manifest.agentNotes?.length}, timeline=${!!manifest.situation?.timeline}, priceExp=${!!manifest.situation?.priceExpectations}, auditTrail=${manifest.auditTrail?.length}`)
 
           // Update manifest with Phase 2 data
-          await supabase
+          const { error: updateErr } = await supabase
             .from('manifests')
             .update({
               manifest,
@@ -945,6 +979,12 @@ export async function POST(req: NextRequest) {
               current_station: manifest.currentStation,
             })
             .eq('id', manifestId)
+
+          if (updateErr) {
+            console.error(`[mojo/sync] MANIFEST UPDATE FAILED:`, updateErr.message)
+          } else {
+            console.log(`[mojo/sync] Manifest ${manifestId} updated successfully after Phase 2`)
+          }
 
           // G. Backfill lead from manifest data (fixes empty "Mojo Lead" / "Unknown" records)
           if (leadId) {
