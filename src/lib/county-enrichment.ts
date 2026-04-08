@@ -963,22 +963,37 @@ export class CountyEnrichmentService {
     }
 
     try {
-      // Step 1: Search by situs (street name only — API matches on street name)
-      // Extract street name: "1234 N Jefferson St" → "Jefferson"
-      const streetName = input.address
-        .replace(/^\d+\s+/, '')           // remove house number
-        .replace(/\b(N|S|E|W|NE|NW|SE|SW)\.?\s+/i, '') // remove direction prefix
-        .replace(/\s+(St|Ave|Blvd|Dr|Rd|Ln|Ct|Pl|Ter|Way|Cir|Pkwy)\.?\s*$/i, '') // remove suffix
+      // Step 1: Search by situs — use full street address (house# + direction + street)
+      // The API requires more than just the street name (returns "too short" error otherwise)
+      // Strip only city/state/zip and suffix, keep house number and direction
+      const streetOnly = input.address.split(',')[0].trim()
+      const situsQuery = streetOnly
+        .replace(/\s+(St|Ave|Blvd|Dr|Rd|Ln|Ct|Pl|Ter|Way|Cir|Pkwy|STREET|AVENUE|BOULEVARD|DRIVE|ROAD|LANE|COURT|PLACE|TERRACE|TRAIL|CIRCLE|PARKWAY)\.?\s*$/i, '') // remove suffix
         .trim()
 
       const searchRes = await fetch(
-        `${BASE}/parcels?situs=${encodeURIComponent(streetName)}`,
+        `${BASE}/parcels?situs=${encodeURIComponent(situsQuery)}`,
         { headers, signal: AbortSignal.timeout(15000) }
       )
       if (!searchRes.ok) throw new Error(`Clay search returned ${searchRes.status}`)
 
-      const allParcels = await searchRes.json()
-      if (!Array.isArray(allParcels) || allParcels.length === 0) {
+      let allParcels = await searchRes.json()
+
+      // If the result is a string (error message like "too short"), try with full address
+      if (typeof allParcels === 'string' || (Array.isArray(allParcels) && allParcels.length === 1 && typeof allParcels[0] === 'string')) {
+        // Fallback: try with just street name (without house number)
+        const fallbackQuery = situsQuery.replace(/^\d+\s+/, '').trim()
+        if (fallbackQuery.length >= 4) {
+          const fallbackRes = await fetch(
+            `${BASE}/parcels?situs=${encodeURIComponent(fallbackQuery)}`,
+            { headers, signal: AbortSignal.timeout(15000) }
+          )
+          allParcels = await fallbackRes.json()
+        }
+      }
+
+      if (!Array.isArray(allParcels) || allParcels.length === 0 ||
+          (allParcels.length === 1 && typeof allParcels[0] === 'string')) {
         return { success: false, county: 'Clay', error: 'Address not found in Clay County records' }
       }
 
