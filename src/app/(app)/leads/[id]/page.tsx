@@ -828,6 +828,7 @@ export default function LeadDetailPage() {
   const [activities, setActivities] = useState<ActivityRow[]>([])
   const [manifestRowId, setManifestRowId] = useState<string | null>(null)
   const [manifestFinancials, setManifestFinancials] = useState<Record<string, number | null>>({ back_taxes: null, liens_amount: null, mortgage_balance: null })
+  const [zestimate, setZestimate] = useState<number | null>(null)
   const [ghostProtocolStatus, setGhostProtocolStatus] = useState<{ phase: number; status: string } | null>(null)
   const [detailsExpanded, setDetailsExpanded] = useState(false)
   const [thankYouSent, setThankYouSent] = useState(false)
@@ -876,6 +877,8 @@ export default function LeadDetailPage() {
             liens_amount: fin.liens_amount ?? null,
             mortgage_balance: fin.mortgage_balance ?? null,
           })
+          // Extract Zestimate from Zillow enrichment
+          setZestimate(fin.zillow_zestimate ?? null)
         }
       } catch { /* silent */ }
     }
@@ -1262,7 +1265,7 @@ export default function LeadDetailPage() {
             property={property}
             detailsExpanded={detailsExpanded}
             onToggleDetails={() => setDetailsExpanded((v) => !v)}
-            arv={lead.arv}
+            zestimate={zestimate}
             onNotesClick={() => setNotesModalOpen(true)}
           />
 

@@ -22,6 +22,7 @@ interface PropertyHeroProps {
   detailsExpanded?: boolean
   onToggleDetails?: () => void
   arv?: number | null
+  zestimate?: number | null
   onNotesClick?: () => void
 }
 
@@ -40,7 +41,7 @@ function getCountyUrl(county: string | undefined, city: string | undefined, addr
   return `https://www.google.com/search?q=${encodeURIComponent(address + ' county records parcel')}`
 }
 
-export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, onNotesClick }: PropertyHeroProps) {
+export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, zestimate, onNotesClick }: PropertyHeroProps) {
   const fullAddress = [property.address, property.city, property.state, property.zip]
     .filter(Boolean)
     .join(', ')
@@ -152,9 +153,9 @@ export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, 
         {/* Zestimate Display */}
         <div className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2">
           <span className="text-sm text-on-surface-variant font-medium">Zestimate:</span>
-          {arv ? (
+          {zestimate ? (
             <>
-              <span className="text-lg font-bold text-primary">${arv.toLocaleString()}</span>
+              <span className="text-lg font-bold text-primary">${zestimate.toLocaleString()}</span>
               <a
                 href={zillowUrl}
                 target="_blank"

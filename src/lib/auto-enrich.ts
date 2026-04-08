@@ -371,8 +371,8 @@ async function enrichFromZillow(
       // Zestimate as ARV (only if missing)
       if (result.zestimate && !manifest.financials?.arv) {
         if (!manifest.financials) manifest.financials = {} as any
-        manifest.financials.arv = result.zestimate
-        manifest.financials.arv_source = 'zestimate' as any
+        manifest.financials!.arv = result.zestimate
+        manifest.financials!.arv_source = 'zestimate' as any
       }
 
       // Year built (only if missing)
