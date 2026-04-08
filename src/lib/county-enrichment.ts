@@ -1156,77 +1156,70 @@ export class CountyEnrichmentService {
       const latestTax = taxData.length > 0 ? taxData[0].amount : undefined
 
       // === STAGE 2: Beacon — dwelling details + valuation ===
+      // Uses ScraperAPI or ZenRows to bypass Cloudflare Turnstile on Beacon
+      // Set SCRAPER_API_KEY env var to enable (sign up free at scraperapi.com or zenrows.com)
 
       let dwelling: any = {}
       let valuation: any = {}
 
-      try {
-        const beaconPage = await this.browser!.newPage()
-        await beaconPage.setExtraHTTPHeaders({
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        })
-        await beaconPage.goto(
-          `https://beacon.schneidercorp.com/Application.aspx?AppID=589&LayerID=17697&PageTypeID=4&PageID=7914&KeyValue=${encodeURIComponent(parcelId)}`,
-          { waitUntil: 'domcontentloaded', timeout: this.timeout }
-        )
-        await beaconPage.waitForTimeout(8000)
+      const scraperApiKey = process.env.SCRAPER_API_KEY
+      const beaconUrl = `https://beacon.schneidercorp.com/Application.aspx?AppID=589&LayerID=17697&PageTypeID=4&PageID=7914&KeyValue=${encodeURIComponent(parcelId)}`
 
-        // Check if Cloudflare blocked us
-        const title = await beaconPage.title()
-        if (title.includes('moment') || title.includes('Cloudflare')) {
-          console.warn('[Platte] Beacon blocked by Cloudflare — using collector data only')
-          await beaconPage.close()
-          throw new Error('Cloudflare challenge')
-        }
+      if (scraperApiKey) {
+        try {
+          // ScraperAPI: renders JS + bypasses Cloudflare
+          const scraperUrl = `https://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(beaconUrl)}&render=true&country_code=us`
 
-        // Extract dwelling data from Beacon
-        const beaconData = await beaconPage.evaluate(() => {
-          const getText = (label: string) => {
-            const dt = Array.from(document.querySelectorAll('dt')).find(el =>
-              el.textContent?.trim().toLowerCase() === label.toLowerCase()
-            )
-            return dt?.nextElementSibling?.textContent?.trim() || ''
-          }
+          const res = await fetch(scraperUrl, { signal: AbortSignal.timeout(45000) })
+          if (!res.ok) throw new Error(`ScraperAPI returned ${res.status}`)
 
-          // Get valuation from table
-          const valuationTable: any = {}
-          const tables = Array.from(document.querySelectorAll('table.tabular-data')) as HTMLTableElement[]
-          for (const table of tables) {
-            const text = (table as HTMLElement).innerText
-            if (text.includes('Residential Value') || text.includes('Current Values')) {
-              const rows = Array.from(table.querySelectorAll('tr'))
-              for (const row of rows) {
-                const cells = Array.from(row.querySelectorAll('td')) as HTMLElement[]
-                if (cells.length >= 4 && cells[0].innerText.includes('Residential')) {
-                  valuationTable.improvements = parseFloat(cells[1]?.innerText.replace(/[$ ,]/g, '')) || 0
-                  valuationTable.land = parseFloat(cells[2]?.innerText.replace(/[$ ,]/g, '')) || 0
-                  valuationTable.total = parseFloat(cells[3]?.innerText.replace(/[$ ,]/g, '')) || 0
-                  valuationTable.assessed = parseFloat(cells[4]?.innerText?.replace(/[$ ,]/g, '')) || 0
-                }
+          const html = await res.text()
+
+          // Check if we got real Beacon data (not a Cloudflare page)
+          if (html.includes('Year Built') || html.includes('Gross Living Area')) {
+            // Parse dt/dd pairs from HTML
+            const dtDdPattern = /<dt[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/dt>\s*<dd[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/dd>/gi
+            const fields: Record<string, string> = {}
+            let match
+            while ((match = dtDdPattern.exec(html)) !== null) {
+              const label = match[1].replace(/<[^>]*>/g, '').trim()
+              const value = match[2].replace(/<[^>]*>/g, '').trim()
+              if (label && value) fields[label] = value
+            }
+
+            dwelling = {
+              yearBuilt: fields['Year Built'] || '',
+              grossLivingArea: fields['Gross Living Area'] || '',
+              style: fields['Style'] || '',
+              bedrooms: fields['Number of Bedrooms'] || '',
+              basement: fields['Basement Area Type'] || '',
+              basementArea: fields['Basement Area'] || '',
+              heat: fields['Heat'] || '',
+              centralAir: fields['Central Air'] || '',
+              bathrooms: fields['Plumbing'] || '',
+              lotArea: fields['Lot Area'] || '',
+            }
+
+            // Parse valuation table
+            const residentialMatch = html.replace(/\n/g, ' ').match(/Residential Value.*?\$([\d,]+\.?\d*).*?\$([\d,]+\.?\d*).*?\$([\d,]+\.?\d*).*?\$([\d,]+\.?\d*)/)
+            if (residentialMatch) {
+              valuation = {
+                improvements: parseFloat(residentialMatch[1].replace(/,/g, '')) || 0,
+                land: parseFloat(residentialMatch[2].replace(/,/g, '')) || 0,
+                total: parseFloat(residentialMatch[3].replace(/,/g, '')) || 0,
+                assessed: parseFloat(residentialMatch[4].replace(/,/g, '')) || 0,
               }
             }
-          }
 
-          return {
-            yearBuilt: getText('Year Built'),
-            grossLivingArea: getText('Gross Living Area'),
-            style: getText('Style'),
-            bedrooms: getText('Number of Bedrooms'),
-            basement: getText('Basement Area Type'),
-            basementArea: getText('Basement Area'),
-            heat: getText('Heat'),
-            centralAir: getText('Central Air'),
-            bathrooms: getText('Plumbing'),
-            lotArea: getText('Lot Area'),
-            valuation: valuationTable
+            console.log('[Platte] Beacon data retrieved via ScraperAPI')
+          } else {
+            console.warn('[Platte] ScraperAPI returned page without property data')
           }
-        })
-
-        dwelling = beaconData
-        valuation = beaconData.valuation || {}
-        await beaconPage.close()
-      } catch (beaconErr: any) {
-        console.warn('[Platte] Beacon cascade failed (continuing with collector data):', beaconErr.message)
+        } catch (scraperErr: any) {
+          console.warn('[Platte] ScraperAPI failed (continuing with collector data):', scraperErr.message)
+        }
+      } else {
+        console.log('[Platte] No SCRAPER_API_KEY set — skipping Beacon dwelling data')
       }
 
       await page.close()
