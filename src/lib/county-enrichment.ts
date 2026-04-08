@@ -29,6 +29,8 @@ export interface EnrichmentResult {
   bedrooms?: number
   bathrooms?: number
   propertyType?: string
+  basementType?: string
+  latestTaxAmount?: number
   source?: string
   fetchedAt?: string
   error?: string
@@ -71,6 +73,8 @@ export class CountyEnrichmentService {
         return await this.enrichJacksonCountyMO(input)
       } else if (state === 'MO' && county === 'clay') {
         return await this.enrichClayCountyMO(input)
+      } else if (state === 'MO' && county === 'platte') {
+        return await this.enrichPlatteCountyMO(input)
       } else {
         return {
           success: false,
@@ -1048,6 +1052,215 @@ export class CountyEnrichmentService {
       return { success: false, county: 'Clay', error: err.message }
     }
   }
+
+  /**
+   * Platte County, MO — Cascade: Collector (address search + tax) → Beacon (dwelling + assessment)
+   * 1. Search plattecountycollector.com by street address to find parcel ID + tax history
+   * 2. Use parcel ID on beacon.schneidercorp.com for dwelling details + valuation
+   */
+  private async enrichPlatteCountyMO(
+    input: EnrichmentInput
+  ): Promise<EnrichmentResult> {
+    if (!this.browser) throw new Error('Browser not initialized')
+    const page = await this.browser.newContext({ ignoreHTTPSErrors: true }).then(ctx => ctx.newPage())
+
+    try {
+      // === STAGE 1: Collector — search by address, get parcel ID + tax data ===
+
+      // Build search query: strip city/state/zip, keep house# + direction + street name, drop suffix
+      const streetOnly = input.address.split(',')[0].trim()
+      const searchQuery = streetOnly
+        .replace(/\s+(St|Ave|Blvd|Dr|Rd|Ln|Ct|Pl|Ter|Way|Cir|Pkwy|STREET|AVENUE|BOULEVARD|DRIVE|ROAD|LANE|COURT|PLACE|TERRACE|TRAIL|CIRCLE|PARKWAY)\.?\s*$/i, '')
+        .trim()
+
+      // Navigate to collector search
+      await page.goto('https://plattecountycollector.com/realsearch.php', {
+        waitUntil: 'domcontentloaded', timeout: this.timeout
+      })
+      await page.waitForTimeout(500)
+
+      // Fill street name field and submit (3rd submit button on page)
+      await page.locator('input[name="strtname"]').fill(searchQuery)
+      const submitBtns = page.locator('input[type="submit"]')
+      const btnCount = await submitBtns.count()
+      if (btnCount >= 3) {
+        await submitBtns.nth(2).click()
+      } else {
+        await page.locator('input[name="strtname"]').press('Enter')
+      }
+      await page.waitForTimeout(3000)
+
+      // Extract parcel ID from results table
+      // Table columns: [checkbox, Parcel, Name, Mailing, Physical, Subdivision]
+      const searchResult = await page.evaluate((houseNum) => {
+        const rows = Array.from(document.querySelectorAll('tr'))
+        for (const row of rows) {
+          const cells = Array.from(row.querySelectorAll('td')) as HTMLElement[]
+          if (cells.length >= 5) {
+            const parcel = cells[1]?.innerText?.trim() || ''
+            const owner = cells[2]?.innerText?.trim() || ''
+            const physical = cells[4]?.innerText?.trim() || ''
+            // Match by house number if provided
+            if (houseNum && physical.startsWith(houseNum)) {
+              return { parcelId: parcel, address: physical, owner }
+            }
+            // Return first result with valid parcel ID format
+            if (parcel.match(/^\d+-/)) {
+              return { parcelId: parcel, address: physical, owner }
+            }
+          }
+        }
+        return null
+      }, input.address.match(/^(\d+)/)?.[1] || '')
+
+      if (!searchResult?.parcelId) {
+        return { success: false, county: 'Platte', error: 'Address not found in Platte County records' }
+      }
+
+      const parcelId = searchResult.parcelId
+
+      // Navigate to collector detail page for tax data
+      await page.goto(
+        `https://plattecountycollector.com/realview.php?user=beacon&pid=${encodeURIComponent(parcelId)}`,
+        { waitUntil: 'domcontentloaded', timeout: this.timeout }
+      )
+      await page.waitForTimeout(2000)
+
+      // Extract tax payment history
+      const taxData = await page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('tr'))
+        const taxRows: { year: number; amount: number; paid: boolean; datePaid: string }[] = []
+        for (const row of rows) {
+          const cells = Array.from(row.querySelectorAll('td'))
+          if (cells.length >= 5) {
+            const year = parseInt(cells[0]?.innerText?.trim())
+            const amountText = cells[2]?.innerText?.trim().replace(/[$ ,]/g, '')
+            const datePaid = cells[4]?.innerText?.trim()
+            if (year > 2000 && amountText) {
+              taxRows.push({
+                year,
+                amount: parseFloat(amountText),
+                paid: !!datePaid && datePaid.length > 3,
+                datePaid: datePaid || ''
+              })
+            }
+          }
+        }
+        return taxRows
+      })
+
+      // Calculate delinquency
+      const currentYear = new Date().getFullYear()
+      const unpaidYears = taxData.filter(t => !t.paid)
+      const totalOwed = unpaidYears.reduce((sum, t) => sum + t.amount, 0)
+      const latestTax = taxData.length > 0 ? taxData[0].amount : undefined
+
+      // === STAGE 2: Beacon — dwelling details + valuation ===
+
+      let dwelling: any = {}
+      let valuation: any = {}
+
+      try {
+        const beaconPage = await this.browser!.newPage()
+        await beaconPage.goto(
+          `https://beacon.schneidercorp.com/Application.aspx?AppID=589&LayerID=17697&PageTypeID=4&PageID=7914&KeyValue=${encodeURIComponent(parcelId)}`,
+          { waitUntil: 'domcontentloaded', timeout: this.timeout }
+        )
+        await beaconPage.waitForTimeout(5000)
+
+        // Extract dwelling data from Beacon
+        const beaconData = await beaconPage.evaluate(() => {
+          const getText = (label: string) => {
+            const dt = Array.from(document.querySelectorAll('dt')).find(el =>
+              el.textContent?.trim().toLowerCase() === label.toLowerCase()
+            )
+            return dt?.nextElementSibling?.textContent?.trim() || ''
+          }
+
+          // Get valuation from table
+          const valuationTable: any = {}
+          const tables = Array.from(document.querySelectorAll('table.tabular-data')) as HTMLTableElement[]
+          for (const table of tables) {
+            const text = (table as HTMLElement).innerText
+            if (text.includes('Residential Value') || text.includes('Current Values')) {
+              const rows = Array.from(table.querySelectorAll('tr'))
+              for (const row of rows) {
+                const cells = Array.from(row.querySelectorAll('td')) as HTMLElement[]
+                if (cells.length >= 4 && cells[0].innerText.includes('Residential')) {
+                  valuationTable.improvements = parseFloat(cells[1]?.innerText.replace(/[$ ,]/g, '')) || 0
+                  valuationTable.land = parseFloat(cells[2]?.innerText.replace(/[$ ,]/g, '')) || 0
+                  valuationTable.total = parseFloat(cells[3]?.innerText.replace(/[$ ,]/g, '')) || 0
+                  valuationTable.assessed = parseFloat(cells[4]?.innerText?.replace(/[$ ,]/g, '')) || 0
+                }
+              }
+            }
+          }
+
+          return {
+            yearBuilt: getText('Year Built'),
+            grossLivingArea: getText('Gross Living Area'),
+            style: getText('Style'),
+            bedrooms: getText('Number of Bedrooms'),
+            basement: getText('Basement Area Type'),
+            basementArea: getText('Basement Area'),
+            heat: getText('Heat'),
+            centralAir: getText('Central Air'),
+            bathrooms: getText('Plumbing'),
+            lotArea: getText('Lot Area'),
+            valuation: valuationTable
+          }
+        })
+
+        dwelling = beaconData
+        valuation = beaconData.valuation || {}
+        await beaconPage.close()
+      } catch (beaconErr: any) {
+        console.warn('[Platte] Beacon cascade failed (continuing with collector data):', beaconErr.message)
+      }
+
+      await page.close()
+
+      // Parse dwelling fields
+      const sqftMatch = dwelling.grossLivingArea?.match(/(\d[\d,]+)/)
+      const sqft = sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : undefined
+      const yearBuilt = dwelling.yearBuilt ? parseInt(dwelling.yearBuilt) : undefined
+      const bedroomsMatch = dwelling.bedrooms?.match(/(\d+)\s*above/)
+      const bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : undefined
+      const bathMatch = dwelling.bathrooms?.match(/(\d+)\s*Standard Bath/)
+      const bathrooms = bathMatch ? parseInt(bathMatch[1]) : undefined
+      const basementMatch = dwelling.basementArea?.match(/(\d[\d,]*)/)
+      const basementSqft = basementMatch ? parseInt(basementMatch[1].replace(/,/g, '')) : undefined
+
+      return {
+        success: true,
+        county: 'Platte',
+        source: 'platte_county_collector_beacon',
+        // Assessment from Beacon
+        appraisedValue: valuation.total || undefined,
+        landValue: valuation.land || undefined,
+        improvementValue: valuation.improvements || undefined,
+        assessedValue: valuation.assessed || undefined,
+        // Dwelling from Beacon
+        sqft,
+        yearBuilt,
+        bedrooms,
+        bathrooms,
+        propertyType: dwelling.style || undefined,
+        basementType: dwelling.basement || undefined,
+        // Tax from Collector
+        taxOwed: totalOwed > 0 ? totalOwed : undefined,
+        taxStatus: unpaidYears.length > 0 ? 'delinquent' : 'current',
+        latestTaxAmount: latestTax,
+        // Parcel
+        parcelId,
+        ownerName: searchResult.owner || undefined,
+        fetchedAt: new Date().toISOString(),
+      }
+    } catch (err: any) {
+      await page.close().catch(() => {})
+      return { success: false, county: 'Platte', error: err.message }
+    }
+  }
 }
 
 /**
@@ -1059,6 +1272,7 @@ export function detectCounty(city?: string, state?: string, zip?: string): { cou
   if (s === 'MO') {
     if (c?.includes('kansas city') || c?.includes('independence') || c?.includes('blue springs') || c?.includes('raytown') || c?.includes('grandview') || c?.includes('lee')) return { county: 'Jackson', state: 'MO' }
     if (c?.includes('liberty') || c?.includes('kearney') || c?.includes('smithville') || c?.includes('excelsior') || c?.includes('north kansas city')) return { county: 'Clay', state: 'MO' }
+    if (c?.includes('platte city') || c?.includes('parkville') || c?.includes('weston') || c?.includes('riverside') || c?.includes('weatherby lake') || c?.includes('platte woods') || c?.includes('camden point') || c?.includes('edgerton') || c?.includes('tracy')) return { county: 'Platte', state: 'MO' }
   }
   if (s === 'KS') {
     if (c?.includes('overland park') || c?.includes('olathe') || c?.includes('shawnee') || c?.includes('lenexa') || c?.includes('leawood') || c?.includes('prairie village') || c?.includes('merriam') || c?.includes('gardner')) return { county: 'Johnson', state: 'KS' }
@@ -1067,6 +1281,7 @@ export function detectCounty(city?: string, state?: string, zip?: string): { cou
   if (zip) {
     const z = parseInt(zip)
     if (z >= 64101 && z <= 64199) return { county: 'Jackson', state: 'MO' }
+    if ((z >= 64150 && z <= 64154) || z === 64079 || z === 64083 || z === 64098) return { county: 'Platte', state: 'MO' }
     if (z >= 66200 && z <= 66299) return { county: 'Johnson', state: 'KS' }
     if (z >= 66100 && z <= 66119) return { county: 'Wyandotte', state: 'KS' }
   }
