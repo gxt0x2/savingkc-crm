@@ -29,7 +29,7 @@ start() {
   fi
 
   echo "Starting Saving KC CRM..."
-  nohup npm start > "$LOG_DIR/crm-$(date +%Y%m%d).log" 2>&1 &
+  PORT=$PORT nohup npm start > "$LOG_DIR/crm-$(date +%Y%m%d).log" 2>&1 &
   echo $! > "$PID_FILE"
   sleep 3
 
