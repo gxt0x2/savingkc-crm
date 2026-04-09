@@ -8,6 +8,7 @@
  */
 
 import twilio from 'twilio'
+import { createClient } from '@supabase/supabase-js'
 
 const TEST_MODE = process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'development'
 
@@ -21,14 +22,30 @@ if (!TEST_MODE) {
   )
 }
 
+// Supabase client for logging
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
 interface SMSParams {
   to: string
   from: string
   body: string
 }
 
+export interface SMSResult {
+  success: boolean
+  sid?: string
+  status?: string
+  error?: string
+  to: string
+  from: string
+  body: string
+}
+
 /**
- * Safe SMS sending with TEST_MODE protection
+ * Safe SMS sending with comprehensive error logging and tracking
  *
  * In TEST_MODE:
  * - Logs the SMS details to console
@@ -37,8 +54,13 @@ interface SMSParams {
  *
  * In PRODUCTION:
  * - Sends real SMS via Twilio
+ * - Logs all attempts (success and failure) to sms_delivery_log table
+ * - Returns detailed success/error information
+ * - NEVER throws errors - always returns result object
  */
-export async function safeSendSMS(params: SMSParams) {
+export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
+  const startTime = Date.now()
+
   if (TEST_MODE) {
     console.log('\n🧪 [TEST_MODE] SMS NOT SENT:')
     console.log('  To:', params.to)
@@ -46,8 +68,9 @@ export async function safeSendSMS(params: SMSParams) {
     console.log('  Body:', params.body)
     console.log('')
 
-    // Return mock response matching Twilio's structure
+    // Return mock response
     return {
+      success: true,
       sid: 'TEST_MESSAGE_SID_' + Date.now(),
       status: 'queued',
       to: params.to,
@@ -57,10 +80,92 @@ export async function safeSendSMS(params: SMSParams) {
   }
 
   if (!twilioClient) {
-    throw new Error('Twilio client not initialized')
+    const error = 'Twilio client not initialized'
+    console.error(`[SMS-ERROR] ${error}`)
+    await logSMSAttempt({ ...params, success: false, error })
+    return { success: false, error, ...params }
   }
 
-  return await twilioClient.messages.create(params)
+  try {
+    const message = await twilioClient.messages.create(params)
+    const duration = Date.now() - startTime
+
+    console.log(`[SMS-SUCCESS] Sent to ${params.to} (SID: ${message.sid}, ${duration}ms)`)
+
+    await logSMSAttempt({
+      ...params,
+      success: true,
+      sid: message.sid,
+      status: message.status,
+    })
+
+    return {
+      success: true,
+      sid: message.sid,
+      status: message.status,
+      to: params.to,
+      from: params.from,
+      body: params.body,
+    }
+  } catch (error: any) {
+    const duration = Date.now() - startTime
+    const errorMsg = error?.message || 'Unknown error'
+    const twilioCode = error?.code
+    const twilioStatus = error?.status
+
+    console.error(`[SMS-ERROR] Failed to send to ${params.to} (${duration}ms)`)
+    console.error(`  Error: ${errorMsg}`)
+    if (twilioCode) console.error(`  Twilio Code: ${twilioCode}`)
+    if (twilioStatus) console.error(`  HTTP Status: ${twilioStatus}`)
+
+    await logSMSAttempt({
+      ...params,
+      success: false,
+      error: errorMsg,
+      twilioCode,
+      twilioStatus,
+    })
+
+    return {
+      success: false,
+      error: errorMsg,
+      to: params.to,
+      from: params.from,
+      body: params.body,
+    }
+  }
+}
+
+/**
+ * Log SMS attempt to database for monitoring and debugging
+ */
+async function logSMSAttempt(data: {
+  to: string
+  from: string
+  body: string
+  success: boolean
+  sid?: string
+  status?: string
+  error?: string
+  twilioCode?: number
+  twilioStatus?: number
+}) {
+  try {
+    await supabase.from('sms_delivery_log').insert({
+      to_phone: data.to,
+      from_phone: data.from,
+      message_body: data.body.slice(0, 1000), // Truncate long messages
+      success: data.success,
+      twilio_sid: data.sid,
+      twilio_status: data.status,
+      error_message: data.error,
+      twilio_error_code: data.twilioCode,
+      http_status: data.twilioStatus,
+    })
+  } catch (err) {
+    // Don't let logging failures break SMS sending
+    console.error('[SMS-LOG-ERROR] Failed to log SMS attempt:', err)
+  }
 }
 
 /**

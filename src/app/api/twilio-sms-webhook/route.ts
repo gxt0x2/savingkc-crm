@@ -466,24 +466,57 @@ export async function POST(req: Request) {
     // ── Known lead replies (any message = alert BOTH agents) ──
     if (lead) {
       const alertBody = `📩 ${leadName} just texted: "${messageBody.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`
-      await Promise.allSettled([
+
+      // Send alerts to both agents
+      const [caseyResult, ernestResult] = await Promise.all([
         safeSendSMS({ body: alertBody, from: TWILIO_PHONE, to: CASEY_PHONE }),
         safeSendSMS({ body: alertBody, from: TWILIO_PHONE, to: ERNEST_PHONE }),
       ])
+
+      // Log success/failure for monitoring
+      const caseySuccess = caseyResult.success
+      const ernestSuccess = ernestResult.success
+
+      if (!caseySuccess) {
+        console.error(`[ALERT-FAILED] Casey alert failed: ${caseyResult.error}`)
+      }
+      if (!ernestSuccess) {
+        console.error(`[ALERT-FAILED] Ernest alert failed: ${ernestResult.error}`)
+      }
+
+      // Push notification as backup
       sendPushToAgents({
         title: 'Lead Texted',
         body: `${leadName}: "${messageBody.slice(0, 80)}"`,
         url: `/leads/${leadId}`,
         tag: 'lead-sms',
       }).catch(() => {})
-      // Log the alert
+
+      // Log the alert intent and delivery status
       await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'sms',
         description: alertBody,
         agent: 'System',
-        metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'lead_reply_alert' },
+        metadata: {
+          direction: 'outbound_alert',
+          to_agents: ['Casey', 'Ernest'],
+          trigger: 'lead_reply_alert',
+          delivery_status: {
+            casey: { success: caseySuccess, sid: caseyResult.sid, error: caseyResult.error },
+            ernest: { success: ernestSuccess, sid: ernestResult.sid, error: ernestResult.error },
+          },
+        },
       })
+
+      // CRITICAL: If both alerts fail, log to console prominently
+      if (!caseySuccess && !ernestSuccess) {
+        console.error('🚨 [CRITICAL] BOTH team SMS alerts failed!')
+        console.error(`  Lead: ${leadName}`)
+        console.error(`  Message: ${messageBody.slice(0, 100)}`)
+        console.error(`  Casey error: ${caseyResult.error}`)
+        console.error(`  Ernest error: ${ernestResult.error}`)
+      }
     }
 
     // ── Unknown number — full automation: lead, manifest, alerts, auto-reply, task ──
