@@ -3,14 +3,30 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { HotOpportunityCard } from '@/components/opportunities/hot-opportunity-card'
-import { ActivityTable } from '@/components/opportunities/activity-table'
+import { HotOpportunityCardCompact } from '@/components/opportunities/hot-opportunity-card-compact'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import { Icon } from '@/components/ui/icon'
 import { toProperCase } from '@/lib/format'
 import { useHotOpportunities, useRefreshHotList } from '@/hooks/use-hot-opportunities'
 import type { Deal, Contact, DealStage } from '@/types'
 import type { ManifestV2 } from '@/lib/manifest-builder'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  DragOverlay,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+} from '@dnd-kit/sortable'
+import type { HotOpportunityData } from '@/types/hot-opportunity'
 
 interface LeadRow {
   id: string
@@ -36,216 +52,247 @@ interface LeadRow {
   appointment_date: string | null
 }
 
-function leadToContact(lead: LeadRow): Contact {
-  const parts = (toProperCase(lead.full_name) || 'Unknown').split(' ')
-  return {
-    id: lead.id,
-    first_name: parts[0] || 'Unknown',
-    last_name: parts.slice(1).join(' ') || '',
-    email: lead.email,
-    phone: lead.phone,
-    address: lead.property_address,
-    city: lead.city,
-    state: lead.state,
-    zip: lead.zip,
-    personality_type: null,
-    lead_score: lead.priority === 'hot' ? 90 : lead.priority === 'high' ? 75 : 60,
-    lead_owner: 'Ernest',
-    smart_tags: lead.priority === 'hot' ? ['Hot Lead'] : [],
-    current_stage: (lead.station as DealStage) || 'qualifying',
-    created_at: lead.created_at,
-    updated_at: lead.created_at,
-  }
-}
+type SortOption = 'score' | 'recent' | 'arv' | 'custom'
+type FilterOption = 'all' | 'favorites' | 'appts' | 'missing-data'
 
-function leadToDeal(lead: LeadRow, manifest?: ManifestV2): Deal {
-  // REAL financials from manifest (not fabricated)
-  const fin = manifest?.financials || {}
-  const arv = fin.arv ?? lead.arv ?? null
-  const asIs = fin.as_is_value ?? null  // NO MORE fake 0.75 multiplier
-  const asking = fin.asking_price ?? manifest?.situation?.priceExpectations?.askingPrice ?? lead.offer_amount ?? null
-  const equity = fin.equity ?? null
-  const estAssignment = fin.assignment_fee ?? null
-  const debtTotal = fin.total_debt ?? null
-
-  // REAL next action from manifest
-  const nextAppointment = manifest?.pipeline?.appointment?.scheduledAt ?? null
-  const recommendedActions = manifest?.ariIntelligence?.recommendedActions ?? []
-  const nextAction = nextAppointment
-    ? new Date(nextAppointment).toISOString()
-    : recommendedActions[0]?.dateTime ?? null
-
-  // REAL Ari insight from manifest
-  const ariInsight = manifest?.ariIntelligence?.lastBriefing?.situation
-    ?? manifest?.situation?.summary
-    ?? lead.seller_situation
-    ?? 'No details yet — visit lead page to add info.'
-
-  // REAL tags from manifest
-  const tags: string[] = []
-  if (lead.priority === 'hot') tags.push('Hot Lead')
-  if (lead.is_favorite) tags.push('⭐ Starred')
-  if (manifest?.pipeline?.appointment?.status === 'scheduled' ||
-      manifest?.pipeline?.appointment?.status === 'confirmed') {
-    tags.push('Appt Set')
-  }
-  if (manifest?.situation?.type?.length) {
-    manifest.situation.type.forEach(t => tags.push(t.replace(/_/g, ' ')))
-  }
-  if (lead.source) tags.push(lead.source.replace(/_/g, ' '))
-
-  return {
-    id: lead.id,
-    contact_id: lead.id,
-    property_address: lead.property_address,
-    stage: (lead.station as DealStage) || 'qualifying',
-    arv,
-    as_is_value: asIs,
-    asking_price: asking,
-    equity,
-    debt_total: debtTotal,
-    est_assignment: estAssignment,
-    ari_insight: ariInsight,
-    ari_tags: tags,
-    created_at: lead.created_at,
-    updated_at: lead.updated_at || lead.created_at,
-    contact: leadToContact(lead),
-    // NEW: pass through for the card to use
-    _nextAction: nextAction,
-    _qualificationScore: manifest?.qualificationScore ?? null,
-    _motivationScore: manifest?.situation?.motivation?.score ?? lead.motivation_score ?? null,
-  }
-}
-
-export default function OpportunitiesPage() {
+export default function OpportunitiesPageV2() {
   const router = useRouter()
-  const [allDeals, setAllDeals] = useState<Deal[]>([])
-  const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const { data: hotData, isLoading: hotLoading } = useHotOpportunities()
   const refreshHotList = useRefreshHotList()
 
-  async function fetchLeads() {
-    setLoading(true)
-    const supabase = createClient()
+  const [opportunities, setOpportunities] = useState<HotOpportunityData[]>([])
+  const [sortBy, setSortBy] = useState<SortOption>('score')
+  const [filterBy, setFilterBy] = useState<FilterOption>('all')
+  const [activeId, setActiveId] = useState<string | null>(null)
 
-    // Fetch ALL active leads (not dead/closed)
-    const { data: oppData } = await supabase
-      .from('leads')
-      .select('id, full_name, phone, email, property_address, city, state, zip, source, station, priority, notes, created_at, updated_at, is_favorite, arv, offer_amount, repair_estimate, motivation_score, seller_situation, appointment_date')
-      .not('station', 'in', '(dead,closed,disposition)')
-      .order('updated_at', { ascending: false })
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // 8px movement required before drag starts
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
-    // Fetch manifests for all leads
-    const allLeadIds = (oppData || []).map(l => l.id)
-    const { data: allManifests } = allLeadIds.length > 0
-      ? await supabase
-          .from('manifests')
-          .select('lead_id, manifest')
-          .in('lead_id', allLeadIds)
-      : { data: [] }
-
-    // Build a map for quick lookup
-    const manifestMap = new Map<string, ManifestV2>()
-    for (const m of (allManifests || [])) {
-      manifestMap.set(m.lead_id, m.manifest as ManifestV2)
+  useEffect(() => {
+    if (hotData?.items) {
+      setOpportunities([...hotData.items])
     }
+  }, [hotData])
 
-    // Build deals with real manifest data
-    const deals = (oppData || []).map(l => leadToDeal(l, manifestMap.get(l.id)))
-
-    setAllDeals(deals)
-    setLoading(false)
+  function handleDragStart(event: any) {
+    setActiveId(event.active.id)
   }
 
-  useEffect(() => { fetchLeads() }, [])
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
 
-  const totalDeals = allDeals.length
+    setActiveId(null)
+
+    if (over && active.id !== over.id) {
+      setOpportunities((items) => {
+        const oldIndex = items.findIndex(item => item.leadId === active.id)
+        const newIndex = items.findIndex(item => item.leadId === over.id)
+
+        if (oldIndex === -1 || newIndex === -1) return items
+
+        const newOrder = arrayMove(items, oldIndex, newIndex)
+
+        // Mark as custom sort
+        setSortBy('custom')
+
+        // TODO: Persist order to backend
+        // Could save to localStorage or API
+
+        return newOrder
+      })
+    }
+  }
+
+  function handleDragCancel() {
+    setActiveId(null)
+  }
+
+  function handleSort(option: SortOption) {
+    setSortBy(option)
+
+    if (!hotData?.items) return
+
+    let sorted = [...hotData.items]
+
+    switch (option) {
+      case 'score':
+        sorted.sort((a, b) => b.score.composite - a.score.composite)
+        break
+      case 'recent':
+        sorted.sort((a, b) => {
+          const dateA = a.lastScoredAt ? new Date(a.lastScoredAt).getTime() : 0
+          const dateB = b.lastScoredAt ? new Date(b.lastScoredAt).getTime() : 0
+          return dateB - dateA
+        })
+        break
+      case 'arv':
+        sorted.sort((a, b) => (b.dealMath.arv ?? 0) - (a.dealMath.arv ?? 0))
+        break
+      case 'custom':
+        // Keep current order
+        return
+    }
+
+    setOpportunities(sorted)
+  }
+
+  const filteredOpps = opportunities.filter(opp => {
+    switch (filterBy) {
+      case 'favorites':
+        // Check if lead has priority signals
+        return opp.score.composite >= 75
+      case 'appts':
+        return opp.flags.hasDeadline || opp.currentStation === 'appt_set'
+      case 'missing-data':
+        return opp.missingFields.length > 0
+      default:
+        return true
+    }
+  })
 
   return (
-    <div className="pt-6 pb-32 px-4 sm:px-6 lg:px-8 max-w-[1600px] mx-auto">
+    <div className="min-h-screen bg-white">
       {showAdd && (
         <AddLeadModal
           onClose={() => setShowAdd(false)}
-          onSuccess={() => { setShowAdd(false); fetchLeads() }}
+          onSuccess={() => { setShowAdd(false); refreshHotList(true) }}
         />
       )}
 
-      {/* Header */}
-      <header className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-primary mb-2">Opportunities</h1>
-          <p className="text-on-surface-variant text-sm">
-            Deals in active qualifying, negotiation, or closing. Double-click any card for full details.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-lg font-medium transition-transform active:scale-95"
-        >
-          <Icon name="add" size="text-sm" />
-          <span>Add Lead</span>
-        </button>
-      </header>
-
-      {/* Hot Opportunities — Ari's curated shortlist */}
-      <section className="mb-10">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <span className="text-lg font-black text-primary">Hot Opportunities</span>
-            {hotData?.items && hotData.items.length > 0 && (
-              <span className="px-2 py-0.5 bg-orange-100 text-orange-600 text-xs font-bold rounded-full">
-                {hotData.items.length} ranked
-              </span>
-            )}
+      <div className="max-w-[1800px] mx-auto px-6 py-8">
+        {/* Header */}
+        <div className="mb-8 flex items-end justify-between">
+          <div>
+            <h1 className="text-4xl font-black text-black tracking-tight">Hot Opportunities</h1>
+            <p className="text-gray-600 mt-2">
+              {filteredOpps.length} active deals · Drag to reorder · Click to view
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            {hotData?.lastRankedAt && (
-              <span className="text-[11px] text-on-surface-variant/50">
-                Last ranked: {new Date(hotData.lastRankedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-              </span>
-            )}
+
+          <div className="flex items-center gap-3">
             <button
               onClick={() => refreshHotList(true)}
-              className="p-1.5 rounded-lg hover:bg-surface-container-high transition-colors text-on-surface-variant"
-              title="Refresh rankings"
+              className="px-4 py-2 border-2 border-black text-black font-bold rounded-lg hover:bg-black hover:text-white transition-colors"
             >
-              <Icon name="refresh" size="text-sm" />
+              <Icon name="refresh" size="text-sm" className="inline mr-2" />
+              Re-rank
+            </button>
+            <button
+              onClick={() => setShowAdd(true)}
+              className="px-4 py-2 bg-[#E32E2E] text-white font-bold rounded-lg hover:bg-[#C42626] transition-colors"
+            >
+              <Icon name="add" size="text-sm" className="inline mr-2" />
+              Add Lead
             </button>
           </div>
         </div>
-        {hotLoading ? (
-          <div className="text-slate-400 py-8 text-center text-sm">Scoring opportunities...</div>
-        ) : hotData?.items && hotData.items.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(380px,1fr))] gap-6">
-            {hotData.items.map((opp) => (
-              <HotOpportunityCard
-                key={opp.leadId}
-                opp={opp}
-                onCall={(phone, leadId) => {
-                  // Dispatch dialer event
-                  window.dispatchEvent(new CustomEvent('crm:dial', { detail: { phone, leadId } }))
-                }}
-              />
+
+        {/* Filters & Sort */}
+        <div className="mb-6 flex items-center justify-between bg-gray-50 rounded-lg p-4 border-2 border-gray-200">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-gray-700 mr-2">Filter:</span>
+            {(['all', 'favorites', 'appts', 'missing-data'] as FilterOption[]).map(option => (
+              <button
+                key={option}
+                onClick={() => setFilterBy(option)}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+                  filterBy === option
+                    ? 'bg-black text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:border-black'
+                }`}
+              >
+                {option === 'all' && 'All'}
+                {option === 'favorites' && '⭐ Favorites'}
+                {option === 'appts' && '📅 Appointments'}
+                {option === 'missing-data' && '⚠️ Missing Data'}
+              </button>
             ))}
           </div>
-        ) : (
-          <div className="text-center py-8 bg-surface-container-low rounded-xl">
-            <p className="text-slate-400 text-sm">No scored opportunities yet. Rankings will appear after leads are scored.</p>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-gray-700 mr-2">Sort:</span>
+            {(['score', 'recent', 'arv', 'custom'] as SortOption[]).map(option => (
+              <button
+                key={option}
+                onClick={() => handleSort(option)}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+                  sortBy === option
+                    ? 'bg-[#E32E2E] text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:border-[#E32E2E]'
+                }`}
+              >
+                {option === 'score' && 'Score'}
+                {option === 'recent' && 'Recent'}
+                {option === 'arv' && 'ARV'}
+                {option === 'custom' && 'Custom Order'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Cards Grid */}
+        {hotLoading ? (
+          <div className="text-center py-16">
+            <div className="text-gray-400 text-lg">Ranking opportunities...</div>
+          </div>
+        ) : filteredOpps.length === 0 ? (
+          <div className="text-center py-16 bg-gray-50 rounded-lg border-2 border-gray-200">
+            <p className="text-gray-600 mb-4">No opportunities match your filter</p>
             <button
-              onClick={() => refreshHotList(true)}
-              className="mt-2 px-3 py-1.5 bg-primary text-on-primary text-xs font-semibold rounded-lg"
+              onClick={() => setFilterBy('all')}
+              className="px-4 py-2 bg-black text-white font-bold rounded-lg"
             >
-              Run Full Ranking
+              Show All
             </button>
           </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <SortableContext
+              items={filteredOpps.map(opp => opp.leadId)}
+              strategy={rectSortingStrategy}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredOpps.map((opp, index) => (
+                  <HotOpportunityCardCompact
+                    key={opp.leadId}
+                    opp={opp}
+                    variant={index % 4 === 0 ? 'white' : index % 4 === 1 ? 'grey' : index % 4 === 2 ? 'lightgrey' : 'red'}
+                    onCall={(phone, leadId) => {
+                      window.dispatchEvent(new CustomEvent('crm:dial', { detail: { phone, leadId } }))
+                    }}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+            <DragOverlay>
+              {activeId ? (
+                <div className="opacity-50 scale-105 shadow-2xl">
+                  <HotOpportunityCardCompact
+                    opp={filteredOpps.find(o => o.leadId === activeId)!}
+                    variant="white"
+                    onCall={() => {}}
+                  />
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
-      </section>
-
-      {/* Activity Table — recent activity for hot list leads */}
-      {hotData?.items && hotData.items.length > 0 && !loading && (
-        <ActivityTable deals={allDeals.filter(d => hotData.items!.some(h => h.leadId === d.id))} />
-      )}
+      </div>
     </div>
   )
 }
