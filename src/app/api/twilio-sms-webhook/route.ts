@@ -463,26 +463,26 @@ export async function POST(req: Request) {
       })
     }
 
-    // ── Known hot lead replies (any message = alert BOTH agents) ──
-    if (lead && lead.priority === 'hot') {
-      const hotAlertBody = `📩 ${leadName} (hot lead) just texted: "${messageBody.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`
+    // ── Known lead replies (any message = alert BOTH agents) ──
+    if (lead) {
+      const alertBody = `📩 ${leadName} just texted: "${messageBody.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`
       await Promise.allSettled([
-        safeSendSMS({ body: hotAlertBody, from: TWILIO_PHONE, to: CASEY_PHONE }),
-        safeSendSMS({ body: hotAlertBody, from: TWILIO_PHONE, to: ERNEST_PHONE }),
+        safeSendSMS({ body: alertBody, from: TWILIO_PHONE, to: CASEY_PHONE }),
+        safeSendSMS({ body: alertBody, from: TWILIO_PHONE, to: ERNEST_PHONE }),
       ])
       sendPushToAgents({
-        title: 'Hot Lead Texted',
+        title: 'Lead Texted',
         body: `${leadName}: "${messageBody.slice(0, 80)}"`,
         url: `/leads/${leadId}`,
-        tag: 'hot-lead-sms',
+        tag: 'lead-sms',
       }).catch(() => {})
       // Log the alert
       await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'sms',
-        description: hotAlertBody,
+        description: alertBody,
         agent: 'System',
-        metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'hot_lead_reply_alert' },
+        metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'lead_reply_alert' },
       })
     }
 
