@@ -1060,30 +1060,80 @@ export default function LeadDetailPage() {
       const status = a.metadata?.status as string | undefined
 
       if (a.activity_type === 'call') {
+        // Extract caller name from description (e.g., "Inbound call from Robert Kilgore — no-answer")
+        const descParts = a.description?.split('—') || []
+        const callerPart = descParts[0]?.trim() || ''
+        const statusPart = descParts[1]?.trim() || status || ''
+
         if (direction === 'inbound') {
-          title = `Phone call — Inbound from ${a.description?.split('—')[0]?.trim() || 'contact'}`
+          // Extract just the name (remove "Inbound call from" prefix if present)
+          const nameMatch = callerPart.match(/(?:Inbound call from|from)\s+(.+)/i)
+          const callerName = nameMatch?.[1] || callerPart || 'Unknown'
+          title = `Inbound call from ${callerName}`
         } else if (direction === 'outbound') {
-          title = 'Phone call — Outbound'
+          title = 'Outbound call'
+        } else {
+          title = 'Phone call'
         }
-        if (status) {
-          title += ` — ${status}`
+
+        // Add status as badge instead of in title
+        if (statusPart) {
+          // Status will be shown in the UI, not in title
         }
       } else if (a.activity_type === 'sms') {
         if (direction === 'inbound') {
-          title = 'SMS — Inbound'
+          title = 'Received text message'
         } else if (direction === 'outbound') {
-          title = 'SMS — Outbound'
+          title = 'Sent text message'
         }
       } else if (a.activity_type === 'voicemail') {
-        title = 'Voicemail — Inbound'
+        title = 'New voicemail'
+      }
+
+      // For calls, extract status info and duration from description
+      let statusBadge: string | undefined
+      let cleanContent: string | undefined
+
+      if (a.activity_type === 'call' && a.description) {
+        const descParts = a.description.split('—')
+        const statusInfo = descParts[1]?.trim()
+
+        if (statusInfo) {
+          // Parse status like "no-answer (0s)" or "completed (45s)"
+          const match = statusInfo.match(/([a-z-]+)\s*\((\d+)s\)/i)
+          if (match) {
+            const [, callStatus, duration] = match
+            const durationNum = parseInt(duration, 10)
+
+            if (callStatus === 'completed' && durationNum > 0) {
+              const mins = Math.floor(durationNum / 60)
+              const secs = durationNum % 60
+              statusBadge = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+            } else if (callStatus === 'no-answer') {
+              statusBadge = 'No answer'
+            } else if (callStatus === 'busy') {
+              statusBadge = 'Busy'
+            } else {
+              statusBadge = callStatus
+            }
+          } else {
+            statusBadge = statusInfo
+          }
+        }
+
+        // Don't repeat the description for calls since we've extracted the info
+        cleanContent = undefined
+      } else {
+        cleanContent = a.description || undefined
       }
 
       return {
         id: a.id,
         type: activityTypeToFeedType(a.activity_type),
         title,
-        content: a.description || undefined,
+        content: cleanContent,
         timestamp: a.created_at, // Pass raw ISO timestamp, let ActivityFeed format it
+        statusBadge,
         link,
         linkLabel,
         recordingUrl,

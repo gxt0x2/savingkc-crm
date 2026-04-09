@@ -284,6 +284,15 @@ export function ActivityFeed({ activities, onCompose }: ActivityFeedProps) {
                     <div className="flex-1 min-w-0 pb-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-semibold text-on-surface leading-snug">{activity.title}</span>
+                        {activity.statusBadge && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                            activity.statusBadge === 'No answer' || activity.statusBadge === 'Busy'
+                              ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                              : 'bg-green-500/10 text-green-400 border border-green-500/20'
+                          }`}>
+                            {activity.statusBadge}
+                          </span>
+                        )}
                         {activity.agentName && (
                           <AgentBadge name={activity.agentName} />
                         )}
