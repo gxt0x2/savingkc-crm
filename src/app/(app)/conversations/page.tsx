@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import { ThreadView } from '@/components/conversations/thread-view'
 import type { Message } from '@/components/conversations/message-bubble'
-import { toProperCase, formatPhone as formatPhoneUtil } from '@/lib/format'
+import { toProperCase, formatPhone } from '@/lib/format'
 
 interface LeadRow {
   id: string
@@ -34,16 +34,6 @@ interface ActivityRow {
 interface Toast {
   id: number
   message: string
-}
-
-function formatPhone(raw: string | null): string {
-  if (!raw) return '—'
-  const digits = raw.replace(/\D/g, '')
-  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
-  if (local.length === 10) {
-    return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`
-  }
-  return raw
 }
 
 function getInitials(name: string | null): string {
@@ -76,11 +66,20 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
     const recordingUrl = recordingSid ? `/api/recordings/${recordingSid}` : undefined
     const transcript = (meta.transcript as string) || undefined
 
+    // Format phone numbers in call descriptions
+    let formattedContent = activity.description || ''
+    const phoneMatch = formattedContent.match(/\+1?(\d{10})/)
+    if (phoneMatch) {
+      const rawPhone = phoneMatch[0]
+      const formatted = formatPhone(rawPhone)
+      formattedContent = formattedContent.replace(rawPhone, formatted)
+    }
+
     return {
       id: activity.id,
       type: 'call',
       direction,
-      content: activity.description || '',
+      content: formattedContent,
       callDuration: formatDuration((meta.duration as number) || 0),
       timestamp,
       senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
@@ -291,7 +290,7 @@ export default function ConversationsPage() {
             const lead = currentLeads.find((l) => l.id === activeLeadId)
             const name = lead?.full_name && lead.full_name !== lead.phone
               ? toProperCase(lead.full_name)
-              : formatPhoneUtil(lead?.phone)
+              : formatPhone(lead?.phone)
             addToast(`New message from ${name}`)
           }
         }
@@ -309,7 +308,7 @@ export default function ConversationsPage() {
 
   const threads: ThreadPreview[] = leads.map((lead) => ({
     id: lead.id,
-    name: lead.full_name && lead.full_name !== lead.phone ? toProperCase(lead.full_name) : formatPhoneUtil(lead.phone),
+    name: lead.full_name && lead.full_name !== lead.phone ? toProperCase(lead.full_name) : formatPhone(lead.phone),
     initials: lead.station === 'unmatched' ? '?' : getInitials(lead.full_name),
     avatarBg: lead.priority === 'hot' ? 'bg-red-900' : lead.station === 'unmatched' ? 'bg-amber-700' : 'bg-slate-700',
     avatarText: 'text-white',

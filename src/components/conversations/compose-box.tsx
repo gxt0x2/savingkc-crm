@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { formatPhone } from '@/lib/format'
 
 type ComposeMode = 'sms' | 'email' | 'call'
 
@@ -119,7 +120,7 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
             <span className="text-xs text-on-surface-variant/60 font-medium">From:</span>
             {replyFromPhone ? (
               <span className="text-xs font-medium text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
-                {TWILIO_NUMBERS.find(n => n.value === replyFromPhone)?.label || replyFromPhone}
+                {TWILIO_NUMBERS.find(n => n.value === replyFromPhone)?.label || formatPhone(replyFromPhone)}
               </span>
             ) : (
               <select

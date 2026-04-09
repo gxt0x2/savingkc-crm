@@ -3,6 +3,7 @@ import { PersonalityBadge } from '@/components/ui/personality-badge'
 import { GhostRiskBadge } from '@/components/leads/ghost-risk-badge'
 import { cn, formatCurrency } from '@/lib/utils'
 import { calculateTemperature, TEMPERATURE_CONFIG } from '@/lib/lead-temperature'
+import { formatPhone } from '@/lib/format'
 import type { PersonalityType, DealStage } from '@/types'
 
 export interface KanbanCardData {
@@ -179,7 +180,7 @@ export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: 
             if (card.phone) window.dispatchEvent(new CustomEvent('crm:dial', { detail: { phone: card.phone } }))
           }}
           disabled={!card.phone}
-          title={card.phone ? `Call ${card.phone}` : 'No phone'}
+          title={card.phone ? `Call ${formatPhone(card.phone)}` : 'No phone'}
           className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[11px] font-bold hover:bg-green-50 text-slate-400 hover:text-green-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
           <Icon name="call" size="text-sm" /> Call

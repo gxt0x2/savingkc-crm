@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
+import { formatPhone } from '@/lib/format'
 import { QuickReplyInput } from './quick-reply-input'
 import type { InboxItem } from '@/hooks/use-ari-page'
 
@@ -78,7 +79,7 @@ export function InboxBlock({ items, count, loading, onRefresh }: InboxBlockProps
                       <span className="text-xs font-bold text-red-500">Missed Call —</span>
                     )}
                     <span className="text-sm font-bold text-slate-800">{item.lead_name}</span>
-                    <span className="text-xs text-slate-400 tabular-nums">{item.phone}</span>
+                    <span className="text-xs text-slate-400 tabular-nums">{formatPhone(item.phone)}</span>
                   </div>
                   {item.message && (
                     <p className="text-sm text-slate-600 mt-0.5 line-clamp-2">&ldquo;{item.message}&rdquo;</p>

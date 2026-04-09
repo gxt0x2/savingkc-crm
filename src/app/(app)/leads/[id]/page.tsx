@@ -651,7 +651,7 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
             <div className="border-t border-white/10 pt-3">
               <p className="text-xs text-slate-500 uppercase font-bold mb-1">Owner</p>
               <p className="text-sm text-white font-medium">{m.owner.fullName}</p>
-              {m.owner.phones?.length > 0 && <p className="text-xs text-slate-400">{m.owner.phones.join(', ')}</p>}
+              {m.owner.phones?.length > 0 && <p className="text-xs text-slate-400">{m.owner.phones.map(formatPhone).join(', ')}</p>}
               {m.owner.emails?.length > 0 && <p className="text-xs text-slate-400">{m.owner.emails.join(', ')}</p>}
               {m.owner.contactPreference && <p className="text-[10px] text-slate-500">Prefers: {m.owner.contactPreference}</p>}
               {m.owner.personalityType && <p className="text-[10px] text-slate-500">Personality: {m.owner.personalityType}</p>}
@@ -801,7 +801,7 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
             <div className="border-t border-white/10 pt-3">
               <p className="text-xs text-slate-500 uppercase font-bold mb-1">Contacts</p>
               {m.contacts.map((c: any, i: number) => (
-                <p key={i} className="text-[10px] text-slate-400">{c.name} ({c.role}){c.phone ? ` — ${c.phone}` : ''}</p>
+                <p key={i} className="text-[10px] text-slate-400">{c.name} ({c.role}){c.phone ? ` — ${formatPhone(c.phone)}` : ''}</p>
               ))}
             </div>
           )}

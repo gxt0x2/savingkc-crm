@@ -1,0 +1,57 @@
+2026-04-08 18:58:45 -05:00: ⨯ Failed to start server
+2026-04-08 18:58:50 -05:00: ⨯ Failed to start server
+2026-04-08 18:58:54 -05:00: ⨯ Failed to start server
+2026-04-08 18:58:58 -05:00: ⨯ Failed to start server
+2026-04-08 18:59:02 -05:00: ⨯ Failed to start server
+2026-04-08 18:59:06 -05:00: ⨯ Failed to start server
+2026-04-08 18:59:11 -05:00: ⨯ Failed to start server
+2026-04-08 18:59:15 -05:00: ⨯ Failed to start server
+2026-04-08 18:59:19 -05:00: ⨯ Failed to start server
+2026-04-08 18:59:23 -05:00: ⨯ Failed to start server
+2026-04-08 19:01:32 -05:00: Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:32 -05:00: ⨯ Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:32 -05:00: ⨯ Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:32 -05:00: ⨯ Error: Failed to load static file for page: /500 ENOENT: no such file or directory, open '/Users/ernestdodson/savingkc-crm/.next/server/pages/500.html'
+    at ignore-listed frames
+2026-04-08 19:01:37 -05:00: Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:37 -05:00: ⨯ Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:37 -05:00: ⨯ Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:37 -05:00: ⨯ Error: Failed to load static file for page: /500 ENOENT: no such file or directory, open '/Users/ernestdodson/savingkc-crm/.next/server/pages/500.html'
+    at ignore-listed frames
+2026-04-08 19:01:39 -05:00: Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:39 -05:00: ⨯ Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:39 -05:00: ⨯ Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:39 -05:00: ⨯ Error: Failed to load static file for page: /500 ENOENT: no such file or directory, open '/Users/ernestdodson/savingkc-crm/.next/server/pages/500.html'
+    at ignore-listed frames
+2026-04-08 19:01:43 -05:00: Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:43 -05:00: ⨯ Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:43 -05:00: ⨯ Error [InvariantError]: Invariant: The client reference manifest for route "/leads" does not exist. This is a bug in Next.js.
+    at Object.get (.next/server/chunks/[root-of-the-server]__0v8bdq7._.js:1:72580)
+2026-04-08 19:01:43 -05:00: ⨯ Error: Failed to load static file for page: /500 ENOENT: no such file or directory, open '/Users/ernestdodson/savingkc-crm/.next/server/pages/500.html'
+    at ignore-listed frames
+2026-04-08 19:03:52 -05:00: ⨯ Failed to start server
+2026-04-08 19:03:56 -05:00: ⨯ Failed to start server
+2026-04-08 19:04:00 -05:00: ⨯ Failed to start server
+2026-04-08 19:04:04 -05:00: ⨯ Failed to start server
+2026-04-08 19:04:09 -05:00: ⨯ Failed to start server
+2026-04-08 19:04:36 -05:00: ⨯ Failed to start server
+2026-04-08 19:04:40 -05:00: ⨯ Failed to start server
+2026-04-08 19:04:44 -05:00: ⨯ Failed to start server
+2026-04-08 19:04:48 -05:00: ⨯ Failed to start server
+2026-04-08 19:04:52 -05:00: ⨯ Failed to start server
+2026-04-08 19:04:57 -05:00: ⨯ Failed to start server
+2026-04-08 19:05:01 -05:00: ⨯ Failed to start server
+2026-04-08 19:05:05 -05:00: ⨯ Failed to start server
+2026-04-08 19:05:09 -05:00: ⨯ Failed to start server
+2026-04-08 19:05:16 -05:00: 2026-04-08 19:05:20 -05:00: 2026-04-08 19:05:25 -05:00: 2026-04-08 19:05:29 -05:00: 2026-04-08 19:05:33 -05:00: 

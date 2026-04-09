@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { ensureManifestExists } from '@/lib/manifest-sync'
+import { formatPhone } from '@/lib/format'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
       noInputLeadId = existingLead.id
     } else {
       const { data: newLead } = await supabase.from('leads').insert({
-        full_name: `Caller (${from})`,
+        full_name: `Caller (${formatPhone(from)})`,
         phone: from,
         source: 'inbound_ivr_no_input',
         station: 'intake',

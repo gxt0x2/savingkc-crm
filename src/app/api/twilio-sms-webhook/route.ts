@@ -10,6 +10,7 @@ import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect, formatProspectAlert } from '@/lib/prospect-to-lead'
 import type { ProspectMatch } from '@/lib/prospect-lookup'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { formatPhone } from '@/lib/format'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -529,7 +530,7 @@ export async function POST(req: Request) {
       } else {
         // Generic unknown SMS — create basic lead
         const { data: newLead } = await supabase.from('leads').insert({
-          full_name: `SMS Lead (${from})`,
+          full_name: `SMS Lead (${formatPhone(from)})`,
           phone: from,
           source: 'inbound_sms',
           station: 'intake',
@@ -554,8 +555,8 @@ export async function POST(req: Request) {
         // Alert both agents — include prospect context if matched
         const unknownProspectCtx = prospectMatch ? `\n🏠 ${formatProspectAlert(prospectMatch)}` : ''
         const smsAlert = prospectMatch
-          ? `🔥 TAX PROSPECT texted! ${prospectMatch.owner_1 || from}: "${messageBody.slice(0, 60)}"${unknownProspectCtx}\n${BASE_URL}/leads/${newLeadId}`
-          : `📩 New text from unknown number ${from}: "${messageBody.slice(0, 80)}" ${BASE_URL}/leads/${newLeadId}`
+          ? `🔥 TAX PROSPECT texted! ${prospectMatch.owner_1 || formatPhone(from)}: "${messageBody.slice(0, 60)}"${unknownProspectCtx}\n${BASE_URL}/leads/${newLeadId}`
+          : `📩 New text from unknown number ${formatPhone(from)}: "${messageBody.slice(0, 80)}" ${BASE_URL}/leads/${newLeadId}`
         await Promise.allSettled([
           safeSendSMS({ body: smsAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
           safeSendSMS({ body: smsAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
@@ -604,8 +605,8 @@ export async function POST(req: Request) {
             event_type: prospectMatch ? 'prospect_inbound_sms' : 'unknown_sms',
             priority: prospectMatch ? 'critical' : 'medium',
             title: prospectMatch
-              ? `Tax prospect texted: ${prospectMatch.owner_1 || from}`
-              : `New text from unknown: ${from}`,
+              ? `Tax prospect texted: ${prospectMatch.owner_1 || formatPhone(from)}`
+              : `New text from unknown: ${formatPhone(from)}`,
             description: prospectMatch
               ? `Message: "${messageBody.slice(0, 120)}". ${formatProspectAlert(prospectMatch)}`
               : `Message: "${messageBody.slice(0, 120)}". Lead created, agents notified.`,

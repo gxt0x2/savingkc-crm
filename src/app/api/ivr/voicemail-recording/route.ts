@@ -6,6 +6,7 @@ import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { ensureManifestExists } from '@/lib/manifest-sync'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { formatPhone } from '@/lib/format'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
       resolvedLeadId = existingLead.id
     } else {
       const { data: newLead } = await supabase.from('leads').insert({
-        full_name: `Voicemail Caller (${from})`,
+        full_name: `Voicemail Caller (${formatPhone(from)})`,
         phone: from,
         source: 'inbound_voicemail',
         station: 'intake',

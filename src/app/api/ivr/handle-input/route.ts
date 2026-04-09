@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { ensureManifestExists } from '@/lib/manifest-sync'
+import { formatPhone } from '@/lib/format'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
         // If no prospect match, create bare lead
         if (!leadId) {
           const { data: newLead } = await supabase.from('leads').insert({
-            full_name: isColdCall ? `Cold Callback (${from})` : 'Inbound Seller',
+            full_name: isColdCall ? `Cold Callback (${formatPhone(from)})` : 'Inbound Seller',
             phone: from,
             source,
             station: 'intake',

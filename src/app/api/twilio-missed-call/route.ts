@@ -6,6 +6,7 @@ import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/midd
 import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { formatPhone } from '@/lib/format'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -224,7 +225,7 @@ export async function POST(req: Request) {
         // If no prospect match, create bare lead
         if (!newLeadId) {
           const { data: newLead } = await supabase.from('leads').insert({
-            full_name: `Missed Call (${from})`,
+            full_name: `Missed Call (${formatPhone(from)})`,
             phone: from,
             source: 'inbound_call',
             station: 'intake',
@@ -294,14 +295,14 @@ export async function POST(req: Request) {
         }
 
         // Alert both agents about unknown caller
-        const agentAlert = `📞 Missed call from unknown number ${from}${response?.shouldSend ? '. Auto-text sent' : ''}. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
+        const agentAlert = `📞 Missed call from unknown number ${formatPhone(from)}${response?.shouldSend ? '. Auto-text sent' : ''}. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
         await Promise.allSettled([
           safeSendSMS({ body: agentAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
           safeSendSMS({ body: agentAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
         ])
         sendPushToAgents({
           title: 'Missed Call - Unknown',
-          body: `Unknown number ${from} called.`,
+          body: `Unknown number ${formatPhone(from)} called.`,
           url: newLeadId ? `/leads/${newLeadId}` : '/',
           tag: 'missed-call-unknown',
         }).catch(() => {})
@@ -311,7 +312,7 @@ export async function POST(req: Request) {
           await supabase.from('ari_briefing_events').insert({
             event_type: 'missed_call',
             priority: 'high',
-            title: `Missed call from unknown: ${from}`,
+            title: `Missed call from unknown: ${formatPhone(from)}`,
             description: `Unknown caller${response?.shouldSend ? ', auto-text sent' : ''}. Watch for YES reply.`,
             lead_id: newLeadId,
             action_url: newLeadId ? `/leads/${newLeadId}` : undefined,

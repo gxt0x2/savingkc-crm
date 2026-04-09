@@ -517,7 +517,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
                         </div>
                       </div>
                       {lead.phone && (
-                        <div className="text-xs text-white/50 font-mono">{lead.phone}</div>
+                        <div className="text-xs text-white/50 font-mono">{formatPhone(lead.phone)}</div>
                       )}
                       {lead.property_address && (
                         <div className="text-xs text-white/40 truncate">{lead.property_address}{lead.city ? `, ${lead.city}` : ''}</div>

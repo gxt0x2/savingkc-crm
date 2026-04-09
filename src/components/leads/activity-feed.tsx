@@ -185,6 +185,16 @@ function relTime(ts: string): string {
 // ─── Agent Badge ────────────────────────────────────────────────────────────
 function AgentBadge({ name }: { name: string }) {
   const profile = getAgentProfile(name)
+  const isSystem = name === 'System' || profile.initials === 'SYS'
+
+  if (isSystem) {
+    return (
+      <span className={`inline-flex items-center text-[9px] font-bold px-1 py-0.5 rounded-full ${profile.color} ${profile.textColor}`}>
+        {profile.initials}
+      </span>
+    )
+  }
+
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${profile.color} ${profile.textColor}`}>
       {profile.initials}
@@ -299,7 +309,7 @@ export function ActivityFeed({ activities, onCompose }: ActivityFeedProps) {
                         <span className="text-[10px] text-on-surface-variant whitespace-nowrap ml-auto">{relTime(activity.timestamp)}</span>
                       </div>
                       {activity.content && (
-                        <p className={`text-xs mt-0.5 ${activity.type === 'sms' ? 'text-blue-200 italic font-medium' : 'text-on-surface-variant'}`}>
+                        <p className={`text-xs mt-0.5 ${activity.type === 'sms' ? 'text-blue-600 italic font-medium' : 'text-on-surface-variant'}`}>
                           {activity.content}
                         </p>
                       )}

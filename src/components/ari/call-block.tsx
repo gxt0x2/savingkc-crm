@@ -2,6 +2,7 @@
 
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
+import { formatPhone } from '@/lib/format'
 import type { CallQueueLead } from '@/hooks/use-ari-page'
 
 interface CallBlockProps {
@@ -100,7 +101,7 @@ export function CallBlock({ queue, counts, targets, loading }: CallBlockProps) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-slate-800 truncate">{lead.full_name}</span>
-                  <span className="text-xs text-slate-400 tabular-nums">{lead.phone}</span>
+                  <span className="text-xs text-slate-400 tabular-nums">{formatPhone(lead.phone)}</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
                   {lead.property_address && (
