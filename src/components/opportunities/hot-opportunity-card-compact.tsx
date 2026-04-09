@@ -17,10 +17,14 @@ export function HotOpportunityCardCompact({
   opp,
   variant,
   onCall,
+  onSms,
+  onEmail,
 }: {
   opp: HotOpportunityData
   variant: CardVariant
   onCall?: (phone: string, leadId: string) => void
+  onSms?: (leadId: string, phone?: string) => void
+  onEmail?: (email?: string) => void
 }) {
   const {
     attributes,
@@ -188,9 +192,10 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              window.location.href = `/conversations?lead=${opp.leadId}`
+              onSms?.(opp.leadId, opp.phone)
             }}
-            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors"
+            disabled={!opp.phone}
+            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
           >
             <Icon name="chat" size="text-sm" />
           </button>
@@ -198,6 +203,8 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
+              // Email functionality - need to get email from opp data
+              onEmail?.()
             }}
             className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors"
           >

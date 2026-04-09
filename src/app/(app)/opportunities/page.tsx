@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { HotOpportunityCardCompact } from '@/components/opportunities/hot-opportunity-card-compact'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
+import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { Icon } from '@/components/ui/icon'
 import { toProperCase } from '@/lib/format'
 import { useHotOpportunities, useRefreshHotList } from '@/hooks/use-hot-opportunities'
@@ -65,6 +66,10 @@ export default function OpportunitiesPageV2() {
   const [sortBy, setSortBy] = useState<SortOption>('score')
   const [filterBy, setFilterBy] = useState<FilterOption>('all')
   const [activeId, setActiveId] = useState<string | null>(null)
+
+  // Modal states
+  const [smsModalOpen, setSmsModalOpen] = useState(false)
+  const [selectedLeadForModal, setSelectedLeadForModal] = useState<any>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -159,12 +164,53 @@ export default function OpportunitiesPageV2() {
     }
   })
 
+  // Action handlers
+  function handleCall(phone: string, leadId: string, name?: string) {
+    window.dispatchEvent(new CustomEvent('crm:dial', {
+      detail: { phone, leadId, name }
+    }))
+  }
+
+  async function handleSms(leadId: string, phone?: string, name?: string) {
+    // Fetch the full lead object
+    const supabase = createClient()
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('*')
+      .eq('id', leadId)
+      .single()
+
+    if (lead) {
+      setSelectedLeadForModal(lead)
+      setSmsModalOpen(true)
+    }
+  }
+
+  function handleEmail(email?: string) {
+    if (email) {
+      window.location.href = `mailto:${email}`
+    }
+  }
+
   return (
     <div className="min-h-screen bg-white">
       {showAdd && (
         <AddLeadModal
           onClose={() => setShowAdd(false)}
           onSuccess={() => { setShowAdd(false); refreshHotList(true) }}
+        />
+      )}
+
+      {smsModalOpen && selectedLeadForModal && (
+        <SmsComposeModal
+          lead={selectedLeadForModal}
+          onClose={() => {
+            setSmsModalOpen(false)
+            setSelectedLeadForModal(null)
+          }}
+          onSent={() => {
+            // Optionally refresh the list
+          }}
         />
       )}
 
@@ -272,9 +318,9 @@ export default function OpportunitiesPageV2() {
                     key={opp.leadId}
                     opp={opp}
                     variant={index % 4 === 0 ? 'white' : index % 4 === 1 ? 'grey' : index % 4 === 2 ? 'lightgrey' : 'red'}
-                    onCall={(phone, leadId) => {
-                      window.dispatchEvent(new CustomEvent('crm:dial', { detail: { phone, leadId } }))
-                    }}
+                    onCall={(phone, leadId) => handleCall(phone, leadId, opp.sellerName)}
+                    onSms={(leadId, phone) => handleSms(leadId, phone, opp.sellerName)}
+                    onEmail={(email) => handleEmail(email)}
                   />
                 ))}
               </div>
