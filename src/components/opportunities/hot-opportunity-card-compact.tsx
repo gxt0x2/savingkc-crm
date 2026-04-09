@@ -176,12 +176,15 @@ export function HotOpportunityCardCompact({
         )}
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              opp.phone && onCall?.(opp.phone, opp.leadId)
+              if (opp.phone && onCall) {
+                console.log('Call button clicked:', opp.phone, opp.leadId)
+                onCall(opp.phone, opp.leadId)
+              }
             }}
             disabled={!opp.phone}
             className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
@@ -192,7 +195,10 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              onSms?.(opp.leadId, opp.phone)
+              if (opp.phone && onSms) {
+                console.log('SMS button clicked:', opp.leadId, opp.phone)
+                onSms(opp.leadId, opp.phone)
+              }
             }}
             disabled={!opp.phone}
             className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
@@ -203,7 +209,7 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              // Email functionality - need to get email from opp data
+              console.log('Email button clicked')
               onEmail?.()
             }}
             className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors"

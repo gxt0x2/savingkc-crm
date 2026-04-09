@@ -84,9 +84,25 @@ export default function OpportunitiesPageV2() {
 
   useEffect(() => {
     if (hotData?.items) {
+      // Load custom order from localStorage if it exists
+      const savedOrder = localStorage.getItem('hot-opportunities-custom-order')
+      if (savedOrder && sortBy === 'custom') {
+        try {
+          const orderMap = JSON.parse(savedOrder) as Record<string, number>
+          const sorted = [...hotData.items].sort((a, b) => {
+            const aOrder = orderMap[a.leadId] ?? 999
+            const bOrder = orderMap[b.leadId] ?? 999
+            return aOrder - bOrder
+          })
+          setOpportunities(sorted)
+          return
+        } catch (e) {
+          // Invalid saved order, ignore
+        }
+      }
       setOpportunities([...hotData.items])
     }
-  }, [hotData])
+  }, [hotData, sortBy])
 
   function handleDragStart(event: any) {
     setActiveId(event.active.id)
@@ -109,8 +125,12 @@ export default function OpportunitiesPageV2() {
         // Mark as custom sort
         setSortBy('custom')
 
-        // TODO: Persist order to backend
-        // Could save to localStorage or API
+        // Save order to localStorage
+        const orderMap: Record<string, number> = {}
+        newOrder.forEach((item, index) => {
+          orderMap[item.leadId] = index
+        })
+        localStorage.setItem('hot-opportunities-custom-order', JSON.stringify(orderMap))
 
         return newOrder
       })
@@ -166,9 +186,12 @@ export default function OpportunitiesPageV2() {
 
   // Action handlers
   function handleCall(phone: string, leadId: string, name?: string) {
-    window.dispatchEvent(new CustomEvent('crm:dial', {
+    console.log('handleCall triggered:', { phone, leadId, name })
+    const event = new CustomEvent('crm:dial', {
       detail: { phone, leadId, name }
-    }))
+    })
+    window.dispatchEvent(event)
+    console.log('crm:dial event dispatched')
   }
 
   async function handleSms(leadId: string, phone?: string, name?: string) {
