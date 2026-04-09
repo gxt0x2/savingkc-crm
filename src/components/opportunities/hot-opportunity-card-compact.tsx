@@ -73,9 +73,10 @@ export function HotOpportunityCardCompact({
         </div>
       </div>
 
-      <Link href={`/leads/${opp.leadId}`} className="block p-4 cursor-pointer">
-        {/* Header */}
-        <div className="mb-3">
+      <div className="p-4">
+        {/* Header - Clickable to lead page */}
+        <Link href={`/leads/${opp.leadId}`}>
+        <div className="mb-3 cursor-pointer hover:opacity-80 transition-opacity">
           {/* County */}
           {opp.county && (
             <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-1">
@@ -174,6 +175,7 @@ export function HotOpportunityCardCompact({
             <p className="text-xs text-black font-semibold">{opp.hotNextMove}</p>
           </div>
         )}
+        </Link>
 
         {/* Quick Actions */}
         <div className="grid grid-cols-3 gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -217,7 +219,7 @@ export function HotOpportunityCardCompact({
             <Icon name="mail" size="text-sm" />
           </button>
         </div>
-      </Link>
+      </div>
     </div>
   )
 }
