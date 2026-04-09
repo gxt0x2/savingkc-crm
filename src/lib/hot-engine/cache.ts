@@ -558,7 +558,7 @@ export async function getHotList(): Promise<{
   // Also fetch lead data from leads table (including financials for hydration)
   const { data: leadRows } = await supabase
     .from('leads')
-    .select('id, source, county, city, created_at, phone, arv, offer_amount, repair_estimate, motivation_score, priority, station, full_name, property_address')
+    .select('id, source, county, city, created_at, phone, email, arv, offer_amount, repair_estimate, motivation_score, priority, station, full_name, property_address')
     .in('id', leadIds)
 
   const leadMap = new Map<string, any>()
@@ -690,6 +690,7 @@ export async function getHotList(): Promise<{
 
       cadenceHealth: ch,
       phone: m?.owner?.phones?.[0] || lead?.phone,
+      email: m?.owner?.emails?.[0] || lead?.email,
     } satisfies HotOpportunityData
   })
 

@@ -211,10 +211,11 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              console.log('Email button clicked')
-              onEmail?.()
+              console.log('Email button clicked:', opp.email)
+              onEmail?.(opp.email)
             }}
-            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors"
+            disabled={!opp.email}
+            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
           >
             <Icon name="mail" size="text-sm" />
           </button>

@@ -86,6 +86,7 @@ export interface HotOpportunityData {
     mail: 'green' | 'amber' | 'red' | 'gray'
   }
 
-  // Phone for quick actions
+  // Contact info for quick actions
   phone?: string
+  email?: string
 }

@@ -187,11 +187,11 @@ export default function OpportunitiesPageV2() {
   // Action handlers
   function handleCall(phone: string, leadId: string, name?: string) {
     console.log('handleCall triggered:', { phone, leadId, name })
-    const event = new CustomEvent('crm:dial', {
+    const event = new CustomEvent('open-dialer', {
       detail: { phone, leadId, name }
     })
     window.dispatchEvent(event)
-    console.log('crm:dial event dispatched')
+    console.log('open-dialer event dispatched')
   }
 
   async function handleSms(leadId: string, phone?: string, name?: string) {
@@ -343,7 +343,7 @@ export default function OpportunitiesPageV2() {
                     variant={index % 4 === 0 ? 'white' : index % 4 === 1 ? 'grey' : index % 4 === 2 ? 'lightgrey' : 'red'}
                     onCall={(phone, leadId) => handleCall(phone, leadId, opp.sellerName)}
                     onSms={(leadId, phone) => handleSms(leadId, phone, opp.sellerName)}
-                    onEmail={(email) => handleEmail(email)}
+                    onEmail={handleEmail}
                   />
                 ))}
               </div>
