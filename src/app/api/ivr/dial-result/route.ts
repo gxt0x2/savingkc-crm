@@ -30,6 +30,8 @@ export async function POST(req: Request) {
   const dialStatus = body.get('DialCallStatus') as string
   const dialCallSid = body.get('DialCallSid') as string
 
+  console.log(`[DIAL-RESULT] type=${type} dialStatus=${dialStatus} from=${from} calledNumber=${calledNumber}`)
+
   const routing = getAgentRouting(calledNumber)
 
   if (dialStatus === 'completed') {
@@ -65,8 +67,16 @@ export async function POST(req: Request) {
 
   // ── Nobody answered ──
 
-  if (leadId) {
-    // Alert both agents
+  const isDirect = type === 'direct'
+
+  // For direct calls, alert the agent who owns that number only (no tasks/SMS to caller)
+  if (isDirect && from) {
+    const missedMsg = `MISSED: Direct call from ${from} to your company line. Going to voicemail.`
+    await safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.primary.phone })
+  }
+
+  if (leadId && !isDirect) {
+    // Alert both agents for IVR calls
     const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${from} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${leadId}`
     await Promise.allSettled([
       safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
@@ -99,8 +109,8 @@ export async function POST(req: Request) {
     })
   }
 
-  // Auto-text ONLY when both agents miss — delayed 3-5 min so it feels human
-  if (from && leadId) {
+  // Auto-text ONLY when both agents miss IVR calls (not direct calls)
+  if (from && leadId && !isDirect) {
     const optedOut = await isOptedOut(from)
     const { allowed: phoneOk } = phoneRateLimit(from)
     if (!optedOut && phoneOk) {

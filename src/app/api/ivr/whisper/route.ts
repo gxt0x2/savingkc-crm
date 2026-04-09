@@ -29,51 +29,86 @@ export async function POST(req: Request) {
   let name = ''
   let address = ''
 
-  // Try to get lead info — by ID first, then by phone
-  if (leadId) {
-    const { data } = await supabase
-      .from('leads')
-      .select('full_name, property_address')
-      .eq('id', leadId)
-      .single()
-    if (data) {
-      if (data.full_name && data.full_name !== 'Inbound Seller') name = data.full_name
-      if (data.property_address) address = data.property_address
+  // Try to get lead info — by ID first, then by phone (only for direct calls)
+  if (type === 'direct') {
+    if (leadId) {
+      const { data } = await supabase
+        .from('leads')
+        .select('full_name, property_address')
+        .eq('id', leadId)
+        .single()
+      if (data) {
+        if (data.full_name && !data.full_name.includes('Inbound') && !data.full_name.includes('Caller')) name = data.full_name
+        if (data.property_address) address = data.property_address
+      }
+    } else if (from) {
+      const { data } = await supabase
+        .from('leads')
+        .select('full_name, property_address')
+        .eq('phone', from)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (data) {
+        if (data.full_name && !data.full_name.includes('Inbound') && !data.full_name.includes('Caller')) name = data.full_name
+        if (data.property_address) address = data.property_address
+      }
     }
-  } else if (from) {
-    const { data } = await supabase
-      .from('leads')
-      .select('full_name, property_address')
-      .eq('phone', from)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-    if (data) {
-      if (data.full_name && data.full_name !== 'Inbound Seller') name = data.full_name
-      if (data.property_address) address = data.property_address
+  } else if (leadId || from) {
+    // For IVR calls, keep the full lookup
+    if (leadId) {
+      const { data } = await supabase
+        .from('leads')
+        .select('full_name, property_address')
+        .eq('id', leadId)
+        .single()
+      if (data) {
+        if (data.full_name && data.full_name !== 'Inbound Seller') name = data.full_name
+        if (data.property_address) address = data.property_address
+      }
+    } else if (from) {
+      const { data } = await supabase
+        .from('leads')
+        .select('full_name, property_address')
+        .eq('phone', from)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (data) {
+        if (data.full_name && data.full_name !== 'Inbound Seller') name = data.full_name
+        if (data.property_address) address = data.property_address
+      }
     }
   }
 
   // Build brief whisper
-  const parts: string[] = []
+  let whisper = ''
 
-  if (type === 'seller') {
-    parts.push('Inbound seller')
-  } else if (type === 'non_seller') {
-    parts.push('Inbound call')
+  if (type === 'direct') {
+    if (name) {
+      whisper = `Call from ${name}`
+    } else {
+      whisper = 'Call from new lead'
+    }
   } else {
-    parts.push('Incoming call')
+    const parts: string[] = []
+    if (type === 'seller') {
+      parts.push('Inbound seller')
+    } else if (type === 'non_seller') {
+      parts.push('Inbound call')
+    } else {
+      parts.push('Incoming call')
+    }
+    if (name) parts.push(name)
+    if (address) parts.push(address)
+    if (from) parts.push(formatPhone(from))
+    whisper = parts.join('. ') + '.'
   }
-
-  if (name) parts.push(name)
-  if (address) parts.push(address)
-  if (from) parts.push(formatPhone(from))
-
-  const whisper = parts.join('. ') + '.'
 
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Matthew" rate="fast">${whisper}</Say>
+  <Pause length="1"/>
+  <Say voice="Polly.Joanna">${whisper}</Say>
 </Response>`
 
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })

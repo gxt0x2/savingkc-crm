@@ -54,16 +54,19 @@ export async function POST(req: Request) {
     }
 
     const body = await req.formData()
-    const from = body.get('From') as string
-    const to = body.get('To') as string
+    const fromRaw = body.get('From') as string | null
+    const to = body.get('To') as string | null
     const callStatus = body.get('CallStatus') as string
     const callSid = body.get('CallSid') as string
     const duration = body.get('CallDuration') as string || '0'
     const direction = body.get('Direction') as string || 'inbound'
 
-    if (!from) {
+    if (!fromRaw) {
       return new NextResponse('OK', { status: 200 })
     }
+
+    // TypeScript narrowing: from is now guaranteed to be string
+    const from: string = fromRaw
 
     // Skip all lead/auto-text flows for internal team numbers
     if (TEAM_NUMBERS.has(from)) {
@@ -117,45 +120,77 @@ export async function POST(req: Request) {
     // Missed call specific handling (no-answer or busy)
     if (callStatus === 'no-answer' || callStatus === 'busy') {
       if (leadId && leadName) {
-        // Known lead — bump priority, send text-back, create callback
+        // ── KNOWN LEAD MISSED CALL ──
         await supabase.from('leads')
           .update({ priority: 'hot' })
           .eq('id', leadId)
 
-        const firstName = leadName.split(' ')[0] || 'there'
-        const smsBody = `Hey ${firstName}, this is Ernest with Saving KC — I just missed your call. I'm available now if you'd like to try again, or I can call you back at a better time.`
+        // Get intelligent auto-text response using new messaging system
+        const { getMissedCallResponse } = await import('@/lib/missed-call-messaging')
+        const { getAgentRouting } = await import('@/lib/agent-routing')
 
-        // Opt-out + rate limit check before auto-text (delayed 45-90s to feel natural)
-        const optedOut = await isOptedOut(from)
-        const { allowed: phoneAllowed } = phoneRateLimit(from)
-        const replyFrom = to || TWILIO_PHONE // Reply from the number they called
-        if (!optedOut && phoneAllowed) {
-          sendDelayed(async () => {
-            await safeSendSMS({ body: smsBody, from: replyFrom, to: from })
-            await supabase.from('lead_activities').insert({
-              lead_id: leadId,
-              activity_type: 'sms',
-              description: smsBody,
-              agent: 'System',
-              metadata: { direction: 'outbound', from: replyFrom, to: from, trigger: 'missed_call_auto' }
-            })
-          }, 45, 90)
+        const routing = getAgentRouting(to || TWILIO_PHONE)
+        const response = await getMissedCallResponse({
+          leadId,
+          leadName,
+          fromPhone: from,
+          calledNumber: to || TWILIO_PHONE,
+          isKnownLead: true,
+        })
+
+        // Send auto-text if approved by messaging system (rate limits, timing, etc.)
+        if (response?.shouldSend && response.message) {
+          const optedOut = await isOptedOut(from)
+          const { allowed: phoneAllowed } = phoneRateLimit(from)
+          const replyFromRaw = to || TWILIO_PHONE
+          const fromPhone = from // Capture for closure
+
+          // Type guard: ensure both strings are non-null
+          if (!replyFromRaw || !fromPhone) {
+            console.error('Missing phone numbers for SMS')
+            return new NextResponse('OK', { status: 200 })
+          }
+
+          if (!optedOut && phoneAllowed) {
+            sendDelayed(async () => {
+              // Safe type assertions: all checked above
+              await safeSendSMS({
+                body: response.message as string,
+                from: replyFromRaw as string,
+                to: fromPhone as string
+              })
+              await supabase.from('lead_activities').insert({
+                lead_id: leadId,
+                activity_type: 'sms',
+                description: response.message,
+                agent: 'System',
+                metadata: {
+                  direction: 'outbound',
+                  from: replyFromRaw as string,
+                  to: fromPhone,
+                  trigger: 'missed_call_auto',
+                  variant: response.variant,
+                  agent_name: response.agentName,
+                }
+              })
+            }, response.delaySeconds, response.delaySeconds + 5)
+          }
         }
 
         // Alert both agents about known lead missed call
-        const missedAlert = `🔥 Missed call from ${leadName} (hot lead). Auto-text sent. Callback in 5 min. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
+        const missedAlert = `🔥 Missed call from ${leadName} (hot lead)${response?.shouldSend ? '. Auto-text sent' : ''}. Callback in 5 min. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
         await Promise.allSettled([
           safeSendSMS({ body: missedAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
           safeSendSMS({ body: missedAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
         ])
         sendPushToAgents({
           title: 'Missed Call - Hot Lead',
-          body: `${leadName} called and got no answer. Auto-text sent.`,
+          body: `${leadName} called and got no answer.`,
           url: `/leads/${leadId}`,
           tag: 'missed-call',
         }).catch(() => {})
 
-        // 5-min callback task
+        // 5-min callback task assigned to the agent whose number was called
         await supabase.from('lead_activities').insert({
           lead_id: leadId,
           activity_type: 'task',
@@ -164,13 +199,13 @@ export async function POST(req: Request) {
           metadata: {
             task_type: 'callback',
             due_date: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-            assigned_to: 'Casey',
+            assigned_to: routing.primary.name,
             priority: 'critical',
             status: 'pending',
           }
         })
       } else if (!leadId) {
-        // Unknown caller missed call — check prospects first
+        // ── UNKNOWN CALLER MISSED CALL ──
         let newLeadId: string | null = null
 
         const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
@@ -211,44 +246,73 @@ export async function POST(req: Request) {
           }).catch(err => console.error('[MANIFEST] Failed:', err))
         }
 
-        const unknownSmsBody = `Thanks for calling Saving KC Homebuyers. Were you looking to sell a property? Reply YES and we'll call you right back.`
-        const unknownReplyFrom = to || TWILIO_PHONE
-        const unknownOptedOut = await isOptedOut(from)
-        const { allowed: unknownPhoneAllowed } = phoneRateLimit(from)
-        if (!unknownOptedOut && unknownPhoneAllowed) {
-          // Delayed 60-120s so it doesn't feel robotic
-          sendDelayed(async () => {
-            await safeSendSMS({ body: unknownSmsBody, from: unknownReplyFrom, to: from })
-            await supabase.from('lead_activities').insert({
-              lead_id: newLeadId,
-              activity_type: 'sms',
-              description: unknownSmsBody,
-              agent: 'System',
-              metadata: { direction: 'outbound', from: unknownReplyFrom, to: from, trigger: 'missed_call_unknown' }
-            })
-          }, 60, 120)
+        // Get intelligent auto-text for unknown caller
+        const { getMissedCallResponse } = await import('@/lib/missed-call-messaging')
+        const { getAgentRouting } = await import('@/lib/agent-routing')
+
+        const routing = getAgentRouting(to || TWILIO_PHONE)
+        const response = await getMissedCallResponse({
+          leadId: newLeadId,
+          leadName: null,
+          fromPhone: from,
+          calledNumber: to || TWILIO_PHONE,
+          isKnownLead: false,
+        })
+
+        // Send auto-text if approved
+        if (response?.shouldSend && response.message) {
+          const unknownOptedOut = await isOptedOut(from)
+          const { allowed: unknownPhoneAllowed } = phoneRateLimit(from)
+          const unknownReplyFromRaw = to || TWILIO_PHONE
+          const fromPhoneUnknown = from
+
+          if (!unknownReplyFromRaw || !fromPhoneUnknown) {
+            console.error('Missing phone numbers for unknown SMS')
+          } else if (!unknownOptedOut && unknownPhoneAllowed) {
+            sendDelayed(async () => {
+              await safeSendSMS({
+                body: response.message as string,
+                from: unknownReplyFromRaw as string,
+                to: fromPhoneUnknown as string
+              })
+              await supabase.from('lead_activities').insert({
+                lead_id: newLeadId,
+                activity_type: 'sms',
+                description: response.message,
+                agent: 'System',
+                metadata: {
+                  direction: 'outbound',
+                  from: unknownReplyFromRaw as string,
+                  to: fromPhoneUnknown,
+                  trigger: 'missed_call_auto',
+                  variant: response.variant,
+                  agent_name: response.agentName,
+                }
+              })
+            }, response.delaySeconds, response.delaySeconds + 5)
+          }
         }
 
         // Alert both agents about unknown caller
-        const agentAlert = `📞 Missed call from unknown number ${from}. Auto-text sent. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
+        const agentAlert = `📞 Missed call from unknown number ${from}${response?.shouldSend ? '. Auto-text sent' : ''}. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
         await Promise.allSettled([
           safeSendSMS({ body: agentAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
           safeSendSMS({ body: agentAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
         ])
         sendPushToAgents({
           title: 'Missed Call - Unknown',
-          body: `Unknown number ${from} called. Auto-text sent.`,
+          body: `Unknown number ${from} called.`,
           url: newLeadId ? `/leads/${newLeadId}` : '/',
           tag: 'missed-call-unknown',
         }).catch(() => {})
 
-        // Briefing event for unknown missed call (now with lead_id)
+        // Briefing event for unknown missed call
         try {
           await supabase.from('ari_briefing_events').insert({
             event_type: 'missed_call',
             priority: 'high',
             title: `Missed call from unknown: ${from}`,
-            description: `Unknown caller, auto-text sent. Watch for YES reply.`,
+            description: `Unknown caller${response?.shouldSend ? ', auto-text sent' : ''}. Watch for YES reply.`,
             lead_id: newLeadId,
             action_url: newLeadId ? `/leads/${newLeadId}` : undefined,
           })

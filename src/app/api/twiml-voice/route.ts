@@ -2,11 +2,19 @@ import { NextResponse } from 'next/server'
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
+const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
 
 // Outbound caller ID per agent identity
 const AGENT_CALLER_IDS: Record<string, string> = {
   ernest: '+18166088588',
   casey:  '+18167277667',
+}
+
+// Company numbers that ring agent cell directly (no IVR)
+const DIRECT_RING_NUMBERS: Record<string, string> = {
+  '+18166088588': ERNEST_PHONE,
+  '+18167277667': CASEY_PHONE,
 }
 
 // Cold call outbound dialing numbers — callbacks get a different IVR
@@ -44,6 +52,18 @@ export async function POST(req: Request) {
 <Response>
   <Dial callerId="${callerId}" timeout="15" record="record-from-answer-dual">
     <Number>${sanitizedTo}</Number>
+  </Dial>
+</Response>`
+    return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+  }
+
+  // ── DIRECT RING: Company numbers ring agent cell (no IVR) ──
+  if (DIRECT_RING_NUMBERS[to]) {
+    const agentPhone = DIRECT_RING_NUMBERS[to]
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct" method="POST" timeout="15" callerId="${to}">
+    <Number url="${BASE_URL}/api/ivr/whisper?type=direct&amp;from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}">${agentPhone}</Number>
   </Dial>
 </Response>`
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
