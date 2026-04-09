@@ -186,15 +186,16 @@ export default function OpportunitiesPageV2() {
 
   // Action handlers
   function handleCall(phone: string, leadId: string, name?: string) {
-    console.log('handleCall triggered:', { phone, leadId, name })
+    console.log('[OPPORTUNITIES PAGE] handleCall triggered:', { phone, leadId, name })
     const event = new CustomEvent('open-dialer', {
       detail: { phone, leadId, name }
     })
     window.dispatchEvent(event)
-    console.log('open-dialer event dispatched')
+    console.log('[OPPORTUNITIES PAGE] open-dialer event dispatched with detail:', { phone, leadId, name })
   }
 
   async function handleSms(leadId: string, phone?: string, name?: string) {
+    console.log('[OPPORTUNITIES PAGE] handleSms triggered:', { leadId, phone, name })
     // Fetch the full lead object
     const supabase = createClient()
     const { data: lead } = await supabase
@@ -210,8 +211,12 @@ export default function OpportunitiesPageV2() {
   }
 
   function handleEmail(email?: string) {
+    console.log('[OPPORTUNITIES PAGE] handleEmail triggered with email:', email)
     if (email) {
+      console.log('[OPPORTUNITIES PAGE] Opening mailto:', email)
       window.location.href = `mailto:${email}`
+    } else {
+      console.log('[OPPORTUNITIES PAGE] No email provided, skipping mailto')
     }
   }
 
@@ -354,7 +359,9 @@ export default function OpportunitiesPageV2() {
                   <HotOpportunityCardCompact
                     opp={filteredOpps.find(o => o.leadId === activeId)!}
                     variant="white"
-                    onCall={() => {}}
+                    onCall={handleCall}
+                    onSms={handleSms}
+                    onEmail={handleEmail}
                   />
                 </div>
               ) : null}

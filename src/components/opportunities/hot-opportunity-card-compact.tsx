@@ -178,14 +178,14 @@ export function HotOpportunityCardCompact({
         </Link>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-3 gap-1.5" onClick={(e) => e.stopPropagation()}>
+        <div className="grid grid-cols-3 gap-1.5">
           <button
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              if (opp.phone && onCall) {
-                console.log('Call button clicked:', opp.phone, opp.leadId)
-                onCall(opp.phone, opp.leadId)
+              console.log('[CALL BTN] Clicked - phone:', opp.phone, 'leadId:', opp.leadId, 'onCall exists:', !!onCall)
+              if (opp.phone) {
+                onCall?.(opp.phone, opp.leadId)
               }
             }}
             disabled={!opp.phone}
@@ -197,9 +197,9 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              if (opp.phone && onSms) {
-                console.log('SMS button clicked:', opp.leadId, opp.phone)
-                onSms(opp.leadId, opp.phone)
+              console.log('[SMS BTN] Clicked - leadId:', opp.leadId, 'phone:', opp.phone, 'onSms exists:', !!onSms)
+              if (opp.phone) {
+                onSms?.(opp.leadId, opp.phone)
               }
             }}
             disabled={!opp.phone}
@@ -211,8 +211,10 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              console.log('Email button clicked:', opp.email)
-              onEmail?.(opp.email)
+              console.log('[EMAIL BTN] Clicked - email:', opp.email, 'onEmail exists:', !!onEmail)
+              if (opp.email) {
+                onEmail?.(opp.email)
+              }
             }}
             disabled={!opp.email}
             className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
