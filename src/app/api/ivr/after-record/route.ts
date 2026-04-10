@@ -43,7 +43,20 @@ export async function POST(req: Request) {
 
     if (existingLead?.id) {
       leadId = existingLead.id
-      await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
+      // Bump to hot via manifest cascade (with fallback if manifest ops fail)
+      try {
+        const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
+        const cascaded = await updateManifestAndCascade(leadId, (m) => {
+          m.priority = 'hot'
+        }, 'system:ivr_voicemail')
+        if (!cascaded) {
+          // No manifest yet - fallback to direct update
+          await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
+        }
+      } catch (err) {
+        console.error('[IVR] Manifest update failed, using direct fallback:', err)
+        await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
+      }
     } else {
       const { data: newLead } = await supabase.from('leads').insert({
         full_name: 'Inbound Seller',
