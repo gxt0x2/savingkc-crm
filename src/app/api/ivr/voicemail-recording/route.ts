@@ -24,15 +24,16 @@ const AGENT_PHONES: Record<string, string> = {
 }
 
 export async function POST(req: Request) {
-  const url = new URL(req.url)
-  const agent = url.searchParams.get('agent') || ''
-  const from = url.searchParams.get('from') || ''
-  let resolvedLeadId = url.searchParams.get('leadId') || ''
+  try {
+    const url = new URL(req.url)
+    const agent = url.searchParams.get('agent') || ''
+    const from = url.searchParams.get('from') || ''
+    let resolvedLeadId = url.searchParams.get('leadId') || ''
 
-  const body = await req.formData()
-  const recordingUrl = body.get('RecordingUrl') as string
-  const recordingSid = body.get('RecordingSid') as string
-  const recordingDuration = body.get('RecordingDuration') as string
+    const body = await req.formData()
+    const recordingUrl = body.get('RecordingUrl') as string
+    const recordingSid = body.get('RecordingSid') as string
+    const recordingDuration = body.get('RecordingDuration') as string
 
   // If no leadId, find or create lead by phone number (dedup)
   if (!resolvedLeadId && from) {
@@ -142,6 +143,13 @@ export async function POST(req: Request) {
   return new NextResponse('<Response><Say voice="Polly.Matthew">Thank you. Goodbye.</Say><Hangup /></Response>', {
     headers: { 'Content-Type': 'text/xml' }
   })
+  } catch (error) {
+    console.error('[IVR/voicemail-recording] Critical error:', error)
+    // Fallback: just acknowledge
+    return new NextResponse('<Response><Say voice="Polly.Matthew">Thank you.</Say><Hangup /></Response>', {
+      headers: { 'Content-Type': 'text/xml' }
+    })
+  }
 }
 
 async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, leadId: string) {

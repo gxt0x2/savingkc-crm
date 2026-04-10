@@ -21,13 +21,14 @@ function formatPhone(phone: string): string {
 }
 
 export async function POST(req: Request) {
-  const url = new URL(req.url)
-  const from = url.searchParams.get('from') || ''
-  const leadId = url.searchParams.get('leadId') || ''
-  const type = url.searchParams.get('type') || 'call' // seller | non_seller | call
+  try {
+    const url = new URL(req.url)
+    const from = url.searchParams.get('from') || ''
+    const leadId = url.searchParams.get('leadId') || ''
+    const type = url.searchParams.get('type') || 'call' // seller | non_seller | call
 
-  let name = ''
-  let address = ''
+    let name = ''
+    let address = ''
 
   // Try to get lead info — by ID first, then by phone (only for direct calls)
   if (type === 'direct') {
@@ -112,4 +113,13 @@ export async function POST(req: Request) {
 </Response>`
 
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+  } catch (error) {
+    console.error('[IVR/whisper] Error:', error)
+    // Silent fallback - just connect without whisper
+    const fallbackTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+</Response>`
+    return new NextResponse(fallbackTwiml, { headers: { 'Content-Type': 'text/xml' } })
+  }
 }

@@ -12,16 +12,17 @@ const supabase = createClient(
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
 export async function POST(req: Request) {
-  const url = new URL(req.url)
-  const from = url.searchParams.get('from') || ''
-  const callSid = url.searchParams.get('callSid') || ''
-  const calledNumber = url.searchParams.get('calledNumber') || ''
-  const isColdCall = url.searchParams.get('coldcall') === '1'
+  try {
+    const url = new URL(req.url)
+    const from = url.searchParams.get('from') || ''
+    const callSid = url.searchParams.get('callSid') || ''
+    const calledNumber = url.searchParams.get('calledNumber') || ''
+    const isColdCall = url.searchParams.get('coldcall') === '1'
 
-  const body = await req.formData()
-  const digit = body.get('Digits') as string
+    const body = await req.formData()
+    const digit = body.get('Digits') as string
 
-  const routing = getAgentRouting(calledNumber)
+    const routing = getAgentRouting(calledNumber)
 
   if (digit === '1') {
     // PRESS 1 — SELLER: Find/create lead, then sim-ring both agents
@@ -150,4 +151,16 @@ export async function POST(req: Request) {
   <Redirect method="POST">${BASE_URL}/api/twiml-voice</Redirect>
 </Response>`
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+  } catch (error) {
+    console.error('[IVR/handle-input] Critical error:', error)
+    // Emergency fallback: ring both agents
+    const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="15">
+    <Number>+18162262552</Number>
+    <Number>+18167564943</Number>
+  </Dial>
+</Response>`
+    return new NextResponse(emergencyTwiml, { headers: { 'Content-Type': 'text/xml' } })
+  }
 }

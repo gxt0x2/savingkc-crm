@@ -20,16 +20,17 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
  * Creates/updates lead, alerts agents, triggers transcript analysis.
  */
 export async function POST(req: Request) {
-  const url = new URL(req.url)
-  const from = url.searchParams.get('from') || ''
-  const callSid = url.searchParams.get('callSid') || ''
-  const calledNumber = url.searchParams.get('calledNumber') || ''
+  try {
+    const url = new URL(req.url)
+    const from = url.searchParams.get('from') || ''
+    const callSid = url.searchParams.get('callSid') || ''
+    const calledNumber = url.searchParams.get('calledNumber') || ''
 
-  const body = await req.formData()
-  const recordingUrl = body.get('RecordingUrl') as string
-  const recordingSid = body.get('RecordingSid') as string
+    const body = await req.formData()
+    const recordingUrl = body.get('RecordingUrl') as string
+    const recordingSid = body.get('RecordingSid') as string
 
-  const routing = getAgentRouting(calledNumber)
+    const routing = getAgentRouting(calledNumber)
 
   // Find or create lead (dedup by phone)
   let leadId = ''
@@ -136,6 +137,13 @@ export async function POST(req: Request) {
   return new NextResponse('<Response><Say voice="Polly.Matthew">Thank you. We\'ll call you back shortly.</Say><Hangup /></Response>', {
     headers: { 'Content-Type': 'text/xml' }
   })
+  } catch (error) {
+    console.error('[IVR/after-record] Critical error:', error)
+    // Fallback: just acknowledge and hang up
+    return new NextResponse('<Response><Say voice="Polly.Matthew">Thank you.</Say><Hangup /></Response>', {
+      headers: { 'Content-Type': 'text/xml' }
+    })
+  }
 }
 
 async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, leadId: string) {

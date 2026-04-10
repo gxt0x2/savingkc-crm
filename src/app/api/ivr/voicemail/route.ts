@@ -20,13 +20,14 @@ const DEFAULT_GREETING = `You've reached Saving KC Homebuyers. No one is availab
 const COLD_GREETING = `Hey, sorry we missed you. Leave a message after the beep and we'll call you right back.`
 
 export async function POST(req: Request) {
-  const url = new URL(req.url)
-  const agent = url.searchParams.get('agent') || ''
-  const from = url.searchParams.get('from') || ''
-  const leadId = url.searchParams.get('leadId') || ''
-  const calledNumber = url.searchParams.get('calledNumber') || ''
+  try {
+    const url = new URL(req.url)
+    const agent = url.searchParams.get('agent') || ''
+    const from = url.searchParams.get('from') || ''
+    const leadId = url.searchParams.get('leadId') || ''
+    const calledNumber = url.searchParams.get('calledNumber') || ''
 
-  console.log(`[VOICEMAIL] agent=${agent} from=${from} calledNumber=${calledNumber}`)
+    console.log(`[VOICEMAIL] agent=${agent} from=${from} calledNumber=${calledNumber}`)
 
   const isColdCall = COLD_CALL_NUMBERS.has(calledNumber)
 
@@ -47,4 +48,15 @@ export async function POST(req: Request) {
 </Response>`
 
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+  } catch (error) {
+    console.error('[IVR/voicemail] Critical error:', error)
+    // Emergency fallback: simple voicemail
+    const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Matthew">Please leave a message after the beep.</Say>
+  <Record action="${BASE_URL}/api/ivr/voicemail-recording" method="POST" maxLength="120" playBeep="true"/>
+  <Hangup />
+</Response>`
+    return new NextResponse(emergencyTwiml, { headers: { 'Content-Type': 'text/xml' } })
+  }
 }

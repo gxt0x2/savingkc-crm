@@ -30,10 +30,11 @@ const COLD_CALL_NUMBERS = new Set([
 ])
 
 export async function POST(req: Request) {
-  const body = await req.formData()
-  const callSid = body.get('CallSid') as string
-  const from = body.get('From') as string
-  const to = body.get('To') as string
+  try {
+    const body = await req.formData()
+    const callSid = body.get('CallSid') as string
+    const from = body.get('From') as string
+    const to = body.get('To') as string
 
   // ── OUTBOUND: browser/SDK-initiated call ──
   if (from && from.startsWith('client:')) {
@@ -91,4 +92,15 @@ export async function POST(req: Request) {
 </Response>`
 
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+  } catch (error) {
+    console.error('[IVR] Critical error in main handler:', error)
+    // Emergency fallback: ring Ernest's cell directly
+    const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="15">
+    <Number>${ERNEST_PHONE}</Number>
+  </Dial>
+</Response>`
+    return new NextResponse(emergencyTwiml, { headers: { 'Content-Type': 'text/xml' } })
+  }
 }

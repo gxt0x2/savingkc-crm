@@ -1,0 +1,75 @@
+
+> savingkc-crm@0.1.0 start
+> next start
+
+▲ Next.js 16.2.1
+- Local:         http://localhost:3002
+- Network:       http://100.96.152.30:3002
+✓ Ready in 116ms
+[VOICEMAIL] agent=Ernest from=+19137179716 calledNumber=+18166088588
+[DIAL-RESULT] type=direct dialStatus=completed from=+19137179716 calledNumber=+18166088588
+[SMS-SUCCESS] Sent to +18168828221 (SID: SM56148df5268df37478f2f05e5d088964, 322ms)
+[ensureManifestExists] Manifest exists, triggering autoEnrichLead for lead 5d99f066-8f16-4ba4-a4c8-f7f13bb248bd
+[auto-enrich] Starting for lead 5d99f066-8f16-4ba4-a4c8-f7f13bb248bd
+[SMS-SUCCESS] Sent to +18162262552 (SID: SMe4e93833b321fbda56cff2b7f0e896bf, 229ms)
+[SMS-SUCCESS] Sent to +18167564943 (SID: SM22f7312fa55c0f9cdefebcdc32f20b2a, 259ms)
+[auto-enrich] Lead data: { phone: '+18582585722', address: null, source: 'inbound_sms' }
+[auto-enrich] Checking manifest for existing enrichment...
+[auto-enrich] Dedup check complete, proceeding with enrichment...
+[auto-enrich] Queuing prospect enrichment for phone: +18582585722
+[auto-enrich] enrichFromProspect starting for lead 5d99f066-8f16-4ba4-a4c8-f7f13bb248bd phone +18582585722
+[auto-enrich] Queued 1 enrichment(s), awaiting completion...
+[auto-enrich] Prospect lookup returned 0 matches
+[auto-enrich] No prospect matches found
+[auto-enrich] Enrichments completed. Results: [ 'fulfilled' ]
+[auto-enrich] Finished for lead 5d99f066-8f16-4ba4-a4c8-f7f13bb248bd
+[push] Sent 6/6 notifications
+[SMS-SUCCESS] Sent to +18582585722 (SID: SM73ef8603a6876fee2845d696e8bceae7, 255ms)
+[ensureManifestExists] Triggering autoEnrichLead for lead 71aa7023-c73e-4573-8d7b-6582fa78f965
+[auto-enrich] Starting for lead 71aa7023-c73e-4573-8d7b-6582fa78f965
+[SMS-SUCCESS] Sent to +18162262552 (SID: SMdce7620b68c8af29e79636f7331b13cc, 241ms)
+[SMS-SUCCESS] Sent to +18167564943 (SID: SMdc5f20ed530fd31eaaa08bb07038dec9, 270ms)
+[auto-enrich] Lead data: { phone: '+12075984008', address: null, source: 'inbound_sms' }
+[auto-enrich] Checking manifest for existing enrichment...
+[auto-enrich] Dedup check complete, proceeding with enrichment...
+[auto-enrich] Queuing prospect enrichment for phone: +12075984008
+[auto-enrich] enrichFromProspect starting for lead 71aa7023-c73e-4573-8d7b-6582fa78f965 phone +12075984008
+[auto-enrich] Queued 1 enrichment(s), awaiting completion...
+[push] Sent 6/6 notifications
+[auto-enrich] Prospect lookup returned 0 matches
+[auto-enrich] No prospect matches found
+[auto-enrich] Enrichments completed. Results: [ 'fulfilled' ]
+[auto-enrich] Finished for lead 71aa7023-c73e-4573-8d7b-6582fa78f965
+[SMS-SUCCESS] Sent to +18163058996 (SID: SM02d586d3440b378ddaeaec03ec55cc9c, 253ms)
+[ensureManifestExists] Manifest exists, triggering autoEnrichLead for lead bbab9eb9-da6b-428a-b301-cf44bc295b0c
+[auto-enrich] Starting for lead bbab9eb9-da6b-428a-b301-cf44bc295b0c
+[auto-enrich] Lead data: {
+  phone: '+18164259217',
+  address: null,
+  source: 'inbound_ivr_no_input'
+}
+[auto-enrich] Checking manifest for existing enrichment...
+[auto-enrich] Dedup check complete, proceeding with enrichment...
+[auto-enrich] Queuing prospect enrichment for phone: +18164259217
+[auto-enrich] enrichFromProspect starting for lead bbab9eb9-da6b-428a-b301-cf44bc295b0c phone +18164259217
+[auto-enrich] Queued 1 enrichment(s), awaiting completion...
+[auto-enrich] Prospect lookup returned 0 matches
+[auto-enrich] No prospect matches found
+[auto-enrich] Enrichments completed. Results: [ 'fulfilled' ]
+[auto-enrich] Finished for lead bbab9eb9-da6b-428a-b301-cf44bc295b0c
+[ensureManifestExists] Manifest exists, triggering autoEnrichLead for lead e76f7122-c5c2-464c-9b90-2f3b108404ce
+[auto-enrich] Starting for lead e76f7122-c5c2-464c-9b90-2f3b108404ce
+[auto-enrich] Lead data: {
+  phone: '+19137179716',
+  address: null,
+  source: 'inbound_ivr_no_input'
+}
+[auto-enrich] Checking manifest for existing enrichment...
+[auto-enrich] Dedup check complete, proceeding with enrichment...
+[auto-enrich] Queuing prospect enrichment for phone: +19137179716
+[auto-enrich] enrichFromProspect starting for lead e76f7122-c5c2-464c-9b90-2f3b108404ce phone +19137179716
+[auto-enrich] Queued 1 enrichment(s), awaiting completion...
+[auto-enrich] Prospect lookup returned 0 matches
+[auto-enrich] No prospect matches found
+[auto-enrich] Enrichments completed. Results: [ 'fulfilled' ]
+[auto-enrich] Finished for lead e76f7122-c5c2-464c-9b90-2f3b108404ce

@@ -20,19 +20,20 @@ function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
 }
 
 export async function POST(req: Request) {
-  const url = new URL(req.url)
-  const from = url.searchParams.get('from') || ''
-  const leadId = url.searchParams.get('leadId') || ''
-  const calledNumber = url.searchParams.get('calledNumber') || ''
-  const type = url.searchParams.get('type') || 'seller'
+  try {
+    const url = new URL(req.url)
+    const from = url.searchParams.get('from') || ''
+    const leadId = url.searchParams.get('leadId') || ''
+    const calledNumber = url.searchParams.get('calledNumber') || ''
+    const type = url.searchParams.get('type') || 'seller'
 
-  const body = await req.formData()
-  const dialStatus = body.get('DialCallStatus') as string
-  const dialCallSid = body.get('DialCallSid') as string
+    const body = await req.formData()
+    const dialStatus = body.get('DialCallStatus') as string
+    const dialCallSid = body.get('DialCallSid') as string
 
-  console.log(`[DIAL-RESULT] type=${type} dialStatus=${dialStatus} from=${from} calledNumber=${calledNumber}`)
+    console.log(`[DIAL-RESULT] type=${type} dialStatus=${dialStatus} from=${from} calledNumber=${calledNumber}`)
 
-  const routing = getAgentRouting(calledNumber)
+    const routing = getAgentRouting(calledNumber)
 
   if (dialStatus === 'completed') {
     // Agent answered — log it, no auto-text needed
@@ -145,4 +146,15 @@ export async function POST(req: Request) {
 </Response>`
 
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+  } catch (error) {
+    console.error('[IVR/dial-result] Critical error:', error)
+    // Emergency fallback: simple voicemail
+    const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Matthew">Please leave a message after the beep.</Say>
+  <Record maxLength="120" playBeep="true"/>
+  <Hangup />
+</Response>`
+    return new NextResponse(emergencyTwiml, { headers: { 'Content-Type': 'text/xml' } })
+  }
 }

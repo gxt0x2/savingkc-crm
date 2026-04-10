@@ -32,11 +32,12 @@ async function isLikelySpam(phone: string): Promise<boolean> {
 }
 
 export async function POST(req: Request) {
-  const url = new URL(req.url)
-  const from = url.searchParams.get('from') || ''
-  const calledNumber = url.searchParams.get('calledNumber') || TWILIO_PHONE
+  try {
+    const url = new URL(req.url)
+    const from = url.searchParams.get('from') || ''
+    const calledNumber = url.searchParams.get('calledNumber') || TWILIO_PHONE
 
-  const routing = getAgentRouting(calledNumber)
+    const routing = getAgentRouting(calledNumber)
 
   if (from && !from.includes('anonymous') && !from.includes('blocked') && !TEAM_NUMBERS.has(from)) {
 
@@ -101,4 +102,16 @@ export async function POST(req: Request) {
   }
 
   return new NextResponse('<Response><Hangup /></Response>', { headers: { 'Content-Type': 'text/xml' } })
+  } catch (error) {
+    console.error('[IVR/no-input] Critical error:', error)
+    // Emergency fallback: ring both agents
+    const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="15">
+    <Number>+18162262552</Number>
+    <Number>+18167564943</Number>
+  </Dial>
+</Response>`
+    return new NextResponse(emergencyTwiml, { headers: { 'Content-Type': 'text/xml' } })
+  }
 }

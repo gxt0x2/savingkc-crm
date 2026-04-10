@@ -23,13 +23,14 @@ function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
  * Don't ring agents. Auto-text to convert passively and hang up.
  */
 export async function POST(req: Request) {
-  const url = new URL(req.url)
-  const from = url.searchParams.get('from') || ''
-  const calledNumber = url.searchParams.get('calledNumber') || ''
+  try {
+    const url = new URL(req.url)
+    const from = url.searchParams.get('from') || ''
+    const calledNumber = url.searchParams.get('calledNumber') || ''
 
-  if (!from || from.includes('anonymous') || from.includes('blocked')) {
-    return new NextResponse('<Response><Hangup /></Response>', { headers: { 'Content-Type': 'text/xml' } })
-  }
+    if (!from || from.includes('anonymous') || from.includes('blocked')) {
+      return new NextResponse('<Response><Hangup /></Response>', { headers: { 'Content-Type': 'text/xml' } })
+    }
 
   // Match to existing lead (they're in CRM from cold call list)
   const { data: existingLead } = await supabase
@@ -54,10 +55,15 @@ export async function POST(req: Request) {
   if (leadId) {
     const currentPriority = existingLead?.priority
     if (!currentPriority || currentPriority === 'normal' || currentPriority === 'low') {
-      const cascaded = await updateManifestAndCascade(leadId, (m) => {
-        m.priority = 'warm'
-      }, 'system:cold_callback')
-      if (!cascaded) {
+      try {
+        const cascaded = await updateManifestAndCascade(leadId, (m) => {
+          m.priority = 'warm'
+        }, 'system:cold_callback')
+        if (!cascaded) {
+          await supabase.from('leads').update({ priority: 'warm' }).eq('id', leadId)
+        }
+      } catch (err) {
+        console.error('[IVR] Manifest update failed, using direct fallback:', err)
         await supabase.from('leads').update({ priority: 'warm' }).eq('id', leadId)
       }
     }
@@ -95,4 +101,9 @@ export async function POST(req: Request) {
 </Response>`,
     { headers: { 'Content-Type': 'text/xml' } }
   )
+  } catch (error) {
+    console.error('[IVR/cold-no-input] Critical error:', error)
+    // Fallback: just hang up gracefully
+    return new NextResponse('<Response><Hangup /></Response>', { headers: { 'Content-Type': 'text/xml' } })
+  }
 }
