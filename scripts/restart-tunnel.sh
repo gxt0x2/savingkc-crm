@@ -1,5 +1,26 @@
 #!/bin/bash
-# restart-tunnel.sh — Restarts Quick Tunnel, updates .env.local, restarts server, updates Twilio
+# restart-tunnel.sh — TEMPORARY WORKAROUND for broken DNS
+#
+# WHY THIS EXISTS:
+#   crm.savingkc.com DNS is hosted at Bluehost (ns218552.ztomy.com) and points
+#   to dead Vercel IPs (66.81.203.x). Without Bluehost login credentials we
+#   cannot fix the DNS record. This script uses a Cloudflare Quick Tunnel as a
+#   stopgap so Twilio can reach the local CRM server.
+#
+# QUICK TUNNELS ARE UNRELIABLE — they can die at any time (Cloudflare gives
+# "no uptime guarantee"). When the tunnel dies, re-run this script.
+#
+# PERMANENT FIX (do this ASAP):
+#   1. Log into Bluehost DNS for savingkc.com
+#   2. Delete the existing 'crm' A record (pointing to 66.81.203.x)
+#   3. Add CNAME: crm → 027648fa-df0a-413e-a500-47daaa10fd68.cfargotunnel.com
+#   4. Remove NEXT_PUBLIC_APP_URL from .env.local (defaults to https://crm.savingkc.com)
+#   5. Restart the server: kill $(lsof -ti:3002); npx next start -p 3002
+#   6. Update all Twilio webhooks back to https://crm.savingkc.com/api/twiml-voice
+#      and SMS to https://crm.savingkc.com/api/twilio-sms-webhook
+#   7. Start the named tunnel: cloudflared tunnel --config ~/.cloudflared/savingkc-crm-config.yml run
+#   8. Delete this script — it is no longer needed
+#
 # Usage: ./scripts/restart-tunnel.sh
 
 set -euo pipefail
