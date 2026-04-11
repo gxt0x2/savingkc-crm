@@ -226,12 +226,13 @@ async function processPhase2Intelligence(
       }
 
       // === Extract structured seller intel from Casey's notes ===
-      // Casey writes: "Timeline: ...\nCondition: ...\nPrice: ...\nMotivation: ..."
+      // Casey writes notes as a single line with periods separating sections:
+      // "Timeline: ... Condition: ... Price: ... Motivation: ..."
       const notes = call.notes
-      const timelineMatch = notes.match(/Timeline:\s*(.+?)(?:\n|$)/i)
-      const conditionMatch = notes.match(/Condition:\s*(.+?)(?:\n|$)/i)
-      const priceMatch = notes.match(/Price:\s*(.+?)(?:\n|$)/i)
-      const motivationMatch = notes.match(/Motivation:\s*(.+?)(?:\n|$)/i)
+      const timelineMatch = notes.match(/Timeline:\s*(.+?)(?=\s*(?:Condition:|Price:|Motivation:|Appointment:|$))/i)
+      const conditionMatch = notes.match(/Condition:\s*(.+?)(?=\s*(?:Timeline:|Price:|Motivation:|Appointment:|$))/i)
+      const priceMatch = notes.match(/Price:\s*(.+?)(?=\s*(?:Timeline:|Condition:|Motivation:|Appointment:|$))/i)
+      const motivationMatch = notes.match(/Motivation:\s*(.+?)(?=\s*(?:Timeline:|Condition:|Price:|Appointment:|$))/i)
 
       if (timelineMatch || conditionMatch || priceMatch || motivationMatch) {
         console.log(`[mojo/sync] Extracting seller intel from agent notes for ${call.contact_name}`)
@@ -256,8 +257,8 @@ async function processPhase2Intelligence(
         if (priceMatch) {
           if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
           ;(manifest.situation.priceExpectations as any).notes = priceMatch[1].trim()
-          // Extract dollar amounts
-          const amounts = priceMatch[1].match(/\$?([\d,]+)k?/gi)
+          // Extract dollar amounts - require $ prefix or k suffix to avoid false positives
+          const amounts = priceMatch[1].match(/\$[\d,]+k?|\d[\d,]*k/gi)
           if (amounts) {
             const nums = amounts.map(a => {
               const n = parseFloat(a.replace(/[$,]/g, ''))
@@ -901,8 +902,9 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // E. If new manifest with address: trigger enrichment
-        if (isNew && manifest && manifestId && call.property_address && call.state) {
+        // E. Trigger enrichment for new records OR high-value updates without prior enrichment
+        const needsEnrich = isNew || (dispositionMap.alertErnest && !manifest?.property?.assessment?.appraisedTotal)
+        if (needsEnrich && manifest && manifestId && call.property_address && call.state) {
           try {
             const detected = detectCounty(call.city, call.state, call.zip)
             if (detected) {
@@ -994,7 +996,12 @@ export async function POST(req: NextRequest) {
 
             // Backfill name from manifest owner
             const manifestName = manifest.owner?.fullName
-            if (manifestName && ld?.full_name && ['Unknown', 'Mojo Lead', ''].includes(ld.full_name)) {
+            const shouldBackfillName = !ld?.full_name
+              || ld.full_name === 'Unknown'
+              || ld.full_name === 'Mojo Lead'
+              || ld.full_name === ''
+              || ld.full_name.startsWith('Caller (')
+            if (manifestName && shouldBackfillName) {
               leadBackfill.full_name = manifestName
             }
 
