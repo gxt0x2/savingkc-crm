@@ -1009,11 +1009,29 @@ export class CountyEnrichmentService {
       const propId = parcel.prop_id
       if (!propId) throw new Error('No prop_id returned from Clay County search')
 
-      // Step 2: Fetch detail, dwelling, and value in parallel
-      const [detailRes, dwellingRes, valueRes] = await Promise.all([
+      // Determine 14-digit collector parcel number (may be in parcel_id / parcelid field)
+      const rawParcelId = (parcel.parcel_id || parcel.parcelid || '').toString().replace(/[-\s]/g, '')
+      const is14Digit = /^\d{14}$/.test(rawParcelId)
+
+      // Step 2: Fetch detail, dwelling, value, AND tax collection in parallel
+      const taxCollectionPromise = (async () => {
+        let p14 = is14Digit ? rawParcelId : null
+        if (!p14) {
+          // Fall back to collector address search to find the 14-digit parcel
+          p14 = await this.getClayCollectorParcelNumber(input.address).catch(() => null)
+        }
+        if (!p14) return null
+        return this.enrichClayCountyTaxCollection(p14)
+      })().catch(err => {
+        console.warn('[Clay] Tax collection failed (continuing):', err.message)
+        return null
+      })
+
+      const [detailRes, dwellingRes, valueRes, taxData] = await Promise.all([
         fetch(`${BASE}/parcel/${propId}`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${BASE}/parcel/${propId}/dwelling`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${BASE}/parcel/${propId}/value`, { headers, signal: AbortSignal.timeout(10000) }),
+        taxCollectionPromise,
       ])
 
       const detail = detailRes.ok ? await detailRes.json() : []
@@ -1032,7 +1050,7 @@ export class CountyEnrichmentService {
       return {
         success: true,
         county: 'Clay',
-        parcelId: parcel.parcel_id || parcel.parcelid || undefined,
+        parcelId: is14Digit ? rawParcelId : (parcel.parcel_id || parcel.parcelid || undefined),
         ownerName: d.current_owner || d.owner_name || undefined,
         mailingAddress: mailingAddress || undefined,
         appraisedValue: v.appraised_val ? parseFloat(v.appraised_val) : undefined,
@@ -1044,13 +1062,125 @@ export class CountyEnrichmentService {
         bedrooms: dw.bedrooms ? parseFloat(dw.bedrooms) : undefined,
         bathrooms: dw.bathrooms ? parseFloat(dw.bathrooms) : undefined,
         propertyType: d.use_code || undefined,
+        taxOwed: taxData?.totalOwed || undefined,
+        taxStatus: taxData?.taxStatus || undefined,
         source: 'clay_county_assessor',
         fetchedAt: new Date().toISOString(),
-        rawData: { parcel, detail: d, dwelling: dw, value: v },
+        rawData: {
+          parcel, detail: d, dwelling: dw, value: v,
+          taxCollection: taxData || null,
+          // Fields auto-enrich.ts maps to manifest.property.taxCollector:
+          numYearsPastDue: taxData?.yearsDelinquent,
+          taxYearsPastDue: taxData?.delinquentYears,
+          currentAmountDue: taxData?.currentAmountDue,
+          pastYearsDue: taxData?.pastYearsDue,
+        },
       }
     } catch (err: any) {
       return { success: false, county: 'Clay', error: err.message }
     }
+  }
+
+  /**
+   * Clay County, MO — Tax Collection Portal
+   * Queries collector.claycountymo.gov installments API for delinquency data.
+   * Requires the 14-digit parcel number (distinct from assessor prop_id).
+   */
+  private async enrichClayCountyTaxCollection(parcelNumber: string): Promise<{
+    totalOwed: number
+    taxStatus: string
+    yearsDelinquent: number
+    delinquentYears: string
+    currentAmountDue: number
+    pastYearsDue: number
+    error?: string
+  }> {
+    const today = new Date()
+    const todayStr = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}-${today.getFullYear()}`
+    const currentYear = today.getFullYear()
+    // Check the 3 most recent tax years (taxes are assessed for prior year)
+    const yearsToCheck = [currentYear - 1, currentYear - 2, currentYear - 3]
+    const collectorHeaders = {
+      Referer: 'https://collector.claycountymo.gov/',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      Accept: 'application/json',
+    }
+
+    const yearResults = await Promise.allSettled(
+      yearsToCheck.map(async (year) => {
+        const url = `https://collector.claycountymo.gov/api/installments.php?parcel_number=${parcelNumber}&tax_year=${year}&interest_date=${todayStr}`
+        const res = await fetch(url, { headers: collectorHeaders, signal: AbortSignal.timeout(15000) })
+        if (!res.ok) throw new Error(`Collector API returned ${res.status} for year ${year}`)
+        const json = await res.json()
+        return { year, json }
+      })
+    )
+
+    let totalOwed = 0
+    let currentAmountDue = 0
+    let pastYearsDue = 0
+    const delinquentYearsList: number[] = []
+
+    for (const result of yearResults) {
+      if (result.status !== 'fulfilled') continue
+      const { year, json } = result.value
+      if (!json.success || json.data?.no_charges_due) continue
+      const balance = typeof json.data?.balance_amount === 'number' ? json.data.balance_amount : 0
+      if (balance > 0) {
+        totalOwed += balance
+        delinquentYearsList.push(year)
+        // Most recent tax year = current amount due; older = past years due
+        if (year === currentYear - 1) {
+          currentAmountDue = balance
+        } else {
+          pastYearsDue += balance
+        }
+      }
+    }
+
+    return {
+      totalOwed,
+      taxStatus: totalOwed > 0 ? 'delinquent' : 'current',
+      yearsDelinquent: delinquentYearsList.length,
+      delinquentYears: delinquentYearsList.sort((a, b) => a - b).join(','),
+      currentAmountDue,
+      pastYearsDue,
+    }
+  }
+
+  /**
+   * Clay County, MO — Collector address search
+   * Used when the assessor parcel_id is not in 14-digit collector format.
+   * POST to collector search, parse parcel-link href for 14-digit parcel number.
+   */
+  private async getClayCollectorParcelNumber(address: string): Promise<string | null> {
+    const streetOnly = address.split(',')[0].trim()
+    const formData = new URLSearchParams({
+      mode: 'address',
+      line1: `%${streetOnly}%`,
+      action: 'search',
+    })
+
+    const res = await fetch('https://collector.claycountymo.gov/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Referer: 'https://collector.claycountymo.gov/',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      },
+      body: formData.toString(),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) return null
+
+    const html = await res.text()
+    // parcel-link elements contain the 14-digit parcel number in the href or text
+    const m =
+      html.match(/class="parcel-link"[^>]*href="[^"]*[?&]parcel[_=](\d{14})[^"]*"/) ||
+      html.match(/href="[^"]*[?&]parcel_number=(\d{14})[^"]*"/) ||
+      html.match(/parcel-link[^>]*>[\s]*(\d{14})[\s]*</) ||
+      html.match(/(\d{14})/)  // fallback: first 14-digit sequence in page
+    return m?.[1] || null
   }
 
   /**
