@@ -2,6 +2,12 @@
 // Queries county assessor systems for property data
 
 import { chromium, Browser, Page } from 'playwright'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseCache = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export interface EnrichmentInput {
   address: string
@@ -56,9 +62,62 @@ export class CountyEnrichmentService {
   }
 
   /**
-   * Main enrichment router
+   * Main enrichment router — checks property_cache first, falls back to scraper.
+   * Pass forceRefresh=true to bypass cache (e.g. manual re-enrichment).
    */
-  async enrich(input: EnrichmentInput): Promise<EnrichmentResult> {
+  async enrich(input: EnrichmentInput, forceRefresh = false): Promise<EnrichmentResult> {
+    const cacheKey = `${input.county.toLowerCase()}:${input.address.toLowerCase().trim()}`
+
+    // Cache check (skip on forceRefresh)
+    if (!forceRefresh) {
+      try {
+        const { data: cached } = await supabaseCache
+          .from('property_cache')
+          .select('data')
+          .eq('cache_key', cacheKey)
+          .gt('expires_at', new Date().toISOString())
+          .limit(1)
+          .single()
+
+        if (cached?.data) {
+          console.log(`[enrichment] Cache hit for ${cacheKey}`)
+          return cached.data as EnrichmentResult
+        }
+      } catch {
+        // Cache miss or table not yet created — proceed to scraper
+      }
+    }
+
+    // Cache miss — run scraper
+    const result = await this.enrichFromCounty(input)
+
+    // Write to cache (fire-and-forget — don't block the caller)
+    if (result.success) {
+      void supabaseCache
+        .from('property_cache')
+        .upsert({
+          cache_key: cacheKey,
+          county: input.county,
+          address: input.address,
+          parcel_id: result.parcelId ?? null,
+          data: result,
+          source: result.source ?? `${input.county.toLowerCase()}_county`,
+          fetched_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        }, { onConflict: 'cache_key' })
+        .then(({ error }) => {
+          if (error) console.warn(`[enrichment] Cache write failed for ${cacheKey}:`, error.message)
+          else console.log(`[enrichment] Cached result for ${cacheKey}`)
+        })
+    }
+
+    return result
+  }
+
+  /**
+   * Internal: routes to the correct county scraper.
+   */
+  private async enrichFromCounty(input: EnrichmentInput): Promise<EnrichmentResult> {
     try {
       await this.init()
 

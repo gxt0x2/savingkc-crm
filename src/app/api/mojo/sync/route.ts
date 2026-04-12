@@ -14,7 +14,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-interface MojoCallRecord {
+export interface MojoCallRecord {
   record_id: string
   contact_name: string
   phone_number: string
@@ -272,8 +272,6 @@ async function processPhase2Intelligence(
       }
 
       // === Extract structured seller intel from Casey's notes ===
-      // Casey writes notes as a single line with periods separating sections:
-      // "Timeline: ... Condition: ... Price: ... Motivation: ..."
       const notes = call.notes
       const timelineMatch = notes.match(/Timeline:\s*(.+?)(?=\s*(?:Condition:|Price:|Motivation:|Appointment:|$))/i)
       const conditionMatch = notes.match(/Condition:\s*(.+?)(?=\s*(?:Timeline:|Price:|Motivation:|Appointment:|$))/i)
@@ -286,7 +284,6 @@ async function processPhase2Intelligence(
         if (timelineMatch) {
           if (!manifest.situation.timeline) manifest.situation.timeline = {}
           ;(manifest.situation.timeline as any).notes = timelineMatch[1].trim()
-          // Detect urgency from keywords
           const tl = timelineMatch[1].toLowerCase()
           if (tl.includes('asap') || tl.includes('immediate') || tl.includes('urgent')) {
             manifest.situation.timeline.urgency = 'high'
@@ -303,7 +300,6 @@ async function processPhase2Intelligence(
         if (priceMatch) {
           if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
           ;(manifest.situation.priceExpectations as any).notes = priceMatch[1].trim()
-          // Extract dollar amounts - require $ prefix or k suffix to avoid false positives
           const amounts = priceMatch[1].match(/\$[\d,]+k?|\d[\d,]*k/gi)
           if (amounts) {
             const nums = amounts.map(a => {
@@ -320,7 +316,6 @@ async function processPhase2Intelligence(
           ;(manifest.situation.motivation as any).notes = motivationMatch[1].trim()
         }
 
-        // Add audit trail entry for note intel extraction
         manifest.auditTrail.push({
           timestamp: new Date().toISOString(),
           agent: 'system:mojo_note_parser',
@@ -386,9 +381,8 @@ async function processPhase2Intelligence(
 
     manifest.communications.transcripts.push(transcriptEntry)
 
-    // Step 5: Update manifest fields from analysis (respecting write priority rules)
+    // Step 5: Update manifest fields from analysis
     if (analysisResult) {
-      // Owner fields
       if (analysisResult.bestTimeToContact && !manifest.owner.bestTimeToContact) {
         manifest.owner.bestTimeToContact = analysisResult.bestTimeToContact
       }
@@ -401,7 +395,6 @@ async function processPhase2Intelligence(
       if (analysisResult.outOfState !== undefined && analysisResult.outOfState !== null) {
         manifest.owner.outOfState = analysisResult.outOfState
       }
-      // Normalize and add alternate phones
       if (analysisResult.alternatePhonesFound && analysisResult.alternatePhonesFound.length > 0) {
         for (const phone of analysisResult.alternatePhonesFound) {
           const normalized = normalizePhone(phone)
@@ -411,7 +404,6 @@ async function processPhase2Intelligence(
         }
       }
 
-      // Property fields
       if (analysisResult.vacant !== undefined && analysisResult.vacant !== null) {
         manifest.property.vacant = analysisResult.vacant
       }
@@ -429,7 +421,6 @@ async function processPhase2Intelligence(
         }
       }
 
-      // Situation fields
       if (analysisResult.situationType && analysisResult.situationType.length > 0) {
         manifest.situation.type = mergeArrays(manifest.situation.type, analysisResult.situationType)
       }
@@ -483,7 +474,6 @@ async function processPhase2Intelligence(
         manifest.situation.objections = mergeArrays(manifest.situation.objections, analysisResult.objectionsRaised)
       }
 
-      // Ari Intelligence fields
       if (analysisResult.personalityType) {
         if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
         manifest.ariIntelligence.sellerProfile.personalityType = analysisResult.personalityType
@@ -523,7 +513,6 @@ async function processPhase2Intelligence(
         manifest.ariIntelligence.dealIntelligence.estimatedRepairs = analysisResult.estimatedRepairsNotes
       }
 
-      // Recommended actions
       if (analysisResult.followUpAction) {
         if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
         manifest.ariIntelligence.recommendedActions.push({
@@ -533,7 +522,6 @@ async function processPhase2Intelligence(
         })
       }
 
-      // Pipeline appointment
       if (analysisResult.appointmentDateTime) {
         const { randomUUID } = await import('crypto')
         manifest.pipeline.appointment = {
@@ -553,10 +541,8 @@ async function processPhase2Intelligence(
         }
       }
 
-      // Queue briefing regeneration
       queueBriefingRegeneration(manifest)
 
-      // Write AI-generated scoring to manifest (used by scoring gate in POST handler)
       if (analysisResult.opportunity_score !== undefined && analysisResult.opportunity_score !== null) {
         const aiScore = analysisResult.opportunity_score
         const aiCls: ManifestScoring['classification'] = analysisResult.classification
@@ -572,7 +558,6 @@ async function processPhase2Intelligence(
       }
     }
 
-    // Add audit entry
     manifest.auditTrail.push({
       timestamp: now,
       agent: 'system:mojo-sync-phase2',
@@ -591,7 +576,6 @@ async function processPhase2Intelligence(
   } catch (err) {
     console.error('Error processing Phase 2 intelligence:', err)
 
-    // Log error to audit trail
     manifest.auditTrail.push({
       timestamp: now,
       agent: 'system:mojo-sync-phase2',
@@ -606,6 +590,469 @@ async function processPhase2Intelligence(
   }
 }
 
+/**
+ * Full pipeline processing for a single call.
+ * Called by the queue worker (process-mojo-queue) after the call has been
+ * inserted into mojo_call_queue. All the heavy work — manifest find/create,
+ * enrichment, AI analysis, scoring, alerts — lives here.
+ */
+export async function processQueuedCall(call: MojoCallRecord, queueItemId: string): Promise<{
+  leadId: string | null
+  manifestId: string | null
+  opportunityScore: number | null
+}> {
+  // A. Duplicate check — look for mojoRecordId in auditTrail
+  const { data: existingManifests } = await supabase
+    .from('manifests')
+    .select('id')
+    .ilike('manifest', `%${call.record_id}%`)
+    .limit(1)
+
+  if (existingManifests && existingManifests.length > 0) {
+    console.log(`[queue] Call ${call.record_id} already in manifests — skipping`)
+    return { leadId: null, manifestId: null, opportunityScore: null }
+  }
+
+  // B. Find or create manifest
+  const hasPhone = !!(call.phone_number && call.phone_number.trim())
+  const normalizedPhone = hasPhone ? normalizePhone(call.phone_number) : ''
+
+  let manifestId: string | null = null
+  let manifest: ManifestV2 | null = null
+  let leadId: string | null = null
+
+  if (hasPhone) {
+    const { data: phoneManifests } = await supabase
+      .from('manifests')
+      .select('id, manifest, lead_id')
+      .contains('manifest->owner->phones', [normalizedPhone])
+      .limit(1)
+
+    if (phoneManifests && phoneManifests.length > 0) {
+      manifestId = phoneManifests[0].id
+      manifest = phoneManifests[0].manifest as ManifestV2
+      leadId = phoneManifests[0].lead_id
+    } else {
+      const { data: phoneLeads } = await supabase
+        .from('leads')
+        .select('id, phone')
+        .eq('phone', normalizedPhone)
+        .limit(1)
+
+      if (phoneLeads && phoneLeads.length > 0) {
+        leadId = phoneLeads[0].id
+
+        const { data: leadManifests } = await supabase
+          .from('manifests')
+          .select('id, manifest')
+          .eq('lead_id', leadId)
+          .limit(1)
+
+        if (leadManifests && leadManifests.length > 0) {
+          manifestId = leadManifests[0].id
+          manifest = leadManifests[0].manifest as ManifestV2
+        }
+      }
+    }
+  }
+
+  // Fallback: match by name if no phone
+  if (!manifestId && !hasPhone && call.contact_name && call.contact_name.trim()) {
+    const trimmedName = call.contact_name.trim()
+
+    const { data: nameLeads } = await supabase
+      .from('leads')
+      .select('id')
+      .ilike('full_name', trimmedName)
+      .limit(1)
+
+    if (nameLeads && nameLeads.length > 0) {
+      leadId = nameLeads[0].id
+
+      const { data: leadManifests } = await supabase
+        .from('manifests')
+        .select('id, manifest')
+        .eq('lead_id', leadId)
+        .limit(1)
+
+      if (leadManifests && leadManifests.length > 0) {
+        manifestId = leadManifests[0].id
+        manifest = leadManifests[0].manifest as ManifestV2
+      }
+    }
+  }
+
+  // C. Disposition mapping
+  const dispositionMap = mapDisposition(call.disposition)
+
+  // D. Manifest update or create
+  const { firstName, lastName } = parseContactName(call.contact_name)
+  const now = new Date().toISOString()
+
+  if (manifest && manifestId) {
+    // Update existing manifest
+    const phones = manifest.owner.phones || []
+    if (hasPhone && normalizedPhone && !phones.includes(normalizedPhone)) {
+      phones.push(normalizedPhone)
+    }
+    manifest.owner.phones = phones
+
+    if (call.property_address) {
+      manifest.property.address = call.property_address
+    }
+
+    if (dispositionMap.priority && !dispositionMap.isDead) {
+      manifest.priority = dispositionMap.priority
+    } else if (dispositionMap.isDead) {
+      manifest.priority = 'cold'
+    }
+
+    const contact: ManifestContact = {
+      name: call.agent_name,
+      role: 'agent',
+      phone: call.phone_number,
+      notes: `${call.disposition}${call.notes ? ` — ${call.notes}` : ''}\nDuration: ${call.call_duration}s\nDate: ${call.call_date}`,
+    }
+    manifest.contacts.push(contact)
+
+    if (call.notes) {
+      manifest.notes.push({
+        timestamp: call.call_date,
+        author: call.agent_name,
+        content: call.notes,
+        type: 'general',
+      })
+    }
+
+    if (dispositionMap.flag) {
+      manifest.flags.redFlags = manifest.flags.redFlags || []
+      if (!manifest.flags.redFlags.includes(dispositionMap.flag)) {
+        manifest.flags.redFlags.push(dispositionMap.flag)
+      }
+    }
+
+    manifest.auditTrail.push({
+      timestamp: now,
+      agent: 'system:mojo-sync',
+      action: 'mojo_call_synced',
+      details: {
+        mojoRecordId: call.record_id,
+        disposition: call.disposition,
+        outcome: dispositionMap.outcome,
+        listName: call.list_name,
+        campaign: call.campaign_name,
+        callDuration: call.call_duration,
+        callDate: call.call_date,
+      },
+    })
+
+    manifest.lastUpdated = now
+    manifest.lastUpdatedBy = 'system:mojo-sync'
+
+    await supabase
+      .from('manifests')
+      .update({
+        manifest,
+        priority: manifest.priority,
+        current_station: manifest.currentStation,
+      })
+      .eq('id', manifestId)
+  } else {
+    // Guard: only create NEW leads for meaningful dispositions
+    const meaningfulOutcomes = new Set([
+      'callback_scheduled', 'meaningful_conversation', 'appointment_set',
+    ])
+    if (!meaningfulOutcomes.has(dispositionMap.outcome)) {
+      console.log(`[queue] Skipping non-meaningful disposition for unknown contact: ${call.disposition}`)
+      return { leadId: null, manifestId: null, opportunityScore: null }
+    }
+
+    // Create new manifest
+    const manifestInput = {
+      firstName,
+      lastName,
+      phone: hasPhone ? normalizedPhone : '',
+      propertyAddress: call.property_address,
+      propertyCity: call.city,
+      propertyState: call.state,
+      propertyZip: call.zip,
+      source: 'mojo_call',
+      station: call.property_address ? 'qualifying' : 'intake',
+      priority: dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm'),
+    }
+
+    manifest = buildManifest(manifestInput)
+    manifest.property.address = call.property_address
+    manifest.currentStation = call.property_address ? 'qualifying' : 'intake'
+    manifest.priority = dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm')
+
+    const contact: ManifestContact = {
+      name: call.agent_name,
+      role: 'agent',
+      phone: call.phone_number,
+      notes: `${call.disposition}${call.notes ? ` — ${call.notes}` : ''}\nDuration: ${call.call_duration}s\nDate: ${call.call_date}`,
+    }
+    manifest.contacts.push(contact)
+
+    if (call.notes) {
+      manifest.notes.push({
+        timestamp: call.call_date,
+        author: call.agent_name,
+        content: call.notes,
+        type: 'general',
+      })
+    }
+
+    if (dispositionMap.flag) {
+      manifest.flags.redFlags = manifest.flags.redFlags || []
+      manifest.flags.redFlags.push(dispositionMap.flag)
+    }
+
+    manifest.auditTrail.push({
+      timestamp: now,
+      agent: 'system:mojo-sync',
+      action: 'mojo_call_synced',
+      details: {
+        mojoRecordId: call.record_id,
+        disposition: call.disposition,
+        outcome: dispositionMap.outcome,
+        listName: call.list_name,
+        campaign: call.campaign_name,
+        callDuration: call.call_duration,
+        callDate: call.call_date,
+      },
+    })
+
+    // Create lead if needed
+    if (!leadId) {
+      const { data: newLead } = await supabase
+        .from('leads')
+        .insert({
+          full_name: call.contact_name,
+          property_address: call.property_address,
+          phone: hasPhone ? normalizedPhone : null,
+          email: call.email || null,
+          city: call.city,
+          state: call.state,
+          zip: call.zip,
+          source: 'mojo_call',
+          station: call.property_address ? 'qualifying' : 'intake',
+          priority: 'normal',
+          appointment_date: call.follow_up_date || null,
+        })
+        .select('id')
+        .single()
+
+      if (newLead) {
+        leadId = newLead.id
+      }
+    }
+
+    // Insert manifest — merge if auto-created for this lead
+    const { data: existingForLead } = await supabase
+      .from('manifests')
+      .select('id, manifest')
+      .eq('lead_id', leadId)
+      .limit(1)
+
+    if (existingForLead && existingForLead.length > 0) {
+      const existing = existingForLead[0]
+      const merged = { ...existing.manifest, ...manifest }
+      merged.auditTrail = [
+        ...(existing.manifest.auditTrail || []),
+        ...(manifest.auditTrail || []).filter((e: any) => e.action !== 'manifest_created'),
+      ]
+      await supabase
+        .from('manifests')
+        .update({ manifest: merged, current_station: manifest.currentStation, priority: manifest.priority })
+        .eq('id', existing.id)
+      manifestId = existing.id
+      manifest = merged
+      console.log(`[queue] Merged into existing manifest ${manifestId}`)
+    } else {
+      const { data } = await supabase
+        .from('manifests')
+        .insert({
+          lead_id: leadId,
+          version: manifest.version,
+          manifest,
+          current_station: manifest.currentStation,
+          priority: manifest.priority,
+        })
+        .select('id')
+        .single()
+
+      if (data) {
+        manifestId = data.id
+      }
+    }
+  }
+
+  // E. Phase 2: Process intelligence (recording → transcription → analysis)
+  if (manifest && manifestId) {
+    manifest.scoring = undefined
+
+    console.log(`[queue] PRE-Phase2: agentNotes=${manifest.agentNotes?.length}, timeline=${!!manifest.situation?.timeline}`)
+    manifest = await processPhase2Intelligence(call, manifest, manifestId)
+    console.log(`[queue] POST-Phase2: auditTrail=${manifest.auditTrail?.length}, scoring=${!!manifest.scoring}`)
+
+    // F. Scoring gate — AI analysis (primary) → notes → static disposition fallback
+    if (!manifest.scoring) {
+      const hasNotes = !!(call.notes && call.notes.trim())
+      if (hasNotes) {
+        const { score, reasoning } = scoreFromNotes(call, manifest)
+        const cls: ManifestScoring['classification'] = score >= 75 ? 'opportunity' : score >= 40 ? 'lead' : 'dead'
+        manifest.scoring = {
+          opportunity_score: score,
+          classification: cls,
+          reasoning,
+          worth_enriching: score >= 60,
+          scored_at: new Date().toISOString(),
+          scored_by: 'notes',
+        }
+      } else {
+        const staticScore = dispositionMap.isDead ? 0
+          : dispositionMap.outcome === 'appointment_set' ? 85
+          : dispositionMap.outcome === 'meaningful_conversation' ? 65
+          : dispositionMap.outcome === 'callback_scheduled' ? 45
+          : 20
+        const cls: ManifestScoring['classification'] = staticScore >= 75 ? 'opportunity' : staticScore >= 40 ? 'lead' : 'dead'
+        manifest.scoring = {
+          opportunity_score: staticScore,
+          classification: cls,
+          reasoning: `Static disposition mapping: ${call.disposition}`,
+          worth_enriching: staticScore >= 60,
+          scored_at: new Date().toISOString(),
+          scored_by: 'disposition',
+        }
+      }
+    }
+
+    const opportunityScore = manifest.scoring.opportunity_score
+    const shouldEnrich = manifest.scoring.worth_enriching
+    const shouldAlert = opportunityScore >= 75
+    manifest.priority = opportunityScore >= 75 ? 'hot' : opportunityScore >= 40 ? 'warm' : 'cold'
+
+    console.log(`[queue] SCORING: score=${opportunityScore} class=${manifest.scoring.classification} shouldEnrich=${shouldEnrich} shouldAlert=${shouldAlert} by=${manifest.scoring.scored_by}`)
+
+    // G. Enrichment — only if score >= 60
+    if (shouldEnrich && call.property_address && call.state) {
+      try {
+        const detected = detectCounty(call.city, call.state, call.zip)
+        if (detected) {
+          manifest = await enrichManifestProperty(
+            manifest,
+            call.property_address,
+            call.city,
+            call.state,
+            call.zip,
+            detected.county
+          )
+          const { score: qualScore, tier } = scoreManifest(manifest)
+          manifest.qualificationScore = qualScore
+          manifest.tier = tier as ManifestV2['tier']
+
+          if (leadId) {
+            const prop = manifest.property || {}
+            const dwell = prop.dwelling || {}
+            const assess = prop.assessment || {}
+            const enrichLeadUpdates: Record<string, any> = {}
+            if (dwell.bedrooms) enrichLeadUpdates.beds = dwell.bedrooms
+            if (dwell.bathrooms) enrichLeadUpdates.baths_full = dwell.bathrooms
+            if (dwell.sqft) enrichLeadUpdates.sqft = dwell.sqft
+            if (dwell.yearBuilt) enrichLeadUpdates.year_built = dwell.yearBuilt
+            if (assess.appraisedTotal) enrichLeadUpdates.arv = assess.appraisedTotal
+            if (assess.assessedTotal) enrichLeadUpdates.assessed_value = assess.assessedTotal
+            if (dwell.propertyType) {
+              enrichLeadUpdates.property_type =
+                dwell.propertyType === 'SF' ? 'Single Family' : dwell.propertyType
+            }
+            if (dwell.basement) enrichLeadUpdates.basement_type = dwell.basement
+            if (detected.county) {
+              enrichLeadUpdates.data_source = `${detected.county.toLowerCase()}_county_assessor`
+              enrichLeadUpdates.data_enriched_at = new Date().toISOString()
+            }
+            if (Object.keys(enrichLeadUpdates).length > 0) {
+              await supabase.from('leads').update(enrichLeadUpdates).eq('id', leadId)
+            }
+          }
+        }
+      } catch (enrichErr) {
+        console.error('[queue] Enrichment failed for call:', call.record_id, enrichErr)
+      }
+    }
+
+    // H. Save manifest
+    const { error: updateErr } = await supabase
+      .from('manifests')
+      .update({
+        manifest,
+        priority: manifest.priority,
+        current_station: manifest.currentStation,
+        qualification_score: manifest.qualificationScore ?? null,
+        tier: manifest.tier ?? null,
+      })
+      .eq('id', manifestId)
+
+    if (updateErr) {
+      console.error(`[queue] MANIFEST UPDATE FAILED:`, updateErr.message)
+    } else {
+      console.log(`[queue] Manifest ${manifestId} saved successfully`)
+    }
+
+    // I. Backfill lead from manifest data
+    if (leadId) {
+      const leadBackfill: Record<string, any> = {}
+      const currentLead = await supabase.from('leads').select('full_name, phone, property_address').eq('id', leadId).single()
+      const ld = currentLead?.data
+
+      const manifestName = manifest.owner?.fullName
+      const shouldBackfillName = !ld?.full_name
+        || ld.full_name === 'Unknown'
+        || ld.full_name === 'Mojo Lead'
+        || ld.full_name === ''
+        || ld.full_name.startsWith('Caller (')
+      if (manifestName && shouldBackfillName) {
+        leadBackfill.full_name = manifestName
+      }
+      if (!ld?.phone && manifest.owner?.phones?.length > 0) {
+        leadBackfill.phone = manifest.owner.phones[0]
+      }
+      if (!ld?.property_address && manifest.property?.address) {
+        leadBackfill.property_address = manifest.property.address
+      }
+      if (manifest.priority && manifest.priority !== 'cold') {
+        leadBackfill.priority = manifest.priority
+      }
+      if (Object.keys(leadBackfill).length > 0) {
+        await supabase.from('leads').update(leadBackfill).eq('id', leadId)
+      }
+    }
+
+    // J. Alert — only if score >= 75
+    if (shouldAlert) {
+      await sendAlert(
+        call.contact_name,
+        call.property_address,
+        call.disposition,
+        manifest.scoring?.opportunity_score
+      )
+    }
+
+    return { leadId, manifestId, opportunityScore }
+  }
+
+  return { leadId, manifestId, opportunityScore: null }
+}
+
+/**
+ * POST /api/mojo/sync
+ *
+ * Validates payload, deduplicates against the queue table,
+ * and inserts pending items. Returns immediately (<200ms).
+ * All processing is handled by the cron worker at
+ * /api/cron/process-mojo-queue.
+ */
 export async function POST(req: NextRequest) {
   try {
     const { calls } = await req.json() as { calls: MojoCallRecord[] }
@@ -614,532 +1061,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'calls array required' }, { status: 400 })
     }
 
-    // Log raw incoming data for debugging
-    console.log(`[mojo/sync] Received ${calls.length} call(s)`)
-    for (const c of calls) {
-      const missing: string[] = []
-      if (!c.property_address) missing.push('property_address')
-      if (!c.recording_url) missing.push('recording_url')
-      if (!c.city) missing.push('city')
-      if (!c.state) missing.push('state')
-      if (!c.zip) missing.push('zip')
-      console.log(`[mojo/sync] Call ${c.record_id}: ${c.contact_name} | phone=${c.phone_number} | addr="${c.property_address || 'MISSING'}" | recording=${c.recording_url ? 'YES' : 'MISSING'} | disposition=${c.disposition}`)
-      if (missing.length > 0) {
-        console.warn(`[mojo/sync] ⚠️ MISSING FIELDS for ${c.contact_name}: ${missing.join(', ')}`)
-      }
-    }
-
-    let processed = 0
-    let created = 0
-    let updated = 0
+    let queued = 0
     let skipped = 0
-    let alertsSent = 0
 
     for (const call of calls) {
-      try {
-        // A. Duplicate check — look for mojoRecordId in auditTrail
-        // Use textSearch on the JSONB field to find the mojoRecordId
-        const { data: existingManifests } = await supabase
-          .from('manifests')
-          .select('id')
-          .ilike('manifest', `%${call.record_id}%`)
-          .limit(1)
+      if (!call.record_id) {
+        skipped++
+        continue
+      }
 
-        if (existingManifests && existingManifests.length > 0) {
+      // Duplicate check against queue table (fast — indexed on record_id)
+      const { data: existing } = await supabase
+        .from('mojo_call_queue')
+        .select('id')
+        .eq('record_id', call.record_id)
+        .limit(1)
+
+      if (existing && existing.length > 0) {
+        skipped++
+        continue
+      }
+
+      const { error: insertErr } = await supabase
+        .from('mojo_call_queue')
+        .insert({
+          record_id: call.record_id,
+          payload: call,
+          status: 'pending',
+        })
+
+      if (insertErr) {
+        // UNIQUE violation means race condition — another request already inserted it
+        if (insertErr.code === '23505') {
           skipped++
-          continue
-        }
-
-        // B. Find or create manifest
-        const hasPhone = !!(call.phone_number && call.phone_number.trim())
-        const normalizedPhone = hasPhone ? normalizePhone(call.phone_number) : ''
-
-        let manifestId: string | null = null
-        let manifest: ManifestV2 | null = null
-        let leadId: string | null = null
-        let isNew = false
-
-        if (hasPhone) {
-          // Search by phone in manifests
-          const { data: phoneManifests } = await supabase
-            .from('manifests')
-            .select('id, manifest, lead_id')
-            .contains('manifest->owner->phones', [normalizedPhone])
-            .limit(1)
-
-          if (phoneManifests && phoneManifests.length > 0) {
-            // Found existing manifest by phone
-            manifestId = phoneManifests[0].id
-            manifest = phoneManifests[0].manifest as ManifestV2
-            leadId = phoneManifests[0].lead_id
-          } else {
-            // Search by phone in leads table
-            const { data: phoneLeads } = await supabase
-              .from('leads')
-              .select('id, phone')
-              .eq('phone', normalizedPhone)
-              .limit(1)
-
-            if (phoneLeads && phoneLeads.length > 0) {
-              leadId = phoneLeads[0].id
-
-              // Check if this lead has a manifest
-              const { data: leadManifests } = await supabase
-                .from('manifests')
-                .select('id, manifest')
-                .eq('lead_id', leadId)
-                .limit(1)
-
-              if (leadManifests && leadManifests.length > 0) {
-                manifestId = leadManifests[0].id
-                manifest = leadManifests[0].manifest as ManifestV2
-              }
-            }
-          }
-        }
-
-        // Fallback: if no phone but we have a contact name, match by name
-        if (!manifestId && !hasPhone && call.contact_name && call.contact_name.trim()) {
-          const trimmedName = call.contact_name.trim()
-
-          // Search leads by full_name (case-insensitive)
-          const { data: nameLeads } = await supabase
-            .from('leads')
-            .select('id')
-            .ilike('full_name', trimmedName)
-            .limit(1)
-
-          if (nameLeads && nameLeads.length > 0) {
-            leadId = nameLeads[0].id
-
-            // Check if this lead has a manifest
-            const { data: leadManifests } = await supabase
-              .from('manifests')
-              .select('id, manifest')
-              .eq('lead_id', leadId)
-              .limit(1)
-
-            if (leadManifests && leadManifests.length > 0) {
-              manifestId = leadManifests[0].id
-              manifest = leadManifests[0].manifest as ManifestV2
-            }
-          }
-        }
-
-        // C. Disposition mapping
-        const dispositionMap = mapDisposition(call.disposition)
-
-        // D. Manifest update or create
-        const { firstName, lastName } = parseContactName(call.contact_name)
-        const now = new Date().toISOString()
-
-        if (manifest && manifestId) {
-          // Update existing manifest
-          // Add phone if not already there
-          const phones = manifest.owner.phones || []
-          if (hasPhone && normalizedPhone && !phones.includes(normalizedPhone)) {
-            phones.push(normalizedPhone)
-          }
-          manifest.owner.phones = phones
-
-          // Update property address if provided
-          if (call.property_address) {
-            manifest.property.address = call.property_address
-          }
-
-          // Update priority if mapped (unless it's a dead lead)
-          if (dispositionMap.priority && !dispositionMap.isDead) {
-            manifest.priority = dispositionMap.priority
-          } else if (dispositionMap.isDead) {
-            // Dead leads get marked as cold priority
-            manifest.priority = 'cold'
-          }
-
-          // Add contact entry
-          const contact: ManifestContact = {
-            name: call.agent_name,
-            role: 'agent',
-            phone: call.phone_number,
-            notes: `${call.disposition}${call.notes ? ` — ${call.notes}` : ''}\nDuration: ${call.call_duration}s\nDate: ${call.call_date}`,
-          }
-          manifest.contacts.push(contact)
-
-          // Add note if provided
-          if (call.notes) {
-            manifest.notes.push({
-              timestamp: call.call_date,
-              author: call.agent_name,
-              content: call.notes,
-              type: 'general',
-            })
-          }
-
-          // Add flag if mapped
-          if (dispositionMap.flag) {
-            manifest.flags.redFlags = manifest.flags.redFlags || []
-            if (!manifest.flags.redFlags.includes(dispositionMap.flag)) {
-              manifest.flags.redFlags.push(dispositionMap.flag)
-            }
-          }
-
-          // Add audit entry
-          manifest.auditTrail.push({
-            timestamp: now,
-            agent: 'system:mojo-sync',
-            action: 'mojo_call_synced',
-            details: {
-              mojoRecordId: call.record_id,
-              disposition: call.disposition,
-              outcome: dispositionMap.outcome,
-              listName: call.list_name,
-              campaign: call.campaign_name,
-              callDuration: call.call_duration,
-              callDate: call.call_date,
-            },
-          })
-
-          manifest.lastUpdated = now
-          manifest.lastUpdatedBy = 'system:mojo-sync'
-
-          // Update in database
-          await supabase
-            .from('manifests')
-            .update({
-              manifest,
-              priority: manifest.priority,
-              current_station: manifest.currentStation,
-            })
-            .eq('id', manifestId)
-
-          updated++
         } else {
-          // Guard: only create NEW leads for meaningful dispositions
-          // No answer, voicemail, hung up, dead, not interested = skip new lead creation
-          const meaningfulOutcomes = new Set([
-            'callback_scheduled', 'meaningful_conversation', 'appointment_set',
-          ])
-          if (!meaningfulOutcomes.has(dispositionMap.outcome)) {
-            // Non-meaningful call to unknown contact — skip, don't pollute the CRM
-            skipped++
-            continue
-          }
-
-          // Create new manifest
-          const manifestInput = {
-            firstName,
-            lastName,
-            phone: hasPhone ? normalizedPhone : '',
-            propertyAddress: call.property_address,
-            propertyCity: call.city,
-            propertyState: call.state,
-            propertyZip: call.zip,
-            source: 'mojo_call',
-            station: call.property_address ? 'qualifying' : 'intake',
-            priority: dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm'),
-          }
-
-          manifest = buildManifest(manifestInput)
-
-          // Override default values with Mojo data
-          manifest.property.address = call.property_address
-          manifest.currentStation = call.property_address ? 'qualifying' : 'intake'
-          manifest.priority = dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm')
-
-          // Add contact entry
-          const contact: ManifestContact = {
-            name: call.agent_name,
-            role: 'agent',
-            phone: call.phone_number,
-            notes: `${call.disposition}${call.notes ? ` — ${call.notes}` : ''}\nDuration: ${call.call_duration}s\nDate: ${call.call_date}`,
-          }
-          manifest.contacts.push(contact)
-
-          // Add note
-          if (call.notes) {
-            manifest.notes.push({
-              timestamp: call.call_date,
-              author: call.agent_name,
-              content: call.notes,
-              type: 'general',
-            })
-          }
-
-          // Add flag if mapped
-          if (dispositionMap.flag) {
-            manifest.flags.redFlags = manifest.flags.redFlags || []
-            manifest.flags.redFlags.push(dispositionMap.flag)
-          }
-
-          // Add audit entry
-          manifest.auditTrail.push({
-            timestamp: now,
-            agent: 'system:mojo-sync',
-            action: 'mojo_call_synced',
-            details: {
-              mojoRecordId: call.record_id,
-              disposition: call.disposition,
-              outcome: dispositionMap.outcome,
-              listName: call.list_name,
-              campaign: call.campaign_name,
-              callDuration: call.call_duration,
-              callDate: call.call_date,
-            },
-          })
-
-          // Create lead if needed
-          if (!leadId) {
-            const { data: newLead } = await supabase
-              .from('leads')
-              .insert({
-                full_name: call.contact_name,
-                property_address: call.property_address,
-                phone: hasPhone ? normalizedPhone : null,
-                email: call.email || null,
-                city: call.city,
-                state: call.state,
-                zip: call.zip,
-                source: 'mojo_call',
-                station: call.property_address ? 'qualifying' : 'intake',
-                priority: 'normal',
-                appointment_date: call.follow_up_date || null,
-              })
-              .select('id')
-              .single()
-
-            if (newLead) {
-              leadId = newLead.id
-            }
-          }
-
-          // Insert manifest — or update if ensureManifestExists already created one
-          // (the manifests_lead_id_unique constraint prevents duplicates)
-          let newManifest: any = null
-
-          // Check if a manifest was already auto-created for this lead
-          const { data: existingForLead } = await supabase
-            .from('manifests')
-            .select('id, manifest')
-            .eq('lead_id', leadId)
-            .limit(1)
-
-          if (existingForLead && existingForLead.length > 0) {
-            // Manifest already exists (auto-created) — merge our data into it
-            const existing = existingForLead[0]
-            const merged = { ...existing.manifest, ...manifest }
-            // Preserve any audit trail entries from auto-creation
-            merged.auditTrail = [
-              ...(existing.manifest.auditTrail || []),
-              ...(manifest.auditTrail || []).filter((e: any) => e.action !== 'manifest_created'),
-            ]
-            await supabase
-              .from('manifests')
-              .update({ manifest: merged, current_station: manifest.currentStation, priority: manifest.priority })
-              .eq('id', existing.id)
-            manifestId = existing.id
-            manifest = merged
-            created++
-            isNew = true
-            console.log(`[mojo/sync] Merged into existing manifest ${manifestId}`)
-          } else {
-            // No existing manifest — insert new
-            const { data } = await supabase
-              .from('manifests')
-              .insert({
-                lead_id: leadId,
-                version: manifest.version,
-                manifest,
-                current_station: manifest.currentStation,
-                priority: manifest.priority,
-              })
-              .select('id')
-              .single()
-            newManifest = data
-
-            if (newManifest) {
-              manifestId = newManifest.id
-              created++
-              isNew = true
-            }
-          }
+          console.error(`[mojo/sync] Failed to queue call ${call.record_id}:`, insertErr.message)
+          skipped++
         }
-
-        // E. Phase 2: Process intelligence (recording → transcription → analysis)
-        if (manifest && manifestId) {
-          // Clear scoring so each call gets a fresh score (not stale from a prior call)
-          manifest.scoring = undefined
-
-          console.log(`[mojo/sync] PRE-Phase2: agentNotes=${manifest.agentNotes?.length}, timeline=${!!manifest.situation?.timeline}, priceExp=${!!manifest.situation?.priceExpectations}`)
-          manifest = await processPhase2Intelligence(call, manifest, manifestId)
-          console.log(`[mojo/sync] POST-Phase2: agentNotes=${manifest.agentNotes?.length}, timeline=${!!manifest.situation?.timeline}, priceExp=${!!manifest.situation?.priceExpectations}, auditTrail=${manifest.auditTrail?.length}`)
-
-          // F. Scoring gate — AI analysis (primary) → notes → static disposition fallback
-          if (!manifest.scoring) {
-            const hasNotes = !!(call.notes && call.notes.trim())
-            if (hasNotes) {
-              const { score, reasoning } = scoreFromNotes(call, manifest)
-              const cls: ManifestScoring['classification'] = score >= 75 ? 'opportunity' : score >= 40 ? 'lead' : 'dead'
-              manifest.scoring = {
-                opportunity_score: score,
-                classification: cls,
-                reasoning,
-                worth_enriching: score >= 60,
-                scored_at: new Date().toISOString(),
-                scored_by: 'notes',
-              }
-            } else {
-              const staticScore = dispositionMap.isDead ? 0
-                : dispositionMap.outcome === 'appointment_set' ? 85
-                : dispositionMap.outcome === 'meaningful_conversation' ? 65
-                : dispositionMap.outcome === 'callback_scheduled' ? 45
-                : 20
-              const cls: ManifestScoring['classification'] = staticScore >= 75 ? 'opportunity' : staticScore >= 40 ? 'lead' : 'dead'
-              manifest.scoring = {
-                opportunity_score: staticScore,
-                classification: cls,
-                reasoning: `Static disposition mapping: ${call.disposition}`,
-                worth_enriching: staticScore >= 60,
-                scored_at: new Date().toISOString(),
-                scored_by: 'disposition',
-              }
-            }
-          }
-
-          const opportunityScore = manifest.scoring.opportunity_score
-          const shouldEnrich = manifest.scoring.worth_enriching
-          const shouldAlert = opportunityScore >= 75
-          manifest.priority = opportunityScore >= 75 ? 'hot' : opportunityScore >= 40 ? 'warm' : 'cold'
-
-          console.log(`[mojo/sync] SCORING: score=${opportunityScore} class=${manifest.scoring.classification} shouldEnrich=${shouldEnrich} shouldAlert=${shouldAlert} by=${manifest.scoring.scored_by}`)
-
-          // G. Enrichment — only if score >= 60 (or worth_enriching from LLM)
-          if (shouldEnrich && call.property_address && call.state) {
-            try {
-              const detected = detectCounty(call.city, call.state, call.zip)
-              if (detected) {
-                manifest = await enrichManifestProperty(
-                  manifest,
-                  call.property_address,
-                  call.city,
-                  call.state,
-                  call.zip,
-                  detected.county
-                )
-                const { score: qualScore, tier } = scoreManifest(manifest)
-                manifest.qualificationScore = qualScore
-                manifest.tier = tier as ManifestV2['tier']
-
-                if (leadId) {
-                  const prop = manifest.property || {}
-                  const dwell = prop.dwelling || {}
-                  const assess = prop.assessment || {}
-                  const enrichLeadUpdates: Record<string, any> = {}
-                  if (dwell.bedrooms) enrichLeadUpdates.beds = dwell.bedrooms
-                  if (dwell.bathrooms) enrichLeadUpdates.baths_full = dwell.bathrooms
-                  if (dwell.sqft) enrichLeadUpdates.sqft = dwell.sqft
-                  if (dwell.yearBuilt) enrichLeadUpdates.year_built = dwell.yearBuilt
-                  if (assess.appraisedTotal) enrichLeadUpdates.arv = assess.appraisedTotal
-                  if (assess.assessedTotal) enrichLeadUpdates.assessed_value = assess.assessedTotal
-                  if (dwell.propertyType) {
-                    enrichLeadUpdates.property_type =
-                      dwell.propertyType === 'SF' ? 'Single Family' : dwell.propertyType
-                  }
-                  if (dwell.basement) enrichLeadUpdates.basement_type = dwell.basement
-                  if (detected.county) {
-                    enrichLeadUpdates.data_source = `${detected.county.toLowerCase()}_county_assessor`
-                    enrichLeadUpdates.data_enriched_at = new Date().toISOString()
-                  }
-                  if (Object.keys(enrichLeadUpdates).length > 0) {
-                    await supabase.from('leads').update(enrichLeadUpdates).eq('id', leadId)
-                  }
-                }
-              }
-            } catch (enrichErr) {
-              console.error('Enrichment failed for call:', call.record_id, enrichErr)
-            }
-          }
-
-          // H. Save manifest with Phase 2 + scoring + enrichment data
-          // Note: opportunity_score and classification live in the manifest JSON blob.
-          // Top-level columns will be added via DB migration (supabase/migrations/20260412_pipeline_v2_scoring.sql)
-          const { error: updateErr } = await supabase
-            .from('manifests')
-            .update({
-              manifest,
-              priority: manifest.priority,
-              current_station: manifest.currentStation,
-              qualification_score: manifest.qualificationScore ?? null,
-              tier: manifest.tier ?? null,
-            })
-            .eq('id', manifestId)
-
-          if (updateErr) {
-            console.error(`[mojo/sync] MANIFEST UPDATE FAILED:`, updateErr.message)
-          } else {
-            console.log(`[mojo/sync] Manifest ${manifestId} updated successfully`)
-          }
-
-          // I. Backfill lead from manifest data (fixes empty "Mojo Lead" / "Unknown" records)
-          if (leadId) {
-            const leadBackfill: Record<string, any> = {}
-            const currentLead = await supabase.from('leads').select('full_name, phone, property_address').eq('id', leadId).single()
-            const ld = currentLead?.data
-
-            const manifestName = manifest.owner?.fullName
-            const shouldBackfillName = !ld?.full_name
-              || ld.full_name === 'Unknown'
-              || ld.full_name === 'Mojo Lead'
-              || ld.full_name === ''
-              || ld.full_name.startsWith('Caller (')
-            if (manifestName && shouldBackfillName) {
-              leadBackfill.full_name = manifestName
-            }
-            if (!ld?.phone && manifest.owner?.phones?.length > 0) {
-              leadBackfill.phone = manifest.owner.phones[0]
-            }
-            if (!ld?.property_address && manifest.property?.address) {
-              leadBackfill.property_address = manifest.property.address
-            }
-            if (manifest.priority && manifest.priority !== 'cold') {
-              leadBackfill.priority = manifest.priority
-            }
-            // Note: opportunity_score + classification lead cascade requires DB migration first
-            // (supabase/migrations/20260412_pipeline_v2_scoring.sql)
-            if (Object.keys(leadBackfill).length > 0) {
-              await supabase.from('leads').update(leadBackfill).eq('id', leadId)
-            }
-          }
-
-          // J. Alert — only if score >= 75
-          if (shouldAlert) {
-            const sent = await sendAlert(
-              call.contact_name,
-              call.property_address,
-              call.disposition,
-              manifest.scoring?.opportunity_score
-            )
-            if (sent) alertsSent++
-          }
-        }
-
-        processed++
-      } catch (callErr) {
-        console.error('Error processing call:', call.record_id, callErr)
+      } else {
+        queued++
       }
     }
 
-    // H. Response
-    return NextResponse.json({
-      processed,
-      created,
-      updated,
-      skipped,
-      alerts_sent: alertsSent,
-    })
+    return NextResponse.json({ queued, skipped, total: calls.length })
   } catch (err) {
-    console.error('Mojo sync error:', err)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    console.error('[mojo/sync] Queue insertion error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
