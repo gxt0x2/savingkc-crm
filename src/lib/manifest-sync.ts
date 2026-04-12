@@ -88,6 +88,8 @@ async function saveManifest(
       qualification_score: manifest.qualificationScore,
       next_appointment_at: manifest.pipeline?.appointment?.scheduledAt ?? null,
       appointment_status: manifest.pipeline?.appointment?.status ?? null,
+      opportunity_score: manifest.scoring?.opportunity_score ?? null,
+      classification: manifest.scoring?.classification ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', rowId)
