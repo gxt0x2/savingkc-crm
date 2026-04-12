@@ -105,6 +105,13 @@ async function saveManifest(
       leadUpdate.motivation_score = motivationScore
     }
 
+    if (manifest.scoring?.opportunity_score !== undefined) {
+      leadUpdate.opportunity_score = manifest.scoring.opportunity_score
+    }
+    if (manifest.scoring?.classification) {
+      leadUpdate.classification = manifest.scoring.classification
+    }
+
     if (Object.keys(leadUpdate).length > 0) {
       await supabase
         .from('leads')

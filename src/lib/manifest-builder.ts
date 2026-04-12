@@ -308,6 +308,15 @@ export interface ManifestAriIntelligence {
   hotSignalGeneratedAt?: string
 }
 
+export interface ManifestScoring {
+  opportunity_score: number
+  classification: 'opportunity' | 'lead' | 'dead'
+  reasoning: string
+  worth_enriching: boolean
+  scored_at: string
+  scored_by: 'ai' | 'disposition' | 'notes'
+}
+
 export interface ManifestV2 {
   manifestId: string
   version: 2
@@ -342,6 +351,7 @@ export interface ManifestV2 {
   lastEmailDate?: string
   lastMailDate?: string
   dispositionTier?: number
+  scoring?: ManifestScoring
 }
 
 export interface BuildManifestInput {

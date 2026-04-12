@@ -45,6 +45,10 @@ export interface CallAnalysisResult {
   followUpDateTime?: string
   appointmentDateTime?: string
   appointmentType?: string
+  opportunity_score?: number        // 0-100 pipeline scoring gate
+  opportunity_reasoning?: string    // Why this score
+  worth_enriching?: boolean         // LLM recommendation: run enrichment?
+  classification?: 'opportunity' | 'lead' | 'dead'
   [key: string]: unknown
 }
 
@@ -107,7 +111,15 @@ Respond in JSON with these fields (skip any field where there's no data):
   "appointmentType": "discovery | walkthrough | closing",
   "dealConfidenceScore": 1-100 (how likely is this deal to close?),
   "nextSteps": ["ordered list of next actions"],
-  "isHotLead": true/false
+  "isHotLead": true/false,
+  "opportunity_score": 0-100 score based on three factors:
+    - Pain/motivation confirmed and specific (not vague): up to 40 points
+    - Timeline stated in days/weeks with a reason (not "someday"): up to 30 points
+    - Next step agreed and locked in (appointment, offer review, contract): up to 30 points
+    Score 75+ = Opportunity. Score 40-74 = Lead (nurture). Score <40 = Dead/low-value.,
+  "opportunity_reasoning": "1-2 sentence explanation of the score",
+  "worth_enriching": true if score >= 60 and property address is real,
+  "classification": "opportunity" if score >= 75, "lead" if 40-74, "dead" if <40 or DNC/wrong number
 }
 
 Be specific. Use actual numbers and quotes from the transcript. Don't make up data that isn't in the call.`

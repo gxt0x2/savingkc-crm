@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
-import type { ManifestV2, ManifestContact, TranscriptEntry, ManifestAgentNote, ManifestOwner, ManifestProperty, ManifestSituation } from '@/lib/manifest-builder'
+import type { ManifestV2, ManifestScoring, ManifestContact, TranscriptEntry, ManifestAgentNote, ManifestOwner, ManifestProperty, ManifestSituation } from '@/lib/manifest-builder'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
@@ -86,6 +86,52 @@ function mapDisposition(disposition: string): DispositionMapping {
   }
 
   return { outcome: 'other' }
+}
+
+// Score a call using agent notes + manifest state (middle case: notes but no recording)
+function scoreFromNotes(call: MojoCallRecord, manifest: ManifestV2): { score: number; reasoning: string } {
+  let score = 0
+  const reasons: string[] = []
+  const notes = (call.notes || '').toLowerCase()
+  const dispositionLower = call.disposition.toLowerCase()
+
+  // Pain/motivation: up to 40 points
+  const painKeywords = ['motivation', 'motivated', 'needs to sell', 'must sell', 'wants to sell',
+    'ready', 'problem', 'behind', 'tax', 'foreclos', 'divorce', 'inherited', 'moving',
+    'relocation', 'financial', 'distress', 'tired', 'landlord', 'vacant']
+  const hasPain = painKeywords.some(k => notes.includes(k))
+    || !!(manifest.situation?.motivation?.primary)
+    || (manifest.situation?.motivation?.signals?.length ?? 0) > 0
+    || (manifest.situation?.type?.length ?? 0) > 0
+  if (hasPain) {
+    score += 40
+    reasons.push('pain/motivation confirmed')
+  }
+
+  // Timeline with urgency: up to 30 points
+  const urgencyKeywords = ['asap', 'urgent', 'this week', 'next week', 'day', 'deadline',
+    '30', '60', 'immediately', 'right away', 'by ']
+  const hasUrgentTimeline = urgencyKeywords.some(k => notes.includes(k))
+    || ['high', 'critical'].includes(manifest.situation?.timeline?.urgency || '')
+    || !!manifest.situation?.timeline?.hardDeadline
+  if (hasUrgentTimeline) {
+    score += 30
+    reasons.push('timeline with urgency stated')
+  }
+
+  // Next step locked in: up to 30 points
+  const nextStepKeywords = ['appointment', 'callback', 'call back', 'follow up', 'follow-up', 'scheduled', 'set up']
+  const hasNextStep = nextStepKeywords.some(k => notes.includes(k))
+    || dispositionLower.includes('appointment')
+    || dispositionLower.includes('callback')
+    || !!manifest.pipeline?.appointment
+  if (hasNextStep) {
+    score += 30
+    reasons.push('next step confirmed')
+  }
+
+  const reasoning = reasons.length > 0 ? reasons.join('; ') : 'no qualifying signals in notes'
+  return { score, reasoning }
 }
 
 // Normalize phone number to E164 format
@@ -509,6 +555,21 @@ async function processPhase2Intelligence(
 
       // Queue briefing regeneration
       queueBriefingRegeneration(manifest)
+
+      // Write AI-generated scoring to manifest (used by scoring gate in POST handler)
+      if (analysisResult.opportunity_score !== undefined && analysisResult.opportunity_score !== null) {
+        const aiScore = analysisResult.opportunity_score
+        const aiCls: ManifestScoring['classification'] = analysisResult.classification
+          || (aiScore >= 75 ? 'opportunity' : aiScore >= 40 ? 'lead' : 'dead')
+        manifest.scoring = {
+          opportunity_score: aiScore,
+          classification: aiCls,
+          reasoning: analysisResult.opportunity_reasoning || '',
+          worth_enriching: analysisResult.worth_enriching ?? (aiScore >= 60),
+          scored_at: new Date().toISOString(),
+          scored_by: 'ai',
+        }
+      }
     }
 
     // Add audit entry
@@ -902,99 +963,127 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // E. Trigger enrichment for new records OR high-value updates without prior enrichment
-        const needsEnrich = isNew || (dispositionMap.alertErnest && !manifest?.property?.assessment?.appraisedTotal)
-        if (needsEnrich && manifest && manifestId && call.property_address && call.state) {
-          try {
-            const detected = detectCounty(call.city, call.state, call.zip)
-            if (detected) {
-              // Enrich manifest
-              manifest = await enrichManifestProperty(
-                manifest,
-                call.property_address,
-                call.city,
-                call.state,
-                call.zip,
-                detected.county
-              )
-
-              // Score manifest
-              const { score, tier } = scoreManifest(manifest)
-              manifest.qualificationScore = score
-              manifest.tier = tier as ManifestV2['tier']
-
-              // Update manifest in database
-              await supabase
-                .from('manifests')
-                .update({
-                  manifest,
-                  qualification_score: score,
-                  tier,
-                })
-                .eq('id', manifestId)
-
-              // Also update leads table
-              if (leadId) {
-                const prop = manifest.property || {}
-                const dwell = prop.dwelling || {}
-                const assess = prop.assessment || {}
-
-                const leadUpdates: Record<string, any> = {}
-                if (dwell.bedrooms) leadUpdates.beds = dwell.bedrooms
-                if (dwell.bathrooms) leadUpdates.baths_full = dwell.bathrooms
-                if (dwell.sqft) leadUpdates.sqft = dwell.sqft
-                if (dwell.yearBuilt) leadUpdates.year_built = dwell.yearBuilt
-                if (assess.appraisedTotal) leadUpdates.arv = assess.appraisedTotal
-                if (assess.assessedTotal) leadUpdates.assessed_value = assess.assessedTotal
-                if (dwell.propertyType) {
-                  leadUpdates.property_type =
-                    dwell.propertyType === 'SF' ? 'Single Family' : dwell.propertyType
-                }
-                if (dwell.basement) leadUpdates.basement_type = dwell.basement
-                if (detected.county) {
-                  leadUpdates.data_source = `${detected.county.toLowerCase()}_county_assessor`
-                  leadUpdates.data_enriched_at = new Date().toISOString()
-                }
-
-                if (Object.keys(leadUpdates).length > 0) {
-                  await supabase.from('leads').update(leadUpdates).eq('id', leadId)
-                }
-              }
-            }
-          } catch (enrichErr) {
-            console.error('Enrichment failed for call:', call.record_id, enrichErr)
-          }
-        }
-
-        // F. Phase 2: Process intelligence (recording → transcription → analysis)
+        // E. Phase 2: Process intelligence (recording → transcription → analysis)
         if (manifest && manifestId) {
+          // Clear scoring so each call gets a fresh score (not stale from a prior call)
+          manifest.scoring = undefined
+
           console.log(`[mojo/sync] PRE-Phase2: agentNotes=${manifest.agentNotes?.length}, timeline=${!!manifest.situation?.timeline}, priceExp=${!!manifest.situation?.priceExpectations}`)
           manifest = await processPhase2Intelligence(call, manifest, manifestId)
           console.log(`[mojo/sync] POST-Phase2: agentNotes=${manifest.agentNotes?.length}, timeline=${!!manifest.situation?.timeline}, priceExp=${!!manifest.situation?.priceExpectations}, auditTrail=${manifest.auditTrail?.length}`)
 
-          // Update manifest with Phase 2 data
+          // F. Scoring gate — AI analysis (primary) → notes → static disposition fallback
+          if (!manifest.scoring) {
+            const hasNotes = !!(call.notes && call.notes.trim())
+            if (hasNotes) {
+              const { score, reasoning } = scoreFromNotes(call, manifest)
+              const cls: ManifestScoring['classification'] = score >= 75 ? 'opportunity' : score >= 40 ? 'lead' : 'dead'
+              manifest.scoring = {
+                opportunity_score: score,
+                classification: cls,
+                reasoning,
+                worth_enriching: score >= 60,
+                scored_at: new Date().toISOString(),
+                scored_by: 'notes',
+              }
+            } else {
+              const staticScore = dispositionMap.isDead ? 0
+                : dispositionMap.outcome === 'appointment_set' ? 85
+                : dispositionMap.outcome === 'meaningful_conversation' ? 65
+                : dispositionMap.outcome === 'callback_scheduled' ? 45
+                : 20
+              const cls: ManifestScoring['classification'] = staticScore >= 75 ? 'opportunity' : staticScore >= 40 ? 'lead' : 'dead'
+              manifest.scoring = {
+                opportunity_score: staticScore,
+                classification: cls,
+                reasoning: `Static disposition mapping: ${call.disposition}`,
+                worth_enriching: staticScore >= 60,
+                scored_at: new Date().toISOString(),
+                scored_by: 'disposition',
+              }
+            }
+          }
+
+          const opportunityScore = manifest.scoring.opportunity_score
+          const shouldEnrich = manifest.scoring.worth_enriching
+          const shouldAlert = opportunityScore >= 75
+          manifest.priority = opportunityScore >= 75 ? 'hot' : opportunityScore >= 40 ? 'warm' : 'cold'
+
+          console.log(`[mojo/sync] SCORING: score=${opportunityScore} class=${manifest.scoring.classification} shouldEnrich=${shouldEnrich} shouldAlert=${shouldAlert} by=${manifest.scoring.scored_by}`)
+
+          // G. Enrichment — only if score >= 60 (or worth_enriching from LLM)
+          if (shouldEnrich && call.property_address && call.state) {
+            try {
+              const detected = detectCounty(call.city, call.state, call.zip)
+              if (detected) {
+                manifest = await enrichManifestProperty(
+                  manifest,
+                  call.property_address,
+                  call.city,
+                  call.state,
+                  call.zip,
+                  detected.county
+                )
+                const { score: qualScore, tier } = scoreManifest(manifest)
+                manifest.qualificationScore = qualScore
+                manifest.tier = tier as ManifestV2['tier']
+
+                if (leadId) {
+                  const prop = manifest.property || {}
+                  const dwell = prop.dwelling || {}
+                  const assess = prop.assessment || {}
+                  const enrichLeadUpdates: Record<string, any> = {}
+                  if (dwell.bedrooms) enrichLeadUpdates.beds = dwell.bedrooms
+                  if (dwell.bathrooms) enrichLeadUpdates.baths_full = dwell.bathrooms
+                  if (dwell.sqft) enrichLeadUpdates.sqft = dwell.sqft
+                  if (dwell.yearBuilt) enrichLeadUpdates.year_built = dwell.yearBuilt
+                  if (assess.appraisedTotal) enrichLeadUpdates.arv = assess.appraisedTotal
+                  if (assess.assessedTotal) enrichLeadUpdates.assessed_value = assess.assessedTotal
+                  if (dwell.propertyType) {
+                    enrichLeadUpdates.property_type =
+                      dwell.propertyType === 'SF' ? 'Single Family' : dwell.propertyType
+                  }
+                  if (dwell.basement) enrichLeadUpdates.basement_type = dwell.basement
+                  if (detected.county) {
+                    enrichLeadUpdates.data_source = `${detected.county.toLowerCase()}_county_assessor`
+                    enrichLeadUpdates.data_enriched_at = new Date().toISOString()
+                  }
+                  if (Object.keys(enrichLeadUpdates).length > 0) {
+                    await supabase.from('leads').update(enrichLeadUpdates).eq('id', leadId)
+                  }
+                }
+              }
+            } catch (enrichErr) {
+              console.error('Enrichment failed for call:', call.record_id, enrichErr)
+            }
+          }
+
+          // H. Save manifest with Phase 2 + scoring + enrichment data
+          // Note: opportunity_score and classification live in the manifest JSON blob.
+          // Top-level columns will be added via DB migration (supabase/migrations/20260412_pipeline_v2_scoring.sql)
           const { error: updateErr } = await supabase
             .from('manifests')
             .update({
               manifest,
               priority: manifest.priority,
               current_station: manifest.currentStation,
+              qualification_score: manifest.qualificationScore ?? null,
+              tier: manifest.tier ?? null,
             })
             .eq('id', manifestId)
 
           if (updateErr) {
             console.error(`[mojo/sync] MANIFEST UPDATE FAILED:`, updateErr.message)
           } else {
-            console.log(`[mojo/sync] Manifest ${manifestId} updated successfully after Phase 2`)
+            console.log(`[mojo/sync] Manifest ${manifestId} updated successfully`)
           }
 
-          // G. Backfill lead from manifest data (fixes empty "Mojo Lead" / "Unknown" records)
+          // I. Backfill lead from manifest data (fixes empty "Mojo Lead" / "Unknown" records)
           if (leadId) {
             const leadBackfill: Record<string, any> = {}
             const currentLead = await supabase.from('leads').select('full_name, phone, property_address').eq('id', leadId).single()
             const ld = currentLead?.data
 
-            // Backfill name from manifest owner
             const manifestName = manifest.owner?.fullName
             const shouldBackfillName = !ld?.full_name
               || ld.full_name === 'Unknown'
@@ -1004,38 +1093,32 @@ export async function POST(req: NextRequest) {
             if (manifestName && shouldBackfillName) {
               leadBackfill.full_name = manifestName
             }
-
-            // Backfill phone from manifest owner phones
             if (!ld?.phone && manifest.owner?.phones?.length > 0) {
               leadBackfill.phone = manifest.owner.phones[0]
             }
-
-            // Backfill address from manifest property
             if (!ld?.property_address && manifest.property?.address) {
               leadBackfill.property_address = manifest.property.address
             }
-
-            // Backfill priority from manifest
             if (manifest.priority && manifest.priority !== 'cold') {
               leadBackfill.priority = manifest.priority
             }
-
+            // Note: opportunity_score + classification lead cascade requires DB migration first
+            // (supabase/migrations/20260412_pipeline_v2_scoring.sql)
             if (Object.keys(leadBackfill).length > 0) {
               await supabase.from('leads').update(leadBackfill).eq('id', leadId)
             }
           }
-        }
 
-        // G. Alerts
-        if (dispositionMap.alertErnest) {
-          const score = manifest?.qualificationScore
-          const sent = await sendAlert(
-            call.contact_name,
-            call.property_address,
-            call.disposition,
-            score
-          )
-          if (sent) alertsSent++
+          // J. Alert — only if score >= 75
+          if (shouldAlert) {
+            const sent = await sendAlert(
+              call.contact_name,
+              call.property_address,
+              call.disposition,
+              manifest.scoring?.opportunity_score
+            )
+            if (sent) alertsSent++
+          }
         }
 
         processed++
