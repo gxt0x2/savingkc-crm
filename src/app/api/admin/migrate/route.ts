@@ -38,6 +38,31 @@ export async function POST(req: Request) {
     results.push(`system_config: error - ${sysErr.message}`)
   } else {
     results.push('system_config: exists')
+
+    // Seed default config entries (insert only if not present)
+    const defaults = [
+      { key: 'last_mojo_sync_timestamp', value: new Date(0).toISOString() },
+      { key: 'mojo_thank_you_enabled', value: 'true' },
+      { key: 'mojo_thank_you_dispositions', value: JSON.stringify(['appointment_set', 'meaningful_conversation', 'callback_scheduled', 'voicemail_left']) },
+      { key: 'casey_company_number', value: '+18167277667' },
+    ]
+
+    for (const entry of defaults) {
+      const { data: existing } = await supabase
+        .from('system_config')
+        .select('key')
+        .eq('key', entry.key)
+        .single()
+
+      if (!existing) {
+        const { error: insertErr } = await supabase
+          .from('system_config')
+          .insert({ key: entry.key, value: entry.value, updated_at: new Date().toISOString() })
+        results.push(`system_config[${entry.key}]: ${insertErr ? 'error - ' + insertErr.message : 'seeded'}`)
+      } else {
+        results.push(`system_config[${entry.key}]: already exists`)
+      }
+    }
   }
 
   return NextResponse.json({ results })

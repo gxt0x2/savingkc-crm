@@ -1,0 +1,52 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+export async function GET(req: NextRequest) {
+  const key = req.nextUrl.searchParams.get('key')
+  if (!key) {
+    return NextResponse.json({ error: 'key required' }, { status: 400 })
+  }
+
+  const { data, error } = await supabase
+    .from('system_config')
+    .select('value, updated_at')
+    .eq('key', key)
+    .single()
+
+  if (error && error.code !== 'PGRST116') {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({
+    key,
+    value: data?.value ?? null,
+    updated_at: data?.updated_at ?? null,
+  })
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json()
+  const { key, value } = body
+
+  if (!key) {
+    return NextResponse.json({ error: 'key required' }, { status: 400 })
+  }
+
+  const { error } = await supabase
+    .from('system_config')
+    .upsert(
+      { key, value, updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    )
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true, key, value })
+}

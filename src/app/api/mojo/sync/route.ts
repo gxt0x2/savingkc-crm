@@ -8,11 +8,45 @@ import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { isOptedOut } from '@/lib/sms-opt-out'
+import { phoneRateLimit } from '@/middleware/rate-limit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+// Casey's company number - used as FROM for thank-you SMS
+const CASEY_COMPANY_NUMBER = '+18167277667'
+
+// Disposition outcomes that trigger a thank-you SMS
+const THANK_YOU_DISPOSITIONS: Record<string, string> = {
+  'appointment_set': 'appointment_set',
+  'meaningful_conversation': 'interested',
+  'callback_scheduled': 'callback',
+  'voicemail_left': 'voicemail',
+}
+
+// SMS templates keyed by templateKey
+const THANK_YOU_TEMPLATES: Record<string, (firstName: string, address: string, date?: string) => string> = {
+  'appointment_set': (firstName, _address, date) =>
+    `Hey ${firstName}! It's Casey from Saving KC. Really enjoyed chatting with you today. Looking forward to coming by on ${date || 'soon'} to check out the property. If anything comes up before then, just shoot me a text. Talk soon!`,
+
+  'interested': (firstName, address) =>
+    `Hey ${firstName}, it's Casey with Saving KC! Thanks for talking with me today about ${address}. I think we can definitely help. I'll be in touch soon, but if you think of anything, just text me back here anytime.`,
+
+  'callback': (firstName) =>
+    `Hey ${firstName}! It's Casey from Saving KC. I tried giving you a call today. Would love to connect when you get a chance. What time works best for you? Just text me back and I'll call you then.`,
+
+  'voicemail': (firstName, address) =>
+    `Hey ${firstName}, it's Casey from Saving KC! I just left you a voicemail about your property on ${address}. No rush. Give me a call back whenever works, or just reply to this text. Hope you're having a good day!`,
+}
+
+// Fire fn after a random delay between minSec and maxSec seconds (non-blocking)
+function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
+  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
+  setTimeout(() => fn().catch(e => console.error('[mojo/sync] Delayed send failed:', e)), delay)
+}
 
 export interface MojoCallRecord {
   record_id: string
@@ -1050,6 +1084,62 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         call.disposition,
         manifest.scoring?.opportunity_score
       )
+    }
+
+    // K. Thank-you SMS — fire once per meaningful disposition
+    const thankYouKey = THANK_YOU_DISPOSITIONS[dispositionMap.outcome]
+    const alreadySent = manifest.communications?.thankYouSms?.sent === true
+
+    if (thankYouKey && !alreadySent && hasPhone && normalizedPhone) {
+      const optedOut = await isOptedOut(normalizedPhone)
+      const rl = phoneRateLimit(normalizedPhone)
+
+      if (!optedOut && rl.allowed) {
+        const { firstName } = parseContactName(call.contact_name)
+        const address = call.property_address || 'your property'
+        const followUpDate = call.follow_up_date
+          ? new Date(call.follow_up_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          : undefined
+
+        const templateFn = THANK_YOU_TEMPLATES[thankYouKey]
+        const body = templateFn(firstName, address, followUpDate)
+
+        // Mark sent before firing to prevent duplicate sends on retry
+        if (!manifest.communications) manifest.communications = { transcripts: [] }
+        manifest.communications.thankYouSms = {
+          sent: true,
+          sentAt: new Date().toISOString(),
+          template: thankYouKey,
+          to: normalizedPhone,
+        }
+
+        manifest.auditTrail.push({
+          timestamp: new Date().toISOString(),
+          agent: 'system:mojo-sync-thankyou',
+          action: 'thank_you_sms_queued',
+          details: { template: thankYouKey, to: normalizedPhone, disposition: dispositionMap.outcome },
+        })
+
+        // Persist the thankYouSms flag before the delayed send fires
+        await supabase
+          .from('manifests')
+          .update({ manifest })
+          .eq('id', manifestId)
+
+        // Fire SMS after a natural 60-180 second delay
+        sendDelayed(async () => {
+          const result = await safeSendSMS({
+            body,
+            from: CASEY_COMPANY_NUMBER,
+            to: normalizedPhone,
+          })
+          console.log(`[queue] Thank-you SMS sent to ${normalizedPhone} template=${thankYouKey} sid=${result.sid || 'n/a'}`)
+        }, 60, 180)
+
+        console.log(`[queue] Thank-you SMS queued for ${call.contact_name} (${normalizedPhone}) template=${thankYouKey}`)
+      } else {
+        console.log(`[queue] Thank-you SMS skipped for ${normalizedPhone}: optedOut=${optedOut} rateLimitAllowed=${rl.allowed}`)
+      }
     }
 
     return { leadId, manifestId, opportunityScore }

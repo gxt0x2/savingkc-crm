@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 /**
- * Mojo Sync Script v3
- * Pulls call activity from Mojo's activity-stream API, syncs ONLY meaningful
- * conversations to CRM manifests.
+ * Mojo EOD Sweep
+ * Pulls ALL of Casey's calls for the current calendar day from the activity
+ * stream and posts them to /api/mojo/sync. Runs at 5:30pm M-F via cron.
  *
- * MEANINGFUL = Casey had a real conversation and dispositioned to:
- *   - "Follow Up" (group 7)
- *   - "Appointment Set" (group 4)
- *   - Qualified as lead (type 30)
- *   - Notes with substantial seller intel (timeline, price, motivation, condition)
+ * Unlike the delta sync (mojo-sync.mjs), this ignores the last_mojo_sync_timestamp
+ * and fetches everything since midnight today. Dedup is handled by the queue
+ * table's unique constraint on record_id.
  *
- * NON-MEANINGFUL (skipped — no lead created):
- *   - No answer, voicemail, hung up, dead lead, not yet interested, trash, busy
+ * After a successful POST, updates last_mojo_sync_timestamp to now so the
+ * next delta sync run starts clean.
  *
- * Runs every 15 minutes (8am-5pm M-F) via cron.
+ * Crontab entry (Ernest adds manually):
+ *   30 17 * * 1-5 cd /Users/ernestdodson/savingkc-crm && /usr/local/bin/node scripts/mojo-eod-sweep.mjs >> /tmp/mojo-eod-sweep.log 2>&1
  */
 
 import fs from 'fs'
@@ -23,9 +22,8 @@ const MOJO_BASE_URL = 'https://app71.mojosells.com'
 const CRM_API_URL = 'https://crm.savingkc.com/api/mojo/sync'
 const CRM_CONFIG_URL = 'https://crm.savingkc.com/api/admin/system-config'
 const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
-const STATE_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-sync-state.json'
 const LOG_DIR = '/Users/ernestdodson/.openclaw/workspace/memory/logs'
-const LOG_FILE = path.join(LOG_DIR, 'mojo-sync.log')
+const LOG_FILE = path.join(LOG_DIR, 'mojo-eod-sweep.log')
 
 // Mojo activity type codes
 const ACTIVITY_NOTE = 3
@@ -33,10 +31,8 @@ const ACTIVITY_FOLLOWUP = 6
 const ACTIVITY_GROUP = 11
 const ACTIVITY_LEAD = 30
 
-// Groups that indicate a meaningful conversation happened
 const MEANINGFUL_GROUPS = new Set(['follow up', 'appointment set'])
 
-// Ensure log directory exists
 if (!fs.existsSync(LOG_DIR)) {
   fs.mkdirSync(LOG_DIR, { recursive: true })
 }
@@ -56,59 +52,7 @@ function logError(message, error) {
   fs.appendFileSync(LOG_FILE, logLine)
 }
 
-// --- State management ---
-
-function readState() {
-  try {
-    if (!fs.existsSync(STATE_FILE)) return { lastActivityId: 0 }
-    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'))
-  } catch {
-    return { lastActivityId: 0 }
-  }
-}
-
-function writeState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
-}
-
-// --- Delta timestamp management (stored in Supabase via CRM API) ---
-
-async function readLastSyncTimestamp() {
-  try {
-    const res = await fetch(`${CRM_CONFIG_URL}?key=last_mojo_sync_timestamp`, {
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) {
-      log(`Config read failed (${res.status}) — using epoch`)
-      return new Date(0).toISOString()
-    }
-    const data = await res.json()
-    return data.value || new Date(0).toISOString()
-  } catch (err) {
-    logError('Failed to read last_mojo_sync_timestamp from CRM — using epoch', err)
-    return new Date(0).toISOString()
-  }
-}
-
-async function writeLastSyncTimestamp(timestamp) {
-  try {
-    const res = await fetch(CRM_CONFIG_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: 'last_mojo_sync_timestamp', value: timestamp }),
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) {
-      log(`Config write failed (${res.status})`)
-    } else {
-      log(`Updated last_mojo_sync_timestamp to ${timestamp}`)
-    }
-  } catch (err) {
-    logError('Failed to write last_mojo_sync_timestamp to CRM', err)
-  }
-}
-
-// --- Session management ---
+// --- Session ---
 
 function readSession() {
   try {
@@ -129,17 +73,23 @@ function markSessionExpired() {
   }
 }
 
-async function pushSessionToCRM(sessionId) {
+// --- CRM config ---
+
+async function writeLastSyncTimestamp(timestamp) {
   try {
-    await fetch(CRM_API_URL.replace('/mojo/sync', '/admin/mojo-session'), {
+    const res = await fetch(CRM_CONFIG_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(10000),
+      body: JSON.stringify({ key: 'last_mojo_sync_timestamp', value: timestamp }),
+      signal: AbortSignal.timeout(8000),
     })
-    log('Pushed Mojo session to CRM')
-  } catch {
-    // Best-effort
+    if (!res.ok) {
+      log(`Config write failed (${res.status})`)
+    } else {
+      log(`Updated last_mojo_sync_timestamp to ${timestamp}`)
+    }
+  } catch (err) {
+    logError('Failed to write last_mojo_sync_timestamp to CRM', err)
   }
 }
 
@@ -152,120 +102,6 @@ function mojoHeaders(sessionId) {
     'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
     referer: `${MOJO_BASE_URL}/`,
   }
-}
-
-/**
- * Fetch full contact details from Mojo (address, phone, notes, etc.)
- * CORRECT endpoint: /v2/rest/contacts/data/{contactId}/
- * (NOT /v2/rest/contacts/{id}/ — that's a SPA route that returns HTML)
- */
-async function fetchContactDetails(sessionId, contactId) {
-  const result = { phone: '', notes: '', address: '', city: '', state: '', zip: '', email: '', followUpDate: '' }
-  if (!contactId) return result
-  try {
-    const url = `${MOJO_BASE_URL}/v2/rest/contacts/data/${contactId}/`
-    const response = await fetch(url, {
-      headers: mojoHeaders(sessionId),
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!response.ok) {
-      log(`  Contact ${contactId} fetch failed: ${response.status}`)
-      return result
-    }
-
-    const contentType = response.headers.get('content-type') || ''
-    if (!contentType.includes('json')) {
-      log(`  Contact ${contactId} returned non-JSON (${contentType}) — likely SPA redirect`)
-      return result
-    }
-
-    const data = await response.json()
-
-    // Address fields
-    result.address = data.address || data.full_address || ''
-    result.city = data.city || ''
-    result.state = data.state || ''
-    result.zip = data.zip_code || data.zip || ''
-
-    // Phone from mediainfo_set (type 3 = primary phone, type 2 = secondary)
-    if (data.mediainfo_set && Array.isArray(data.mediainfo_set)) {
-      const primaryPhone = data.mediainfo_set.find(m => m.type === 3 && m.value)
-      const anyPhone = data.mediainfo_set.find(m => (m.type === 2 || m.type === 3) && m.value)
-      const emailEntry = data.mediainfo_set.find(m => m.type === 4 && m.value)
-      result.phone = (primaryPhone || anyPhone)?.value || ''
-      result.email = emailEntry?.value || ''
-    }
-
-    // Notes from contactnote_set
-    if (data.contactnote_set && Array.isArray(data.contactnote_set)) {
-      const noteTexts = data.contactnote_set
-        .sort((a, b) => new Date(b.create_date).getTime() - new Date(a.create_date).getTime())
-        .map(n => n.contents)
-        .filter(Boolean)
-      result.notes = noteTexts.join('\n')
-    }
-
-    // Follow-up from event_set
-    if (data.event_set && Array.isArray(data.event_set)) {
-      const upcoming = data.event_set
-        .filter(e => new Date(e.datetime || e.date) > new Date())
-        .sort((a, b) => new Date(a.datetime || a.date).getTime() - new Date(b.datetime || b.date).getTime())
-      if (upcoming.length > 0) {
-        result.followUpDate = upcoming[0].datetime || upcoming[0].date || ''
-      }
-    }
-
-    log(`  Contact ${contactId} details: addr="${result.address}", city="${result.city}", state="${result.state}", zip="${result.zip}", phone="${result.phone}", followUp="${result.followUpDate}"`)
-  } catch (err) {
-    logError(`Failed to fetch contact ${contactId}`, err)
-  }
-  return result
-}
-
-/**
- * Fetch today's call recordings from Mojo.
- * Returns a map of contactId → recording URL.
- */
-async function fetchTodayRecordings(sessionId) {
-  const recordingMap = new Map() // contactId → { audio, duration, recordId }
-  try {
-    const today = new Date().toISOString().split('T')[0]
-    const url = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=%5B-1%5D&date_range=custom&from=${today}&to=${today}`
-    const response = await fetch(url, {
-      headers: mojoHeaders(sessionId),
-      signal: AbortSignal.timeout(20000),
-    })
-    if (!response.ok) {
-      log(`Recording API returned ${response.status}`)
-      return recordingMap
-    }
-    const data = await response.json()
-    const recordings = data.recordings || []
-    log(`Fetched ${recordings.length} recordings for ${today}`)
-
-    for (const rec of recordings) {
-      const contactId = rec.contact?.id
-      if (contactId && rec.audio) {
-        // Keep longest recording per contact
-        const existing = recordingMap.get(contactId)
-        const durParts = (rec.duration || '0:00').split(':').map(Number)
-        const durSec = durParts.length === 3
-          ? durParts[0] * 3600 + durParts[1] * 60 + durParts[2]
-          : durParts[0] * 60 + (durParts[1] || 0)
-
-        if (!existing || durSec > existing.duration) {
-          recordingMap.set(contactId, {
-            audio: rec.audio,
-            duration: durSec,
-            recordId: rec.record_id,
-          })
-        }
-      }
-    }
-  } catch (err) {
-    logError('Failed to fetch recordings', err)
-  }
-  return recordingMap
 }
 
 async function fetchActivityStream(sessionId, page = 1) {
@@ -287,37 +123,104 @@ async function fetchActivityStream(sessionId, page = 1) {
   return data.activities || []
 }
 
+async function fetchContactDetails(sessionId, contactId) {
+  const result = { phone: '', notes: '', address: '', city: '', state: '', zip: '', email: '', followUpDate: '' }
+  if (!contactId) return result
+  try {
+    const url = `${MOJO_BASE_URL}/v2/rest/contacts/data/${contactId}/`
+    const response = await fetch(url, {
+      headers: mojoHeaders(sessionId),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!response.ok) return result
+
+    const contentType = response.headers.get('content-type') || ''
+    if (!contentType.includes('json')) return result
+
+    const data = await response.json()
+
+    result.address = data.address || data.full_address || ''
+    result.city = data.city || ''
+    result.state = data.state || ''
+    result.zip = data.zip_code || data.zip || ''
+
+    if (data.mediainfo_set && Array.isArray(data.mediainfo_set)) {
+      const primaryPhone = data.mediainfo_set.find(m => m.type === 3 && m.value)
+      const anyPhone = data.mediainfo_set.find(m => (m.type === 2 || m.type === 3) && m.value)
+      const emailEntry = data.mediainfo_set.find(m => m.type === 4 && m.value)
+      result.phone = (primaryPhone || anyPhone)?.value || ''
+      result.email = emailEntry?.value || ''
+    }
+
+    if (data.contactnote_set && Array.isArray(data.contactnote_set)) {
+      const noteTexts = data.contactnote_set
+        .sort((a, b) => new Date(b.create_date).getTime() - new Date(a.create_date).getTime())
+        .map(n => n.contents)
+        .filter(Boolean)
+      result.notes = noteTexts.join('\n')
+    }
+
+    if (data.event_set && Array.isArray(data.event_set)) {
+      const upcoming = data.event_set
+        .filter(e => new Date(e.datetime || e.date) > new Date())
+        .sort((a, b) => new Date(a.datetime || a.date).getTime() - new Date(b.datetime || b.date).getTime())
+      if (upcoming.length > 0) {
+        result.followUpDate = upcoming[0].datetime || upcoming[0].date || ''
+      }
+    }
+  } catch (err) {
+    logError(`Failed to fetch contact ${contactId}`, err)
+  }
+  return result
+}
+
+async function fetchTodayRecordings(sessionId) {
+  const recordingMap = new Map()
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    const url = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=%5B-1%5D&date_range=custom&from=${today}&to=${today}`
+    const response = await fetch(url, {
+      headers: mojoHeaders(sessionId),
+      signal: AbortSignal.timeout(20000),
+    })
+    if (!response.ok) return recordingMap
+    const data = await response.json()
+    const recordings = data.recordings || []
+    log(`Fetched ${recordings.length} recordings for ${today}`)
+
+    for (const rec of recordings) {
+      const contactId = rec.contact?.id
+      if (contactId && rec.audio) {
+        const existing = recordingMap.get(contactId)
+        const durParts = (rec.duration || '0:00').split(':').map(Number)
+        const durSec = durParts.length === 3
+          ? durParts[0] * 3600 + durParts[1] * 60 + durParts[2]
+          : durParts[0] * 60 + (durParts[1] || 0)
+        if (!existing || durSec > existing.duration) {
+          recordingMap.set(contactId, { audio: rec.audio, duration: durSec, recordId: rec.record_id })
+        }
+      }
+    }
+  } catch (err) {
+    logError('Failed to fetch recordings', err)
+  }
+  return recordingMap
+}
+
 // --- Parse helpers ---
 
-/**
- * Extract phone number from Casey's notes.
- * Casey puts the phone on the first line: "816-547-6163\ncontact and hung up"
- * Also check anywhere in the note for phone patterns.
- */
 function extractPhone(noteContent) {
   if (!noteContent) return ''
-  // First line phone pattern
   const firstLine = noteContent.match(/^(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})/)
   if (firstLine) return firstLine[1].replace(/[-.\s]/g, '')
-  // Anywhere in content
   const anywhere = noteContent.match(/(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})/)
   if (anywhere) return anywhere[1].replace(/[-.\s]/g, '')
   return ''
 }
 
-/**
- * Check if notes contain meaningful seller intel.
- * Casey writes structured notes for real conversations:
- *   Timeline: 30-60 days
- *   Condition: good shape, some flooding
- *   Price: 160-185k
- *   Motivation: wants a clean slate
- */
 function hasSellerIntel(noteContent) {
   if (!noteContent) return false
   const lower = noteContent.toLowerCase()
-
-  // Structured intel keywords Casey uses
   if (lower.includes('timeline:') || lower.includes('motivation:') ||
       lower.includes('price:') || lower.includes('condition:') ||
       lower.includes('asking price') || lower.includes('wants to sell') ||
@@ -326,20 +229,12 @@ function hasSellerIntel(noteContent) {
       lower.includes('inherited') || lower.includes('probate')) {
     return true
   }
-
-  // Substantial free-form notes (not just "no contact 04/06")
   const lines = noteContent.split('\n').filter(l => l.trim())
   const textLength = noteContent.replace(/^\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n?/, '').trim().length
-  if (lines.length >= 3 && textLength > 80) {
-    return true
-  }
-
+  if (lines.length >= 3 && textLength > 80) return true
   return false
 }
 
-/**
- * Parse Mojo timestamp "04/06/2026 01:40 PM" to ISO string
- */
 function parseMojoTimestamp(ts) {
   try {
     const [datePart, timePart, ampm] = ts.split(' ')
@@ -355,31 +250,39 @@ function parseMojoTimestamp(ts) {
 }
 
 /**
- * Process activities into MEANINGFUL call records only.
- * Now fetches contact details (address, phone) from Mojo for each meaningful contact.
+ * Get midnight (start) of today in local time (America/Chicago, UTC-5/6).
+ * Returns an ISO string representing today 00:00:00 CT.
  */
-async function buildCallRecords(activities, lastActivityId, sessionId, recordingMap, lastSyncTimestamp) {
-  const lastSyncMs = new Date(lastSyncTimestamp || 0).getTime()
+function getTodayMidnightISO() {
+  const now = new Date()
+  // Use CT offset (-5 standard / -6 daylight) — approximate as -5 for simplicity
+  const ctOffset = 5 * 60 * 60 * 1000
+  const ctNow = new Date(now.getTime() - ctOffset)
+  const dateStr = ctNow.toISOString().split('T')[0]
+  return new Date(`${dateStr}T00:00:00-05:00`).toISOString()
+}
 
-  const newActivities = activities
-    .filter(a => {
-      if (a[0] <= lastActivityId) return false
-      // Also filter by timestamp — only process activities newer than last sync
-      const [, , , timestamp] = a
-      if (timestamp) {
-        const activityMs = new Date(parseMojoTimestamp(timestamp)).getTime()
-        if (activityMs <= lastSyncMs) return false
-      }
-      return true
-    })
-    .sort((a, b) => a[0] - b[0])
+// --- Build call records for today (no activityId or timestamp delta filter) ---
 
-  if (newActivities.length === 0) return { calls: [], skippedCount: 0, maxId: lastActivityId, maxCallTimestamp: null }
+async function buildTodayCallRecords(activities, sessionId, recordingMap) {
+  const todayMidnightMs = new Date(getTodayMidnightISO()).getTime()
+
+  // Filter to activities from today only
+  const todayActivities = activities.filter(a => {
+    const [, , , timestamp] = a
+    if (!timestamp) return false
+    const activityMs = new Date(parseMojoTimestamp(timestamp)).getTime()
+    return activityMs >= todayMidnightMs
+  })
+
+  log(`Total activities: ${activities.length}, today's activities: ${todayActivities.length}`)
+
+  if (todayActivities.length === 0) return { calls: [], skippedCount: 0 }
 
   // Group by contact_id
   const contactMap = new Map()
 
-  for (const activity of newActivities) {
+  for (const activity of todayActivities) {
     const [activityId, type, agentName, timestamp, details] = activity
     const contactId = details?.contact_id
     if (!contactId) continue
@@ -411,9 +314,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
         break
       }
       case ACTIVITY_FOLLOWUP: {
-        // Casey set a follow-up call — details.datetime is the scheduled time
         entry.followUpDate = details.datetime || ''
-        log(`  Follow-up scheduled for ${entry.contactName}: ${entry.followUpDate}`)
         break
       }
       case ACTIVITY_GROUP: {
@@ -428,14 +329,11 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     }
   }
 
-  // Filter to MEANINGFUL only, then convert to call records
   const calls = []
   let skippedCount = 0
 
   for (const [contactId, entry] of contactMap) {
     const groupLower = entry.groupName.toLowerCase()
-
-    // === MEANINGFUL CHECK ===
     const isMeaningfulGroup = MEANINGFUL_GROUPS.has(groupLower)
     const isMeaningfulNotes = hasSellerIntel(entry.notes)
     const isMeaningful = entry.isQualifiedLead || isMeaningfulGroup || isMeaningfulNotes
@@ -445,28 +343,19 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
       continue
     }
 
-    // Map disposition
     let disposition = 'Interested'
     if (groupLower.includes('appointment')) disposition = 'Appointment Set'
     else if (groupLower.includes('follow up')) disposition = 'Callback Requested'
 
-    // Clean notes — strip phone from first line
     let cleanNotes = entry.notes
     if (extractPhone(entry.notes)) {
       cleanNotes = entry.notes.replace(/^\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n?/, '').trim()
     }
 
-    // Fetch full contact details from Mojo (address, phone, email)
     log(`  Fetching contact details for ${entry.contactName} (${contactId})...`)
     const contactDetails = await fetchContactDetails(sessionId, contactId)
 
-    // Check for recording from today's recording report
     const recording = recordingMap?.get(Number(contactId))
-    if (recording) {
-      log(`  Found recording for ${entry.contactName}: ${recording.duration}s (record_id: ${recording.recordId})`)
-    }
-
-    // Use follow-up date from activity stream or contact details
     const followUpDate = entry.followUpDate || contactDetails.followUpDate || ''
 
     const call = {
@@ -492,24 +381,13 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     calls.push(call)
   }
 
-  const maxId = Math.max(...newActivities.map(a => a[0]), lastActivityId)
-
-  // Track the newest call timestamp among meaningful calls processed
-  let maxCallTimestamp = null
-  if (calls.length > 0) {
-    const timestamps = calls.map(c => new Date(c.call_date).getTime()).filter(t => !isNaN(t))
-    if (timestamps.length > 0) {
-      maxCallTimestamp = new Date(Math.max(...timestamps)).toISOString()
-    }
-  }
-
-  return { calls, skippedCount, maxId, maxCallTimestamp }
+  return { calls, skippedCount }
 }
 
-// --- Main sync ---
+// --- Main EOD sweep ---
 
-async function sync() {
-  log('Starting Mojo sync (v3 — meaningful only)...')
+async function eodSweep() {
+  log('Starting Mojo EOD sweep (full day pull)...')
 
   try {
     const session = readSession()
@@ -519,65 +397,54 @@ async function sync() {
     }
 
     log(`Using session: ${session.sessionId.substring(0, 20)}...`)
-    await pushSessionToCRM(session.sessionId)
 
-    const state = readState()
-    log(`Last processed activity ID: ${state.lastActivityId}`)
+    // Fetch activity stream — pull up to 3 pages to ensure full day coverage
+    log('Fetching activity stream (up to 3 pages)...')
+    let activities = []
+    for (let page = 1; page <= 3; page++) {
+      try {
+        const pageActivities = await fetchActivityStream(session.sessionId, page)
+        log(`Page ${page}: ${pageActivities.length} activities`)
+        if (pageActivities.length === 0) break
+        activities = [...activities, ...pageActivities]
 
-    // Read delta timestamp from Supabase via CRM
-    const lastSyncTimestamp = await readLastSyncTimestamp()
-    log(`Last sync timestamp: ${lastSyncTimestamp}`)
-
-    // Fetch activity stream
-    log('Fetching activity stream page 1...')
-    let activities = await fetchActivityStream(session.sessionId, 1)
-    log(`Got ${activities.length} activities from page 1`)
-
-    // Catch-up: if all page 1 activities are new, also fetch page 2
-    if (activities.length > 0 && state.lastActivityId > 0) {
-      const oldestOnPage = Math.min(...activities.map(a => a[0]))
-      if (oldestOnPage > state.lastActivityId) {
-        log('All page 1 activities are new — fetching page 2 for catch-up...')
-        try {
-          const page2 = await fetchActivityStream(session.sessionId, 2)
-          if (page2.length > 0) {
-            activities = [...activities, ...page2]
-            log(`Total activities after page 2: ${activities.length}`)
-          }
-        } catch (err) {
-          logError('Page 2 fetch failed (non-fatal)', err)
+        // Stop if we've gone past today's activities
+        const todayMidnightMs = new Date(getTodayMidnightISO()).getTime()
+        const oldestOnPage = pageActivities
+          .map(a => new Date(parseMojoTimestamp(a[3])).getTime())
+          .filter(t => !isNaN(t))
+        if (oldestOnPage.length > 0 && Math.min(...oldestOnPage) < todayMidnightMs) {
+          log(`Page ${page} contains activities from before today — stopping pagination`)
+          break
         }
+      } catch (err) {
+        logError(`Page ${page} fetch failed (non-fatal)`, err)
+        break
       }
     }
+    log(`Total activities fetched: ${activities.length}`)
 
-    // Fetch today's recordings (for matching to contacts)
-    log('Fetching today\'s call recordings...')
+    // Fetch today's recordings
+    log("Fetching today's call recordings...")
     const recordingMap = await fetchTodayRecordings(session.sessionId)
 
-    // Build MEANINGFUL call records only (filtered by both activityId and timestamp)
-    const { calls, skippedCount, maxId, maxCallTimestamp } = await buildCallRecords(activities, state.lastActivityId, session.sessionId, recordingMap, lastSyncTimestamp)
-    log(`Built ${calls.length} meaningful calls, skipped ${skippedCount} non-meaningful`)
+    // Build call records for today (no delta filter)
+    const { calls, skippedCount } = await buildTodayCallRecords(activities, session.sessionId, recordingMap)
+    log(`Built ${calls.length} meaningful calls for today, skipped ${skippedCount} non-meaningful`)
 
     if (calls.length === 0) {
-      if (maxId > state.lastActivityId) {
-        writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })
-        log(`Updated state: lastActivityId=${maxId}`)
-      }
-      log(`No new calls since ${lastSyncTimestamp}`)
+      log('No meaningful calls found for today')
+      // Still update the timestamp so next delta sync starts from now
+      await writeLastSyncTimestamp(new Date().toISOString())
       return { ok: true, processed: 0 }
     }
 
-    // Log what we're syncing
     for (const c of calls) {
-      log(`  → ${c.contact_name} (${c.phone_number || 'no phone'}) — ${c.disposition}`)
-      if (c.notes) {
-        const preview = c.notes.substring(0, 120).replace(/\n/g, ' ')
-        log(`    Notes: ${preview}${c.notes.length > 120 ? '...' : ''}`)
-      }
+      log(`  -> ${c.contact_name} (${c.phone_number || 'no phone'}) -- ${c.disposition}`)
     }
 
-    // POST to CRM
-    log(`Posting ${calls.length} meaningful calls to CRM...`)
+    // POST to CRM — queue dedup handles any already-processed records
+    log(`Posting ${calls.length} calls to CRM...`)
     const crmResponse = await fetch(CRM_API_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -593,28 +460,23 @@ async function sync() {
     const crmResult = await crmResponse.json()
     log(`CRM sync: queued=${crmResult.queued}, skipped=${crmResult.skipped}, total=${crmResult.total}`)
 
-    // Update local state
-    writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })
-    log(`Updated state: lastActivityId=${maxId}`)
-
-    // Update delta timestamp in Supabase
-    const newTimestamp = maxCallTimestamp || new Date().toISOString()
-    await writeLastSyncTimestamp(newTimestamp)
+    // Update delta timestamp to now so next delta sync starts fresh
+    await writeLastSyncTimestamp(new Date().toISOString())
 
     return { ok: true, ...crmResult }
   } catch (err) {
-    logError('Sync failed', err)
+    logError('EOD sweep failed', err)
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
-sync()
+eodSweep()
   .then((result) => {
     if (result.ok) {
-      log('Sync completed successfully')
+      log('EOD sweep completed successfully')
       process.exit(0)
     } else {
-      log(`Sync failed: ${result.error}`)
+      log(`EOD sweep failed: ${result.error}`)
       process.exit(1)
     }
   })
