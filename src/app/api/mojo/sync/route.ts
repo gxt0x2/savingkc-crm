@@ -591,6 +591,19 @@ async function processPhase2Intelligence(
 }
 
 /**
+ * Guard against manifests loaded from DB that may be missing array fields
+ * (created before arrays were standardized in the schema).
+ */
+function ensureManifestArrays(manifest: ManifestV2): ManifestV2 {
+  if (!Array.isArray(manifest.contacts)) manifest.contacts = []
+  if (!Array.isArray(manifest.notes)) manifest.notes = []
+  if (!Array.isArray(manifest.auditTrail)) manifest.auditTrail = []
+  if (!manifest.flags) manifest.flags = { redFlags: [] }
+  if (!Array.isArray(manifest.flags.redFlags)) manifest.flags.redFlags = []
+  return manifest
+}
+
+/**
  * Full pipeline processing for a single call.
  * Called by the queue worker (process-mojo-queue) after the call has been
  * inserted into mojo_call_queue. All the heavy work — manifest find/create,
@@ -630,7 +643,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
 
     if (phoneManifests && phoneManifests.length > 0) {
       manifestId = phoneManifests[0].id
-      manifest = phoneManifests[0].manifest as ManifestV2
+      manifest = ensureManifestArrays(phoneManifests[0].manifest as ManifestV2)
       leadId = phoneManifests[0].lead_id
     } else {
       const { data: phoneLeads } = await supabase
@@ -650,7 +663,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
 
         if (leadManifests && leadManifests.length > 0) {
           manifestId = leadManifests[0].id
-          manifest = leadManifests[0].manifest as ManifestV2
+          manifest = ensureManifestArrays(leadManifests[0].manifest as ManifestV2)
         }
       }
     }
@@ -857,7 +870,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
 
     if (existingForLead && existingForLead.length > 0) {
       const existing = existingForLead[0]
-      const merged = { ...existing.manifest, ...manifest }
+      const merged = ensureManifestArrays({ ...existing.manifest, ...manifest })
       merged.auditTrail = [
         ...(existing.manifest.auditTrail || []),
         ...(manifest.auditTrail || []).filter((e: any) => e.action !== 'manifest_created'),
