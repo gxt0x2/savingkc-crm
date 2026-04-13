@@ -269,6 +269,12 @@ export interface ManifestCommunications {
   cadenceGapDetected?: boolean
   outreachAttemptsSinceLastResponse?: number
   daysSinceLastSellerResponse?: number
+  thankYouSms?: {
+    sent: boolean
+    sentAt?: string
+    template?: string
+    to?: string
+  }
 }
 
 export interface SellerProfile {

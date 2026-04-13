@@ -8,6 +8,8 @@ import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { isOptedOut } from '@/lib/sms-opt-out'
+import { phoneRateLimit } from '@/middleware/rate-limit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -603,11 +605,48 @@ function ensureManifestArrays(manifest: ManifestV2): ManifestV2 {
   return manifest
 }
 
+// Casey's outreach number (separate from main Twilio line)
+const CASEY_OUTREACH_NUMBER = '+18167277667'
+
+// Thank-you SMS templates. Friendly neighbor tone, from Casey.
+// No en dashes anywhere.
+const THANK_YOU_TEMPLATES = {
+  appointment_set: (firstName: string, _address: string, date?: string) =>
+    `Hey ${firstName}! It's Casey from Saving KC. Really enjoyed chatting with you today. Looking forward to coming by on ${date || 'soon'} to check out the property. If anything comes up before then, just shoot me a text. Talk soon!`,
+  interested: (firstName: string, address: string) =>
+    `Hey ${firstName}, it's Casey with Saving KC! Thanks for talking with me today about ${address}. I think we can definitely help. I'll be in touch soon, but if you think of anything, just text me back here anytime.`,
+  callback: (firstName: string) =>
+    `Hey ${firstName}! It's Casey from Saving KC. I tried giving you a call today. Would love to connect when you get a chance. What time works best for you? Just text me back and I'll call you then.`,
+  voicemail: (firstName: string, address: string) =>
+    `Hey ${firstName}, it's Casey from Saving KC! I just left you a voicemail about your property on ${address}. No rush. Give me a call back whenever works, or just reply to this text. Hope you're having a good day!`,
+} as const
+
+type ThankYouTemplateKey = keyof typeof THANK_YOU_TEMPLATES
+
+function getThankYouTemplateKey(outcome: string): ThankYouTemplateKey | null {
+  switch (outcome) {
+    case 'appointment_set': return 'appointment_set'
+    case 'meaningful_conversation': return 'interested'
+    case 'callback_scheduled': return 'callback'
+    case 'voicemail_left': return 'voicemail'
+    default: return null
+  }
+}
+
+async function sendDelayedThankYouSms(
+  phone: string,
+  body: string,
+  delayMs: number
+): Promise<void> {
+  await new Promise<void>(resolve => setTimeout(resolve, delayMs))
+  await safeSendSMS({ to: phone, from: CASEY_OUTREACH_NUMBER, body })
+}
+
 /**
  * Full pipeline processing for a single call.
  * Called by the queue worker (process-mojo-queue) after the call has been
- * inserted into mojo_call_queue. All the heavy work — manifest find/create,
- * enrichment, AI analysis, scoring, alerts — lives here.
+ * inserted into mojo_call_queue. All the heavy work -- manifest find/create,
+ * enrichment, AI analysis, scoring, alerts -- lives here.
  */
 export async function processQueuedCall(call: MojoCallRecord, queueItemId: string): Promise<{
   leadId: string | null
@@ -1042,7 +1081,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       }
     }
 
-    // J. Alert — only if score >= 75
+    // J. Alert -- only if score >= 75
     if (shouldAlert) {
       await sendAlert(
         call.contact_name,
@@ -1050,6 +1089,62 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         call.disposition,
         manifest.scoring?.opportunity_score
       )
+    }
+
+    // K. Thank-you SMS -- send once per contact, with 60-180s random delay
+    const templateKey = getThankYouTemplateKey(dispositionMap.outcome)
+    const alreadySent = manifest.communications?.thankYouSms?.sent === true
+    const hasPhone = !!(call.phone_number && call.phone_number.trim())
+
+    if (templateKey && !alreadySent && hasPhone) {
+      const normalizedForSms = normalizePhone(call.phone_number)
+      const optedOut = await isOptedOut(normalizedForSms)
+      const { allowed: phoneOk } = phoneRateLimit(normalizedForSms, 1, 24 * 60 * 60 * 1000)
+
+      if (!optedOut && phoneOk) {
+        const { firstName } = parseContactName(call.contact_name)
+        const address = call.property_address || 'your property'
+        const followUpDateStr = call.follow_up_date
+          ? new Date(call.follow_up_date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+          : undefined
+
+        let body: string
+        if (templateKey === 'appointment_set') {
+          body = THANK_YOU_TEMPLATES.appointment_set(firstName, address, followUpDateStr)
+        } else if (templateKey === 'interested') {
+          body = THANK_YOU_TEMPLATES.interested(firstName, address)
+        } else if (templateKey === 'callback') {
+          body = THANK_YOU_TEMPLATES.callback(firstName)
+        } else {
+          body = THANK_YOU_TEMPLATES.voicemail(firstName, address)
+        }
+
+        // Mark on manifest immediately to prevent duplicates from concurrent runs
+        if (!manifest.communications) {
+          manifest.communications = { transcripts: [] }
+        }
+        manifest.communications.thankYouSms = {
+          sent: true,
+          sentAt: new Date().toISOString(),
+          template: templateKey,
+          to: normalizedForSms,
+        }
+
+        // Persist the thankYouSms flag before firing the delayed send
+        await supabase
+          .from('manifests')
+          .update({ manifest })
+          .eq('id', manifestId)
+
+        // Fire with 60-180s random delay (non-blocking -- intentionally not awaited)
+        const delayMs = Math.floor(Math.random() * (180000 - 60000 + 1)) + 60000
+        console.log(`[queue] Scheduling thank-you SMS (${templateKey}) to ${normalizedForSms} in ${Math.round(delayMs / 1000)}s`)
+        sendDelayedThankYouSms(normalizedForSms, body, delayMs).catch(err => {
+          console.error('[queue] Thank-you SMS failed:', err)
+        })
+      } else {
+        console.log(`[queue] Skipping thank-you SMS for ${call.phone_number}: optedOut=${optedOut} phoneOk=${phoneOk}`)
+      }
     }
 
     return { leadId, manifestId, opportunityScore }

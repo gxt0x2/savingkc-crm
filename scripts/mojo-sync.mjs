@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Mojo Sync Script v3
+ * Mojo Sync Script v4
  * Pulls call activity from Mojo's activity-stream API, syncs ONLY meaningful
  * conversations to CRM manifests.
  *
@@ -13,16 +13,46 @@
  * NON-MEANINGFUL (skipped — no lead created):
  *   - No answer, voicemail, hung up, dead lead, not yet interested, trash, busy
  *
+ * Delta state is stored in Supabase system_config (key: last_mojo_sync_timestamp).
  * Runs every 15 minutes (8am-5pm M-F) via cron.
  */
 
 import fs from 'fs'
 import path from 'path'
+import { createClient } from '@supabase/supabase-js'
+
+// --- Load env from .env.local ---
+function loadEnv() {
+  const envPaths = [
+    path.join(path.dirname(new URL(import.meta.url).pathname), '..', '.env.local'),
+    path.join(path.dirname(new URL(import.meta.url).pathname), '..', '.env'),
+  ]
+  for (const envPath of envPaths) {
+    if (!fs.existsSync(envPath)) continue
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n')
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+      const eqIdx = trimmed.indexOf('=')
+      if (eqIdx < 0) continue
+      const key = trimmed.slice(0, eqIdx).trim()
+      const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '')
+      if (!process.env[key]) process.env[key] = val
+    }
+    break
+  }
+}
+loadEnv()
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabase = (SUPABASE_URL && SUPABASE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_KEY)
+  : null
 
 const MOJO_BASE_URL = 'https://app71.mojosells.com'
 const CRM_API_URL = 'https://crm.savingkc.com/api/mojo/sync'
 const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
-const STATE_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-sync-state.json'
 const LOG_DIR = '/Users/ernestdodson/.openclaw/workspace/memory/logs'
 const LOG_FILE = path.join(LOG_DIR, 'mojo-sync.log')
 
@@ -55,19 +85,38 @@ function logError(message, error) {
   fs.appendFileSync(LOG_FILE, logLine)
 }
 
-// --- State management ---
+// --- State management (Supabase system_config) ---
 
-function readState() {
+const SYNC_TIMESTAMP_KEY = 'last_mojo_sync_timestamp'
+
+async function readSyncTimestamp() {
+  if (!supabase) {
+    log('WARN: Supabase not configured, using epoch as last sync timestamp')
+    return null
+  }
   try {
-    if (!fs.existsSync(STATE_FILE)) return { lastActivityId: 0 }
-    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'))
-  } catch {
-    return { lastActivityId: 0 }
+    const { data, error } = await supabase
+      .from('system_config')
+      .select('value')
+      .eq('key', SYNC_TIMESTAMP_KEY)
+      .single()
+    if (error || !data) return null
+    return data.value
+  } catch (err) {
+    logError('Failed to read sync timestamp from Supabase', err)
+    return null
   }
 }
 
-function writeState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
+async function writeSyncTimestamp(isoTimestamp) {
+  if (!supabase) return
+  try {
+    await supabase
+      .from('system_config')
+      .upsert({ key: SYNC_TIMESTAMP_KEY, value: isoTimestamp, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  } catch (err) {
+    logError('Failed to write sync timestamp to Supabase', err)
+  }
 }
 
 // --- Session management ---
@@ -320,12 +369,21 @@ function parseMojoTimestamp(ts) {
  * Process activities into MEANINGFUL call records only.
  * Now fetches contact details (address, phone) from Mojo for each meaningful contact.
  */
-async function buildCallRecords(activities, lastActivityId, sessionId, recordingMap) {
+async function buildCallRecords(activities, lastSyncTimestamp, sessionId, recordingMap) {
+  const cutoff = lastSyncTimestamp ? new Date(lastSyncTimestamp) : null
+
   const newActivities = activities
-    .filter(a => a[0] > lastActivityId)
+    .filter(a => {
+      if (!cutoff) return true
+      try {
+        return new Date(parseMojoTimestamp(a[3])) > cutoff
+      } catch {
+        return true
+      }
+    })
     .sort((a, b) => a[0] - b[0])
 
-  if (newActivities.length === 0) return { calls: [], skippedCount: 0, maxId: lastActivityId }
+  if (newActivities.length === 0) return { calls: [], skippedCount: 0 }
 
   // Group by contact_id
   const contactMap = new Map()
@@ -443,14 +501,13 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     calls.push(call)
   }
 
-  const maxId = Math.max(...newActivities.map(a => a[0]), lastActivityId)
-  return { calls, skippedCount, maxId }
+  return { calls, skippedCount }
 }
 
 // --- Main sync ---
 
 async function sync() {
-  log('Starting Mojo sync (v3 — meaningful only)...')
+  log('Starting Mojo sync (v4 — Supabase delta timestamp)...')
 
   try {
     const session = readSession()
@@ -462,19 +519,23 @@ async function sync() {
     log(`Using session: ${session.sessionId.substring(0, 20)}...`)
     await pushSessionToCRM(session.sessionId)
 
-    const state = readState()
-    log(`Last processed activity ID: ${state.lastActivityId}`)
+    // Read last sync timestamp from Supabase
+    const lastSyncTimestamp = await readSyncTimestamp()
+    log(`Last sync timestamp: ${lastSyncTimestamp || '(none — first run)'}`)
 
     // Fetch activity stream
     log('Fetching activity stream page 1...')
     let activities = await fetchActivityStream(session.sessionId, 1)
     log(`Got ${activities.length} activities from page 1`)
 
-    // Catch-up: if all page 1 activities are new, also fetch page 2
-    if (activities.length > 0 && state.lastActivityId > 0) {
-      const oldestOnPage = Math.min(...activities.map(a => a[0]))
-      if (oldestOnPage > state.lastActivityId) {
-        log('All page 1 activities are new — fetching page 2 for catch-up...')
+    // Catch-up: if last sync was a while ago, also fetch page 2
+    if (activities.length > 0 && lastSyncTimestamp) {
+      const cutoff = new Date(lastSyncTimestamp)
+      const oldestOnPage = activities.reduce((min, a) => {
+        try { return new Date(parseMojoTimestamp(a[3])) < min ? new Date(parseMojoTimestamp(a[3])) : min } catch { return min }
+      }, new Date())
+      if (oldestOnPage > cutoff) {
+        log('All page 1 activities are newer than last sync — fetching page 2 for catch-up...')
         try {
           const page2 = await fetchActivityStream(session.sessionId, 2)
           if (page2.length > 0) {
@@ -491,22 +552,20 @@ async function sync() {
     log('Fetching today\'s call recordings...')
     const recordingMap = await fetchTodayRecordings(session.sessionId)
 
-    // Build MEANINGFUL call records only
-    const { calls, skippedCount, maxId } = await buildCallRecords(activities, state.lastActivityId, session.sessionId, recordingMap)
+    // Build MEANINGFUL call records only (delta-filtered by timestamp)
+    const { calls, skippedCount } = await buildCallRecords(activities, lastSyncTimestamp, session.sessionId, recordingMap)
     log(`Built ${calls.length} meaningful calls, skipped ${skippedCount} non-meaningful`)
 
     if (calls.length === 0) {
-      if (maxId > state.lastActivityId) {
-        writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })
-        log(`Updated state: lastActivityId=${maxId}`)
-      }
-      log('No meaningful calls to sync')
+      log('No new meaningful calls to sync')
+      // Update timestamp even on empty run so next poll has a current cutoff
+      await writeSyncTimestamp(new Date().toISOString())
       return { ok: true, processed: 0 }
     }
 
     // Log what we're syncing
     for (const c of calls) {
-      log(`  → ${c.contact_name} (${c.phone_number || 'no phone'}) — ${c.disposition}`)
+      log(`  -> ${c.contact_name} (${c.phone_number || 'no phone'}) -- ${c.disposition}`)
       if (c.notes) {
         const preview = c.notes.substring(0, 120).replace(/\n/g, ' ')
         log(`    Notes: ${preview}${c.notes.length > 120 ? '...' : ''}`)
@@ -528,11 +587,12 @@ async function sync() {
     }
 
     const crmResult = await crmResponse.json()
-    log(`CRM sync: processed=${crmResult.processed}, created=${crmResult.created}, updated=${crmResult.updated}, skipped=${crmResult.skipped}, alerts=${crmResult.alerts_sent}`)
+    log(`CRM sync: queued=${crmResult.queued}, skipped=${crmResult.skipped}`)
 
-    // Update state
-    writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })
-    log(`Updated state: lastActivityId=${maxId}`)
+    // Update timestamp on success
+    const nowIso = new Date().toISOString()
+    await writeSyncTimestamp(nowIso)
+    log(`Updated last_mojo_sync_timestamp to ${nowIso}`)
 
     return { ok: true, ...crmResult }
   } catch (err) {
