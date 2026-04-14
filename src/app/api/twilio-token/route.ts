@@ -15,8 +15,11 @@ const DEFAULT_CALLER_ID = '+18163077835' // fallback: main Twilio number
 
 async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID!
-  const authToken = process.env.TWILIO_AUTH_TOKEN!
-  const creds = Buffer.from(`${accountSid}:${authToken}`).toString('base64')
+  // Use API Key credentials (more reliable than rotating auth tokens)
+  const apiKey = process.env.TWILIO_API_KEY!
+  const apiSecret = process.env.TWILIO_API_SECRET!
+  const creds = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
+  const voiceUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}/api/twiml-voice`
 
   try {
     const listRes = await fetch(
@@ -27,7 +30,18 @@ async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
     const existing = listData.applications?.find(
       (a: { friendly_name: string; sid: string }) => a.friendly_name === 'SavingKC CRM'
     )
-    if (existing) return existing.sid
+    if (existing) {
+      // Update VoiceUrl in case it's stale (e.g. old tunnel URL)
+      await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Applications/${existing.sid}.json`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ VoiceUrl: voiceUrl, VoiceMethod: 'POST' }).toString(),
+        }
+      )
+      return existing.sid
+    }
 
     const createRes = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Applications.json`,
@@ -39,7 +53,7 @@ async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
         },
         body: new URLSearchParams({
           FriendlyName: 'SavingKC CRM',
-          VoiceUrl: 'https://crm.savingkc.com/api/twiml-voice',
+          VoiceUrl: voiceUrl,
           VoiceMethod: 'POST',
         }).toString(),
       }
@@ -47,7 +61,8 @@ async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
     const data = await createRes.json()
     return data.sid
   } catch {
-    return undefined
+    // Fallback to known SID if API call fails
+    return process.env.TWILIO_TWIML_APP_SID
   }
 }
 

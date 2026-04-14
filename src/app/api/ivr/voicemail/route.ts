@@ -10,7 +10,7 @@ const COLD_CALL_NUMBERS = new Set([
 // Standard greetings (company name included)
 const GREETING_AUDIO: Record<string, string> = {
   Ernest: `${BASE_URL}/audio/ernest-vm.mp3`,
-  Casey: `${BASE_URL}/audio/casey-vm.mp3`,
+  Casey: `${BASE_URL}/audio/casey-vm-v2.mp3`,
 }
 const GREETINGS: Record<string, string> = {
   Casey: `You've reached Casey with Saving KC Homebuyers. I'm unable to take your call right now. Please leave a message after the beep and I'll get back to you as soon as possible.`,
