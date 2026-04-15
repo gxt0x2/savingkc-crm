@@ -44,22 +44,30 @@ export async function GET(request: NextRequest) {
     const isStale = manifest.ariIntelligence?.briefingStale === true
 
     if (cached && !isStale) {
-      // Sanitize: if situation field contains raw JSON, parse it
+      // Sanitize cached briefing: handle nested JSON and label prefixes
       let { situation, motivation, strategy } = cached
-      if (typeof situation === 'string' && situation.trimStart().startsWith('{')) {
-        try {
-          const inner = JSON.parse(situation)
-          if (inner.situation) {
-            situation = inner.situation
-            motivation = inner.motivation || motivation
-            strategy = inner.strategy || strategy
-          }
-        } catch { /* use as-is */ }
+
+      const sanitizeCachedField = (val: string | undefined, fieldName: string): string => {
+        if (!val) return ''
+        let s = String(val).trim()
+        // Unwrap nested JSON
+        if (s.startsWith('{')) {
+          try {
+            const inner = JSON.parse(s)
+            if (inner[fieldName] && typeof inner[fieldName] === 'string') {
+              s = inner[fieldName]
+            }
+          } catch { /* use as-is */ }
+        }
+        // Strip leading label prefix (e.g., "Situation: ...")
+        s = s.replace(new RegExp(`^${fieldName}\\s*[:\\-–—]\\s*`, 'i'), '')
+        return s
       }
+
       return NextResponse.json({
-        situation,
-        motivation,
-        strategy,
+        situation: sanitizeCachedField(situation, 'situation'),
+        motivation: sanitizeCachedField(motivation, 'motivation'),
+        strategy: sanitizeCachedField(strategy, 'strategy'),
         cached: true,
         generatedAt: cached.generatedAt,
       })
@@ -201,6 +209,7 @@ async function generateBriefing(
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 1200,
       temperature: 0.7,
+      response_format: { type: 'json_object' },
     }),
   })
 
@@ -267,7 +276,7 @@ async function generateBriefing(
     }
   }
 
-  // Final sanitization: ensure no nested JSON in fields
+  // Final sanitization: ensure no nested JSON or label prefixes in fields
   const cleanField = (value: string, fieldName: string): string => {
     let cleaned = String(value || '').trim()
 
@@ -280,13 +289,11 @@ async function generateBriefing(
         }
       } catch {
         // Not valid JSON (often truncated), extract via flexible regex
-        // Matches: {"fieldName": "content... or {\n  "fieldName": "content...
         const pattern = new RegExp(`\\{[\\s\\n]*"${fieldName}"[\\s\\n]*:[\\s\\n]*"([^"]*(?:"[^}]*)?)"?[\\s\\n]*\\}?`, 's')
         const match = cleaned.match(pattern)
         if (match && match[1]) {
           cleaned = match[1]
         } else {
-          // Last resort: strip everything before the first quote after fieldName
           const simplePattern = new RegExp(`"${fieldName}"[\\s\\n]*:[\\s\\n]*"([\\s\\S]+)`)
           const simpleMatch = cleaned.match(simplePattern)
           if (simpleMatch && simpleMatch[1]) {
@@ -296,13 +303,42 @@ async function generateBriefing(
       }
     }
 
+    // Strip leading label prefixes (e.g., "Situation: The homeowner..." → "The homeowner...")
+    const labelPattern = new RegExp(`^${fieldName}\\s*[:\\-–—]\\s*`, 'i')
+    cleaned = cleaned.replace(labelPattern, '')
+
     return cleaned
   }
 
+  // If Groq dumped everything into situation and left motivation/strategy empty,
+  // try to split it out by looking for labeled sections
+  const splitBriefingFields = (b: BriefingResult): BriefingResult => {
+    const sit = b.situation || ''
+    const hasEmptyMotivation = !b.motivation?.trim() || b.motivation === 'Contact needed to gauge motivation level'
+    const hasEmptyStrategy = !b.strategy?.trim() || b.strategy === 'Schedule call to assess opportunity and build rapport'
+
+    if (hasEmptyMotivation || hasEmptyStrategy) {
+      // Try to find labeled sections within the situation text
+      const motMatch = sit.match(/(?:motivation|urgency)\s*[:\-–—]\s*([\s\S]*?)(?=(?:strategy|approach|recommendation)\s*[:\-–—]|$)/i)
+      const stratMatch = sit.match(/(?:strategy|approach|recommendation)\s*[:\-–—]\s*([\s\S]*?)$/i)
+      const sitMatch = sit.match(/^([\s\S]*?)(?=(?:motivation|urgency)\s*[:\-–—])/i)
+
+      if (motMatch || stratMatch) {
+        return {
+          situation: (sitMatch ? sitMatch[1] : sit).trim(),
+          motivation: (motMatch ? motMatch[1] : b.motivation || '').trim(),
+          strategy: (stratMatch ? stratMatch[1] : b.strategy || '').trim(),
+        }
+      }
+    }
+    return b
+  }
+
+  const splitBriefing = splitBriefingFields(briefing)
   const sanitizedBriefing = {
-    situation: cleanField(briefing.situation, 'situation'),
-    motivation: cleanField(briefing.motivation, 'motivation'),
-    strategy: cleanField(briefing.strategy, 'strategy'),
+    situation: cleanField(splitBriefing.situation, 'situation'),
+    motivation: cleanField(splitBriefing.motivation, 'motivation'),
+    strategy: cleanField(splitBriefing.strategy, 'strategy'),
   }
 
   // Save briefing to manifest

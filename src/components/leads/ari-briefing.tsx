@@ -47,7 +47,7 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
     let { situation, motivation, strategy } = data
 
     // Helper to clean a field value
-    const cleanField = (value: any): string => {
+    const cleanField = (value: any, fieldName: string): string => {
       if (!value) return ''
       let str = String(value).trim()
 
@@ -60,18 +60,25 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
           if (keys.length === 1 && typeof parsed[keys[0]] === 'string') {
             return parsed[keys[0]]
           }
+          // If it has the field name as a key, extract it
+          if (parsed[fieldName] && typeof parsed[fieldName] === 'string') {
+            return parsed[fieldName]
+          }
         } catch { /* not valid JSON, use as-is */ }
       }
 
       // Remove common JSON artifacts that slip through
       str = str.replace(/^\{"[^"]+"\s*:\s*"/, '').replace(/"\}$/, '')
 
+      // Strip leading label prefix (e.g., "Situation: The homeowner..." → "The homeowner...")
+      str = str.replace(new RegExp(`^${fieldName}\\s*[:\\-–—]\\s*`, 'i'), '')
+
       return str
     }
 
-    situation = cleanField(situation)
-    motivation = cleanField(motivation)
-    strategy = cleanField(strategy)
+    situation = cleanField(situation, 'situation')
+    motivation = cleanField(motivation, 'motivation')
+    strategy = cleanField(strategy, 'strategy')
 
     if (!situation && !motivation && !strategy) return null
     return { situation, motivation, strategy }
