@@ -1,7 +1,7 @@
 // County Property Enrichment Service
 // Queries county assessor systems for property data
 
-import { chromium, Browser, Page } from 'playwright'
+import type { Browser } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseCache = createClient(
@@ -43,15 +43,42 @@ export interface EnrichmentResult {
   rawData?: any
 }
 
+/**
+ * Convert HTML to plain text approximating browser innerText.
+ * Used by fetch-based scrapers that can't run JavaScript.
+ */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|tr|li|h[1-6]|td|th|section|header|footer)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 export class CountyEnrichmentService {
   private browser: Browser | null = null
   private readonly timeout = 30000
 
   async init() {
-    this.browser = await chromium.launch({
-      headless: true,
-      timeout: this.timeout,
-    })
+    try {
+      const { chromium } = await import('playwright')
+      this.browser = await chromium.launch({ headless: true, timeout: this.timeout })
+    } catch {
+      // Playwright not available (e.g. Vercel serverless) — browser-based counties will fail gracefully
+      this.browser = null
+    }
   }
 
   async close() {
@@ -356,184 +383,183 @@ export class CountyEnrichmentService {
   }
 
   /**
-   * Jackson County, MO — Playwright-based iasWorld scraper
-   * Uses publicaccess.jacksongov.org with disclaimer acceptance
-   * Searches by PARID (preferred) or address, then scrapes profile/values/residential tabs
+   * Jackson County, MO — fetch-based iasWorld scraper (no Playwright)
+   * Maintains ASP.NET session cookies through: disclaimer → search → datalet tabs
    */
   private async enrichJacksonCountyMO(
     input: EnrichmentInput
   ): Promise<EnrichmentResult> {
-    try {
-      if (!this.browser) throw new Error('Browser not initialized')
-      const page = await this.browser.newPage()
-      await page.setExtraHTTPHeaders({
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+    const BASE = 'https://publicaccess.jacksongov.org'
+    const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    const cookies: Record<string, string> = {}
+
+    // Merge Set-Cookie headers into the cookie jar
+    const mergeCookies = (res: Response) => {
+      const setCookies: string[] = typeof (res.headers as any).getSetCookie === 'function'
+        ? (res.headers as any).getSetCookie()
+        : res.headers.get('set-cookie') ? [res.headers.get('set-cookie')!] : []
+      for (const c of setCookies) {
+        const [kv] = c.split(';')
+        const eq = kv.indexOf('=')
+        if (eq > 0) cookies[kv.slice(0, eq).trim()] = kv.slice(eq + 1).trim()
+      }
+    }
+
+    const cookieHeader = () => Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ')
+
+    const get = (url: string, referer?: string) =>
+      fetch(url, {
+        headers: { 'User-Agent': UA, Cookie: cookieHeader(), ...(referer ? { Referer: referer } : {}) },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(25000),
       })
 
-      try {
-        // Step 1: Accept disclaimer (sets ASP.NET_SessionId + DISCLAIMER=1 cookies)
-        await page.goto(
-          'https://publicaccess.jacksongov.org/Search/Disclaimer.aspx?FromUrl=../search/commonsearch.aspx?mode=realprop',
-          { waitUntil: 'domcontentloaded', timeout: this.timeout }
-        )
-        await page.waitForTimeout(500)
+    const post = (url: string, body: URLSearchParams, referer: string) =>
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'User-Agent': UA,
+          Cookie: cookieHeader(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Referer: referer,
+        },
+        body: body.toString(),
+        redirect: 'follow',
+        signal: AbortSignal.timeout(25000),
+      })
 
-        // POST disclaimer acceptance
-        const agreeBtn = page.locator('#btAgree, input[id*="Agree"]').first()
-        if (await agreeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await agreeBtn.click()
-          await page.waitForTimeout(1000)
+    const extractViewState = (html: string): Record<string, string> => {
+      const fields: Record<string, string> = {}
+      for (const f of ['__VIEWSTATE', '__VIEWSTATEGENERATOR', '__EVENTVALIDATION']) {
+        const m = html.match(new RegExp(`name="${f}"[^>]*value="([^"]*)"`, 'i'))
+          ?? html.match(new RegExp(`id="${f}"[^>]*value="([^"]*)"`, 'i'))
+        if (m) fields[f] = m[1]
+      }
+      return fields
+    }
+
+    try {
+      // Step 1: GET disclaimer page — establishes ASP.NET_SessionId
+      const disclaimerUrl = `${BASE}/Search/Disclaimer.aspx?FromUrl=../search/commonsearch.aspx?mode=realprop`
+      const r1 = await get(disclaimerUrl)
+      mergeCookies(r1)
+      const html1 = await r1.text()
+      const vs1 = extractViewState(html1)
+
+      // Step 2: POST disclaimer acceptance — sets DISCLAIMER cookie
+      const r2 = await post(
+        disclaimerUrl,
+        new URLSearchParams({ ...vs1, '__EVENTTARGET': '', '__EVENTARGUMENT': '', 'btAgree': 'I Agree' }),
+        disclaimerUrl
+      )
+      mergeCookies(r2)
+      await r2.text() // consume body
+
+      // Step 3: GET real property search page — extract ViewState for search form
+      const searchUrl = `${BASE}/search/commonsearch.aspx?mode=realprop`
+      const r3 = await get(searchUrl, BASE)
+      mergeCookies(r3)
+      const html3 = await r3.text()
+      const vs3 = extractViewState(html3)
+
+      // Step 4: POST address search
+      const { houseNumber, streetName, suffix } = this.parseJacksonAddress(input.address)
+      const r4 = await post(
+        searchUrl,
+        new URLSearchParams({
+          ...vs3,
+          '__EVENTTARGET': '', '__EVENTARGUMENT': '',
+          'inpNo': houseNumber,
+          'inpStreet': streetName.toUpperCase(),
+          'inpSuf': suffix,
+          'inpDirPrefix': '',
+          'inpDirSuffix': '',
+          'btSearch': 'Search',
+        }),
+        searchUrl
+      )
+      mergeCookies(r4)
+      let html4 = await r4.text()
+
+      if (html4.includes('did not find any records') || html4.includes('No records found')) {
+        return { success: false, county: 'Jackson', error: 'Address not found in Jackson County records' }
+      }
+
+      // Step 5: If on a results list (not auto-redirected to a datalet), follow first datalet link
+      const onDatalet = r4.url.includes('/Datalets/') || r4.url.includes('/datalets/')
+      if (!onDatalet) {
+        // iasWorld renders datalet links as href="../Datalets/Datalet.aspx?..."
+        const hrefMatch = html4.match(/href="([^"]*[Dd]atalet\.aspx[^"]*)"/)
+        if (!hrefMatch) {
+          return { success: false, county: 'Jackson', error: 'No property record found in search results' }
         }
+        const href = hrefMatch[1].replace(/&amp;/g, '&')
+        const destUrl = href.startsWith('http') ? href : `${BASE}/${href.replace(/^\.\.\//, '').replace(/^\//, '')}`
+        const r5 = await get(destUrl, r4.url)
+        mergeCookies(r5)
+        html4 = await r5.text() // profile data is on this datalet landing page
+      }
 
-        // Step 2: Navigate to real property search
-        await page.goto(
-          'https://publicaccess.jacksongov.org/search/commonsearch.aspx?mode=realprop',
-          { waitUntil: 'domcontentloaded', timeout: this.timeout }
-        )
-        await page.waitForTimeout(500)
+      // Profile text from the current datalet page (equivalent to .WidgetBar innerText)
+      const profileText = htmlToText(html4)
 
-        // Step 3: Try PARID search first if available
-        const paridInput = (input as any).parcelId
-        if (paridInput) {
-          const paridField = page.locator('#inpParid')
-          if (await paridField.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await paridField.fill(paridInput)
-            await page.locator('#btSearch').click()
-            await page.waitForTimeout(2000)
-          }
-        } else {
-          // Step 4: Address search — parse house number, street name, suffix
-          const addressParts = this.parseJacksonAddress(input.address)
+      // Step 6: Values tab — session holds the current parcel via sIndex/idx
+      const rValues = await get(
+        `${BASE}/datalets/datalet.aspx?mode=valuesall&sIndex=0&idx=1&LMparent=20`,
+        r4.url
+      )
+      const valuesText = htmlToText(await rValues.text())
 
-          if (addressParts.houseNumber) {
-            await page.locator('#inpNo').fill(addressParts.houseNumber)
-          }
-          if (addressParts.streetName) {
-            await page.locator('#inpStreet').fill(addressParts.streetName)
-          }
-          if (addressParts.suffix) {
-            // Select suffix from dropdown
-            await page.locator('#inpSuf').selectOption({ value: addressParts.suffix })
-          }
+      // Step 7: Residential tab
+      const rResidential = await get(
+        `${BASE}/datalets/datalet.aspx?mode=residential&sIndex=0&idx=1&LMparent=20`,
+        `${BASE}/datalets/datalet.aspx?mode=valuesall&sIndex=0&idx=1&LMparent=20`
+      )
+      const residentialText = htmlToText(await rResidential.text())
 
-          await page.locator('#btSearch').click()
-          await page.waitForTimeout(2000)
-        }
+      // Step 8: Parse all tabs
+      const parsed = this.parseJacksonCountyData(profileText, valuesText, residentialText)
 
-        // Step 5: Wait for either .WidgetBar (results) or a "no records" indicator
-        // The search may redirect to datalet (1 result), show results list, or show "no records"
-        try {
-          await Promise.race([
-            page.waitForSelector('.WidgetBar', { timeout: 15000 }),
-            page.waitForSelector('.SearchResults', { timeout: 15000 }),
-            page.locator('text=did not find any records').waitFor({ timeout: 15000 }),
-            page.locator('text=No records found').waitFor({ timeout: 15000 }),
-          ])
-        } catch {
-          // None of the expected elements appeared — check page content
-          const bodyText = await page.evaluate(() => document.body.innerText)
-          if (bodyText.includes('did not find') || bodyText.includes('No records')) {
-            return { success: false, county: 'Jackson', error: 'Address not found in Jackson County records' }
-          }
-          // Try waiting a bit longer for slow loads
-          await page.waitForSelector('.WidgetBar', { timeout: 10000 })
-        }
+      // Step 9: Tax collection data (best-effort, non-blocking)
+      let taxData: any = {}
+      if (parsed.paridFormatted) {
+        taxData = await this.enrichJacksonCountyTaxCollection(parsed.paridFormatted)
+      }
 
-        // Check for "no records found" message
-        const noRecordsMsg = await page.evaluate(() => {
-          const text = document.body.innerText
-          return text.includes('did not find any records') || text.includes('No records found')
-        })
-        if (noRecordsMsg) {
-          return { success: false, county: 'Jackson', error: 'Address not found in Jackson County records' }
-        }
+      const outOfState = parsed.mailingState && parsed.mailingState !== 'MO'
 
-        // If we're on a search results list (multiple results), click the first result
-        const isOnDatalet = page.url().includes('/Datalets/') || page.url().includes('/datalets/')
-        if (!isOnDatalet) {
-          const firstResultLink = page.locator('a[href*="Datalet"], a[href*="datalet"]').first()
-          if (await firstResultLink.isVisible({ timeout: 3000 }).catch(() => false)) {
-            await firstResultLink.click()
-            await page.waitForTimeout(2000)
-            await page.waitForSelector('.WidgetBar', { timeout: 10000 })
-          }
-        }
-
-        // Extract inline profile data from initial search results
-        const profileText = await page.evaluate(() => {
-          const widget = document.querySelector('.WidgetBar') as HTMLElement | null
-          return widget?.innerText || ''
-        })
-
-        // Step 6: Navigate to values tab
-        await page.goto(
-          'https://publicaccess.jacksongov.org/datalets/datalet.aspx?mode=valuesall&sIndex=0&idx=1&LMparent=20',
-          { waitUntil: 'domcontentloaded', timeout: this.timeout }
-        )
-        await page.waitForSelector('.WidgetBar', { timeout: 15000 })
-        const valuesText = await page.evaluate(() => {
-          const widget = document.querySelector('.WidgetBar') as HTMLElement | null
-          return widget?.innerText || ''
-        })
-
-        // Step 7: Navigate to residential tab
-        await page.goto(
-          'https://publicaccess.jacksongov.org/datalets/datalet.aspx?mode=residential&sIndex=0&idx=1&LMparent=20',
-          { waitUntil: 'domcontentloaded', timeout: this.timeout }
-        )
-        await page.waitForSelector('.WidgetBar', { timeout: 15000 })
-        const residentialText = await page.evaluate(() => {
-          const widget = document.querySelector('.WidgetBar') as HTMLElement | null
-          return widget?.innerText || ''
-        })
-
-        // Step 8: Parse all data
-        const parsed = this.parseJacksonCountyData(profileText, valuesText, residentialText)
-
-        // Step 9: Fetch tax collection data (delinquency, bankruptcy, payment history)
-        let taxData: any = {}
-        if (parsed.paridFormatted) {
-          taxData = await this.enrichJacksonCountyTaxCollection(parsed.paridFormatted)
-        }
-
-        // Step 10: Check out-of-state ownership
-        const outOfState = parsed.mailingState && parsed.mailingState !== 'MO'
-
-        return {
-          success: true,
-          county: 'Jackson',
-          parcelId: parsed.paridFormatted || undefined,
-          ownerName: parsed.ownerName || undefined,
-          mailingAddress: parsed.mailingAddress || undefined,
-          appraisedValue: parsed.appraisedValue || undefined,
-          assessedValue: parsed.assessedValue || undefined,
-          landValue: parsed.landValue || undefined,
-          improvementValue: parsed.improvementValue || undefined,
-          taxOwed: taxData.taxOwed || undefined,
-          taxStatus: taxData.taxStatus || undefined,
-          yearBuilt: parsed.yearBuilt || undefined,
-          sqft: parsed.sqft || undefined,
-          bedrooms: parsed.bedrooms || undefined,
-          bathrooms: parsed.bathrooms || undefined,
-          propertyType: parsed.propertyType || undefined,
-          source: 'jackson_county_assessor',
-          fetchedAt: new Date().toISOString(),
-          rawData: {
-            ...parsed,
-            outOfState,
-            yearsDelinquent: taxData.yearsDelinquent,
-            lastPaymentDate: taxData.lastPaymentDate,
-            lastPaymentAmount: taxData.lastPaymentAmount,
-            delinquentBills: taxData.delinquentBills,
-            isBankruptcy: taxData.isBankruptcy,
-            taxCollectionError: taxData.error,
-            profileText: profileText.substring(0, 500),
-            valuesText: valuesText.substring(0, 500),
-            residentialText: residentialText.substring(0, 500),
-          },
-        }
-      } finally {
-        await page.close()
+      return {
+        success: true,
+        county: 'Jackson',
+        parcelId: parsed.paridFormatted || undefined,
+        ownerName: parsed.ownerName || undefined,
+        mailingAddress: parsed.mailingAddress || undefined,
+        appraisedValue: parsed.appraisedValue || undefined,
+        assessedValue: parsed.assessedValue || undefined,
+        landValue: parsed.landValue || undefined,
+        improvementValue: parsed.improvementValue || undefined,
+        taxOwed: taxData.taxOwed || undefined,
+        taxStatus: taxData.taxStatus || undefined,
+        yearBuilt: parsed.yearBuilt || undefined,
+        sqft: parsed.sqft || undefined,
+        bedrooms: parsed.bedrooms || undefined,
+        bathrooms: parsed.bathrooms || undefined,
+        propertyType: parsed.propertyType || undefined,
+        source: 'jackson_county_assessor',
+        fetchedAt: new Date().toISOString(),
+        rawData: {
+          ...parsed,
+          outOfState,
+          yearsDelinquent: taxData.yearsDelinquent,
+          lastPaymentDate: taxData.lastPaymentDate,
+          lastPaymentAmount: taxData.lastPaymentAmount,
+          delinquentBills: taxData.delinquentBills,
+          isBankruptcy: taxData.isBankruptcy,
+          taxCollectionError: taxData.error,
+          profileText: profileText.substring(0, 500),
+          valuesText: valuesText.substring(0, 500),
+          residentialText: residentialText.substring(0, 500),
+        },
       }
     } catch (err: any) {
       return { success: false, county: 'Jackson', error: err.message }
@@ -723,7 +749,8 @@ export class CountyEnrichmentService {
 
   /**
    * Jackson County, MO — Tax Collection Portal
-   * Scrapes mo-jackson.publicaccessnow.com for tax delinquency data
+   * mo-jackson.publicaccessnow.com is an Angular SPA; we try ScraperAPI (render=true)
+   * if SCRAPER_API_KEY is set, otherwise return unknown gracefully.
    */
   private async enrichJacksonCountyTaxCollection(
     parid: string
@@ -746,164 +773,84 @@ export class CountyEnrichmentService {
     isBankruptcy?: boolean
     error?: string
   }> {
-    try {
-      if (!this.browser) throw new Error('Browser not initialized')
-      const page = await this.browser.newPage()
+    const parseTaxText = (text: string) => {
+      const totalDueMatch = text.match(/Total Due:\s*\$?([\d,]+\.?\d*)/)
+      const taxOwed = totalDueMatch ? parseFloat(totalDueMatch[1].replace(/,/g, '')) : 0
+      const isBankruptcy = text.includes('Bankruptcy')
+      const taxStatus = taxOwed > 0 ? (isBankruptcy ? 'bankruptcy' : 'delinquent') : 'current'
 
-      try {
-        // Step 1: Load tax search page to establish session
-        await page.goto('https://mo-jackson.publicaccessnow.com/Collector/TaxSearch.aspx', {
-          waitUntil: 'domcontentloaded',
-          timeout: this.timeout,
-        })
-        await page.waitForTimeout(1000)
+      const yearMatches = [...text.matchAll(/^(\d{4})\s*$/gm)]
+      const uniqueYears = new Set(
+        yearMatches.map(m => parseInt(m[1])).filter(y => y >= 2000 && y <= new Date().getFullYear())
+      )
+      const yearsDelinquent = uniqueYears.size
 
-        // Step 2: Wait for Angular to mount
-        await page.waitForSelector('input[placeholder="Search..."]', { timeout: 10000 })
-
-        // Step 3: Fill search input with PARID and press Enter
-        const searchInput = page.locator('input[placeholder="Search..."]')
-        await searchInput.fill(parid)
-        await searchInput.press('Enter')
-
-        // Step 4: Wait for results to load or redirect to Account.aspx
-        // The site auto-redirects if there's only 1 result
-        await Promise.race([
-          page.waitForURL('**/Account.aspx**', { timeout: 10000 }),
-          page.waitForSelector('text=View Account', { timeout: 10000 }),
-        ]).catch(() => {})
-
-        // Step 5: If on search results, click "View Account" for the matching parcel
-        const currentUrl = page.url()
-        if (!currentUrl.includes('Account.aspx')) {
-          // Look for "View Account" link
-          const viewAccountBtn = page.locator('text=View Account').first()
-          if (await viewAccountBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await viewAccountBtn.click()
-            await page.waitForURL('**/Account.aspx**', { timeout: 8000 })
-          } else {
-            return {
-              taxStatus: 'unknown',
-              error: 'Could not find property in tax collection portal',
-            }
-          }
-        }
-
-        // Step 6: Wait for Angular to render the account detail
-        // Look for "Total Due" or "Tax Bills Due" text
-        await page.waitForFunction(
-          () => document.body.innerText.includes('Total Due') || document.body.innerText.includes('Tax Bills'),
-          { timeout: 10000 }
-        ).catch(() => {})
-
-        // Extra wait for Angular to finish rendering
-        await page.waitForTimeout(2000)
-
-        // Step 7: Extract all text from the page
-        const text = await page.evaluate(() => document.body.innerText)
-
-        // Step 8: Parse data using regex
-
-        // Total due
-        const totalDueMatch = text.match(/Total Due:\s*\$?([\d,]+\.?\d*)/)
-        const taxOwed = totalDueMatch ? parseFloat(totalDueMatch[1].replace(/,/g, '')) : 0
-
-        // Tax status
-        const isBankruptcy = text.includes('Bankruptcy')
-        const hasPastDue = text.includes('Past Due')
-        const taxStatus = taxOwed > 0
-          ? (isBankruptcy ? 'bankruptcy' : 'delinquent')
-          : 'current'
-
-        // Years delinquent (count unique years that show up in bills section)
-        const yearMatches = [...text.matchAll(/^(\d{4})\s*$/gm)]
-        const uniqueYears = new Set(
-          yearMatches
-            .map(m => parseInt(m[1]))
-            .filter(y => y >= 2000 && y <= new Date().getFullYear())
+      const delinquentBills: Array<{
+        taxYear: number; billNumber: string; totalCharges: number; totalPaid: number
+        principal: number; penalty: number; interest: number; status: string
+      }> = []
+      for (const section of text.split(/\n(?=\d{4}\s*\n)/)) {
+        const yearMatch = section.match(/^(\d{4})\s*\n/)
+        if (!yearMatch) continue
+        const taxYear = parseInt(yearMatch[1])
+        if (taxYear < 2000 || taxYear > new Date().getFullYear()) continue
+        const amounts = [...section.matchAll(/\$?([\d,]+\.\d{2})/g)].map(m =>
+          parseFloat(m[1].replace(/,/g, ''))
         )
-        const yearsDelinquent = uniqueYears.size
-
-        // Parse bills - look for bill blocks
-        // Pattern: year on its own line, followed by bill data
-        const delinquentBills: Array<{
-          taxYear: number
-          billNumber: string
-          totalCharges: number
-          totalPaid: number
-          principal: number
-          penalty: number
-          interest: number
-          status: string
-        }> = []
-
-        // Simple approach: look for dollar amounts and years
-        const billSections = text.split(/\n(?=\d{4}\s*\n)/)
-        for (const section of billSections) {
-          const yearMatch = section.match(/^(\d{4})\s*\n/)
-          if (!yearMatch) continue
-
-          const taxYear = parseInt(yearMatch[1])
-          if (taxYear < 2000 || taxYear > new Date().getFullYear()) continue
-
-          // Extract amounts - look for patterns like "$17,700.00"
-          const amounts = [...section.matchAll(/\$?([\d,]+\.\d{2})/g)].map(m =>
-            parseFloat(m[1].replace(/,/g, ''))
-          )
-
-          // Determine status
-          const status = section.includes('Past Due')
-            ? 'Past Due'
-            : (section.includes('Current') ? 'Current' : 'Unknown')
-
-          if (amounts.length >= 4) {
-            delinquentBills.push({
-              taxYear,
-              billNumber: '1', // Default to 1 (real estate)
-              totalCharges: amounts[0] || 0,
-              totalPaid: amounts[amounts.length - 1] || 0,
-              principal: amounts[0] || 0,
-              penalty: amounts[1] || 0,
-              interest: amounts[2] || 0,
-              status,
-            })
-          }
+        const status = section.includes('Past Due') ? 'Past Due' : section.includes('Current') ? 'Current' : 'Unknown'
+        if (amounts.length >= 4) {
+          delinquentBills.push({
+            taxYear, billNumber: '1',
+            totalCharges: amounts[0] || 0, totalPaid: amounts[amounts.length - 1] || 0,
+            principal: amounts[0] || 0, penalty: amounts[1] || 0, interest: amounts[2] || 0, status,
+          })
         }
-
-        // Last payment (most recent date in payment history section)
-        const paymentMatches = [...text.matchAll(/(\d{1,2}\/\d{1,2}\/\d{4})[^\$]*\$?([\d,]+\.\d{2})/g)]
-        let lastPaymentDate: string | undefined
-        let lastPaymentAmount: number | undefined
-
-        if (paymentMatches.length > 0) {
-          // Sort by date descending
-          const payments = paymentMatches.map(m => ({
-            date: m[1],
-            amount: parseFloat(m[2].replace(/,/g, '')),
-          }))
-          // Take the most recent (assuming they're in chronological order in the page)
-          const last = payments[payments.length - 1]
-          lastPaymentDate = last.date
-          lastPaymentAmount = last.amount
-        }
-
-        return {
-          taxOwed: taxOwed > 0 ? taxOwed : undefined,
-          taxStatus,
-          yearsDelinquent: yearsDelinquent > 0 ? yearsDelinquent : undefined,
-          lastPaymentDate,
-          lastPaymentAmount,
-          delinquentBills: delinquentBills.length > 0 ? delinquentBills : undefined,
-          isBankruptcy: isBankruptcy || undefined,
-        }
-      } finally {
-        await page.close()
       }
-    } catch (err: any) {
+
+      const paymentMatches = [...text.matchAll(/(\d{1,2}\/\d{1,2}\/\d{4})[^$]*\$?([\d,]+\.\d{2})/g)]
+      let lastPaymentDate: string | undefined
+      let lastPaymentAmount: number | undefined
+      if (paymentMatches.length > 0) {
+        const last = paymentMatches[paymentMatches.length - 1]
+        lastPaymentDate = last[1]
+        lastPaymentAmount = parseFloat(last[2].replace(/,/g, ''))
+      }
+
       return {
-        taxStatus: 'unknown',
-        error: err.message || 'Tax collection scrape failed',
+        taxOwed: taxOwed > 0 ? taxOwed : undefined,
+        taxStatus,
+        yearsDelinquent: yearsDelinquent > 0 ? yearsDelinquent : undefined,
+        lastPaymentDate,
+        lastPaymentAmount,
+        delinquentBills: delinquentBills.length > 0 ? delinquentBills : undefined,
+        isBankruptcy: isBankruptcy || undefined,
       }
+    }
+
+    const scraperApiKey = process.env.SCRAPER_API_KEY
+    if (!scraperApiKey) {
+      return { taxStatus: 'unknown', error: 'Tax portal is a JS SPA — set SCRAPER_API_KEY to enable' }
+    }
+
+    try {
+      // publicaccessnow.com Angular app — use ScraperAPI with JS rendering
+      // The app auto-redirects to Account.aspx when a single parcel matches; try direct deep-link first
+      const accountUrl = `https://mo-jackson.publicaccessnow.com/Collector/TaxSearch.aspx`
+      const scraperUrl = `https://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(accountUrl)}&render=true&country_code=us&wait=4000`
+
+      const res = await fetch(scraperUrl, { signal: AbortSignal.timeout(90000) })
+      if (!res.ok) throw new Error(`ScraperAPI returned ${res.status}`)
+
+      const html = await res.text()
+      const text = htmlToText(html)
+
+      if (!text.includes('Total Due') && !text.includes('Tax Bills')) {
+        return { taxStatus: 'unknown', error: 'Tax portal did not return account data' }
+      }
+
+      return parseTaxText(text)
+    } catch (err: any) {
+      return { taxStatus: 'unknown', error: err.message || 'Tax collection lookup failed' }
     }
   }
 
