@@ -279,11 +279,19 @@ async function generateBriefing(
           cleaned = parsed[fieldName]
         }
       } catch {
-        // Not valid JSON, strip common artifacts manually
-        const pattern = new RegExp(`^\\{"${fieldName}"\\s*:\\s*"(.*)"}$`, 's')
+        // Not valid JSON (often truncated), extract via flexible regex
+        // Matches: {"fieldName": "content... or {\n  "fieldName": "content...
+        const pattern = new RegExp(`\\{[\\s\\n]*"${fieldName}"[\\s\\n]*:[\\s\\n]*"([^"]*(?:"[^}]*)?)"?[\\s\\n]*\\}?`, 's')
         const match = cleaned.match(pattern)
-        if (match) {
+        if (match && match[1]) {
           cleaned = match[1]
+        } else {
+          // Last resort: strip everything before the first quote after fieldName
+          const simplePattern = new RegExp(`"${fieldName}"[\\s\\n]*:[\\s\\n]*"([\\s\\S]+)`)
+          const simpleMatch = cleaned.match(simplePattern)
+          if (simpleMatch && simpleMatch[1]) {
+            cleaned = simpleMatch[1].replace(/"[\\s\\n]*\}?$/, '').trim()
+          }
         }
       }
     }
