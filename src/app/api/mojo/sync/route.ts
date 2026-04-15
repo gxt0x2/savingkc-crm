@@ -980,10 +980,18 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
     const shouldAlert = opportunityScore >= 75
     manifest.priority = opportunityScore >= 75 ? 'hot' : opportunityScore >= 40 ? 'warm' : 'cold'
 
-    console.log(`[queue] SCORING: score=${opportunityScore} class=${manifest.scoring.classification} shouldEnrich=${shouldEnrich} shouldAlert=${shouldAlert} by=${manifest.scoring.scored_by}`)
+    // Auto-enrich dispositions (override worth_enriching flag)
+    const AUTO_ENRICH_DISPOSITIONS = [
+      'interested', 'motivated', 'callback requested', 'callback',
+      'appointment set', 'appointment', 'voicemail left', 'voicemail'
+    ]
+    const dispositionLower = call.disposition.toLowerCase()
+    const forceEnrichByDisposition = AUTO_ENRICH_DISPOSITIONS.some(d => dispositionLower.includes(d))
 
-    // G. Enrichment — only if score >= 60
-    if (shouldEnrich && call.property_address && call.state) {
+    console.log(`[queue] SCORING: score=${opportunityScore} class=${manifest.scoring.classification} shouldEnrich=${shouldEnrich} forceByDisposition=${forceEnrichByDisposition} shouldAlert=${shouldAlert} by=${manifest.scoring.scored_by}`)
+
+    // G. Enrichment — if score >= 60 OR disposition-based trigger
+    if ((shouldEnrich || forceEnrichByDisposition) && call.property_address && call.state) {
       try {
         const detected = detectCounty(call.city, call.state, call.zip)
         if (detected) {
