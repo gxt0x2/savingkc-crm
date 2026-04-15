@@ -18,6 +18,7 @@ import { ThankYouCard } from '@/components/leads/thank-you-card'
 import { MailTracker } from '@/components/leads/mail-tracker'
 import { ContractModal } from '@/components/leads/contract-modal'
 import { AppointmentModal } from '@/components/leads/appointment-modal'
+import { AppointmentOutcomeModal } from '@/components/leads/appointment-outcome-modal'
 import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { SellerGoals } from '@/components/leads/seller-goals'
 import { createClient } from '@/lib/supabase/client'
@@ -835,6 +836,9 @@ export default function LeadDetailPage() {
   const [editPanelOpen, setEditPanelOpen] = useState(false)
   const [contractModalOpen, setContractModalOpen] = useState(false)
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
+  const [outcomeModalOpen, setOutcomeModalOpen] = useState(false)
+  const [outcomeModalDismissed, setOutcomeModalDismissed] = useState(false)
+  const [manifestAppointment, setManifestAppointment] = useState<any>(null)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [notesModalOpen, setNotesModalOpen] = useState(false)
   const [smsModalOpen, setSmsModalOpen] = useState(false)
@@ -842,6 +846,17 @@ export default function LeadDetailPage() {
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
+
+  // ── Auto-show appointment outcome modal when appointment time has passed ──
+  useEffect(() => {
+    if (outcomeModalDismissed || outcomeModalOpen) return
+    if (!manifestAppointment?.scheduledAt) return
+    const activeStatuses = ['scheduled', 'confirmed', 'reconfirmed']
+    if (!activeStatuses.includes(manifestAppointment.status)) return
+    if (new Date(manifestAppointment.scheduledAt).getTime() < Date.now()) {
+      setOutcomeModalOpen(true)
+    }
+  }, [manifestAppointment, outcomeModalDismissed, outcomeModalOpen])
 
   // ── Data fetching (runs on mount + after user actions) ──
   const [refreshTick, setRefreshTick] = useState(0)
@@ -879,6 +894,8 @@ export default function LeadDetailPage() {
           })
           // Extract Zestimate from Zillow enrichment
           setZestimate(fin.zillow_zestimate ?? null)
+          // Store appointment data for outcome modal
+          setManifestAppointment(data.manifest.manifest?.pipeline?.appointment || null)
         }
       } catch { /* silent */ }
     }
@@ -1535,6 +1552,14 @@ export default function LeadDetailPage() {
         <AppointmentModal
           lead={lead}
           onClose={() => setAppointmentModalOpen(false)}
+          onSuccess={() => { refreshAll() }}
+        />
+      )}
+      {outcomeModalOpen && manifestAppointment && (
+        <AppointmentOutcomeModal
+          lead={lead}
+          appointment={manifestAppointment}
+          onClose={() => { setOutcomeModalOpen(false); setOutcomeModalDismissed(true) }}
           onSuccess={() => { refreshAll() }}
         />
       )}

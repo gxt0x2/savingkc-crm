@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { updateManifestAndCascade } from '@/lib/manifest-sync'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
+import { regenerateBriefing } from '@/lib/briefing-regen'
 
 const VALID_OUTCOMES = ['completed', 'no_show', 'cancelled', 'rescheduled'] as const
 type Outcome = (typeof VALID_OUTCOMES)[number]
@@ -126,6 +127,9 @@ export async function POST(req: NextRequest) {
     if (outcome === 'completed') {
       autoAdvance = await checkAutoAdvance(leadId, 'appointment_completed')
     }
+
+    // 4. Eager briefing regen — appointment outcome is high-value
+    regenerateBriefing(leadId, `appointment_${outcome}`).catch(() => {})
 
     return NextResponse.json({
       success: true,
