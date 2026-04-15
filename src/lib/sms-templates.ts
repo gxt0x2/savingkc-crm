@@ -117,7 +117,7 @@ export const appointmentTemplates: AppointmentTemplate[] = [
     timing: 'booking',
     asks_for_reply: true,
     merge_fields: ['firstName', 'date', 'time', 'agentName', 'twilioNumber'],
-    body: `Hey {firstName}! This is {agentName} with Saving KC Homebuyers. Just wanted to confirm our phone call for {date} at {time}. We're looking forward to chatting with you about your property.\n\nCould you reply YES to confirm? That way we'll make sure {agentName} has your time blocked off.\n\nQuestions anytime: {twilioNumber}`,
+    body: `Hey {firstName}! This is {agentName} with Saving KC Homebuyers. Just confirming our phone call for {date} at {time}.\n\nReply 1 to confirm.\n\nQuestions anytime: {twilioNumber}`,
   },
   {
     name: 'appt_confirm_inperson',
@@ -125,7 +125,7 @@ export const appointmentTemplates: AppointmentTemplate[] = [
     timing: 'booking',
     asks_for_reply: true,
     merge_fields: ['firstName', 'date', 'time', 'address', 'agentName', 'twilioNumber'],
-    body: `Hey {firstName}! This is {agentName} with Saving KC Homebuyers. We're all set to meet at {address} on {date} at {time}.\n\nCould you reply YES to confirm? We want to make sure we've got the right date and time for you.\n\nIf anything changes, just text us here or call {twilioNumber}.`,
+    body: `Hey {firstName}! This is {agentName} with Saving KC Homebuyers. We're all set to meet at {address} on {date} at {time}.\n\nReply 1 to confirm.\n\nIf anything changes, just text us here or call {twilioNumber}.`,
   },
   {
     name: 'appt_value_add_phone',
@@ -149,7 +149,7 @@ export const appointmentTemplates: AppointmentTemplate[] = [
     timing: 'T-3h',
     asks_for_reply: true,
     merge_fields: ['firstName', 'time'],
-    body: `Good morning {firstName}! Just a friendly check-in — we're still on for {time} today, right? Reply YES and we'll see you then. If something came up, no worries at all, just let us know and we'll reschedule.`,
+    body: `Morning {firstName}! Still on for {time} today? Reply 1 to confirm. If something came up, no worries — just let us know.`,
   },
   {
     name: 'appt_lockin_30min',

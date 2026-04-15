@@ -182,6 +182,64 @@ export async function POST(req: Request) {
     // ── Keyword detection & auto-reply logic ────────────────
     const msg = messageBody.trim().toUpperCase()
 
+    // ── Quick-confirm: if lead has active appointment, low-friction keywords confirm it ──
+    const CONFIRM_KEYWORDS = new Set(['1', 'YES', 'YES!', 'Y', 'YEP', 'YEAH', 'YA', 'OK', 'OKAY', 'SURE', 'SOUNDS GOOD', 'CONFIRM', 'CONFIRMED', 'CONFIRM!', 'YES PLEASE', 'PERFECT', 'SEE YOU THEN', 'WILL BE THERE', 'IM GOOD', "I'M GOOD", 'WORKS FOR ME'])
+    if (leadId && CONFIRM_KEYWORDS.has(msg)) {
+      // Check if this lead has an active appointment
+      const { data: manifestRow } = await supabase
+        .from('manifests')
+        .select('manifest')
+        .eq('lead_id', leadId)
+        .single()
+
+      const appt = manifestRow?.manifest?.pipeline?.appointment
+      const activeStatuses = ['scheduled', 'confirmed', 'reconfirmed']
+      if (appt && activeStatuses.includes(appt.status)) {
+        // Route to appointment confirmation instead of "wants to sell" flow
+        try {
+          const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
+
+          await updateManifestAndCascade(leadId, (manifest) => {
+            const a = manifest.pipeline?.appointment
+            if (!a) return
+            a.confirmationCount = (a.confirmationCount || 0) + 1
+            a.lastSellerResponse = new Date().toISOString()
+            a.status = a.confirmationCount > 1 ? 'reconfirmed' : 'confirmed'
+            a.ghostRiskScore = Math.max(0, (a.ghostRiskScore || 0) - 30)
+
+            if (!a.automationLog) a.automationLog = []
+            a.automationLog.push({
+              timestamp: new Date().toISOString(),
+              action: 'seller_confirmed',
+              channel: 'sms',
+              sellerResponded: true,
+            })
+
+            if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+            manifest.ariIntelligence.briefingStale = true
+          }, 'twilio:quick_confirm')
+
+          await supabase.from('lead_activities').insert({
+            lead_id: leadId,
+            activity_type: 'appointment_confirmed',
+            description: `Seller confirmed appointment via SMS ("${messageBody.trim()}")`,
+            agent: 'Seller',
+            metadata: { source: 'sms_reply', keyword: msg, original_message: messageBody.trim() },
+          })
+
+          regenerateBriefing(leadId, 'appointment_confirmed').catch(() => {})
+
+          return new NextResponse(
+            `<?xml version="1.0" encoding="UTF-8"?><Response><Message>You're all set! We'll see you then. — Saving KC</Message></Response>`,
+            { headers: { 'Content-Type': 'text/xml' } }
+          )
+        } catch (err) {
+          console.error('Quick-confirm failed:', err)
+          // Fall through to normal YES handling
+        }
+      }
+    }
+
     // ── YES reply (from IVR no-input or missed call text-back) ──
     if (msg === 'YES' || msg === 'YES!' || msg === 'YES PLEASE' || msg === 'Y') {
       let yesLeadId = leadId
