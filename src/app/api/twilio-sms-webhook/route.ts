@@ -4,6 +4,7 @@ import { isOptedOut, handleOptOut, handleOptIn, isStopKeyword, isStartKeyword } 
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
 import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
+import { regenerateBriefing } from '@/lib/briefing-regen'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
@@ -273,6 +274,9 @@ export async function POST(req: Request) {
 
         // Sync YES reply to manifest (high-intent signal)
         onCommunicationEvent(yesLeadId, { type: 'yes_reply', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
+
+        // Eager briefing regen — YES reply is the highest-value signal
+        regenerateBriefing(yesLeadId, 'yes_reply').catch(() => {})
       }
 
       // Reply to seller
@@ -343,6 +347,9 @@ export async function POST(req: Request) {
             agent: 'Seller',
             metadata: { source: 'sms_reply', keyword: 'CONFIRM' },
           })
+
+          // Eager briefing regen — appointment confirmation is high-value
+          regenerateBriefing(leadId, 'appointment_confirmed').catch(() => {})
 
           // Send acknowledgment reply
           return new NextResponse(
