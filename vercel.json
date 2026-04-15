@@ -3,12 +3,6 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "crons": [
-    {
-      "path": "/api/cron/process-mojo-queue",
-      "schedule": "* * * * *"
-    }
-  ],
   "rewrites": [
     {
       "source": "/api/:path*",
