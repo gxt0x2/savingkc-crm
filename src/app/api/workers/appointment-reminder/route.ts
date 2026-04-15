@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { updateManifestAndCascade } from '@/lib/manifest-sync'
 import { calculateGhostRisk } from '@/lib/ghost-risk-calculator'
+import { shouldActivateGhostProtocol, runGhostProtocolAppointment } from '@/lib/ghost-protocol-appointment'
 import { renderTemplate } from '@/lib/sms-templates'
 
 const CRON_SECRET = process.env.CRON_SECRET
@@ -125,6 +126,8 @@ export async function GET(request: Request) {
     let processed = 0
     let remindersQueued = 0
     let skipped = 0
+    let ghostActivated = 0
+    let ghostStepped = 0
     const errors: string[] = []
 
     for (const row of rows) {
@@ -135,8 +138,15 @@ export async function GET(request: Request) {
         const appointment = manifest?.pipeline?.appointment
         if (!appointment) continue
 
-        // Skip if Ghost Protocol is active — it owns communication
+        // If Ghost Protocol is active — run next step, skip normal reminders
         if (appointment.ghostProtocolActive === true) {
+          try {
+            await runGhostProtocolAppointment(row.lead_id)
+            ghostStepped++
+          } catch (gpErr: any) {
+            console.error(`[appointment-reminder] Ghost protocol step failed for lead ${row.lead_id}:`, gpErr)
+            errors.push(`ghost_step for lead ${row.lead_id}: ${gpErr.message}`)
+          }
           skipped++
           continue
         }
@@ -374,6 +384,35 @@ export async function GET(request: Request) {
             remindersQueued++
           }
         }
+
+        // 5. Ghost Protocol activation check
+        //    After all reminders processed, check if ghost risk crossed threshold
+        const currentGhostRisk = appointment.ghostRiskScore ?? calculateGhostRisk(manifest)
+        if (shouldActivateGhostProtocol(manifest)) {
+          console.log(`[appointment-reminder] Activating Ghost Protocol for lead ${row.lead_id} (risk=${currentGhostRisk})`)
+
+          await updateManifestAndCascade(row.lead_id, (m: any) => {
+            const appt = m.pipeline?.appointment
+            if (!appt) return
+            appt.ghostProtocolActive = true
+            appt.ghostRiskScore = currentGhostRisk
+
+            if (!m.auditTrail) m.auditTrail = []
+            m.auditTrail.push({
+              timestamp: new Date().toISOString(),
+              agent: 'appointment-reminder-worker',
+              action: 'ghost_protocol_activated',
+              details: { ghostRiskScore: currentGhostRisk },
+            })
+
+            if (!m.ariIntelligence) m.ariIntelligence = {}
+            m.ariIntelligence.briefingStale = true
+          }, 'appointment-reminder-worker')
+
+          // Run first ghost protocol step immediately
+          await runGhostProtocolAppointment(row.lead_id)
+          ghostActivated++
+        }
       } catch (rowError: any) {
         console.error(`[appointment-reminder] Error processing lead ${row.lead_id}:`, rowError)
         errors.push(`lead ${row.lead_id}: ${rowError.message}`)
@@ -385,6 +424,8 @@ export async function GET(request: Request) {
       processed,
       reminders_queued: remindersQueued,
       skipped,
+      ghost_activated: ghostActivated,
+      ghost_stepped: ghostStepped,
       errors: errors.length > 0 ? errors : undefined,
     })
   } catch (error: any) {
