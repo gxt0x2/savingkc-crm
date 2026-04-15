@@ -51,7 +51,7 @@ export async function POST(req: Request) {
 
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${callerId}" timeout="15" record="record-from-answer-dual">
+  <Dial callerId="${callerId}" timeout="15" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number>${sanitizedTo}</Number>
   </Dial>
 </Response>`
