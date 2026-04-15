@@ -194,11 +194,12 @@ export async function PATCH(req: NextRequest) {
         },
       })
     } else if (activity) {
-      // Log other call dispositions as call activities
-      await supabase.from('lead_activities').insert({
+      // Log call disposition as activity
+      const description = `Call: ${activity.disposition?.replace(/_/g, ' ') || 'completed'}${activity.notes ? ' - ' + activity.notes : ''}`
+      const { error: activityError } = await supabase.from('lead_activities').insert({
         lead_id: id,
         activity_type: 'call',
-        description: `Call: ${activity.disposition?.replace(/_/g, ' ') || 'completed'}${activity.notes ? ' - ' + activity.notes : ''}`,
+        description,
         agent: 'Casey',
         metadata: {
           disposition: activity.disposition,
@@ -206,6 +207,97 @@ export async function PATCH(req: NextRequest) {
           notes: activity.notes,
         },
       })
+
+      if (activityError) {
+        console.error('[leads PATCH] Failed to insert activity:', activityError.message)
+      }
+
+      // Update manifest with disposition notes + mark briefing stale
+      if (activity.notes || activity.disposition) {
+        try {
+          const { updateManifestAndCascade, ensureManifestExists: ensureManifest } = await import('@/lib/manifest-sync')
+          const { checkAutoAdvance } = await import('@/lib/pipeline-auto-advance')
+          await ensureManifest(id)
+          await updateManifestAndCascade(id, (manifest) => {
+            const dispo = activity.disposition || ''
+
+            // Add agent notes to manifest
+            if (activity.notes) {
+              if (!manifest.agentNotes) manifest.agentNotes = []
+              manifest.agentNotes.push({
+                timestamp: new Date().toISOString(),
+                author: 'casey',
+                source: 'disposition',
+                content: activity.notes,
+                callRecordId: activity.phone || undefined,
+              })
+            }
+
+            // Update disposition on manifest
+            if (dispo) {
+              if (!manifest.communications) manifest.communications = { transcripts: [] }
+              manifest.communications.lastDisposition = dispo
+              manifest.communications.lastDispositionDate = new Date().toISOString()
+            }
+
+            // Disposition-specific manifest updates
+            if (dispo === 'callback_requested') {
+              if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+              if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
+              manifest.ariIntelligence.recommendedActions.push({
+                action: `Callback requested${activity.notes ? ': ' + activity.notes : ''}`,
+                reason: 'seller_requested',
+              })
+            } else if (dispo === 'deal_potential' || dispo === 'offer_made') {
+              manifest.currentStation = dispo === 'offer_made' ? 'negotiating' : 'qualifying'
+              manifest.priority = 'hot'
+            } else if (dispo === 'not_interested' || dispo === 'dead') {
+              manifest.priority = 'cold'
+              if (!manifest.scoring) manifest.scoring = {} as any
+              manifest.scoring!.classification = 'dead'
+            } else if (dispo === 'dnc') {
+              if (!manifest.flags) manifest.flags = {}
+              if (!manifest.flags.redFlags) manifest.flags.redFlags = []
+              if (!manifest.flags.redFlags.includes('do_not_contact')) {
+                manifest.flags.redFlags.push('do_not_contact')
+              }
+            } else if (dispo === 'wrong_number' || dispo === 'disconnected') {
+              if (!manifest.flags) manifest.flags = {}
+              if (!manifest.flags.redFlags) manifest.flags.redFlags = []
+              if (!manifest.flags.redFlags.includes('bad_phone')) {
+                manifest.flags.redFlags.push('bad_phone')
+              }
+            }
+
+            // Mark briefing as stale so Ari regenerates with new context
+            if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+            manifest.ariIntelligence.briefingStale = true
+
+            // Add audit trail
+            if (!manifest.auditTrail) manifest.auditTrail = []
+            manifest.auditTrail.push({
+              timestamp: new Date().toISOString(),
+              agent: 'disposition:' + (dispo || 'unknown'),
+              action: 'call_disposition',
+              details: {
+                disposition: dispo,
+                hasNotes: !!activity.notes,
+                phone: activity.phone,
+              },
+            })
+          }, 'disposition:' + (activity.disposition || 'call'))
+
+          // Fire auto-advance for meaningful dispositions
+          const advanceDispos = ['callback_requested', 'spoke_with_owner', 'deal_potential', 'offer_made']
+          if (advanceDispos.includes(activity.disposition)) {
+            await checkAutoAdvance(id, activity.disposition).catch(err =>
+              console.error('[leads PATCH] Auto-advance failed:', err)
+            )
+          }
+        } catch (manifestErr) {
+          console.error('[leads PATCH] Manifest update failed:', manifestErr)
+        }
+      }
     }
 
     // Manifest-owned fields must cascade through manifest → leads

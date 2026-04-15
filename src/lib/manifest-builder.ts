@@ -261,6 +261,8 @@ export interface ManifestCommunications {
   lastSellerContactDate?: string
   lastInboundDate?: string
   lastOutboundDate?: string
+  lastDisposition?: string
+  lastDispositionDate?: string
   responsePending?: boolean
   lastConversationCloser?: 'agent' | 'seller'
   conversationCloseType?: 'sign_off' | 'question' | 'request' | 'initial_outreach'
