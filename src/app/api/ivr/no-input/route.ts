@@ -93,7 +93,7 @@ export async function POST(req: Request) {
     // Dial both agents — let dial-result handle the outcome
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(noInputLeadId || '')}&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=no_input" method="POST" timeout="20" callerId="${routing.primary.companyNumber}">
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(noInputLeadId || '')}&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=no_input" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number url="${BASE_URL}/api/ivr/whisper?type=call&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(noInputLeadId || '')}">${routing.primary.phone}</Number>
     <Number url="${BASE_URL}/api/ivr/whisper?type=call&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(noInputLeadId || '')}">${routing.secondary.phone}</Number>
   </Dial>
