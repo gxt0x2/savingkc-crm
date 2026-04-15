@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     const leadId = manifestRow.lead_id
     const activities = leadId ? await fetchRecentActivities(leadId) : []
     const result = await generateBriefing(manifest, manifestId, activities, leadId)
-    return NextResponse.json({ ...result, cached: false })
+    return NextResponse.json({ ...result, cached: false, generatedAt: new Date().toISOString() })
   } catch (error) {
     console.error('GET briefing error:', error)
     return NextResponse.json(
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
       const leadId = manifestRow.lead_id
       const activities = leadId ? await fetchRecentActivities(leadId) : []
       const result = await generateBriefing(manifest, body.manifestId, activities, leadId)
-      return NextResponse.json({ ...result, cached: false })
+      return NextResponse.json({ ...result, cached: false, generatedAt: new Date().toISOString() })
     }
 
     // Legacy mode: simple briefing from basic data

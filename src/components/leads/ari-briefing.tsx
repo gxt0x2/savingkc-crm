@@ -27,6 +27,7 @@ interface BriefingData {
   situation: string
   motivation: string
   strategy: string
+  generatedAt?: string
 }
 
 export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motivationScore, activities }: AriBriefingProps) {
@@ -34,6 +35,7 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
   const [loading, setLoading] = useState(false)
   const [cached, setCached] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null)
 
   // Only re-generate when manifestId or leadId changes (not on every activities change)
   useEffect(() => {
@@ -95,6 +97,7 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
           if (data) {
             setBriefing(data)
             setCached(raw.cached || false)
+            setGeneratedAt(raw.generatedAt || null)
             setLoading(false)
             return
           }
@@ -152,6 +155,20 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
     setLoading(false)
   }
 
+  // Freshness indicator: green < 2min, yellow 2-15min, red > 15min
+  function getFreshness(): { label: string; color: string; dotColor: string } | null {
+    if (!generatedAt) return null
+    const ageMs = Date.now() - new Date(generatedAt).getTime()
+    const ageMin = Math.floor(ageMs / 60_000)
+
+    if (ageMin < 1) return { label: 'Just now', color: 'text-green-400/80', dotColor: 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]' }
+    if (ageMin < 2) return { label: '1m ago', color: 'text-green-400/80', dotColor: 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]' }
+    if (ageMin < 15) return { label: `${ageMin}m ago`, color: 'text-yellow-400/80', dotColor: 'bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.6)]' }
+    if (ageMin < 60) return { label: `${ageMin}m ago`, color: 'text-red-400/80', dotColor: 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.6)]' }
+    const ageHrs = Math.floor(ageMin / 60)
+    return { label: `${ageHrs}h ago`, color: 'text-red-400/80', dotColor: 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.6)]' }
+  }
+
   // Get first sentence as snippet
   function snippet(text: string, maxLen = 90): string {
     if (!text) return ''
@@ -173,16 +190,21 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
           <h2 className="text-sm font-black text-white">Ari Briefing</h2>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]" />
-            <span className="text-[10px] text-green-400/80 font-medium">
-              {cached ? 'Cached' : 'Live'}
-            </span>
-          </div>
+          {(() => {
+            const freshness = getFreshness()
+            return (
+              <div className="flex items-center gap-1.5" title={generatedAt ? `Generated: ${new Date(generatedAt).toLocaleString()}` : ''}>
+                <div className={`w-1.5 h-1.5 rounded-full ${freshness?.dotColor || 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]'}`} />
+                <span className={`text-[10px] font-medium ${freshness?.color || 'text-green-400/80'}`}>
+                  {freshness?.label || (cached ? 'Cached' : 'Live')}
+                </span>
+              </div>
+            )
+          })()}
           <button
             onClick={(e) => { e.stopPropagation(); buildBriefing() }}
             disabled={loading}
-            title="Refresh"
+            title="Regenerate briefing"
             className="p-1 rounded bg-white/5 hover:bg-white/10 text-white/40 hover:text-amber-400 transition-all disabled:opacity-30"
           >
             <Icon name="refresh" className={`!text-xs ${loading ? 'animate-spin' : ''}`} />

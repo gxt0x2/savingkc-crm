@@ -214,6 +214,10 @@ async function processRecording(
         },
       })
     }, 'system:recording_callback')
+
+    // Eager briefing regen — transcript is high-value intelligence
+    const { regenerateBriefing } = await import('@/lib/briefing-regen')
+    await regenerateBriefing(leadId, 'transcript_added').catch(() => {})
   } catch (err) {
     console.error('[recording-callback] Manifest update failed:', err)
   }

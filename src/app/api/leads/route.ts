@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureManifestExists } from '@/lib/manifest-sync'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { regenerateBriefing, EAGER_REGEN_EVENTS } from '@/lib/briefing-regen'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -193,6 +194,9 @@ export async function PATCH(req: NextRequest) {
           status: 'scheduled',
         },
       })
+
+      // Eager briefing regen for appointment_set
+      regenerateBriefing(id, 'appointment_set').catch(() => {})
     } else if (activity) {
       // Skip lead_activities insert for notes (already inserted by frontend)
       const isNoteOnly = activity.disposition === 'note_added' || activity.type === 'note'
@@ -298,6 +302,11 @@ export async function PATCH(req: NextRequest) {
             await checkAutoAdvance(id, activity.disposition).catch(err =>
               console.error('[leads PATCH] Auto-advance failed:', err)
             )
+          }
+
+          // Eager briefing regen for high-value dispositions (fire-and-forget)
+          if (EAGER_REGEN_EVENTS.has(activity.disposition)) {
+            regenerateBriefing(id, activity.disposition).catch(() => {})
           }
         } catch (manifestErr) {
           console.error('[leads PATCH] Manifest update failed:', manifestErr)
