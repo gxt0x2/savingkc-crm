@@ -1007,6 +1007,9 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
           manifest.qualificationScore = qualScore
           manifest.tier = tier as ManifestV2['tier']
 
+          // Recalculate priority based on post-enrichment score
+          manifest.priority = qualScore >= 75 ? 'hot' : qualScore >= 40 ? 'warm' : 'cold'
+
           if (leadId) {
             const prop = manifest.property || {}
             const dwell = prop.dwelling || {}
