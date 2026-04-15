@@ -1421,7 +1421,8 @@ export function detectCounty(city?: string, state?: string, zip?: string): { cou
   }
   if (zip) {
     const z = parseInt(zip)
-    if (z >= 64101 && z <= 64199) return { county: 'Jackson', state: 'MO' }
+    // Jackson County, MO: Kansas City metro + eastern cities (Independence, Blue Springs, Lee's Summit, Raytown, Grandview, Summit)
+    if ((z >= 64012 && z <= 64089) || (z >= 64101 && z <= 64199)) return { county: 'Jackson', state: 'MO' }
     if ((z >= 64150 && z <= 64154) || z === 64079 || z === 64083 || z === 64098) return { county: 'Platte', state: 'MO' }
     if (z >= 66200 && z <= 66299) return { county: 'Johnson', state: 'KS' }
     if (z >= 66100 && z <= 66119) return { county: 'Wyandotte', state: 'KS' }
