@@ -36,6 +36,21 @@ export function AddNote({ leadId, onNoteAdded }: AddNoteProps) {
 
     if (!error && data) {
       onNoteAdded(data as { id: string; activity_type: string; description: string; agent: string; metadata: Record<string, unknown> | null; created_at: string })
+
+      // Trigger manifest update + briefing refresh via server API
+      fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: leadId,
+          activity: {
+            type: 'note',
+            disposition: 'note_added',
+            notes: content.trim(),
+          },
+        }),
+      }).catch(() => {})
+
       setContent('')
       setExpanded(false)
     }

@@ -194,22 +194,27 @@ export async function PATCH(req: NextRequest) {
         },
       })
     } else if (activity) {
-      // Log call disposition as activity
-      const description = `Call: ${activity.disposition?.replace(/_/g, ' ') || 'completed'}${activity.notes ? ' - ' + activity.notes : ''}`
-      const { error: activityError } = await supabase.from('lead_activities').insert({
-        lead_id: id,
-        activity_type: 'call',
-        description,
-        agent: 'Casey',
-        metadata: {
-          disposition: activity.disposition,
-          phone: activity.phone,
-          notes: activity.notes,
-        },
-      })
+      // Skip lead_activities insert for notes (already inserted by frontend)
+      const isNoteOnly = activity.disposition === 'note_added' || activity.type === 'note'
 
-      if (activityError) {
-        console.error('[leads PATCH] Failed to insert activity:', activityError.message)
+      if (!isNoteOnly) {
+        // Log call disposition as activity
+        const description = `Call: ${activity.disposition?.replace(/_/g, ' ') || 'completed'}${activity.notes ? ' - ' + activity.notes : ''}`
+        const { error: activityError } = await supabase.from('lead_activities').insert({
+          lead_id: id,
+          activity_type: 'call',
+          description,
+          agent: 'Casey',
+          metadata: {
+            disposition: activity.disposition,
+            phone: activity.phone,
+            notes: activity.notes,
+          },
+        })
+
+        if (activityError) {
+          console.error('[leads PATCH] Failed to insert activity:', activityError.message)
+        }
       }
 
       // Update manifest with disposition notes + mark briefing stale
