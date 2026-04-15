@@ -1,0 +1,7 @@
+.claude
+*.csv
+*.xlsx
+logs/
+test-results/
+deploy.log
+out/
