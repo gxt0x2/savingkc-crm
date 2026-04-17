@@ -8,7 +8,9 @@ import { WeekView } from '@/components/calendar/week-view'
 import { AgendaView } from '@/components/calendar/agenda-view'
 import { DayView } from '@/components/calendar/day-view'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
+import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { useCalendarTasks } from '@/hooks/use-calendar-tasks'
+import { toProperCase } from '@/lib/format'
 import type { Task } from '@/types'
 
 const MONTH_NAMES = [
@@ -28,6 +30,7 @@ function CalendarContent() {
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [showNewTask, setShowNewTask] = useState(false)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
 
   function handleTaskClick(task: Task) {
     setSelectedTask(task)
@@ -111,7 +114,7 @@ function CalendarContent() {
                 <div><span className="font-semibold text-slate-600">Details:</span> {selectedTask.description}</div>
               )}
               {selectedTask.contact && (
-                <div><span className="font-semibold text-slate-600">Contact:</span> {selectedTask.contact.first_name} {selectedTask.contact.last_name}</div>
+                <div><span className="font-semibold text-slate-600">Contact:</span> {toProperCase(selectedTask.contact.first_name || '')} {toProperCase(selectedTask.contact.last_name || '')}</div>
               )}
               {selectedTask.property_address && (
                 <div><span className="font-semibold text-slate-600">Property:</span> {selectedTask.property_address}</div>
@@ -121,14 +124,25 @@ function CalendarContent() {
               )}
               <div><span className="font-semibold text-slate-600">Status:</span> <span className={selectedTask.status === 'overdue' ? 'text-red-600 font-bold' : ''}>{selectedTask.status}</span></div>
             </div>
-            {selectedTask.contact_id && (
-              <a
-                href={`/leads/${selectedTask.contact_id}`}
-                className="mt-4 block w-full text-center py-2 bg-primary text-white rounded-lg font-semibold text-sm hover:opacity-90 transition-all"
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => {
+                  setEditingTask(selectedTask)
+                  setSelectedTask(null)
+                }}
+                className="flex-1 py-2 bg-slate-100 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-200 transition-all"
               >
-                View Lead Profile →
-              </a>
-            )}
+                Edit Task
+              </button>
+              {selectedTask.contact_id && (
+                <a
+                  href={`/leads/${selectedTask.contact_id}`}
+                  className="flex-1 text-center py-2 bg-primary text-white rounded-lg font-semibold text-sm hover:opacity-90 transition-all"
+                >
+                  View Lead Profile →
+                </a>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -138,6 +152,27 @@ function CalendarContent() {
           onClose={() => setShowNewTask(false)}
           onCreated={() => { setShowNewTask(false); window.location.reload() }}
           showLeadSelector={true}
+        />
+      )}
+
+      {editingTask && (
+        <EditTaskModal
+          taskId={editingTask.id}
+          initialTitle={editingTask.title}
+          initialMetadata={{
+            task_type: editingTask.type,
+            due_date: editingTask.due_date || undefined,
+            assigned_to: editingTask.assigned_to || undefined,
+            notes: editingTask.description || undefined,
+            status: editingTask.status === 'overdue' ? 'pending' : editingTask.status,
+            priority: 'normal',
+            source: 'calendar'
+          }}
+          onClose={() => setEditingTask(null)}
+          onSaved={() => {
+            setEditingTask(null)
+            window.location.reload()
+          }}
         />
       )}
     </>

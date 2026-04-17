@@ -14,6 +14,7 @@ import { PropertyDetailsCard } from '@/components/leads/property-details-card'
 import { TemperatureBadge } from '@/components/leads/temperature-badge'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
 import { AddNote } from '@/components/leads/add-note'
+import { EditNoteModal } from '@/components/leads/edit-note-modal'
 import { ThankYouCard } from '@/components/leads/thank-you-card'
 import { MailTracker } from '@/components/leads/mail-tracker'
 import { ContractModal } from '@/components/leads/contract-modal'
@@ -22,6 +23,7 @@ import { AppointmentOutcomeModal } from '@/components/leads/appointment-outcome-
 import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { SellerGoals } from '@/components/leads/seller-goals'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
+import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 
@@ -845,6 +847,11 @@ export default function LeadDetailPage() {
   const [notesModalOpen, setNotesModalOpen] = useState(false)
   const [smsModalOpen, setSmsModalOpen] = useState(false)
   const [composeTab, setComposeTab] = useState<'sms' | 'email'>('sms')
+  const [editNoteId, setEditNoteId] = useState<string | null>(null)
+  const [editNoteContent, setEditNoteContent] = useState('')
+  const [editTaskId, setEditTaskId] = useState<string | null>(null)
+  const [editTaskTitle, setEditTaskTitle] = useState('')
+  const [editTaskMetadata, setEditTaskMetadata] = useState<Record<string, unknown>>({})
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
@@ -1158,6 +1165,7 @@ export default function LeadDetailPage() {
         recordingUrl,
         rawType: a.activity_type,
         agentName: a.agent || undefined,
+        metadata: a.metadata || undefined,
       }
     })
 
@@ -1457,6 +1465,15 @@ export default function LeadDetailPage() {
                   setSmsModalOpen(true)
                 }
               }}
+              onEditNote={(noteId, currentContent) => {
+                setEditNoteId(noteId)
+                setEditNoteContent(currentContent)
+              }}
+              onEditTask={(taskId, currentTitle, metadata) => {
+                setEditTaskId(taskId)
+                setEditTaskTitle(currentTitle)
+                setEditTaskMetadata(metadata)
+              }}
             />
             <div className="mt-3 text-right">
               <Link
@@ -1560,7 +1577,7 @@ export default function LeadDetailPage() {
       {showNewTask && (
         <NewTaskModal
           leadId={lead.id}
-          leadName={lead.full_name || lead.property_address || 'Unknown'}
+          leadName={toProperCase(lead.full_name || '') || lead.property_address || 'Unknown'}
           onClose={() => setShowNewTask(false)}
           onCreated={() => { setShowNewTask(false); refreshAll() }}
         />
@@ -1579,6 +1596,46 @@ export default function LeadDetailPage() {
           onClose={() => setSmsModalOpen(false)}
           onSent={() => { refreshAll() }}
           initialTab={composeTab}
+        />
+      )}
+      {editNoteId && (
+        <EditNoteModal
+          noteId={editNoteId}
+          initialContent={editNoteContent}
+          onClose={() => {
+            setEditNoteId(null)
+            setEditNoteContent('')
+          }}
+          onSaved={(noteId, newContent) => {
+            // Update the activity in the local state
+            setActivities((prev) =>
+              prev.map((a) =>
+                a.id === noteId ? { ...a, description: newContent } : a
+              )
+            )
+            refreshAll()
+          }}
+        />
+      )}
+      {editTaskId && (
+        <EditTaskModal
+          taskId={editTaskId}
+          initialTitle={editTaskTitle}
+          initialMetadata={editTaskMetadata as Record<string, string>}
+          onClose={() => {
+            setEditTaskId(null)
+            setEditTaskTitle('')
+            setEditTaskMetadata({})
+          }}
+          onSaved={(taskId, newTitle, newMetadata) => {
+            // Update the activity in the local state
+            setActivities((prev) =>
+              prev.map((a) =>
+                a.id === taskId ? { ...a, description: newTitle, metadata: newMetadata } : a
+              )
+            )
+            refreshAll()
+          }}
         />
       )}
       {notesModalOpen && (

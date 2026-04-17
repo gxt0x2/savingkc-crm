@@ -18,6 +18,7 @@ interface FeedItem {
   recordingUrl?: string
   rawType?: string
   agentName?: string   // Who performed this action
+  metadata?: Record<string, unknown>
 }
 
 interface ActivityFeedProps {
@@ -26,6 +27,8 @@ interface ActivityFeedProps {
   leadEmail?: string
   leadId?: string
   onCompose?: (type: 'call' | 'sms' | 'email') => void
+  onEditNote?: (noteId: string, currentContent: string) => void
+  onEditTask?: (taskId: string, currentTitle: string, metadata: Record<string, unknown>) => void
 }
 
 // ─── Recording Player (with signed URL fetching) ───────────────────────────
@@ -233,7 +236,10 @@ function CommsBar({ onAction }: { onAction: (type: 'call' | 'sms' | 'email') => 
 }
 
 // ─── Main Feed ──────────────────────────────────────────────────────────────
-export function ActivityFeed({ activities, onCompose }: ActivityFeedProps) {
+export function ActivityFeed({ activities, onCompose, onEditNote, onEditTask }: ActivityFeedProps) {
+  const [hoveredNote, setHoveredNote] = useState<string | null>(null)
+  const [hoveredTask, setHoveredTask] = useState<string | null>(null)
+
   const handleAction = (type: 'call' | 'sms' | 'email') => {
     onCompose?.(type)
   }
@@ -291,7 +297,17 @@ export function ActivityFeed({ activities, onCompose }: ActivityFeedProps) {
                     </div>
                   ) : (
                     // Regular entry
-                    <div className="flex-1 min-w-0 pb-1">
+                    <div
+                      className="flex-1 min-w-0 pb-1 group"
+                      onMouseEnter={() => {
+                        if (activity.rawType === 'note') setHoveredNote(activity.id)
+                        if (activity.rawType === 'task') setHoveredTask(activity.id)
+                      }}
+                      onMouseLeave={() => {
+                        setHoveredNote(null)
+                        setHoveredTask(null)
+                      }}
+                    >
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-semibold text-on-surface leading-snug">{activity.title}</span>
                         {activity.statusBadge && (
@@ -307,6 +323,24 @@ export function ActivityFeed({ activities, onCompose }: ActivityFeedProps) {
                           <AgentBadge name={activity.agentName} />
                         )}
                         <span className="text-[10px] text-on-surface-variant whitespace-nowrap ml-auto">{relTime(activity.timestamp)}</span>
+                        {activity.rawType === 'note' && onEditNote && hoveredNote === activity.id && (
+                          <button
+                            onClick={() => onEditNote(activity.id, activity.content || '')}
+                            className="text-on-surface-variant/60 hover:text-primary transition-colors p-1"
+                            title="Edit note"
+                          >
+                            <Icon name="edit" size="text-xs" />
+                          </button>
+                        )}
+                        {activity.rawType === 'task' && onEditTask && hoveredTask === activity.id && (
+                          <button
+                            onClick={() => onEditTask(activity.id, activity.title, activity.metadata || {})}
+                            className="text-on-surface-variant/60 hover:text-primary transition-colors p-1"
+                            title="Edit task"
+                          >
+                            <Icon name="edit" size="text-xs" />
+                          </button>
+                        )}
                       </div>
                       {activity.content && (
                         <p className={`text-xs mt-0.5 ${activity.type === 'sms' ? 'text-blue-600 italic font-medium' : 'text-on-surface-variant'}`}>
