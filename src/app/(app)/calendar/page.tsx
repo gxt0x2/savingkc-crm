@@ -173,6 +173,10 @@ function CalendarContent() {
             setEditingTask(null)
             window.location.reload()
           }}
+          onDeleted={() => {
+            setEditingTask(null)
+            window.location.reload()
+          }}
         />
       )}
     </>

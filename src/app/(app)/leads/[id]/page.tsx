@@ -1615,6 +1615,11 @@ export default function LeadDetailPage() {
             )
             refreshAll()
           }}
+          onDeleted={(noteId) => {
+            // Remove from local state
+            setActivities((prev) => prev.filter((a) => a.id !== noteId))
+            refreshAll()
+          }}
         />
       )}
       {editTaskId && (
@@ -1634,6 +1639,11 @@ export default function LeadDetailPage() {
                 a.id === taskId ? { ...a, description: newTitle, metadata: newMetadata } : a
               )
             )
+            refreshAll()
+          }}
+          onDeleted={(taskId) => {
+            // Remove from local state
+            setActivities((prev) => prev.filter((a) => a.id !== taskId))
             refreshAll()
           }}
         />
