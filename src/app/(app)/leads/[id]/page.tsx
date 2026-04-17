@@ -21,6 +21,7 @@ import { AppointmentModal } from '@/components/leads/appointment-modal'
 import { AppointmentOutcomeModal } from '@/components/leads/appointment-outcome-modal'
 import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { SellerGoals } from '@/components/leads/seller-goals'
+import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 
@@ -836,6 +837,7 @@ export default function LeadDetailPage() {
   const [editPanelOpen, setEditPanelOpen] = useState(false)
   const [contractModalOpen, setContractModalOpen] = useState(false)
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
+  const [showNewTask, setShowNewTask] = useState(false)
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false)
   const [outcomeModalDismissed, setOutcomeModalDismissed] = useState(false)
   const [manifestAppointment, setManifestAppointment] = useState<any>(null)
@@ -1267,11 +1269,11 @@ export default function LeadDetailPage() {
 
         <div className="flex gap-2 sm:gap-3 flex-wrap sm:flex-nowrap shrink-0">
           <button
-            onClick={() => setAppointmentModalOpen(true)}
+            onClick={() => setShowNewTask(true)}
             className="bg-surface-container-lowest border border-outline-variant/15 px-4 py-2.5 rounded-lg font-bold text-on-surface-variant hover:bg-surface-container-low transition-all text-sm flex items-center gap-1.5"
           >
-            <Icon name="calendar_month" size="text-sm" />
-            Appointment
+            <Icon name="add_task" size="text-sm" />
+            New Task
           </button>
           <button
             onClick={() => setContractModalOpen(true)}
@@ -1553,6 +1555,14 @@ export default function LeadDetailPage() {
           lead={lead}
           onClose={() => setAppointmentModalOpen(false)}
           onSuccess={() => { refreshAll() }}
+        />
+      )}
+      {showNewTask && (
+        <NewTaskModal
+          leadId={lead.id}
+          leadName={lead.full_name || lead.property_address || 'Unknown'}
+          onClose={() => setShowNewTask(false)}
+          onCreated={() => { setShowNewTask(false); refreshAll() }}
         />
       )}
       {outcomeModalOpen && manifestAppointment && (
