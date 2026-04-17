@@ -378,9 +378,10 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
     setDialNumber('')
   }
 
-  function handleDisposition(disposition: DispositionType, notes?: string) {
-    if (selectedLead) {
-      fetch('/api/leads', {
+  async function handleDisposition(disposition: DispositionType, notes?: string) {
+    if (!selectedLead) return
+    try {
+      await fetch('/api/leads', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -392,8 +393,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
             phone: lastCallPhoneRef.current,
           },
         }),
-      }).catch(() => {})
-    }
+      })
+      window.dispatchEvent(new CustomEvent('crm:disposition-logged', { detail: { leadId: selectedLead.id } }))
+    } catch {}
   }
 
   function handleRedial(call: RecentCall) {

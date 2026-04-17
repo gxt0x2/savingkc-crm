@@ -873,6 +873,16 @@ export default function LeadDetailPage() {
   // Call this after any user action that changes data (note, call, edit, email, etc.)
   function refreshAll() { setRefreshTick(t => t + 1) }
 
+  // Listen for disposition logged events from the telephony bar
+  useEffect(() => {
+    function onDisposition(e: Event) {
+      const detail = (e as CustomEvent).detail as { leadId?: string }
+      if (detail?.leadId === id) refreshAll()
+    }
+    window.addEventListener('crm:disposition-logged', onDisposition)
+    return () => window.removeEventListener('crm:disposition-logged', onDisposition)
+  }, [id])
+
   useEffect(() => {
     async function fetchLead() {
       const supabase = createClient()
@@ -1075,6 +1085,7 @@ export default function LeadDetailPage() {
         agent_note: 'Agent Note',
         task: 'Task',
         appointment: 'Appointment',
+        appointment_outcome: 'Appointment Outcome',
         contract_sent: 'Contract Sent',
         letter_tracking: 'Mail',
         status_change: 'Status update',
@@ -1147,8 +1158,9 @@ export default function LeadDetailPage() {
           }
         }
 
-        // Don't repeat the description for calls since we've extracted the info
-        cleanContent = undefined
+        // Show disposition notes from metadata (call dispositions save notes there)
+        const callNotes = (a.metadata?.notes as string | undefined) || undefined
+        cleanContent = callNotes
       } else {
         cleanContent = a.description || undefined
       }
