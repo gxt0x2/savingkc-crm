@@ -77,6 +77,11 @@ export default function PrivacyPage() {
                 (816) 429-2900
               </a>.
             </p>
+            <p className="mt-4">
+              Saving KC Homebuyers LLC<br />
+              7021 NW Winter Ave<br />
+              Kansas City, MO 64152
+            </p>
           </section>
         </div>
       </div>
