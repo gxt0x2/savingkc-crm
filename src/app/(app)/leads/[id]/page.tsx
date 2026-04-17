@@ -1468,7 +1468,7 @@ export default function LeadDetailPage() {
         </div>
 
         {/* RIGHT COLUMN: Favorite or Fool, Net Proceeds, File Checklist */}
-        <div className="col-span-12 lg:col-span-3 space-y-6 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6">
+        <div className="col-span-12 lg:col-span-3 space-y-6 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6 z-0">
           <FavoriteOrFool
             leadId={lead.id}
             manifestId={manifestRowId ?? undefined}
