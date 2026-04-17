@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '@/components/ui/icon'
 
 interface PropertyDetails {
@@ -53,6 +54,11 @@ export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, 
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x320&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
   const [showStreetView, setShowStreetView] = useState(false)
   const [streetViewEmbedUrl, setStreetViewEmbedUrl] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   async function openStreetView() {
     setShowStreetView(true)
@@ -79,42 +85,43 @@ export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, 
     }
   }
 
+  const streetViewModal = showStreetView && (
+    <div
+      className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4"
+      onClick={() => setShowStreetView(false)}
+    >
+      <div
+        className="relative w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={() => setShowStreetView(false)}
+          className="absolute top-3 right-3 z-10 bg-black/60 text-white rounded-full w-9 h-9 flex items-center justify-center hover:bg-black/80 transition-colors"
+        >
+          <Icon name="close" />
+        </button>
+        {streetViewEmbedUrl ? (
+          <iframe
+            src={streetViewEmbedUrl}
+            width="100%"
+            height="500"
+            style={{ border: 0, display: 'block' }}
+            allowFullScreen
+            loading="lazy"
+            title="Street View"
+          />
+        ) : (
+          <div className="flex items-center justify-center h-[500px] bg-slate-900 text-slate-400 text-sm">
+            Loading…
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <div className="space-y-4">
-      {/* Street View Modal */}
-      {showStreetView && (
-        <div
-          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setShowStreetView(false)}
-        >
-          <div
-            className="relative w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl"
-            onClick={e => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setShowStreetView(false)}
-              className="absolute top-3 right-3 z-10 bg-black/60 text-white rounded-full w-9 h-9 flex items-center justify-center hover:bg-black/80 transition-colors"
-            >
-              <Icon name="close" />
-            </button>
-            {streetViewEmbedUrl ? (
-              <iframe
-                src={streetViewEmbedUrl}
-                width="100%"
-                height="500"
-                style={{ border: 0, display: 'block' }}
-                allowFullScreen
-                loading="lazy"
-                title="Street View"
-              />
-            ) : (
-              <div className="flex items-center justify-center h-[500px] bg-slate-900 text-slate-400 text-sm">
-                Loading…
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {mounted && streetViewModal && createPortal(streetViewModal, document.body)}
 
       {/* Street View Header — click to open inline Street View modal */}
       <div className="relative rounded-2xl overflow-hidden shadow-sm bg-slate-800">
