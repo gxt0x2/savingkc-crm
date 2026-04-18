@@ -4,7 +4,6 @@
 // Night 4 Phase 1: Complete Property Dossier
 
 import { Icon } from '@/components/ui/icon'
-import { useState } from 'react'
 
 export interface PropertyHousingDetails {
   // Core specs
@@ -30,6 +29,7 @@ export interface PropertyHousingDetails {
   // Financial
   hoa_amount: number | null
   tax_assessment: number | null
+  tax_owed: number | null
   last_sale_date: string | null
   last_sale_price: number | null
 
@@ -67,134 +67,58 @@ function formatDate(date: string | null): string {
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function getDataSourceBadge(source: string | null): { label: string; color: string } {
-  if (!source) return { label: 'Not Enriched', color: 'bg-gray-100 text-gray-600' }
-
+function getDataSourceBadge(source: string | null): { label: string } {
+  if (!source) return { label: 'Not Enriched' }
   switch (source.toLowerCase()) {
-    case 'county':
-      return { label: 'County', color: 'bg-blue-100 text-blue-700' }
-    case 'zillow':
-      return { label: 'Zillow', color: 'bg-purple-100 text-purple-700' }
-    case 'usfirstcheck':
-      return { label: 'US First Check', color: 'bg-green-100 text-green-700' }
-    case 'manual':
-      return { label: 'Manual', color: 'bg-amber-100 text-amber-700' }
-    case 'johnson_county_assessor':
-      return { label: 'Johnson Co.', color: 'bg-blue-100 text-blue-700' }
-    case 'jackson_county_assessor':
-      return { label: 'Jackson Co.', color: 'bg-blue-100 text-blue-700' }
-    case 'clay_county_assessor':
-      return { label: 'Clay Co.', color: 'bg-blue-100 text-blue-700' }
-    case 'wyandotte_county_assessor':
-      return { label: 'Wyandotte Co.', color: 'bg-blue-100 text-blue-700' }
-    default:
-      return { label: source, color: 'bg-slate-100 text-slate-600' }
+    case 'county': return { label: 'County' }
+    case 'zillow': return { label: 'Zillow' }
+    case 'usfirstcheck': return { label: 'US First Check' }
+    case 'manual': return { label: 'Manual' }
+    case 'johnson_county_assessor': return { label: 'Johnson Co.' }
+    case 'jackson_county_assessor': return { label: 'Jackson Co.' }
+    case 'clay_county_assessor': return { label: 'Clay Co.' }
+    case 'wyandotte_county_assessor': return { label: 'Wyandotte Co.' }
+    default: return { label: source }
   }
 }
 
-export function PropertyDetailsCard({ details, address, city, state, zip, leadId, onEdit }: PropertyDetailsCardProps) {
+export function PropertyDetailsCard({ details, onEdit }: PropertyDetailsCardProps) {
   const sourceBadge = getDataSourceBadge(details.data_source)
 
-  // Calculate completeness
-  const totalFields = 18
-  const filledFields = [
-    details.beds,
-    details.baths_full,
-    details.baths_half,
-    details.sqft,
-    details.lot_size,
-    details.year_built,
-    details.basement_type,
-    details.stories,
-    details.garage_spaces,
-    details.roof_type,
-    details.heating,
-    details.cooling,
-    details.property_type,
-    details.zoning,
-    details.hoa_amount !== null ? 0 : null, // HOA can be $0
-    details.tax_assessment,
-    details.last_sale_date,
-    details.last_sale_price,
-  ].filter(v => v !== null && v !== undefined).length
-
-  const completenessPercent = Math.round((filledFields / totalFields) * 100)
-  const isIncomplete = completenessPercent <= 70 // Show Zillow button if 70% or less complete
-
-  const getZillowUrl = () => {
-    if (!address || !city || !state) return null
-    const searchAddress = `${address}, ${city}, ${state}${zip ? ' ' + zip : ''}`
-    const slug = searchAddress.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-')
-    return `https://www.zillow.com/homes/${slug}_rb/`
-  }
-
   return (
-    <section className="bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-6 shadow-sm">
+    <section
+      className="rounded-2xl p-5 border"
+      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+    >
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-black uppercase tracking-widest text-primary">
-            Property Details
-          </h2>
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${sourceBadge.color}`}>
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon name="home_work" className="!text-base !text-[color:var(--ck-accent)]" />
+          <h2 className="ck-microlabel !text-[11px] !text-white">Property Details</h2>
+          <span
+            className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+            style={{
+              background: 'var(--ck-surface-elev)',
+              border: '1px solid var(--ck-border)',
+              color: 'var(--ck-text-muted)',
+            }}
+          >
             {sourceBadge.label}
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-24 h-1.5 bg-surface-container rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all ${
-                  isIncomplete ? 'bg-amber-500' : 'bg-green-500'
-                }`}
-                style={{ width: `${completenessPercent}%` }}
-              />
-            </div>
-            <span className={`text-[11px] font-bold ${isIncomplete ? 'text-amber-600' : 'text-green-600'}`}>
-              {filledFields}/{totalFields}
-            </span>
-          </div>
-          {isIncomplete && getZillowUrl() && (
-            <a
-              href={getZillowUrl()!}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors"
-              title="View on Zillow to get missing data"
-            >
-              <Icon name="open_in_new" size="text-sm" />
-              View on Zillow
-            </a>
-          )}
-          {onEdit && (
-            <button
-              onClick={onEdit}
-              className="text-primary hover:text-secondary transition-colors"
-              title="Edit property details"
-            >
-              <Icon name="edit" size="text-lg" />
-            </button>
-          )}
-        </div>
+        {onEdit && (
+          <button
+            onClick={onEdit}
+            className="text-[color:var(--ck-text-dim)] hover:text-white transition-colors"
+            title="Edit property details"
+          >
+            <Icon name="edit" size="text-sm" />
+          </button>
+        )}
       </div>
 
-      {/* Data Quality Alert */}
-      {isIncomplete && (
-        <div className="mb-5 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-          <Icon name="warning" className="text-amber-600 !text-sm shrink-0 mt-0.5" />
-          <div>
-            <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wide mb-1">
-              Incomplete Property Data
-            </p>
-            <p className="text-xs text-amber-700">
-              {totalFields - filledFields} of {totalFields} fields missing. Complete data improves deal accuracy.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* 3-Column Grid */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* ── Specs grid ──────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {/* Core Specs */}
         <DetailItem icon="bed" label="Bedrooms" value={details.beds?.toString()} />
         <DetailItem
@@ -263,49 +187,85 @@ export function PropertyDetailsCard({ details, address, city, state, zip, leadId
           value={details.property_type || null}
         />
 
-        {/* Classification & Financial */}
         <DetailItem
           icon="map"
           label="Zoning"
           value={details.zoning || null}
         />
-        <DetailItem
-          icon="account_balance"
-          label="HOA"
-          value={
-            details.hoa_amount !== null && details.hoa_amount !== undefined
-              ? details.hoa_amount === 0
-                ? 'None'
-                : formatCurrency(details.hoa_amount)
-              : null
-          }
-          subtitle={details.hoa_amount && details.hoa_amount > 0 ? 'per month' : undefined}
-        />
-        <DetailItem
-          icon="assessment"
-          label="Tax Assessment"
-          value={details.tax_assessment ? formatCurrency(details.tax_assessment) : null}
-        />
-
-        <DetailItem
-          icon="event"
-          label="Last Sale Date"
-          value={formatDate(details.last_sale_date)}
-        />
-        <DetailItem
-          icon="attach_money"
-          label="Last Sale Price"
-          value={details.last_sale_price ? formatCurrency(details.last_sale_price) : null}
-        />
       </div>
+
+      {/* ── Tax & Finance — visually distinct from the spec grid ──────── */}
+      {(
+        details.tax_assessment ||
+        details.tax_owed ||
+        details.hoa_amount !== null ||
+        details.last_sale_date ||
+        details.last_sale_price
+      ) && (
+        <div
+          className="mt-4 rounded-xl p-3 border"
+          style={{
+            background:
+              'linear-gradient(180deg, rgba(239,68,68,0.05) 0%, rgba(239,68,68,0.02) 100%)',
+            borderColor: 'rgba(239,68,68,0.2)',
+          }}
+        >
+          <div className="flex items-center gap-2 mb-2.5">
+            <Icon name="account_balance_wallet" className="!text-sm !text-[color:var(--ck-accent)]" />
+            <p className="ck-microlabel !text-[10px]" style={{ color: 'var(--ck-accent-bright)' }}>
+              Tax &amp; Finance
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <FinanceItem
+              icon="warning_amber"
+              label="Taxes Owed"
+              value={details.tax_owed ? formatCurrency(details.tax_owed) : null}
+              tone="danger"
+            />
+            <FinanceItem
+              icon="assessment"
+              label="Tax Assessment"
+              value={details.tax_assessment ? formatCurrency(details.tax_assessment) : null}
+              tone="neutral"
+            />
+            <FinanceItem
+              icon="account_balance"
+              label="HOA"
+              value={
+                details.hoa_amount !== null && details.hoa_amount !== undefined
+                  ? details.hoa_amount === 0
+                    ? 'None'
+                    : formatCurrency(details.hoa_amount)
+                  : null
+              }
+              subtitle={details.hoa_amount && details.hoa_amount > 0 ? 'per month' : undefined}
+              tone="neutral"
+            />
+            <FinanceItem
+              icon="event"
+              label="Last Sale Date"
+              value={formatDate(details.last_sale_date)}
+              tone="neutral"
+            />
+            <FinanceItem
+              icon="attach_money"
+              label="Last Sale Price"
+              value={details.last_sale_price ? formatCurrency(details.last_sale_price) : null}
+              tone="neutral"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Data Source Footer */}
       {details.data_enriched_at && (
-        <div className="mt-5 pt-4 border-t border-outline-variant/20">
-          <p className="text-[10px] text-on-surface-variant">
-            Last enriched: {formatDate(details.data_enriched_at)}
-          </p>
-        </div>
+        <p
+          className="mt-3 text-[10px]"
+          style={{ color: 'var(--ck-text-muted)' }}
+        >
+          Last enriched: {formatDate(details.data_enriched_at)}
+        </p>
       )}
     </section>
   )
@@ -324,27 +284,83 @@ function DetailItem({
   unit?: string
   subtitle?: string
 }) {
-  const isEmpty = !value || value === '—'
+  // Hide empty cells entirely — user wants clean display
+  if (!value || value === '—') return null
 
   return (
-    <div className={`p-3 rounded-lg ${isEmpty ? 'bg-surface-container/30' : 'bg-surface-container-low'}`}>
-      <div className="flex items-center gap-2 mb-1">
-        <Icon
-          name={icon}
-          className={`!text-sm ${isEmpty ? 'text-on-surface-variant/40' : 'text-primary'}`}
-        />
-        <p className={`text-[10px] font-bold uppercase ${isEmpty ? 'text-on-surface-variant/60' : 'text-on-surface-variant'}`}>
+    <div
+      className="p-2.5 rounded-lg border"
+      style={{ background: 'var(--ck-surface-elev)', borderColor: 'var(--ck-border)' }}
+    >
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <Icon name={icon} className="!text-xs !text-[color:var(--ck-accent)]" />
+        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--ck-text-muted)' }}>
           {label}
         </p>
       </div>
-      <p className={`text-sm font-black ${isEmpty ? 'text-on-surface-variant/40' : 'text-primary'}`}>
-        {value || '—'}
-        {unit && value && value !== '—' && (
+      <p className="text-sm font-black" style={{ color: 'var(--ck-text)' }}>
+        {value}
+        {unit && (
           <span className="text-[10px] font-medium opacity-60 ml-1">{unit}</span>
         )}
       </p>
       {subtitle && (
-        <p className="text-[9px] text-on-surface-variant/60 mt-0.5">{subtitle}</p>
+        <p className="text-[9px] mt-0.5" style={{ color: 'var(--ck-text-dim)' }}>{subtitle}</p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Finance-specific tile. Visually distinct from DetailItem:
+ *  - darker translucent surface over the red-tinted finance container
+ *  - value in red for `danger` tone (taxes owed), white for neutral
+ */
+function FinanceItem({
+  icon,
+  label,
+  value,
+  subtitle,
+  tone = 'neutral',
+}: {
+  icon: string
+  label: string
+  value: string | null | undefined
+  subtitle?: string
+  tone?: 'neutral' | 'danger'
+}) {
+  if (!value || value === '—') return null
+
+  const danger = tone === 'danger'
+
+  return (
+    <div
+      className="p-2.5 rounded-lg border"
+      style={{
+        background: 'rgba(0,0,0,0.35)',
+        borderColor: danger ? 'rgba(239,68,68,0.35)' : 'var(--ck-border)',
+      }}
+    >
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <Icon
+          name={icon}
+          className={`!text-xs ${danger ? '!text-[color:var(--ck-accent-bright)]' : '!text-[color:var(--ck-text-muted)]'}`}
+        />
+        <p
+          className="text-[10px] font-bold uppercase tracking-wider"
+          style={{ color: danger ? 'var(--ck-accent-bright)' : 'var(--ck-text-muted)' }}
+        >
+          {label}
+        </p>
+      </div>
+      <p
+        className="text-sm font-black"
+        style={{ color: danger ? 'var(--ck-accent-bright)' : 'var(--ck-text)' }}
+      >
+        {value}
+      </p>
+      {subtitle && (
+        <p className="text-[9px] mt-0.5" style={{ color: 'var(--ck-text-dim)' }}>{subtitle}</p>
       )}
     </div>
   )

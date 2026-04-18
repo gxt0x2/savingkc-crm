@@ -167,6 +167,57 @@ export class ZillowEnrichmentService {
         fetchedAt: new Date().toISOString()
       }
 
+      // ── Primary path: read __NEXT_DATA__ JSON blob (stable across UI changes)
+      try {
+        const nextDataRaw = await page
+          .locator('script#__NEXT_DATA__')
+          .first()
+          .textContent({ timeout: 2000 })
+        if (nextDataRaw) {
+          const nextData = JSON.parse(nextDataRaw)
+          const home = findHomeInfo(nextData)
+          if (home) {
+            if (typeof home.zestimate === 'number' && home.zestimate > 0) {
+              result.zestimate = home.zestimate
+            }
+            if (typeof home.rentZestimate === 'number' && home.rentZestimate > 0) {
+              result.rentZestimate = home.rentZestimate
+            }
+            if (typeof home.yearBuilt === 'number' && home.yearBuilt > 0) {
+              result.yearBuilt = home.yearBuilt
+            }
+            if (typeof home.taxAssessedValue === 'number' && home.taxAssessedValue > 0) {
+              result.taxAssessment = home.taxAssessedValue
+            }
+            if (typeof home.lotAreaValue === 'number' && home.lotAreaValue > 0) {
+              const unit = (home.lotAreaUnit || '').toString().toLowerCase()
+              if (unit.includes('acre')) {
+                result.lotSizeAcres = home.lotAreaValue
+                result.lotSizeSqft = Math.round(home.lotAreaValue * 43560)
+              } else {
+                result.lotSizeSqft = home.lotAreaValue
+                result.lotSizeAcres = home.lotAreaValue / 43560
+              }
+            }
+            if (typeof home.dateSold === 'number' && home.dateSold > 0) {
+              result.lastSaleDate = new Date(home.dateSold).toISOString().slice(0, 10)
+            }
+            if (typeof home.lastSoldPrice === 'number' && home.lastSoldPrice > 0) {
+              result.lastSalePrice = home.lastSoldPrice
+            }
+            console.log('[Zillow] Extracted from __NEXT_DATA__:', {
+              zestimate: result.zestimate,
+              yearBuilt: result.yearBuilt,
+              taxAssessment: result.taxAssessment,
+            })
+          } else {
+            console.log('[Zillow] __NEXT_DATA__ present but no homeInfo found')
+          }
+        }
+      } catch (err: any) {
+        console.log('[Zillow] __NEXT_DATA__ parse failed:', err.message)
+      }
+
       // Lot size - look for "Lot: X acres" or "X sqft"
       try {
         const lotText = await page.locator('span:has-text("Lot:")').first().textContent()
@@ -274,4 +325,34 @@ export async function enrichFromZillow(input: ZillowInput): Promise<ZillowResult
   } finally {
     await service.close()
   }
+}
+
+/**
+ * Walk the __NEXT_DATA__ tree looking for the object that carries Zillow's
+ * homeInfo fields (zestimate, yearBuilt, taxAssessedValue, etc). Zillow
+ * stores it under different paths depending on page variant, so we scan.
+ */
+function findHomeInfo(root: unknown): Record<string, any> | null {
+  const seen = new WeakSet<object>()
+  const queue: unknown[] = [root]
+  while (queue.length) {
+    const node = queue.shift()
+    if (!node || typeof node !== 'object') continue
+    if (seen.has(node as object)) continue
+    seen.add(node as object)
+    const rec = node as Record<string, unknown>
+    // Heuristic: an object is the homeInfo if it has zestimate OR
+    // zpid+yearBuilt together. This covers both `homeInfo` and
+    // `hdpData.homeInfo` variants.
+    if (
+      typeof rec.zestimate === 'number' ||
+      (typeof rec.zpid !== 'undefined' && typeof rec.yearBuilt === 'number')
+    ) {
+      return rec as Record<string, any>
+    }
+    for (const v of Object.values(rec)) {
+      if (v && typeof v === 'object') queue.push(v)
+    }
+  }
+  return null
 }

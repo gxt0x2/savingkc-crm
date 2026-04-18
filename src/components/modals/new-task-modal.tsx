@@ -32,6 +32,7 @@ export function NewTaskModal({
     return d.toISOString().slice(0, 16)
   })
   const [assignedTo, setAssignedTo] = useState('Casey')
+  const [role, setRole] = useState<'setter' | 'closer' | 'admin'>('setter')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [leadId, setLeadId] = useState(initialLeadId || '')
@@ -81,6 +82,7 @@ export function NewTaskModal({
         task_type: taskType,
         due_date: new Date(dueDate).toISOString(),
         assigned_to: assignedTo,
+        role,
         priority: 'normal',
         status: 'pending',
         notes: notes.trim() || undefined,
@@ -93,9 +95,9 @@ export function NewTaskModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <form
-        className="bg-surface-container-lowest rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+        className="ck-dark bg-surface-container-lowest rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-outline-variant/20"
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
       >
@@ -169,7 +171,7 @@ export function NewTaskModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Type</label>
               <select value={taskType} onChange={(e) => setTaskType(e.target.value)} className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm">
@@ -188,6 +190,18 @@ export function NewTaskModal({
                 <option value="Ernest">Ernest</option>
               </select>
             </div>
+            <div>
+              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Role</label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as 'setter' | 'closer' | 'admin')}
+                className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="setter">Setter</option>
+                <option value="closer">Closer</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
           </div>
           <div>
             <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Due Date</label>
@@ -195,6 +209,7 @@ export function NewTaskModal({
               type="datetime-local"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
+              style={{ colorScheme: 'dark' }}
               className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
             />
           </div>
@@ -211,7 +226,15 @@ export function NewTaskModal({
         </div>
         <div className="px-6 py-4 bg-surface-container-high border-t border-outline-variant/10 flex justify-between">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container rounded-lg">Cancel</button>
-          <button type="submit" disabled={saving || !title.trim()} className="px-6 py-2 bg-primary text-on-primary font-bold rounded-lg text-sm hover:opacity-90 disabled:opacity-40">
+          <button
+            type="submit"
+            disabled={saving || !title.trim()}
+            className="px-6 py-2 text-white font-bold rounded-lg text-sm hover:opacity-90 disabled:opacity-40 transition-opacity"
+            style={{
+              background: 'var(--ck-accent)',
+              boxShadow: '0 4px 16px rgba(239,68,68,0.22)',
+            }}
+          >
             {saving ? 'Creating...' : 'Create Task'}
           </button>
         </div>

@@ -118,9 +118,9 @@ export function EditTaskModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <form
-        className="bg-surface-container-lowest rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+        className="ck-dark bg-surface-container-lowest rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-outline-variant/20"
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
       >
@@ -249,8 +249,8 @@ export function EditTaskModal({
 
         {/* Delete Confirmation */}
         {showDeleteConfirm && (
-          <div className="absolute inset-0 bg-black/50 rounded-xl flex items-center justify-center p-6">
-            <div className="bg-white rounded-xl p-6 shadow-xl max-w-sm">
+          <div className="absolute inset-0 bg-black/70 rounded-xl flex items-center justify-center p-6">
+            <div className="ck-dark bg-surface-container-lowest rounded-xl p-6 shadow-xl max-w-sm border border-outline-variant/20">
               <h3 className="text-lg font-bold text-error mb-2">Delete Task?</h3>
               <p className="text-sm text-on-surface-variant mb-4">
                 This action cannot be undone. The task will be permanently deleted.

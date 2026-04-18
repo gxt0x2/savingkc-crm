@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
+import { useCardCollapse } from '@/hooks/use-card-collapse'
 
 interface FavoriteOrFoolProps {
   leadId: string
@@ -19,6 +20,10 @@ interface FavoriteOrFoolProps {
   station: string | null
   notes: string | null
   sellerSituation: string | null
+  activities?: Array<{
+    activity_type: string
+    created_at: string
+  }>
 }
 
 interface ManifestData {
@@ -326,9 +331,24 @@ const DIAGNOSIS_CONFIG: Record<Diagnosis, { label: string; textClass: string; bg
   fool:           { label: 'THE FOOL',          textClass: 'text-red-500',    bg: 'bg-red-500/10',    barBg: 'bg-red-500',    icon: 'block' },
 }
 
-export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation }: FavoriteOrFoolProps) {
+function formatLastSeen(activities?: Array<{ activity_type: string; created_at: string }>): string | null {
+  if (!activities || activities.length === 0) return null
+  const meaningful = ['call', 'sms', 'sms_sent', 'sms_received', 'sms_inbound', 'email', 'appointment', 'note']
+  const last = activities.find((a) => meaningful.includes(a.activity_type)) || activities[0]
+  if (!last) return null
+  const ms = Date.now() - new Date(last.created_at).getTime()
+  const mins = Math.floor(ms / 60000)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
+export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation, activities }: FavoriteOrFoolProps) {
   const [manifest, setManifest] = useState<ManifestData>({})
   const [loading, setLoading] = useState(true)
+  const [open, toggleOpen] = useCardCollapse('favorite-or-fool')
 
   useEffect(() => {
     async function fetchManifest() {
@@ -354,41 +374,78 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
 
   if (loading) {
     return (
-      <section className="bg-[#1B2A4A] rounded-2xl p-6">
+      <section
+        className="rounded-2xl p-5 border"
+        style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+      >
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-          <span className="text-xs text-slate-400">Diagnosing seller intent...</span>
+          <div
+            className="w-3 h-3 border-2 rounded-full animate-spin"
+            style={{ borderColor: 'rgba(239,68,68,0.3)', borderTopColor: 'var(--ck-accent)' }}
+          />
+          <span className="text-xs" style={{ color: 'var(--ck-text-muted)' }}>Diagnosing…</span>
         </div>
       </section>
     )
   }
 
   return (
-    <section className="bg-[#1B2A4A] rounded-2xl p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Icon name="psychology" className="!text-lg text-amber-400" />
-        <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
-          Favorite or Fool?
-        </h2>
-      </div>
+    <section
+      className="rounded-2xl p-5 border"
+      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+    >
+      <button
+        type="button"
+        onClick={toggleOpen}
+        className="w-full flex items-center gap-2 mb-4"
+      >
+        <Icon name="psychology" className="!text-base !text-[color:var(--ck-accent)]" />
+        <h2 className="ck-microlabel !text-[11px] !text-white">Favorite or Fool?</h2>
+        {(() => {
+          const lastSeen = formatLastSeen(activities)
+          return lastSeen ? (
+            <span
+              className="ml-auto text-[10px] font-bold"
+              style={{ color: 'var(--ck-text-muted)' }}
+              title="Time since last meaningful touch"
+            >
+              Last: {lastSeen}
+            </span>
+          ) : null
+        })()}
+        <Icon
+          name={open ? 'expand_less' : 'expand_more'}
+          className="!text-base !text-[color:var(--ck-text-muted)] ml-auto"
+        />
+      </button>
 
+      {!open ? null : (
+      <>
       {/* Diagnosis Badge */}
-      <div className={`${config.bg} border border-white/5 rounded-xl px-4 py-3 mb-4`}>
-        <div className="flex items-center gap-2 mb-1">
-          <Icon name={config.icon} className={`!text-xl ${config.textClass}`} />
-          <span className={`text-lg font-black tracking-wide ${config.textClass}`}>
+      <div
+        className="rounded-xl px-4 py-3 mb-4 border"
+        style={{ background: 'var(--ck-surface-elev)', borderColor: 'var(--ck-border)' }}
+      >
+        <div className="flex items-center gap-2 mb-1.5">
+          <Icon name={config.icon} className={`!text-lg ${config.textClass}`} />
+          <span className={`text-base font-black tracking-wide ${config.textClass}`}>
             {config.label}
           </span>
         </div>
         {result.confidence > 0 && (
           <div className="flex items-center gap-2 mt-1">
-            <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="flex-1 h-1.5 rounded-full overflow-hidden"
+              style={{ background: 'var(--ck-border)' }}
+            >
               <div
                 className={`h-full rounded-full transition-all duration-700 ${config.barBg}`}
                 style={{ width: `${result.confidence}%` }}
               />
             </div>
-            <span className="text-[10px] text-slate-400 font-bold">{result.confidence}%</span>
+            <span className="text-[10px] font-bold" style={{ color: 'var(--ck-text-muted)' }}>
+              {result.confidence}%
+            </span>
           </div>
         )}
       </div>
@@ -396,13 +453,17 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
       {/* Proof of Life signals */}
       {result.proofOfLife.length > 0 && (
         <div className="mb-3">
-          <p className="text-[10px] font-black uppercase tracking-wider text-green-400 mb-1.5">
+          <p className="ck-microlabel mb-1.5" style={{ color: 'var(--ck-success)' }}>
             Proof of Life
           </p>
           <ul className="space-y-1">
             {result.proofOfLife.map((s, i) => (
-              <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
-                <span className="text-green-400 mt-0.5 shrink-0">+</span>
+              <li
+                key={i}
+                className="text-xs flex items-start gap-1.5 leading-snug"
+                style={{ color: 'var(--ck-text)' }}
+              >
+                <span className="mt-0.5 shrink-0 font-black" style={{ color: 'var(--ck-success)' }}>+</span>
                 {s}
               </li>
             ))}
@@ -413,13 +474,17 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
       {/* Fool signals */}
       {result.foolSignals.length > 0 && (
         <div className="mb-3">
-          <p className="text-[10px] font-black uppercase tracking-wider text-red-400 mb-1.5">
+          <p className="ck-microlabel mb-1.5" style={{ color: 'var(--ck-accent)' }}>
             Fool Signals
           </p>
           <ul className="space-y-1">
             {result.foolSignals.map((s, i) => (
-              <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
-                <span className="text-red-400 mt-0.5 shrink-0">-</span>
+              <li
+                key={i}
+                className="text-xs flex items-start gap-1.5 leading-snug"
+                style={{ color: 'var(--ck-text)' }}
+              >
+                <span className="mt-0.5 shrink-0 font-black" style={{ color: 'var(--ck-accent)' }}>−</span>
                 {s}
               </li>
             ))}
@@ -427,16 +492,8 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
         </div>
       )}
 
-      {/* Recommendation */}
-      <div className="bg-white/5 rounded-lg px-3 py-2.5 mt-3">
-        <p className="text-xs text-slate-300 leading-relaxed">
-          {result.recommendation}
-        </p>
-      </div>
-
-      <p className="text-[9px] text-slate-500 mt-3">
-        Based on manifest call analysis, communication patterns, and seller behavior
-      </p>
+      </>
+      )}
     </section>
   )
 }

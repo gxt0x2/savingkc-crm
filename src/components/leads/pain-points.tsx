@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
+import { useCardCollapse } from '@/hooks/use-card-collapse'
 
 interface PainPoint {
   period: 'past' | 'present' | 'future'
@@ -97,6 +98,7 @@ const SITUATION_TYPE_MAP: Record<string, { label: string; period: 'past' | 'pres
 export function PainPoints({ leadId, notes, sellerSituation, motivationScore, activities }: PainPointsProps) {
   const [painPoints, setPainPoints] = useState<PainPoint[]>([])
   const [loading, setLoading] = useState(true)
+  const [open, toggleOpen] = useCardCollapse('pain-points')
 
   useEffect(() => {
     async function analyze() {
@@ -215,49 +217,65 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
   }, [leadId, notes, sellerSituation, motivationScore, activities])
 
   const PERIOD_CONFIG = {
-    past: { color: 'text-slate-400', dotBg: 'bg-slate-400', label: 'Past', icon: 'history' },
-    present: { color: 'text-amber-400', dotBg: 'bg-amber-400', label: 'Present', icon: 'radio_button_checked' },
-    future: { color: 'text-blue-400', dotBg: 'bg-blue-400', label: 'Future', icon: 'schedule' },
+    past: { color: 'var(--ck-text-muted)', label: 'Past' },
+    present: { color: 'var(--ck-warn)', label: 'Present' },
+    future: { color: 'var(--ck-info)', label: 'Future' },
   }
 
   return (
-    <section className="bg-[#1B2A4A] rounded-2xl p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Icon name="psychology_alt" className="!text-lg text-rose-400" />
-        <h2 className="text-sm font-black uppercase tracking-[0.15em] text-white">
-          Seller Pain Points
-        </h2>
-      </div>
+    <section
+      className="rounded-2xl p-5 border"
+      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+    >
+      <button
+        type="button"
+        onClick={toggleOpen}
+        className="w-full flex items-center justify-between mb-4"
+      >
+        <div className="flex items-center gap-2">
+          <Icon name="warning" className="!text-base !text-[color:var(--ck-warn)]" />
+          <h2 className="ck-microlabel !text-[11px] !text-white">Pain Points</h2>
+        </div>
+        <Icon
+          name={open ? 'expand_less' : 'expand_more'}
+          className="!text-base !text-[color:var(--ck-text-muted)]"
+        />
+      </button>
 
-      {loading ? (
-        <div className="flex items-center gap-2 py-3">
-          <div className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-          <span className="text-xs text-slate-400">Analyzing...</span>
+      {!open ? null : loading ? (
+        <div className="flex items-center gap-2 py-2">
+          <div
+            className="w-3 h-3 border-2 rounded-full animate-spin"
+            style={{ borderColor: 'rgba(245,158,11,0.3)', borderTopColor: 'var(--ck-warn)' }}
+          />
+          <span className="text-xs" style={{ color: 'var(--ck-text-muted)' }}>Analyzing…</span>
         </div>
       ) : painPoints.length === 0 ? (
-        <p className="text-sm text-slate-400 italic">
-          No pain points identified yet. Add notes or log calls to detect seller motivations.
+        <p className="text-xs italic" style={{ color: 'var(--ck-text-muted)' }}>
+          No pain points identified yet.
         </p>
       ) : (
-        <div className="space-y-4 relative">
-          {/* Timeline line */}
-          <div className="absolute left-[11px] top-3 bottom-3 w-[2px] bg-white/10" />
-
+        <div className="space-y-3">
           {painPoints.map((point) => {
             const config = PERIOD_CONFIG[point.period]
             return (
-              <div key={point.period} className="relative pl-8">
-                <div className={`absolute left-0 top-1 w-6 h-6 rounded-full border-2 border-[#1B2A4A] flex items-center justify-center ${config.dotBg}`}>
-                  <div className="w-2 h-2 rounded-full bg-[#1B2A4A]" />
-                </div>
-                <p className={`text-[10px] font-black uppercase tracking-wider mb-1.5 ${config.color}`}>
+              <div key={point.period}>
+                <p
+                  className="ck-microlabel mb-1.5"
+                  style={{ color: config.color }}
+                >
                   {config.label}
                 </p>
                 <ul className="space-y-1">
                   {point.items.map((item, i) => (
                     <li key={i} className="flex items-start gap-2">
-                      <Icon name="chevron_right" className="!text-xs text-slate-500 mt-0.5 shrink-0" />
-                      <span className="text-sm text-slate-300">{item}</span>
+                      <span
+                        className="mt-[7px] w-1 h-1 rounded-full shrink-0"
+                        style={{ background: config.color }}
+                      />
+                      <span className="text-sm leading-snug" style={{ color: 'var(--ck-text)' }}>
+                        {item}
+                      </span>
                     </li>
                   ))}
                 </ul>

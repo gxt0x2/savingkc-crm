@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       // Fetch lead data from database
       const { data: leadData, error: leadError } = await supabase
         .from('leads')
-        .select('id, address, city, state, zip, full_name, year_built')
+        .select('id, property_address, city, state, zip, full_name, year_built')
         .eq('id', leadId)
         .single()
 
@@ -53,18 +53,21 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (!lead.address || !lead.city || !lead.state) {
+    // Normalize — DB rows use `property_address`, direct-address mode uses `address`.
+    const resolvedAddress: string | null = lead.property_address || lead.address || null
+
+    if (!resolvedAddress || !lead.city || !lead.state) {
       return NextResponse.json(
         { success: false, error: 'Lead is missing address information' },
         { status: 400 }
       )
     }
 
-    console.log(`[Zillow Enrich] Starting for ${lead.full_name || lead.address}: ${lead.address}, ${lead.city}, ${lead.state}`)
+    console.log(`[Zillow Enrich] Starting for ${lead.full_name || resolvedAddress}: ${resolvedAddress}, ${lead.city}, ${lead.state}`)
 
     // Run Zillow enrichment
     const input: ZillowInput = {
-      address: lead.address,
+      address: resolvedAddress,
       city: lead.city,
       state: lead.state,
       zip: lead.zip || undefined,
@@ -119,7 +122,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    console.log(`[Zillow Enrich] Success for ${lead.full_name || lead.address}`)
+    console.log(`[Zillow Enrich] Success for ${lead.full_name || resolvedAddress}`)
 
     return NextResponse.json({
       ...result,

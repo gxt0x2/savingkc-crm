@@ -91,3 +91,168 @@ body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+/* ─── Lead Cockpit tokens (shared with .ck-dark for portaled modals) ─── */
+.lead-cockpit,
+.ck-dark {
+  --ck-bg: #0a0a0a;
+  --ck-surface: #141414;
+  --ck-surface-elev: #1c1c1c;
+  --ck-surface-hi: #232323;
+  --ck-border: #262626;
+  --ck-border-strong: #2e2e2e;
+  --ck-text: #fafafa;
+  --ck-text-muted: #a3a3a3;
+  --ck-text-dim: #6b7280;
+  --ck-accent: #ef4444;
+  --ck-accent-bright: #f87171;
+  --ck-warn: #f59e0b;
+  --ck-success: #10b981;
+  --ck-info: #3b82f6;
+}
+
+/* Layout side-effects: apply only to the page root, NOT to portaled modals */
+.lead-cockpit {
+  background-color: var(--ck-bg);
+  color: var(--ck-text);
+  min-height: 100vh;
+}
+
+/* Utility classes scoped to cockpit */
+.ck-card {
+  background-color: var(--ck-surface);
+  border: 1px solid var(--ck-border);
+  border-radius: 1rem;
+}
+.ck-card-elev {
+  background-color: var(--ck-surface-elev);
+  border: 1px solid var(--ck-border);
+  border-radius: 1rem;
+}
+.ck-microlabel {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ck-text-muted);
+}
+.ck-display {
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--ck-text);
+}
+.ck-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.625rem;
+  background: var(--ck-surface-elev);
+  border: 1px solid var(--ck-border);
+  color: var(--ck-text);
+  transition: background-color 150ms, border-color 150ms, transform 150ms;
+}
+.ck-icon-btn:hover {
+  background: var(--ck-surface-hi);
+  border-color: var(--ck-border-strong);
+}
+.ck-icon-btn.ck-icon-btn-primary {
+  background: var(--ck-accent);
+  border-color: var(--ck-accent);
+  color: white;
+}
+.ck-icon-btn.ck-icon-btn-primary:hover {
+  background: var(--ck-accent-bright);
+}
+
+/* Override light-theme surface utilities inside cockpit + portaled modals opted-in with .ck-dark */
+.lead-cockpit .bg-surface,
+.lead-cockpit .bg-background,
+.ck-dark .bg-surface,
+.ck-dark .bg-background {
+  background-color: var(--ck-bg) !important;
+}
+.lead-cockpit .bg-surface-container-lowest,
+.lead-cockpit .bg-surface-container-low,
+.lead-cockpit .bg-surface-container,
+.lead-cockpit .bg-surface-container-high,
+.ck-dark,
+.ck-dark .bg-surface-container-lowest,
+.ck-dark .bg-surface-container-low,
+.ck-dark .bg-surface-container,
+.ck-dark .bg-surface-container-high {
+  background-color: var(--ck-surface) !important;
+}
+.lead-cockpit .border-outline-variant\/10,
+.lead-cockpit .border-outline-variant\/15,
+.lead-cockpit .border-outline-variant\/20,
+.lead-cockpit .border-outline-variant\/25,
+.lead-cockpit .border-outline-variant\/30,
+.lead-cockpit .border-outline-variant,
+.ck-dark .border-outline-variant\/10,
+.ck-dark .border-outline-variant\/15,
+.ck-dark .border-outline-variant\/20,
+.ck-dark .border-outline-variant\/25,
+.ck-dark .border-outline-variant\/30,
+.ck-dark .border-outline-variant {
+  border-color: var(--ck-border) !important;
+}
+.lead-cockpit .text-primary,
+.ck-dark .text-primary {
+  color: var(--ck-text) !important;
+}
+.lead-cockpit .text-on-surface-variant,
+.ck-dark .text-on-surface-variant {
+  color: var(--ck-text-muted) !important;
+}
+.lead-cockpit .text-on-surface,
+.ck-dark .text-on-surface {
+  color: var(--ck-text) !important;
+}
+/* Inputs/textareas inside dark modals: match surface + text color */
+.ck-dark input:not([type="checkbox"]):not([type="radio"]),
+.ck-dark textarea,
+.ck-dark select {
+  background-color: var(--ck-surface-elev) !important;
+  border-color: var(--ck-border) !important;
+  color: var(--ck-text) !important;
+  color-scheme: dark;
+}
+.ck-dark input::placeholder,
+.ck-dark textarea::placeholder {
+  color: var(--ck-text-dim) !important;
+}
+/* Scrollbar in cockpit + dark modals */
+.lead-cockpit ::-webkit-scrollbar-thumb,
+.ck-dark ::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+}
+.lead-cockpit ::-webkit-scrollbar-thumb:hover,
+.ck-dark ::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}
+
+/* Subtle attention cue — soft pulse on accent border + shadow */
+@keyframes ck-attention-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.0);
+    border-color: var(--ck-border);
+  }
+  50% {
+    box-shadow: 0 0 18px 0 rgba(239, 68, 68, 0.18);
+    border-color: rgba(239, 68, 68, 0.35);
+  }
+}
+.ck-attention {
+  animation: ck-attention-pulse 3.2s ease-in-out infinite;
+}
+.ck-attention:hover,
+.ck-attention:focus-within {
+  animation: none;
+  border-color: rgba(239, 68, 68, 0.5) !important;
+  box-shadow: 0 0 24px 0 rgba(239, 68, 68, 0.22);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ck-attention { animation: none; }
+}

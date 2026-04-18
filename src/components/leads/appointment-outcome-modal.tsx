@@ -109,9 +109,9 @@ export function AppointmentOutcomeModal({
   })
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary/20 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div
-        className="w-full max-w-lg bg-surface-container-lowest rounded-xl shadow-2xl overflow-hidden border border-outline-variant/20"
+        className="ck-dark w-full max-w-lg bg-surface-container-lowest rounded-xl shadow-2xl overflow-hidden border border-outline-variant/20"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

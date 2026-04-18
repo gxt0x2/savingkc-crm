@@ -74,15 +74,15 @@ export function AppointmentModal({ lead, onClose, onSuccess }: AppointmentModalP
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="ck-dark bg-surface-container-lowest rounded-2xl shadow-2xl max-w-md w-full border border-outline-variant/20">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-[color:var(--ck-border)]">
             <div className="flex items-center gap-2">
               <Icon name="calendar_month" className="text-primary" />
-              <h2 className="text-lg font-bold text-gray-900">Schedule Appointment</h2>
+              <h2 className="text-lg font-bold text-white">Schedule Appointment</h2>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <button onClick={onClose} className="text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text-muted)] transition-colors">
               <Icon name="close" />
             </button>
           </div>
@@ -90,7 +90,7 @@ export function AppointmentModal({ lead, onClose, onSuccess }: AppointmentModalP
           <div className="px-6 py-5 space-y-4">
             {/* Appointment Type */}
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Type</label>
+              <label className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-2">Type</label>
               <div className="flex gap-2">
                 {typeOptions.map(opt => (
                   <button
@@ -99,7 +99,7 @@ export function AppointmentModal({ lead, onClose, onSuccess }: AppointmentModalP
                     className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-sm font-medium border transition-all ${
                       form.type === opt.value
                         ? 'bg-primary text-white border-primary'
-                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                        : 'bg-[color:var(--ck-surface-elev)] text-[color:var(--ck-text-muted)] border-[color:var(--ck-border)] hover:bg-[color:var(--ck-surface-hi)]'
                     }`}
                   >
                     <Icon name={opt.icon} size="text-sm" />
@@ -112,33 +112,33 @@ export function AppointmentModal({ lead, onClose, onSuccess }: AppointmentModalP
             {/* Date & Time */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Date</label>
+                <label className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Date</label>
                 <input
                   type="date"
                   value={form.date}
                   onChange={(e) => setForm(f => ({ ...f, date: e.target.value }))}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                  className="w-full border border-[color:var(--ck-border)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Time</label>
+                <label className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Time</label>
                 <input
                   type="time"
                   value={form.time}
                   onChange={(e) => setForm(f => ({ ...f, time: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                  className="w-full border border-[color:var(--ck-border)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
                 />
               </div>
             </div>
 
             {/* Agent */}
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Agent</label>
+              <label className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Agent</label>
               <select
                 value={form.agent}
                 onChange={(e) => setForm(f => ({ ...f, agent: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                className="w-full border border-[color:var(--ck-border)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
               >
                 <option value="Ernest Dodson">Ernest Dodson</option>
                 <option value="Casey Davis">Casey Davis</option>
@@ -147,32 +147,32 @@ export function AppointmentModal({ lead, onClose, onSuccess }: AppointmentModalP
 
             {/* Notes */}
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Notes (optional)</label>
+              <label className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Notes (optional)</label>
               <textarea
                 value={form.notes}
                 onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
                 placeholder="Any additional details..."
                 rows={2}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                className="w-full border border-[color:var(--ck-border)] rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-primary/20 focus:outline-none"
               />
             </div>
 
             {/* Send Reminder */}
-            <label className="flex items-center gap-2 text-sm cursor-pointer bg-blue-50 rounded-lg p-3">
+            <label className="flex items-center gap-2 text-sm cursor-pointer bg-[color:var(--ck-surface-elev)] rounded-lg p-3">
               <input
                 type="checkbox"
                 checked={form.sendReminder}
                 onChange={(e) => setForm(f => ({ ...f, sendReminder: e.target.checked }))}
-                className="rounded border-gray-300 text-primary focus:ring-primary"
+                className="rounded border-[color:var(--ck-border)] text-primary focus:ring-primary"
               />
-              <span className="text-gray-700">Send SMS confirmation to seller</span>
+              <span className="text-[color:var(--ck-text)]">Send SMS confirmation to seller</span>
             </label>
           </div>
 
-          <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+          <div className="px-6 py-4 border-t border-[color:var(--ck-border)] flex gap-3">
             <button
               onClick={onClose}
-              className="flex-1 border border-gray-200 rounded-lg py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-50 transition-all"
+              className="flex-1 border border-[color:var(--ck-border)] rounded-lg py-2.5 text-sm font-bold text-[color:var(--ck-text-muted)] hover:bg-[color:var(--ck-surface-hi)] transition-all"
             >
               Cancel
             </button>

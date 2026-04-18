@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { useCardCollapse } from '@/hooks/use-card-collapse'
 
 interface AriBriefingProps {
   leadId: string
@@ -36,6 +37,7 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
   const [cached, setCached] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [generatedAt, setGeneratedAt] = useState<string | null>(null)
+  const [open, toggleOpen] = useCardCollapse('ari-briefing')
 
   // Only re-generate when manifestId or leadId changes (not on every activities change)
   useEffect(() => {
@@ -177,17 +179,33 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
     return first + '.'
   }
 
+  // Build a single-line synopsis (<10s read) from the 3-part briefing.
+  function buildSynopsis(b: BriefingData): string {
+    const sit = snippet(b.situation, 110).replace(/[.!?]$/, '')
+    const mot = snippet(b.motivation, 90).replace(/[.!?]$/, '')
+    const strat = snippet(b.strategy, 90).replace(/[.!?]$/, '')
+    const parts: string[] = []
+    if (sit) parts.push(sit)
+    if (mot) parts.push(mot)
+    if (strat) parts.push(`Next: ${strat}`)
+    return parts.join('. ') + '.'
+  }
+
   return (
     <section
-      className="bg-[#1B2A4A] rounded-2xl p-5 relative overflow-hidden cursor-pointer select-none"
+      className="rounded-2xl p-5 relative overflow-hidden cursor-pointer select-none border"
+      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
       onDoubleClick={() => setExpanded(!expanded)}
       title={expanded ? 'Double-click to collapse' : 'Double-click to expand full briefing'}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div
+        className="flex items-center justify-between mb-4 cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); toggleOpen() }}
+      >
         <div className="flex items-center gap-2">
-          <span className="text-lg">🦊</span>
-          <h2 className="text-sm font-black text-white">Ari Briefing</h2>
+          <Icon name="auto_awesome" className="!text-base !text-[color:var(--ck-accent)]" />
+          <h2 className="ck-microlabel !text-[11px] !text-white">AI Strategic Briefing</h2>
         </div>
         <div className="flex items-center gap-2">
           {(() => {
@@ -209,10 +227,14 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
           >
             <Icon name="refresh" className={`!text-xs ${loading ? 'animate-spin' : ''}`} />
           </button>
+          <Icon
+            name={open ? 'expand_less' : 'expand_more'}
+            className="!text-base !text-[color:var(--ck-text-muted)]"
+          />
         </div>
       </div>
 
-      {loading ? (
+      {!open ? null : loading ? (
         <div className="flex items-center gap-2 py-3">
           <div className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
           <span className="text-xs text-slate-400">Analyzing lead data...</span>
@@ -222,40 +244,53 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
           No data yet. Add notes or log calls to generate briefing.
         </p>
       ) : expanded ? (
-        /* ── EXPANDED: full paragraphs ── */
+        /* ── EXPANDED: detailed breakdown of the entire situation ── */
         <div className="space-y-4">
-          <p className="text-sm text-slate-200 leading-relaxed">
-            <span className="font-bold text-white">Situation: </span>
-            {briefing.situation}
-          </p>
-          <p className="text-sm text-slate-200 leading-relaxed">
-            <span className="font-bold text-amber-400">Motivation: </span>
-            {briefing.motivation}
-          </p>
-          <p className="text-sm text-slate-200 leading-relaxed">
-            <span className="font-bold text-green-400">Strategy: </span>
-            {briefing.strategy}
-          </p>
+          <div
+            className="rounded-lg p-3 border"
+            style={{ background: 'var(--ck-surface-elev)', borderColor: 'var(--ck-border)' }}
+          >
+            <p className="ck-microlabel mb-1.5 !text-[10px]" style={{ color: 'var(--ck-accent)' }}>
+              Situation
+            </p>
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--ck-text)' }}>
+              {briefing.situation || 'No situation data yet.'}
+            </p>
+          </div>
+          <div
+            className="rounded-lg p-3 border"
+            style={{ background: 'var(--ck-surface-elev)', borderColor: 'var(--ck-border)' }}
+          >
+            <p className="ck-microlabel mb-1.5 !text-[10px]" style={{ color: 'var(--ck-accent)' }}>
+              Motivation
+            </p>
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--ck-text)' }}>
+              {briefing.motivation || 'No motivation data yet.'}
+            </p>
+          </div>
+          <div
+            className="rounded-lg p-3 border"
+            style={{ background: 'var(--ck-surface-elev)', borderColor: 'var(--ck-border)' }}
+          >
+            <p className="ck-microlabel mb-1.5 !text-[10px]" style={{ color: 'var(--ck-accent)' }}>
+              Strategy / Next Move
+            </p>
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--ck-text)' }}>
+              {briefing.strategy || 'No strategy yet.'}
+            </p>
+          </div>
         </div>
       ) : (
-        /* ── COLLAPSED: one-line snippet per section ── */
-        <div className="space-y-2">
-          <p className="text-xs text-slate-300 leading-relaxed">
-            <span className="font-bold text-white">Situation:</span>{' '}
-            {snippet(briefing.situation)}
-          </p>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            <span className="font-bold text-amber-400">Motivation:</span>{' '}
-            {snippet(briefing.motivation)}
-          </p>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            <span className="font-bold text-green-400">Strategy:</span>{' '}
-            {snippet(briefing.strategy)}
-          </p>
-        </div>
+        /* ── SYNOPSIS: one-line, agent reads in <10s ── */
+        <p
+          className="text-sm leading-snug"
+          style={{ color: 'var(--ck-text)' }}
+        >
+          {buildSynopsis(briefing)}
+        </p>
       )}
 
-      <p className="text-[9px] text-slate-500 mt-3">
+      <p className="text-[9px] mt-3" style={{ color: 'var(--ck-text-dim)' }}>
         {expanded ? 'Double-click to collapse' : 'Double-click for full briefing'}
       </p>
     </section>

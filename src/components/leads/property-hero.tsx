@@ -20,36 +20,48 @@ interface PropertyDetails {
 
 interface PropertyHeroProps {
   property: PropertyDetails
-  detailsExpanded?: boolean
-  onToggleDetails?: () => void
-  arv?: number | null
+  /** Zillow zestimate */
   zestimate?: number | null
+  /** Redfin estimate */
+  redfinEstimate?: number | null
+  /** County/tax-assessed value */
+  assessedValue?: number | null
+  /** Show a shimmer placeholder while estimate enrichment is running. */
+  estimateLoading?: boolean
+  /** Called when user double-clicks the stats row (beds/baths/sqft/built). Opens the property-details modal. */
+  onOpenDetails?: () => void
+  /** @deprecated retained for compat */
+  detailsExpanded?: boolean
+  /** @deprecated retained for compat */
+  onToggleDetails?: () => void
+  /** @deprecated Notes row removed; kept to avoid breaking parent prop. */
   onNotesClick?: () => void
+  /** @deprecated Replaced by explicit zestimate + assessedValue props. */
+  zestimateLabel?: string
+  /** @deprecated ARV now shown in Net Proceeds card. */
+  arv?: number | null
 }
 
-function getCountyUrl(county: string | undefined, city: string | undefined, address: string): string {
-  if (county) {
-    if (county.toLowerCase().includes('jackson')) {
-      return `https://www.jacksongov.org/services/property-tax/search?q=${encodeURIComponent(address)}`
-    }
-    if (county.toLowerCase().includes('wyandotte') || (city && city.toLowerCase().includes('kansas city, ks'))) {
-      return 'https://www.wycokck.org/departments/county-appraiser'
-    }
-  }
-  if (city && city.toLowerCase().includes('kansas city, ks')) {
-    return 'https://www.wycokck.org/departments/county-appraiser'
-  }
-  return `https://www.google.com/search?q=${encodeURIComponent(address + ' county records parcel')}`
+function compactDollars(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+  if (n >= 1_000) return `$${Math.round(n / 1_000)}k`
+  return `$${n.toLocaleString()}`
 }
 
-export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, zestimate, onNotesClick }: PropertyHeroProps) {
+export function PropertyHero({
+  property,
+  zestimate,
+  redfinEstimate,
+  assessedValue,
+  estimateLoading,
+  onOpenDetails,
+}: PropertyHeroProps) {
   const fullAddress = [property.address, property.city, property.state, property.zip]
     .filter(Boolean)
     .join(', ')
   const encodedAddress = encodeURIComponent(fullAddress || property.address)
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`
   const zillowUrl = `https://www.zillow.com/homes/${encodeURIComponent(fullAddress || property.address)}`
-  const countyUrl = getCountyUrl(property.county, property.city, fullAddress || property.address)
   const GMAPS_KEY = 'AIzaSyB0_wshDWSFFVuEiuUmhslBYcpWG3ooLPc'
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x320&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
   const [showStreetView, setShowStreetView] = useState(false)
@@ -91,15 +103,33 @@ export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, 
       onClick={() => setShowStreetView(false)}
     >
       <div
-        className="relative w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl"
+        className="relative w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl border"
         onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
       >
-        <button
-          onClick={() => setShowStreetView(false)}
-          className="absolute top-3 right-3 z-10 bg-black/60 text-white rounded-full w-9 h-9 flex items-center justify-center hover:bg-black/80 transition-colors"
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-5 py-3 border-b"
+          style={{ borderColor: 'var(--ck-border)' }}
         >
-          <Icon name="close" />
-        </button>
+          <div className="min-w-0 flex items-center gap-2">
+            <Icon name="360" className="!text-base !text-[color:var(--ck-accent)]" />
+            <div className="min-w-0">
+              <p className="ck-microlabel !text-[10px]">Street View</p>
+              <p className="text-sm font-bold text-white truncate">
+                {fullAddress || property.address}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowStreetView(false)}
+            className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+            style={{ background: 'var(--ck-surface-elev)', color: 'var(--ck-text)' }}
+            title="Close"
+          >
+            <Icon name="close" className="!text-base" />
+          </button>
+        </div>
         {streetViewEmbedUrl ? (
           <iframe
             src={streetViewEmbedUrl}
@@ -111,7 +141,10 @@ export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, 
             title="Street View"
           />
         ) : (
-          <div className="flex items-center justify-center h-[500px] bg-slate-900 text-slate-400 text-sm">
+          <div
+            className="flex items-center justify-center h-[500px] text-sm"
+            style={{ background: 'var(--ck-surface-elev)', color: 'var(--ck-text-muted)' }}
+          >
             Loading…
           </div>
         )}
@@ -123,110 +156,116 @@ export function PropertyHero({ property, detailsExpanded, onToggleDetails, arv, 
     <div className="space-y-4">
       {mounted && streetViewModal && createPortal(streetViewModal, document.body)}
 
-      {/* Street View Header — click to open inline Street View modal */}
-      <div className="relative rounded-2xl overflow-hidden shadow-sm bg-slate-800">
+      {/* ── Hero card: property image + PRIMARY ASSET overlay + address / estimate row ── */}
+      <div
+        className="rounded-2xl overflow-hidden border"
+        style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+      >
         <button
           onClick={openStreetView}
-          className="w-full block cursor-pointer"
+          className="relative w-full block cursor-pointer group"
           title="Click to open Street View"
           style={{ padding: 0, border: 'none', background: 'none' }}
         >
           <img
             src={streetViewUrl}
             alt={`Street view of ${fullAddress || property.address}`}
-            width="100%"
-            style={{ display: 'block', width: '100%', height: '200px', objectFit: 'cover' }}
+            className="block w-full h-[220px] sm:h-[260px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
             loading="lazy"
           />
-        </button>
-        {/* Address overlay */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none px-4 pb-3 pt-8">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
+          {/* subtle vignette */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/10 pointer-events-none" />
+          {/* top-left: tags */}
+          <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
             {property.tags.map((tag) => (
               <span
                 key={tag}
-                className="px-2 py-0.5 bg-secondary text-[10px] font-black uppercase rounded text-white"
+                className="px-2 py-0.5 bg-black/60 backdrop-blur-sm text-[10px] font-black uppercase tracking-wider rounded text-white border border-white/10"
               >
                 {tag}
               </span>
             ))}
           </div>
-          <p className="text-white font-bold text-sm">{fullAddress || property.address}</p>
-        </div>
-      </div>
-
-      {/* Quick Links */}
-      <div className="flex gap-3">
-        {/* Zestimate Display */}
-        <div className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2">
-          <span className="text-sm text-on-surface-variant font-medium">Zestimate:</span>
-          {zestimate ? (
-            <>
-              <span className="text-lg font-bold text-primary">${zestimate.toLocaleString()}</span>
-              <a
-                href={zillowUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
-              >
-                via Zillow <Icon name="open_in_new" size="text-xs" />
-              </a>
-            </>
-          ) : (
-            <span className="text-lg font-bold text-on-surface-variant">—</span>
-          )}
-        </div>
-        <a
-          href={countyUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2 text-sm font-bold text-primary hover:bg-surface-container-low transition-all"
-        >
-          <Icon name="description" className="text-blue-600" /> County Records
-        </a>
-        <button
-          onClick={onNotesClick}
-          className="flex-1 bg-surface-container-lowest border border-outline-variant/20 p-3 rounded-lg flex items-center justify-center gap-2 text-sm font-bold text-primary hover:bg-surface-container-low transition-all"
-        >
-          <Icon name="edit_note" className="text-blue-600" /> Notes
+          {/* top-right: street-view hint icon */}
+          <div className="absolute top-3 right-3 w-8 h-8 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/80 group-hover:text-white group-hover:bg-black/80 transition-colors">
+            <Icon name="360" size="text-sm" />
+          </div>
         </button>
+
+        {/* Address + estimate row */}
+        <div className="px-5 pt-4 pb-5 flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="ck-microlabel mb-1.5">Primary Asset</p>
+            <p className="text-xl sm:text-2xl font-black text-white leading-tight tracking-tight break-words">
+              {property.address}
+            </p>
+            <p className="text-xs text-[color:var(--ck-text-muted)] mt-1">
+              {[property.city, property.state, property.zip].filter(Boolean).join(', ')}
+            </p>
+            <div
+              onDoubleClick={onOpenDetails}
+              onClick={onOpenDetails}
+              title="Click to view full property details"
+              className="mt-3 inline-flex items-center gap-3 flex-wrap text-xs text-[color:var(--ck-text-muted)] cursor-pointer select-none px-1.5 -mx-1.5 py-1 rounded hover:bg-white/5 transition-colors"
+            >
+              <span className="font-semibold">
+                <span className="text-white">{property.beds || '—'}</span>B /{' '}
+                <span className="text-white">{property.baths || '—'}</span>B
+              </span>
+              <span className="text-[color:var(--ck-text-dim)]">·</span>
+              <span className="font-semibold">
+                <span className="text-white">
+                  {property.sqft ? property.sqft.toLocaleString() : '—'}
+                </span>{' '}
+                SF
+              </span>
+              {property.yearBuilt ? (
+                <>
+                  <span className="text-[color:var(--ck-text-dim)]">·</span>
+                  <span className="font-semibold">
+                    Built <span className="text-white">{property.yearBuilt}</span>
+                  </span>
+                </>
+              ) : null}
+              <Icon
+                name="info"
+                className="!text-[11px] !text-[color:var(--ck-text-dim)] ml-1"
+              />
+            </div>
+          </div>
+          <div className="text-right shrink-0 min-w-[96px]">
+            <p
+              className="ck-microlabel mb-0.5"
+              style={{ color: 'var(--ck-accent)' }}
+            >
+              Assessed
+            </p>
+            {assessedValue ? (
+              <span
+                className="block text-xl sm:text-2xl font-black tracking-tight leading-none"
+                style={{ color: 'var(--ck-accent-bright)' }}
+                title={`$${assessedValue.toLocaleString()}`}
+              >
+                {compactDollars(assessedValue)}
+              </span>
+            ) : (
+              <span
+                className="block text-xl sm:text-2xl font-black tracking-tight leading-none"
+                style={{ color: 'var(--ck-text-dim)' }}
+              >
+                —
+              </span>
+            )}
+
+            {property.lotSize && property.lotSize !== '--' && property.lotSize !== '—' ? (
+              <p className="text-[10px] text-[color:var(--ck-text-muted)] mt-2 font-medium">
+                {property.lotSize} AC lot
+              </p>
+            ) : null}
+          </div>
+        </div>
       </div>
 
-      {/* Property Summary Row — click to expand */}
-      <button
-        onClick={onToggleDetails}
-        className="w-full grid grid-cols-4 gap-3 group"
-        title={detailsExpanded ? 'Collapse property details' : 'Expand property details'}
-      >
-        <div className="bg-surface-container-low p-4 rounded-xl text-left">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Beds/Baths</p>
-          <p className="text-xl font-black text-primary">
-            {property.beds || '—'} / {property.baths || '—'}
-          </p>
-        </div>
-        <div className="bg-surface-container-low p-4 rounded-xl text-left">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Total SF</p>
-          <p className="text-xl font-black text-primary">
-            {property.sqft ? property.sqft.toLocaleString() : '—'}
-          </p>
-        </div>
-        <div className="bg-surface-container-low p-4 rounded-xl text-left">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Built</p>
-          <p className="text-xl font-black text-primary">{property.yearBuilt || '—'}</p>
-        </div>
-        <div className="bg-surface-container-low p-4 rounded-xl text-left relative">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Lot Size</p>
-          <p className="text-xl font-black text-primary">
-            {property.lotSize && property.lotSize !== '—' ? (
-              <>{property.lotSize} <span className="text-xs font-medium opacity-60">AC</span></>
-            ) : '—'}
-          </p>
-          {/* Chevron indicator */}
-          <span className="absolute top-2 right-2 text-on-surface-variant group-hover:text-primary transition-colors">
-            <Icon name={detailsExpanded ? 'expand_less' : 'expand_more'} size="text-base" />
-          </span>
-        </div>
-      </button>
     </div>
   )
 }

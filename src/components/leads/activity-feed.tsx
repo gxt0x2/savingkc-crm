@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 import Link from 'next/link'
 import type { ActivityType } from '@/types'
 import { getAgentProfile } from '@/lib/agent-profiles'
+import { useCardCollapse } from '@/hooks/use-card-collapse'
 
 interface FeedItem {
   id: string
@@ -208,26 +209,30 @@ function AgentBadge({ name }: { name: string }) {
 
 // ─── Comms Hub Quick-Action Bar ─────────────────────────────────────────────
 function CommsBar({ onAction }: { onAction: (type: 'call' | 'sms' | 'email') => void }) {
+  const baseCls =
+    'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-xs font-bold transition-all'
+  const neutralStyle = {
+    background: 'var(--ck-surface-elev)',
+    borderColor: 'var(--ck-border)',
+    color: 'var(--ck-text)',
+  } as const
+  const primaryStyle = {
+    background: 'var(--ck-accent)',
+    borderColor: 'var(--ck-accent)',
+    color: 'white',
+    boxShadow: '0 4px 16px rgba(239,68,68,0.22)',
+  } as const
   return (
     <div className="flex gap-2 mb-5">
-      <button
-        onClick={() => onAction('call')}
-        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600/15 hover:bg-green-600/25 border border-green-600/20 text-green-400 text-xs font-bold transition-all"
-      >
+      <button onClick={() => onAction('call')} className={baseCls} style={primaryStyle}>
         <Icon name="call" size="text-sm" />
         Call
       </button>
-      <button
-        onClick={() => onAction('sms')}
-        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 border border-blue-600/20 text-blue-400 text-xs font-bold transition-all"
-      >
+      <button onClick={() => onAction('sms')} className={baseCls} style={neutralStyle}>
         <Icon name="sms" size="text-sm" />
         Text
       </button>
-      <button
-        onClick={() => onAction('email')}
-        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-600/15 hover:bg-purple-600/25 border border-purple-600/20 text-purple-400 text-xs font-bold transition-all"
-      >
+      <button onClick={() => onAction('email')} className={baseCls} style={neutralStyle}>
         <Icon name="email" size="text-sm" />
         Email
       </button>
@@ -239,21 +244,37 @@ function CommsBar({ onAction }: { onAction: (type: 'call' | 'sms' | 'email') => 
 export function ActivityFeed({ activities, onCompose, onEditNote, onEditTask }: ActivityFeedProps) {
   const [hoveredNote, setHoveredNote] = useState<string | null>(null)
   const [hoveredTask, setHoveredTask] = useState<string | null>(null)
+  const [open, toggleOpen] = useCardCollapse('activity-feed', false)
 
   const handleAction = (type: 'call' | 'sms' | 'email') => {
     onCompose?.(type)
   }
 
   return (
-    <section className="bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-5 shadow-sm">
+    <section
+      className="rounded-2xl p-5 border"
+      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+    >
       {/* Header */}
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-sm font-black uppercase tracking-widest text-primary">
-          Communications
-        </h2>
-        <span className="text-xs text-on-surface-variant">{activities.length} events</span>
-      </div>
+      <button
+        type="button"
+        onClick={toggleOpen}
+        className="w-full flex justify-between items-center mb-4"
+      >
+        <h2 className="ck-microlabel !text-[11px] !text-white">Communications</h2>
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: 'var(--ck-text-muted)' }}>
+            {activities.length} events
+          </span>
+          <Icon
+            name={open ? 'expand_less' : 'expand_more'}
+            className="!text-base !text-[color:var(--ck-text-muted)]"
+          />
+        </div>
+      </button>
 
+      {!open ? null : (
+      <>
       {/* Quick action bar */}
       <CommsBar onAction={handleAction} />
 
@@ -366,6 +387,8 @@ export function ActivityFeed({ activities, onCompose, onEditNote, onEditTask }: 
             })}
           </div>
         </div>
+      )}
+      </>
       )}
     </section>
   )

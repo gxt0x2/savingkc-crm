@@ -74,9 +74,9 @@ export function EditNoteModal({ noteId, initialContent, onClose, onSaved, onDele
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-lg">
+        <div className="ck-dark bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-lg border border-outline-variant/20">
           <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10">
             <div className="flex items-center gap-2">
               <Icon name="edit_note" className="text-primary" />
@@ -138,8 +138,8 @@ export function EditNoteModal({ noteId, initialContent, onClose, onSaved, onDele
 
           {/* Delete Confirmation */}
           {showDeleteConfirm && (
-            <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center p-6">
-              <div className="bg-white rounded-xl p-6 shadow-xl max-w-sm">
+            <div className="absolute inset-0 bg-black/70 rounded-2xl flex items-center justify-center p-6">
+              <div className="ck-dark bg-surface-container-lowest rounded-xl p-6 shadow-xl max-w-sm border border-outline-variant/20">
                 <h3 className="text-lg font-bold text-error mb-2">Delete Note?</h3>
                 <p className="text-sm text-on-surface-variant mb-4">
                   This action cannot be undone. The note will be permanently deleted.

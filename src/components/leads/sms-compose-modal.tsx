@@ -32,6 +32,14 @@ interface Lead {
   email: string | null
   property_address: string | null
   assigned_agent: string | null
+  city?: string | null
+  state?: string | null
+  zip?: string | null
+}
+
+interface PropertyMeta {
+  parcelId?: string
+  legalDescription?: string
 }
 
 interface Activity {
@@ -79,6 +87,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
   const [sent, setSent] = useState(false)
   const [templates, setTemplates] = useState<SmsTemplate[]>([])
   const [showTemplates, setShowTemplates] = useState(false)
+  const [propertyMeta, setPropertyMeta] = useState<PropertyMeta>({})
 
   // Email-specific state
   const [emailTo, setEmailTo] = useState(lead.email || '')
@@ -112,13 +121,31 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
     }
   }, [messages, fromPhoneOverridden])
 
-  // ── Load history + templates on mount ──
+  // ── Load history + templates + property meta on mount ──
   useEffect(() => {
     fetchHistory()
     fetch('/api/sms-templates')
       .then(r => r.json())
       .then(data => setTemplates(data.templates || []))
       .catch(() => {})
+
+    // Pull parcel + legal description from manifest
+    ;(async () => {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('manifests')
+        .select('manifest')
+        .eq('lead_id', lead.id)
+        .limit(1)
+        .maybeSingle()
+      const m = data?.manifest as any
+      if (m?.property) {
+        setPropertyMeta({
+          parcelId: m.property.parcel || undefined,
+          legalDescription: m.property.legalDescription || m.property.legal_description || undefined,
+        })
+      }
+    })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Realtime subscription for new messages ──
@@ -273,11 +300,11 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40" onClick={onClose} />
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: '80vh' }}>
+        <div className="ck-dark bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-lg flex flex-col border border-outline-variant/20" style={{ maxHeight: '80vh' }}>
 
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10">
@@ -357,6 +384,30 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
 
               {/* SMS Compose Area */}
               <div className="border-t border-outline-variant/10">
+                {/* Property info quick-inserts */}
+                {(lead.property_address || propertyMeta.parcelId || propertyMeta.legalDescription) && (
+                  <div className="px-6 pt-3 flex flex-wrap gap-1.5">
+                    {lead.property_address && (
+                      <QuickInsert
+                        label="Address"
+                        onClick={() => setMessage((m) => (m ? m + '\n' : '') + `Property: ${[lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', ')}`)}
+                      />
+                    )}
+                    {propertyMeta.parcelId && (
+                      <QuickInsert
+                        label={`Parcel ID: ${propertyMeta.parcelId}`}
+                        onClick={() => setMessage((m) => (m ? m + '\n' : '') + `Parcel ID: ${propertyMeta.parcelId}`)}
+                      />
+                    )}
+                    {propertyMeta.legalDescription && (
+                      <QuickInsert
+                        label="Legal Description"
+                        onClick={() => setMessage((m) => (m ? m + '\n' : '') + `Legal: ${propertyMeta.legalDescription}`)}
+                      />
+                    )}
+                  </div>
+                )}
+
                 {/* From number */}
                 <div className="px-6 pt-3 flex items-center gap-2">
                   <span className="text-xs text-on-surface-variant/60 font-medium">From:</span>
@@ -506,5 +557,19 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
         </div>
       </div>
     </>
+  )
+}
+
+function QuickInsert({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-[11px] px-2 py-1 rounded-full border border-outline-variant/30 hover:bg-surface-container text-on-surface-variant flex items-center gap-1"
+      title="Insert into message"
+    >
+      <Icon name="add" className="!text-[12px]" />
+      <span className="truncate max-w-[180px]">{label}</span>
+    </button>
   )
 }
