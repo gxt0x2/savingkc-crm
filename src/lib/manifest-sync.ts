@@ -472,27 +472,49 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
  * The callback mutates the manifest in place. After it runs, saveManifest()
  * persists the change AND syncs derived fields to the leads table.
  */
+/**
+ * Legacy mutator-callback API. Kept for source-level compatibility with ~37
+ * existing callsites. Under the hood, delegates to updateManifestV2_1 — so
+ * every call now goes through the RPC, writes a manifest_history row, and
+ * enjoys shallow-subtree replacement at the DB layer. Self-nesting can't
+ * form even if the mutator does a deep merge, because the RPC only sees
+ * discrete subtrees.
+ *
+ * New code should prefer updateManifestV2_1 directly. This shim exists so
+ * the refactor doesn't require a 37-file churn to ship the infrastructure
+ * upgrade.
+ */
 export async function updateManifestAndCascade(
   leadId: string,
   updater: (manifest: ManifestV2) => void,
   source?: string,
 ): Promise<boolean> {
-  const row = await getManifestForLead(leadId)
-  if (!row) return false
-
-  const { manifest } = row
-  const previousManifest = JSON.parse(JSON.stringify(manifest)) as ManifestV2
-
-  // Apply the caller's mutations
-  updater(manifest)
-
-  // Stamp metadata
-  manifest.lastUpdated = new Date().toISOString()
-  if (source) manifest.lastUpdatedBy = source
-
-  // Save + cascade to leads table + hot engine event bus
-  await saveManifest(row.rowId, manifest, leadId, previousManifest)
-  return true
+  const result = await updateManifestV2_1({
+    leadId,
+    compute: (current) => {
+      // Clone so the mutator can't accidentally alter our previousManifest
+      // reference (used for the hot-engine diff inside updateManifestV2_1).
+      const clone = JSON.parse(JSON.stringify(current)) as ManifestV2
+      updater(clone)
+      // Preserve the legacy metadata stamps so callers that assert on
+      // lastUpdated / lastUpdatedBy continue to see them.
+      ;(clone as any).lastUpdated = new Date().toISOString()
+      if (source) (clone as any).lastUpdatedBy = source
+      // Return every top-level key as a subtree. The RPC shallow-replaces
+      // each one — no self-nesting, even if the mutator did a deep merge.
+      const subtrees: Record<string, unknown> = {}
+      for (const key of Object.keys(clone)) {
+        subtrees[key] = (clone as any)[key]
+      }
+      return subtrees
+    },
+    actor: (source as ManifestActor) || 'system',
+    reason: source || 'legacy:updateManifestAndCascade',
+  }).catch((err) => {
+    console.error('[manifest-sync] legacy updateManifestAndCascade shim failed:', err)
+    return null
+  })
+  return !!result
 }
 
 // ─── V2.1 API — spec-shaped subtree-payload write path ────────────────────
