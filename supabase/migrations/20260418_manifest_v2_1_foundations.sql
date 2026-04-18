@@ -84,7 +84,9 @@ BEGIN
     RAISE EXCEPTION 'Manifest not found: %', p_manifest_id;
   END IF;
 
-  v_prior_hash := encode(digest(v_existing::text, 'sha256'), 'hex');
+  -- pgcrypto lives in the `extensions` schema on Supabase, not `public`.
+  -- Fully-qualify the call so SET search_path = public doesn't hide it.
+  v_prior_hash := encode(extensions.digest(v_existing::text, 'sha256'), 'hex');
 
   -- 2. Strip derived fields from the caller payload.
   -- Callers cannot write hot_eligibility, completeness, or next_action.description
