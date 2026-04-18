@@ -205,7 +205,7 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
       >
         <div className="flex items-center gap-2">
           <Icon name="auto_awesome" className="!text-base !text-[color:var(--ck-accent)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-white">AI Strategic Briefing</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-white">Ari Briefing</h2>
         </div>
         <div className="flex items-center gap-2">
           {(() => {

@@ -95,6 +95,49 @@ const SITUATION_TYPE_MAP: Record<string, { label: string; period: 'past' | 'pres
   downsizing: { label: 'Looking to downsize', period: 'future' },
 }
 
+// Humanize a raw enum/slug (tax_delinquent → Tax Delinquent) when it slips through.
+function humanize(raw: string): string {
+  const trimmed = raw.trim()
+  // Already human (has spaces, proper caps)
+  if (/\s/.test(trimmed) && /[a-z]/.test(trimmed)) return trimmed
+  // Enum-looking: all lower/upper with underscores/hyphens
+  if (/^[a-z0-9_\-]+$/i.test(trimmed)) {
+    return trimmed
+      .replace(/[_\-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+  return trimmed
+}
+
+// Canonical concept key — strips dollar amounts, parentheticals, prefixes,
+// lowercases, squashes spaces/punct. Used to dedupe across sources.
+function conceptKey(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/objection:\s*/g, '')
+    .replace(/blocker:\s*/g, '')
+    .replace(/\([^)]*\)/g, '')            // strip parentheticals like "($13,124 owed)"
+    .replace(/\$[\d,.]+/g, '')             // strip dollar amounts
+    .replace(/[_\-]+/g, ' ')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Merge strategy: keep the longest label per concept key (the one with the most
+// context — "Tax delinquent ($13,124 owed)" wins over "Tax delinquent").
+function mergeInto(map: Map<string, string>, raw: string): void {
+  const label = humanize(raw)
+  if (!label) return
+  const key = conceptKey(label)
+  if (!key) return
+  const existing = map.get(key)
+  if (!existing || label.length > existing.length) {
+    map.set(key, label)
+  }
+}
+
 export function PainPoints({ leadId, notes, sellerSituation, motivationScore, activities }: PainPointsProps) {
   const [painPoints, setPainPoints] = useState<PainPoint[]>([])
   const [loading, setLoading] = useState(true)
@@ -103,7 +146,12 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
   useEffect(() => {
     async function analyze() {
       setLoading(true)
-      const grouped: Record<string, Set<string>> = { past: new Set(), present: new Set(), future: new Set() }
+      // Per-period concept-key → best label map (dedupes across sources).
+      const buckets: Record<'past' | 'present' | 'future', Map<string, string>> = {
+        past: new Map(),
+        present: new Map(),
+        future: new Map(),
+      }
 
       // 1. Pull from manifest (structured data — most reliable)
       try {
@@ -117,63 +165,75 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
 
         const m = data?.manifest as any
         if (m) {
-          // Situation types
+          // Situation types — always go through the enum map so slugs never leak.
           const types: string[] = m.situation?.type || []
           for (const t of types) {
             const mapped = SITUATION_TYPE_MAP[t]
-            if (mapped) grouped[mapped.period].add(mapped.label)
+            if (mapped) mergeInto(buckets[mapped.period], mapped.label)
+            else mergeInto(buckets.present, humanize(t))
           }
 
-          // Motivation signals
+          // Motivation signals — if they match a known enum, humanize via the map;
+          // otherwise humanize the raw slug/phrase before merging.
           const signals: string[] = m.situation?.motivation?.signals || []
           for (const sig of signals) {
-            grouped.present.add(sig)
+            const mapped = SITUATION_TYPE_MAP[sig]
+            if (mapped) mergeInto(buckets[mapped.period], mapped.label)
+            else mergeInto(buckets.present, sig)
           }
 
           // Secondary motivations
           const secondary: string[] = m.situation?.motivation?.secondary || []
           for (const sec of secondary) {
-            grouped.present.add(sec)
+            const mapped = SITUATION_TYPE_MAP[sec]
+            if (mapped) mergeInto(buckets[mapped.period], mapped.label)
+            else mergeInto(buckets.present, sec)
           }
 
           // Red flags
           const redFlags: string[] = m.flags?.redFlags || []
           for (const rf of redFlags) {
-            grouped.present.add(rf)
+            const mapped = SITUATION_TYPE_MAP[rf]
+            if (mapped) mergeInto(buckets[mapped.period], mapped.label)
+            else mergeInto(buckets.present, rf)
           }
 
           // Opportunity flags
           const oppFlags: string[] = m.flags?.opportunityFlags || []
           for (const of_ of oppFlags) {
             const mapped = SITUATION_TYPE_MAP[of_]
-            if (mapped) grouped[mapped.period].add(mapped.label)
+            if (mapped) mergeInto(buckets[mapped.period], mapped.label)
+            else mergeInto(buckets.present, of_)
           }
 
           // Deceased owner
-          if (m.owner?.deceased) grouped.past.add('Owner deceased')
+          if (m.owner?.deceased) mergeInto(buckets.past, 'Owner deceased')
 
           // Vacant
-          if (m.property?.vacant) grouped.present.add('Property is vacant')
+          if (m.property?.vacant) mergeInto(buckets.present, 'Property is vacant')
 
           // Out of state
-          if (m.owner?.outOfState) grouped.present.add('Absentee / out-of-state owner')
+          if (m.owner?.outOfState) mergeInto(buckets.present, 'Absentee / out-of-state owner')
 
-          // Tax delinquent
+          // Tax delinquent — pass with amount so dedup prefers this detailed version.
           if (m.property?.taxCollector?.delinquentAmount) {
             const amt = m.property.taxCollector.delinquentAmount
-            grouped.present.add(`Tax delinquent ($${Number(amt).toLocaleString()} owed)`)
+            mergeInto(buckets.present, `Tax delinquent ($${Number(amt).toLocaleString()} owed)`)
+          } else if (m.property?.taxCollector?.totalOwed) {
+            const amt = m.property.taxCollector.totalOwed
+            mergeInto(buckets.present, `Tax delinquent ($${Number(amt).toLocaleString()} owed)`)
           }
 
           // Objections
           const objections: string[] = m.situation?.objections || []
           for (const obj of objections) {
-            grouped.present.add(`Objection: ${obj}`)
+            mergeInto(buckets.present, `Objection: ${humanize(obj)}`)
           }
 
           // Blockers
           const blockers: string[] = m.situation?.blockers || []
           for (const b of blockers) {
-            grouped.future.add(`Blocker: ${b}`)
+            mergeInto(buckets.future, `Blocker: ${humanize(b)}`)
           }
 
           // Call transcript pain points
@@ -181,7 +241,7 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
           for (const t of transcripts) {
             const painPts: string[] = t.extractedData?.painPoints || t.extractedData?.pain_points || []
             for (const pp of painPts) {
-              grouped.present.add(pp)
+              mergeInto(buckets.present, pp)
             }
           }
         }
@@ -191,23 +251,23 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
       const texts: string[] = []
       if (notes) texts.push(notes)
       if (sellerSituation) texts.push(sellerSituation)
-      activities?.forEach(a => { if (a.description) texts.push(a.description) })
+      activities?.forEach((a) => { if (a.description) texts.push(a.description) })
       const allText = texts.join(' ')
 
       if (allText) {
         const textPoints = extractFromText(allText)
         for (const tp of textPoints) {
           for (const item of tp.items) {
-            grouped[tp.period].add(item)
+            mergeInto(buckets[tp.period], item)
           }
         }
       }
 
       // Build final list
       const result: PainPoint[] = []
-      if (grouped.past.size) result.push({ period: 'past', items: [...grouped.past] })
-      if (grouped.present.size) result.push({ period: 'present', items: [...grouped.present] })
-      if (grouped.future.size) result.push({ period: 'future', items: [...grouped.future] })
+      if (buckets.past.size) result.push({ period: 'past', items: [...buckets.past.values()] })
+      if (buckets.present.size) result.push({ period: 'present', items: [...buckets.present.values()] })
+      if (buckets.future.size) result.push({ period: 'future', items: [...buckets.future.values()] })
 
       setPainPoints(result)
       setLoading(false)

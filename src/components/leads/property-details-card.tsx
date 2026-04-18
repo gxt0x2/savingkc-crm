@@ -30,6 +30,7 @@ export interface PropertyHousingDetails {
   hoa_amount: number | null
   tax_assessment: number | null
   tax_owed: number | null
+  first_delinquent_year: number | null
   last_sale_date: string | null
   last_sale_price: number | null
 
@@ -198,6 +199,7 @@ export function PropertyDetailsCard({ details, onEdit }: PropertyDetailsCardProp
       {(
         details.tax_assessment ||
         details.tax_owed ||
+        details.first_delinquent_year ||
         details.hoa_amount !== null ||
         details.last_sale_date ||
         details.last_sale_price
@@ -228,6 +230,12 @@ export function PropertyDetailsCard({ details, onEdit }: PropertyDetailsCardProp
               label="Tax Assessment"
               value={details.tax_assessment ? formatCurrency(details.tax_assessment) : null}
               tone="neutral"
+            />
+            <FinanceItem
+              icon="event_busy"
+              label="Delinquent Since"
+              value={details.first_delinquent_year ? String(details.first_delinquent_year) : null}
+              tone="danger"
             />
             <FinanceItem
               icon="account_balance"

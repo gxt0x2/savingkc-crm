@@ -26,6 +26,8 @@ interface PropertyHeroProps {
   redfinEstimate?: number | null
   /** County/tax-assessed value */
   assessedValue?: number | null
+  /** Taxes owed / delinquent (if any) */
+  taxOwed?: number | null
   /** Show a shimmer placeholder while estimate enrichment is running. */
   estimateLoading?: boolean
   /** Called when user double-clicks the stats row (beds/baths/sqft/built). Opens the property-details modal. */
@@ -53,6 +55,7 @@ export function PropertyHero({
   zestimate,
   redfinEstimate,
   assessedValue,
+  taxOwed,
   estimateLoading,
   onOpenDetails,
 }: PropertyHeroProps) {
@@ -243,7 +246,7 @@ export function PropertyHero({
             {assessedValue ? (
               <span
                 className="block text-xl sm:text-2xl font-black tracking-tight leading-none"
-                style={{ color: 'var(--ck-accent-bright)' }}
+                style={{ color: 'var(--ck-text)' }}
                 title={`$${assessedValue.toLocaleString()}`}
               >
                 {compactDollars(assessedValue)}
@@ -255,6 +258,24 @@ export function PropertyHero({
               >
                 —
               </span>
+            )}
+
+            {typeof taxOwed === 'number' && taxOwed > 0 && (
+              <div className="mt-3">
+                <p
+                  className="ck-microlabel mb-0.5"
+                  style={{ color: 'var(--ck-accent)' }}
+                >
+                  Taxes Owed
+                </p>
+                <span
+                  className="block text-xl sm:text-2xl font-black tracking-tight leading-none"
+                  style={{ color: 'var(--ck-text)' }}
+                  title={`$${taxOwed.toLocaleString()}`}
+                >
+                  {compactDollars(taxOwed)}
+                </span>
+              </div>
             )}
 
             {property.lotSize && property.lotSize !== '--' && property.lotSize !== '—' ? (

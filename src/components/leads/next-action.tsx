@@ -18,6 +18,7 @@ interface SynthesizedAction {
   priority: Priority
   cta: string
   source: string
+  prep_actions?: string[]
 }
 
 interface NextActionProps {
@@ -120,6 +121,7 @@ function localFallback(props: NextActionProps): SynthesizedAction {
 export function NextAction(props: NextActionProps) {
   const { leadId } = props
   const [open, toggleOpen] = useCardCollapse('next-action', true)
+  const [expanded, setExpanded] = useState(false) // compact by default; double-click to expand
   const [action, setAction] = useState<SynthesizedAction | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -231,6 +233,39 @@ export function NextAction(props: NextActionProps) {
         </div>
       </button>
 
+      {/* Date/time pill — pinned directly under the Next Action header */}
+      {open && action && (dateLabel || timeLabel) && (
+        <div
+          className="inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 mb-3 border"
+          style={{
+            background: 'rgba(239,68,68,0.08)',
+            borderColor: 'rgba(239,68,68,0.3)',
+          }}
+        >
+          {dateLabel && (
+            <span
+              className="inline-flex items-center gap-1.5 font-black"
+              style={{ color: 'var(--ck-accent-bright)' }}
+            >
+              <Icon name="event" className="!text-base" />
+              <span className="text-base tracking-tight">{dateLabel}</span>
+            </span>
+          )}
+          {timeLabel && (
+            <>
+              <span style={{ color: 'rgba(239,68,68,0.4)' }}>·</span>
+              <span
+                className="inline-flex items-center gap-1 font-bold"
+                style={{ color: 'var(--ck-accent-bright)' }}
+              >
+                <Icon name="schedule" className="!text-sm" />
+                <span className="text-sm">{timeLabel}</span>
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {open && (
         loading && !action ? (
           <div className="flex items-center gap-2 py-2">
@@ -243,75 +278,74 @@ export function NextAction(props: NextActionProps) {
         ) : !action ? (
           <p className="text-xs" style={{ color: 'var(--ck-text-muted)' }}>No recommendation.</p>
         ) : (
-          <div className="text-left">
+          <div
+            className="text-left select-none"
+            onDoubleClick={() => setExpanded((v) => !v)}
+            title={expanded ? 'Double-click to collapse' : 'Double-click to see full briefing'}
+          >
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <p className="text-sm font-bold leading-tight" style={{ color: 'var(--ck-text)' }}>
-                  {action.title}
-                </p>
-                <span
-                  className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded"
-                  style={{ background: tone.bg, color: tone.color }}
-                >
-                  {tone.label}
-                </span>
-              </div>
+              <p className="text-sm font-bold leading-tight" style={{ color: 'var(--ck-text)' }}>
+                {action.title}
+              </p>
+              <span
+                className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded"
+                style={{ background: tone.bg, color: tone.color }}
+              >
+                {tone.label}
+              </span>
+            </div>
 
-              {(dateLabel || timeLabel) && (
-                <div
-                  className="inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 mb-2 border"
-                  style={{
-                    background: 'rgba(239,68,68,0.08)',
-                    borderColor: 'rgba(239,68,68,0.3)',
-                  }}
-                >
-                  {dateLabel && (
-                    <span
-                      className="inline-flex items-center gap-1.5 font-black"
-                      style={{ color: 'var(--ck-accent-bright)' }}
-                    >
-                      <Icon name="event" className="!text-base" />
-                      <span className="text-base tracking-tight">{dateLabel}</span>
-                    </span>
-                  )}
-                  {timeLabel && (
-                    <>
-                      <span style={{ color: 'rgba(239,68,68,0.4)' }}>·</span>
-                      <span
-                        className="inline-flex items-center gap-1 font-bold"
-                        style={{ color: 'var(--ck-accent-bright)' }}
-                      >
-                        <Icon name="schedule" className="!text-sm" />
-                        <span className="text-sm">{timeLabel}</span>
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
+            {expanded && action.detail && (
+              <p
+                className="text-[12px] leading-relaxed mb-2 whitespace-pre-line"
+                style={{ color: 'var(--ck-text)' }}
+              >
+                {action.detail}
+              </p>
+            )}
 
-              {action.detail && (
+            {expanded && action.prep_actions && action.prep_actions.length > 0 && (
+              <div className="mb-3">
                 <p
-                  className="text-[11px] leading-snug mb-2"
-                  style={{ color: 'var(--ck-text-muted)' }}
+                  className="ck-microlabel !text-[10px] mb-1.5"
+                  style={{ color: 'var(--ck-accent)' }}
                 >
-                  {action.detail}
+                  Prep before this call
                 </p>
-              )}
+                <ul className="space-y-1">
+                  {action.prep_actions.map((p, i) => (
+                    <li
+                      key={i}
+                      className="flex items-start gap-2 text-[11px] leading-snug"
+                      style={{ color: 'var(--ck-text)' }}
+                    >
+                      <span
+                        className="mt-[5px] w-1 h-1 rounded-full shrink-0"
+                        style={{ background: 'var(--ck-accent)' }}
+                      />
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-              {action.source && (
-                <div
-                  className="text-[10px] italic mb-3 flex items-center gap-1"
-                  style={{ color: 'var(--ck-text-dim)' }}
-                  title="Where this recommendation came from"
-                >
-                  <Icon name="info" className="!text-[10px]" />
-                  {action.source}
-                </div>
-              )}
+            {expanded && action.source && (
+              <div
+                className="text-[10px] italic mb-3 flex items-center gap-1"
+                style={{ color: 'var(--ck-text-dim)' }}
+                title="Where this recommendation came from"
+              >
+                <Icon name="info" className="!text-[10px]" />
+                {action.source}
+              </div>
+            )}
 
-              {ctaHandler && (
+            <div className="flex items-center justify-between gap-2 mt-2">
+              {ctaHandler ? (
                 <button
                   type="button"
-                  onClick={ctaHandler}
+                  onClick={(e) => { e.stopPropagation(); ctaHandler() }}
                   className="h-9 px-3 rounded-lg text-xs font-bold text-white inline-flex items-center gap-1.5 transition-opacity hover:opacity-90"
                   style={{
                     background: 'var(--ck-accent)',
@@ -320,13 +354,23 @@ export function NextAction(props: NextActionProps) {
                 >
                   {action.cta}
                 </button>
-              )}
+              ) : <span />}
 
-              {error && (
-                <p className="text-[9px] mt-2" style={{ color: 'var(--ck-text-dim)' }}>
-                  Using local fallback ({error})
-                </p>
-              )}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v) }}
+                className="text-[10px] font-bold hover:underline"
+                style={{ color: 'var(--ck-text-muted)' }}
+              >
+                {expanded ? 'Show less' : 'Show details'}
+              </button>
+            </div>
+
+            {error && expanded && (
+              <p className="text-[9px] mt-2" style={{ color: 'var(--ck-text-dim)' }}>
+                Using local fallback ({error})
+              </p>
+            )}
           </div>
         )
       )}

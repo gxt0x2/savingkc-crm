@@ -1548,6 +1548,11 @@ export default function LeadDetailPage() {
             zestimate={zestimate}
             redfinEstimate={redfinEstimate}
             assessedValue={assessedValue ?? lead.tax_assessment ?? null}
+            taxOwed={
+              manifestProperty?.taxCollector?.totalOwed ??
+              manifestProperty?.taxCollector?.delinquentAmount ??
+              null
+            }
             estimateLoading={
               (zillowEnriching && zestimate == null) ||
               (redfinEnriching && redfinEstimate == null)
@@ -1562,37 +1567,34 @@ export default function LeadDetailPage() {
           />
         </div>
 
-        {/* RIGHT COLUMN: sortable — Favorite or Fool, Discovery, Activity, Net Proceeds, Missing Info, Manifest */}
-        <div className="col-span-12 lg:col-span-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6 lg:pl-4 z-0">
+        {/* RIGHT COLUMN: Next Action (pinned) + sortable rest */}
+        <div className="col-span-12 lg:col-span-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6 lg:pl-4 z-0 space-y-6">
+          {/* Pinned — always first, not draggable */}
+          <NextAction
+            leadId={lead.id}
+            leadName={formattedName}
+            leadPhone={lead.phone}
+            leadEmail={lead.email}
+            priority={lead.priority}
+            station={lead.station}
+            activities={activities}
+            onNewTask={() => setShowNewTask(true)}
+            onSmsCompose={() => { setComposeTab('sms'); setSmsModalOpen(true) }}
+            onLogNote={() => setNotesModalOpen(true)}
+            onAppointmentOutcome={() => setOutcomeModalOpen(true)}
+            onContract={() => setContractModalOpen(true)}
+            onCall={() => {
+              if (lead.phone) {
+                window.dispatchEvent(new CustomEvent('open-dialer', {
+                  detail: { phone: lead.phone, name: formattedName, leadId: lead.id },
+                }))
+              }
+            }}
+          />
+
           <SortableColumn
-            storageKey={`crm_col_right_${id}`}
+            storageKey={`crm_col_right_v2_${id}`}
             items={[
-              {
-                id: 'next-action',
-                node: (
-                  <NextAction
-                    leadId={lead.id}
-                    leadName={formattedName}
-                    leadPhone={lead.phone}
-                    leadEmail={lead.email}
-                    priority={lead.priority}
-                    station={lead.station}
-                    activities={activities}
-                    onNewTask={() => setShowNewTask(true)}
-                    onSmsCompose={() => { setComposeTab('sms'); setSmsModalOpen(true) }}
-                    onLogNote={() => setNotesModalOpen(true)}
-                    onAppointmentOutcome={() => setOutcomeModalOpen(true)}
-                    onContract={() => setContractModalOpen(true)}
-                    onCall={() => {
-                      if (lead.phone) {
-                        window.dispatchEvent(new CustomEvent('open-dialer', {
-                          detail: { phone: lead.phone, name: formattedName, leadId: lead.id },
-                        }))
-                      }
-                    }}
-                  />
-                ),
-              },
               {
                 id: 'favorite-or-fool',
                 node: (
@@ -1893,6 +1895,26 @@ export default function LeadDetailPage() {
                 hoa_amount: pick(lead.hoa_amount, mp.hoa_amount),
                 tax_assessment: pick(lead.tax_assessment, mp.assessment?.totalValue ?? mp.tax_assessment),
                 tax_owed: mp.taxCollector?.totalOwed ?? mp.taxCollector?.delinquentAmount ?? null,
+                first_delinquent_year: (() => {
+                  const tc = mp.taxCollector || {}
+                  // Prefer an explicit year field
+                  const explicit =
+                    tc.firstDelinquentYear ??
+                    tc.firstYearDelinquent ??
+                    tc.delinquentSince ??
+                    tc.oldestDelinquentYear
+                  if (typeof explicit === 'number' && explicit > 1900) return explicit
+                  if (typeof explicit === 'string') {
+                    const parsed = parseInt(explicit.slice(0, 4), 10)
+                    if (parsed > 1900) return parsed
+                  }
+                  // Fall back to computing from yearsDelinquent
+                  const yrs = tc.yearsDelinquent
+                  if (typeof yrs === 'number' && yrs > 0) {
+                    return new Date().getFullYear() - yrs
+                  }
+                  return null
+                })(),
                 last_sale_date: pick(lead.last_sale_date, mp.last_sale_date ?? mp.lastSaleDate),
                 last_sale_price: pick(lead.last_sale_price, mp.last_sale_price ?? mp.lastSalePrice),
                 data_source: pick(lead.data_source, mp.assessment?.source ?? mp.data_source),
