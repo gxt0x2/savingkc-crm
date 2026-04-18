@@ -1087,6 +1087,57 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       }
     }
 
+    // I+. Calendar sync — mirror Mojo follow-ups / appointments into
+    // lead_activities so they appear on /calendar. Deduped by mojo_record_id.
+    if (leadId) {
+      const dispoLower = call.disposition.toLowerCase()
+      const aiScheduled = manifest.pipeline?.appointment?.scheduledAt
+      const calendarDate = call.follow_up_date || aiScheduled
+
+      if (calendarDate) {
+        const isAppointment = dispoLower.includes('appointment') || !!aiScheduled
+        const activityType = isAppointment ? 'appointment' : 'follow_up'
+        const title = `${isAppointment ? 'Appointment' : 'Follow-up'}: ${call.contact_name}`
+        const metadata: Record<string, any> = {
+          title,
+          task_type: activityType,
+          due_date: calendarDate,
+          assigned_to: 'Casey',
+          status: 'pending',
+          priority: 'normal',
+          source: 'mojo_sync',
+          mojo_record_id: call.record_id,
+        }
+        if (call.property_address) metadata.property_address = call.property_address
+
+        const { data: existing } = await supabase
+          .from('lead_activities')
+          .select('id')
+          .eq('lead_id', leadId)
+          .eq('activity_type', activityType)
+          .contains('metadata', { mojo_record_id: call.record_id })
+          .limit(1)
+
+        if (existing && existing.length > 0) {
+          await supabase
+            .from('lead_activities')
+            .update({ metadata, description: call.notes || title })
+            .eq('id', existing[0].id)
+          console.log(`[queue] Calendar ${activityType} updated: ${call.contact_name} @ ${calendarDate}`)
+        } else {
+          await supabase
+            .from('lead_activities')
+            .insert({
+              lead_id: leadId,
+              activity_type: activityType,
+              description: call.notes || title,
+              metadata,
+            })
+          console.log(`[queue] Calendar ${activityType} created: ${call.contact_name} @ ${calendarDate}`)
+        }
+      }
+    }
+
     // J. Alert — only if score >= 75
     if (shouldAlert) {
       await sendAlert(
