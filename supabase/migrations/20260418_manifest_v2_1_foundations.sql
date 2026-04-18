@@ -157,6 +157,15 @@ END;
 $$;
 
 -- ─── 6. Ownership and permissions on the RPC ─────────────────────────────────
+-- Before we can transfer ownership to cascade_writer, the session's current
+-- role must be a member of cascade_writer (or have SET ROLE privilege on it).
+-- Supabase Studio runs SQL as service_role, which isn't automatically a member
+-- of a role we just created — so grant membership first. The role creator
+-- (CURRENT_USER when CREATE ROLE ran) has ADMIN OPTION implicitly, which lets
+-- us do this grant.
+GRANT cascade_writer    TO CURRENT_USER;
+GRANT manifest_migrator TO CURRENT_USER;
+
 ALTER FUNCTION update_manifest_and_cascade(uuid, jsonb, text, text)
   OWNER TO cascade_writer;
 
