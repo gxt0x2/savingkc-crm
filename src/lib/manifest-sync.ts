@@ -69,80 +69,36 @@ async function getManifestForLead(leadId: string): Promise<{ rowId: string; lead
  * and the leads table is always kept in sync. No other code should
  * write station/priority/motivation_score to leads directly.
  */
+/**
+ * Internal save path. Delegates to updateManifestV2_1 so internal helpers
+ * (markBriefingStale, syncPriority, addMotivationSignal, addFlag,
+ * addSituationType, flagDeceased, onCommunicationEvent, ensureManifestExists
+ * auto-create follow-on) inherit the V2.1 infrastructure:
+ *   - manifest_history row on every save
+ *   - shallow per-subtree replacement via RPC
+ *   - denormalized column sync atomic with the JSONB write
+ *   - leads-table cascade and hot-engine event fire on the TS side
+ *
+ * The leadId and previousManifest parameters are now ignored — V2.1 resolves
+ * leadId from manifestId and refetches previousManifest for its own diff.
+ * Minor double-read accepted in exchange for a single canonical write path.
+ */
 async function saveManifest(
   rowId: string,
   manifest: ManifestV2,
-  leadId?: string,
-  previousManifest?: ManifestV2 | null,
+  _leadId?: string,
+  _previousManifest?: ManifestV2 | null,
 ) {
-  const supabase = getSupabase()
-
-  // 1. Save manifest to manifests table
-  await supabase
-    .from('manifests')
-    .update({
-      manifest,
-      current_station: manifest.currentStation,
-      priority: manifest.priority,
-      tier: manifest.tier,
-      qualification_score: manifest.qualificationScore,
-      next_appointment_at: manifest.pipeline?.appointment?.scheduledAt ?? null,
-      appointment_status: manifest.pipeline?.appointment?.status ?? null,
-      opportunity_score: manifest.scoring?.opportunity_score ?? null,
-      classification: manifest.scoring?.classification ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', rowId)
-
-  // 2. Sync derived fields to leads table (manifest → leads, never the reverse)
-  const resolvedLeadId = leadId || await getLeadIdForManifest(rowId)
-  if (resolvedLeadId) {
-    const leadUpdate: Record<string, any> = {}
-
-    if (manifest.currentStation) leadUpdate.station = manifest.currentStation
-    if (manifest.priority) leadUpdate.priority = manifest.priority
-
-    const motivationScore = manifest.situation?.motivation?.score
-    if (motivationScore && motivationScore >= 1) {
-      leadUpdate.motivation_score = motivationScore
-    }
-
-    if (manifest.scoring?.opportunity_score !== undefined) {
-      leadUpdate.opportunity_score = manifest.scoring.opportunity_score
-    }
-    if (manifest.scoring?.classification) {
-      leadUpdate.classification = manifest.scoring.classification
-    }
-
-    if (Object.keys(leadUpdate).length > 0) {
-      await supabase
-        .from('leads')
-        .update(leadUpdate)
-        .eq('id', resolvedLeadId)
-    }
-
-    // 3. Hot Engine event bus — classify change and fire rescore if invalidating
-    const diff = classifyManifestChange(previousManifest ?? null, manifest, manifest.lastUpdatedBy || 'unknown')
-    if (diff?.invalidating) {
-      processHotEngineEvent({
-        type: diff.eventType,
-        leadId: resolvedLeadId,
-        source: manifest.lastUpdatedBy || 'unknown',
-        tier1: diff.tier1,
-      }).catch(err => console.error('[hot-engine] Event processing failed:', err))
-    }
+  const subtrees: Record<string, unknown> = {}
+  for (const key of Object.keys(manifest)) {
+    subtrees[key] = (manifest as any)[key]
   }
-}
-
-/** Look up lead_id from manifest row ID */
-async function getLeadIdForManifest(rowId: string): Promise<string | null> {
-  const supabase = getSupabase()
-  const { data } = await supabase
-    .from('manifests')
-    .select('lead_id')
-    .eq('id', rowId)
-    .single()
-  return (data as any)?.lead_id || null
+  await updateManifestV2_1({
+    manifestId: rowId,
+    subtrees,
+    actor: ((manifest as any).lastUpdatedBy as ManifestActor) || 'system',
+    reason: 'legacy:saveManifest',
+  })
 }
 
 /** Mark briefing as stale so Ari regenerates on next view */
@@ -472,25 +428,214 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
  * The callback mutates the manifest in place. After it runs, saveManifest()
  * persists the change AND syncs derived fields to the leads table.
  */
+/**
+ * Legacy mutator-callback API. Kept for source-level compatibility with ~37
+ * existing callsites. Under the hood, delegates to updateManifestV2_1 — so
+ * every call now goes through the RPC, writes a manifest_history row, and
+ * enjoys shallow-subtree replacement at the DB layer. Self-nesting can't
+ * form even if the mutator does a deep merge, because the RPC only sees
+ * discrete subtrees.
+ *
+ * New code should prefer updateManifestV2_1 directly. This shim exists so
+ * the refactor doesn't require a 37-file churn to ship the infrastructure
+ * upgrade.
+ */
 export async function updateManifestAndCascade(
   leadId: string,
   updater: (manifest: ManifestV2) => void,
   source?: string,
 ): Promise<boolean> {
-  const row = await getManifestForLead(leadId)
-  if (!row) return false
+  const result = await updateManifestV2_1({
+    leadId,
+    compute: (current) => {
+      // Clone so the mutator can't accidentally alter our previousManifest
+      // reference (used for the hot-engine diff inside updateManifestV2_1).
+      const clone = JSON.parse(JSON.stringify(current)) as ManifestV2
+      updater(clone)
+      // Preserve the legacy metadata stamps so callers that assert on
+      // lastUpdated / lastUpdatedBy continue to see them.
+      ;(clone as any).lastUpdated = new Date().toISOString()
+      if (source) (clone as any).lastUpdatedBy = source
+      // Return every top-level key as a subtree. The RPC shallow-replaces
+      // each one — no self-nesting, even if the mutator did a deep merge.
+      const subtrees: Record<string, unknown> = {}
+      for (const key of Object.keys(clone)) {
+        subtrees[key] = (clone as any)[key]
+      }
+      return subtrees
+    },
+    actor: (source as ManifestActor) || 'system',
+    reason: source || 'legacy:updateManifestAndCascade',
+  }).catch((err) => {
+    console.error('[manifest-sync] legacy updateManifestAndCascade shim failed:', err)
+    return null
+  })
+  return !!result
+}
 
-  const { manifest } = row
-  const previousManifest = JSON.parse(JSON.stringify(manifest)) as ManifestV2
+// ─── V2.1 API — spec-shaped subtree-payload write path ────────────────────
+// See docs/manifest-v2-1-spec/05_WRITE_PATH_AUDIT.md Step 4.5.
+//
+// This is the sanctioned callsite-facing API for the V2.1 refactor. Callers
+// pass discrete subtrees that will shallow-replace their counterparts in the
+// stored manifest — the doctrine that kills the self-nesting bug class. The
+// heavy lifting (shallow replace, history row, denormalized column sync) is
+// done by the update_manifest_and_cascade RPC inside Postgres, atomically.
+//
+// The legacy mutator-style updateManifestAndCascade above remains for now.
+// Callers migrate to this new API over Phase 5 and Phase 11 cleanup.
 
-  // Apply the caller's mutations
-  updater(manifest)
+export type ManifestActor = 'ernest' | 'casey' | 'ari' | 'system' | 'migration'
 
-  // Stamp metadata
-  manifest.lastUpdated = new Date().toISOString()
-  if (source) manifest.lastUpdatedBy = source
+export interface UpdateManifestV2_1Params {
+  /** Either manifestId or leadId must be provided. manifestId is preferred. */
+  manifestId?: string
+  leadId?: string
+  /**
+   * Top-level subtrees to replace. Siblings inside a subtree are wholly
+   * replaced — if you want to preserve them, include them in the payload
+   * (or use `compute` to derive the full subtree from the current manifest).
+   */
+  subtrees?: Record<string, unknown>
+  /**
+   * Alternative to `subtrees`: a pure function that receives the current
+   * stored manifest and returns the subtrees to write. Use this when you
+   * need to append to arrays or preserve sibling keys — the wrapper has
+   * already fetched `current` internally, so no double read.
+   */
+  compute?: (current: ManifestV2) => Record<string, unknown>
+  actor: ManifestActor | string
+  reason: string
+}
 
-  // Save + cascade to leads table + hot engine event bus
-  await saveManifest(row.rowId, manifest, leadId, previousManifest)
-  return true
+export class ManifestWriteError extends Error {
+  constructor(msg: string, public readonly cause?: unknown) {
+    super(msg)
+    this.name = 'ManifestWriteError'
+  }
+}
+
+/**
+ * V2.1 write path. Routes through the update_manifest_and_cascade Postgres
+ * RPC for shallow per-subtree replacement + history row + denormalized
+ * column sync, then cascades to the leads table and fires the hot-engine
+ * event bus on the TS side (those live outside the RPC for now).
+ *
+ * Returns the updated manifest, or null if the target manifest doesn't exist.
+ * Throws ManifestWriteError for validation / RPC / auth failures.
+ */
+export async function updateManifestV2_1(
+  params: UpdateManifestV2_1Params,
+): Promise<ManifestV2 | null> {
+  if (!params.manifestId && !params.leadId) {
+    throw new ManifestWriteError('updateManifestV2_1: must provide manifestId or leadId')
+  }
+  if (!params.subtrees && !params.compute) {
+    throw new ManifestWriteError('updateManifestV2_1: must provide subtrees or compute')
+  }
+  if (params.subtrees && params.compute) {
+    throw new ManifestWriteError('updateManifestV2_1: provide subtrees OR compute, not both')
+  }
+
+  const supabase = getSupabase()
+
+  // Resolve manifestId + capture pre-write state (for hot-engine diff).
+  let manifestId = params.manifestId
+  let leadId: string | null = params.leadId ?? null
+  let previousManifest: ManifestV2 | null = null
+
+  if (manifestId) {
+    const { data } = await supabase
+      .from('manifests')
+      .select('lead_id, manifest')
+      .eq('id', manifestId)
+      .limit(1)
+      .single()
+    if (!data) return null
+    leadId = (data as any).lead_id
+    previousManifest = (data as any).manifest as ManifestV2
+  } else {
+    const { data } = await supabase
+      .from('manifests')
+      .select('id, manifest')
+      .eq('lead_id', leadId!)
+      .limit(1)
+      .single()
+    if (!data) return null
+    manifestId = (data as any).id
+    previousManifest = (data as any).manifest as ManifestV2
+  }
+
+  // Resolve subtrees (either static or computed from the current manifest).
+  const resolvedSubtrees: Record<string, unknown> = params.compute
+    ? params.compute(previousManifest!)
+    : { ...params.subtrees! }
+
+  // Strip derived fields client-side (RPC does this too, belt-and-suspenders).
+  const cleaned: Record<string, unknown> = { ...resolvedSubtrees }
+  for (const derivedKey of ['hot_eligibility', 'completeness']) {
+    if (derivedKey in cleaned) {
+      console.warn(
+        `[updateManifestV2_1] Stripping derived key "${derivedKey}" from caller payload. ` +
+        `These fields are recomputed on every write; callers cannot set them directly.`,
+      )
+      delete cleaned[derivedKey]
+    }
+  }
+
+  // Call the atomic RPC: shallow replace + history row + denorm sync, all in
+  // one transaction inside Postgres.
+  const { data: next, error } = await supabase.rpc('update_manifest_and_cascade', {
+    p_manifest_id: manifestId,
+    p_subtrees: cleaned,
+    p_actor: params.actor,
+    p_reason: params.reason,
+  })
+  if (error) {
+    throw new ManifestWriteError(
+      `RPC update_manifest_and_cascade failed: ${error.message}`,
+      error,
+    )
+  }
+
+  const manifest = next as ManifestV2
+
+  // TS-side cascade to the leads table (the RPC only syncs columns on
+  // manifests). Remove once the RPC is extended to cascade, or once the
+  // denormalized lead columns are retired.
+  if (leadId) {
+    const leadUpdate: Record<string, unknown> = {}
+    if (manifest.currentStation) leadUpdate.station = manifest.currentStation
+    if (manifest.priority) leadUpdate.priority = manifest.priority
+    const motivationScore = manifest.situation?.motivation?.score
+    if (motivationScore && motivationScore >= 1) {
+      leadUpdate.motivation_score = motivationScore
+    }
+    if (manifest.scoring?.opportunity_score !== undefined) {
+      leadUpdate.opportunity_score = manifest.scoring.opportunity_score
+    }
+    if (manifest.scoring?.classification) {
+      leadUpdate.classification = manifest.scoring.classification
+    }
+    if (Object.keys(leadUpdate).length > 0) {
+      await supabase.from('leads').update(leadUpdate).eq('id', leadId)
+    }
+  }
+
+  // Hot-engine event bus — fire-and-forget, same as saveManifest.
+  if (leadId && previousManifest) {
+    const diff = classifyManifestChange(previousManifest, manifest, params.actor)
+    if (diff?.invalidating) {
+      processHotEngineEvent({
+        type: diff.eventType,
+        leadId,
+        source: params.actor,
+        tier1: diff.tier1,
+      }).catch((err) =>
+        console.error('[hot-engine] Event processing failed:', err),
+      )
+    }
+  }
+
+  return manifest
 }

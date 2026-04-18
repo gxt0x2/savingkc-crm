@@ -482,16 +482,21 @@ async function refreshAriSignalsForHotList(): Promise<void> {
     // Generate signal (fire-and-forget per lead)
     generateHotSignal(manifest, score)
       .then(async (result) => {
-        // Update manifest with signal
-        if (!manifest.ariIntelligence) manifest.ariIntelligence = {} as any
-        manifest.ariIntelligence!.hotSignal = result.signal
-        manifest.ariIntelligence!.hotNextMove = result.nextMove
-        manifest.ariIntelligence!.hotSignalGeneratedAt = new Date().toISOString()
-
-        await supabase
-          .from('manifests')
-          .update({ manifest, updated_at: new Date().toISOString() })
-          .eq('id', row.id)
+        // Update manifest with signal via V2.1 write path
+        const { updateManifestV2_1 } = await import('@/lib/manifest-sync')
+        await updateManifestV2_1({
+          manifestId: row.id,
+          compute: (current: any) => ({
+            ariIntelligence: {
+              ...(current.ariIntelligence ?? {}),
+              hotSignal: result.signal,
+              hotNextMove: result.nextMove,
+              hotSignalGeneratedAt: new Date().toISOString(),
+            },
+          }),
+          actor: 'ari',
+          reason: 'hot-engine:ari_signal_generated',
+        })
       })
       .catch(err => console.error(`[ari-signal] Failed for lead ${row.lead_id}:`, err))
   }

@@ -131,18 +131,23 @@ export async function POST(req: NextRequest) {
           manifest.qualificationScore = score
           manifest.tier = tier as ManifestV2['tier']
 
-          // Update manifest in Supabase
-          const { error: updateError } = await supabase
-            .from('manifests')
-            .update({
-              manifest: manifest,
-              qualification_score: score,
-              tier: tier,
+          // Update manifest via V2.1 write path. Every top-level key of the
+          // freshly-enriched manifest is passed as a subtree — the RPC
+          // shallow-replaces each and writes a manifest_history row.
+          try {
+            const { updateManifestV2_1 } = await import('@/lib/manifest-sync')
+            const subtrees: Record<string, unknown> = {}
+            for (const key of Object.keys(manifest)) {
+              subtrees[key] = (manifest as any)[key]
+            }
+            await updateManifestV2_1({
+              manifestId,
+              subtrees,
+              actor: 'system',
+              reason: 'api:manifests_post_enrichment',
             })
-            .eq('id', manifestId)
-
-          if (updateError) {
-            console.error('Manifest enrichment update error:', updateError)
+          } catch (updateErr) {
+            console.error('Manifest enrichment update error:', updateErr)
           }
 
           // Also write enrichment data back to leads table so the CRM UI shows it

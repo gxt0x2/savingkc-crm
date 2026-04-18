@@ -1,0 +1,113 @@
+{
+  "manifest_id": "00000000-0000-4000-8000-000000000401",
+  "lead_id": "00000000-0000-4000-8000-000000000402",
+  "seller": {
+    "contact_id": "00000000-0000-4000-8000-000000000403",
+    "full_name": "Stale Fixture",
+    "phones": [
+      { "number": "+18165554444", "label": "mobile", "verified": true }
+    ],
+    "emails": null,
+    "preferred_channel": "phone",
+    "best_time_to_reach": null,
+    "spouse_or_co_decider": null
+  },
+  "property": {
+    "address_line_1": "42 Outdated Ln",
+    "address_line_2": null,
+    "city": "Blue Springs",
+    "state": "MO",
+    "zip": "64015",
+    "county": "Jackson",
+    "parcel_id": null,
+    "property_type": "single_family",
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "sqft": 1650,
+    "year_built": 1988,
+    "lot_size_sqft": 7200,
+    "condition": "good",
+    "occupancy": "owner_occupied",
+    "known_issues": null
+  },
+  "financials": {
+    "seller_asking_price": 165000,
+    "seller_floor_price": 140000,
+    "our_max_offer": 135000,
+    "mortgage_balance": 55000,
+    "back_taxes_owed": 0,
+    "liens_total": 0,
+    "estimated_arv": 195000,
+    "estimated_repair_cost": 18000,
+    "estimated_spread": 42000,
+    "spread_meets_25k_floor": true
+  },
+  "situation": {
+    "life_event_type": "downsizing",
+    "blockers": null,
+    "timeline_raw": "flexible, maybe 60-90 days",
+    "timeline_normalized_days": 75,
+    "objections": null,
+    "red_flags": null,
+    "opportunity_flags": null,
+    "price_expectations_raw": null
+  },
+  "motivation": {
+    "score": 5,
+    "score_reasoning": "downsizing but flexible",
+    "primary_driver": "downsizing after kids moved out",
+    "secondary_drivers": null,
+    "key_quotes": null,
+    "urgency_signals": null
+  },
+  "personality": {
+    "type": "accommodator",
+    "communication_style": "open_expressive",
+    "best_approach": "build rapport, share success stories",
+    "rapport_notes": null,
+    "trust_level": "medium"
+  },
+  "pipeline": {
+    "current_station": "qualifying",
+    "priority": "warm",
+    "entered_current_station_at": "2026-03-20T00:00:00.000Z",
+    "days_in_current_station": 29,
+    "last_meaningful_contact_at": "2026-03-28T14:00:00.000Z",
+    "next_scheduled_contact_at": null,
+    "disposition_history_count": 2
+  },
+  "completeness": {
+    "percent": 72,
+    "required_fields_total": 18,
+    "required_fields_present": 13,
+    "missing_fields": [
+      "motivation.key_quotes",
+      "situation.objections",
+      "situation.opportunity_flags"
+    ],
+    "last_computed_at": "2026-03-28T14:00:00.000Z"
+  },
+  "next_action": {
+    "description": "Re-engage after silence — call to check status",
+    "owner": "casey",
+    "due_by": "2026-04-19T15:00:00.000Z",
+    "category": "outbound_call",
+    "reasoning": "Lead has gone cold for ~3 weeks, stored briefing may reflect pre-silence state. Reconfirm before committing to offer strategy."
+  },
+  "sources": {
+    "call_ids": ["00000000-0000-4000-8000-000000000410"],
+    "latest_call_id": "00000000-0000-4000-8000-000000000410",
+    "email_thread_ids": null,
+    "sms_thread_ids": null,
+    "enrichment_ids": null,
+    "manual_note_ids": null,
+    "all": null
+  },
+  "meta": {
+    "schema_version": "2.1",
+    "created_at": "2026-03-15T00:00:00.000Z",
+    "updated_at": "2026-03-28T14:00:00.000Z",
+    "last_actor": "casey",
+    "briefing_stale": true
+  }
+}
