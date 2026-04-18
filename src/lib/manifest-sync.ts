@@ -494,3 +494,148 @@ export async function updateManifestAndCascade(
   await saveManifest(row.rowId, manifest, leadId, previousManifest)
   return true
 }
+
+// ─── V2.1 API — spec-shaped subtree-payload write path ────────────────────
+// See docs/manifest-v2-1-spec/05_WRITE_PATH_AUDIT.md Step 4.5.
+//
+// This is the sanctioned callsite-facing API for the V2.1 refactor. Callers
+// pass discrete subtrees that will shallow-replace their counterparts in the
+// stored manifest — the doctrine that kills the self-nesting bug class. The
+// heavy lifting (shallow replace, history row, denormalized column sync) is
+// done by the update_manifest_and_cascade RPC inside Postgres, atomically.
+//
+// The legacy mutator-style updateManifestAndCascade above remains for now.
+// Callers migrate to this new API over Phase 5 and Phase 11 cleanup.
+
+export type ManifestActor = 'ernest' | 'casey' | 'ari' | 'system' | 'migration'
+
+export interface UpdateManifestV2_1Params {
+  /** Either manifestId or leadId must be provided. manifestId is preferred. */
+  manifestId?: string
+  leadId?: string
+  /** Top-level subtrees to replace. Siblings inside a subtree are wholly replaced. */
+  subtrees: Record<string, unknown>
+  actor: ManifestActor | string
+  reason: string
+}
+
+export class ManifestWriteError extends Error {
+  constructor(msg: string, public readonly cause?: unknown) {
+    super(msg)
+    this.name = 'ManifestWriteError'
+  }
+}
+
+/**
+ * V2.1 write path. Routes through the update_manifest_and_cascade Postgres
+ * RPC for shallow per-subtree replacement + history row + denormalized
+ * column sync, then cascades to the leads table and fires the hot-engine
+ * event bus on the TS side (those live outside the RPC for now).
+ *
+ * Returns the updated manifest, or null if the target manifest doesn't exist.
+ * Throws ManifestWriteError for validation / RPC / auth failures.
+ */
+export async function updateManifestV2_1(
+  params: UpdateManifestV2_1Params,
+): Promise<ManifestV2 | null> {
+  if (!params.manifestId && !params.leadId) {
+    throw new ManifestWriteError('updateManifestV2_1: must provide manifestId or leadId')
+  }
+
+  const supabase = getSupabase()
+
+  // Resolve manifestId + capture pre-write state (for hot-engine diff).
+  let manifestId = params.manifestId
+  let leadId: string | null = params.leadId ?? null
+  let previousManifest: ManifestV2 | null = null
+
+  if (manifestId) {
+    const { data } = await supabase
+      .from('manifests')
+      .select('lead_id, manifest')
+      .eq('id', manifestId)
+      .limit(1)
+      .single()
+    if (!data) return null
+    leadId = (data as any).lead_id
+    previousManifest = (data as any).manifest as ManifestV2
+  } else {
+    const { data } = await supabase
+      .from('manifests')
+      .select('id, manifest')
+      .eq('lead_id', leadId!)
+      .limit(1)
+      .single()
+    if (!data) return null
+    manifestId = (data as any).id
+    previousManifest = (data as any).manifest as ManifestV2
+  }
+
+  // Strip derived fields client-side (RPC does this too, belt-and-suspenders).
+  const cleaned: Record<string, unknown> = { ...params.subtrees }
+  for (const derivedKey of ['hot_eligibility', 'completeness']) {
+    if (derivedKey in cleaned) {
+      console.warn(
+        `[updateManifestV2_1] Stripping derived key "${derivedKey}" from caller payload. ` +
+        `These fields are recomputed on every write; callers cannot set them directly.`,
+      )
+      delete cleaned[derivedKey]
+    }
+  }
+
+  // Call the atomic RPC: shallow replace + history row + denorm sync, all in
+  // one transaction inside Postgres.
+  const { data: next, error } = await supabase.rpc('update_manifest_and_cascade', {
+    p_manifest_id: manifestId,
+    p_subtrees: cleaned,
+    p_actor: params.actor,
+    p_reason: params.reason,
+  })
+  if (error) {
+    throw new ManifestWriteError(
+      `RPC update_manifest_and_cascade failed: ${error.message}`,
+      error,
+    )
+  }
+
+  const manifest = next as ManifestV2
+
+  // TS-side cascade to the leads table (the RPC only syncs columns on
+  // manifests). Remove once the RPC is extended to cascade, or once the
+  // denormalized lead columns are retired.
+  if (leadId) {
+    const leadUpdate: Record<string, unknown> = {}
+    if (manifest.currentStation) leadUpdate.station = manifest.currentStation
+    if (manifest.priority) leadUpdate.priority = manifest.priority
+    const motivationScore = manifest.situation?.motivation?.score
+    if (motivationScore && motivationScore >= 1) {
+      leadUpdate.motivation_score = motivationScore
+    }
+    if (manifest.scoring?.opportunity_score !== undefined) {
+      leadUpdate.opportunity_score = manifest.scoring.opportunity_score
+    }
+    if (manifest.scoring?.classification) {
+      leadUpdate.classification = manifest.scoring.classification
+    }
+    if (Object.keys(leadUpdate).length > 0) {
+      await supabase.from('leads').update(leadUpdate).eq('id', leadId)
+    }
+  }
+
+  // Hot-engine event bus — fire-and-forget, same as saveManifest.
+  if (leadId && previousManifest) {
+    const diff = classifyManifestChange(previousManifest, manifest, params.actor)
+    if (diff?.invalidating) {
+      processHotEngineEvent({
+        type: diff.eventType,
+        leadId,
+        source: params.actor,
+        tier1: diff.tier1,
+      }).catch((err) =>
+        console.error('[hot-engine] Event processing failed:', err),
+      )
+    }
+  }
+
+  return manifest
+}
