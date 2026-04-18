@@ -10,19 +10,35 @@ Per `docs/manifest-v2-1-spec/05_WRITE_PATH_AUDIT.md` Phase 2. Classification of 
 
 73 distinct `manifests` touches classified across the five files that matter for Phase 5.
 
-| Bucket | Count | Meaning |
+| Bucket | Count | Status (2026-04-18 PM) |
 |---|---|---|
-| **A** — the write path itself | 6 lines in `manifest-sync.ts` | Hardened in Phase 3 |
+| **A** — the write path itself | `manifest-sync.ts` internals | ✅ Rewritten in Phase 3 to delegate through V2.1 RPC |
 | **B** — reads (`.select(...)`) | 56 | Leave alone |
-| **C** — writes routed through `updateManifestAndCascade` | 10 | Verify Zod validation in Phase 3 |
-| **D** — direct `.insert/.update/.delete` bypasses | **5** | **Phase 5 closes these** |
-| **C-doctrine-violation** — through the path but with `deepMerge` | **1** | **Fix at same time as Phase 5** |
+| **C** — writes routed through `updateManifestAndCascade` | 10 | ✅ Inherited V2.1 infra via the legacy-shim (commit d1c2dd8) |
+| **D** — direct `.insert/.update/.delete` bypasses | 5 → 3 | ✅ 2 update bypasses closed in Phase 5. 3 remaining are creation/deletion (categorically different — see below). |
+| **C-doctrine-violation** — through the path but with `deepMerge` | 1 | ✅ Closed in Phase 3a (commit d055d80) |
 
 The canonical write path already exists: `updateManifestAndCascade` at `src/lib/manifest-sync.ts:475`, with internal helpers `saveManifest` (`:72`) and `ensureManifestExists` (around `:427`). 10 call sites already use it correctly. 5 bypass it. 1 routes through it but with a deep-merge callback that's almost certainly the source of the `manifest.manifest.*` self-nesting bug.
 
 ---
 
-## The 5 bypasses — Phase 5 work
+## Bypass closures — Phase 5 work
+
+**Closed:**
+- ✅ `src/lib/hot-engine/cache.ts:492` — Hot Engine signal write (update) → now via `updateManifestV2_1`
+- ✅ `src/app/api/manifests/route.ts:136` — POST enrichment follow-up (update) → now via `updateManifestV2_1`
+
+**Categorically out of Phase 5 scope (the update-path RPC doesn't handle creation/deletion):**
+
+- `src/lib/prospect-to-lead.ts:171` — direct `.insert()` creating a new manifest. Creation has no prior state to shallow-replace over; the V2.1 RPC only handles updates. Legitimate creation path. Follow-up: either add a `create_manifest_and_cascade` RPC, or route all creation through `ensureManifestExists` (already Bucket A).
+- `src/app/api/manifests/route.ts:75` — direct `.insert()` creating a manifest from POST input. Same reasoning — creation, not update.
+- `src/app/api/leads/route.ts:392` — `.delete().in('lead_id', ids)` during bulk lead deletion. Cascade deletion is a separate discipline from update. Follow-up: build a `delete_manifests_for_leads` RPC that writes a tombstone row in `manifest_history` before deleting.
+
+These 3 items should appear in a **follow-up audit** focused on creation/deletion paths, which is out of scope for the V2.1 write-path refactor but should be addressed before the lockdown migration (Phase 4 lockdown) can safely revoke service_role's direct write/delete permissions.
+
+---
+
+## Original bypass detail (for historical record)
 
 ### 1. `src/lib/prospect-to-lead.ts:171` — direct `.insert()`
 
