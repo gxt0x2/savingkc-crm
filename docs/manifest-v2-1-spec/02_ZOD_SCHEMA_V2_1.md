@@ -139,7 +139,7 @@ export const SellerSchema = z.object({
     label: z.enum(['primary', 'mobile', 'work', 'home', 'other']),
     verified: z.boolean(),
   })),
-  emails: z.array(z.object({
+  emails: nonEmptyArray(z.object({
     address: z.string().email(),
     label: z.enum(['primary', 'work', 'personal', 'other']),
     verified: z.boolean(),
@@ -223,11 +223,11 @@ export const MotivationSchema = z.object({
   score_reasoning: z.string().min(1),
   primary_driver: z.string().min(1),
   secondary_drivers: nonEmptyArray(z.string()).nullable(),
-  key_quotes: z.array(z.object({
+  key_quotes: nonEmptyArray(z.object({
     quote: z.string().min(1),
     source_call_id: CallIdSchema,
     source_timestamp_seconds: z.number().int().nonnegative().nullable(),
-  })).max(5).nullable(),   // cap at 5 quotes. More is noise.
+  })).max(5).nullable(),   // null or between 1 and 5. Empty banned.
   urgency_signals: nonEmptyArray(z.string()).nullable(),
 }).strict();
 
@@ -257,7 +257,7 @@ export const HotFactorSchema = z.object({
   raw_value: z.number(),
   weight: z.number().min(0).max(1),
   normalized_contribution: z.number().min(0).max(1),
-});
+}).strict();
 
 export const HotEligibilitySchema = z.object({
   verdict: HotEligibilityVerdictSchema,
@@ -267,13 +267,13 @@ export const HotEligibilitySchema = z.object({
     velocity: HotFactorSchema,
     deal_quality: HotFactorSchema,
     time_pressure: HotFactorSchema,
-  }),
+  }).strict(),
   gates: z.object({
     min_spread_25k_pass: z.boolean(),
     data_completeness_pass: z.boolean(),
     anti_flicker_cooldown_active: z.boolean(),
     cooldown_expires_at: z.string().datetime().nullable(),
-  }),
+  }).strict(),
   missing_fields_for_gate: nonEmptyArray(z.string()).nullable(),
   last_evaluated_at: z.string().datetime(),
 }).strict();
@@ -308,13 +308,15 @@ export const SourcePointerSchema = z.object({
 }).strict();
 
 export const SourcesSchema = z.object({
-  call_ids: z.array(CallIdSchema).max(200).nullable(),
+  // All array fields are null-or-non-empty (tri-state: missing / null / populated).
+  // Empty arrays are banned — a collected-but-empty state is represented by null.
+  call_ids: nonEmptyArray(CallIdSchema).max(200).nullable(),
   latest_call_id: CallIdSchema.nullable(),
-  email_thread_ids: z.array(ThreadIdSchema).max(50).nullable(),
-  sms_thread_ids: z.array(ThreadIdSchema).max(50).nullable(),
-  enrichment_ids: z.array(EnrichmentIdSchema).max(20).nullable(),
-  manual_note_ids: z.array(z.string().uuid()).max(100).nullable(),
-  all: z.array(SourcePointerSchema).max(500).nullable(),
+  email_thread_ids: nonEmptyArray(ThreadIdSchema).max(50).nullable(),
+  sms_thread_ids: nonEmptyArray(ThreadIdSchema).max(50).nullable(),
+  enrichment_ids: nonEmptyArray(EnrichmentIdSchema).max(20).nullable(),
+  manual_note_ids: nonEmptyArray(z.string().uuid()).max(100).nullable(),
+  all: nonEmptyArray(SourcePointerSchema).max(500).nullable(),
   // `all` is a denormalized, chronological projection for the serializer.
   // Kept bounded; older entries roll off to a `sources_archive` if needed.
 }).strict();

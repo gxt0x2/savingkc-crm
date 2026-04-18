@@ -115,15 +115,13 @@ export const SellerSchema = z
         verified: z.boolean(),
       }),
     ),
-    emails: z
-      .array(
-        z.object({
-          address: z.string().email(),
-          label: z.enum(['primary', 'work', 'personal', 'other']),
-          verified: z.boolean(),
-        }),
-      )
-      .nullable(),
+    emails: nonEmptyArray(
+      z.object({
+        address: z.string().email(),
+        label: z.enum(['primary', 'work', 'personal', 'other']),
+        verified: z.boolean(),
+      }),
+    ).nullable(),
     preferred_channel: z.enum(['phone', 'sms', 'email']).nullable(),
     best_time_to_reach: z.string().nullable(),
     spouse_or_co_decider: z
@@ -236,14 +234,13 @@ export const MotivationSchema = z
     score_reasoning: z.string().min(1),
     primary_driver: z.string().min(1),
     secondary_drivers: nonEmptyArray(z.string()).nullable(),
-    key_quotes: z
-      .array(
-        z.object({
-          quote: z.string().min(1),
-          source_call_id: CallIdSchema,
-          source_timestamp_seconds: z.number().int().nonnegative().nullable(),
-        }),
-      )
+    key_quotes: nonEmptyArray(
+      z.object({
+        quote: z.string().min(1),
+        source_call_id: CallIdSchema,
+        source_timestamp_seconds: z.number().int().nonnegative().nullable(),
+      }),
+    )
       .max(5)
       .nullable(),
     urgency_signals: nonEmptyArray(z.string()).nullable(),
@@ -275,28 +272,34 @@ export const PipelineSchema = z
   .strict()
 
 // ─── Subtree: Hot Eligibility ──────────────────────────────────────────
-export const HotFactorSchema = z.object({
-  raw_value: z.number(),
-  weight: z.number().min(0).max(1),
-  normalized_contribution: z.number().min(0).max(1),
-})
+export const HotFactorSchema = z
+  .object({
+    raw_value: z.number(),
+    weight: z.number().min(0).max(1),
+    normalized_contribution: z.number().min(0).max(1),
+  })
+  .strict()
 
 export const HotEligibilitySchema = z
   .object({
     verdict: HotEligibilityVerdictSchema,
     composite_score: z.number().min(0).max(1),
-    factors: z.object({
-      engagement: HotFactorSchema,
-      velocity: HotFactorSchema,
-      deal_quality: HotFactorSchema,
-      time_pressure: HotFactorSchema,
-    }),
-    gates: z.object({
-      min_spread_25k_pass: z.boolean(),
-      data_completeness_pass: z.boolean(),
-      anti_flicker_cooldown_active: z.boolean(),
-      cooldown_expires_at: z.string().datetime().nullable(),
-    }),
+    factors: z
+      .object({
+        engagement: HotFactorSchema,
+        velocity: HotFactorSchema,
+        deal_quality: HotFactorSchema,
+        time_pressure: HotFactorSchema,
+      })
+      .strict(),
+    gates: z
+      .object({
+        min_spread_25k_pass: z.boolean(),
+        data_completeness_pass: z.boolean(),
+        anti_flicker_cooldown_active: z.boolean(),
+        cooldown_expires_at: z.string().datetime().nullable(),
+      })
+      .strict(),
     missing_fields_for_gate: nonEmptyArray(z.string()).nullable(),
     last_evaluated_at: z.string().datetime(),
   })
@@ -346,13 +349,13 @@ export const SourcePointerSchema = z
 
 export const SourcesSchema = z
   .object({
-    call_ids: z.array(CallIdSchema).max(200).nullable(),
+    call_ids: nonEmptyArray(CallIdSchema).max(200).nullable(),
     latest_call_id: CallIdSchema.nullable(),
-    email_thread_ids: z.array(ThreadIdSchema).max(50).nullable(),
-    sms_thread_ids: z.array(ThreadIdSchema).max(50).nullable(),
-    enrichment_ids: z.array(EnrichmentIdSchema).max(20).nullable(),
-    manual_note_ids: z.array(z.string().uuid()).max(100).nullable(),
-    all: z.array(SourcePointerSchema).max(500).nullable(),
+    email_thread_ids: nonEmptyArray(ThreadIdSchema).max(50).nullable(),
+    sms_thread_ids: nonEmptyArray(ThreadIdSchema).max(50).nullable(),
+    enrichment_ids: nonEmptyArray(EnrichmentIdSchema).max(20).nullable(),
+    manual_note_ids: nonEmptyArray(z.string().uuid()).max(100).nullable(),
+    all: nonEmptyArray(SourcePointerSchema).max(500).nullable(),
   })
   .strict()
 

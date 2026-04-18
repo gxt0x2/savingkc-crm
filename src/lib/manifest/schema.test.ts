@@ -242,6 +242,88 @@ describe('empty-collection bans', () => {
     const bad = { ...validSeller, phones: [] }
     expect(() => SellerSchema.parse(bad)).toThrow()
   })
+
+  it('rejects empty emails array on SellerSchema (must be null or non-empty)', () => {
+    const bad = { ...validSeller, emails: [] }
+    expect(() => SellerSchema.parse(bad)).toThrow()
+  })
+
+  it('rejects empty key_quotes array on MotivationSchema', () => {
+    const bad = {
+      score: 5,
+      score_reasoning: 'test',
+      primary_driver: 'test',
+      secondary_drivers: null,
+      key_quotes: [],
+      urgency_signals: null,
+    }
+    expect(() => MotivationSchema.parse(bad)).toThrow()
+  })
+
+  it('rejects empty call_ids array on SourcesSchema (must be null or non-empty)', () => {
+    const bad = {
+      call_ids: [],
+      latest_call_id: null,
+      email_thread_ids: null,
+      sms_thread_ids: null,
+      enrichment_ids: null,
+      manual_note_ids: null,
+      all: null,
+    }
+    expect(() => SourcesSchema.parse(bad)).toThrow()
+  })
+})
+
+describe('strict-mode discipline', () => {
+  it('HotFactorSchema rejects unknown fields', () => {
+    const bad = {
+      raw_value: 5,
+      weight: 0.25,
+      normalized_contribution: 0.2,
+      bonusField: 'nope',
+    }
+    expect(() => HotEligibilitySchema.parse({
+      verdict: 'eligible',
+      composite_score: 0.5,
+      factors: {
+        engagement: bad,
+        velocity: { raw_value: 0, weight: 0.25, normalized_contribution: 0 },
+        deal_quality: { raw_value: 0, weight: 0.25, normalized_contribution: 0 },
+        time_pressure: { raw_value: 0, weight: 0.25, normalized_contribution: 0 },
+      },
+      gates: {
+        min_spread_25k_pass: true,
+        data_completeness_pass: true,
+        anti_flicker_cooldown_active: false,
+        cooldown_expires_at: null,
+      },
+      missing_fields_for_gate: null,
+      last_evaluated_at: '2026-04-18T12:00:00.000Z',
+    })).toThrow()
+  })
+
+  it('HotEligibility.gates rejects unknown fields', () => {
+    const base = {
+      verdict: 'eligible' as const,
+      composite_score: 0.5,
+      factors: {
+        engagement: { raw_value: 0, weight: 0.25, normalized_contribution: 0 },
+        velocity: { raw_value: 0, weight: 0.25, normalized_contribution: 0 },
+        deal_quality: { raw_value: 0, weight: 0.25, normalized_contribution: 0 },
+        time_pressure: { raw_value: 0, weight: 0.25, normalized_contribution: 0 },
+      },
+      gates: {
+        min_spread_25k_pass: true,
+        data_completeness_pass: true,
+        anti_flicker_cooldown_active: false,
+        cooldown_expires_at: null,
+        extraGate: true,
+      },
+      missing_fields_for_gate: null,
+      last_evaluated_at: '2026-04-18T12:00:00.000Z',
+    }
+    expect(() => HotEligibilitySchema.parse(base)).toThrow()
+  })
 })
 
 describe('branded IDs', () => {
