@@ -69,80 +69,36 @@ async function getManifestForLead(leadId: string): Promise<{ rowId: string; lead
  * and the leads table is always kept in sync. No other code should
  * write station/priority/motivation_score to leads directly.
  */
+/**
+ * Internal save path. Delegates to updateManifestV2_1 so internal helpers
+ * (markBriefingStale, syncPriority, addMotivationSignal, addFlag,
+ * addSituationType, flagDeceased, onCommunicationEvent, ensureManifestExists
+ * auto-create follow-on) inherit the V2.1 infrastructure:
+ *   - manifest_history row on every save
+ *   - shallow per-subtree replacement via RPC
+ *   - denormalized column sync atomic with the JSONB write
+ *   - leads-table cascade and hot-engine event fire on the TS side
+ *
+ * The leadId and previousManifest parameters are now ignored — V2.1 resolves
+ * leadId from manifestId and refetches previousManifest for its own diff.
+ * Minor double-read accepted in exchange for a single canonical write path.
+ */
 async function saveManifest(
   rowId: string,
   manifest: ManifestV2,
-  leadId?: string,
-  previousManifest?: ManifestV2 | null,
+  _leadId?: string,
+  _previousManifest?: ManifestV2 | null,
 ) {
-  const supabase = getSupabase()
-
-  // 1. Save manifest to manifests table
-  await supabase
-    .from('manifests')
-    .update({
-      manifest,
-      current_station: manifest.currentStation,
-      priority: manifest.priority,
-      tier: manifest.tier,
-      qualification_score: manifest.qualificationScore,
-      next_appointment_at: manifest.pipeline?.appointment?.scheduledAt ?? null,
-      appointment_status: manifest.pipeline?.appointment?.status ?? null,
-      opportunity_score: manifest.scoring?.opportunity_score ?? null,
-      classification: manifest.scoring?.classification ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', rowId)
-
-  // 2. Sync derived fields to leads table (manifest → leads, never the reverse)
-  const resolvedLeadId = leadId || await getLeadIdForManifest(rowId)
-  if (resolvedLeadId) {
-    const leadUpdate: Record<string, any> = {}
-
-    if (manifest.currentStation) leadUpdate.station = manifest.currentStation
-    if (manifest.priority) leadUpdate.priority = manifest.priority
-
-    const motivationScore = manifest.situation?.motivation?.score
-    if (motivationScore && motivationScore >= 1) {
-      leadUpdate.motivation_score = motivationScore
-    }
-
-    if (manifest.scoring?.opportunity_score !== undefined) {
-      leadUpdate.opportunity_score = manifest.scoring.opportunity_score
-    }
-    if (manifest.scoring?.classification) {
-      leadUpdate.classification = manifest.scoring.classification
-    }
-
-    if (Object.keys(leadUpdate).length > 0) {
-      await supabase
-        .from('leads')
-        .update(leadUpdate)
-        .eq('id', resolvedLeadId)
-    }
-
-    // 3. Hot Engine event bus — classify change and fire rescore if invalidating
-    const diff = classifyManifestChange(previousManifest ?? null, manifest, manifest.lastUpdatedBy || 'unknown')
-    if (diff?.invalidating) {
-      processHotEngineEvent({
-        type: diff.eventType,
-        leadId: resolvedLeadId,
-        source: manifest.lastUpdatedBy || 'unknown',
-        tier1: diff.tier1,
-      }).catch(err => console.error('[hot-engine] Event processing failed:', err))
-    }
+  const subtrees: Record<string, unknown> = {}
+  for (const key of Object.keys(manifest)) {
+    subtrees[key] = (manifest as any)[key]
   }
-}
-
-/** Look up lead_id from manifest row ID */
-async function getLeadIdForManifest(rowId: string): Promise<string | null> {
-  const supabase = getSupabase()
-  const { data } = await supabase
-    .from('manifests')
-    .select('lead_id')
-    .eq('id', rowId)
-    .single()
-  return (data as any)?.lead_id || null
+  await updateManifestV2_1({
+    manifestId: rowId,
+    subtrees,
+    actor: ((manifest as any).lastUpdatedBy as ManifestActor) || 'system',
+    reason: 'legacy:saveManifest',
+  })
 }
 
 /** Mark briefing as stale so Ari regenerates on next view */
