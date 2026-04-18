@@ -1,0 +1,281 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderPreCallBriefing — snapshots > full.json renders deterministic Markdown 1`] = `
+"# Pre-Call Briefing — Jane Seller
+
+**Property:** 123 Main St, Kansas City, MO (Jackson County)
+**Station:** qualifying — Day 8
+**Priority:** warm | **Motivation:** 7/10
+
+---
+
+## What to do on this call
+
+**Follow up Tuesday morning with a revised offer in the $150-160k range, contingent on probate clearance**
+
+Seller asked for a callback after discussing with spouse; timing aligns with expected probate progress
+
+---
+
+## Seller snapshot
+
+- **probate resolution** (primary driver)
+- Secondary: relocation planned, maintenance burden
+- Timeline: needs to close before end of summer (90 days)
+- Life event: probate
+- Personality: analytical, professional
+- Best approach: **lead with numbers, confirm in writing**
+
+---
+
+## Financials at a glance
+
+- Seller asking: **$180,000**
+- Seller floor (our estimate): $150,000
+- Our max offer: $140,000
+- Mortgage: $60,000
+- Estimated spread: **$45,000** ✓ clears $25K floor
+
+---
+
+## Open objections
+
+- **[price]** wants $20k more than our max
+  ↳ Unaddressed.
+- **[logistics]** worried about closing costs
+  ↳ We cover all closing costs — confirmed in writing
+
+---
+
+## Key leverage points
+
+- seller initiated contact
+- motivated timeline — Mentioned close date twice
+
+---
+
+## Red flags
+
+- **[medium]** probate court involvement — Executor named, docs pending
+
+---
+
+## Voice of the seller
+
+> "We need to close by Labor Day — mom's estate has to settle"
+> — Call 00000000…
+
+> "Honestly the repairs are more than we want to deal with"
+> — Call 00000000…
+
+
+---
+
+## Context flags
+
+- Last meaningful contact: 2 days ago
+- Next scheduled: Apr 22
+- Data completeness: 85% (15/18)
+- Missing: motivation.secondary_drivers, financials.liens_total, personality.rapport_notes
+- Hot Opportunity verdict: eligible
+
+---
+
+## Briefing freshness
+
+Generated at 2026-04-18T12:00:00.000Z.
+Manifest updated today.
+"
+`;
+
+exports[`renderPreCallBriefing — snapshots > hot.json renders deterministic Markdown 1`] = `
+"# Pre-Call Briefing — Hot Lead Smith
+
+**Property:** 789 Urgent Way, Kansas City, MO (Jackson County)
+**Station:** offer_prep — Day 1
+**Priority:** hot | **Motivation:** 9/10
+
+---
+
+## What to do on this call
+
+**Present $150k cash offer with May 10 close**
+
+Seller's hard deadline + our $75k spread. Lead with the close date since that's what he cares about most.
+
+---
+
+## Seller snapshot
+
+- **job relocation (30-day hard deadline)** (primary driver)
+- Secondary: avoid landlord hassle
+- Timeline: need to move for job in 30 days (30 days)
+- Life event: relocation
+- Personality: driver, terse
+- Best approach: **get to numbers fast, confirm close date first**
+
+---
+
+## Financials at a glance
+
+- Seller asking: **$195,000**
+- Seller floor (our estimate): $155,000
+- Our max offer: $150,000
+- Mortgage: $40,000
+- Estimated spread: **$75,000** ✓ clears $25K floor
+
+---
+
+## Key leverage points
+
+- job relocation deadline — Must close in 30 days
+- clean title — No liens or back taxes
+
+---
+
+## Voice of the seller
+
+> "I start my new job May 20th — I need this closed before then"
+> — Call 00000000…
+
+
+---
+
+## Context flags
+
+- Last meaningful contact: today
+- Next scheduled: Apr 19
+- Data completeness: 92% (17/18)
+- Missing: personality.rapport_notes
+- Hot Opportunity verdict: eligible
+
+---
+
+## Briefing freshness
+
+Generated at 2026-04-18T12:00:00.000Z.
+Manifest updated today.
+"
+`;
+
+exports[`renderPreCallBriefing — snapshots > minimal.json renders deterministic Markdown 1`] = `
+"# Pre-Call Briefing — Minimal Jones
+
+**Property:** 1 Test Rd, Lee's Summit, MO (Jackson County)
+**Station:** new — Day 0
+**Priority:** cold
+
+---
+
+## What to do on this call
+
+_Evaluation in progress._
+
+---
+
+## Context flags
+
+- Next scheduled: none scheduled
+- Data completeness: 12% (2/18)
+- Missing: motivation.score, situation.life_event_type, property.condition
+
+---
+
+## Briefing freshness
+
+Generated at 2026-04-18T12:00:00.000Z.
+Manifest updated today.
+"
+`;
+
+exports[`renderPreCallBriefing — snapshots > pending.json renders deterministic Markdown 1`] = `
+"# Pre-Call Briefing — Pat Pendinghof
+
+**Property:** 555 Pending Ave, Independence, MO (Jackson County)
+**Station:** attempting_contact — Day 1
+**Priority:** warm
+
+---
+
+## What to do on this call
+
+_Evaluation in progress._
+
+---
+
+## Financials at a glance
+
+- Seller asking: **$95,000**
+
+---
+
+## Context flags
+
+- Last meaningful contact: today
+- Next scheduled: none scheduled
+- Data completeness: 45% (8/18)
+- Missing: motivation.score, situation.life_event_type, personality.type
+
+---
+
+## Briefing freshness
+
+Generated at 2026-04-18T12:00:00.000Z.
+Manifest updated today.
+"
+`;
+
+exports[`renderPreCallBriefing — snapshots > stale.json renders deterministic Markdown 1`] = `
+"# Pre-Call Briefing — Stale Fixture
+
+**Property:** 42 Outdated Ln, Blue Springs, MO (Jackson County)
+**Station:** qualifying — Day 29
+**Priority:** warm | **Motivation:** 5/10
+
+---
+
+## What to do on this call
+
+**Re-engage after silence — call to check status**
+
+Lead has gone cold for ~3 weeks, stored briefing may reflect pre-silence state. Reconfirm before committing to offer strategy.
+
+---
+
+## Seller snapshot
+
+- **downsizing after kids moved out** (primary driver)
+- Timeline: flexible, maybe 60-90 days (75 days)
+- Life event: downsizing
+- Personality: accommodator, open_expressive
+- Best approach: **build rapport, share success stories**
+
+---
+
+## Financials at a glance
+
+- Seller asking: **$165,000**
+- Seller floor (our estimate): $140,000
+- Our max offer: $135,000
+- Mortgage: $55,000
+- Estimated spread: **$42,000** ✓ clears $25K floor
+
+---
+
+## Context flags
+
+- Last meaningful contact: 20 days ago
+- Next scheduled: none scheduled
+- Data completeness: 72% (13/18)
+- Missing: motivation.key_quotes, situation.objections, situation.opportunity_flags
+
+---
+
+## Briefing freshness
+
+Generated at 2026-04-18T12:00:00.000Z.
+Manifest updated 20 days ago.
+
+⚠️ Briefing flagged stale — verify critical fields before call.
+"
+`;
