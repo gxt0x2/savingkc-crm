@@ -195,17 +195,17 @@ export async function renderManifestForAri(
   options: RenderOptions = {},
 ): Promise<string> {
   const supabase = createClient();
-  const { data, error } = await supabase
+  const { data: row, error } = await supabase
     .from('manifests')
-    .select('data')
+    .select('manifest')
     .eq('id', manifestId)
     .single();
 
-  if (error || !data) {
+  if (error || !row) {
     throw new ManifestNotFoundError(manifestId);
   }
 
-  const manifest = manifestV2_1Schema.parse(data.data);
+  const manifest = manifestV2_1Schema.parse(row.manifest);
 
   switch (intent) {
     case 'pre_call_briefing':

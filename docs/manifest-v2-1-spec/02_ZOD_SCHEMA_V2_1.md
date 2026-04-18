@@ -357,20 +357,28 @@ export type ManifestV2_1 = z.infer<typeof manifestV2_1Schema>;
 
 ## Database column mapping
 
-Assume the `manifests` table has:
+The real `manifests` table (probed April 18, 2026) has:
 
-| Column | Type | Source |
+| Column | Type | Source / Purpose |
 |---|---|---|
 | `id` | uuid | `manifest_id` |
-| `lead_id` | uuid (unique) | `lead_id` |
-| `data` | jsonb | the full V2.1 object |
-| `schema_version` | text | redundant pointer, indexed |
-| `updated_at` | timestamptz | mirrors `meta.updated_at` |
-| `priority` | text | mirrors `pipeline.priority`, indexed |
-| `current_station` | text | mirrors `pipeline.current_station`, indexed |
-| `is_hot_eligible` | boolean | mirrors `hot_eligibility.verdict === 'eligible'`, indexed |
+| `lead_id` | uuid | `lead_id` |
+| `booking_id` | uuid nullable | unrelated to V2.1; preserve as-is |
+| `version` | integer | row-level schema version; synced from `meta.schema_version` by `update_manifest_and_cascade`. NOTE: the draft spec called this `schema_version` (text); the repo uses `version` (integer) — adopt repo naming per doctrine rule 7. |
+| `manifest` | jsonb | the full V2.1 object. NOTE: the draft spec called this `data`; the repo uses `manifest`. All SQL and TS in this spec has been updated to match. |
+| `current_station` | text | mirrors `manifest.pipeline.current_station`, indexed |
+| `priority` | text | mirrors `manifest.pipeline.priority`, indexed |
+| `tier` | text | existing denormalization, preserved |
+| `qualification_score` | numeric | existing denormalization, preserved |
+| `opportunity_score` | numeric | existing denormalization (related to Hot Opportunities), preserved |
+| `classification` | text | existing denormalization, preserved |
+| `next_appointment_at` | timestamptz | existing denormalization, preserved |
+| `appointment_status` | text | existing denormalization, preserved |
+| `created_at` | timestamptz | preserved |
+| `updated_at` | timestamptz | mirrors `manifest.meta.updated_at` |
+| `is_hot_eligible` | boolean | **NEW in V2.1** — added by the Phase 4 migration. Mirrors `manifest.hot_eligibility.verdict === 'eligible'`, indexed. |
 
-The top-level columns are denormalized for query performance. They are written by `updateManifestAndCascade` atomically alongside the jsonb blob. Do not let callers write them directly.
+The top-level columns are denormalized for query performance. They are all written by `update_manifest_and_cascade` atomically alongside the jsonb blob. Do not let callers write them directly. The write function is responsible for keeping every denormalized column in sync with its canonical source inside `manifest` — this list is load-bearing; adding a new denormalized column means updating the write function.
 
 ---
 

@@ -2,6 +2,8 @@
 
 How to wire Ari to consume Markdown briefings from `renderManifestForAri` instead of raw manifest JSON.
 
+> **Next.js caveat (per repo `AGENTS.md`):** this codebase runs a Next.js version with breaking changes from what general training data assumes. Before touching Server Components, Server Actions, route handlers, or the fetch/cache layer for the Ari wiring, consult `node_modules/next/dist/docs/` for the version-specific API.
+
 ---
 
 ## The change in one diagram

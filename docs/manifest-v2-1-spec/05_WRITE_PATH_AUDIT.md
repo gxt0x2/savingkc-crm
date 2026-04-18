@@ -67,10 +67,10 @@ Open the function. Check these points in order:
 2. **Does it use `Object.assign`, spread merging, or any lodash `merge` against the existing record?** If yes, that is the self-nesting source. Replace with shallow subtree replacement:
    ```typescript
    // WRONG — causes nesting
-   const next = { ...existing.data, ...payload };
+   const next = { ...existing.manifest, ...payload };
 
    // RIGHT — shallow replace per-subtree
-   const next = { ...existing.data };
+   const next = { ...existing.manifest };
    for (const [key, value] of Object.entries(payload.subtrees)) {
      next[key] = value;   // whole subtree replaced, no merge
    }
@@ -142,7 +142,7 @@ DECLARE
   v_prior_hash text;
 BEGIN
   -- 1. Load existing
-  SELECT data INTO v_existing FROM manifests WHERE id = p_manifest_id FOR UPDATE;
+  SELECT manifest INTO v_existing FROM manifests WHERE id = p_manifest_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Manifest not found: %', p_manifest_id;
   END IF;
@@ -158,7 +158,7 @@ BEGIN
   -- ... delegated to helper functions ...
 
   -- 4. Write the main row
-  UPDATE manifests SET data = v_next, updated_at = now() WHERE id = p_manifest_id;
+  UPDATE manifests SET manifest = v_next, updated_at = now() WHERE id = p_manifest_id;
 
   -- 5. Write the audit row in the same transaction
   INSERT INTO manifest_history (manifest_id, actor, reason, diff, prior_hash)

@@ -24,22 +24,26 @@ SELECT COUNT(*) FROM manifests;
 
 -- Manifests with self-nesting (the bug we're killing)
 SELECT COUNT(*) FROM manifests
-WHERE data ? 'manifest';
+WHERE manifest ? 'manifest';
 
 -- Manifests with embedded transcripts
 SELECT COUNT(*) FROM manifests
-WHERE jsonb_path_exists(data, '$.** ? (@.type() == "string" && @.size() > 5000)');
+WHERE jsonb_path_exists(manifest, '$.** ? (@.type() == "string" && @.size() > 5000)');
 
 -- Manifests with empty arrays or empty objects (to be eliminated)
 SELECT COUNT(*) FROM manifests
-WHERE data::text ~ '(\[\])|(\{\})';
+WHERE manifest::text ~ '(\[\])|(\{\})';
 
--- Current schema versions present
-SELECT data->>'schemaVersion' AS version, COUNT(*)
+-- Inner version field distribution
+SELECT manifest->>'version' AS inner_version, COUNT(*)
+FROM manifests GROUP BY 1;
+
+-- Row-level version column distribution
+SELECT version AS row_version, COUNT(*)
 FROM manifests GROUP BY 1;
 ```
 
-Expected after migration: first three queries return 0. Last query returns only `'2.1'`.
+Expected after migration: first three queries return 0. Inner-version query returns only `'2.1'`. Row-version column bump policy (pick one before Phase 4 migration): (a) keep `version` as int and bump to `3` to signal V2.1 layout, or (b) leave at `2` and trust `meta.schema_version`. Recommendation: (a) — the int bump gives a cheap "SELECT WHERE version = 3" filter without JSON extraction.
 
 ---
 
@@ -105,10 +109,10 @@ For every manifest where the transcript lives embedded:
 async function extractTranscripts(dryRun: boolean) {
   const { data: manifests } = await supabase
     .from('manifests')
-    .select('id, data');
+    .select('id, manifest');
 
   for (const m of manifests) {
-    const embeddedTranscripts = findEmbeddedTranscripts(m.data);
+    const embeddedTranscripts = findEmbeddedTranscripts(m.manifest);
     for (const { callId, text } of embeddedTranscripts) {
       const { data: existingCall } = await supabase
         .from('calls').select('id, transcript_text')
@@ -319,7 +323,7 @@ The migration script's DB connection must use this user. Verify with `SELECT cur
 ```typescript
 for (const batch of chunk(manifests, 50)) {
   for (const m of batch) {
-    const next = transformToV2_1(m.data);
+    const next = transformToV2_1(m.manifest);
     await updateManifestAndCascade({
       manifest_id: m.id,
       subtrees: {
@@ -364,17 +368,22 @@ Expected after revoke: only `cascade_writer` has INSERT/UPDATE/DELETE.
 
 ```sql
 -- Every manifest now has schema_version 2.1
-SELECT COUNT(*) FROM manifests WHERE data->'meta'->>'schema_version' != '2.1';
+SELECT COUNT(*) FROM manifests WHERE manifest->'meta'->>'schema_version' != '2.1';
 -- Expected: 0
 
 -- No self-nesting remains
-SELECT COUNT(*) FROM manifests WHERE data ? 'manifest';
+SELECT COUNT(*) FROM manifests WHERE manifest ? 'manifest';
 -- Expected: 0
 
 -- No embedded transcripts
 SELECT COUNT(*) FROM manifests
-WHERE length(data::text) > 50000;
+WHERE length(manifest::text) > 50000;
 -- Expected: 0 (a clean manifest is well under 50KB)
+
+-- Row-level version column matches inner meta.schema_version
+SELECT COUNT(*) FROM manifests
+WHERE version != 3 OR manifest->'meta'->>'schema_version' != '2.1';
+-- Expected: 0 (denormalization integrity)
 
 -- Every manifest passes Zod validation in a Node script
 -- (run outside SQL, using manifestV2_1Schema.parse)
@@ -387,17 +396,17 @@ Validation script:
 import { manifestV2_1Schema } from '@/lib/manifest/schema';
 
 async function verifyAll() {
-  const { data } = await supabase.from('manifests').select('id, data');
+  const { data: rows } = await supabase.from('manifests').select('id, manifest');
   const failures: Array<{ id: string; issue: unknown }> = [];
 
-  for (const row of data ?? []) {
-    const result = manifestV2_1Schema.safeParse(row.data);
+  for (const row of rows ?? []) {
+    const result = manifestV2_1Schema.safeParse(row.manifest);
     if (!result.success) {
       failures.push({ id: row.id, issue: result.error.format() });
     }
   }
 
-  console.log(`Verified ${data?.length} manifests. Failures: ${failures.length}`);
+  console.log(`Verified ${rows?.length} manifests. Failures: ${failures.length}`);
   if (failures.length > 0) {
     console.log(JSON.stringify(failures.slice(0, 10), null, 2));
     process.exit(1);

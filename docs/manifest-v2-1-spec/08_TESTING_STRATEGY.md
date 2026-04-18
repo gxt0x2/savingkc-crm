@@ -97,7 +97,7 @@ describe('updateManifestAndCascade', () => {
   it('does not create nested manifest.manifest paths', async () => {
     await updateManifestAndCascade({ /* ... */ });
     const raw = await rawSelect(existingFixture.manifest_id);
-    expect(raw.data).not.toHaveProperty('manifest');
+    expect(raw.manifest).not.toHaveProperty('manifest');
   });
 
   it('rejects invalid payloads via Zod', async () => {
@@ -149,16 +149,22 @@ describe('updateManifestAndCascade', () => {
 
 ```typescript
 describe('database write-path guard', () => {
-  it('rejects direct updates to manifests', async () => {
+  // The primary guard is GRANT revocation — the app role (service_role) no longer
+  // has INSERT/UPDATE/DELETE on manifests. The trigger is belt-and-suspenders.
+  it('rejects direct updates from service_role (GRANT revoked)', async () => {
     await expect(
-      rawAdminClient.from('manifests').update({ data: {} }).eq('id', someId),
-    ).rejects.toThrow(/Direct writes to manifests are forbidden/);
+      rawAdminClient.from('manifests').update({ manifest: {} }).eq('id', someId),
+    ).rejects.toThrow(/permission|denied/i);
   });
 
-  it('allows writes when app.write_path is set to cascade', async () => {
-    await rawAdminClient.rpc('set_config', { key: 'app.write_path', value: 'cascade' });
+  it('allows writes through the update_manifest_and_cascade RPC', async () => {
     await expect(
-      rawAdminClient.from('manifests').update({ data: validJson }).eq('id', someId),
+      rawAdminClient.rpc('update_manifest_and_cascade', {
+        p_manifest_id: someId,
+        p_subtrees: { seller: { full_name: 'Test' } },
+        p_actor: 'test',
+        p_reason: 'guard test',
+      }),
     ).resolves.not.toThrow();
   });
 });
