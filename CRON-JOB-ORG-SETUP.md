@@ -11,8 +11,12 @@
 - **Title:** `SavingKC CRM - Process Mojo Queue`
 - **URL:** `https://savingkc-crm-gxt0x2s-projects.vercel.app/api/cron/process-mojo-queue`
   - (Will update to custom domain once configured)
-- **Schedule:** Every 1 minute
-  - Select: "Every X minutes" → `1`
+- **Schedule:** Every 5 minutes, 9am-5pm CT, Mon-Fri
+  - Minutes: `*/5`
+  - Hours: `9-16` (9:00 through 4:59pm CT)
+  - Days of week: `1-5` (Mon-Fri)
+  - Timezone: `America/Chicago`
+  - Expected: ~96 runs/day (fits under free tier 100/day cap)
 
 ### Advanced Settings
 Click "Advanced" tab:
@@ -79,9 +83,10 @@ In cron-job.org dashboard:
 ## Upgrade Options
 
 ### Free Tier Limits
-- 1-minute minimum interval ✅ (we need this)
-- 100 executions/day (1440 minutes/day, so we're over)
+- 1-minute minimum interval
+- 100 executions/day
+- Current schedule (every 5 min, 9-5 M-F) = 96/day, fits under cap
 
-If we hit limits, upgrade to:
+If we need more frequent runs or 24/7 coverage, upgrade to:
 - **Basic Plan:** $3/month - unlimited executions
 - **Plus Plan:** $7/month - includes monitoring, notifications, API access
