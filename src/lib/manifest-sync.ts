@@ -513,8 +513,19 @@ export interface UpdateManifestV2_1Params {
   /** Either manifestId or leadId must be provided. manifestId is preferred. */
   manifestId?: string
   leadId?: string
-  /** Top-level subtrees to replace. Siblings inside a subtree are wholly replaced. */
-  subtrees: Record<string, unknown>
+  /**
+   * Top-level subtrees to replace. Siblings inside a subtree are wholly
+   * replaced — if you want to preserve them, include them in the payload
+   * (or use `compute` to derive the full subtree from the current manifest).
+   */
+  subtrees?: Record<string, unknown>
+  /**
+   * Alternative to `subtrees`: a pure function that receives the current
+   * stored manifest and returns the subtrees to write. Use this when you
+   * need to append to arrays or preserve sibling keys — the wrapper has
+   * already fetched `current` internally, so no double read.
+   */
+  compute?: (current: ManifestV2) => Record<string, unknown>
   actor: ManifestActor | string
   reason: string
 }
@@ -540,6 +551,12 @@ export async function updateManifestV2_1(
 ): Promise<ManifestV2 | null> {
   if (!params.manifestId && !params.leadId) {
     throw new ManifestWriteError('updateManifestV2_1: must provide manifestId or leadId')
+  }
+  if (!params.subtrees && !params.compute) {
+    throw new ManifestWriteError('updateManifestV2_1: must provide subtrees or compute')
+  }
+  if (params.subtrees && params.compute) {
+    throw new ManifestWriteError('updateManifestV2_1: provide subtrees OR compute, not both')
   }
 
   const supabase = getSupabase()
@@ -571,8 +588,13 @@ export async function updateManifestV2_1(
     previousManifest = (data as any).manifest as ManifestV2
   }
 
+  // Resolve subtrees (either static or computed from the current manifest).
+  const resolvedSubtrees: Record<string, unknown> = params.compute
+    ? params.compute(previousManifest!)
+    : { ...params.subtrees! }
+
   // Strip derived fields client-side (RPC does this too, belt-and-suspenders).
-  const cleaned: Record<string, unknown> = { ...params.subtrees }
+  const cleaned: Record<string, unknown> = { ...resolvedSubtrees }
   for (const derivedKey of ['hot_eligibility', 'completeness']) {
     if (derivedKey in cleaned) {
       console.warn(

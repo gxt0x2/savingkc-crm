@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { updateManifestAndCascade } from '@/lib/manifest-sync'
+import { updateManifestV2_1 } from '@/lib/manifest-sync'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { regenerateBriefing } from '@/lib/briefing-regen'
 
@@ -48,50 +48,47 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString()
 
     // 1. Update manifest: set appointment status, audit trail, briefingStale
-    const updated = await updateManifestAndCascade(
+    const updated = await updateManifestV2_1({
       leadId,
-      (manifest) => {
-        // Ensure pipeline.appointment exists
-        if (!manifest.pipeline) (manifest as any).pipeline = {}
-        if (!(manifest as any).pipeline.appointment) {
-          (manifest as any).pipeline.appointment = {}
+      compute: (current: any) => {
+        const prevAppt = current.pipeline?.appointment ?? {}
+        const nextAppt: any = {
+          ...prevAppt,
+          status: outcome,
+          outcomeRecordedAt: now,
         }
-
-        // Set appointment status to the outcome
-        ;(manifest as any).pipeline.appointment.status = outcome
-        ;(manifest as any).pipeline.appointment.outcomeRecordedAt = now
-        if (notes) {
-          ;(manifest as any).pipeline.appointment.outcomeNotes = notes
-        }
-
-        // If no-show, mark for re-engagement
+        if (notes) nextAppt.outcomeNotes = notes
         if (outcome === 'no_show') {
-          ;(manifest as any).pipeline.appointment.reEngagement = {
-            needed: true,
-            reason: 'no_show',
-            markedAt: now,
-          }
+          nextAppt.reEngagement = { needed: true, reason: 'no_show', markedAt: now }
         }
 
-        // Push to auditTrail
-        if (!manifest.auditTrail) (manifest as any).auditTrail = []
-        ;(manifest as any).auditTrail.push({
-          timestamp: now,
-          agent: 'casey',
-          action: 'appointment_outcome',
-          details: {
-            outcome,
-            appointmentId: appointmentId || null,
-            notes: notes || null,
+        return {
+          pipeline: {
+            ...(current.pipeline ?? {}),
+            appointment: nextAppt,
           },
-        })
-
-        // Mark briefing as stale
-        if (!manifest.ariIntelligence) (manifest as any).ariIntelligence = {}
-        ;(manifest as any).ariIntelligence.briefingStale = true
+          auditTrail: [
+            ...(current.auditTrail ?? []),
+            {
+              timestamp: now,
+              agent: 'casey',
+              action: 'appointment_outcome',
+              details: {
+                outcome,
+                appointmentId: appointmentId || null,
+                notes: notes || null,
+              },
+            },
+          ],
+          ariIntelligence: {
+            ...(current.ariIntelligence ?? {}),
+            briefingStale: true,
+          },
+        }
       },
-      'api:appointment-outcome',
-    )
+      actor: 'casey',
+      reason: 'api:appointment-outcome',
+    })
 
     if (!updated) {
       return NextResponse.json(

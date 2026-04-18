@@ -56,24 +56,31 @@ export async function POST(req: NextRequest) {
     // Update manifest if we have one and got an estimate
     if (leadId && result.success && result.redfinEstimate) {
       try {
-        const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-        await updateManifestAndCascade(
+        const { updateManifestV2_1 } = await import('@/lib/manifest-sync')
+        await updateManifestV2_1({
           leadId,
-          (manifest: any) => {
-            if (!manifest.financials) manifest.financials = {}
-            manifest.financials.redfin_estimate = result.redfinEstimate
-            if (!manifest.auditTrail) manifest.auditTrail = []
-            manifest.auditTrail.push({
-              timestamp: new Date().toISOString(),
-              agent: 'system:redfin_enrichment',
-              action: 'redfin_supplement_complete',
-              details: { estimate: result.redfinEstimate, url: result.url, source: 'redfin' },
-            })
-            if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-            manifest.ariIntelligence.briefingStale = true
-          },
-          'api:enrich-redfin'
-        )
+          compute: (current: any) => ({
+            financials: {
+              ...(current.financials ?? {}),
+              redfin_estimate: result.redfinEstimate,
+            },
+            auditTrail: [
+              ...(current.auditTrail ?? []),
+              {
+                timestamp: new Date().toISOString(),
+                agent: 'system:redfin_enrichment',
+                action: 'redfin_supplement_complete',
+                details: { estimate: result.redfinEstimate, url: result.url, source: 'redfin' },
+              },
+            ],
+            ariIntelligence: {
+              ...(current.ariIntelligence ?? {}),
+              briefingStale: true,
+            },
+          }),
+          actor: 'system',
+          reason: 'api:enrich-redfin',
+        })
       } catch (err) {
         console.log('[Redfin Enrich] Manifest update failed:', err)
       }
