@@ -186,17 +186,13 @@ export default function OpportunitiesPageV2() {
 
   // Action handlers
   function handleCall(phone: string, leadId: string, name?: string) {
-    console.log('[OPPORTUNITIES PAGE] handleCall triggered:', { phone, leadId, name })
     const event = new CustomEvent('open-dialer', {
       detail: { phone, leadId, name }
     })
     window.dispatchEvent(event)
-    console.log('[OPPORTUNITIES PAGE] open-dialer event dispatched with detail:', { phone, leadId, name })
   }
 
   async function handleSms(leadId: string, phone?: string, name?: string) {
-    console.log('[OPPORTUNITIES PAGE] handleSms triggered:', { leadId, phone, name })
-    // Fetch the full lead object
     const supabase = createClient()
     const { data: lead } = await supabase
       .from('leads')
@@ -211,12 +207,8 @@ export default function OpportunitiesPageV2() {
   }
 
   function handleEmail(email?: string) {
-    console.log('[OPPORTUNITIES PAGE] handleEmail triggered with email:', email)
     if (email) {
-      console.log('[OPPORTUNITIES PAGE] Opening mailto:', email)
       window.location.href = `mailto:${email}`
-    } else {
-      console.log('[OPPORTUNITIES PAGE] No email provided, skipping mailto')
     }
   }
 
@@ -285,9 +277,9 @@ export default function OpportunitiesPageV2() {
                 }`}
               >
                 {option === 'all' && 'All'}
-                {option === 'favorites' && '⭐ Favorites'}
-                {option === 'appts' && '📅 Appointments'}
-                {option === 'missing-data' && '⚠️ Missing Data'}
+                {option === 'favorites' && 'Favorites'}
+                {option === 'appts' && 'Appointments'}
+                {option === 'missing-data' && 'Missing Data'}
               </button>
             ))}
           </div>
@@ -341,11 +333,10 @@ export default function OpportunitiesPageV2() {
               strategy={rectSortingStrategy}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredOpps.map((opp, index) => (
+                {filteredOpps.map((opp) => (
                   <HotOpportunityCardCompact
                     key={opp.leadId}
                     opp={opp}
-                    variant={index % 4 === 0 ? 'white' : index % 4 === 1 ? 'grey' : index % 4 === 2 ? 'lightgrey' : 'red'}
                     onCall={(phone, leadId) => handleCall(phone, leadId, opp.sellerName)}
                     onSms={(leadId, phone) => handleSms(leadId, phone, opp.sellerName)}
                     onEmail={handleEmail}
@@ -358,7 +349,6 @@ export default function OpportunitiesPageV2() {
                 <div className="opacity-50 scale-105 shadow-2xl">
                   <HotOpportunityCardCompact
                     opp={filteredOpps.find(o => o.leadId === activeId)!}
-                    variant="white"
                     onCall={handleCall}
                     onSms={handleSms}
                     onEmail={handleEmail}
