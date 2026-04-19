@@ -1608,6 +1608,10 @@ export default function LeadDetailPage() {
                     station={lead.station}
                     notes={lead.notes}
                     sellerSituation={lead.seller_situation}
+                    classification={(lead as any).classification}
+                    priority={lead.priority}
+                    isFavorite={(lead as any).is_favorite}
+                    opportunityScore={(lead as any).opportunity_score}
                     activities={activities}
                   />
                 ),

@@ -20,6 +20,13 @@ interface FavoriteOrFoolProps {
   station: string | null
   notes: string | null
   sellerSituation: string | null
+  // Lead-state signals added 2026-04-19 to eliminate UNDETERMINED for
+  // leads without transcript extractedData. All optional — component
+  // reads them if passed, falls back to just manifest signals otherwise.
+  classification?: string | null
+  priority?: string | null
+  isFavorite?: boolean | null
+  opportunityScore?: number | null
   activities?: Array<{
     activity_type: string
     created_at: string
@@ -277,6 +284,48 @@ function diagnose(manifest: ManifestData, props: FavoriteOrFoolProps): Diagnosis
     foolSignals.push('Assertive personality — may push for best price from multiple buyers')
   }
 
+  // ── Lead-state signals ──
+  // These pull from the leads row (classification, priority, favorite,
+  // opportunity score, motivation) so the diagnosis never renders
+  // UNDETERMINED just because the call wasn't AI-transcribed yet.
+  if (props.isFavorite) {
+    proofOfLife.push('Starred by agent — flagged as priority lead')
+  }
+  if (props.classification === 'opportunity') {
+    proofOfLife.push('Scored as opportunity by pipeline')
+  } else if (props.classification === 'lead') {
+    proofOfLife.push('Qualified lead in pipeline')
+  }
+  if (props.classification === 'dead') {
+    foolSignals.push('Pipeline classified as dead')
+  }
+  if ((props.opportunityScore ?? 0) >= 75) {
+    proofOfLife.push(`High opportunity score (${props.opportunityScore}/100)`)
+  } else if ((props.opportunityScore ?? 0) >= 40) {
+    proofOfLife.push(`Moderate opportunity score (${props.opportunityScore}/100)`)
+  } else if ((props.opportunityScore ?? 0) > 0 && (props.opportunityScore ?? 0) < 20) {
+    foolSignals.push(`Low opportunity score (${props.opportunityScore}/100)`)
+  }
+  if ((props.motivationScore ?? 0) >= 8) {
+    proofOfLife.push(`High motivation (${props.motivationScore}/10)`)
+  } else if ((props.motivationScore ?? 0) >= 5) {
+    proofOfLife.push(`Moderate motivation (${props.motivationScore}/10)`)
+  }
+  const priority = (props.priority || '').toLowerCase()
+  if (priority === 'hot') {
+    proofOfLife.push('Priority: hot')
+  } else if (priority === 'warm') {
+    proofOfLife.push('Priority: warm')
+  } else if (priority === 'cold' && (props.classification === 'dead' || (props.opportunityScore ?? 100) < 20)) {
+    foolSignals.push('Priority: cold + low pipeline score')
+  }
+  const stationLower = (props.station || '').toLowerCase()
+  if (['appointment', 'qualifying', 'discovery', 'offer', 'negotiations', 'contract', 'under_contract'].includes(stationLower)) {
+    proofOfLife.push(`Active pipeline stage: ${stationLower}`)
+  } else if (['intake', 'contacted', 'new'].includes(stationLower)) {
+    proofOfLife.push(`In active pipeline: ${stationLower}`)
+  }
+
   // ── Deduplicate ──
   const uniqueProof = [...new Set(proofOfLife)]
   const uniqueFool = [...new Set(foolSignals)]
@@ -345,7 +394,7 @@ function formatLastSeen(activities?: Array<{ activity_type: string; created_at: 
   return `${days}d ago`
 }
 
-export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation, activities }: FavoriteOrFoolProps) {
+export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation, classification, priority, isFavorite, opportunityScore, activities }: FavoriteOrFoolProps) {
   const [manifest, setManifest] = useState<ManifestData>({})
   const [loading, setLoading] = useState(true)
   const [open, toggleOpen] = useCardCollapse('favorite-or-fool')
@@ -368,6 +417,7 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
 
   const result = diagnose(manifest, {
     leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation,
+    classification, priority, isFavorite, opportunityScore,
   })
 
   const config = DIAGNOSIS_CONFIG[result.diagnosis]
