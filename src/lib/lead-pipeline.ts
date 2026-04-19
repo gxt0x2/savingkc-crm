@@ -205,7 +205,7 @@ export async function reprocessLead(
   }
 
   // 7. Rescore — prefer AI (from latest transcript), fall back to manifest scoring
-  const scoringResult = computeScoring(manifest, queueRows)
+  const scoringResult = computeScoring(manifest, queueRows, lead)
   if (scoringResult) {
     manifest.scoring = scoringResult
     changed.push(`scored=${scoringResult.opportunity_score}/${scoringResult.classification}/${scoringResult.scored_by}`)
@@ -465,10 +465,14 @@ function applyAnalysisToManifest(manifest: ManifestV2, a: CallAnalysisResult): v
 
 /**
  * Compute manifest.scoring from available signals.
- * Priority: latest AI analysis → static disposition mapping → keep existing.
+ * Priority: AI transcript → Mojo disposition → lead-state fallback → keep existing.
  */
-function computeScoring(manifest: ManifestV2, queueRows: QueueRow[]): ManifestScoring | null {
-  // 1. Look for the most recent transcript with AI analysis
+function computeScoring(
+  manifest: ManifestV2,
+  queueRows: QueueRow[],
+  lead: any,
+): ManifestScoring | null {
+  // 1. Most recent transcript with AI analysis
   const transcripts = manifest.communications?.transcripts || []
   const analyzed = transcripts
     .filter(t => t.extractedData?.motivationScore != null)
@@ -489,7 +493,7 @@ function computeScoring(manifest: ManifestV2, queueRows: QueueRow[]): ManifestSc
     }
   }
 
-  // 2. Fall back to latest queue row disposition
+  // 2. Latest queue row disposition
   const latestCompleted = [...queueRows].reverse().find(r => r.status === 'completed')
   if (latestCompleted) {
     const d = (latestCompleted.payload.disposition || '').toLowerCase()
@@ -509,6 +513,59 @@ function computeScoring(manifest: ManifestV2, queueRows: QueueRow[]): ManifestSc
       worth_enriching: staticScore >= 60,
       scored_at: new Date().toISOString(),
       scored_by: 'disposition',
+    }
+  }
+
+  // 3. Lead-state fallback — handles the Jackie Daniels class: no queue row
+  // and no AI'd transcript, but rich lead signals (favorited, appointment set,
+  // high motivation, notes like "ready to move forward"). The old code left
+  // these leads classification=null, so the UI showed "undetermined."
+  const reasons: string[] = []
+  let score = 0
+
+  const isFavorite = !!(lead?.is_favorite || (manifest as any).is_favorite)
+  const priority = (lead?.priority || manifest.priority || '').toLowerCase()
+  const manifestMotivation = manifest.situation?.motivation?.score || 0
+  const leadMotivation = lead?.motivation_score || 0
+  const motivation = Math.max(manifestMotivation, leadMotivation)
+  const hasAppointment = !!manifest.pipeline?.appointment?.scheduledAt
+  const station = (lead?.station || manifest.currentStation || '').toLowerCase()
+  const notesHaystack = [
+    ...(manifest.notes || []).map(n => (n as any).content || ''),
+    ...(manifest.agentNotes || []).map(n => n.content || ''),
+    lead?.notes || '',
+  ].join(' ').toLowerCase()
+
+  if (isFavorite) { score = Math.max(score, 80); reasons.push('favorited') }
+  if (hasAppointment) { score = Math.max(score, 75); reasons.push('appointment scheduled') }
+  if (motivation >= 8) { score = Math.max(score, 70); reasons.push(`motivation=${motivation}/10`) }
+  else if (motivation >= 5) { score = Math.max(score, 50); reasons.push(`motivation=${motivation}/10`) }
+  if (/ready|move forward|agreed|let's go|sign|contract|sell now|motivated/i.test(notesHaystack)) {
+    score = Math.max(score, 60)
+    reasons.push('positive note signals')
+  }
+  if (priority === 'hot') { score = Math.max(score, 55); reasons.push('priority=hot') }
+  else if (priority === 'warm') { score = Math.max(score, 40); reasons.push('priority=warm') }
+  if (['appointment', 'offer', 'negotiations', 'contract', 'under_contract'].includes(station)) {
+    score = Math.max(score, 65); reasons.push(`station=${station}`)
+  } else if (['qualifying', 'discovery', 'valuation', 'research'].includes(station)) {
+    score = Math.max(score, 45); reasons.push(`station=${station}`)
+  }
+  if (/not interested|wrong number|do not call|dnc|disconnected|dead/i.test(notesHaystack)) {
+    score = Math.min(score, 15)
+    reasons.push('negative note signals')
+  }
+
+  if (score > 0) {
+    const classification: ManifestScoring['classification'] =
+      score >= 75 ? 'opportunity' : score >= 40 ? 'lead' : 'dead'
+    return {
+      opportunity_score: score,
+      classification,
+      reasoning: `Lead-state fallback: ${reasons.join(', ')}`,
+      worth_enriching: score >= 60,
+      scored_at: new Date().toISOString(),
+      scored_by: 'notes',
     }
   }
 
