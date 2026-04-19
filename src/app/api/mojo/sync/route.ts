@@ -1058,10 +1058,17 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       console.log(`[queue] Manifest ${manifestId} saved successfully`)
     }
 
-    // I. Backfill lead from manifest data
+    // I. Backfill lead from manifest data + cascade scoring/call fields.
+    // Cascade is unconditional (match current values) so live Mojo calls
+    // don't leave leads.opportunity_score/classification/transcript null
+    // while manifests.scoring is populated. Same cascade used by reprocessLead.
     if (leadId) {
       const leadBackfill: Record<string, any> = {}
-      const currentLead = await supabase.from('leads').select('full_name, phone, property_address').eq('id', leadId).single()
+      const currentLead = await supabase
+        .from('leads')
+        .select('full_name, phone, property_address, opportunity_score, classification, motivation_score, station, mojo_record_id, call_result, call_duration_seconds, transcript')
+        .eq('id', leadId)
+        .single()
       const ld = currentLead?.data
 
       const manifestName = manifest.owner?.fullName
@@ -1082,8 +1089,43 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       if (manifest.priority && manifest.priority !== 'cold') {
         leadBackfill.priority = manifest.priority
       }
+
+      // Cascade scoring from manifest.scoring → leads row
+      if (manifest.scoring?.opportunity_score != null && manifest.scoring.opportunity_score !== ld?.opportunity_score) {
+        leadBackfill.opportunity_score = manifest.scoring.opportunity_score
+      }
+      if (manifest.scoring?.classification && manifest.scoring.classification !== ld?.classification) {
+        leadBackfill.classification = manifest.scoring.classification
+      }
+      if (manifest.situation?.motivation?.score != null && manifest.situation.motivation.score !== ld?.motivation_score) {
+        leadBackfill.motivation_score = manifest.situation.motivation.score
+      }
+      if (manifest.currentStation && manifest.currentStation !== ld?.station) {
+        leadBackfill.station = manifest.currentStation
+      }
+
+      // Cascade this call's metadata (always update — this IS the latest call)
+      if (call.record_id && call.record_id !== ld?.mojo_record_id) {
+        leadBackfill.mojo_record_id = call.record_id
+      }
+      if (call.disposition && call.disposition !== ld?.call_result) {
+        leadBackfill.call_result = call.disposition
+      }
+      if (call.call_duration && call.call_duration !== ld?.call_duration_seconds) {
+        leadBackfill.call_duration_seconds = call.call_duration
+      }
+
+      // Cascade the latest transcript text (from Phase 2)
+      const latestTranscript = (manifest.communications?.transcripts || [])
+        .filter(t => !!t.fullTranscript)
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
+      if (latestTranscript?.fullTranscript && latestTranscript.fullTranscript !== ld?.transcript) {
+        leadBackfill.transcript = latestTranscript.fullTranscript
+      }
+
       if (Object.keys(leadBackfill).length > 0) {
         await supabase.from('leads').update(leadBackfill).eq('id', leadId)
+        console.log(`[queue] Cascaded ${Object.keys(leadBackfill).length} fields to lead ${leadId}: ${Object.keys(leadBackfill).join(', ')}`)
       }
     }
 
