@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { NavTabs } from './nav-tab'
+import { CommandPalette } from './command-palette'
 import { DialerPanel, CallStatus } from '@/components/telephony/telephony-bar'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
@@ -12,8 +13,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showDialer, setShowDialer] = useState(false)
   const [dialerStatus, setDialerStatus] = useState<CallStatus>('offline')
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
+
+  // Global ⌘K / Ctrl+K to open command palette
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Auto-open dialer on incoming call
   useEffect(() => {
@@ -112,24 +126,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Right side */}
           <div className="flex items-center gap-2 md:gap-4">
-            <form
-              className="relative hidden sm:block"
-              onSubmit={(e) => {
-                e.preventDefault()
-                const q = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value.trim()
-                if (q) window.location.href = `/leads?q=${encodeURIComponent(q)}`
-              }}
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              className="hidden sm:flex items-center gap-2 bg-slate-100 hover:bg-slate-200 rounded-full pl-3 pr-2 py-1.5 text-sm text-slate-500 w-48 md:w-64 transition-colors"
+              aria-label="Open search"
             >
-              <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
-                <Icon name="search" size="text-lg" />
-              </span>
-              <input
-                name="q"
-                type="text"
-                className="bg-slate-100 border-none rounded-full pl-10 pr-4 py-1.5 text-sm w-48 md:w-64 focus:ring-2 focus:ring-slate-200 transition-all"
-                placeholder="Search leads..."
-              />
-            </form>
+              <Icon name="search" size="text-lg" className="text-slate-400" />
+              <span className="flex-1 text-left">Search leads…</span>
+              <kbd className="hidden md:inline-block text-[10px] font-bold text-slate-400 bg-white border border-slate-200 rounded px-1.5 py-0.5">
+                ⌘K
+              </kbd>
+            </button>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setShowDialer(!showDialer)}
@@ -228,6 +236,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onStatusChange={setDialerStatus}
         pendingDial={pendingDialLead}
       />
+
+      {/* ⌘K Command Palette — global search */}
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   )
 }
