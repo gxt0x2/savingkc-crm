@@ -1043,37 +1043,52 @@ export class CountyEnrichmentService {
     }
 
     try {
-      // Step 1: Search by situs — use full street address (house# + direction + street)
-      // The API requires more than just the street name (returns "too short" error otherwise)
-      // Strip only city/state/zip and suffix, keep house number and direction
+      // Step 1: Search by situs. Clay's /parcels endpoint is picky — it matches
+      // a substring against the raw situs string ("729 LAUREL AVE LIBERTY MO"),
+      // so any extra word not present (or a trailing city that IS present but
+      // at the wrong position) returns []. Strategy: try several progressively
+      // looser queries until one returns results.
       const streetOnly = input.address.split(',')[0].trim()
-      const situsQuery = streetOnly
-        .replace(/\s+(St|Ave|Blvd|Dr|Rd|Ln|Ct|Pl|Ter|Way|Cir|Pkwy|STREET|AVENUE|BOULEVARD|DRIVE|ROAD|LANE|COURT|PLACE|TERRACE|TRAIL|CIRCLE|PARKWAY)\.?\s*$/i, '') // remove suffix
-        .trim()
+      const suffixRe = /\s+(St|Ave|Blvd|Dr|Rd|Ln|Ct|Pl|Ter|Way|Cir|Pkwy|STREET|AVENUE|BOULEVARD|DRIVE|ROAD|LANE|COURT|PLACE|TERRACE|TRAIL|CIRCLE|PARKWAY)\b\.?/i
+      const clayCities = /\b(Liberty|Kearney|Smithville|Excelsior\s+Springs|Gladstone|Pleasant\s+Valley|North\s+Kansas\s+City|Claycomo|Randolph|Oakview)\b/i
 
-      const searchRes = await fetch(
-        `${BASE}/parcels?situs=${encodeURIComponent(situsQuery)}`,
-        { headers, signal: AbortSignal.timeout(15000) }
-      )
-      if (!searchRes.ok) throw new Error(`Clay search returned ${searchRes.status}`)
-
-      let allParcels = await searchRes.json()
-
-      // If the result is a string (error message like "too short"), try with full address
-      if (typeof allParcels === 'string' || (Array.isArray(allParcels) && allParcels.length === 1 && typeof allParcels[0] === 'string')) {
-        // Fallback: try with just street name (without house number)
-        const fallbackQuery = situsQuery.replace(/^\d+\s+/, '').trim()
-        if (fallbackQuery.length >= 4) {
-          const fallbackRes = await fetch(
-            `${BASE}/parcels?situs=${encodeURIComponent(fallbackQuery)}`,
-            { headers, signal: AbortSignal.timeout(15000) }
-          )
-          allParcels = await fallbackRes.json()
-        }
+      const queries: string[] = []
+      // (a) Full street-only (may include city at end — fine if it's in the situs string)
+      queries.push(streetOnly)
+      // (b) Strip trailing city name (e.g. "729 LAUREL AVE LIBERTY" → "729 LAUREL AVE")
+      const noCitySuffix = streetOnly.replace(clayCities, '').replace(/\s{2,}/g, ' ').trim()
+      if (noCitySuffix !== streetOnly) queries.push(noCitySuffix)
+      // (c) Truncate at (and through) the street suffix — "729 LAUREL AVE LIBERTY" → "729 LAUREL"
+      const suffixIdx = streetOnly.search(suffixRe)
+      if (suffixIdx > 0) queries.push(streetOnly.slice(0, suffixIdx).trim())
+      // (d) Drop the suffix only, keep the rest — "729 LAUREL AVE LIBERTY" → "729 LAUREL LIBERTY" (rarely helps but cheap)
+      const noSuffix = streetOnly.replace(suffixRe, ' ').replace(/\s{2,}/g, ' ').trim()
+      if (noSuffix && !queries.includes(noSuffix)) queries.push(noSuffix)
+      // (e) House number + first 2 tokens of street name (fallback) — "729 LAUREL"
+      const tokens = streetOnly.split(/\s+/)
+      if (tokens.length >= 2) {
+        const short = tokens.slice(0, 2).join(' ')
+        if (short && !queries.includes(short)) queries.push(short)
       }
 
-      if (!Array.isArray(allParcels) || allParcels.length === 0 ||
-          (allParcels.length === 1 && typeof allParcels[0] === 'string')) {
+      let allParcels: any = []
+      for (const q of queries) {
+        if (!q || q.length < 3) continue
+        try {
+          const res = await fetch(
+            `${BASE}/parcels?situs=${encodeURIComponent(q)}`,
+            { headers, signal: AbortSignal.timeout(15000) },
+          )
+          if (!res.ok) continue
+          const json = await res.json()
+          if (Array.isArray(json) && json.length > 0 && typeof json[0] !== 'string') {
+            allParcels = json
+            break
+          }
+        } catch { /* try next */ }
+      }
+
+      if (!Array.isArray(allParcels) || allParcels.length === 0) {
         return { success: false, county: 'Clay', error: 'Address not found in Clay County records' }
       }
 
@@ -1490,10 +1505,15 @@ export function detectCounty(city?: string, state?: string, zip?: string): { cou
     if (c?.includes('kansas city') || c?.includes('bonner springs') || c?.includes('edwardsville')) return { county: 'Wyandotte', state: 'KS' }
   }
   if (zip) {
-    const z = parseInt(zip)
+    const z = parseInt(String(zip).slice(0, 5))
+    // Clay County MO (north of the river KC): 64116-64119, 64157-64158, 64024, 64068-64069, 64073, 64081, 64089
+    // Check Clay BEFORE Jackson so KC-MO-north (64117, 64118) doesn't fall into Jackson's broad 64101-64199 range.
+    const clayZips = new Set([64024, 64068, 64069, 64073, 64089, 64116, 64117, 64118, 64119, 64156, 64157, 64158, 64161, 64165, 64166, 64167])
+    if (clayZips.has(z)) return { county: 'Clay', state: 'MO' }
+    // Platte County MO: 64150-64154, plus a few outliers
+    if ((z >= 64150 && z <= 64154) || z === 64079 || z === 64083 || z === 64098) return { county: 'Platte', state: 'MO' }
     // Jackson County, MO: Kansas City metro + eastern cities (Independence, Blue Springs, Lee's Summit, Raytown, Grandview, Summit)
     if ((z >= 64012 && z <= 64089) || (z >= 64101 && z <= 64199)) return { county: 'Jackson', state: 'MO' }
-    if ((z >= 64150 && z <= 64154) || z === 64079 || z === 64083 || z === 64098) return { county: 'Platte', state: 'MO' }
     if (z >= 66200 && z <= 66299) return { county: 'Johnson', state: 'KS' }
     if (z >= 66100 && z <= 66119) return { county: 'Wyandotte', state: 'KS' }
   }

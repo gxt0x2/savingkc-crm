@@ -176,12 +176,17 @@ export async function reprocessLead(
     // Prefer lead.county (set by the healer from prospect data — authoritative
     // because detectCounty's city list is incomplete: Clay Co. includes
     // parts of Kansas City MO but detectCounty routes all "kansas city" → Jackson).
+    // Reject bogus values (state codes, empty, unknown counties).
+    const VALID_COUNTIES = new Set(['jackson', 'clay', 'johnson', 'platte', 'wyandotte'])
     let countyName: string | null = null
-    if (lead.county) {
-      countyName = String(lead.county).charAt(0).toUpperCase() + String(lead.county).slice(1).toLowerCase()
+    const raw = String(lead.county || '').toLowerCase().trim()
+    if (raw && VALID_COUNTIES.has(raw)) {
+      countyName = raw.charAt(0).toUpperCase() + raw.slice(1)
     } else {
       const detected = detectCounty(city, state, zip)
-      if (detected) countyName = detected.county
+      if (detected && VALID_COUNTIES.has(detected.county.toLowerCase())) {
+        countyName = detected.county
+      }
     }
 
     if (countyName) {
@@ -576,15 +581,17 @@ async function cascadeManifestToLead(
     }
   }
 
-  // Property fields from manifest dwelling/assessment (only if lead is missing them)
+  // Property fields from manifest dwelling/assessment (only if lead is missing them).
+  // Number-coerce + round because scrapers return floats (e.g. 3.0 bedrooms, 5.2
+  // bathrooms, 8430.5 sqft) but the leads columns are integers.
   const dwell = manifest.property?.dwelling
   const assess = manifest.property?.assessment
-  if (dwell?.bedrooms && !currentLead.beds) { updates.beds = dwell.bedrooms; changed.push('beds') }
-  if (dwell?.bathrooms && !currentLead.baths_full) { updates.baths_full = dwell.bathrooms; changed.push('baths_full') }
-  if (dwell?.sqft && !currentLead.sqft) { updates.sqft = dwell.sqft; changed.push('sqft') }
-  if (dwell?.yearBuilt && !currentLead.year_built) { updates.year_built = dwell.yearBuilt; changed.push('year_built') }
-  if (assess?.appraisedTotal && !currentLead.arv) { updates.arv = assess.appraisedTotal; changed.push('arv') }
-  if (assess?.assessedTotal && !currentLead.assessed_value) { updates.assessed_value = assess.assessedTotal; changed.push('assessed_value') }
+  if (dwell?.bedrooms && !currentLead.beds) { updates.beds = Math.round(Number(dwell.bedrooms)); changed.push('beds') }
+  if (dwell?.bathrooms && !currentLead.baths_full) { updates.baths_full = Math.round(Number(dwell.bathrooms)); changed.push('baths_full') }
+  if (dwell?.sqft && !currentLead.sqft) { updates.sqft = Math.round(Number(dwell.sqft)); changed.push('sqft') }
+  if (dwell?.yearBuilt && !currentLead.year_built) { updates.year_built = Math.round(Number(dwell.yearBuilt)); changed.push('year_built') }
+  if (assess?.appraisedTotal && !currentLead.arv) { updates.arv = Math.round(Number(assess.appraisedTotal)); changed.push('arv') }
+  if (assess?.assessedTotal && !currentLead.assessed_value) { updates.assessed_value = Math.round(Number(assess.assessedTotal)); changed.push('assessed_value') }
 
   if (Object.keys(updates).length > 0) {
     const { error } = await supabase.from('leads').update(updates).eq('id', leadId)
