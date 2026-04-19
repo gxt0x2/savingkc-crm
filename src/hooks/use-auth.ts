@@ -10,6 +10,11 @@ interface AuthState {
   loading: boolean
 }
 
+// Defer Supabase browser-client creation to browser-only contexts.
+// Instantiating it at hook body level ran during SSR of every page that
+// mounts <AppShell> and threw "Your project's URL and API key are required"
+// in the production build, crashing /ari, /dashboard, /opportunities, /calendar.
+// (Same class of bug as PR #14 fixed for /login/page.tsx.)
 export function useAuth() {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -17,10 +22,9 @@ export function useAuth() {
     loading: true,
   })
 
-  const supabase = createClient()
-
   useEffect(() => {
-    // Get initial session
+    const supabase = createClient()
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setState({
         user: session?.user ?? null,
@@ -29,7 +33,6 @@ export function useAuth() {
       })
     })
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setState({
@@ -41,12 +44,13 @@ export function useAuth() {
     )
 
     return () => subscription.unsubscribe()
-  }, [supabase])
+  }, [])
 
   const signOut = useCallback(async () => {
+    const supabase = createClient()
     await supabase.auth.signOut()
     window.location.href = '/login'
-  }, [supabase])
+  }, [])
 
   return {
     ...state,
