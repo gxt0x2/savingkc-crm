@@ -26,7 +26,7 @@ import type {
 } from '@/lib/manifest-builder'
 import { ensureManifestExists } from '@/lib/manifest-sync'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
-import { detectCounty } from '@/lib/county-enrichment'
+import { detectCounty, parseAddressForCounty } from '@/lib/county-enrichment'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
@@ -147,6 +147,19 @@ export async function reprocessLead(
   // phone and rewrite the lead + manifest property fields.
   const healed = await healSplitAddress(leadId, lead, manifest, errors)
   if (healed.length > 0) changed.push(`address_healed=${healed.join(',')}`)
+
+  // 5c. Parse city/state/zip from property_address when the lead row
+  // is missing them. Many legacy imports stashed everything in one column:
+  // "729 Laurel Ave Liberty, MO 64068-1362". This lets the county scraper
+  // route correctly without needing prospects.
+  const addrParsed = await parseAddressFromPropertyString(leadId, lead)
+  if (addrParsed.length > 0) changed.push(`addr_parsed=${addrParsed.join(',')}`)
+
+  // 5d. Hydrate from prospects: even without the split pattern, the prospects
+  // table holds county-authoritative data (parcel_id, market value, delinquency)
+  // the county scrapers often fail to return. Match by phone, fill gaps.
+  const hydrated = await hydrateFromProspect(leadId, lead, manifest, errors)
+  if (hydrated.length > 0) changed.push(`prospect_hydrated=${hydrated.join(',')}`)
 
   // 6. County enrichment if address present and dwelling data missing (or forced)
   const needsEnrich = forceReEnrich || healed.length > 0 || !manifest.property?.dwelling?.bedrooms
@@ -710,6 +723,134 @@ async function healSplitAddress(
   if (p.parcel_id) manifest.property.parcel = p.parcel_id
 
   return Object.keys(updates)
+}
+
+/**
+ * Parse city/state/zip from a combined property_address when the lead row
+ * has them missing. Uses the shared parseAddressForCounty helper which
+ * matches known KC-metro city names and MO/KS state patterns.
+ * Synchronous, in-memory only — caller persists via subsequent lead update
+ * (the prospect hydrator flushes everything with a single update).
+ */
+async function parseAddressFromPropertyString(
+  leadId: string,
+  lead: any,
+): Promise<string[]> {
+  if (!lead.property_address) return []
+  if (lead.city && lead.state && lead.county) return []
+  const parsed = parseAddressForCounty(lead.property_address)
+  if (!parsed) return []
+  const updates: Record<string, any> = {}
+  if (!lead.city && parsed.city) updates.city = parsed.city
+  if (!lead.state && parsed.state) updates.state = parsed.state
+  if (!lead.zip && parsed.zip) updates.zip = parsed.zip
+  if (!lead.county && parsed.county) updates.county = parsed.county.toLowerCase()
+  if (Object.keys(updates).length === 0) return []
+  const { error } = await supabase.from('leads').update(updates).eq('id', leadId)
+  if (error) {
+    console.error(`[reprocess] parseAddress update failed: ${error.message}`)
+    return []
+  }
+  Object.assign(lead, updates)
+  return Object.keys(updates)
+}
+
+/**
+ * Hydrate the lead + manifest from the prospects table. Runs for every lead
+ * with a phone (not gated on split-address pattern). Fills only missing fields,
+ * so it's safe to re-run. Populates county/parcel/arv/assessed_value fields
+ * that the on-demand county scrapers often fail to return (Jackson in
+ * particular has a flaky ASP.NET form that returns valuation but not dwelling).
+ */
+async function hydrateFromProspect(
+  leadId: string,
+  lead: any,
+  manifest: ManifestV2,
+  errors: string[],
+): Promise<string[]> {
+  if (!lead.phone) return []
+  const changed: string[] = []
+
+  // Match prospect by phone (exact first, then last-10 fallback)
+  let prospect: any = null
+  const { data: exact } = await supabase
+    .from('prospect_phones')
+    .select('prospects(parcel_id, county, total_market_value, zestimate, situs_street, situs_city, situs_state, situs_zip, cumulative_due, earliest_delinquent_year, occupancy_status, owner_1)')
+    .eq('phone', lead.phone)
+    .limit(1)
+  if (exact && exact[0]?.prospects) {
+    prospect = (exact[0] as any).prospects
+  } else {
+    const last10 = String(lead.phone).replace(/\D/g, '').slice(-10)
+    if (last10.length === 10) {
+      const { data: fuzzy } = await supabase
+        .from('prospect_phones')
+        .select('prospects(parcel_id, county, total_market_value, zestimate, situs_street, situs_city, situs_state, situs_zip, cumulative_due, earliest_delinquent_year, occupancy_status, owner_1)')
+        .like('phone', `%${last10}%`)
+        .limit(1)
+      if (fuzzy && fuzzy[0]?.prospects) prospect = (fuzzy[0] as any).prospects
+    }
+  }
+
+  if (!prospect) return []
+
+  const updates: Record<string, any> = {}
+
+  // Only fill missing lead fields (never overwrite)
+  if (!lead.county && prospect.county) updates.county = prospect.county
+  if (!lead.parcel_id && prospect.parcel_id) updates.parcel_id = prospect.parcel_id
+  if (!lead.zip && prospect.situs_zip) updates.zip = String(prospect.situs_zip)
+  // ARV fallback: prefer zestimate (market), fall back to total_market_value (assessor)
+  const prospectArv = Number(prospect.zestimate || prospect.total_market_value || 0)
+  if (!lead.arv && prospectArv > 0) updates.arv = prospectArv
+  if (!lead.assessed_value && Number(prospect.total_market_value) > 0) {
+    updates.assessed_value = Number(prospect.total_market_value)
+  }
+  if (!lead.property_address && prospect.situs_street) updates.property_address = prospect.situs_street
+  if (!lead.city && prospect.situs_city) updates.city = prospect.situs_city
+  if (!lead.state && prospect.situs_state) updates.state = prospect.situs_state
+
+  if (Object.keys(updates).length > 0) {
+    const { error } = await supabase.from('leads').update(updates).eq('id', leadId)
+    if (error) {
+      errors.push(`prospect_hydrate_update_failed: ${error.message}`)
+      return []
+    }
+    Object.assign(lead, updates)
+    changed.push(...Object.keys(updates))
+  }
+
+  // Manifest property hydration (so the scoring engine sees the same data)
+  if (!manifest.property) manifest.property = {} as any
+  if (!manifest.property.address && prospect.situs_street) manifest.property.address = prospect.situs_street
+  if (!manifest.property.parcel && prospect.parcel_id) manifest.property.parcel = prospect.parcel_id
+  if (!manifest.property.assessment) manifest.property.assessment = {} as any
+  if (!manifest.property.assessment!.totalValue && prospectArv > 0) {
+    manifest.property.assessment!.totalValue = prospectArv
+  }
+  if (!manifest.property.assessment!.appraisedTotal && prospectArv > 0) {
+    manifest.property.assessment!.appraisedTotal = prospectArv
+  }
+  if (!manifest.property.occupancy && prospect.occupancy_status) {
+    const occ = String(prospect.occupancy_status).toLowerCase()
+    manifest.property.occupancy = occ.includes('owner') ? 'owner' : occ.includes('tenant') ? 'tenant' : occ.includes('vacant') ? 'vacant' : null
+  }
+
+  // Tax-delinquency flag for Hot Engine's quality scoring
+  if (prospect.cumulative_due && Number(prospect.cumulative_due) > 0) {
+    if (!manifest.property.taxCollector) manifest.property.taxCollector = {} as any
+    manifest.property.taxCollector!.totalOwed = Number(prospect.cumulative_due)
+    manifest.property.taxCollector!.delinquentAmount = Number(prospect.cumulative_due)
+    if (prospect.earliest_delinquent_year) {
+      const yearsDelinquent = new Date().getFullYear() - Number(prospect.earliest_delinquent_year)
+      if (yearsDelinquent > 0) manifest.property.taxCollector!.yearsDelinquent = yearsDelinquent
+    }
+    if (!manifest.flags.redFlags?.includes('tax_delinquent')) {
+      manifest.flags.redFlags = [...(manifest.flags.redFlags || []), 'tax_delinquent']
+    }
+  }
+
+  return changed
 }
 
 /**
