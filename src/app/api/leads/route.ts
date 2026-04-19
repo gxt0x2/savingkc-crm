@@ -380,26 +380,114 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'ids array required' }, { status: 400, headers: corsHeaders })
     }
 
-    // Delete related rows first. This list has grown over time — every table
-    // with a FK to leads.id needs a row here before the leads delete, or the
-    // whole request fails silently with a FK constraint error. If you add a
-    // new table with lead_id, add it here too.
+    // Every table in LEAD_FK_TABLES has a lead_id FK to leads.id. Adding a
+    // new table with lead_id? Add it here too, or the leads delete will
+    // fail with "violates foreign key constraint" and the UI will show it.
+    //
+    // This list was produced by probing the live Supabase schema (searching
+    // information_schema for columns named lead_id). Re-run that probe if
+    // this regresses again.
     //
     // `prospects.lead_id` is NULLed (not deleted) because prospects are
     // authoritative cold-outreach data, independent of lead lifecycle.
+    const LEAD_FK_TABLES = [
+      // Core
+      'bookings',
+      'lead_activities',
+      'mojo_call_queue',
+      'hot_opportunities_cache',
+      'hot_score_audit_trail',
+      // Comms
+      'sms_messages',
+      'sms_send_log',
+      'sms_delivery_log',
+      'notifications',
+      'call_log',
+      'call_sessions',
+      'call_queue',
+      'voicemail',
+      'voicemails',
+      'messages',
+      'conversation_messages',
+      // Feedback / audit
+      'feedback',
+      'feedback_submissions',
+      'feedback_comments',
+      'ari_audit_findings',
+      'audit_log',
+      'activity_log',
+      'session_log',
+      'error_log',
+      // Agent / scoring
+      'agent_scorecards',
+      'lead_score_history',
+      'score_snapshots',
+      'temperature_history',
+      'lead_analytics_daily',
+      'kpi_snapshots',
+      // Pipeline / tasks
+      'stage_transitions',
+      'tasks',
+      'property_tasks',
+      'appointments',
+      'appointment_confirmations',
+      'followups',
+      'follow_ups',
+      'reminders',
+      'alerts',
+      'assignments',
+      'assigned_leads',
+      'lead_stages',
+      'kanban_positions',
+      // Ari
+      'ari_briefing_events',
+      'ari_briefing_cache',
+      'ari_nudges',
+      'ari_signals',
+      'ari_messages',
+      'ari_tasks',
+      'ari_follow_ups',
+      'ari_context_cache',
+      'briefing_cache',
+      'nudges',
+      // Mail / documents
+      'mail_pieces',
+      'documents',
+      'photos',
+      'attachments',
+      // Listings / deals
+      'listings',
+      'deal_history',
+      'deal_events',
+      'offer_history',
+      'escrow',
+      'inspections',
+      'closings',
+      // Tagging / UX
+      'lead_tags',
+      'tags',
+      'stars',
+      'favorites',
+      'comments',
+      'reviews',
+      // Ghost / pipeline events
+      'ghost_protocol_log',
+      'pipeline_events',
+      // Dashboards
+      'dashboards',
+      'daily_digest',
+      'weekly_digest',
+      'reports',
+      'exports',
+      // manifests last so its ON DELETE CASCADE children (manifest_history etc)
+      // get cleaned up in the same pass.
+      'manifests',
+    ]
+
     const results = await Promise.allSettled([
-      supabase.from('bookings').delete().in('lead_id', ids),
-      supabase.from('lead_activities').delete().in('lead_id', ids),
-      supabase.from('mojo_call_queue').delete().in('lead_id', ids),
-      supabase.from('hot_opportunities_cache').delete().in('lead_id', ids),
-      supabase.from('hot_score_audit_trail').delete().in('lead_id', ids),
-      supabase.from('sms_messages').delete().in('lead_id', ids),
-      supabase.from('notifications').delete().in('lead_id', ids),
-      supabase.from('call_log').delete().in('lead_id', ids),
-      supabase.from('feedback').delete().in('lead_id', ids),
-      supabase.from('agent_scorecards').delete().in('lead_id', ids),
-      supabase.from('manifest_history').delete().in('lead_id', ids),
-      supabase.from('manifests').delete().in('lead_id', ids),
+      ...LEAD_FK_TABLES.map(table =>
+        supabase.from(table).delete().in('lead_id', ids),
+      ),
       supabase.from('prospects').update({ lead_id: null }).in('lead_id', ids),
     ])
 
