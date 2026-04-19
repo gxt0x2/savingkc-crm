@@ -12,13 +12,8 @@
  * - Personalized with lead name when available
  */
 
-import { createClient } from '@supabase/supabase-js'
 import { getAgentRouting } from '@/lib/agent-routing'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '@/lib/supabase-lazy'
 
 export interface MissedCallContext {
   leadId: string | null

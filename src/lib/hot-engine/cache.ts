@@ -20,7 +20,7 @@ function getSupabase() {
 }
 
 const DEAD_STATIONS = ['dead', 'closed', 'disposition']
-const HOT_LIST_SIZE = 7
+const HOT_LIST_SIZE = 20
 
 interface CacheRow {
   id: string
@@ -339,32 +339,40 @@ async function rerankTopN(overrideCooldown?: boolean): Promise<number> {
 
   // Apply cooldown and quality gates
   const eligible = allCache.filter((row: CacheRow) => {
-    // Must have score >= 33 (meaningful data threshold)
-    if (row.composite_score < 33) return false
-
     const ri = row.raw_inputs || {}
     // Strong user signal = they explicitly marked this lead as important
     const hasStrongUserSignal = ri.isFavorite || ri.priorityHot
     const hasAnyUserSignal = hasStrongUserSignal || ri.priorityWarm
 
+    // Opportunity-score override: if the AI transcript analysis scored this
+    // lead as an opportunity (>= 75), treat it as a strong signal — same
+    // weight as a user favorite. This prevents high-opportunity leads from
+    // being filtered out by tier_label/engagement/cooldown/composite gates
+    // that are tuned for the Hot Engine's own composite scoring.
+    const opportunityScore = ri.opportunityScore || 0
+    const isAiOpportunity = opportunityScore >= 75
+
+    // Must have score >= 33 (meaningful data threshold) — OR AI-opportunity / favorite override
+    if (row.composite_score < 33 && !isAiOpportunity && !hasStrongUserSignal) return false
+
     // Long-shot and not-scored leads don't belong on the hot list
-    // Only favorite/hot override — warm alone isn't enough (Mojo sets warm automatically)
-    if (['long_shot', 'not_scored'].includes(row.tier_label) && !hasStrongUserSignal) return false
+    // Only favorite/hot/AI-opportunity override — warm alone isn't enough
+    if (['long_shot', 'not_scored'].includes(row.tier_label) && !hasStrongUserSignal && !isAiOpportunity) return false
 
     // Quality gate: intake leads need SOME signal of value to be on hot list
     const station = ri.velocity?.currentStation || ''
     const hasFinancials = ri.dealQuality?.arv || ri.dealQuality?.spread
-    if (['intake', 'new'].includes(station) && !hasFinancials && !hasAnyUserSignal) return false
+    if (['intake', 'new'].includes(station) && !hasFinancials && !hasAnyUserSignal && !isAiOpportunity) return false
 
     // Require at least SOME real engagement or strong user signal — don't fill slots with bare leads
     const hasEngagement = row.engagement_score > 5
     const hasTimePressure = row.time_pressure_score > 5
     const hasDealQuality = row.deal_quality_score > 8
-    const hasRealSignal = hasEngagement || hasTimePressure || hasDealQuality || hasStrongUserSignal
+    const hasRealSignal = hasEngagement || hasTimePressure || hasDealQuality || hasStrongUserSignal || isAiOpportunity
     if (!hasRealSignal) return false
 
-    // Check cooldown (favorites override cooldown — user starred means they want to see it)
-    if (!overrideCooldown && !ri.isFavorite && row.cooldown_until) {
+    // Check cooldown (favorites + AI-opportunity override cooldown — user starred or AI flagged means we want to see it)
+    if (!overrideCooldown && !ri.isFavorite && !isAiOpportunity && row.cooldown_until) {
       const cooldownEnd = new Date(row.cooldown_until)
       if (cooldownEnd > now) return false
     }

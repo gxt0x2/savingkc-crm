@@ -15,8 +15,8 @@ import { createClient } from '@supabase/supabase-js'
 import { encode } from 'gpt-tokenizer'
 
 const env = readFileSync(process.env.HOME + '/savingkc-crm/.env.local', 'utf-8')
-const url = env.match(/NEXT_PUBLIC_SUPABASE_URL=(.+)/)[1].trim()
-const key = env.match(/SUPABASE_SERVICE_ROLE_KEY=(.+)/)[1].trim()
+const url = env.match(/NEXT_PUBLIC_SUPABASE_URL=(.+)/)![1].trim()
+const key = env.match(/SUPABASE_SERVICE_ROLE_KEY=(.+)/)![1].trim()
 const supabase = createClient(url, key, { auth: { persistSession: false } })
 
 // ─── Helper: a single criterion check ───────────────────────────────────

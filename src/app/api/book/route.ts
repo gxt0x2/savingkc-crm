@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { ensureManifestExists } from '@/lib/manifest-sync'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '@/lib/supabase-lazy'
 
 // Random delay to make auto-texts feel human
 function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {

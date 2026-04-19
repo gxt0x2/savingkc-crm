@@ -6,17 +6,15 @@
  * Body: { leadId?: string } — if omitted, processes all pending transcripts
  */
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase-lazy'
+
 import type { ManifestV2 } from '@/lib/manifest-builder'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
 import type { ManifestOwner, ManifestProperty, ManifestSituation } from '@/lib/manifest-builder'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
+
 
 export async function POST(req: Request) {
   try {

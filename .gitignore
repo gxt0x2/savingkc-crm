@@ -45,3 +45,6 @@ savingkc-dialer
 test-results/
 deploy.log
 query-sharion.js
+
+# Local reprocess progress log (regenerated per run)
+scripts/.reprocess-progress.jsonl

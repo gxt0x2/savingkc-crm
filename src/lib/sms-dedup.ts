@@ -3,13 +3,11 @@
  * Prevents sending the same message to the same number within 24 hours.
  * Uses SHA-256 hash of normalized body text.
  */
-import { createClient } from '@supabase/supabase-js'
-import { createHash } from 'crypto'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { createHash } from 'crypto'
+import { supabase } from '@/lib/supabase-lazy'
+
+
 
 function hashBody(body: string): string {
   const normalized = body.trim().toLowerCase().replace(/\s+/g, ' ')

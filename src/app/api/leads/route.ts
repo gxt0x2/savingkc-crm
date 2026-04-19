@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { ensureManifestExists } from '@/lib/manifest-sync'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { regenerateBriefing, EAGER_REGEN_EVENTS } from '@/lib/briefing-regen'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '@/lib/supabase-lazy'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

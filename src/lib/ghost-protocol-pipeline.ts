@@ -1,3 +1,5 @@
+import { supabase } from '@/lib/supabase-lazy'
+
 /**
  * Ghost Protocol — Pipeline (re-engagement for cold/ghosted leads in the pipeline)
  *
@@ -6,12 +8,6 @@
  * These were NOT renamed to 'ghost_pipeline_*' to avoid breaking existing data.
  * If you add new template_names, prefer the 'ghost_pipeline_*' prefix.
  */
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
 
 export type GhostProtocolPhase = 1 | 2 | 3
 export type GhostProtocolStatus = 'active' | 'paused' | 'completed' | 'cancelled'

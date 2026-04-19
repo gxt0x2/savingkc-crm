@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
@@ -7,11 +6,7 @@ import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { formatPhone } from '@/lib/format'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '@/lib/supabase-lazy'
 
 const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'

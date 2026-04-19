@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
+// Lazy-init: Preview builds on Vercel don't have Supabase env vars set,
+// so the module would throw at import time and fail the build. Defer the
+// client creation to the first request, which runs on Production only.
+export const dynamic = 'force-dynamic'
+const getSupabase = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
 /**
@@ -15,6 +19,7 @@ const supabase = createClient(
  */
 export async function GET() {
   // 1. Check what values the constraint allows
+  const supabase = getSupabase()
   const { data: constraintInfo } = await supabase.rpc('exec_sql', {
     sql: `SELECT conname, pg_get_constraintdef(oid) as def FROM pg_constraint WHERE conname = 'leads_source_check'`
   }).maybeSingle()

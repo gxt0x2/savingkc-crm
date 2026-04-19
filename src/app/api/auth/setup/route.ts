@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase-lazy'
+
 
 // Uses service role to create users (admin-only endpoint)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+
 
 const ADMIN_SECRET = process.env.CRON_SECRET || process.env.DEPLOY_SECRET
 

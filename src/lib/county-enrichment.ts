@@ -2,12 +2,7 @@
 // Queries county assessor systems for property data
 
 import type { Browser } from 'playwright'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseCache = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase as supabaseCache } from '@/lib/supabase-lazy'
 
 export interface EnrichmentInput {
   address: string
@@ -15,6 +10,10 @@ export interface EnrichmentInput {
   state: string
   zip?: string
   county: string
+  /** Optional pre-known parcel id — when provided, Jackson/Clay scrapers
+   * skip the flaky address-search step and go straight to the parcel record.
+   * Populated by the reprocess pipeline from prospect_phones matches. */
+  parcel_id?: string
   manifest_id?: string
 }
 
@@ -462,22 +461,40 @@ export class CountyEnrichmentService {
       const html3 = await r3.text()
       const vs3 = extractViewState(html3)
 
-      // Step 4: POST address search
-      const { houseNumber, streetName, suffix } = this.parseJacksonAddress(input.address)
-      const r4 = await post(
-        searchUrl,
-        new URLSearchParams({
-          ...vs3,
-          '__EVENTTARGET': '', '__EVENTARGUMENT': '',
-          'inpNo': houseNumber,
-          'inpStreet': streetName.toUpperCase(),
-          'inpSuf': suffix,
-          'inpDirPrefix': '',
-          'inpDirSuffix': '',
-          'btSearch': 'Search',
-        }),
-        searchUrl
-      )
+      // Step 4: POST search — prefer parcel_id when we have one (dramatically
+      // more reliable than the flaky address search). Fall back to address.
+      let r4: Response
+      if (input.parcel_id) {
+        // iasWorld supports direct parcel search via inpParid field.
+        // Normalize: strip hyphens/spaces.
+        const paridClean = input.parcel_id.replace(/[-\s]/g, '')
+        r4 = await post(
+          searchUrl,
+          new URLSearchParams({
+            ...vs3,
+            '__EVENTTARGET': '', '__EVENTARGUMENT': '',
+            'inpParid': paridClean,
+            'btSearch': 'Search',
+          }),
+          searchUrl,
+        )
+      } else {
+        const { houseNumber, streetName, suffix } = this.parseJacksonAddress(input.address)
+        r4 = await post(
+          searchUrl,
+          new URLSearchParams({
+            ...vs3,
+            '__EVENTTARGET': '', '__EVENTARGUMENT': '',
+            'inpNo': houseNumber,
+            'inpStreet': streetName.toUpperCase(),
+            'inpSuf': suffix,
+            'inpDirPrefix': '',
+            'inpDirSuffix': '',
+            'btSearch': 'Search',
+          }),
+          searchUrl,
+        )
+      }
       mergeCookies(r4)
       let html4 = await r4.text()
 
@@ -510,15 +527,36 @@ export class CountyEnrichmentService {
       )
       const valuesText = htmlToText(await rValues.text())
 
-      // Step 7: Residential tab
-      const rResidential = await get(
-        `${BASE}/datalets/datalet.aspx?mode=residential&sIndex=0&idx=1&LMparent=20`,
-        `${BASE}/datalets/datalet.aspx?mode=valuesall&sIndex=0&idx=1&LMparent=20`
-      )
-      const residentialText = htmlToText(await rResidential.text())
+      // Step 7: Residential tab — try residential → profileall → oby and
+      // merge results. iasWorld stores building-card data on different tabs
+      // depending on parcel class; the external jackson-county-parcel-scraper
+      // repo walks all three to cover the matrix.
+      let residentialText = ''
+      let cardText = ''
+      let referer = `${BASE}/datalets/datalet.aspx?mode=valuesall&sIndex=0&idx=1&LMparent=20`
+      for (const mode of ['residential', 'profileall', 'oby']) {
+        try {
+          const r = await get(
+            `${BASE}/datalets/datalet.aspx?mode=${mode}&sIndex=0&idx=1&LMparent=20`,
+            referer,
+          )
+          const text = htmlToText(await r.text())
+          // Keep the original 'residential' text for backward-compat regex parsing,
+          // and append other modes into a combined 'cardText' string which the
+          // parser also inspects for bedroom/sqft/year fields.
+          if (mode === 'residential') {
+            residentialText = text
+          }
+          cardText += '\n' + text
+          referer = `${BASE}/datalets/datalet.aspx?mode=${mode}&sIndex=0&idx=1&LMparent=20`
+        } catch (tabErr) {
+          // Continue — not all tabs exist for every parcel
+          console.warn(`[Jackson] tab ${mode} failed:`, (tabErr as any)?.message)
+        }
+      }
 
-      // Step 8: Parse all tabs
-      const parsed = this.parseJacksonCountyData(profileText, valuesText, residentialText)
+      // Step 8: Parse — pass combined cardText so parser can check across modes
+      const parsed = this.parseJacksonCountyData(profileText, valuesText, residentialText + '\n' + cardText)
 
       // Step 9: Tax collection data (best-effort, non-blocking)
       let taxData: any = {}
@@ -710,21 +748,48 @@ export class CountyEnrichmentService {
     result.landValue = dollarValue(/Total Market Land\s+\$([0-9,]+)/i)
     result.improvementValue = dollarValue(/Total Market Building\s+\$([0-9,]+)/i)
 
-    // Parse residential tab
-    const yearMatch = residentialText.match(/Year Built\s+(\d{4})/i)
-    if (yearMatch) result.yearBuilt = parseInt(yearMatch[1])
+    // Parse residential/card tab — try multiple label variants (Jackson County
+    // iasWorld uses different labels on residential vs profileall vs oby tabs;
+    // mirrors the external jackson-county-parcel-scraper repo's fallback set).
+    const firstMatch = (text: string, patterns: RegExp[]): string | null => {
+      for (const p of patterns) {
+        const m = text.match(p)
+        if (m) return m[1]
+      }
+      return null
+    }
 
-    const sqftMatch = residentialText.match(/Living Area\s+([\d,]+)/i)
-    if (sqftMatch) result.sqft = parseInt(sqftMatch[1].replace(/,/g, ''))
+    const yearStr = firstMatch(residentialText, [
+      /Year Built\s+(\d{4})/i,
+      /Eff(?:ective)?\s*Year\s*Built\s+(\d{4})/i,
+    ])
+    if (yearStr) result.yearBuilt = parseInt(yearStr)
 
-    const bedroomsMatch = residentialText.match(/Bedrooms\s+(\d+)/i)
-    if (bedroomsMatch) result.bedrooms = parseInt(bedroomsMatch[1])
+    const sqftStr = firstMatch(residentialText, [
+      /Living\s*Area\s+([\d,]+)/i,
+      /Total\s*Living\s*Area\s+([\d,]+)/i,
+      /Finished\s*Sq(?:uare)?\s*Ft\.?\s+([\d,]+)/i,
+    ])
+    if (sqftStr) result.sqft = parseInt(sqftStr.replace(/,/g, ''))
 
-    const fullBathsMatch = residentialText.match(/Full Baths\s+(\d+)/i)
-    if (fullBathsMatch) result.bathrooms = parseInt(fullBathsMatch[1])
+    const bedsStr = firstMatch(residentialText, [
+      /Bedrooms\s+(\d+)/i,
+      /Total\s*Bedrooms\s+(\d+)/i,
+      /No\.?\s*Bedrooms\s+(\d+)/i,
+    ])
+    if (bedsStr) result.bedrooms = parseInt(bedsStr)
 
-    const halfBathsMatch = residentialText.match(/Half Baths\s+(\d+)/i)
-    if (halfBathsMatch) result.halfBaths = parseInt(halfBathsMatch[1])
+    const fullBathStr = firstMatch(residentialText, [
+      /Full\s*Baths?\s+(\d+)/i,
+      /Baths\s+(\d+)/i,
+      /Bathrooms\s+(\d+)/i,
+    ])
+    if (fullBathStr) result.bathrooms = parseInt(fullBathStr)
+
+    const halfBathStr = firstMatch(residentialText, [
+      /Half\s*Baths?\s+(\d+)/i,
+    ])
+    if (halfBathStr) result.halfBaths = parseInt(halfBathStr)
 
     const conditionMatch = residentialText.match(/Physical Condition\s+\d+-(\w+)/i)
     if (conditionMatch) result.condition = conditionMatch[1]
@@ -973,37 +1038,52 @@ export class CountyEnrichmentService {
     }
 
     try {
-      // Step 1: Search by situs — use full street address (house# + direction + street)
-      // The API requires more than just the street name (returns "too short" error otherwise)
-      // Strip only city/state/zip and suffix, keep house number and direction
+      // Step 1: Search by situs. Clay's /parcels endpoint is picky — it matches
+      // a substring against the raw situs string ("729 LAUREL AVE LIBERTY MO"),
+      // so any extra word not present (or a trailing city that IS present but
+      // at the wrong position) returns []. Strategy: try several progressively
+      // looser queries until one returns results.
       const streetOnly = input.address.split(',')[0].trim()
-      const situsQuery = streetOnly
-        .replace(/\s+(St|Ave|Blvd|Dr|Rd|Ln|Ct|Pl|Ter|Way|Cir|Pkwy|STREET|AVENUE|BOULEVARD|DRIVE|ROAD|LANE|COURT|PLACE|TERRACE|TRAIL|CIRCLE|PARKWAY)\.?\s*$/i, '') // remove suffix
-        .trim()
+      const suffixRe = /\s+(St|Ave|Blvd|Dr|Rd|Ln|Ct|Pl|Ter|Way|Cir|Pkwy|STREET|AVENUE|BOULEVARD|DRIVE|ROAD|LANE|COURT|PLACE|TERRACE|TRAIL|CIRCLE|PARKWAY)\b\.?/i
+      const clayCities = /\b(Liberty|Kearney|Smithville|Excelsior\s+Springs|Gladstone|Pleasant\s+Valley|North\s+Kansas\s+City|Claycomo|Randolph|Oakview)\b/i
 
-      const searchRes = await fetch(
-        `${BASE}/parcels?situs=${encodeURIComponent(situsQuery)}`,
-        { headers, signal: AbortSignal.timeout(15000) }
-      )
-      if (!searchRes.ok) throw new Error(`Clay search returned ${searchRes.status}`)
-
-      let allParcels = await searchRes.json()
-
-      // If the result is a string (error message like "too short"), try with full address
-      if (typeof allParcels === 'string' || (Array.isArray(allParcels) && allParcels.length === 1 && typeof allParcels[0] === 'string')) {
-        // Fallback: try with just street name (without house number)
-        const fallbackQuery = situsQuery.replace(/^\d+\s+/, '').trim()
-        if (fallbackQuery.length >= 4) {
-          const fallbackRes = await fetch(
-            `${BASE}/parcels?situs=${encodeURIComponent(fallbackQuery)}`,
-            { headers, signal: AbortSignal.timeout(15000) }
-          )
-          allParcels = await fallbackRes.json()
-        }
+      const queries: string[] = []
+      // (a) Full street-only (may include city at end — fine if it's in the situs string)
+      queries.push(streetOnly)
+      // (b) Strip trailing city name (e.g. "729 LAUREL AVE LIBERTY" → "729 LAUREL AVE")
+      const noCitySuffix = streetOnly.replace(clayCities, '').replace(/\s{2,}/g, ' ').trim()
+      if (noCitySuffix !== streetOnly) queries.push(noCitySuffix)
+      // (c) Truncate at (and through) the street suffix — "729 LAUREL AVE LIBERTY" → "729 LAUREL"
+      const suffixIdx = streetOnly.search(suffixRe)
+      if (suffixIdx > 0) queries.push(streetOnly.slice(0, suffixIdx).trim())
+      // (d) Drop the suffix only, keep the rest — "729 LAUREL AVE LIBERTY" → "729 LAUREL LIBERTY" (rarely helps but cheap)
+      const noSuffix = streetOnly.replace(suffixRe, ' ').replace(/\s{2,}/g, ' ').trim()
+      if (noSuffix && !queries.includes(noSuffix)) queries.push(noSuffix)
+      // (e) House number + first 2 tokens of street name (fallback) — "729 LAUREL"
+      const tokens = streetOnly.split(/\s+/)
+      if (tokens.length >= 2) {
+        const short = tokens.slice(0, 2).join(' ')
+        if (short && !queries.includes(short)) queries.push(short)
       }
 
-      if (!Array.isArray(allParcels) || allParcels.length === 0 ||
-          (allParcels.length === 1 && typeof allParcels[0] === 'string')) {
+      let allParcels: any = []
+      for (const q of queries) {
+        if (!q || q.length < 3) continue
+        try {
+          const res = await fetch(
+            `${BASE}/parcels?situs=${encodeURIComponent(q)}`,
+            { headers, signal: AbortSignal.timeout(15000) },
+          )
+          if (!res.ok) continue
+          const json = await res.json()
+          if (Array.isArray(json) && json.length > 0 && typeof json[0] !== 'string') {
+            allParcels = json
+            break
+          }
+        } catch { /* try next */ }
+      }
+
+      if (!Array.isArray(allParcels) || allParcels.length === 0) {
         return { success: false, county: 'Clay', error: 'Address not found in Clay County records' }
       }
 
@@ -1420,10 +1500,15 @@ export function detectCounty(city?: string, state?: string, zip?: string): { cou
     if (c?.includes('kansas city') || c?.includes('bonner springs') || c?.includes('edwardsville')) return { county: 'Wyandotte', state: 'KS' }
   }
   if (zip) {
-    const z = parseInt(zip)
+    const z = parseInt(String(zip).slice(0, 5))
+    // Clay County MO (north of the river KC): 64116-64119, 64157-64158, 64024, 64068-64069, 64073, 64081, 64089
+    // Check Clay BEFORE Jackson so KC-MO-north (64117, 64118) doesn't fall into Jackson's broad 64101-64199 range.
+    const clayZips = new Set([64024, 64068, 64069, 64073, 64089, 64116, 64117, 64118, 64119, 64156, 64157, 64158, 64161, 64165, 64166, 64167])
+    if (clayZips.has(z)) return { county: 'Clay', state: 'MO' }
+    // Platte County MO: 64150-64154, plus a few outliers
+    if ((z >= 64150 && z <= 64154) || z === 64079 || z === 64083 || z === 64098) return { county: 'Platte', state: 'MO' }
     // Jackson County, MO: Kansas City metro + eastern cities (Independence, Blue Springs, Lee's Summit, Raytown, Grandview, Summit)
     if ((z >= 64012 && z <= 64089) || (z >= 64101 && z <= 64199)) return { county: 'Jackson', state: 'MO' }
-    if ((z >= 64150 && z <= 64154) || z === 64079 || z === 64083 || z === 64098) return { county: 'Platte', state: 'MO' }
     if (z >= 66200 && z <= 66299) return { county: 'Johnson', state: 'KS' }
     if (z >= 66100 && z <= 66119) return { county: 'Wyandotte', state: 'KS' }
   }

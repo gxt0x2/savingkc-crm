@@ -13,7 +13,8 @@ export async function enrichManifestProperty(
   city: string | undefined,
   state: string,
   zip: string | undefined,
-  county: string
+  county: string,
+  parcelId?: string,
 ): Promise<ManifestV2> {
   const service = new CountyEnrichmentService()
 
@@ -23,9 +24,14 @@ export async function enrichManifestProperty(
     state,
     zip,
     county,
+    parcel_id: parcelId || manifest.property?.parcel,
   }
 
-  const result = await service.enrich(enrichmentInput)
+  // Always force-refresh from reprocess path: the cache can hold success=true
+  // but empty-dwelling rows from earlier scraper runs, and those will
+  // otherwise return forever. Callers that want the cache (Mojo live path)
+  // can pass false directly to the service; this wrapper is used by reprocess.
+  const result = await service.enrich(enrichmentInput, true)
 
   if (!result.success) {
     // Enrichment failed — append error to audit trail but don't throw

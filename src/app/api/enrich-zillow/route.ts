@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { enrichFromZillow, ZillowInput } from '@/lib/zillow-enrichment'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '@/lib/supabase-lazy'
 
 // POST /api/enrich-zillow — Supplement county data with Zillow
 export async function POST(req: NextRequest) {

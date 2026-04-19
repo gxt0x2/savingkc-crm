@@ -7,14 +7,12 @@
  * Check if session is configured (doesn't return the actual value).
  */
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase-lazy'
+
 
 const ADMIN_SECRET = process.env.CRON_SECRET || process.env.DEPLOY_SECRET
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
+
 
 export async function GET(req: Request) {
   try {
