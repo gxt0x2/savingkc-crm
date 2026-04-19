@@ -15,7 +15,7 @@
  * dedups transcripts by mojo record_id, activities by metadata.mojo_record_id.
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase-lazy'
 import type {
   ManifestV2,
   ManifestScoring,
@@ -30,11 +30,6 @@ import { detectCounty, parseAddressForCounty } from '@/lib/county-enrichment'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
 
 export interface ReprocessOptions {
   suppressNotifications?: boolean

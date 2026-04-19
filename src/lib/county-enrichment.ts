@@ -2,12 +2,7 @@
 // Queries county assessor systems for property data
 
 import type { Browser } from 'playwright'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseCache = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase as supabaseCache } from '@/lib/supabase-lazy'
 
 export interface EnrichmentInput {
   address: string

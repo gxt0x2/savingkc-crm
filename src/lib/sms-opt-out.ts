@@ -1,14 +1,13 @@
+import { supabase } from '@/lib/supabase-lazy'
+
 /**
  * TCPA Opt-Out Compliance
  * Handles STOP/START keyword processing and opt-out state management
  */
 
-import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+
+
 
 const STOP_KEYWORDS = ['STOP', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'STOPALL']
 const START_KEYWORDS = ['START', 'UNSTOP']

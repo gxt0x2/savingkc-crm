@@ -8,7 +8,7 @@
  */
 
 import twilio from 'twilio'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase-lazy'
 
 const TEST_MODE = process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'development'
 
@@ -23,10 +23,6 @@ if (!TEST_MODE) {
 }
 
 // Supabase client for logging
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
 
 interface SMSParams {
   to: string
