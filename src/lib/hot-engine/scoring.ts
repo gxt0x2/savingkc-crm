@@ -2,9 +2,34 @@
  * Hot Opportunities Scoring Engine — Pure Functions
  *
  * scoreOpportunity(manifest) → HotScoreResult
- * No DB access. Reads manifest fields and computes four factors:
- *   Engagement (0-35), Velocity (0-25), Deal Quality (0-25), Time Pressure (0-15)
- * Composite = min(100, round((sum) * multiplier))
+ * No DB access. Computes a composite score in [0, 100] from these layers:
+ *
+ *   1. Four data-driven factors (sum range 0-100):
+ *        Engagement   (0-35) — recency + inbound posture of seller contact
+ *        Velocity     (0-25) — days since the current pipeline stage was entered
+ *        Deal Quality (0-25) — spread, with bonuses for verified ARV / repair bid
+ *        Time Pressure (0-15) — deadlines, competing offers, foreclosure, life events
+ *
+ *   2. User-signal bonuses added to the factor sum:
+ *        +12  is_favorite
+ *        +12  priority === 'hot'  (or +6 for 'warm')
+ *        +8   station ∈ {appointment, appt_set}
+ *        +5   station not in {intake, new}
+ *        +5   motivation.score > 5
+ *      These also double as the "why this is on the hot list" gate in cache.ts —
+ *      favorite + priority-hot can bypass some quality thresholds. They pull the
+ *      composite toward manual labels as well as data, which should be revisited
+ *      when separating "filter" from "rank" (planned Phase B of the scoring
+ *      accuracy rework).
+ *
+ *   3. Multiplier: currently fixed at 1.0. (See computeMultiplier comment.)
+ *
+ * Composite = min(100, round(factorSum + bonusSum) * multiplier)
+ *
+ * Tier labels: favorite (≥75 with data gate passed), caution (≥75 gate-failed
+ * or ≥50), long_shot (≥25), not_scored (<25). `tierCapped` is informational —
+ * it does NOT reduce the composite, only flags that a high score is based on
+ * incomplete data. UI code that sorts should keep using `composite`.
  */
 
 import type { ManifestV2 } from '../manifest-builder'
@@ -116,15 +141,32 @@ function scoreVelocity(m: ManifestV2): { score: number; inputs: Record<string, a
   const pipeline = m.pipeline as Record<string, any>
   let enteredAt: string | undefined
 
-  // Map station names to pipeline keys
+  // Map the lead's current station to the pipeline key whose `enteredAt`
+  // timestamp represents "when this stage began." Several stations intentionally
+  // collapse to the same pipeline key because they share a meaningful starting
+  // point — e.g. `new` is a pre-contact state that shares `intake` timing, and
+  // `appt_set` follows from `discovery`. If you add a new station, pick the
+  // pipeline key that most closely matches when the lead meaningfully advanced.
   const stationToPipeline: Record<string, string> = {
-    intake: 'intake', new: 'intake', contacted: 'qualifying',
-    qualifying: 'qualifying', qualified: 'discovery', appt_set: 'discovery',
-    appointment: 'discovery', discovery: 'discovery', research: 'research', valuation: 'valuation',
-    offer: 'offer', offer_made: 'offer', negotiations: 'negotiations',
-    contract: 'contract', under_contract: 'contract',
-    inspection: 'inspection', closing_prep: 'closing_prep',
-    closing: 'closing', closed: 'closed',
+    intake: 'intake',
+    new: 'intake',                // pre-contact — shares intake timing
+    contacted: 'qualifying',
+    qualifying: 'qualifying',
+    qualified: 'discovery',
+    appt_set: 'discovery',        // appointment set — follows discovery
+    appointment: 'discovery',
+    discovery: 'discovery',
+    research: 'research',
+    valuation: 'valuation',
+    offer: 'offer',
+    offer_made: 'offer',
+    negotiations: 'negotiations',
+    contract: 'contract',
+    under_contract: 'contract',
+    inspection: 'inspection',
+    closing_prep: 'closing_prep',
+    closing: 'closing',
+    closed: 'closed',
   }
 
   const pipelineKey = stationToPipeline[station]
@@ -324,25 +366,22 @@ function scoreTimePressure(m: ManifestV2): { score: number; inputs: Record<strin
 
 // ─── Multiplier ──────────────────────────────────────────────────────────────
 
-function computeMultiplier(m: ManifestV2): { multiplier: number; reason?: string } {
-  const timeline = m.situation?.timeline
-  if (!timeline) return { multiplier: 1.0 }
-
-  const deadlineDays = daysUntil(timeline.sellerDeadline)
-
-  if (deadlineDays !== null && deadlineDays <= 7 && timeline.sellerDeadlineVerified) {
-    return { multiplier: 1.3, reason: '7d_verified_deadline' }
-  }
-  if (deadlineDays !== null && deadlineDays <= 14 && timeline.sellerDeadlineVerified) {
-    return { multiplier: 1.2, reason: '14d_verified_deadline' }
-  }
-  if (timeline.competingOffersPresent && timeline.competingOfferSpecificity === 'specific') {
-    return { multiplier: 1.15, reason: 'specific_competing_offer' }
-  }
-  if (deadlineDays !== null && deadlineDays <= 30) {
-    return { multiplier: 1.1, reason: '30d_deadline' }
-  }
-
+// Composite multiplier is intentionally fixed at 1.0.
+//
+// Previously this returned 1.1–1.3× for verified short deadlines, specific
+// competing offers, and 30-day deadlines — but those are the exact same
+// signals that already inflate the Time Pressure factor (0–15). Applying both
+// at once compounded the reward: a 7-day verified deadline added +15 from the
+// factor AND multiplied the rest of the score by 1.3×, double-paying for one
+// event.
+//
+// The wire-format field is preserved (HotScoreResult.multiplier, the cache
+// column, audit trail rows) for downstream stability — removing it entirely
+// would require a schema migration and touches every consumer. When the next
+// recalibration runs (Phase C of the scoring rework), this function can be
+// repurposed for a genuinely orthogonal multiplier if one is identified, but
+// it must not re-reward any signal already scored in the factors above.
+function computeMultiplier(_m: ManifestV2): { multiplier: number } {
   return { multiplier: 1.0 }
 }
 

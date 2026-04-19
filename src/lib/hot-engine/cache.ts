@@ -1,9 +1,12 @@
 /**
  * Hot Opportunities Cache Manager
  *
- * - surgicalRescore(leadId, triggerEvent) — rescore one lead + re-rank top 7
- * - fullRerank() — score all active leads, bulk upsert, assign ranks 1-7
- * - getHotList() — read top 7 from cache, join with manifest data for card rendering
+ * - surgicalRescore(leadId, triggerEvent) — rescore one lead + re-rank the hot list
+ * - fullRerank() — score all active leads, bulk upsert, assign ranks 1..HOT_LIST_SIZE
+ * - getHotList() — read the ranked hot list from cache, join with manifest data
+ *
+ * List size is controlled by HOT_LIST_SIZE (currently 20). Older comments
+ * throughout this module may reference "top 7" — that was the earlier design.
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -172,7 +175,7 @@ export async function surgicalRescore(
     raw_inputs: result.rawInputs,
   })
 
-  // Re-rank top 7 + refresh Ari signals
+  // Re-rank hot list + refresh Ari signals
   await rerankTopN(isTier1)
   refreshAriSignalsForHotList().catch(err => console.error('[hot-engine] Signal refresh failed:', err))
 }
@@ -311,7 +314,7 @@ export async function fullRerank(): Promise<{ scored: number; hotList: number }>
     scored++
   }
 
-  // Assign ranks + generate Ari signals for top 7
+  // Assign ranks + generate Ari signals for hot list
   const hotCount = await rerankTopN()
   await refreshAriSignalsForHotList()
   return { scored, hotList: hotCount }
@@ -435,7 +438,7 @@ async function rerankTopN(overrideCooldown?: boolean): Promise<number> {
 async function refreshAriSignalsForHotList(): Promise<void> {
   const supabase = getSupabase()
 
-  // Get top 7 leads
+  // Get hot list leads
   const { data: hotCache } = await supabase
     .from('hot_opportunities_cache')
     .select('lead_id')
