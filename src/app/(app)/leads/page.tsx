@@ -263,20 +263,37 @@ export default function LeadsPage() {
     const count = selectedIds.size
     if (!window.confirm(`Delete ${count} lead${count !== 1 ? 's' : ''}? This cannot be undone.`)) return
     setBulkLoading(true)
+    const ids = Array.from(selectedIds)
     try {
-      const ids = Array.from(selectedIds)
       const res = await fetch('/api/leads', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ ids }),
       })
-      const data = await res.json()
-      if (!res.ok || !data.success) throw new Error(data.error || 'Delete failed')
+      // Parse body even on non-2xx so we can surface server error text.
+      const text = await res.text()
+      let data: any = {}
+      try { data = text ? JSON.parse(text) : {} } catch { data = { raw: text } }
+
+      if (res.status === 401) {
+        showFeedback('Session expired — reloading to log back in')
+        setTimeout(() => { window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}` }, 1500)
+        return
+      }
+      if (!res.ok || !data.success) {
+        const msg = data.error || data.raw || `HTTP ${res.status}`
+        console.error('[delete-leads] server error:', msg, data)
+        throw new Error(msg)
+      }
+
       showFeedback(`Deleted ${ids.length} lead${ids.length !== 1 ? 's' : ''}`)
       setSelectedIds(new Set())
       fetchLeads()
-    } catch {
-      showFeedback('Failed to delete leads')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[delete-leads] exception:', err)
+      showFeedback(`Delete failed: ${msg.slice(0, 120)}`)
     } finally {
       setBulkLoading(false)
     }
