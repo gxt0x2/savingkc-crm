@@ -380,12 +380,36 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'ids array required' }, { status: 400, headers: corsHeaders })
     }
 
-    // Delete related rows first (foreign key constraints)
-    await Promise.all([
+    // Delete related rows first. This list has grown over time — every table
+    // with a FK to leads.id needs a row here before the leads delete, or the
+    // whole request fails silently with a FK constraint error. If you add a
+    // new table with lead_id, add it here too.
+    //
+    // `prospects.lead_id` is NULLed (not deleted) because prospects are
+    // authoritative cold-outreach data, independent of lead lifecycle.
+    const results = await Promise.allSettled([
       supabase.from('bookings').delete().in('lead_id', ids),
       supabase.from('lead_activities').delete().in('lead_id', ids),
+      supabase.from('mojo_call_queue').delete().in('lead_id', ids),
+      supabase.from('hot_opportunities_cache').delete().in('lead_id', ids),
+      supabase.from('hot_score_audit_trail').delete().in('lead_id', ids),
+      supabase.from('sms_messages').delete().in('lead_id', ids),
+      supabase.from('notifications').delete().in('lead_id', ids),
+      supabase.from('call_log').delete().in('lead_id', ids),
+      supabase.from('feedback').delete().in('lead_id', ids),
+      supabase.from('agent_scorecards').delete().in('lead_id', ids),
+      supabase.from('manifest_history').delete().in('lead_id', ids),
       supabase.from('manifests').delete().in('lead_id', ids),
+      supabase.from('prospects').update({ lead_id: null }).in('lead_id', ids),
     ])
+
+    // Surface any unexpected errors from the cleanup step.
+    const cleanupErrors = results
+      .map((r, i) => r.status === 'rejected' ? `step${i}: ${String(r.reason).slice(0, 200)}` : null)
+      .filter(Boolean)
+    if (cleanupErrors.length > 0) {
+      console.error('Lead cleanup errors (non-fatal, continuing):', cleanupErrors)
+    }
 
     const { error } = await supabase
       .from('leads')
@@ -394,13 +418,19 @@ export async function DELETE(req: NextRequest) {
 
     if (error) {
       console.error('Supabase delete error:', error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+      return NextResponse.json(
+        { success: false, error: error.message, cleanupErrors },
+        { status: 500, headers: corsHeaders },
+      )
     }
 
-    return NextResponse.json({ success: true, deleted: ids.length }, { headers: corsHeaders })
+    return NextResponse.json({ success: true, deleted: ids.length, cleanupErrors }, { headers: corsHeaders })
   } catch (err) {
     console.error('leads DELETE error:', err)
-    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500, headers: corsHeaders })
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : 'Internal error' },
+      { status: 500, headers: corsHeaders },
+    )
   }
 }
 
