@@ -247,7 +247,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div>
         <span className="text-[10px] font-bold text-secondary uppercase tracking-[0.2em] mb-1 block">
-          Operations Command Center
+          KPIs
         </span>
         <h2 className="text-3xl font-extrabold tracking-tight text-primary">
           Today&apos;s Overview

@@ -6,12 +6,9 @@ import { cn } from '@/lib/utils'
 
 const tabs = [
   { label: 'ARI', href: '/ari', icon: 'assistant' },
-  { label: 'Dashboard', href: '/dashboard', icon: 'dashboard' },
-  { label: 'Opportunities', href: '/opportunities', icon: 'star' },
-  { label: 'Leads', href: '/leads', icon: 'people' },
-  { label: 'Conversations', href: '/conversations', icon: 'forum' },
+  { label: 'Hot Opps', href: '/opportunities', icon: 'local_fire_department' },
+  { label: 'KPIs', href: '/dashboard', icon: 'insights' },
   { label: 'Calendar', href: '/calendar', icon: 'calendar_today' },
-  { label: 'Pipeline', href: '/pipeline', icon: 'view_kanban' },
 ]
 
 interface NavTabsProps {

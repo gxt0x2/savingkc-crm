@@ -246,7 +246,7 @@ export default function OpportunitiesPageV2() {
         {/* Header */}
         <div className="mb-8 flex items-end justify-between">
           <div>
-            <h1 className="text-4xl font-black text-black tracking-tight">Hot Opportunities</h1>
+            <h1 className="text-4xl font-black text-black tracking-tight">Hot Opps</h1>
             <p className="text-gray-600 mt-2">
               {filteredOpps.length} active deals · Drag to reorder · Click to view
             </p>

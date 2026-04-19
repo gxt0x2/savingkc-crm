@@ -183,7 +183,6 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              console.log('[CALL BTN] Clicked - phone:', opp.phone, 'leadId:', opp.leadId, 'onCall exists:', !!onCall)
               if (opp.phone) {
                 onCall?.(opp.phone, opp.leadId)
               }
@@ -197,7 +196,6 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              console.log('[SMS BTN] Clicked - leadId:', opp.leadId, 'phone:', opp.phone, 'onSms exists:', !!onSms)
               if (opp.phone) {
                 onSms?.(opp.leadId, opp.phone)
               }
@@ -211,7 +209,6 @@ export function HotOpportunityCardCompact({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              console.log('[EMAIL BTN] Clicked - email:', opp.email, 'onEmail exists:', !!onEmail)
               if (opp.email) {
                 onEmail?.(opp.email)
               }
