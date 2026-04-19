@@ -10,17 +10,21 @@
  *        Deal Quality (0-25) — spread, with bonuses for verified ARV / repair bid
  *        Time Pressure (0-15) — deadlines, competing offers, foreclosure, life events
  *
- *   2. User-signal bonuses added to the factor sum:
- *        +12  is_favorite
- *        +12  priority === 'hot'  (or +6 for 'warm')
+ *   2. Derived-signal bonuses added to the factor sum:
  *        +8   station ∈ {appointment, appt_set}
  *        +5   station not in {intake, new}
- *        +5   motivation.score > 5
- *      These also double as the "why this is on the hot list" gate in cache.ts —
- *      favorite + priority-hot can bypass some quality thresholds. They pull the
- *      composite toward manual labels as well as data, which should be revisited
- *      when separating "filter" from "rank" (planned Phase B of the scoring
- *      accuracy rework).
+ *        +5   motivation.score > 5  (from AI call-transcript analysis)
+ *      These are state/evidence signals, not manual labels — they reflect that
+ *      the lead has actually advanced (appointment set, past intake) or that
+ *      a call analysis flagged motivation.
+ *
+ *      Phase B removed the previous user-label bonuses (+12 is_favorite,
+ *      +12 priority === 'hot', +6 'warm'). Those are manual labels that
+ *      should affect *visibility* (is the lead pinned / on the hot list?),
+ *      not the numeric composite — adding them to the score conflated
+ *      "discover hot leads from data" with "re-rank leads I already
+ *      labeled hot." The flags still live in `rawInputs` so cache.ts can
+ *      keep using them for the hot-list gate and favorites-first slotting.
  *
  *   3. Multiplier: currently fixed at 1.0. (See computeMultiplier comment.)
  *
@@ -425,19 +429,17 @@ export function scoreOpportunity(manifest: ManifestV2): HotScoreResult {
 
   const rawSum = eng.score + vel.score + dq.score + tp.score
 
-  // Priority, favorites, and pipeline progress bonus
+  // Derived-signal bonuses — evidence that the lead has actually advanced or
+  // that analysis flagged motivation. Manual user labels (is_favorite, priority)
+  // are intentionally NOT included here (see Phase B rationale in the top-of-
+  // file comment). They're still surfaced in `rawInputs` for the cache.ts
+  // filter layer to drive visibility without inflating the composite.
   let bonus = 0
-  // User starred as favorite = strong manual signal, they know this lead matters
-  if ((manifest as any).is_favorite) bonus += 12
-  // User marked as hot = significant boost
-  if ((manifest as any).priority === 'hot') bonus += 12
-  // User marked as warm = moderate boost
-  else if ((manifest as any).priority === 'warm') bonus += 6
-  // Appointment set = real engagement
+  // Appointment set — concrete forward progress
   if (['appointment', 'appt_set'].includes(manifest.currentStation)) bonus += 8
-  // Past intake = at least we've made contact
+  // Past initial contact — we've at least made contact
   if (!['intake', 'new'].includes(manifest.currentStation)) bonus += 5
-  // Has motivation score > 5 = seller showed interest
+  // Call analyzer returned motivation > 5 — the seller expressed interest
   if (manifest.situation?.motivation?.score && manifest.situation.motivation.score > 5) bonus += 5
 
   const composite = Math.min(100, Math.round((rawSum + bonus) * mult.multiplier))
