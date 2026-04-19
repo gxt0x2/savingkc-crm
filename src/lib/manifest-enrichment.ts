@@ -13,7 +13,8 @@ export async function enrichManifestProperty(
   city: string | undefined,
   state: string,
   zip: string | undefined,
-  county: string
+  county: string,
+  parcelId?: string,
 ): Promise<ManifestV2> {
   const service = new CountyEnrichmentService()
 
@@ -23,6 +24,7 @@ export async function enrichManifestProperty(
     state,
     zip,
     county,
+    parcel_id: parcelId || manifest.property?.parcel,
   }
 
   const result = await service.enrich(enrichmentInput)

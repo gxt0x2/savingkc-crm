@@ -186,7 +186,15 @@ export async function reprocessLead(
 
     if (countyName) {
       try {
-        manifest = await enrichManifestProperty(manifest, addr, city, state, zip, countyName)
+        manifest = await enrichManifestProperty(
+          manifest,
+          addr,
+          city,
+          state,
+          zip,
+          countyName,
+          lead.parcel_id || undefined,
+        )
         changed.push(`enriched_via=${countyName.toLowerCase()}`)
       } catch (err: any) {
         errors.push(`enrich_failed: ${err?.message || String(err)}`)

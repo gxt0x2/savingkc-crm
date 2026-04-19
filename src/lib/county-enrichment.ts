@@ -15,6 +15,10 @@ export interface EnrichmentInput {
   state: string
   zip?: string
   county: string
+  /** Optional pre-known parcel id — when provided, Jackson/Clay scrapers
+   * skip the flaky address-search step and go straight to the parcel record.
+   * Populated by the reprocess pipeline from prospect_phones matches. */
+  parcel_id?: string
   manifest_id?: string
 }
 
@@ -462,22 +466,40 @@ export class CountyEnrichmentService {
       const html3 = await r3.text()
       const vs3 = extractViewState(html3)
 
-      // Step 4: POST address search
-      const { houseNumber, streetName, suffix } = this.parseJacksonAddress(input.address)
-      const r4 = await post(
-        searchUrl,
-        new URLSearchParams({
-          ...vs3,
-          '__EVENTTARGET': '', '__EVENTARGUMENT': '',
-          'inpNo': houseNumber,
-          'inpStreet': streetName.toUpperCase(),
-          'inpSuf': suffix,
-          'inpDirPrefix': '',
-          'inpDirSuffix': '',
-          'btSearch': 'Search',
-        }),
-        searchUrl
-      )
+      // Step 4: POST search — prefer parcel_id when we have one (dramatically
+      // more reliable than the flaky address search). Fall back to address.
+      let r4: Response
+      if (input.parcel_id) {
+        // iasWorld supports direct parcel search via inpParid field.
+        // Normalize: strip hyphens/spaces.
+        const paridClean = input.parcel_id.replace(/[-\s]/g, '')
+        r4 = await post(
+          searchUrl,
+          new URLSearchParams({
+            ...vs3,
+            '__EVENTTARGET': '', '__EVENTARGUMENT': '',
+            'inpParid': paridClean,
+            'btSearch': 'Search',
+          }),
+          searchUrl,
+        )
+      } else {
+        const { houseNumber, streetName, suffix } = this.parseJacksonAddress(input.address)
+        r4 = await post(
+          searchUrl,
+          new URLSearchParams({
+            ...vs3,
+            '__EVENTTARGET': '', '__EVENTARGUMENT': '',
+            'inpNo': houseNumber,
+            'inpStreet': streetName.toUpperCase(),
+            'inpSuf': suffix,
+            'inpDirPrefix': '',
+            'inpDirSuffix': '',
+            'btSearch': 'Search',
+          }),
+          searchUrl,
+        )
+      }
       mergeCookies(r4)
       let html4 = await r4.text()
 
@@ -510,15 +532,36 @@ export class CountyEnrichmentService {
       )
       const valuesText = htmlToText(await rValues.text())
 
-      // Step 7: Residential tab
-      const rResidential = await get(
-        `${BASE}/datalets/datalet.aspx?mode=residential&sIndex=0&idx=1&LMparent=20`,
-        `${BASE}/datalets/datalet.aspx?mode=valuesall&sIndex=0&idx=1&LMparent=20`
-      )
-      const residentialText = htmlToText(await rResidential.text())
+      // Step 7: Residential tab — try residential → profileall → oby and
+      // merge results. iasWorld stores building-card data on different tabs
+      // depending on parcel class; the external jackson-county-parcel-scraper
+      // repo walks all three to cover the matrix.
+      let residentialText = ''
+      let cardText = ''
+      let referer = `${BASE}/datalets/datalet.aspx?mode=valuesall&sIndex=0&idx=1&LMparent=20`
+      for (const mode of ['residential', 'profileall', 'oby']) {
+        try {
+          const r = await get(
+            `${BASE}/datalets/datalet.aspx?mode=${mode}&sIndex=0&idx=1&LMparent=20`,
+            referer,
+          )
+          const text = htmlToText(await r.text())
+          // Keep the original 'residential' text for backward-compat regex parsing,
+          // and append other modes into a combined 'cardText' string which the
+          // parser also inspects for bedroom/sqft/year fields.
+          if (mode === 'residential') {
+            residentialText = text
+          }
+          cardText += '\n' + text
+          referer = `${BASE}/datalets/datalet.aspx?mode=${mode}&sIndex=0&idx=1&LMparent=20`
+        } catch (tabErr) {
+          // Continue — not all tabs exist for every parcel
+          console.warn(`[Jackson] tab ${mode} failed:`, (tabErr as any)?.message)
+        }
+      }
 
-      // Step 8: Parse all tabs
-      const parsed = this.parseJacksonCountyData(profileText, valuesText, residentialText)
+      // Step 8: Parse — pass combined cardText so parser can check across modes
+      const parsed = this.parseJacksonCountyData(profileText, valuesText, residentialText + '\n' + cardText)
 
       // Step 9: Tax collection data (best-effort, non-blocking)
       let taxData: any = {}
@@ -710,21 +753,48 @@ export class CountyEnrichmentService {
     result.landValue = dollarValue(/Total Market Land\s+\$([0-9,]+)/i)
     result.improvementValue = dollarValue(/Total Market Building\s+\$([0-9,]+)/i)
 
-    // Parse residential tab
-    const yearMatch = residentialText.match(/Year Built\s+(\d{4})/i)
-    if (yearMatch) result.yearBuilt = parseInt(yearMatch[1])
+    // Parse residential/card tab — try multiple label variants (Jackson County
+    // iasWorld uses different labels on residential vs profileall vs oby tabs;
+    // mirrors the external jackson-county-parcel-scraper repo's fallback set).
+    const firstMatch = (text: string, patterns: RegExp[]): string | null => {
+      for (const p of patterns) {
+        const m = text.match(p)
+        if (m) return m[1]
+      }
+      return null
+    }
 
-    const sqftMatch = residentialText.match(/Living Area\s+([\d,]+)/i)
-    if (sqftMatch) result.sqft = parseInt(sqftMatch[1].replace(/,/g, ''))
+    const yearStr = firstMatch(residentialText, [
+      /Year Built\s+(\d{4})/i,
+      /Eff(?:ective)?\s*Year\s*Built\s+(\d{4})/i,
+    ])
+    if (yearStr) result.yearBuilt = parseInt(yearStr)
 
-    const bedroomsMatch = residentialText.match(/Bedrooms\s+(\d+)/i)
-    if (bedroomsMatch) result.bedrooms = parseInt(bedroomsMatch[1])
+    const sqftStr = firstMatch(residentialText, [
+      /Living\s*Area\s+([\d,]+)/i,
+      /Total\s*Living\s*Area\s+([\d,]+)/i,
+      /Finished\s*Sq(?:uare)?\s*Ft\.?\s+([\d,]+)/i,
+    ])
+    if (sqftStr) result.sqft = parseInt(sqftStr.replace(/,/g, ''))
 
-    const fullBathsMatch = residentialText.match(/Full Baths\s+(\d+)/i)
-    if (fullBathsMatch) result.bathrooms = parseInt(fullBathsMatch[1])
+    const bedsStr = firstMatch(residentialText, [
+      /Bedrooms\s+(\d+)/i,
+      /Total\s*Bedrooms\s+(\d+)/i,
+      /No\.?\s*Bedrooms\s+(\d+)/i,
+    ])
+    if (bedsStr) result.bedrooms = parseInt(bedsStr)
 
-    const halfBathsMatch = residentialText.match(/Half Baths\s+(\d+)/i)
-    if (halfBathsMatch) result.halfBaths = parseInt(halfBathsMatch[1])
+    const fullBathStr = firstMatch(residentialText, [
+      /Full\s*Baths?\s+(\d+)/i,
+      /Baths\s+(\d+)/i,
+      /Bathrooms\s+(\d+)/i,
+    ])
+    if (fullBathStr) result.bathrooms = parseInt(fullBathStr)
+
+    const halfBathStr = firstMatch(residentialText, [
+      /Half\s*Baths?\s+(\d+)/i,
+    ])
+    if (halfBathStr) result.halfBaths = parseInt(halfBathStr)
 
     const conditionMatch = residentialText.match(/Physical Condition\s+\d+-(\w+)/i)
     if (conditionMatch) result.condition = conditionMatch[1]
