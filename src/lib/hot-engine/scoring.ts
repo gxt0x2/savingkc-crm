@@ -435,6 +435,11 @@ export function scoreOpportunity(manifest: ManifestV2): HotScoreResult {
     priorityWarm: (manifest as any).priority === 'warm',
     stationBonus: ['appointment', 'appt_set'].includes(manifest.currentStation) ? 8 : !['intake', 'new'].includes(manifest.currentStation) ? 5 : 0,
     motivationBonus: (manifest.situation?.motivation?.score && manifest.situation.motivation.score > 5) ? 5 : 0,
+    // AI call-transcript opportunity score — surfaced so the hot-list gate
+    // can override tier/engagement filters when the AI explicitly flagged
+    // this lead as an opportunity (>= 75).
+    opportunityScore: manifest.scoring?.opportunity_score ?? 0,
+    opportunityClassification: manifest.scoring?.classification || null,
   }
 
   return {
