@@ -1,15 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { safeSendSMS } from '@/lib/safe-communications'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '@/lib/supabase-lazy'
 
 const DEFAULT_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const TWILIO_MESSAGING_SERVICE = process.env.TWILIO_MESSAGING_SERVICE

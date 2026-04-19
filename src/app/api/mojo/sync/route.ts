@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
@@ -10,11 +9,7 @@ import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-
 import { safeSendSMS } from '@/lib/safe-communications'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { phoneRateLimit } from '@/middleware/rate-limit'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '@/lib/supabase-lazy'
 
 // Casey's company number - used as FROM for thank-you SMS
 const CASEY_COMPANY_NUMBER = '+18167277667'

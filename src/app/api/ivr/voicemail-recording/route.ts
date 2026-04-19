@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase-lazy'
+
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
@@ -8,10 +9,7 @@ import { ensureManifestExists } from '@/lib/manifest-sync'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { formatPhone } from '@/lib/format'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+
 
 const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'

@@ -4,15 +4,13 @@
  * This endpoint only works on the production Mac where the session file exists.
  */
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase-lazy'
+
 import { readFile } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
+
 
 const SESSION_FILE_PATHS = [
   join(homedir(), '.openclaw/workspace/memory/mojo-session.json'),

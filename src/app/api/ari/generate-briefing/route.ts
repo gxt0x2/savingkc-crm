@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from '@/lib/manifest-builder'
 import { buildManifestBriefingPrompt, type BriefingResult, type ActivityRow } from '@/lib/manifest-briefing'
 import { detectDeceasedSignals } from '@/lib/manifest-sync'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '@/lib/supabase-lazy'
 
 // GET /api/ari/generate-briefing?manifestId={id}
 // Returns cached briefing if available and not stale, otherwise generates fresh
