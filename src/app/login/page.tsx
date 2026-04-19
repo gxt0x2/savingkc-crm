@@ -12,8 +12,6 @@ export default function LoginPage() {
   const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [mode, setMode] = useState<'password' | 'magic'>('password')
 
-  const supabase = createClient()
-
   // Get redirect URL from query params
   const redirect = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('redirect') || '/dashboard'
@@ -23,6 +21,7 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    const supabase = createClient()
 
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
@@ -38,6 +37,7 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    const supabase = createClient()
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -57,6 +57,7 @@ export default function LoginPage() {
   async function handleGoogleLogin() {
     setLoading(true)
     setError('')
+    const supabase = createClient()
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
