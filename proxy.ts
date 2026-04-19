@@ -33,7 +33,7 @@ const WEBHOOK_PREFIXES = [
   '/api/cron/',
 ]
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Skip auth for public routes
