@@ -232,6 +232,13 @@ export function SellerGoals(props: SellerGoalsProps) {
   const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   const [open, toggleOpen] = useCardCollapse('core-goals')
 
+  const [refreshTick, setRefreshTick] = useState(0)
+  useEffect(() => {
+    function bump() { setRefreshTick((t) => t + 1) }
+    window.addEventListener('crm:lead-refresh', bump)
+    return () => window.removeEventListener('crm:lead-refresh', bump)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -257,7 +264,7 @@ export function SellerGoals(props: SellerGoalsProps) {
     }
     if (leadId) load()
     return () => { cancelled = true }
-  }, [leadId, props.notes, props.sellerSituation, props.activities?.length])
+  }, [leadId, props.notes, props.sellerSituation, props.activities?.length, refreshTick])
 
   const goals = useMemo(() => analyzeGoals(manifest, props), [manifest, props])
 
