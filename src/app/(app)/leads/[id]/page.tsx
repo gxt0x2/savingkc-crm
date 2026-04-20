@@ -1586,6 +1586,14 @@ export default function LeadDetailPage() {
             onOpenDetails={() => setDetailsExpanded(true)}
           />
 
+          {ownerDeceased && (
+            <HeirsSection
+              leadId={lead.id}
+              deceasedOwnerName={formattedName || lead.full_name || 'Deceased owner'}
+              propertyAddress={lead.property_address || ''}
+            />
+          )}
+
           <AriChat
             leadId={lead.id}
             leadName={lead.full_name}
@@ -1621,16 +1629,6 @@ export default function LeadDetailPage() {
           <SortableColumn
             storageKey={`crm_col_right_v2_${id}`}
             items={[
-              ...(ownerDeceased ? [{
-                id: 'heirs',
-                node: (
-                  <HeirsSection
-                    leadId={lead.id}
-                    deceasedOwnerName={formattedName || lead.full_name || 'Deceased owner'}
-                    propertyAddress={lead.property_address || ''}
-                  />
-                ),
-              }] : []),
               {
                 id: 'favorite-or-fool',
                 node: (

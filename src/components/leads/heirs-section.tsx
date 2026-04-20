@@ -76,6 +76,7 @@ export function HeirsSection({
   const [lastTracedAt, setLastTracedAt] = useState<string | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -163,9 +164,12 @@ export function HeirsSection({
   }
 
   return (
-    <section className="ck-card p-6">
-      {/* Header */}
-      <header className="flex items-center justify-between gap-4 mb-5">
+    <section className={`ck-card ${expanded ? 'p-6' : 'px-6 py-4'}`}>
+      {/* Header — click anywhere (except Call button) to toggle */}
+      <header
+        className={`flex items-center justify-between gap-4 ${expanded ? 'mb-5' : ''} cursor-pointer select-none`}
+        onClick={() => setExpanded((v) => !v)}
+      >
         <div className="flex items-center gap-3 min-w-0">
           <Icon name="diversity_3" className="!text-xl text-[var(--ck-text-muted)] shrink-0" />
           <h2 className="text-sm font-black uppercase tracking-widest text-[var(--ck-text)]">
@@ -177,22 +181,32 @@ export function HeirsSection({
             )}
           </h2>
           {lastTracedAt && (
-            <span className="text-[10px] text-[var(--ck-text-dim)] whitespace-nowrap">
+            <span className="text-[10px] text-[var(--ck-text-dim)] whitespace-nowrap hidden sm:inline">
               Traced {daysAgo(lastTracedAt)}
             </span>
           )}
         </div>
-        {totalHeirs > 0 && unattemptedPhones > 0 && (
-          <button
-            onClick={queueAll}
-            className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap"
-            title="Cycle through all unattempted heir phones"
-          >
-            <Icon name="call" size="text-sm" />
-            Call heirs ({unattemptedPhones})
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {totalHeirs > 0 && unattemptedPhones > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); queueAll() }}
+              className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap"
+              title="Cycle through all unattempted heir phones"
+            >
+              <Icon name="call" size="text-sm" />
+              Call heirs ({unattemptedPhones})
+            </button>
+          )}
+          <Icon
+            name={expanded ? 'expand_less' : 'expand_more'}
+            className="!text-xl text-[var(--ck-text-muted)]"
+          />
+        </div>
       </header>
+
+      {!expanded && null}
+      {expanded && <div className="heirs-body-wrap">
+      {/* --- expanded body starts --- */}
 
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-[#E32E2E]/10 border border-[#E32E2E]/30 text-xs text-[#E32E2E]">
@@ -259,6 +273,8 @@ export function HeirsSection({
           </button>
         </div>
       )}
+      {/* --- expanded body ends --- */}
+      </div>}
     </section>
   )
 }
