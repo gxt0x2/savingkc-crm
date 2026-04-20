@@ -973,8 +973,11 @@ export default function LeadDetailPage() {
           })
           // Store property object for PropertyDetailsCard manifest fallback
           setManifestProperty(data.manifest.manifest?.property || null)
-          // Track deceased flag for the heirs section
-          setOwnerDeceased(Boolean(data.manifest.manifest?.owner?.deceased))
+          // Track deceased flag for the heirs section.
+          // Additive only: if the manifest says deceased we flip to true, but
+          // never flip back to false — the prospects-table fetch is the other
+          // source and the OR must hold across both.
+          if (data.manifest.manifest?.owner?.deceased) setOwnerDeceased(true)
           // Two independent values: live Zillow zestimate and county/tax assessed value.
           const m = data.manifest.manifest || {}
           const property = m.property || {}
