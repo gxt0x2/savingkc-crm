@@ -114,16 +114,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Icon name="menu" size="text-xl" />
             </button>
 
-            {/* Brand lockup — inline so house glyph and "Homebuyers" tagline can both
-                take the brand red while "SAVING KC" stays white. A flat PNG can't do
-                two-color theming; when a proper two-color dark-variant asset exists,
-                swap back to <img src="/logo-dark.png">. */}
-            <Link href="/ari" className="flex items-center gap-2.5 flex-shrink-0 group" aria-label="Saving KC Homebuyers">
-              <Icon name="home_work" size="text-3xl" className="text-[#E32E2E] group-hover:text-[#C42626] transition-colors" filled />
-              <div className="flex flex-col leading-none">
-                <span className="text-white font-black text-sm tracking-tight">SAVING KC</span>
-                <span className="text-[10px] font-black tracking-[0.18em] text-[#E32E2E] uppercase mt-0.5">Homebuyers</span>
-              </div>
+            {/* Brand — the actual /logo.png asset, with a CSS filter that re-themes
+                only the dark pixels.
+                  invert(1) flips every channel (black→white, red→cyan, white→black)
+                  hue-rotate(180deg) then swaps the color wheel back around, so red
+                  returns to red; black/white grays (no hue) are unaffected.
+                Net result: SAVING + KC letters flip black→white, the red house and
+                HOMEBUYERS tagline stay red. Zero asset edits needed. */}
+            <Link href="/ari" className="flex items-center flex-shrink-0" aria-label="Saving KC Homebuyers">
+              <img
+                src="/logo.png"
+                alt="Saving KC Homebuyers"
+                className="h-10 w-auto"
+                style={{ filter: 'invert(1) hue-rotate(180deg)' }}
+              />
             </Link>
           </div>
 
