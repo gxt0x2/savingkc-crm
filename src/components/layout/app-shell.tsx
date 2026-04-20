@@ -102,11 +102,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col">
       {/* Top Navbar */}
       <header className="sticky top-0 w-full z-40 bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4 md:gap-8">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          {/* LEFT: hamburger + logo */}
+          <div className="flex items-center gap-3 flex-shrink-0">
             {/* Hamburger — mobile only */}
             <button
-              className="md:hidden p-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
+              className="md:hidden p-2 text-[var(--ck-text-muted)] hover:bg-white/5 rounded-lg transition-colors"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
             >
@@ -123,15 +124,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="text-[9px] font-bold tracking-[0.2em] text-[var(--ck-text-muted)] uppercase mt-0.5">Homebuyers</span>
               </div>
             </Link>
-
-            {/* Nav Tabs — desktop only */}
-            <div className="hidden md:block">
-              <NavTabs onNavigate={() => {}} />
-            </div>
           </div>
 
-          {/* Right side */}
-          <div className="flex items-center gap-2 md:gap-4">
+          {/* CENTER: nav tabs (desktop only) */}
+          <div className="hidden md:flex flex-1 justify-center">
+            <NavTabs onNavigate={() => {}} />
+          </div>
+
+          {/* RIGHT: search, dialer, notifications, profile */}
+          <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
