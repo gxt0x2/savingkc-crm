@@ -41,19 +41,19 @@ function isSameDay(a: Date, b: Date) {
 // rule — overdue red, appointment emerald, follow-up amber, etc.
 function taskChipStyle(task: Task) {
   if (task.status === 'overdue') {
-    return 'bg-[#E32E2E]/15 border-l-2 border-[#E32E2E] text-[#FCA5A5]'
+    return 'bg-[#E32E2E]/20 border-l-2 border-[#E32E2E] text-[#FCA5A5]'
   }
   switch (task.type) {
     case 'appointment':
-      return 'bg-emerald-500/12 border-l-2 border-emerald-500 text-emerald-200'
+      return 'bg-emerald-500/20 border-l-2 border-emerald-400 text-emerald-300'
     case 'follow_up':
-      return 'bg-amber-500/12 border-l-2 border-amber-500 text-amber-100'
+      return 'bg-yellow-400/20 border-l-2 border-yellow-400 text-yellow-300'
     case 'send_offer':
-      return 'bg-violet-500/15 border-l-2 border-violet-500 text-violet-200'
+      return 'bg-violet-500/20 border-l-2 border-violet-400 text-violet-300'
     case 'review':
     case 'task':
     default:
-      return 'bg-white/5 border-l-2 border-[var(--ck-border-strong)] text-[var(--ck-text)]'
+      return 'bg-white/8 border-l-2 border-[var(--ck-border-strong)] text-[var(--ck-text)]'
   }
 }
 

@@ -145,37 +145,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ⌘K
               </kbd>
             </button>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowDialer(!showDialer)}
-                className="relative ck-icon-btn"
+                className="relative w-10 h-10 rounded-lg bg-[#E32E2E] hover:bg-[#C42626] flex items-center justify-center transition-colors shadow-sm shadow-[#E32E2E]/30"
                 aria-label="Open dialer"
                 title="Open dialer"
               >
-                <Icon name="call" size="text-base" className="text-[#E32E2E]" />
-                <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
+                <Icon name="call" size="text-lg" className="text-white" />
+                <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ring-1 ring-[#E32E2E] ${
                   dialerStatus === 'ready' || dialerStatus === 'on_call' ? 'bg-emerald-400' :
-                  dialerStatus === 'connecting' || dialerStatus === 'calling' ? 'bg-amber-400' :
-                  dialerStatus === 'incoming' ? 'bg-amber-400 animate-pulse' :
-                  'bg-[var(--ck-border-strong)]'
+                  dialerStatus === 'connecting' || dialerStatus === 'calling' ? 'bg-amber-300' :
+                  dialerStatus === 'incoming' ? 'bg-amber-300 animate-pulse' :
+                  'bg-transparent ring-0'
                 }`} />
               </button>
-              <button className="ck-icon-btn" aria-label="Notifications" title="Notifications">
-                <Icon name="notifications" className="text-[var(--ck-text-muted)]" />
-              </button>
-{/* gear icon removed — settings now in profile menu only */}
               <div className="relative" ref={profileMenuRef}>
                 {profilePhotoUrl ? (
-                  <img
-                    src={profilePhotoUrl}
-                    alt="Profile"
-                    className="h-8 w-8 rounded-full object-cover border border-primary/20 ml-1 cursor-pointer"
+                  <button
                     onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  />
+                    className="w-10 h-10 rounded-lg overflow-hidden bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] transition-colors"
+                    aria-label="Profile menu"
+                  >
+                    <img
+                      src={profilePhotoUrl}
+                      alt="Profile"
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
                 ) : (
-                  <div className="h-8 w-8 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold ml-1 cursor-pointer" onClick={() => setShowProfileMenu(!showProfileMenu)}>
+                  <button
+                    onClick={() => setShowProfileMenu(!showProfileMenu)}
+                    className="w-10 h-10 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] flex items-center justify-center text-xs font-black transition-colors"
+                    aria-label="Profile menu"
+                  >
                     {user?.email?.substring(0, 2).toUpperCase() || 'ED'}
-                  </div>
+                  </button>
                 )}
                 {showProfileMenu && (
                   <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-2 z-50">
