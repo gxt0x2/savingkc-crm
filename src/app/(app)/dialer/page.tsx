@@ -47,6 +47,7 @@ interface ProspectSummary {
 
 interface ManifestShape {
   owner?: { coOwners?: string[] }
+  property?: { vacant?: boolean }
 }
 
 interface Activity {
@@ -286,13 +287,22 @@ function DialerPageInner() {
     currentProspect?.situs_state || currentLead?.state,
     currentProspect?.situs_zip || currentLead?.zip,
   ])
-  const mailingAddress = joinAddress([
-    currentProspect?.mailing_street,
-    currentProspect?.mailing_city,
-    currentProspect?.mailing_state,
-    currentProspect?.mailing_zip,
-  ])
-  const mailingDiffers = mailingAddress && mailingAddress !== situsAddress
+  // Occupancy status — prefer the manifest's vacant flag, then the mailing vs
+  // situs comparison (absentee when tax bill goes somewhere other than the
+  // property). Default is owner-occupied when we can tell, null otherwise.
+  type Occupancy = { label: 'Vacant' | 'Absentee' | 'Owner occupied'; tone: 'warn' | 'amber' | 'neutral' }
+  const occupancy: Occupancy | null = (() => {
+    if (currentManifest?.property?.vacant === true) return { label: 'Vacant', tone: 'warn' }
+    const mailing = joinAddress([
+      currentProspect?.mailing_street,
+      currentProspect?.mailing_city,
+      currentProspect?.mailing_state,
+      currentProspect?.mailing_zip,
+    ])
+    if (!mailing) return null
+    if (mailing !== situsAddress) return { label: 'Absentee', tone: 'amber' }
+    return { label: 'Owner occupied', tone: 'neutral' }
+  })()
 
   const coOwners: string[] = (currentManifest?.owner?.coOwners ?? []).filter(Boolean)
 
@@ -434,21 +444,6 @@ function DialerPageInner() {
               </Link>
             </div>
 
-            {/* Mailing address — when different from situs, it's absentee-owned. */}
-            {mailingAddress && (
-              <div
-                className={`mb-4 p-3 rounded-lg border ${
-                  mailingDiffers
-                    ? 'bg-amber-500/10 border-amber-500/30'
-                    : 'bg-[var(--ck-surface-elev)] border-[var(--ck-border)]'
-                }`}
-              >
-                <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${mailingDiffers ? 'text-amber-400' : 'text-[var(--ck-text-dim)]'}`}>
-                  Tax bill mailed to {mailingDiffers ? '· absentee' : '· same as situs'}
-                </p>
-                <p className="text-xs text-[var(--ck-text)]">{mailingAddress}</p>
-              </div>
-            )}
 
             {/* Deceased owner + co-owners + taxpayer */}
             <div className="mb-4 p-3 rounded-lg bg-[#E32E2E]/10 border border-[#E32E2E]/30">
@@ -476,6 +471,19 @@ function DialerPageInner() {
 
             {/* Signal chips */}
             <div className="flex flex-wrap gap-2 mb-4">
+              {occupancy && (
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border ${
+                    occupancy.tone === 'warn'
+                      ? 'bg-[#E32E2E]/15 border-[#E32E2E]/40 text-[#E32E2E]'
+                      : occupancy.tone === 'amber'
+                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                      : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                  }`}
+                >
+                  {occupancy.label}
+                </span>
+              )}
               {currentProspect?.county && (
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] text-[var(--ck-text-muted)]">
                   {currentProspect.county} county

@@ -395,15 +395,11 @@ function HeirRow({
         ) : null}
       </div>
 
-      {/* Heir address row */}
-      {heir.address ? (
+      {/* Heir address row — only when present */}
+      {heir.address && (
         <div className="flex items-center gap-2 mb-3 pl-4">
           <Icon name="location_on" size="text-xs" className="text-[var(--ck-text-dim)] shrink-0" />
           <span className="text-[11px] text-[var(--ck-text-muted)] truncate">{heir.address}</span>
-        </div>
-      ) : (
-        <div className="mb-3 pl-4 text-[10px] text-[var(--ck-text-dim)] italic">
-          No address on file · populates on next re-sync
         </div>
       )}
 
