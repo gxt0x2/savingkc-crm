@@ -114,17 +114,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Icon name="menu" size="text-xl" />
             </button>
 
-            {/* Brand — use actual logo asset, inverted for dark theme via CSS filter.
-                `brightness(0) invert(1)` flattens the PNG to pure white which reads
-                cleanly on the near-black header. When a proper dark-variant logo is
-                dropped at /logo-dark.png, swap the src. */}
-            <Link href="/ari" className="flex items-center flex-shrink-0" aria-label="Saving KC home">
-              <img
-                src="/logo.png"
-                alt="Saving KC Homebuyers"
-                className="h-9 w-auto"
-                style={{ filter: 'brightness(0) invert(1)' }}
-              />
+            {/* Brand lockup — inline so house glyph and "Homebuyers" tagline can both
+                take the brand red while "SAVING KC" stays white. A flat PNG can't do
+                two-color theming; when a proper two-color dark-variant asset exists,
+                swap back to <img src="/logo-dark.png">. */}
+            <Link href="/ari" className="flex items-center gap-2.5 flex-shrink-0 group" aria-label="Saving KC Homebuyers">
+              <Icon name="home_work" size="text-3xl" className="text-[#E32E2E] group-hover:text-[#C42626] transition-colors" filled />
+              <div className="flex flex-col leading-none">
+                <span className="text-white font-black text-sm tracking-tight">SAVING KC</span>
+                <span className="text-[10px] font-black tracking-[0.18em] text-[#E32E2E] uppercase mt-0.5">Homebuyers</span>
+              </div>
             </Link>
           </div>
 
