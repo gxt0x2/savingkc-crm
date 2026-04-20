@@ -73,7 +73,8 @@ function formatDateLabel(iso: string | null): string | null {
   if (diffDays === -1) return 'Yesterday'
   if (diffDays > 0 && diffDays <= 6) return d.toLocaleDateString('en-US', { weekday: 'long' })
   if (diffDays < 0 && diffDays >= -6) return `${Math.abs(diffDays)}d ago`
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  // Full, readable format: "Wednesday, April 29" — no cramped abbreviations
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 function formatTimeLabel(iso: string | null, dateOnlyHint?: boolean): string | null {
