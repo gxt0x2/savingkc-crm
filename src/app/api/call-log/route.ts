@@ -62,6 +62,15 @@ export async function POST(req: Request) {
       onCommunicationEvent(leadId, { type: 'outbound_call' }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
     }
 
+    // On call end: refresh denormalized last-call snapshot on the lead row
+    if (leadId && event === 'ended') {
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      if (typeof duration === 'number' && duration > 0) patch.call_duration_seconds = duration
+      await supabase.from('leads').update(patch).eq('id', leadId).then(({ error }) => {
+        if (error) console.error('[call-log] lead snapshot update failed:', error.message)
+      })
+    }
+
     return NextResponse.json({ success: true, leadId })
   } catch (err) {
     console.error('Call log error:', err)
