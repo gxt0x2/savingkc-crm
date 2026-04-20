@@ -214,6 +214,22 @@ export async function PATCH(req: NextRequest) {
         if (activityError) {
           console.error('[leads PATCH] Failed to insert activity:', activityError.message)
         }
+
+        // Denormalized snapshot on the leads row so filters / KPIs see the
+        // latest contact without having to join lead_activities.
+        if (activity.disposition) {
+          const leadPatch: Record<string, unknown> = {
+            call_result: activity.disposition,
+            updated_at: new Date().toISOString(),
+          }
+          const { error: leadPatchErr } = await supabase
+            .from('leads')
+            .update(leadPatch)
+            .eq('id', id)
+          if (leadPatchErr) {
+            console.error('[leads PATCH] Failed to update lead snapshot:', leadPatchErr.message)
+          }
+        }
       }
 
       // Update manifest with disposition notes + mark briefing stale

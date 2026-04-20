@@ -1,8 +1,33 @@
 import { NextResponse } from 'next/server'
+import twilio from 'twilio'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { supabase } from '@/lib/supabase-lazy'
+
+// WebRTC-initiated calls record against the parent leg whose To/From are
+// client identifiers rather than the dialed number. When the lookup-by-phone
+// falls through, we ask Twilio for the child legs and match on their `to`.
+async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | null> {
+  const sid = process.env.TWILIO_API_KEY
+  const secret = process.env.TWILIO_API_SECRET
+  const acct = process.env.TWILIO_ACCOUNT_SID
+  if (!sid || !secret || !acct) return null
+  try {
+    const client = twilio(sid, secret, { accountSid: acct })
+    const children = await client.calls.list({ parentCallSid: callSid, limit: 5 })
+    for (const child of children) {
+      if (!child.to) continue
+      const phone = child.to.replace(/[^\d+]/g, '')
+      if (!phone) continue
+      const { data } = await supabase.from('leads').select('id').eq('phone', phone).limit(1).maybeSingle()
+      if (data?.id) return data.id
+    }
+  } catch (err) {
+    console.error('[recording-callback] child-leg lookup failed', (err as Error).message)
+  }
+  return null
+}
 
 /**
  * Twilio recording status callback.
@@ -55,12 +80,20 @@ export async function POST(req: Request) {
         .select('id')
         .eq('phone', cleanPhone)
         .limit(1)
-        .single()
+        .maybeSingle()
       leadId = lead?.id || null
     }
 
+    // Fallback: WebRTC parent legs have empty To — look at child legs via Twilio
+    if (!leadId && callSid) {
+      leadId = await resolveLeadIdFromChildLegs(callSid)
+      if (leadId) {
+        console.log(`[recording-callback] Resolved lead ${leadId} via child-leg lookup`)
+      }
+    }
+
     if (!leadId) {
-      console.log(`[recording-callback] No lead found for phone ${cleanPhone}, skipping transcript`)
+      console.log(`[recording-callback] No lead found (phone=${cleanPhone || 'none'} callSid=${callSid}), skipping transcript`)
       return NextResponse.json({ ok: true, skipped: 'no_lead' })
     }
 
@@ -124,14 +157,23 @@ async function processRecording(
       metadata: { source: 'call_analysis', analysis },
     })
 
-    // 6. Update lead fields from analysis
-    const leadUpdates: Record<string, any> = {}
+    // 6. Update lead fields from analysis (+ denormalized last-call snapshot)
+    const leadUpdates: Record<string, any> = {
+      transcript,
+      call_duration_seconds: duration,
+      updated_at: new Date().toISOString(),
+    }
     if (analysis.motivationScore) leadUpdates.motivation_score = analysis.motivationScore
     if (analysis.conditionOverall) leadUpdates.property_condition = analysis.conditionOverall
     if (analysis.sellerAsking) leadUpdates.asking_price = analysis.sellerAsking
-    if (Object.keys(leadUpdates).length > 0) {
-      await supabase.from('leads').update(leadUpdates).eq('id', leadId)
-    }
+    await supabase.from('leads').update(leadUpdates).eq('id', leadId)
+  } else {
+    // No analysis available but still refresh the transcript + duration
+    await supabase.from('leads').update({
+      transcript,
+      call_duration_seconds: duration,
+      updated_at: new Date().toISOString(),
+    }).eq('id', leadId)
   }
 
   // 7. Update manifest with transcript + analysis
