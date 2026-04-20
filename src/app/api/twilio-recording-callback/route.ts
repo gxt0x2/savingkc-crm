@@ -9,12 +9,19 @@ import { supabase } from '@/lib/supabase-lazy'
 // client identifiers rather than the dialed number. When the lookup-by-phone
 // falls through, we ask Twilio for the child legs and match on their `to`.
 async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | null> {
-  const sid = process.env.TWILIO_API_KEY
-  const secret = process.env.TWILIO_API_SECRET
   const acct = process.env.TWILIO_ACCOUNT_SID
-  if (!sid || !secret || !acct) return null
+  const authToken = process.env.TWILIO_AUTH_TOKEN
+  const apiKey = process.env.TWILIO_API_KEY
+  const apiSecret = process.env.TWILIO_API_SECRET
+  if (!acct) return null
+  let client: ReturnType<typeof twilio> | null = null
+  if (apiKey && apiSecret) {
+    client = twilio(apiKey, apiSecret, { accountSid: acct })
+  } else if (authToken) {
+    client = twilio(acct, authToken)
+  }
+  if (!client) return null
   try {
-    const client = twilio(sid, secret, { accountSid: acct })
     const children = await client.calls.list({ parentCallSid: callSid, limit: 5 })
     for (const child of children) {
       if (!child.to) continue
@@ -166,6 +173,8 @@ async function processRecording(
     if (analysis.motivationScore) leadUpdates.motivation_score = analysis.motivationScore
     if (analysis.conditionOverall) leadUpdates.property_condition = analysis.conditionOverall
     if (analysis.sellerAsking) leadUpdates.asking_price = analysis.sellerAsking
+    if (typeof analysis.opportunity_score === 'number') leadUpdates.opportunity_score = analysis.opportunity_score
+    if (analysis.classification) leadUpdates.classification = analysis.classification
     await supabase.from('leads').update(leadUpdates).eq('id', leadId)
   } else {
     // No analysis available but still refresh the transcript + duration
