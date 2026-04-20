@@ -114,15 +114,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Icon name="menu" size="text-xl" />
             </button>
 
-            {/* Brand — inline text lockup (PNG logo doesn't invert cleanly for dark) */}
-            <Link href="/ari" className="flex items-center gap-2.5 group" aria-label="Saving KC home">
-              <span className="w-8 h-8 rounded-lg bg-[#E32E2E] flex items-center justify-center flex-shrink-0 shadow-sm shadow-[#E32E2E]/30 group-hover:bg-[#C42626] transition-colors">
-                <Icon name="home_work" size="text-lg" className="text-white" />
-              </span>
-              <div className="flex flex-col leading-none">
-                <span className="text-white font-black text-[13px] tracking-tight">SAVING KC</span>
-                <span className="text-[9px] font-bold tracking-[0.2em] text-[var(--ck-text-muted)] uppercase mt-0.5">Homebuyers</span>
-              </div>
+            {/* Brand — use actual logo asset, inverted for dark theme via CSS filter.
+                `brightness(0) invert(1)` flattens the PNG to pure white which reads
+                cleanly on the near-black header. When a proper dark-variant logo is
+                dropped at /logo-dark.png, swap the src. */}
+            <Link href="/ari" className="flex items-center flex-shrink-0" aria-label="Saving KC home">
+              <img
+                src="/logo.png"
+                alt="Saving KC Homebuyers"
+                className="h-9 w-auto"
+                style={{ filter: 'brightness(0) invert(1)' }}
+              />
             </Link>
           </div>
 
@@ -183,19 +185,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </button>
                 )}
                 {showProfileMenu && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-2 z-50">
+                  <div className="absolute right-0 mt-2 w-56 ck-card shadow-2xl py-2 z-50">
                     {user && (
-                      <div className="px-4 py-2 border-b border-slate-100">
-                        <p className="text-xs font-bold text-primary truncate">{user.email}</p>
+                      <div className="px-4 py-2 border-b border-[var(--ck-border)]">
+                        <p className="text-xs font-bold text-[var(--ck-text)] truncate">{user.email}</p>
                       </div>
                     )}
-                    <button onClick={() => { setShowProfileMenu(false); window.location.href = '/checklist' }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                      <Icon name="checklist" size="text-lg" /> SOD / EOD
-                    </button>
-                    <button onClick={() => { setShowProfileMenu(false); window.location.href = '/settings' }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                      <Icon name="settings" size="text-lg" /> Settings
-                    </button>
-                    <button onClick={() => { setShowProfileMenu(false); signOut() }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                    <Link
+                      href="/checklist"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[var(--ck-text)] hover:bg-white/5 transition-colors"
+                    >
+                      <Icon name="checklist" size="text-lg" className="text-[var(--ck-text-muted)]" /> SOD / EOD
+                    </Link>
+                    <Link
+                      href="/settings"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[var(--ck-text)] hover:bg-white/5 transition-colors"
+                    >
+                      <Icon name="settings" size="text-lg" className="text-[var(--ck-text-muted)]" /> Settings
+                    </Link>
+                    <button
+                      onClick={() => { setShowProfileMenu(false); signOut() }}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[#FCA5A5] hover:bg-[#E32E2E]/10 transition-colors"
+                    >
                       <Icon name="logout" size="text-lg" /> Sign Out
                     </button>
                   </div>

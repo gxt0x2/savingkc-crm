@@ -1,9 +1,58 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { useAriPage, type FollowUp, type InboxItem, type PipelineAction, type CallQueueLead } from '@/hooks/use-ari-page'
 import { Icon } from '@/components/ui/icon'
+import { createClient } from '@/lib/supabase/client'
 import { formatPhone, toProperCase } from '@/lib/format'
+
+// ─── Business-day lookback helpers ────────────────────────────────
+
+// Roll back N weekdays (Mon-Fri). On Sunday with N=2, returns start of Thursday.
+function startOfBusinessDaysAgo(from: Date, biz: number): Date {
+  const d = new Date(from)
+  let counted = 0
+  // Step back one day at a time until we've counted `biz` weekdays.
+  while (counted < biz) {
+    d.setDate(d.getDate() - 1)
+    const dow = d.getDay() // 0=Sun, 6=Sat
+    if (dow !== 0 && dow !== 6) counted++
+  }
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+interface RecentLead {
+  id: string
+  full_name: string | null
+  phone: string | null
+  property_address: string | null
+  city: string | null
+  source: string | null
+  station: string | null
+  priority: string | null
+  created_at: string
+  motivation_score: number | null
+}
+
+// Fetch leads created in the last 2 business days (weekends excluded).
+// On Sunday, this returns Thursday + Friday leads; on Monday, Friday + Thursday; etc.
+function useRecentLeads() {
+  const [leads, setLeads] = useState<RecentLead[]>([])
+  useEffect(() => {
+    const cutoff = startOfBusinessDaysAgo(new Date(), 2).toISOString()
+    const supabase = createClient()
+    supabase
+      .from('leads')
+      .select('id, full_name, phone, property_address, city, source, station, priority, created_at, motivation_score')
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending: false })
+      .limit(8)
+      .then(({ data }) => setLeads((data as RecentLead[]) || []))
+  }, [])
+  return leads
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -56,6 +105,7 @@ function timeAgo(iso: string, now: Date): string {
 
 export default function AriPage() {
   const data = useAriPage()
+  const recentLeads = useRecentLeads()
   const now = new Date()
   const greeting = greetingFor(now)
   const todayStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -136,8 +186,8 @@ export default function AriPage() {
         )}
       </div>
 
-      {/* ═══ 3-column triage grid ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* ═══ 4-column triage grid ═══ */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <Tile
           icon="calendar_today"
           title="Today's Schedule"
@@ -172,6 +222,19 @@ export default function AriPage() {
         >
           {messages.map((m) => (
             <MessageRow key={m.id} msg={m} now={now} />
+          ))}
+        </Tile>
+
+        <Tile
+          icon="fiber_new"
+          title="Fresh Leads"
+          subtitle="Last 2 biz days"
+          count={recentLeads.length}
+          emptyMsg="No new leads"
+          emptyIcon="person_add"
+        >
+          {recentLeads.map((l) => (
+            <FreshLeadRow key={l.id} lead={l} now={now} />
           ))}
         </Tile>
       </div>
@@ -230,6 +293,7 @@ function ProgressChip({ label, value, target, pct }: { label: string; value: num
 function Tile({
   icon,
   title,
+  subtitle,
   count,
   accent,
   emptyMsg,
@@ -238,6 +302,7 @@ function Tile({
 }: {
   icon: string
   title: string
+  subtitle?: string
   count: number
   accent?: boolean
   emptyMsg: string
@@ -247,14 +312,17 @@ function Tile({
   return (
     <div className={`ck-card overflow-hidden ${accent ? 'border-l-2 border-[#E32E2E]' : ''}`}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--ck-border)]">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <Icon name={icon} size="text-sm" className={accent ? 'text-[#E32E2E]' : 'text-[var(--ck-text-muted)]'} />
-          <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[var(--ck-text-muted)]">
+          <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[var(--ck-text-muted)] truncate">
             {title}
           </span>
+          {subtitle && (
+            <span className="text-[9px] font-bold text-[var(--ck-text-dim)] truncate hidden sm:inline">· {subtitle}</span>
+          )}
         </div>
         {count > 0 && (
-          <span className={`text-[10px] font-black tabular-nums px-2 py-0.5 rounded-full ${accent ? 'bg-[#E32E2E] text-white' : 'bg-white/5 text-[var(--ck-text)]'}`}>
+          <span className={`text-[10px] font-black tabular-nums px-2 py-0.5 rounded-full flex-shrink-0 ${accent ? 'bg-[#E32E2E] text-white' : 'bg-white/5 text-[var(--ck-text)]'}`}>
             {count}
           </span>
         )}
@@ -345,6 +413,35 @@ function MessageRow({ msg, now }: { msg: InboxItem; now: Date }) {
               </p>
             ) : null}
           </div>
+        </div>
+      </Link>
+    </li>
+  )
+}
+
+function FreshLeadRow({ lead, now }: { lead: RecentLead; now: Date }) {
+  const dateStr = new Date(lead.created_at).toLocaleDateString('en-US', { weekday: 'short' })
+  const hot = lead.priority === 'hot' || (lead.motivation_score !== null && lead.motivation_score >= 7)
+  return (
+    <li>
+      <Link href={`/leads/${lead.id}`} className="block px-4 py-3 hover:bg-white/5 transition-colors">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-1.5">
+              <p className="text-xs font-semibold text-[var(--ck-text)] truncate">
+                {toProperCase(lead.full_name || 'Unknown')}
+              </p>
+              {hot && (
+                <Icon name="local_fire_department" size="text-xs" className="text-[#E32E2E] flex-shrink-0" />
+              )}
+            </div>
+            <p className="text-[11px] text-[var(--ck-text-muted)] truncate leading-snug">
+              {lead.property_address || (lead.phone ? formatPhone(lead.phone) : lead.source || 'No details')}
+            </p>
+          </div>
+          <span className="text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-dim)] whitespace-nowrap tabular-nums">
+            {dateStr}
+          </span>
         </div>
       </Link>
     </li>
