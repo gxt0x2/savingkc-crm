@@ -939,6 +939,25 @@ export default function LeadDetailPage() {
     if (id) fetchLead()
   }, [id, refreshTick])
 
+  // The manifest's owner.deceased can drift (we've seen manifests built from
+  // the wrong owner's prospect). Fall back to prospects.is_deceased so the
+  // heirs panel appears whenever any linked prospect is flagged deceased.
+  useEffect(() => {
+    if (!id) return
+    async function fetchProspectDeceased() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('prospects')
+        .select('is_deceased')
+        .eq('lead_id', id)
+        .limit(50)
+      if ((data ?? []).some((r: { is_deceased: boolean | null }) => r.is_deceased)) {
+        setOwnerDeceased(true)
+      }
+    }
+    fetchProspectDeceased()
+  }, [id])
+
   useEffect(() => {
     async function fetchManifestId() {
       try {
