@@ -6,8 +6,6 @@ import type { HotOpportunityData } from '@/types/hot-opportunity'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-type CardVariant = 'white' | 'grey' | 'lightgrey' | 'red'
-
 function dollars(amount?: number | null): string {
   if (amount == null) return '--'
   return '$' + Math.round(amount / 1000) + 'K'
@@ -15,13 +13,11 @@ function dollars(amount?: number | null): string {
 
 export function HotOpportunityCardCompact({
   opp,
-  variant,
   onCall,
   onSms,
   onEmail,
 }: {
   opp: HotOpportunityData
-  variant: CardVariant
   onCall?: (phone: string, leadId: string) => void
   onSms?: (leadId: string, phone?: string) => void
   onEmail?: (email?: string) => void
@@ -41,13 +37,6 @@ export function HotOpportunityCardCompact({
     opacity: isDragging ? 0.5 : 1,
   }
 
-  const variantStyles = {
-    white: 'bg-white border-2 border-gray-200',
-    grey: 'bg-gray-100 border-2 border-gray-300',
-    lightgrey: 'bg-gray-50 border-2 border-gray-200',
-    red: 'bg-[#FFF5F5] border-2 border-[#E32E2E]',
-  }
-
   const scoreColor = opp.score.composite >= 75
     ? 'bg-[#E32E2E] text-white'
     : opp.score.composite >= 50
@@ -58,7 +47,7 @@ export function HotOpportunityCardCompact({
     <div
       ref={setNodeRef}
       style={style}
-      className={`${variantStyles[variant]} rounded-lg overflow-hidden hover:shadow-xl transition-all group`}
+      className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-lg hover:border-gray-300 transition-all group"
     >
       {/* Drag handle indicator */}
       <div
@@ -100,10 +89,10 @@ export function HotOpportunityCardCompact({
 
         {/* Ari Insight */}
         {opp.hotSignal && (
-          <div className="bg-gray-100 border border-gray-200 rounded-lg p-2.5 mb-3">
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-sm">🦊</span>
-              <span className="text-[9px] font-bold text-gray-600 uppercase">Ari</span>
+          <div className="bg-gray-50 rounded-lg p-2.5 mb-3 border-l-2 border-[#E32E2E]">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Icon name="auto_awesome" size="text-xs" className="text-[#E32E2E]" />
+              <span className="text-[9px] font-black text-gray-600 uppercase tracking-wider">Ari</span>
             </div>
             <p className="text-xs text-gray-800 leading-snug line-clamp-3">
               {opp.hotSignal}
@@ -177,7 +166,7 @@ export function HotOpportunityCardCompact({
         )}
         </Link>
 
-        {/* Quick Actions */}
+        {/* Quick Actions — hierarchy: Call (primary) > SMS > Email */}
         <div className="grid grid-cols-3 gap-1.5">
           <button
             onClick={(e) => {
@@ -188,9 +177,10 @@ export function HotOpportunityCardCompact({
               }
             }}
             disabled={!opp.phone}
-            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#E32E2E] text-white font-bold text-xs hover:bg-[#C42626] transition-colors disabled:opacity-40 disabled:bg-gray-300 shadow-sm"
           >
             <Icon name="call" size="text-sm" />
+            Call
           </button>
           <button
             onClick={(e) => {
@@ -201,9 +191,10 @@ export function HotOpportunityCardCompact({
               }
             }}
             disabled={!opp.phone}
-            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-black text-white font-bold text-xs hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
           >
             <Icon name="chat" size="text-sm" />
+            SMS
           </button>
           <button
             onClick={(e) => {
@@ -214,7 +205,7 @@ export function HotOpportunityCardCompact({
               }
             }}
             disabled={!opp.email}
-            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 font-bold text-xs hover:border-gray-400 hover:bg-gray-50 transition-colors disabled:opacity-40"
           >
             <Icon name="mail" size="text-sm" />
           </button>
