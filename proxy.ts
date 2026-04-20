@@ -8,6 +8,7 @@ const PUBLIC_ROUTES = ['/login', '/auth/callback', '/terms', '/privacy']
 const WEBHOOK_PREFIXES = [
   '/api/twilio-sms-webhook',
   '/api/twilio-missed-call',
+  '/api/twilio-recording-callback',
   '/api/twiml-voice',
   '/api/ivr/',
   '/api/audio/',
