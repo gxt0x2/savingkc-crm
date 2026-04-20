@@ -39,6 +39,8 @@ interface HeirsSectionProps {
   leadId: string
   deceasedOwnerName: string
   propertyAddress: string
+  defaultExpanded?: boolean
+  collapsible?: boolean
 }
 
 function dispatchHeirQueue(queue: HeirDialerQueueItem[]) {
@@ -88,13 +90,15 @@ export function HeirsSection({
   leadId,
   deceasedOwnerName,
   propertyAddress,
+  defaultExpanded = false,
+  collapsible = true,
 }: HeirsSectionProps) {
   const [heirs, setHeirs] = useState<Heir[]>([])
   const [loading, setLoading] = useState(true)
   const [lastTracedAt, setLastTracedAt] = useState<string | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -195,10 +199,10 @@ export function HeirsSection({
 
   return (
     <section className={`ck-card ${expanded ? 'p-6' : 'px-6 py-4'}`}>
-      {/* Header — click anywhere (except Call button) to toggle */}
+      {/* Header — click anywhere (except Call button) to toggle when collapsible */}
       <header
-        className={`flex items-center justify-between gap-4 ${expanded ? 'mb-5' : ''} cursor-pointer select-none`}
-        onClick={() => setExpanded((v) => !v)}
+        className={`flex items-center justify-between gap-4 ${expanded ? 'mb-5' : ''} ${collapsible ? 'cursor-pointer select-none' : ''}`}
+        onClick={collapsible ? () => setExpanded((v) => !v) : undefined}
       >
         <div className="flex items-center gap-3 min-w-0">
           <Icon name="diversity_3" className="!text-xl text-[var(--ck-text-muted)] shrink-0" />
@@ -227,10 +231,12 @@ export function HeirsSection({
               Call heirs ({unattemptedPhones})
             </button>
           )}
-          <Icon
-            name={expanded ? 'expand_less' : 'expand_more'}
-            className="!text-xl text-[var(--ck-text-muted)]"
-          />
+          {collapsible && (
+            <Icon
+              name={expanded ? 'expand_less' : 'expand_more'}
+              className="!text-xl text-[var(--ck-text-muted)]"
+            />
+          )}
         </div>
       </header>
 

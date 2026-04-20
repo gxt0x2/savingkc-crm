@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { AriBriefing } from '@/components/leads/ari-briefing'
 import { PainPoints } from '@/components/leads/pain-points'
-import { HeirsSection } from '@/components/leads/heirs-section'
 import { FavoriteOrFool } from '@/components/leads/favorite-or-fool'
 import { PropertyHero } from '@/components/leads/property-hero'
 import { ActivityFeed } from '@/components/leads/activity-feed'
@@ -1585,14 +1584,6 @@ export default function LeadDetailPage() {
             }
             onOpenDetails={() => setDetailsExpanded(true)}
           />
-
-          {ownerDeceased && (
-            <HeirsSection
-              leadId={lead.id}
-              deceasedOwnerName={formattedName || lead.full_name || 'Deceased owner'}
-              propertyAddress={lead.property_address || ''}
-            />
-          )}
 
           <AriChat
             leadId={lead.id}

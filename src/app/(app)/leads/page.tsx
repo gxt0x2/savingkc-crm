@@ -460,6 +460,24 @@ export default function LeadsPage() {
               )}
             </button>
 
+            {/* Start dialing — appears when a cohort or selection is active */}
+            {(() => {
+              const selectionIds = Array.from(selectedIds)
+              const cohortIds = deceasedLeadIds ? Array.from(deceasedLeadIds) : []
+              const sessionIds = selectionIds.length > 0 ? selectionIds : cohortIds
+              if (sessionIds.length === 0) return null
+              return (
+                <button
+                  onClick={() => router.push(`/dialer?lead_ids=${sessionIds.join(',')}`)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#E32E2E] hover:bg-[#C42626] text-white text-sm font-bold transition-colors shadow-sm"
+                  title={selectionIds.length > 0 ? `Dial ${selectionIds.length} selected leads` : `Dial all ${sessionIds.length} in cohort`}
+                >
+                  <Icon name="call" size="text-sm" />
+                  Start dialing ({sessionIds.length})
+                </button>
+              )
+            })()}
+
             {/* Stage Filter */}
             <div className="relative group">
               <button className={`flex items-center gap-1 px-3 py-2 border rounded-lg text-sm font-medium transition-all ${

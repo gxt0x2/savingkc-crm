@@ -482,7 +482,14 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     if (!queue) return
     const next = queueIndex + 1
     if (next >= queue.length) {
-      // Queue complete — drop back to normal dialer state.
+      // Queue complete — let listeners (e.g. /dialer page) advance to the
+      // next lead before we reset local state.
+      const finishedLeadId = queue[queueIndex]?.leadId
+      if (finishedLeadId) {
+        window.dispatchEvent(new CustomEvent('heir-queue-complete', {
+          detail: { leadId: finishedLeadId },
+        }))
+      }
       setQueue(null)
       setQueueIndex(0)
       setSelectedLead(null)
