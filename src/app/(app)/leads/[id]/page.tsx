@@ -1301,29 +1301,41 @@ export default function LeadDetailPage() {
       let dispositionTone: 'positive' | 'neutral' | 'negative' | undefined
 
       if (a.activity_type === 'call' && a.description) {
-        const descParts = a.description.split('—')
-        const statusInfo = descParts[1]?.trim()
+        const metaDuration = typeof a.metadata?.duration === 'number'
+          ? (a.metadata.duration as number)
+          : undefined
+        const metaStatus = a.metadata?.status as string | undefined
 
-        if (statusInfo) {
-          // Parse status like "no-answer (0s)" or "completed (45s)"
-          const match = statusInfo.match(/([a-z-]+)\s*\((\d+)s\)/i)
-          if (match) {
-            const [, callStatus, duration] = match
-            const durationNum = parseInt(duration, 10)
+        const fmtMMSS = (sec: number) => {
+          const m = Math.floor(sec / 60)
+          const s = sec % 60
+          return `${m}:${String(s).padStart(2, '0')}`
+        }
 
-            if (callStatus === 'completed' && durationNum > 0) {
-              const mins = Math.floor(durationNum / 60)
-              const secs = durationNum % 60
-              statusBadge = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
-            } else if (callStatus === 'no-answer') {
-              statusBadge = 'No answer'
-            } else if (callStatus === 'busy') {
-              statusBadge = 'Busy'
+        if (metaDuration && metaDuration > 0) {
+          statusBadge = fmtMMSS(metaDuration)
+        } else if (metaStatus === 'no-answer') {
+          statusBadge = 'No answer'
+        } else if (metaStatus === 'busy') {
+          statusBadge = 'Busy'
+        } else {
+          // Fallback: parse from description tail ("— 1526s" or "— completed (45s)")
+          const tail = a.description.split('—')[1]?.trim()
+          if (tail) {
+            const m1 = tail.match(/^(\d+)s$/)
+            const m2 = tail.match(/([a-z-]+)\s*\((\d+)s\)/i)
+            if (m1) {
+              statusBadge = fmtMMSS(parseInt(m1[1], 10))
+            } else if (m2) {
+              const [, callStatus, duration] = m2
+              const n = parseInt(duration, 10)
+              if (callStatus === 'completed' && n > 0) statusBadge = fmtMMSS(n)
+              else if (callStatus === 'no-answer') statusBadge = 'No answer'
+              else if (callStatus === 'busy') statusBadge = 'Busy'
+              else statusBadge = callStatus
             } else {
-              statusBadge = callStatus
+              statusBadge = tail
             }
-          } else {
-            statusBadge = statusInfo
           }
         }
 
