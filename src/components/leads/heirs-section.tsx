@@ -104,6 +104,19 @@ export function HeirsSection({
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(defaultExpanded)
 
+  // Currently-dialing prospect_phone_id — populated from the telephony bar's
+  // heir-queue-state event. The matching heir row auto-expands; the rest stay
+  // collapsed until the user clicks one.
+  const [activePhoneId, setActivePhoneId] = useState<string | null>(null)
+  useEffect(() => {
+    function onState(e: Event) {
+      const detail = (e as CustomEvent).detail as { queueItem?: { prospect_phone_id?: string } | null }
+      setActivePhoneId(detail?.queueItem?.prospect_phone_id ?? null)
+    }
+    window.addEventListener('heir-queue-state', onState)
+    return () => window.removeEventListener('heir-queue-state', onState)
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -289,6 +302,7 @@ export function HeirsSection({
               key={heir.key}
               heir={heir}
               alt={idx % 2 === 1}
+              isActive={Boolean(activePhoneId && heir.phones.some((p) => p.id === activePhoneId))}
               onCallPhone={(phone) => queueOne(heir, phone)}
               onCallHeir={() => queueHeir(heir)}
               onSmsPhone={onSmsPhone ? (phone) => onSmsPhone({
@@ -330,12 +344,14 @@ export function HeirsSection({
 function HeirRow({
   heir,
   alt,
+  isActive,
   onCallPhone,
   onCallHeir,
   onSmsPhone,
 }: {
   heir: Heir
   alt: boolean
+  isActive: boolean
   onCallPhone: (phone: HeirPhone) => void
   onCallHeir: () => void
   onSmsPhone?: (phone: HeirPhone) => void
@@ -347,7 +363,17 @@ function HeirRow({
   // Only render the confirmed phone in that case.
   const visiblePhones = confirmed ? [confirmed] : heir.phones
 
-  const statusDotColor = confirmed
+  // Auto-expand the heir currently being called. Otherwise collapse — Ernest
+  // only wants one heir's details in view at a time. User can manually
+  // override by clicking the row header; that override resets whenever the
+  // active heir changes so attention follows the live call.
+  const [userToggled, setUserToggled] = useState(false)
+  useEffect(() => { setUserToggled(false) }, [isActive])
+  const expanded = isActive ? !userToggled : userToggled
+
+  const statusDotColor = isActive
+    ? 'bg-emerald-400 animate-pulse'
+    : confirmed
     ? 'bg-emerald-400'
     : heir.phones.length === 0
     ? 'bg-[var(--ck-text-dim)]'
@@ -359,10 +385,19 @@ function HeirRow({
 
   return (
     <div
-      className={`${rowBg} border ${confirmed ? 'border-emerald-500/40' : 'border-[var(--ck-border)]'} rounded-xl p-4 hover:border-[var(--ck-border-strong)] transition-colors`}
+      className={`${rowBg} border ${
+        isActive
+          ? 'border-emerald-500/60 ring-1 ring-emerald-500/20'
+          : confirmed
+          ? 'border-emerald-500/40'
+          : 'border-[var(--ck-border)]'
+      } rounded-xl ${expanded ? 'p-4' : 'px-4 py-2.5'} hover:border-[var(--ck-border-strong)] transition-colors`}
     >
-      {/* Name row — per-heir Call button in the corner */}
-      <div className="flex items-center justify-between gap-3 mb-2">
+      {/* Name row — clickable to expand/collapse, per-heir Call in the corner */}
+      <div
+        className={`flex items-center justify-between gap-3 ${expanded ? 'mb-2' : ''} cursor-pointer select-none`}
+        onClick={() => setUserToggled((v) => !v)}
+      >
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotColor}`} aria-hidden />
           <span className="text-sm font-bold text-[var(--ck-text)] truncate">
@@ -375,26 +410,34 @@ function HeirRow({
 
         {/* Corner action: confirmed badge takes priority; otherwise show
             per-heir "Call" button when there's something left to call. */}
-        {confirmed ? (
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 whitespace-nowrap flex items-center gap-1 shrink-0">
-            <Icon name="check_circle" size="text-sm" /> Confirmed
-          </span>
-        ) : heir.unattempted_count > 0 ? (
-          <button
-            onClick={onCallHeir}
-            className="shrink-0 bg-[#E32E2E] hover:bg-[#C42626] text-white px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors"
-            title={`Queue ${heir.unattempted_count} ${heir.unattempted_count === 1 ? 'phone' : 'phones'} for this heir`}
-          >
-            <Icon name="call" size="text-xs" />
-            Call ({heir.unattempted_count})
-          </button>
-        ) : allAttempted ? (
-          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 whitespace-nowrap flex items-center gap-1 shrink-0">
-            <Icon name="history" size="text-xs" /> All tried
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2 shrink-0">
+          {confirmed ? (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 whitespace-nowrap flex items-center gap-1">
+              <Icon name="check_circle" size="text-sm" /> Confirmed
+            </span>
+          ) : heir.unattempted_count > 0 ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onCallHeir() }}
+              className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors"
+              title={`Queue ${heir.unattempted_count} ${heir.unattempted_count === 1 ? 'phone' : 'phones'} for this heir`}
+            >
+              <Icon name="call" size="text-xs" />
+              Call ({heir.unattempted_count})
+            </button>
+          ) : allAttempted ? (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 whitespace-nowrap flex items-center gap-1">
+              <Icon name="history" size="text-xs" /> All tried
+            </span>
+          ) : null}
+          <Icon
+            name={expanded ? 'expand_less' : 'expand_more'}
+            className="!text-lg text-[var(--ck-text-dim)]"
+          />
+        </div>
       </div>
 
+      {/* Collapsible body — only rendered when expanded */}
+      {expanded && <>
       {/* Heir address row — only when present */}
       {heir.address && (
         <div className="flex items-center gap-2 mb-3 pl-4">
@@ -423,6 +466,7 @@ function HeirRow({
           </p>
         )}
       </div>
+      </>}
     </div>
   )
 }
