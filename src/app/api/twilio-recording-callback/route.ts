@@ -204,6 +204,11 @@ async function processRecording(
           sentiment: analysis.sentiment,
           rapportLevel: analysis.rapportLevel,
           verbatimQuotes: analysis.verbatimQuotes,
+          // Feed the Pain Points component: pull from keyLeverage + emotionalDrivers
+          painPoints: [
+            ...(analysis.keyLeverage || []),
+            ...(analysis.emotionalDrivers || []),
+          ].filter(Boolean),
         } : null,
       })
 
@@ -239,6 +244,78 @@ async function processRecording(
         }
         if (analysis.coOwners?.length) {
           manifest.owner.coOwners = analysis.coOwners
+        }
+
+        // ── Structured situation fields consumed by SellerGoals, PainPoints,
+        //    FavoriteOrFool. These were missing, so those UI cards never
+        //    reflected a new conversation even when transcription succeeded.
+        if (!manifest.situation) manifest.situation = {}
+        if (!manifest.situation.motivation) manifest.situation.motivation = {}
+        if (!manifest.situation.timeline) manifest.situation.timeline = {}
+        if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
+
+        if (analysis.urgency) manifest.situation.motivation.urgencyLevel = analysis.urgency
+        if (analysis.motivationScore) manifest.situation.motivation.score = analysis.motivationScore
+        if (analysis.motivationSignals?.length) {
+          const existing: string[] = manifest.situation.motivation.signals || []
+          for (const s of analysis.motivationSignals) {
+            if (!existing.includes(s)) existing.push(s)
+          }
+          manifest.situation.motivation.signals = existing
+        }
+        if (analysis.emotionalDrivers?.length) {
+          manifest.situation.motivation.emotionalDrivers = analysis.emotionalDrivers
+          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+          if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
+          manifest.ariIntelligence.sellerProfile.emotionalDrivers = analysis.emotionalDrivers
+        }
+
+        if (analysis.targetCloseDate) manifest.situation.timeline.preferredClosing = analysis.targetCloseDate
+        if (analysis.hardDeadline !== undefined) manifest.situation.timeline.hardDeadline = analysis.hardDeadline
+        if (analysis.deadlineReason) manifest.situation.timeline.deadlineReason = analysis.deadlineReason
+        if (analysis.urgency) {
+          manifest.situation.timeline.flexibility =
+            analysis.urgency === 'critical' || analysis.urgency === 'high' ? 'tight' :
+            analysis.urgency === 'medium' ? 'moderate' : 'flexible'
+        }
+
+        if (analysis.sellerAsking != null) manifest.situation.priceExpectations.sellerAsking = analysis.sellerAsking
+        if (analysis.sellerFloor != null) manifest.situation.priceExpectations.sellerFloor = analysis.sellerFloor
+        if (analysis.priceFlexibility) manifest.situation.priceExpectations.flexibility = analysis.priceFlexibility
+        if (analysis.priceAnchor) manifest.situation.priceExpectations.anchor = analysis.priceAnchor
+
+        if (!manifest.property) manifest.property = {}
+        if (!manifest.property.condition) manifest.property.condition = {}
+        if (analysis.conditionOverall) manifest.property.condition.overall = analysis.conditionOverall
+        if (analysis.repairsNotes) manifest.property.condition.repairsNotes = analysis.repairsNotes
+        if (analysis.vacant === true) manifest.property.vacant = true
+
+        if (analysis.situationType?.length) {
+          if (!manifest.situation.type) manifest.situation.type = []
+          for (const t of analysis.situationType) {
+            if (!manifest.situation.type.includes(t)) manifest.situation.type.push(t)
+          }
+        }
+        if (analysis.blockers?.length) {
+          if (!manifest.situation.blockers) manifest.situation.blockers = []
+          for (const b of analysis.blockers) {
+            if (!manifest.situation.blockers.includes(b)) manifest.situation.blockers.push(b)
+          }
+        }
+
+        if (analysis.dealConfidenceScore != null) {
+          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+          if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
+          manifest.ariIntelligence.dealIntelligence.confidenceScore = analysis.dealConfidenceScore
+        }
+        if (analysis.followUpAction) {
+          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+          if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
+          manifest.ariIntelligence.recommendedActions.unshift({
+            action: analysis.followUpAction,
+            reason: 'transcript_analysis',
+            when: analysis.followUpDateTime || null,
+          })
         }
       }
 
