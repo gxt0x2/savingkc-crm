@@ -11,14 +11,18 @@ import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 
 export type DispositionType =
+  | 'answered'
   | 'no_answer'
   | 'left_vm'
-  | 'callback_requested'
+  | 'bad_number'
+  | 'busy'
+  | 'dnc'
+  // legacy values still emitted by older code paths / present in existing rows
   | 'spoke_with_owner'
+  | 'callback_requested'
   | 'not_interested'
   | 'wrong_number'
   | 'disconnected'
-  | 'dnc'
   | 'deal_potential'
   | 'appointment_set'
   | 'offer_made'
@@ -39,10 +43,10 @@ const DISPOSITIONS: Array<{
   color: string
 }> = [
   {
-    type: 'spoke_with_owner',
-    label: 'Spoke with Owner',
+    type: 'answered',
+    label: 'Answered',
     icon: 'check_circle',
-    color: 'bg-primary/10 text-primary',
+    color: 'bg-emerald-50 text-emerald-600',
   },
   {
     type: 'no_answer',
@@ -54,42 +58,18 @@ const DISPOSITIONS: Array<{
     type: 'left_vm',
     label: 'Left Voicemail',
     icon: 'voicemail',
-    color: 'bg-primary/10 text-primary',
+    color: 'bg-slate-100 text-slate-600',
   },
   {
-    type: 'callback_requested',
-    label: 'Callback Requested',
-    icon: 'phone_in_talk',
-    color: 'bg-primary/10 text-primary',
-  },
-  {
-    type: 'deal_potential',
-    label: 'Deal Potential',
-    icon: 'star',
-    color: 'bg-amber-50 text-amber-600',
-  },
-  {
-    type: 'appointment_set',
-    label: 'Appointment Set',
-    icon: 'event',
-    color: 'bg-emerald-50 text-emerald-600',
-  },
-  {
-    type: 'not_interested',
-    label: 'Not Interested',
-    icon: 'cancel',
-    color: 'bg-slate-100 text-slate-500',
-  },
-  {
-    type: 'wrong_number',
-    label: 'Wrong Number',
+    type: 'bad_number',
+    label: 'Bad Number',
     icon: 'error',
     color: 'bg-red-50 text-red-500',
   },
   {
-    type: 'disconnected',
-    label: 'Disconnected',
-    icon: 'phone_disabled',
+    type: 'busy',
+    label: 'Busy',
+    icon: 'phone_paused',
     color: 'bg-slate-100 text-slate-500',
   },
   {

@@ -14,6 +14,8 @@ interface FeedItem {
   content?: string
   timestamp: string
   statusBadge?: string
+  dispositionLabel?: string
+  dispositionTone?: 'positive' | 'neutral' | 'negative'
   link?: string
   linkLabel?: string
   recordingUrl?: string
@@ -331,6 +333,17 @@ export function ActivityFeed({ activities, onCompose, onEditNote, onEditTask }: 
                     >
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-semibold text-on-surface leading-snug">{activity.title}</span>
+                        {activity.dispositionLabel && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                            activity.dispositionTone === 'negative'
+                              ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                              : activity.dispositionTone === 'positive'
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                          }`}>
+                            {activity.dispositionLabel}
+                          </span>
+                        )}
                         {activity.statusBadge && (
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                             activity.statusBadge === 'No answer' || activity.statusBadge === 'Busy'
