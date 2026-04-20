@@ -67,7 +67,13 @@ export async function analyzeCallTranscript(
     ? transcript.slice(0, maxChars) + '\n... [transcript truncated]'
     : transcript
 
+  const today = new Date()
+  const todayISO = today.toISOString().slice(0, 10)
+  const todayReadable = `${today.toLocaleDateString('en-US', { weekday: 'short' })} ${today.toLocaleDateString('en-US', { month: 'long' })} ${today.getDate()}`
+
   const prompt = `You are an expert real estate wholesaling call analyst for Saving KC Homebuyers in Kansas City. Analyze this seller call transcript and extract structured intelligence.
+
+TODAY'S DATE: ${todayReadable} (${todayISO}). Convert every relative date reference in the call ("couple weeks", "end of the month", "Monday", "after the holidays") into a concrete YYYY-MM-DD date using today as the anchor. In prose fields (aiSummary, followUpAction, repairsNotes), write dates in the format "Wed April 30th" — short weekday + full month + day with ordinal suffix. Structured date fields (targetCloseDate, followUpDateTime) MUST be ISO 8601. Never output "end of the month" or "around the 28th" as a date — convert them.
 
 TRANSCRIPT:
 ${truncatedTranscript}

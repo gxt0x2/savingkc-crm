@@ -61,6 +61,19 @@ function parseSmart(iso: string): { date: Date; dateOnly: boolean } {
   return { date: new Date(iso), dateOnly: false }
 }
 
+function ordinalSuffix(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+// Passage format Ernest wants: "Wed April 30th" — short weekday, full month, day+ordinal
+function formatPassageDate(d: Date): string {
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' })
+  const month = d.toLocaleDateString('en-US', { month: 'long' })
+  return `${weekday} ${month} ${ordinalSuffix(d.getDate())}`
+}
+
 function formatDateLabel(iso: string | null): string | null {
   if (!iso) return null
   const { date: d } = parseSmart(iso)
@@ -73,8 +86,7 @@ function formatDateLabel(iso: string | null): string | null {
   if (diffDays === -1) return 'Yesterday'
   if (diffDays > 0 && diffDays <= 6) return d.toLocaleDateString('en-US', { weekday: 'long' })
   if (diffDays < 0 && diffDays >= -6) return `${Math.abs(diffDays)}d ago`
-  // Full, readable format: "Wednesday, April 29" — no cramped abbreviations
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  return formatPassageDate(d)
 }
 
 function formatTimeLabel(iso: string | null, dateOnlyHint?: boolean): string | null {
@@ -135,8 +147,17 @@ export function NextAction(props: NextActionProps) {
     return `${leadId}:${count}:${latestId}`
   }, [leadId, props.activities])
 
+  const [refreshTick, setRefreshTick] = useState(0)
+  useEffect(() => {
+    function bump() { setRefreshTick((t) => t + 1) }
+    window.addEventListener('crm:lead-refresh', bump)
+    return () => window.removeEventListener('crm:lead-refresh', bump)
+  }, [])
+
   useEffect(() => {
     if (!leadId) return
+    // Refetch on every crm:lead-refresh by invalidating the cached key
+    if (refreshTick > 0) lastFetchKey.current = ''
     if (lastFetchKey.current === fetchKey) return
     lastFetchKey.current = fetchKey
     let cancelled = false
@@ -168,7 +189,7 @@ export function NextAction(props: NextActionProps) {
     run()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchKey, leadId])
+  }, [fetchKey, leadId, refreshTick])
 
   async function handleRefresh() {
     lastFetchKey.current = '' // force

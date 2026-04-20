@@ -38,13 +38,20 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
   const [expanded, setExpanded] = useState(false)
   const [generatedAt, setGeneratedAt] = useState<string | null>(null)
   const [open, toggleOpen] = useCardCollapse('ari-briefing')
+  const [refreshTick, setRefreshTick] = useState(0)
 
-  // Only re-generate when manifestId or leadId changes (not on every activities change)
+  useEffect(() => {
+    function bump() { setRefreshTick((t) => t + 1) }
+    window.addEventListener('crm:lead-refresh', bump)
+    return () => window.removeEventListener('crm:lead-refresh', bump)
+  }, [])
+
+  // Re-generate when manifestId or leadId changes OR the lead page broadcasts a refresh
   useEffect(() => {
     const controller = new AbortController()
     buildBriefing(controller.signal)
     return () => controller.abort()
-  }, [leadId, manifestId])
+  }, [leadId, manifestId, refreshTick])
 
   function sanitizeBriefing(data: any): BriefingData | null {
     if (!data) return null

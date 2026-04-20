@@ -910,7 +910,12 @@ export default function LeadDetailPage() {
   const [refreshTick, setRefreshTick] = useState(0)
 
   // Call this after any user action that changes data (note, call, edit, email, etc.)
-  function refreshAll() { setRefreshTick(t => t + 1) }
+  function refreshAll() {
+    setRefreshTick(t => t + 1)
+    // Fan out to every sub-card (AriBriefing, PainPoints, SellerGoals, NextAction, FavoriteOrFool, etc.)
+    // so they all re-read manifest/activities in one go.
+    window.dispatchEvent(new CustomEvent('crm:lead-refresh', { detail: { leadId: id } }))
+  }
 
   // Listen for disposition logged events from the telephony bar
   useEffect(() => {
