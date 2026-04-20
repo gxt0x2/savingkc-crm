@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { NavTabs } from './nav-tab'
 import { CommandPalette } from './command-palette'
 import { DialerPanel, CallStatus } from '@/components/telephony/telephony-bar'
@@ -112,11 +113,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Icon name="menu" size="text-xl" />
             </button>
 
-            {/* Brand */}
-            <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="Saving KC" className="h-9 w-auto" />
-
-            </div>
+            {/* Brand — inline text lockup (PNG logo doesn't invert cleanly for dark) */}
+            <Link href="/ari" className="flex items-center gap-2.5 group" aria-label="Saving KC home">
+              <span className="w-8 h-8 rounded-lg bg-[#E32E2E] flex items-center justify-center flex-shrink-0 shadow-sm shadow-[#E32E2E]/30 group-hover:bg-[#C42626] transition-colors">
+                <Icon name="home_work" size="text-lg" className="text-white" />
+              </span>
+              <div className="flex flex-col leading-none">
+                <span className="text-white font-black text-[13px] tracking-tight">SAVING KC</span>
+                <span className="text-[9px] font-bold tracking-[0.2em] text-[var(--ck-text-muted)] uppercase mt-0.5">Homebuyers</span>
+              </div>
+            </Link>
 
             {/* Nav Tabs — desktop only */}
             <div className="hidden md:block">
@@ -141,19 +147,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setShowDialer(!showDialer)}
-                className="relative p-2 text-white bg-emerald-500 hover:bg-emerald-600 rounded-full transition-colors shadow-sm"
+                className="relative ck-icon-btn"
                 aria-label="Open dialer"
+                title="Open dialer"
               >
-                <Icon name="call" size="text-lg" />
-                <span className={`absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                <Icon name="call" size="text-base" className="text-[#E32E2E]" />
+                <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
                   dialerStatus === 'ready' || dialerStatus === 'on_call' ? 'bg-emerald-400' :
-                  dialerStatus === 'connecting' || dialerStatus === 'calling' ? 'bg-yellow-400' :
-                  dialerStatus === 'incoming' ? 'bg-orange-400' :
-                  'bg-slate-400'
+                  dialerStatus === 'connecting' || dialerStatus === 'calling' ? 'bg-amber-400' :
+                  dialerStatus === 'incoming' ? 'bg-amber-400 animate-pulse' :
+                  'bg-[var(--ck-border-strong)]'
                 }`} />
               </button>
-              <button className="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
-                <Icon name="notifications" />
+              <button className="ck-icon-btn" aria-label="Notifications" title="Notifications">
+                <Icon name="notifications" className="text-[var(--ck-text-muted)]" />
               </button>
 {/* gear icon removed — settings now in profile menu only */}
               <div className="relative" ref={profileMenuRef}>

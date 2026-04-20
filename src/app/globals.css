@@ -322,6 +322,37 @@ body {
  * still applies. For the few cases that use opacity utility separately we
  * don't need to touch anything. */
 
+/* Hover-state neutrals — without these, hover:bg-slate-200 and friends flash
+ * back to light colors because Tailwind generates `.hover\:bg-slate-200:hover`
+ * selectors that our base overrides don't match. */
+.ck-dark .hover\:bg-white:hover,
+.ck-dark .hover\:bg-gray-50:hover,
+.ck-dark .hover\:bg-slate-50:hover {
+  background-color: var(--ck-surface-elev) !important;
+}
+.ck-dark .hover\:bg-gray-100:hover,
+.ck-dark .hover\:bg-slate-100:hover,
+.ck-dark .hover\:bg-gray-200:hover,
+.ck-dark .hover\:bg-slate-200:hover {
+  background-color: var(--ck-surface-hi) !important;
+}
+.ck-dark .hover\:bg-gray-300:hover,
+.ck-dark .hover\:bg-slate-300:hover {
+  background-color: var(--ck-border-strong) !important;
+}
+.ck-dark .hover\:border-gray-300:hover,
+.ck-dark .hover\:border-gray-400:hover,
+.ck-dark .hover\:border-slate-300:hover,
+.ck-dark .hover\:border-slate-400:hover {
+  border-color: var(--ck-border-strong) !important;
+}
+.ck-dark .hover\:text-slate-900:hover,
+.ck-dark .hover\:text-gray-900:hover,
+.ck-dark .hover\:text-slate-700:hover,
+.ck-dark .hover\:text-gray-700:hover {
+  color: var(--ck-text) !important;
+}
+
 /* Subtle attention cue — soft pulse on accent border + shadow */
 @keyframes ck-attention-pulse {
   0%, 100% {
