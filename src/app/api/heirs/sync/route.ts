@@ -76,7 +76,15 @@ export async function POST(req: Request) {
       name: string
       relationship?: string
       phones?: Array<{ number: string; type?: string; is_connected?: boolean }>
+      addresses?: Array<string | { street?: string; city?: string; state?: string; zip?: string }>
     }> = Array.isArray(result?.relatives) ? result.relatives : []
+
+    function firstAddress(addrs: typeof relatives[number]['addresses']): string | null {
+      if (!addrs || addrs.length === 0) return null
+      const a = addrs[0]
+      if (typeof a === 'string') return a
+      return [a.street, a.city, a.state, a.zip].filter(Boolean).join(', ') || null
+    }
 
     // Upsert each (prospect_id, phone) — phone is the natural dedupe key since
     // prospect_phones has no unique constraint by default; we delete stale
@@ -87,16 +95,18 @@ export async function POST(req: Request) {
       .eq('prospect_id', prospect.id)
       .neq('relationship', 'owner')
 
-    const rows = relatives.flatMap((r) =>
-      (r.phones ?? []).map((ph) => ({
+    const rows = relatives.flatMap((r) => {
+      const address = firstAddress(r.addresses)
+      return (r.phones ?? []).map((ph) => ({
         prospect_id: prospect.id,
         phone: ph.number,
         phone_type: ph.type ?? null,
         phone_connected: ph.is_connected == null ? null : ph.is_connected ? 'connected' : 'disconnected',
         contact_name: r.name,
         relationship: (r.relationship ?? 'relative').toLowerCase(),
-      })),
-    )
+        contact_address: address,
+      }))
+    })
 
     if (rows.length > 0) {
       const { error: insErr } = await supabase.from('prospect_phones').insert(rows)

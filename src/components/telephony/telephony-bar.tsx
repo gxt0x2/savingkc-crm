@@ -152,6 +152,19 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     }
   }, [open, pendingDial])
 
+  // Broadcast queue state so the /dialer page (or any other surface) can
+  // render its own "Now calling" indicator without importing the bar.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('heir-queue-state', {
+      detail: {
+        queueItem,
+        queueIndex,
+        queueLength: queue?.length ?? 0,
+        status,
+      },
+    }))
+  }, [queueItem, queueIndex, queue, status])
+
   // Handle pendingQueue from HeirsSection — open heir-dialer queue mode.
   useEffect(() => {
     if (open && pendingQueue && pendingQueue.length > 0) {

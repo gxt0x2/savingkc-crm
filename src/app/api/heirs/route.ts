@@ -39,7 +39,7 @@ export async function GET(req: Request) {
   // useful, but heir rows only include non-owner relationships.
   const { data: phones, error: phErr } = await supabase
     .from('prospect_phones')
-    .select('id, prospect_id, phone, phone_type, phone_connected, contact_name, relationship, attempted, last_disposition, last_attempt_at, created_at')
+    .select('id, prospect_id, phone, phone_type, phone_connected, contact_name, relationship, contact_address, attempted, last_disposition, last_attempt_at, created_at')
     .in('prospect_id', prospectIds)
     .order('created_at', { ascending: true })
 
@@ -58,6 +58,7 @@ export async function GET(req: Request) {
     key: string
     contact_name: string
     relationship: string
+    address: string | null
     phones: PhoneRow[]
   }>()
 
@@ -68,8 +69,9 @@ export async function GET(req: Request) {
     const existing = groups.get(key)
     if (existing) {
       existing.phones.push(p)
+      if (!existing.address && p.contact_address) existing.address = p.contact_address
     } else {
-      groups.set(key, { key, contact_name: name, relationship: relation, phones: [p] })
+      groups.set(key, { key, contact_name: name, relationship: relation, address: p.contact_address ?? null, phones: [p] })
     }
   })
 
@@ -79,6 +81,7 @@ export async function GET(req: Request) {
       key: g.key,
       contact_name: g.contact_name,
       relationship: g.relationship,
+      address: g.address,
       unattempted_count: g.phones.filter((p) => !p.attempted).length,
       phones: g.phones.map((p) => ({
         id: p.id,

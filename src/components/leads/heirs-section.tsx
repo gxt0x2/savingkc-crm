@@ -31,6 +31,7 @@ export interface Heir {
   key: string
   contact_name: string
   relationship: string
+  address: string | null
   unattempted_count: number
   phones: HeirPhone[]
 }
@@ -41,6 +42,8 @@ interface HeirsSectionProps {
   propertyAddress: string
   defaultExpanded?: boolean
   collapsible?: boolean
+  /** When provided, a chat-bubble button appears next to each phone and calls this with (heirName, phone). */
+  onSmsPhone?: (args: { heirName: string; relation: string; phone: string }) => void
 }
 
 function dispatchHeirQueue(queue: HeirDialerQueueItem[]) {
@@ -92,6 +95,7 @@ export function HeirsSection({
   propertyAddress,
   defaultExpanded = false,
   collapsible = true,
+  onSmsPhone,
 }: HeirsSectionProps) {
   const [heirs, setHeirs] = useState<Heir[]>([])
   const [loading, setLoading] = useState(true)
@@ -287,6 +291,11 @@ export function HeirsSection({
               alt={idx % 2 === 1}
               onCallPhone={(phone) => queueOne(heir, phone)}
               onCallHeir={() => queueHeir(heir)}
+              onSmsPhone={onSmsPhone ? (phone) => onSmsPhone({
+                heirName: toProperCase(heir.contact_name),
+                relation: heir.relationship,
+                phone: phone.number,
+              }) : undefined}
             />
           ))}
         </div>
@@ -323,11 +332,13 @@ function HeirRow({
   alt,
   onCallPhone,
   onCallHeir,
+  onSmsPhone,
 }: {
   heir: Heir
   alt: boolean
   onCallPhone: (phone: HeirPhone) => void
   onCallHeir: () => void
+  onSmsPhone?: (phone: HeirPhone) => void
 }) {
   const confirmed = confirmedPhoneOf(heir)
   const allAttempted = heir.unattempted_count === 0 && heir.phones.length > 0
@@ -351,7 +362,7 @@ function HeirRow({
       className={`${rowBg} border ${confirmed ? 'border-emerald-500/40' : 'border-[var(--ck-border)]'} rounded-xl p-4 hover:border-[var(--ck-border-strong)] transition-colors`}
     >
       {/* Name row — per-heir Call button in the corner */}
-      <div className="flex items-center justify-between gap-3 mb-3">
+      <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotColor}`} aria-hidden />
           <span className="text-sm font-bold text-[var(--ck-text)] truncate">
@@ -384,6 +395,18 @@ function HeirRow({
         ) : null}
       </div>
 
+      {/* Heir address row */}
+      {heir.address ? (
+        <div className="flex items-center gap-2 mb-3 pl-4">
+          <Icon name="location_on" size="text-xs" className="text-[var(--ck-text-dim)] shrink-0" />
+          <span className="text-[11px] text-[var(--ck-text-muted)] truncate">{heir.address}</span>
+        </div>
+      ) : (
+        <div className="mb-3 pl-4 text-[10px] text-[var(--ck-text-dim)] italic">
+          No address on file · populates on next re-sync
+        </div>
+      )}
+
       {/* Phone pills */}
       <div className="space-y-1.5">
         {heir.phones.length === 0 && (
@@ -395,6 +418,7 @@ function HeirRow({
             phone={phone}
             confirmed={confirmed?.id === phone.id}
             onCall={() => onCallPhone(phone)}
+            onSms={onSmsPhone ? () => onSmsPhone(phone) : undefined}
           />
         ))}
         {confirmed && heir.phones.length > 1 && (
@@ -411,10 +435,12 @@ function PhonePill({
   phone,
   confirmed,
   onCall,
+  onSms,
 }: {
   phone: HeirPhone
   confirmed: boolean
   onCall: () => void
+  onSms?: () => void
 }) {
   const icon = phoneIcon(phone.type)
   const typeLabel = (phone.type ?? 'phone').toLowerCase()
@@ -466,6 +492,16 @@ function PhonePill({
 
       <div className="flex-1" />
 
+      {onSms && (
+        <button
+          onClick={onSms}
+          className="shrink-0 w-8 h-8 rounded-lg bg-[var(--ck-surface-elev)] hover:bg-[var(--ck-surface-hi)] border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] flex items-center justify-center transition-colors"
+          title="Send SMS to this number"
+          aria-label="Send SMS"
+        >
+          <Icon name="chat" size="text-sm" />
+        </button>
+      )}
       <button
         onClick={onCall}
         disabled={phone.attempted && !confirmed}
