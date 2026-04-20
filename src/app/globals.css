@@ -233,6 +233,95 @@ body {
   background: #3a3a3a;
 }
 
+/* ─── Sitewide Lead Cockpit palette overrides ───────────────────────────────
+ * The <body> carries `ck-dark` in production (see src/app/layout.tsx), so
+ * these rules rewire light-mode Tailwind utility classes to their dark-mode
+ * equivalents using the same --ck-* tokens the Lead Detail page uses. This
+ * lets existing Tailwind markup keep working without rewriting every class.
+ * Rules intentionally target NEUTRAL colors only — brand red (#E32E2E),
+ * emerald, amber, violet, blue, and other semantic accent colors pass
+ * through unchanged so status signals keep their meaning.
+ */
+
+/* Neutral page/card backgrounds → surface tokens */
+.ck-dark .bg-white,
+.ck-dark .bg-gray-50,
+.ck-dark .bg-slate-50 {
+  background-color: var(--ck-surface) !important;
+}
+.ck-dark .bg-gray-100,
+.ck-dark .bg-slate-100 {
+  background-color: var(--ck-surface-elev) !important;
+}
+.ck-dark .bg-gray-200,
+.ck-dark .bg-slate-200 {
+  background-color: var(--ck-surface-hi) !important;
+}
+
+/* Darker grays → keep a lifted surface but not pitch black */
+.ck-dark .bg-gray-300,
+.ck-dark .bg-slate-300 {
+  background-color: var(--ck-border-strong) !important;
+}
+
+/* Reserved pure-black button backgrounds (SMS secondary, etc) → elevated surface so
+ * they stand apart from cards but still look "second-tier" vs the brand-red primary. */
+.ck-dark .bg-black {
+  background-color: var(--ck-surface-hi) !important;
+}
+.ck-dark .hover\:bg-gray-800:hover,
+.ck-dark .hover\:bg-slate-800:hover {
+  background-color: var(--ck-border-strong) !important;
+}
+
+/* Neutral text → light tokens, tiered by weight */
+.ck-dark .text-black,
+.ck-dark .text-slate-900,
+.ck-dark .text-gray-900,
+.ck-dark .text-slate-800,
+.ck-dark .text-gray-800 {
+  color: var(--ck-text) !important;
+}
+.ck-dark .text-slate-700,
+.ck-dark .text-gray-700,
+.ck-dark .text-slate-600,
+.ck-dark .text-gray-600 {
+  color: var(--ck-text) !important;
+}
+.ck-dark .text-slate-500,
+.ck-dark .text-gray-500,
+.ck-dark .text-slate-400,
+.ck-dark .text-gray-400 {
+  color: var(--ck-text-muted) !important;
+}
+.ck-dark .text-slate-300,
+.ck-dark .text-gray-300,
+.ck-dark .text-slate-200,
+.ck-dark .text-gray-200 {
+  color: var(--ck-text-dim) !important;
+}
+
+/* Neutral borders → ck-border token (subtle, brand-dark) */
+.ck-dark .border-slate-100,
+.ck-dark .border-slate-200,
+.ck-dark .border-slate-300,
+.ck-dark .border-gray-100,
+.ck-dark .border-gray-200,
+.ck-dark .border-gray-300 {
+  border-color: var(--ck-border) !important;
+}
+.ck-dark .divide-slate-50 > :not([hidden]) ~ :not([hidden]),
+.ck-dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.ck-dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--ck-border) !important;
+}
+
+/* Tailwind opacity-suffixed neutrals (e.g. bg-slate-50/50, bg-gray-50/80) keep
+ * working via the base override since Tailwind emits the alpha via
+ * background-color with an rgba — the base override wins because !important
+ * still applies. For the few cases that use opacity utility separately we
+ * don't need to touch anything. */
+
 /* Subtle attention cue — soft pulse on accent border + shadow */
 @keyframes ck-attention-pulse {
   0%, 100% {

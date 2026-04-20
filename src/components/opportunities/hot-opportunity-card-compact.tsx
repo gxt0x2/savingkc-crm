@@ -13,11 +13,13 @@ function dollars(amount?: number | null): string {
 
 export function HotOpportunityCardCompact({
   opp,
+  index = 0,
   onCall,
   onSms,
   onEmail,
 }: {
   opp: HotOpportunityData
+  index?: number
   onCall?: (phone: string, leadId: string) => void
   onSms?: (leadId: string, phone?: string) => void
   onEmail?: (email?: string) => void
@@ -43,11 +45,17 @@ export function HotOpportunityCardCompact({
     ? 'bg-gray-800 text-white'
     : 'bg-gray-400 text-white'
 
+  // Alternating surface elevation so adjacent cards read as distinct without
+  // introducing arbitrary color variants. Even indices sit on --ck-surface,
+  // odd indices lift to --ck-surface-elev. Both are brand-dark; the contrast
+  // is deliberate but quiet.
+  const surfaceClass = index % 2 === 0 ? 'ck-card' : 'ck-card-elev'
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-lg hover:border-gray-300 transition-all group"
+      className={`${surfaceClass} overflow-hidden shadow-sm hover:shadow-lg transition-all group`}
     >
       {/* Drag handle indicator */}
       <div
