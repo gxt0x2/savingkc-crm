@@ -46,6 +46,12 @@ export default function LeadsPage() {
   const [filterTemp, setFilterTemp] = useState<string[]>([])
   const [filterSource, setFilterSource] = useState<string[]>([])
 
+  // Cohort preset: deceased owners in 2-3 year tax-delinquent properties.
+  // Stored as a Set of lead_ids (server-joined) so the client filter can
+  // intersect cheaply. null = filter off.
+  const [deceasedLeadIds, setDeceasedLeadIds] = useState<Set<string> | null>(null)
+  const [deceasedCount, setDeceasedCount] = useState<number | null>(null)
+
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [stationDropdownOpen, setStationDropdownOpen] = useState(false)
@@ -83,7 +89,7 @@ export default function LeadsPage() {
   // Clear selection when filters change
   useEffect(() => {
     setSelectedIds(new Set())
-  }, [search, filterStage, filterTemp, filterSource])
+  }, [search, filterStage, filterTemp, filterSource, deceasedLeadIds])
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -120,6 +126,8 @@ export default function LeadsPage() {
       }
       // Source filter
       if (filterSource.length > 0 && !filterSource.includes(l.source || '')) return false
+      // Deceased 2-3yr cohort
+      if (deceasedLeadIds && !deceasedLeadIds.has(l.id)) return false
       return true
     })
 
@@ -174,7 +182,7 @@ export default function LeadsPage() {
     })
 
     return result
-  }, [leads, search, sortKey, sortDir, filterStage, filterTemp, filterSource])
+  }, [leads, search, sortKey, sortDir, filterStage, filterTemp, filterSource, deceasedLeadIds])
 
   // Bulk selection helpers
   const pageIds = processed.map(l => l.id)
@@ -362,10 +370,35 @@ export default function LeadsPage() {
     return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
   }
 
-  const hasActiveFilters = filterStage.length > 0 || filterTemp.length > 0 || filterSource.length > 0
+  const hasActiveFilters =
+    filterStage.length > 0 ||
+    filterTemp.length > 0 ||
+    filterSource.length > 0 ||
+    deceasedLeadIds !== null
 
   function toggleFilter(arr: string[], setArr: (v: string[]) => void, val: string) {
     setArr(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
+  }
+
+  async function toggleDeceasedCohort() {
+    if (deceasedLeadIds !== null) {
+      setDeceasedLeadIds(null)
+      return
+    }
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('prospects')
+      .select('lead_id')
+      .eq('is_deceased', true)
+      .in('delinquent_years_category', ['2yr', '3yr_plus'])
+      .not('lead_id', 'is', null)
+    if (error) {
+      console.error('[deceased-filter]', error)
+      return
+    }
+    const ids = new Set<string>((data ?? []).map((r: { lead_id: string | null }) => r.lead_id).filter(Boolean) as string[])
+    setDeceasedLeadIds(ids)
+    setDeceasedCount(ids.size)
   }
 
   return (
@@ -410,6 +443,23 @@ export default function LeadsPage() {
 
           {/* Filter Dropdowns */}
           <div className="flex gap-2 flex-wrap">
+            {/* Deceased · 2-3yr delinquent cohort preset */}
+            <button
+              onClick={toggleDeceasedCohort}
+              className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium transition-all ${
+                deceasedLeadIds !== null
+                  ? 'bg-[#E32E2E] border-[#E32E2E] text-white'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+              title="Deceased owners in 2-3 year tax-delinquent properties"
+            >
+              <Icon name="diversity_3" size="text-sm" />
+              Deceased · 2-3yr
+              {deceasedLeadIds !== null && deceasedCount != null && (
+                <span className="text-[10px] font-black opacity-90">({deceasedCount})</span>
+              )}
+            </button>
+
             {/* Stage Filter */}
             <div className="relative group">
               <button className={`flex items-center gap-1 px-3 py-2 border rounded-lg text-sm font-medium transition-all ${
@@ -492,6 +542,14 @@ export default function LeadsPage() {
         {/* Active Filter Chips */}
         {hasActiveFilters && (
           <div className="flex gap-2 flex-wrap items-center">
+            {deceasedLeadIds !== null && (
+              <span className="flex items-center gap-1 px-2 py-1 bg-[#E32E2E]/10 text-[#E32E2E] text-xs font-bold rounded-full">
+                Deceased · 2-3yr{deceasedCount != null && ` (${deceasedCount})`}
+                <button onClick={() => setDeceasedLeadIds(null)} className="hover:text-red-700">
+                  <Icon name="close" size="text-xs" />
+                </button>
+              </span>
+            )}
             {filterStage.map(s => (
               <span key={`stage-${s}`} className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary text-xs font-bold rounded-full">
                 {s.replace(/_/g, ' ')}
@@ -517,7 +575,7 @@ export default function LeadsPage() {
               </span>
             ))}
             <button
-              onClick={() => { setFilterStage([]); setFilterTemp([]); setFilterSource([]) }}
+              onClick={() => { setFilterStage([]); setFilterTemp([]); setFilterSource([]); setDeceasedLeadIds(null) }}
               className="text-xs font-bold text-red-500 hover:underline"
             >
               Clear all

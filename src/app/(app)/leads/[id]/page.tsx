@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { AriBriefing } from '@/components/leads/ari-briefing'
 import { PainPoints } from '@/components/leads/pain-points'
+import { HeirsSection } from '@/components/leads/heirs-section'
 import { FavoriteOrFool } from '@/components/leads/favorite-or-fool'
 import { PropertyHero } from '@/components/leads/property-hero'
 import { ActivityFeed } from '@/components/leads/activity-feed'
@@ -866,6 +867,7 @@ export default function LeadDetailPage() {
   const [manifestRowId, setManifestRowId] = useState<string | null>(null)
   const [manifestFinancials, setManifestFinancials] = useState<Record<string, number | null>>({ back_taxes: null, liens_amount: null, mortgage_balance: null })
   const [manifestProperty, setManifestProperty] = useState<Record<string, any> | null>(null)
+  const [ownerDeceased, setOwnerDeceased] = useState<boolean>(false)
   const [zestimate, setZestimate] = useState<number | null>(null)
   const [assessedValue, setAssessedValue] = useState<number | null>(null)
   const [redfinEstimate, setRedfinEstimate] = useState<number | null>(null)
@@ -952,6 +954,8 @@ export default function LeadDetailPage() {
           })
           // Store property object for PropertyDetailsCard manifest fallback
           setManifestProperty(data.manifest.manifest?.property || null)
+          // Track deceased flag for the heirs section
+          setOwnerDeceased(Boolean(data.manifest.manifest?.owner?.deceased))
           // Two independent values: live Zillow zestimate and county/tax assessed value.
           const m = data.manifest.manifest || {}
           const property = m.property || {}
@@ -1595,6 +1599,16 @@ export default function LeadDetailPage() {
           <SortableColumn
             storageKey={`crm_col_right_v2_${id}`}
             items={[
+              ...(ownerDeceased ? [{
+                id: 'heirs',
+                node: (
+                  <HeirsSection
+                    leadId={lead.id}
+                    deceasedOwnerName={formattedName || lead.full_name || 'Deceased owner'}
+                    propertyAddress={lead.property_address || ''}
+                  />
+                ),
+              }] : []),
               {
                 id: 'favorite-or-fool',
                 node: (

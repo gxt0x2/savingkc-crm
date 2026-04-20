@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { NavTabs } from './nav-tab'
 import { CommandPalette } from './command-palette'
-import { DialerPanel, CallStatus } from '@/components/telephony/telephony-bar'
+import { DialerPanel, CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 
@@ -37,17 +37,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Listen for open-dialer custom events (from ARI page click-to-call)
   const [pendingDialLead, setPendingDialLead] = useState<{ phone: string; name: string; leadId: string } | null>(null)
+  const [pendingQueue, setPendingQueue] = useState<HeirQueueItem[] | null>(null)
 
   useEffect(() => {
     function handleOpenDialer(e: Event) {
       const detail = (e as CustomEvent).detail
       if (detail?.phone) {
         setPendingDialLead({ phone: detail.phone, name: detail.name || '', leadId: detail.leadId || '' })
+        setPendingQueue(null)
+        setShowDialer(true)
+      }
+    }
+    function handleOpenDialerQueue(e: Event) {
+      const detail = (e as CustomEvent).detail
+      if (Array.isArray(detail?.queue) && detail.queue.length > 0) {
+        setPendingQueue(detail.queue)
+        setPendingDialLead(null)
         setShowDialer(true)
       }
     }
     window.addEventListener('open-dialer', handleOpenDialer)
-    return () => window.removeEventListener('open-dialer', handleOpenDialer)
+    window.addEventListener('open-dialer-queue', handleOpenDialerQueue)
+    return () => {
+      window.removeEventListener('open-dialer', handleOpenDialer)
+      window.removeEventListener('open-dialer-queue', handleOpenDialerQueue)
+    }
   }, [])
 
   useEffect(() => {
@@ -276,9 +290,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Dialer Panel — Twilio softphone */}
       <DialerPanel
         open={showDialer}
-        onClose={() => { setShowDialer(false); setPendingDialLead(null) }}
+        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null) }}
         onStatusChange={setDialerStatus}
         pendingDial={pendingDialLead}
+        pendingQueue={pendingQueue}
       />
 
       {/* ⌘K Command Palette — global search */}

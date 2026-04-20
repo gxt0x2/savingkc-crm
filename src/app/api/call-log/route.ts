@@ -9,49 +9,66 @@ import { onCommunicationEvent } from '@/lib/manifest-sync'
 // Log outbound calls from the telephony bar
 export async function POST(req: Request) {
   try {
-    const { phone, event, duration, agent } = await req.json()
+    const body = await req.json()
+    const { phone, event, duration, agent, lead_id, heir_name, heir_relation, prospect_phone_id } = body
 
     if (!phone) {
       return NextResponse.json({ error: 'phone required' }, { status: 400 })
     }
 
-    // Match phone to lead
     const cleanPhone = phone.replace(/[^\d+]/g, '')
-    const { data: lead } = await supabase
-      .from('leads')
-      .select('id, full_name')
-      .eq('phone', cleanPhone)
-      .limit(1)
-      .single()
 
-    const leadId = lead?.id || null
-    const leadName = lead?.full_name || phone
+    // Prefer an explicit lead_id from the caller (set by the dialer for queue
+    // mode so heir calls are attributed to the property lead, not the heir).
+    let leadId: string | null = lead_id ?? null
+    let leadName: string = phone
+
+    if (leadId) {
+      const { data: leadRow } = await supabase
+        .from('leads').select('full_name').eq('id', leadId).limit(1).single()
+      leadName = leadRow?.full_name || phone
+    } else {
+      const { data: lead } = await supabase
+        .from('leads').select('id, full_name').eq('phone', cleanPhone).limit(1).single()
+      leadId = lead?.id || null
+      leadName = lead?.full_name || phone
+    }
+
+    // When dialing a relative, the activity row reads "Call to <heir> (daughter)"
+    // so the property timeline is legible. Without heir context we keep the
+    // original "Outbound call to <lead>" wording.
+    const isHeirCall = Boolean(heir_name)
+    const heirLabel = isHeirCall ? `${heir_name} (${heir_relation || 'relative'})` : null
 
     if (event === 'started') {
       await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'call',
-        description: `Outbound call to ${leadName}`,
+        description: isHeirCall ? `Outbound call to ${heirLabel}` : `Outbound call to ${leadName}`,
         agent: agent || 'System',
         metadata: {
           direction: 'outbound',
           to: cleanPhone,
           status: 'initiated',
-          source: 'telephony_bar',
+          source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
+          ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id }),
         }
       })
     } else if (event === 'ended') {
       await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'call',
-        description: `Outbound call to ${leadName} — ${duration || 0}s`,
+        description: isHeirCall
+          ? `Outbound call to ${heirLabel} — ${duration || 0}s`
+          : `Outbound call to ${leadName} — ${duration || 0}s`,
         agent: agent || 'System',
         metadata: {
           direction: 'outbound',
           to: cleanPhone,
           status: 'completed',
           duration: duration || 0,
-          source: 'telephony_bar',
+          source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
+          ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id }),
         }
       })
     }
