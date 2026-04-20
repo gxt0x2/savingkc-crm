@@ -114,19 +114,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Icon name="menu" size="text-xl" />
             </button>
 
-            {/* Brand — the actual /logo.png asset, with a CSS filter that re-themes
-                only the dark pixels.
-                  invert(1) flips every channel (black→white, red→cyan, white→black)
-                  hue-rotate(180deg) then swaps the color wheel back around, so red
-                  returns to red; black/white grays (no hue) are unaffected.
-                Net result: SAVING + KC letters flip black→white, the red house and
-                HOMEBUYERS tagline stay red. Zero asset edits needed. */}
+            {/* Brand — real /logo.png with a pixel-exact SVG color-matrix filter.
+                CSS `hue-rotate(180)` can't cleanly recover red (the filter matrix
+                produces pink); an SVG feColorMatrix can. This one maps:
+                  R' = -0.5G - 0.5B + 1    // black(0,0,0)→1; red(1,0,0)→1; white(1,1,1)→0
+                  G' = -R + 1              // red(1,0,0)→0; white→0; black→1
+                  B' = -R + 1              // same
+                Net: black text flips to white, red stays red (brand color preserved),
+                white background flips to black and disappears into the header, and
+                anti-aliased mid-gray edges map to themselves so letters don't halo. */}
+            <svg width="0" height="0" aria-hidden="true" className="absolute">
+              <filter id="logo-dark-theme" colorInterpolationFilters="sRGB">
+                <feColorMatrix
+                  type="matrix"
+                  values="
+                    0   -0.5  -0.5  0  1
+                    -1   0     0    0  1
+                    -1   0     0    0  1
+                    0    0     0    1  0
+                  "
+                />
+              </filter>
+            </svg>
             <Link href="/ari" className="flex items-center flex-shrink-0" aria-label="Saving KC Homebuyers">
               <img
                 src="/logo.png"
                 alt="Saving KC Homebuyers"
                 className="h-10 w-auto"
-                style={{ filter: 'invert(1) hue-rotate(180deg)' }}
+                style={{ filter: 'url(#logo-dark-theme)' }}
               />
             </Link>
           </div>
