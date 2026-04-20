@@ -53,6 +53,24 @@ function phoneIcon(type: string | null): string {
   return 'phone'
 }
 
+// Dispositions that confirm this IS the relative's number — i.e., you actually
+// reached the person. Left VM / no answer / disconnected don't count since
+// the right number could still be a different one. Once one phone on a heir
+// lands a confirmed disposition, the others are irrelevant.
+const CONFIRMED_DISPOSITIONS = new Set([
+  'spoke_with_owner',
+  'callback_requested',
+  'appointment_set',
+  'deal_potential',
+  'offer_made',
+  'not_interested',
+  'dnc',
+])
+
+function confirmedPhoneOf(heir: Heir): HeirPhone | null {
+  return heir.phones.find((p) => p.last_disposition && CONFIRMED_DISPOSITIONS.has(p.last_disposition)) ?? null
+}
+
 function dispositionLabel(d: string | null): string {
   if (!d) return ''
   return d.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -129,26 +147,38 @@ export function HeirsSection({
 
   const totalHeirs = heirs.length
   const totalPhones = heirs.reduce((n, h) => n + h.phones.length, 0)
-  const unattemptedPhones = heirs.reduce((n, h) => n + h.unattempted_count, 0)
+  // Only count unattempted phones that are actually worth calling — heirs
+  // whose correct number is already confirmed are excluded from the queue.
+  const unattemptedPhones = heirs.reduce(
+    (n, h) => n + (confirmedPhoneOf(h) ? 0 : h.unattempted_count),
+    0,
+  )
+  const confirmedHeirs = heirs.filter((h) => confirmedPhoneOf(h)).length
+
+  function buildQueueForHeir(h: Heir): HeirDialerQueueItem[] {
+    // Skip entirely if this heir is already confirmed — the remaining numbers
+    // are not worth dialing, the right one is known.
+    if (confirmedPhoneOf(h)) return []
+    return h.phones
+      .filter((p) => !p.attempted)
+      .map((p) => ({
+        prospect_phone_id: p.id,
+        phone: p.number,
+        heirName: toProperCase(h.contact_name),
+        relation: h.relationship,
+        leadId,
+        propertyAddress,
+        deceasedOwnerName,
+      }))
+  }
 
   function queueAll() {
-    const queue: HeirDialerQueueItem[] = []
-    heirs.forEach((h) => {
-      h.phones
-        .filter((p) => !p.attempted)
-        .forEach((p) => {
-          queue.push({
-            prospect_phone_id: p.id,
-            phone: p.number,
-            heirName: toProperCase(h.contact_name),
-            relation: h.relationship,
-            leadId,
-            propertyAddress,
-            deceasedOwnerName,
-          })
-        })
-    })
+    const queue: HeirDialerQueueItem[] = heirs.flatMap(buildQueueForHeir)
     dispatchHeirQueue(queue)
+  }
+
+  function queueHeir(heir: Heir) {
+    dispatchHeirQueue(buildQueueForHeir(heir))
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
@@ -250,6 +280,7 @@ export function HeirsSection({
               heir={heir}
               alt={idx % 2 === 1}
               onCallPhone={(phone) => queueOne(heir, phone)}
+              onCallHeir={() => queueHeir(heir)}
             />
           ))}
         </div>
@@ -260,7 +291,9 @@ export function HeirsSection({
         <div className="mt-5 pt-4 border-t border-[var(--ck-border)] flex items-center justify-between">
           <p className="text-[10px] text-[var(--ck-text-dim)]">
             {unattemptedPhones === 0
-              ? 'All heir phones attempted. Re-sync if new data is expected.'
+              ? confirmedHeirs > 0
+                ? `${confirmedHeirs} of ${totalHeirs} heir${totalHeirs === 1 ? '' : 's'} confirmed. Re-sync if new data is expected.`
+                : 'All heir phones attempted. Re-sync if new data is expected.'
               : `${unattemptedPhones} unattempted · auto-advances through queue.`}
           </p>
           <button
@@ -283,25 +316,35 @@ function HeirRow({
   heir,
   alt,
   onCallPhone,
+  onCallHeir,
 }: {
   heir: Heir
   alt: boolean
   onCallPhone: (phone: HeirPhone) => void
+  onCallHeir: () => void
 }) {
+  const confirmed = confirmedPhoneOf(heir)
   const allAttempted = heir.unattempted_count === 0 && heir.phones.length > 0
-  const statusDotColor = heir.phones.length === 0
+
+  // Once a phone is confirmed as the right one, the siblings are dead weight.
+  // Only render the confirmed phone in that case.
+  const visiblePhones = confirmed ? [confirmed] : heir.phones
+
+  const statusDotColor = confirmed
+    ? 'bg-emerald-400'
+    : heir.phones.length === 0
     ? 'bg-[var(--ck-text-dim)]'
     : allAttempted
-    ? 'bg-emerald-400'
+    ? 'bg-amber-400'
     : 'bg-[#E32E2E]'
 
   const rowBg = alt ? 'bg-[var(--ck-surface-elev)]' : 'bg-[var(--ck-surface)]'
 
   return (
     <div
-      className={`${rowBg} border border-[var(--ck-border)] rounded-xl p-4 hover:border-[var(--ck-border-strong)] transition-colors`}
+      className={`${rowBg} border ${confirmed ? 'border-emerald-500/40' : 'border-[var(--ck-border)]'} rounded-xl p-4 hover:border-[var(--ck-border-strong)] transition-colors`}
     >
-      {/* Name row */}
+      {/* Name row — per-heir Call button in the corner */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotColor}`} aria-hidden />
@@ -312,11 +355,27 @@ function HeirRow({
             · {heir.relationship}
           </span>
         </div>
-        {allAttempted && (
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 whitespace-nowrap flex items-center gap-1">
-            <Icon name="check_circle" size="text-xs" /> All tried
+
+        {/* Corner action: confirmed badge takes priority; otherwise show
+            per-heir "Call" button when there's something left to call. */}
+        {confirmed ? (
+          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 whitespace-nowrap flex items-center gap-1 shrink-0">
+            <Icon name="check_circle" size="text-sm" /> Confirmed
           </span>
-        )}
+        ) : heir.unattempted_count > 0 ? (
+          <button
+            onClick={onCallHeir}
+            className="shrink-0 bg-[#E32E2E] hover:bg-[#C42626] text-white px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors"
+            title={`Queue ${heir.unattempted_count} ${heir.unattempted_count === 1 ? 'phone' : 'phones'} for this heir`}
+          >
+            <Icon name="call" size="text-xs" />
+            Call ({heir.unattempted_count})
+          </button>
+        ) : allAttempted ? (
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 whitespace-nowrap flex items-center gap-1 shrink-0">
+            <Icon name="history" size="text-xs" /> All tried
+          </span>
+        ) : null}
       </div>
 
       {/* Phone pills */}
@@ -324,27 +383,59 @@ function HeirRow({
         {heir.phones.length === 0 && (
           <p className="text-[11px] text-[var(--ck-text-dim)] italic">No phones on file.</p>
         )}
-        {heir.phones.map((phone) => (
-          <PhonePill key={phone.id} phone={phone} onCall={() => onCallPhone(phone)} />
+        {visiblePhones.map((phone) => (
+          <PhonePill
+            key={phone.id}
+            phone={phone}
+            confirmed={confirmed?.id === phone.id}
+            onCall={() => onCallPhone(phone)}
+          />
         ))}
+        {confirmed && heir.phones.length > 1 && (
+          <p className="text-[10px] text-[var(--ck-text-dim)] italic pl-2 pt-1">
+            {heir.phones.length - 1} other {heir.phones.length - 1 === 1 ? 'number' : 'numbers'} hidden — this is the confirmed line.
+          </p>
+        )}
       </div>
     </div>
   )
 }
 
-function PhonePill({ phone, onCall }: { phone: HeirPhone; onCall: () => void }) {
+function PhonePill({
+  phone,
+  confirmed,
+  onCall,
+}: {
+  phone: HeirPhone
+  confirmed: boolean
+  onCall: () => void
+}) {
   const icon = phoneIcon(phone.type)
   const typeLabel = (phone.type ?? 'phone').toLowerCase()
 
   return (
-    <div className="flex items-center gap-3 py-1.5 pr-1.5 pl-2 rounded-lg hover:bg-[var(--ck-surface-hi)] transition-colors group">
-      <Icon
-        name={icon}
-        size="text-sm"
-        className={phone.attempted ? 'text-[var(--ck-text-dim)]' : 'text-[var(--ck-text)]'}
-      />
+    <div
+      className={`flex items-center gap-3 py-1.5 pr-1.5 pl-2 rounded-lg transition-colors group ${
+        confirmed ? 'bg-emerald-500/10 ring-1 ring-emerald-500/30' : 'hover:bg-[var(--ck-surface-hi)]'
+      }`}
+    >
+      {confirmed ? (
+        <Icon name="check_circle" size="text-base" className="text-emerald-400" filled />
+      ) : (
+        <Icon
+          name={icon}
+          size="text-sm"
+          className={phone.attempted ? 'text-[var(--ck-text-dim)]' : 'text-[var(--ck-text)]'}
+        />
+      )}
       <span
-        className={`font-mono text-sm tabular-nums ${phone.attempted ? 'text-[var(--ck-text-muted)]' : 'text-[var(--ck-text)] font-bold'}`}
+        className={`font-mono text-sm tabular-nums ${
+          confirmed
+            ? 'text-emerald-300 font-bold'
+            : phone.attempted
+            ? 'text-[var(--ck-text-muted)]'
+            : 'text-[var(--ck-text)] font-bold'
+        }`}
       >
         {formatPhone(phone.number) || phone.number}
       </span>
@@ -353,11 +444,16 @@ function PhonePill({ phone, onCall }: { phone: HeirPhone; onCall: () => void }) 
       </span>
 
       {phone.attempted && (
-        <span className="text-[11px] text-[var(--ck-text-muted)] truncate flex items-center gap-1.5 ml-1">
-          <Icon name="check_circle" size="text-xs" className="text-emerald-400" />
+        <span
+          className={`text-[11px] truncate flex items-center gap-1.5 ml-1 ${
+            confirmed ? 'text-emerald-300 font-bold' : 'text-[var(--ck-text-muted)]'
+          }`}
+        >
           {dispositionLabel(phone.last_disposition)}
           {phone.last_attempt_at && (
-            <span className="text-[var(--ck-text-dim)]">· {daysAgo(phone.last_attempt_at)}</span>
+            <span className={confirmed ? 'text-emerald-400/70' : 'text-[var(--ck-text-dim)]'}>
+              · {daysAgo(phone.last_attempt_at)}
+            </span>
           )}
         </span>
       )}
@@ -366,9 +462,19 @@ function PhonePill({ phone, onCall }: { phone: HeirPhone; onCall: () => void }) 
 
       <button
         onClick={onCall}
-        disabled={phone.attempted}
-        className="shrink-0 w-8 h-8 rounded-lg bg-[#E32E2E] hover:bg-[#C42626] disabled:bg-[var(--ck-border-strong)] disabled:text-[var(--ck-text-dim)] text-white flex items-center justify-center transition-colors"
-        title={phone.attempted ? 'Already attempted — redial from dialer if needed' : 'Call this number'}
+        disabled={phone.attempted && !confirmed}
+        className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-white ${
+          confirmed
+            ? 'bg-emerald-500 hover:bg-emerald-600'
+            : 'bg-[#E32E2E] hover:bg-[#C42626] disabled:bg-[var(--ck-border-strong)] disabled:text-[var(--ck-text-dim)]'
+        }`}
+        title={
+          confirmed
+            ? 'Redial the confirmed number'
+            : phone.attempted
+            ? 'Already attempted — redial from dialer if needed'
+            : 'Call this number'
+        }
         aria-label="Call this number"
       >
         <Icon name="call" size="text-sm" />
