@@ -10,7 +10,7 @@ import type { BuyerOffer } from '@/types/dispo'
 // ---------------------------------------------------------------------------
 function statusBadge(status: BuyerOffer['status']) {
   const map: Record<BuyerOffer['status'], string> = {
-    submitted: 'bg-blue-500/20 text-blue-300',
+    submitted: 'bg-sky-500/20 text-sky-300',
     reviewing: 'bg-amber-500/20 text-amber-300',
     countered: 'bg-purple-500/20 text-purple-300',
     accepted: 'bg-emerald-500/20 text-emerald-300',

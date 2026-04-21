@@ -10,7 +10,7 @@ import type { DispoDeal, DispoStage } from '@/types/dispo'
 // ---------------------------------------------------------------------------
 const STAGES: { key: DispoStage | 'all'; label: string; icon: string; color: string }[] = [
   { key: 'all', label: 'All', icon: 'view_list', color: 'bg-slate-600' },
-  { key: 'new', label: 'New', icon: 'fiber_new', color: 'bg-blue-600' },
+  { key: 'new', label: 'New', icon: 'fiber_new', color: 'bg-cyan-600' },
   { key: 'marketing', label: 'Marketing', icon: 'campaign', color: 'bg-violet-600' },
   { key: 'offers_in', label: 'Offers In', icon: 'local_offer', color: 'bg-amber-600' },
   { key: 'negotiating', label: 'Negotiating', icon: 'handshake', color: 'bg-orange-600' },
@@ -25,7 +25,7 @@ function stageConfig(stage: DispoStage) {
 
 function stageBadgeClass(stage: DispoStage): string {
   const map: Record<DispoStage, string> = {
-    new: 'bg-blue-500/20 text-blue-400',
+    new: 'bg-cyan-500/20 text-cyan-400',
     marketing: 'bg-violet-500/20 text-violet-400',
     offers_in: 'bg-amber-500/20 text-amber-400',
     negotiating: 'bg-orange-500/20 text-orange-400',
@@ -106,7 +106,7 @@ function AddDealModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-[var(--ck-bg-card)] border border-white/10 rounded-xl shadow-2xl w-full max-w-lg mx-4">
+      <div className="bg-[#141414] border border-white/10 rounded-xl shadow-2xl w-full max-w-lg mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
           <h2 className="text-lg font-bold text-white">Add Deal to Pipeline</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-lg text-[var(--ck-text-muted)]">
@@ -202,11 +202,11 @@ function DealDetail({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
       <div
-        className="w-full max-w-md bg-[var(--ck-bg-card)] border-l border-white/10 h-full overflow-y-auto shadow-2xl"
+        className="w-full max-w-md bg-[#141414] border-l border-white/10 h-full overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 sticky top-0 bg-[var(--ck-bg-card)] z-10">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 sticky top-0 bg-[#141414] z-10">
           <div>
             <h2 className="text-lg font-bold text-white">{addr}</h2>
             <p className="text-xs text-[var(--ck-text-muted)]">
@@ -523,7 +523,7 @@ export default function PipelinePage() {
           </p>
         </div>
       ) : (
-        <div className="bg-[var(--ck-bg-card)] rounded-xl border border-white/10 shadow-sm overflow-hidden">
+        <div className="bg-[#141414] rounded-xl border border-white/10 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

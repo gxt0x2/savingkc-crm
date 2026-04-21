@@ -12,7 +12,7 @@ import type { DealBroadcast, BroadcastRecipient } from '@/types/dispo'
 function statusBadge(status: DealBroadcast['status']) {
   const map: Record<DealBroadcast['status'], string> = {
     draft: 'bg-slate-500/20 text-slate-300',
-    scheduled: 'bg-blue-500/20 text-blue-300',
+    scheduled: 'bg-sky-500/20 text-sky-300',
     sending: 'bg-amber-500/20 text-amber-300',
     sent: 'bg-emerald-500/20 text-emerald-300',
     cancelled: 'bg-red-500/20 text-red-300',
@@ -43,13 +43,13 @@ function RecipientRow({ recipient }: { recipient: BroadcastRecipient }) {
 
   function smsBadge() {
     if (recipient.sms_replied) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">Replied</span>
-    if (recipient.sms_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/20 text-blue-300">Sent</span>
+    if (recipient.sms_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/20 text-sky-300">Sent</span>
     return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">Not sent</span>
   }
 
   function emailBadge() {
     if (recipient.email_clicked_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">Clicked</span>
-    if (recipient.email_opened_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/20 text-blue-300">Opened</span>
+    if (recipient.email_opened_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/20 text-sky-300">Opened</span>
     if (recipient.email_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">Sent</span>
     return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">—</span>
   }

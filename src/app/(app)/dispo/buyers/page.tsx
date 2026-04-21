@@ -33,7 +33,7 @@ function formatBuyBox(bb: BuyBox): string {
 function tierBadge(tier: string) {
   const map: Record<string, string> = {
     VIP: 'bg-amber-500/20 text-amber-300',
-    Standard: 'bg-blue-500/20 text-blue-300',
+    Standard: 'bg-sky-500/20 text-sky-300',
     New: 'bg-slate-500/20 text-slate-300',
   }
   return map[tier] ?? 'bg-slate-100 text-slate-600'

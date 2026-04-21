@@ -52,7 +52,7 @@ const CATEGORIES: { value: VendorCategory | 'all'; label: string; icon: string }
 
 const CATEGORY_COLORS: Record<VendorCategory, string> = {
   contractor: 'bg-orange-500/20 text-orange-300',
-  escrow:     'bg-blue-500/20 text-blue-300',
+  escrow:     'bg-sky-500/20 text-sky-300',
   title:      'bg-purple-500/20 text-purple-300',
   cleanout:   'bg-teal-500/20 text-teal-300',
   dumpster:   'bg-amber-500/20 text-amber-300',
