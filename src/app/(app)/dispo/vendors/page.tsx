@@ -51,15 +51,15 @@ const CATEGORIES: { value: VendorCategory | 'all'; label: string; icon: string }
 ]
 
 const CATEGORY_COLORS: Record<VendorCategory, string> = {
-  contractor: 'bg-orange-100 text-orange-700',
-  escrow:     'bg-blue-100 text-blue-700',
-  title:      'bg-purple-100 text-purple-700',
-  cleanout:   'bg-teal-100 text-teal-700',
-  dumpster:   'bg-yellow-100 text-yellow-700',
-  inspector:  'bg-cyan-100 text-cyan-700',
-  appraiser:  'bg-indigo-100 text-indigo-700',
-  attorney:   'bg-rose-100 text-rose-700',
-  other:      'bg-slate-100 text-slate-600',
+  contractor: 'bg-orange-500/20 text-orange-300',
+  escrow:     'bg-blue-500/20 text-blue-300',
+  title:      'bg-purple-500/20 text-purple-300',
+  cleanout:   'bg-teal-500/20 text-teal-300',
+  dumpster:   'bg-amber-500/20 text-amber-300',
+  inspector:  'bg-cyan-500/20 text-cyan-300',
+  appraiser:  'bg-indigo-500/20 text-indigo-300',
+  attorney:   'bg-rose-500/20 text-rose-300',
+  other:      'bg-slate-500/20 text-slate-300',
 }
 
 // ---------------------------------------------------------------------------
@@ -706,7 +706,7 @@ export default function VendorsPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-[var(--ck-text)]">{v.name}</span>
                         {v.is_preferred && (
-                          <span className="inline-flex items-center gap-0.5 bg-yellow-100 text-yellow-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-0.5 bg-amber-500/20 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                             <Icon name="star" size="text-[10px]" />
                             Preferred
                           </span>

@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ deals: data ?? [], total: count ?? 0 })
+    return NextResponse.json({ pages: data ?? [], total: count ?? 0 })
   } catch (err) {
     console.error('[deals GET] Unexpected error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
@@ -68,59 +68,40 @@ export async function POST(req: NextRequest) {
     // Generate 8-char random slug (lowercase alphanumeric)
     const slug = crypto.randomBytes(6).toString('base64url').toLowerCase().slice(0, 8)
 
-    // Build property details from lead
-    const property_details = {
-      property_address: lead.property_address,
-      city: lead.city,
-      state: lead.state,
-      zip: lead.zip,
-      county: lead.county,
-      property_type: lead.property_type,
-      beds: lead.beds,
-      baths_full: lead.baths_full,
-      sqft: lead.sqft,
-      arv: lead.arv,
-      asking_price: lead.offer_amount,
-      lot_size: lead.lot_size,
-      year_built: lead.year_built,
-    }
-
     const defaultTitle = lead.property_address
       ? `Investment Opportunity - ${lead.property_address}`
       : 'Investment Opportunity'
 
+    const row = {
+      lead_id,
+      slug,
+      title: title || defaultTitle,
+      description: description || null,
+      photos: photos || [],
+      is_active: true,
+      view_count: 0,
+      unique_visitors: 0,
+      show_address: body.show_address ?? true,
+      show_arv: body.show_arv ?? true,
+      show_asking_price: body.show_asking_price ?? true,
+      show_assignment_fee: body.show_assignment_fee ?? false,
+      accept_offers: body.accept_offers ?? true,
+      requires_registration: body.requires_registration ?? false,
+    }
+
     const { data: dealPage, error: insertError } = await db
       .from('deal_pages')
-      .insert({
-        lead_id,
-        slug,
-        title: title || defaultTitle,
-        description: description || null,
-        photos: photos || [],
-        property_details,
-        status: 'active',
-        view_count: 0,
-      })
+      .insert(row)
       .select()
       .single()
 
     if (insertError) {
       // Handle slug collision (extremely unlikely with 8 random chars)
       if (insertError.code === '23505' && insertError.message?.includes('slug')) {
-        // Retry once with new slug
         const retrySlug = crypto.randomBytes(6).toString('base64url').toLowerCase().slice(0, 8)
         const { data: retryPage, error: retryError } = await db
           .from('deal_pages')
-          .insert({
-            lead_id,
-            slug: retrySlug,
-            title: title || defaultTitle,
-            description: description || null,
-            photos: photos || [],
-            property_details,
-            status: 'active',
-            view_count: 0,
-          })
+          .insert({ ...row, slug: retrySlug })
           .select()
           .single()
 

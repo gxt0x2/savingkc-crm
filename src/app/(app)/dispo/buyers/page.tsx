@@ -32,9 +32,9 @@ function formatBuyBox(bb: BuyBox): string {
 
 function tierBadge(tier: string) {
   const map: Record<string, string> = {
-    VIP: 'bg-yellow-100 text-yellow-700',
-    Standard: 'bg-blue-100 text-blue-700',
-    New: 'bg-slate-100 text-slate-600',
+    VIP: 'bg-amber-500/20 text-amber-300',
+    Standard: 'bg-blue-500/20 text-blue-300',
+    New: 'bg-slate-500/20 text-slate-300',
   }
   return map[tier] ?? 'bg-slate-100 text-slate-600'
 }
@@ -378,10 +378,10 @@ function ImportBuyerModal({ onClose }: { onClose: () => void }) {
                 <p className="text-sm text-green-700">{result.imported} imported, {result.skipped} skipped</p>
               </div>
               {result.errors.length > 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 max-h-40 overflow-y-auto">
-                  <p className="text-xs font-semibold text-yellow-800 mb-1">Errors ({result.errors.length})</p>
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 max-h-40 overflow-y-auto">
+                  <p className="text-xs font-semibold text-amber-300 mb-1">Errors ({result.errors.length})</p>
                   {result.errors.map((err, i) => (
-                    <p key={i} className="text-xs text-yellow-700">{err}</p>
+                    <p key={i} className="text-xs text-amber-400">{err}</p>
                   ))}
                 </div>
               )}

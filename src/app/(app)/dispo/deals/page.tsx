@@ -188,7 +188,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
                     onClick={() => set(!val)}
                     className={cn(
                       'relative w-9 h-5 rounded-full transition-colors cursor-pointer',
-                      val ? 'bg-primary' : 'bg-slate-200'
+                      val ? 'bg-[#E32E2E]' : 'bg-slate-200'
                     )}
                   >
                     <span className={cn(
@@ -287,10 +287,10 @@ function DealPageCard({ page, onToggle, onCopied }: {
         {/* Tags */}
         <div className="flex flex-wrap gap-1 mb-4">
           {page.accept_offers && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">Accepts Offers</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#E32E2E]/20 text-[#f87171]">Accepts Offers</span>
           )}
           {page.requires_registration && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700">Reg Required</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300">Reg Required</span>
           )}
           {page.show_arv && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">ARV Shown</span>

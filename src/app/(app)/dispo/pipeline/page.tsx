@@ -283,7 +283,7 @@ function DealDetail({
                 href={`/deals/${deal.deal_page.slug}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-blue-400 hover:text-blue-300 underline"
+                className="text-sm text-[#f87171] hover:text-[#fca5a5] underline"
               >
                 crm.savingkc.com/deals/{deal.deal_page.slug}
               </a>

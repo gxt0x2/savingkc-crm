@@ -11,11 +11,11 @@ import type { DealBroadcast, BroadcastRecipient } from '@/types/dispo'
 // ---------------------------------------------------------------------------
 function statusBadge(status: DealBroadcast['status']) {
   const map: Record<DealBroadcast['status'], string> = {
-    draft: 'bg-slate-100 text-slate-600',
-    scheduled: 'bg-blue-100 text-blue-700',
-    sending: 'bg-yellow-100 text-yellow-700',
-    sent: 'bg-emerald-100 text-emerald-700',
-    cancelled: 'bg-red-100 text-red-700',
+    draft: 'bg-slate-500/20 text-slate-300',
+    scheduled: 'bg-blue-500/20 text-blue-300',
+    sending: 'bg-amber-500/20 text-amber-300',
+    sent: 'bg-emerald-500/20 text-emerald-300',
+    cancelled: 'bg-red-500/20 text-red-300',
   }
   return map[status] ?? 'bg-slate-100 text-slate-600'
 }
@@ -42,16 +42,16 @@ function RecipientRow({ recipient }: { recipient: BroadcastRecipient }) {
   const name = buyer ? `${buyer.first_name} ${buyer.last_name}` : recipient.buyer_id
 
   function smsBadge() {
-    if (recipient.sms_replied) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">Replied</span>
-    if (recipient.sms_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">Sent</span>
-    return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500">Not sent</span>
+    if (recipient.sms_replied) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">Replied</span>
+    if (recipient.sms_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/20 text-blue-300">Sent</span>
+    return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">Not sent</span>
   }
 
   function emailBadge() {
-    if (recipient.email_clicked_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">Clicked</span>
-    if (recipient.email_opened_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">Opened</span>
-    if (recipient.email_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500">Sent</span>
-    return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-400">—</span>
+    if (recipient.email_clicked_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">Clicked</span>
+    if (recipient.email_opened_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/20 text-blue-300">Opened</span>
+    if (recipient.email_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">Sent</span>
+    return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">—</span>
   }
 
   return (

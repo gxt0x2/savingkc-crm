@@ -10,12 +10,12 @@ import type { BuyerOffer } from '@/types/dispo'
 // ---------------------------------------------------------------------------
 function statusBadge(status: BuyerOffer['status']) {
   const map: Record<BuyerOffer['status'], string> = {
-    submitted: 'bg-blue-100 text-blue-700',
-    reviewing: 'bg-yellow-100 text-yellow-700',
-    countered: 'bg-purple-100 text-purple-700',
-    accepted: 'bg-emerald-100 text-emerald-700',
-    rejected: 'bg-red-100 text-red-700',
-    withdrawn: 'bg-slate-100 text-slate-500',
+    submitted: 'bg-blue-500/20 text-blue-300',
+    reviewing: 'bg-amber-500/20 text-amber-300',
+    countered: 'bg-purple-500/20 text-purple-300',
+    accepted: 'bg-emerald-500/20 text-emerald-300',
+    rejected: 'bg-red-500/20 text-red-300',
+    withdrawn: 'bg-slate-500/20 text-slate-400',
   }
   return map[status] ?? 'bg-slate-100 text-slate-500'
 }
@@ -266,9 +266,9 @@ function OfferDetail({
 
           {/* Counter info */}
           {offer.counter_amount != null && (
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
-              <p className="text-xs font-bold text-purple-700 mb-1">Counter Offer: {formatCurrency(offer.counter_amount)}</p>
-              {offer.counter_notes && <p className="text-xs text-purple-600">{offer.counter_notes}</p>}
+            <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3 mb-4">
+              <p className="text-xs font-bold text-purple-300 mb-1">Counter Offer: {formatCurrency(offer.counter_amount)}</p>
+              {offer.counter_notes && <p className="text-xs text-purple-400">{offer.counter_notes}</p>}
             </div>
           )}
 
@@ -300,7 +300,7 @@ function OfferDetail({
                 {buyer.email && (
                   <a
                     href={`mailto:${buyer.email}`}
-                    className="p-2 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors"
+                    className="p-2 rounded-lg hover:bg-[#E32E2E]/10 text-slate-400 hover:text-[#f87171] transition-colors"
                   >
                     <Icon name="mail" size="text-base" />
                   </a>
