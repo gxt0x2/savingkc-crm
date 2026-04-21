@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { NavTabs } from './nav-tab'
 import { CommandPalette } from './command-palette'
+import { ModeSwitcher } from './mode-switcher'
 import { DialerPanel, CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
+import { useAppMode } from '@/hooks/use-app-mode'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -17,6 +20,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
+  const { mode, setMode } = useAppMode()
+  const router = useRouter()
 
   // Global ⌘K / Ctrl+K to open command palette
   useEffect(() => {
@@ -129,14 +134,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
 
             {/* Brand — real /logo.png with a pixel-exact SVG color-matrix filter.
-                CSS `hue-rotate(180)` can't cleanly recover red (the filter matrix
-                produces pink); an SVG feColorMatrix can. This one maps:
-                  R' = -0.5G - 0.5B + 1    // black(0,0,0)→1; red(1,0,0)→1; white(1,1,1)→0
-                  G' = -R + 1              // red(1,0,0)→0; white→0; black→1
-                  B' = -R + 1              // same
-                Net: black text flips to white, red stays red (brand color preserved),
-                white background flips to black and disappears into the header, and
-                anti-aliased mid-gray edges map to themselves so letters don't halo. */}
+                Maps black text → white, red stays red (brand), white bg disappears. */}
             <svg width="0" height="0" aria-hidden="true" className="absolute">
               <filter id="logo-dark-theme" colorInterpolationFilters="sRGB">
                 <feColorMatrix
@@ -158,6 +156,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 style={{ filter: 'url(#logo-dark-theme)' }}
               />
             </Link>
+
+            {/* Mode Switcher — desktop only */}
+            <div className="hidden md:block">
+              <ModeSwitcher
+                mode={mode}
+                onChange={(m) => {
+                  setMode(m)
+                  router.push(m === 'dispositions' ? '/dispo/buyers' : '/dashboard')
+                }}
+              />
+            </div>
           </div>
 
           {/* CENTER: nav tabs (desktop only) */}
@@ -278,6 +287,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
         <div className="p-4">
+          <div className="mb-4">
+            <ModeSwitcher
+              mode={mode}
+              onChange={(m) => {
+                setMode(m)
+                setDrawerOpen(false)
+                router.push(m === 'dispositions' ? '/dispo/buyers' : '/dashboard')
+              }}
+            />
+          </div>
           <NavTabs onNavigate={() => setDrawerOpen(false)} mobile />
         </div>
       </div>

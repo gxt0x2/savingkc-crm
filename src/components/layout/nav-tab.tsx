@@ -3,12 +3,20 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
+import { useAppMode } from '@/hooks/use-app-mode'
 
-const tabs = [
+const acquisitionTabs = [
   { label: 'ARI', href: '/ari', icon: 'assistant' },
   { label: 'Hot Opps', href: '/opportunities', icon: 'local_fire_department' },
   { label: 'KPIs', href: '/dashboard', icon: 'insights' },
   { label: 'Calendar', href: '/calendar', icon: 'calendar_today' },
+]
+
+const dispoTabs = [
+  { label: 'Buyers', href: '/dispo/buyers', icon: 'group' },
+  { label: 'Broadcasts', href: '/dispo/broadcasts', icon: 'campaign' },
+  { label: 'Deal Pages', href: '/dispo/deals', icon: 'description' },
+  { label: 'Offers', href: '/dispo/offers', icon: 'local_offer' },
 ]
 
 interface NavTabsProps {
@@ -18,6 +26,8 @@ interface NavTabsProps {
 
 export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
   const pathname = usePathname()
+  const { mode } = useAppMode()
+  const tabs = mode === 'dispositions' ? dispoTabs : acquisitionTabs
 
   function isActive(href: string): boolean {
     if (pathname === href) return true
@@ -25,6 +35,10 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
     if (href === '/opportunities' && (pathname?.startsWith('/opportunities') || pathname?.startsWith('/leads'))) return true
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
     if (href === '/calendar' && pathname?.startsWith('/calendar')) return true
+    if (href === '/dispo/buyers' && pathname?.startsWith('/dispo/buyers')) return true
+    if (href === '/dispo/broadcasts' && pathname?.startsWith('/dispo/broadcasts')) return true
+    if (href === '/dispo/deals' && pathname?.startsWith('/dispo/deals')) return true
+    if (href === '/dispo/offers' && pathname?.startsWith('/dispo/offers')) return true
     return false
   }
 

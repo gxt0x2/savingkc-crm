@@ -71,6 +71,67 @@ export const eodSchema = z.object({
   agent: z.string().max(50),
 })
 
+// Buyer creation
+export const createBuyerSchema = z.object({
+  first_name: z.string().min(1, 'First name is required').max(100),
+  last_name: z.string().min(1, 'Last name is required').max(100),
+  company_name: z.string().max(200).optional().nullable(),
+  email: z.string().email('Invalid email').optional().nullable(),
+  phone: z.string().min(10).max(20).optional().nullable(),
+  phone_2: z.string().min(10).max(20).optional().nullable(),
+  buy_box: z.object({
+    zip_codes: z.array(z.string()).optional(),
+    cities: z.array(z.string()).optional(),
+    counties: z.array(z.string()).optional(),
+    property_types: z.array(z.string()).optional(),
+    price_min: z.number().min(0).optional(),
+    price_max: z.number().min(0).optional(),
+    beds_min: z.number().min(0).optional(),
+    condition_ok: z.array(z.string()).optional(),
+    notes: z.string().max(1000).optional(),
+  }).optional(),
+  funding_type: z.enum(['cash', 'hard_money', 'private_money', 'conventional']).optional().nullable(),
+  max_purchase_price: z.number().min(0).optional().nullable(),
+  monthly_capacity: z.number().min(0).optional().nullable(),
+  avg_close_days: z.number().min(0).optional().nullable(),
+  proof_of_funds: z.boolean().optional(),
+  tier: z.enum(['vip', 'standard', 'new']).optional(),
+  notes: z.string().max(5000).optional().nullable(),
+  tags: z.array(z.string().max(50)).optional(),
+})
+
+// Buyer intake (public form)
+export const buyerIntakeSchema = z.object({
+  first_name: z.string().min(1).max(100),
+  last_name: z.string().min(1).max(100),
+  email: z.string().email(),
+  phone: z.string().min(10).max(20),
+  company_name: z.string().max(200).optional(),
+  buy_box: z.object({
+    zip_codes: z.array(z.string()).optional(),
+    cities: z.array(z.string()).optional(),
+    counties: z.array(z.string()).optional(),
+    property_types: z.array(z.string()).optional(),
+    price_min: z.number().min(0).optional(),
+    price_max: z.number().min(0).optional(),
+  }),
+  notes: z.string().max(2000).optional(),
+})
+
+// Buyer offer submission (public)
+export const buyerOfferSchema = z.object({
+  offer_amount: z.number().min(1, 'Offer amount is required'),
+  earnest_money: z.number().min(0).optional(),
+  close_days: z.number().min(1).max(365).optional(),
+  inspection_days: z.number().min(0).max(90).optional(),
+  financing_type: z.enum(['cash', 'hard_money', 'private_money', 'conventional']).optional(),
+  contingencies: z.string().max(2000).optional(),
+  notes: z.string().max(2000).optional(),
+  buyer_name: z.string().min(1).max(200),
+  buyer_phone: z.string().min(10).max(20),
+  buyer_email: z.string().email(),
+})
+
 // Utility function to validate and return parsed data
 export function validateInput<T>(schema: z.ZodSchema<T>, data: unknown): { success: true; data: T } | { success: false; errors: string[] } {
   try {
