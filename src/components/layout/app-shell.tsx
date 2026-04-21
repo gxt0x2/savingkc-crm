@@ -163,7 +163,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 mode={mode}
                 onChange={(m) => {
                   setMode(m)
-                  router.push(m === 'dispositions' ? '/dispo/buyers' : '/dashboard')
+                  router.push(m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
                 }}
               />
             </div>
@@ -293,7 +293,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onChange={(m) => {
                 setMode(m)
                 setDrawerOpen(false)
-                router.push(m === 'dispositions' ? '/dispo/buyers' : '/dashboard')
+                router.push(m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
               }}
             />
           </div>

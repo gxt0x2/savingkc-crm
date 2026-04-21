@@ -135,3 +135,37 @@ export interface BuyerMatch {
   score: number
   reasons: string[]
 }
+
+export type DispoStage = 'new' | 'marketing' | 'offers_in' | 'negotiating' | 'under_contract' | 'closed' | 'dead'
+
+export interface DispoDeal {
+  id: string
+  lead_id: string
+  stage: DispoStage
+  entered_at: string
+  assignment_fee: number | null
+  close_date: string | null
+  accepted_offer_id: string | null
+  accepted_buyer_id: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  lead?: {
+    id: string
+    full_name: string | null
+    property_address: string | null
+    city: string | null
+    state: string | null
+    zip: string | null
+    arv: number | null
+    offer_amount: number | null
+    property_type: string | null
+    beds: number | null
+    baths_full: number | null
+    sqft: number | null
+  }
+  deal_page?: { id: string; slug: string; is_active: boolean } | null
+  broadcasts_count?: number
+  offers_count?: number
+  accepted_buyer?: { id: string; first_name: string; last_name: string; company_name: string | null } | null
+}

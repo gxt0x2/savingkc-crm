@@ -13,6 +13,7 @@ const acquisitionTabs = [
 ]
 
 const dispoTabs = [
+  { label: 'Pipeline', href: '/dispo/pipeline', icon: 'route' },
   { label: 'Buyers', href: '/dispo/buyers', icon: 'group' },
   { label: 'Deal Pages', href: '/dispo/deals', icon: 'description' },
   { label: 'Broadcasts', href: '/dispo/broadcasts', icon: 'campaign' },
@@ -36,6 +37,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
     if (href === '/opportunities' && (pathname?.startsWith('/opportunities') || pathname?.startsWith('/leads'))) return true
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
     if (href === '/calendar' && pathname?.startsWith('/calendar')) return true
+    if (href === '/dispo/pipeline' && pathname?.startsWith('/dispo/pipeline')) return true
     if (href === '/dispo/buyers' && pathname?.startsWith('/dispo/buyers')) return true
     if (href === '/dispo/broadcasts' && pathname?.startsWith('/dispo/broadcasts')) return true
     if (href === '/dispo/deals' && pathname?.startsWith('/dispo/deals')) return true
