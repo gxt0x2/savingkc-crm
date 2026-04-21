@@ -2,12 +2,87 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { validateInput, createBuyerSchema } from '@/lib/validation-schemas'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
 // ---------------------------------------------------------------------------
+// Schema adapter: the DB buyers table has the OLD columns (name, company,
+// areas, min_price, max_price, etc.).  The front-end expects the NEW shape
+// (first_name, last_name, buy_box, status, tier …).
+// We transform on read and reverse-transform on write.
+// ---------------------------------------------------------------------------
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function dbRowToBuyer(row: any) {
+  const nameParts = (row.name ?? '').split(' ')
+  const firstName = row.first_name ?? nameParts[0] ?? ''
+  const lastName = row.last_name ?? nameParts.slice(1).join(' ') ?? ''
+
+  return {
+    id: row.id,
+    first_name: firstName,
+    last_name: lastName,
+    company_name: row.company_name ?? row.company ?? null,
+    email: row.email ?? null,
+    phone: row.phone ?? null,
+    phone_2: row.phone_2 ?? null,
+    buy_box: row.buy_box ?? {
+      cities: row.areas ?? [],
+      price_min: row.min_price ?? undefined,
+      price_max: row.max_price ?? undefined,
+      property_types: row.property_types ?? [],
+    },
+    funding_type: row.funding_type ?? null,
+    max_purchase_price: row.max_purchase_price ?? row.max_price ?? null,
+    monthly_capacity: row.monthly_capacity ?? null,
+    avg_close_days: row.avg_close_days ?? row.avg_days_to_close ?? null,
+    proof_of_funds: row.proof_of_funds ?? row.cash_verified ?? false,
+    status: row.status ?? 'active',
+    tier: row.tier ?? (row.notes?.toLowerCase?.().includes('vip') ? 'vip' : 'new'),
+    source: row.source ?? null,
+    deals_closed: row.deals_closed ?? row.past_purchases ?? 0,
+    last_deal_date: row.last_deal_date ?? null,
+    sms_opted_in: row.sms_opted_in ?? true,
+    email_opted_in: row.email_opted_in ?? true,
+    preferred_contact: row.preferred_contact ?? row.preferred_contact_method ?? 'sms',
+    notes: row.notes ?? null,
+    tags: row.tags ?? [],
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
+}
+
+// Reverse-map new field names to old DB columns for inserts/updates
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buyerToDbRow(data: any) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row: any = {}
+
+  // Name → stored as single 'name' column
+  if (data.first_name !== undefined || data.last_name !== undefined) {
+    row.name = `${data.first_name ?? ''} ${data.last_name ?? ''}`.trim()
+  }
+  if (data.company_name !== undefined) row.company = data.company_name
+  if (data.email !== undefined) row.email = data.email
+  if (data.phone !== undefined) row.phone = data.phone
+  if (data.notes !== undefined) row.notes = data.notes
+
+  // Buy box → flatten to old columns
+  if (data.buy_box) {
+    if (data.buy_box.cities) row.areas = data.buy_box.cities
+    if (data.buy_box.price_min !== undefined) row.min_price = data.buy_box.price_min
+    if (data.buy_box.price_max !== undefined) row.max_price = data.buy_box.price_max
+    if (data.buy_box.property_types) row.property_types = data.buy_box.property_types
+  }
+
+  if (data.proof_of_funds !== undefined) row.cash_verified = data.proof_of_funds
+  if (data.deals_closed !== undefined) row.past_purchases = data.deals_closed
+  if (data.preferred_contact !== undefined) row.preferred_contact_method = data.preferred_contact
+  if (data.max_purchase_price !== undefined) row.max_price = data.max_purchase_price
+
+  return row
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/buyers
-// List buyers with pagination, search, and filters
 // ---------------------------------------------------------------------------
 export async function GET(req: NextRequest) {
   try {
@@ -15,10 +90,7 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = (page - 1) * limit
-    const status = searchParams.get('status')
-    const tier = searchParams.get('tier')
     const search = searchParams.get('search')
-    const tag = searchParams.get('tag')
 
     let query = supabaseAdmin()
       .from('buyers')
@@ -26,22 +98,10 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
-    if (status) {
-      query = query.eq('status', status)
-    }
-
-    if (tier) {
-      query = query.eq('tier', tier)
-    }
-
     if (search) {
       query = query.or(
-        `first_name.ilike.%${search}%,last_name.ilike.%${search}%,company_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`
+        `name.ilike.%${search}%,company.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`
       )
-    }
-
-    if (tag) {
-      query = query.contains('tags', [tag])
     }
 
     const { data, error, count } = await query
@@ -51,7 +111,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ buyers: data ?? [], total: count ?? 0 })
+    const buyers = (data ?? []).map(dbRowToBuyer)
+    return NextResponse.json({ buyers, total: count ?? 0 })
   } catch (err) {
     console.error('[buyers GET] Unexpected error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
@@ -60,32 +121,23 @@ export async function GET(req: NextRequest) {
 
 // ---------------------------------------------------------------------------
 // POST /api/buyers
-// Create a new buyer
 // ---------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const validation = validateInput(createBuyerSchema, body)
 
-    if (!validation.success) {
-      return NextResponse.json({ error: 'Validation failed', details: validation.errors }, { status: 400 })
+    // Basic validation
+    if (!body.first_name?.trim() || !body.last_name?.trim()) {
+      return NextResponse.json({ error: 'First and last name are required' }, { status: 400 })
     }
 
-    const data = validation.data
+    const phone = body.phone ? normalizePhoneToE164(body.phone) : null
+    const dbData = buyerToDbRow(body)
+    dbData.phone = phone
 
-    // Normalize phones to E.164
-    const phone = data.phone ? normalizePhoneToE164(data.phone) : null
-    const phone_2 = data.phone_2 ? normalizePhoneToE164(data.phone_2) : null
-
-    const { data: buyer, error } = await supabaseAdmin()
+    const { data: row, error } = await supabaseAdmin()
       .from('buyers')
-      .insert({
-        ...data,
-        phone,
-        phone_2,
-        tier: data.tier ?? 'new',
-        status: 'active',
-      })
+      .insert(dbData)
       .select()
       .single()
 
@@ -94,7 +146,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ buyer }, { status: 201 })
+    return NextResponse.json({ buyer: dbRowToBuyer(row) }, { status: 201 })
   } catch (err) {
     console.error('[buyers POST] Unexpected error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
@@ -103,7 +155,6 @@ export async function POST(req: NextRequest) {
 
 // ---------------------------------------------------------------------------
 // PATCH /api/buyers
-// Update buyer by id (id in body)
 // ---------------------------------------------------------------------------
 export async function PATCH(req: NextRequest) {
   try {
@@ -114,17 +165,17 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'id required' }, { status: 400 })
     }
 
-    // Normalize phones if present
     if (fields.phone !== undefined) {
       fields.phone = fields.phone ? normalizePhoneToE164(fields.phone) : null
     }
-    if (fields.phone_2 !== undefined) {
-      fields.phone_2 = fields.phone_2 ? normalizePhoneToE164(fields.phone_2) : null
-    }
 
-    const { data: buyer, error } = await supabaseAdmin()
+    const dbData = buyerToDbRow(fields)
+    // Pass through phone directly (already in fields → dbData doesn't map it)
+    if (fields.phone !== undefined) dbData.phone = fields.phone
+
+    const { data: row, error } = await supabaseAdmin()
       .from('buyers')
-      .update(fields)
+      .update(dbData)
       .eq('id', id)
       .select()
       .single()
@@ -134,7 +185,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ buyer })
+    return NextResponse.json({ buyer: dbRowToBuyer(row) })
   } catch (err) {
     console.error('[buyers PATCH] Unexpected error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
@@ -143,7 +194,6 @@ export async function PATCH(req: NextRequest) {
 
 // ---------------------------------------------------------------------------
 // DELETE /api/buyers
-// Delete buyers by ids array (ids in body)
 // ---------------------------------------------------------------------------
 export async function DELETE(req: NextRequest) {
   try {

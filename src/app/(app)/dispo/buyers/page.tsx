@@ -466,7 +466,7 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
   const deleteBuyers = useDeleteBuyers()
   const [form, setForm] = useState({
     notes: buyer.notes ?? '',
-    tags: buyer.tags.join(', '),
+    tags: (buyer.tags ?? []).join(', '),
     status: buyer.status,
     tier: buyer.tier,
   })
@@ -922,7 +922,7 @@ export default function BuyersPage() {
                     <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">{buyer.phone ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500 hidden lg:table-cell truncate max-w-[180px]">{buyer.email ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs hidden xl:table-cell max-w-[220px] truncate">
-                      {formatBuyBox(buyer.buy_box)}
+                      {formatBuyBox(buyer.buy_box ?? {})}
                     </td>
                     <td className="px-4 py-3">
                       <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold', tierBadge(buyer.tier))}>
