@@ -910,7 +910,12 @@ export default function LeadDetailPage() {
   const [refreshTick, setRefreshTick] = useState(0)
 
   // Call this after any user action that changes data (note, call, edit, email, etc.)
-  function refreshAll() { setRefreshTick(t => t + 1) }
+  function refreshAll() {
+    setRefreshTick(t => t + 1)
+    // Fan out to every sub-card (AriBriefing, PainPoints, SellerGoals, NextAction, FavoriteOrFool, etc.)
+    // so they all re-read manifest/activities in one go.
+    window.dispatchEvent(new CustomEvent('crm:lead-refresh', { detail: { leadId: id } }))
+  }
 
   // Listen for disposition logged events from the telephony bar
   useEffect(() => {
@@ -1172,8 +1177,57 @@ export default function LeadDetailPage() {
     return true
   })
 
+  // Merge disposition-only call rows (description "Call: <dispo>") into their
+  // parent telephony call row (the "Outbound/Inbound call ..." entry) so the
+  // disposition badge lands on the row with caller name + duration.
+  const mergedActivities = (() => {
+    const asc = [...filteredActivities].sort((a, b) =>
+      a.created_at.localeCompare(b.created_at),
+    )
+    const dropIds = new Set<string>()
+    const dispoByCallId = new Map<string, { disposition: string; notes?: string }>()
+    for (let i = 0; i < asc.length; i++) {
+      const row = asc[i]
+      if (row.activity_type !== 'call') continue
+      const m = (row.metadata || {}) as Record<string, unknown>
+      const isDispoOnly = !!m.disposition && !m.direction && !m.status
+      if (!isDispoOnly) continue
+      const phone = (m.phone as string | undefined)?.trim() || ''
+      for (let j = i - 1; j >= 0; j--) {
+        const prev = asc[j]
+        if (prev.activity_type !== 'call') continue
+        const pm = (prev.metadata || {}) as Record<string, unknown>
+        if (!pm.direction) continue
+        if (dispoByCallId.has(prev.id)) continue
+        const prevPhone = ((pm.to as string | undefined) || (pm.from as string | undefined) || '').trim()
+        if (phone && prevPhone && phone !== prevPhone) continue
+        dispoByCallId.set(prev.id, {
+          disposition: m.disposition as string,
+          notes: m.notes as string | undefined,
+        })
+        dropIds.add(row.id)
+        break
+      }
+    }
+    return filteredActivities
+      .filter((a) => !dropIds.has(a.id))
+      .map((a) => {
+        const extra = dispoByCallId.get(a.id)
+        if (!extra) return a
+        const existingMeta = (a.metadata || {}) as Record<string, unknown>
+        return {
+          ...a,
+          metadata: {
+            ...existingMeta,
+            disposition: extra.disposition,
+            notes: (existingMeta.notes as string | undefined) || extra.notes,
+          },
+        }
+      })
+  })()
+
   // Build feed activities - include notes, appointments, call recordings
-  const feedActivities = filteredActivities
+  const feedActivities = mergedActivities
     .slice(0, 30)
     .map((a) => {
       let link: string | undefined
@@ -1248,37 +1302,79 @@ export default function LeadDetailPage() {
       // For calls, extract status info and duration from description
       let statusBadge: string | undefined
       let cleanContent: string | undefined
+      let dispositionLabel: string | undefined
+      let dispositionTone: 'positive' | 'neutral' | 'negative' | undefined
 
       if (a.activity_type === 'call' && a.description) {
-        const descParts = a.description.split('—')
-        const statusInfo = descParts[1]?.trim()
+        const metaDuration = typeof a.metadata?.duration === 'number'
+          ? (a.metadata.duration as number)
+          : undefined
+        const metaStatus = a.metadata?.status as string | undefined
 
-        if (statusInfo) {
-          // Parse status like "no-answer (0s)" or "completed (45s)"
-          const match = statusInfo.match(/([a-z-]+)\s*\((\d+)s\)/i)
-          if (match) {
-            const [, callStatus, duration] = match
-            const durationNum = parseInt(duration, 10)
+        const fmtMMSS = (sec: number) => {
+          const m = Math.floor(sec / 60)
+          const s = sec % 60
+          return `${m}:${String(s).padStart(2, '0')}`
+        }
 
-            if (callStatus === 'completed' && durationNum > 0) {
-              const mins = Math.floor(durationNum / 60)
-              const secs = durationNum % 60
-              statusBadge = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
-            } else if (callStatus === 'no-answer') {
-              statusBadge = 'No answer'
-            } else if (callStatus === 'busy') {
-              statusBadge = 'Busy'
+        if (metaDuration && metaDuration > 0) {
+          statusBadge = fmtMMSS(metaDuration)
+        } else if (metaStatus === 'no-answer') {
+          statusBadge = 'No answer'
+        } else if (metaStatus === 'busy') {
+          statusBadge = 'Busy'
+        } else {
+          // Fallback: parse from description tail ("— 1526s" or "— completed (45s)")
+          const tail = a.description.split('—')[1]?.trim()
+          if (tail) {
+            const m1 = tail.match(/^(\d+)s$/)
+            const m2 = tail.match(/([a-z-]+)\s*\((\d+)s\)/i)
+            if (m1) {
+              statusBadge = fmtMMSS(parseInt(m1[1], 10))
+            } else if (m2) {
+              const [, callStatus, duration] = m2
+              const n = parseInt(duration, 10)
+              if (callStatus === 'completed' && n > 0) statusBadge = fmtMMSS(n)
+              else if (callStatus === 'no-answer') statusBadge = 'No answer'
+              else if (callStatus === 'busy') statusBadge = 'Busy'
+              else statusBadge = callStatus
             } else {
-              statusBadge = callStatus
+              statusBadge = tail
             }
-          } else {
-            statusBadge = statusInfo
           }
         }
 
         // Show disposition notes from metadata (call dispositions save notes there)
         const callNotes = (a.metadata?.notes as string | undefined) || undefined
         cleanContent = callNotes
+
+        // Surface disposition result as a badge
+        const dispo = a.metadata?.disposition as string | undefined
+        if (dispo) {
+          const DISPOSITION_LABELS: Record<string, string> = {
+            // current set surfaced by the disposition modal
+            answered: 'Answered',
+            no_answer: 'No Answer',
+            left_vm: 'Left Voicemail',
+            bad_number: 'Bad Number',
+            busy: 'Busy',
+            dnc: 'Do Not Call',
+            // legacy values still present in historical rows
+            spoke_with_owner: 'Answered',
+            callback_requested: 'Callback Requested',
+            not_interested: 'Not Interested',
+            wrong_number: 'Bad Number',
+            disconnected: 'Disconnected',
+            deal_potential: 'Deal Potential',
+            appointment_set: 'Appointment Set',
+            offer_made: 'Offer Made',
+            dead: 'Dead',
+          }
+          const POSITIVE = new Set(['answered', 'spoke_with_owner', 'callback_requested', 'deal_potential', 'appointment_set', 'offer_made'])
+          const NEGATIVE = new Set(['bad_number', 'wrong_number', 'disconnected', 'dnc', 'not_interested', 'dead'])
+          dispositionLabel = DISPOSITION_LABELS[dispo] || dispo.replace(/_/g, ' ')
+          dispositionTone = POSITIVE.has(dispo) ? 'positive' : NEGATIVE.has(dispo) ? 'negative' : 'neutral'
+        }
       } else {
         cleanContent = a.description || undefined
       }
@@ -1290,6 +1386,8 @@ export default function LeadDetailPage() {
         content: cleanContent,
         timestamp: a.created_at, // Pass raw ISO timestamp, let ActivityFeed format it
         statusBadge,
+        dispositionLabel,
+        dispositionTone,
         link,
         linkLabel,
         recordingUrl,

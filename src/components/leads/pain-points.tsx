@@ -142,6 +142,13 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
   const [painPoints, setPainPoints] = useState<PainPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [open, toggleOpen] = useCardCollapse('pain-points')
+  const [refreshTick, setRefreshTick] = useState(0)
+
+  useEffect(() => {
+    function bump() { setRefreshTick((t) => t + 1) }
+    window.addEventListener('crm:lead-refresh', bump)
+    return () => window.removeEventListener('crm:lead-refresh', bump)
+  }, [])
 
   useEffect(() => {
     async function analyze() {
@@ -274,7 +281,7 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
     }
 
     if (leadId) analyze()
-  }, [leadId, notes, sellerSituation, motivationScore, activities])
+  }, [leadId, notes, sellerSituation, motivationScore, activities, refreshTick])
 
   const PERIOD_CONFIG = {
     past: { color: 'var(--ck-text-muted)', label: 'Past' },
