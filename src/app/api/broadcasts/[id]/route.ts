@@ -17,7 +17,7 @@ export async function GET(
 
     // Fetch broadcast with lead info
     const { data: broadcast, error: bcError } = await db
-      .from('broadcasts')
+      .from('deal_broadcasts')
       .select(
         '*, leads:lead_id(id, property_address, city, state, zip, county, property_type, beds, baths_full, sqft, arv, offer_amount)'
       )

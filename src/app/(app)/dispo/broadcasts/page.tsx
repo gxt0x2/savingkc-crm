@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import { useBroadcasts, useBroadcast, useCreateBroadcast, useSendBroadcast } from '@/hooks/use-broadcasts'
@@ -264,18 +264,25 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [broadcastType, setBroadcastType] = useState<'auto_match' | 'manual_select' | 'blast_all'>('auto_match')
   const [error, setError] = useState<string | null>(null)
 
-  async function searchLeads(q: string) {
-    if (!q.trim()) { setLeads([]); return }
+  const debounceRef = useRef<NodeJS.Timeout | null>(null)
+
+  function debouncedSearchLeads(q: string) {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (!q.trim()) { setLeads([]); setSearching(false); return }
     setSearching(true)
-    try {
-      const res = await fetch(`/api/leads?search=${encodeURIComponent(q)}&limit=10`)
-      if (!res.ok) return
-      const data = await res.json()
-      setLeads(data.leads ?? [])
-    } finally {
-      setSearching(false)
-    }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/leads/search?q=${encodeURIComponent(q)}&limit=10`)
+        if (!res.ok) return
+        const data = await res.json()
+        setLeads(data.results ?? [])
+      } finally {
+        setSearching(false)
+      }
+    }, 400)
   }
+
+  useEffect(() => { return () => { if (debounceRef.current) clearTimeout(debounceRef.current) } }, [])
 
   async function handleCreate() {
     if (!selectedLead) { setError('Please select a lead'); return }
@@ -308,7 +315,7 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
               <input
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 value={leadSearch}
-                onChange={e => { setLeadSearch(e.target.value); searchLeads(e.target.value) }}
+                onChange={e => { setLeadSearch(e.target.value); debouncedSearchLeads(e.target.value) }}
                 placeholder="123 Main St..."
               />
               {searching && (
@@ -414,7 +421,7 @@ export default function BroadcastsPage() {
       {/* Header */}
       <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-primary mb-1">Broadcasts</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Broadcasts</h1>
           <p className="text-slate-500 text-sm">
             {isLoading ? 'Loading…' : `${broadcasts.length} broadcast${broadcasts.length !== 1 ? 's' : ''}`}
           </p>

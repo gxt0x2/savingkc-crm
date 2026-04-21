@@ -150,7 +150,7 @@ export async function POST(
 
     // Increment offers_received on any broadcast linked to this lead
     const { data: broadcasts } = await db
-      .from('broadcasts')
+      .from('deal_broadcasts')
       .select('id, offers_received')
       .eq('lead_id', dealPage.lead_id)
       .eq('status', 'sent')
@@ -159,7 +159,7 @@ export async function POST(
       // Increment on the most recent broadcast
       const latest = broadcasts[0]
       await db
-        .from('broadcasts')
+        .from('deal_broadcasts')
         .update({ offers_received: (latest.offers_received || 0) + 1 })
         .eq('id', latest.id)
     }

@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     // Fetch broadcast with recipients + buyer data
     const { data: broadcast, error: bcError } = await db
-      .from('broadcasts')
+      .from('deal_broadcasts')
       .select('*')
       .eq('id', broadcast_id)
       .single()
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       .from('deal_pages')
       .select('slug')
       .eq('lead_id', broadcast.lead_id)
-      .eq('status', 'active')
+      .eq('is_active', true)
       .limit(1)
       .single()
 
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       const buyer = recipient.buyers
       if (!buyer) continue
 
-      const buyerFirst = buyer.first_name || 'Investor'
+      const buyerFirst = buyer.first_name || (buyer.name ? buyer.name.split(' ')[0] : 'Investor')
 
       // --- SMS ---
       if (buyer.sms_opted_in && buyer.phone) {
@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
 
     // Update broadcast stats
     await db
-      .from('broadcasts')
+      .from('deal_broadcasts')
       .update({
         status: 'sent',
         sent_at: new Date().toISOString(),

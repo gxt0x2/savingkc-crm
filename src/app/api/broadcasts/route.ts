@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     const offset = (page - 1) * limit
 
     let query = supabaseAdmin()
-      .from('broadcasts')
+      .from('deal_broadcasts')
       .select(
         '*, leads:lead_id(id, property_address, city, state, zip, arv, offer_amount)',
         { count: 'exact' }
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
 
     // Insert broadcast record
     const { data: broadcast, error: broadcastError } = await db
-      .from('broadcasts')
+      .from('deal_broadcasts')
       .insert({
         lead_id,
         broadcast_type: broadcast_type || 'sms_email',

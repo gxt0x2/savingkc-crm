@@ -14,9 +14,10 @@ const acquisitionTabs = [
 
 const dispoTabs = [
   { label: 'Buyers', href: '/dispo/buyers', icon: 'group' },
-  { label: 'Broadcasts', href: '/dispo/broadcasts', icon: 'campaign' },
   { label: 'Deal Pages', href: '/dispo/deals', icon: 'description' },
+  { label: 'Broadcasts', href: '/dispo/broadcasts', icon: 'campaign' },
   { label: 'Offers', href: '/dispo/offers', icon: 'local_offer' },
+  { label: 'Vendors', href: '/dispo/vendors', icon: 'store' },
 ]
 
 interface NavTabsProps {
@@ -39,6 +40,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
     if (href === '/dispo/broadcasts' && pathname?.startsWith('/dispo/broadcasts')) return true
     if (href === '/dispo/deals' && pathname?.startsWith('/dispo/deals')) return true
     if (href === '/dispo/offers' && pathname?.startsWith('/dispo/offers')) return true
+    if (href === '/dispo/vendors' && pathname?.startsWith('/dispo/vendors')) return true
     return false
   }
 
