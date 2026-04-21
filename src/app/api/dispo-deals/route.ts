@@ -12,7 +12,7 @@ async function ensureTable() {
   const db = supabaseAdmin()
   try {
     await db.rpc('exec_sql', {
-      sql: `
+      sql_query: `
         CREATE TABLE IF NOT EXISTS dispo_deals (
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           lead_id uuid NOT NULL REFERENCES leads(id),
