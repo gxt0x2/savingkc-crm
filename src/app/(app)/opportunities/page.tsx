@@ -1,16 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { HotOpportunityCardCompact } from '@/components/opportunities/hot-opportunity-card-compact'
+import { HotOpportunityRow } from '@/components/opportunities/hot-opportunity-row'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { Icon } from '@/components/ui/icon'
-import { toProperCase } from '@/lib/format'
 import { useHotOpportunities, useRefreshHotList } from '@/hooks/use-hot-opportunities'
-import type { Deal, Contact, DealStage } from '@/types'
-import type { ManifestV2 } from '@/lib/manifest-builder'
 import {
   DndContext,
   closestCenter,
@@ -25,46 +21,30 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  rectSortingStrategy,
+  verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import type { HotOpportunityData } from '@/types/hot-opportunity'
 
-interface LeadRow {
-  id: string
-  full_name: string | null
-  phone: string | null
-  email: string | null
-  property_address: string | null
-  city: string | null
-  state: string | null
-  zip: string | null
-  source: string | null
-  station: string | null
-  priority: string | null
-  notes: string | null
-  created_at: string
-  updated_at: string
-  is_favorite: boolean | null
-  arv: number | null
-  offer_amount: number | null
-  repair_estimate: number | null
-  motivation_score: number | null
-  seller_situation: string | null
-  appointment_date: string | null
-}
-
 type SortOption = 'score' | 'recent' | 'arv' | 'custom'
-type FilterOption = 'all' | 'favorites' | 'appts' | 'missing-data'
+type FilterOption = 'all' | 'hot' | 'appts' | 'missing-data'
 
-export default function OpportunitiesPageV2() {
-  const router = useRouter()
+const ORDER_KEY = 'hot-opportunities-custom-order'
+
+export default function OpportunitiesPage() {
   const [showAdd, setShowAdd] = useState(false)
-  const { data: hotData, isLoading: hotLoading } = useHotOpportunities()
+  const { data: hotData, isLoading } = useHotOpportunities()
   const refreshHotList = useRefreshHotList()
 
-  const [opportunities, setOpportunities] = useState<HotOpportunityData[]>([])
   const [sortBy, setSortBy] = useState<SortOption>('score')
   const [filterBy, setFilterBy] = useState<FilterOption>('all')
+  const [customOrder, setCustomOrder] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const saved = localStorage.getItem(ORDER_KEY)
+      return saved ? JSON.parse(saved) : {}
+    } catch { return {} }
+  })
+  const [rerankBusy, setRerankBusy] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
 
   // Modal states
@@ -73,137 +53,93 @@ export default function OpportunitiesPageV2() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8, // 8px movement required before drag starts
-      },
+      activationConstraint: { distance: 8 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   )
 
-  useEffect(() => {
-    if (hotData?.items) {
-      // Load custom order from localStorage if it exists
-      const savedOrder = localStorage.getItem('hot-opportunities-custom-order')
-      if (savedOrder && sortBy === 'custom') {
-        try {
-          const orderMap = JSON.parse(savedOrder) as Record<string, number>
-          const sorted = [...hotData.items].sort((a, b) => {
-            const aOrder = orderMap[a.leadId] ?? 999
-            const bOrder = orderMap[b.leadId] ?? 999
-            return aOrder - bOrder
-          })
-          setOpportunities(sorted)
-          return
-        } catch (e) {
-          // Invalid saved order, ignore
-        }
-      }
-      setOpportunities([...hotData.items])
-    }
-  }, [hotData, sortBy])
-
-  function handleDragStart(event: any) {
-    setActiveId(event.active.id)
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-
-    setActiveId(null)
-
-    if (over && active.id !== over.id) {
-      setOpportunities((items) => {
-        const oldIndex = items.findIndex(item => item.leadId === active.id)
-        const newIndex = items.findIndex(item => item.leadId === over.id)
-
-        if (oldIndex === -1 || newIndex === -1) return items
-
-        const newOrder = arrayMove(items, oldIndex, newIndex)
-
-        // Mark as custom sort
-        setSortBy('custom')
-
-        // Save order to localStorage
-        const orderMap: Record<string, number> = {}
-        newOrder.forEach((item, index) => {
-          orderMap[item.leadId] = index
-        })
-        localStorage.setItem('hot-opportunities-custom-order', JSON.stringify(orderMap))
-
-        return newOrder
-      })
-    }
-  }
-
-  function handleDragCancel() {
-    setActiveId(null)
-  }
-
-  function handleSort(option: SortOption) {
-    setSortBy(option)
-
-    if (!hotData?.items) return
-
-    let sorted = [...hotData.items]
-
-    switch (option) {
+  // Single source of truth for sorted + filtered list. Derived from hotData +
+  // sortBy + filterBy + customOrder via useMemo — no useEffect/setState round-trip
+  // (that was the bug: effect was wiping handleSort's setState on every sortBy change).
+  const visibleOpps: HotOpportunityData[] = useMemo(() => {
+    const items = hotData?.items ? [...hotData.items] : []
+    // Sort
+    switch (sortBy) {
       case 'score':
-        sorted.sort((a, b) => b.score.composite - a.score.composite)
+        items.sort((a, b) => b.score.composite - a.score.composite)
         break
       case 'recent':
-        sorted.sort((a, b) => {
-          const dateA = a.lastScoredAt ? new Date(a.lastScoredAt).getTime() : 0
-          const dateB = b.lastScoredAt ? new Date(b.lastScoredAt).getTime() : 0
-          return dateB - dateA
+        items.sort((a, b) => {
+          const aT = a.lastScoredAt ? new Date(a.lastScoredAt).getTime() : 0
+          const bT = b.lastScoredAt ? new Date(b.lastScoredAt).getTime() : 0
+          return bT - aT
         })
         break
       case 'arv':
-        sorted.sort((a, b) => (b.dealMath.arv ?? 0) - (a.dealMath.arv ?? 0))
+        items.sort((a, b) => (b.dealMath.arv ?? 0) - (a.dealMath.arv ?? 0))
         break
       case 'custom':
-        // Keep current order
-        return
+        items.sort((a, b) => {
+          const aO = customOrder[a.leadId] ?? 999
+          const bO = customOrder[b.leadId] ?? 999
+          return aO - bO
+        })
+        break
     }
+    // Filter
+    return items.filter((opp) => {
+      switch (filterBy) {
+        case 'hot':
+          return opp.score.composite >= 75
+        case 'appts':
+          return opp.flags.hasDeadline || opp.currentStation === 'appt_set'
+        case 'missing-data':
+          return opp.missingFields.length > 0
+        default:
+          return true
+      }
+    })
+  }, [hotData, sortBy, filterBy, customOrder])
 
-    setOpportunities(sorted)
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    setActiveId(null)
+    if (!over || active.id === over.id) return
+
+    const oldIndex = visibleOpps.findIndex((i) => i.leadId === active.id)
+    const newIndex = visibleOpps.findIndex((i) => i.leadId === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const newOrder = arrayMove(visibleOpps, oldIndex, newIndex)
+    const orderMap: Record<string, number> = {}
+    newOrder.forEach((it, i) => { orderMap[it.leadId] = i })
+    setCustomOrder(orderMap)
+    setSortBy('custom')
+    try { localStorage.setItem(ORDER_KEY, JSON.stringify(orderMap)) } catch {}
   }
 
-  const filteredOpps = opportunities.filter(opp => {
-    switch (filterBy) {
-      case 'favorites':
-        // Check if lead has priority signals
-        return opp.score.composite >= 75
-      case 'appts':
-        return opp.flags.hasDeadline || opp.currentStation === 'appt_set'
-      case 'missing-data':
-        return opp.missingFields.length > 0
-      default:
-        return true
+  async function handleRerank() {
+    setRerankBusy(true)
+    try {
+      await refreshHotList(true)
+    } finally {
+      setRerankBusy(false)
     }
-  })
+  }
 
   // Action handlers
   function handleCall(phone: string, leadId: string, name?: string) {
-    console.log('[OPPORTUNITIES PAGE] handleCall triggered:', { phone, leadId, name })
-    const event = new CustomEvent('open-dialer', {
-      detail: { phone, leadId, name }
-    })
-    window.dispatchEvent(event)
-    console.log('[OPPORTUNITIES PAGE] open-dialer event dispatched with detail:', { phone, leadId, name })
+    window.dispatchEvent(new CustomEvent('open-dialer', {
+      detail: { phone, leadId, name },
+    }))
   }
 
-  async function handleSms(leadId: string, phone?: string, name?: string) {
-    console.log('[OPPORTUNITIES PAGE] handleSms triggered:', { leadId, phone, name })
-    // Fetch the full lead object
+  async function handleSms(leadId: string, phone?: string) {
     const supabase = createClient()
     const { data: lead } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('id', leadId)
-      .single()
-
+      .from('leads').select('*').eq('id', leadId).single()
     if (lead) {
       setSelectedLeadForModal(lead)
       setSmsModalOpen(true)
@@ -211,17 +147,11 @@ export default function OpportunitiesPageV2() {
   }
 
   function handleEmail(email?: string) {
-    console.log('[OPPORTUNITIES PAGE] handleEmail triggered with email:', email)
-    if (email) {
-      console.log('[OPPORTUNITIES PAGE] Opening mailto:', email)
-      window.location.href = `mailto:${email}`
-    } else {
-      console.log('[OPPORTUNITIES PAGE] No email provided, skipping mailto')
-    }
+    if (email) window.location.href = `mailto:${email}`
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen">
       {showAdd && (
         <AddLeadModal
           onClose={() => setShowAdd(false)}
@@ -236,94 +166,103 @@ export default function OpportunitiesPageV2() {
             setSmsModalOpen(false)
             setSelectedLeadForModal(null)
           }}
-          onSent={() => {
-            // Optionally refresh the list
-          }}
+          onSent={() => {}}
         />
       )}
 
-      <div className="max-w-[1800px] mx-auto px-6 py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
-        <div className="mb-8 flex items-end justify-between">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-4xl font-black text-black tracking-tight">Hot Opportunities</h1>
-            <p className="text-gray-600 mt-2">
-              {filteredOpps.length} active deals · Drag to reorder · Click to view
+            <span className="text-[10px] font-black text-[#E32E2E] uppercase tracking-[0.25em]">
+              Priority Queue
+            </span>
+            <h1 className="text-3xl font-black text-[var(--ck-text)] tracking-tight mt-1">Hot Opps</h1>
+            <p className="text-xs text-[var(--ck-text-muted)] mt-1">
+              {visibleOpps.length} ranked leads · drag to reorder · click a row to open
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => refreshHotList(true)}
-              className="px-4 py-2 border-2 border-black text-black font-bold rounded-lg hover:bg-black hover:text-white transition-colors"
+              onClick={handleRerank}
+              disabled={rerankBusy}
+              className="px-4 py-2 ck-card-elev border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] font-bold rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-60"
             >
-              <Icon name="refresh" size="text-sm" className="inline mr-2" />
-              Re-rank
+              <Icon
+                name="refresh"
+                size="text-sm"
+                className={rerankBusy ? 'animate-spin' : ''}
+              />
+              {rerankBusy ? 'Ranking…' : 'Re-rank'}
             </button>
             <button
               onClick={() => setShowAdd(true)}
-              className="px-4 py-2 bg-[#E32E2E] text-white font-bold rounded-lg hover:bg-[#C42626] transition-colors"
+              className="px-4 py-2 bg-[#E32E2E] hover:bg-[#C42626] text-white font-bold rounded-lg text-sm transition-colors flex items-center gap-2"
             >
-              <Icon name="add" size="text-sm" className="inline mr-2" />
+              <Icon name="add" size="text-sm" />
               Add Lead
             </button>
           </div>
         </div>
 
-        {/* Filters & Sort */}
-        <div className="mb-6 flex items-center justify-between bg-gray-50 rounded-lg p-4 border-2 border-gray-200">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-gray-700 mr-2">Filter:</span>
-            {(['all', 'favorites', 'appts', 'missing-data'] as FilterOption[]).map(option => (
+        {/* Filter + Sort bar */}
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 ck-card-elev rounded-lg">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-muted)] mr-1">Filter</span>
+            {([
+              { k: 'all', label: 'All' },
+              { k: 'hot', label: 'Hot (75+)' },
+              { k: 'appts', label: 'Appointments' },
+              { k: 'missing-data', label: 'Missing Data' },
+            ] as { k: FilterOption; label: string }[]).map(({ k, label }) => (
               <button
-                key={option}
-                onClick={() => setFilterBy(option)}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
-                  filterBy === option
-                    ? 'bg-black text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:border-black'
+                key={k}
+                onClick={() => setFilterBy(k)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors ${
+                  filterBy === k
+                    ? 'bg-[#E32E2E] text-white'
+                    : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] hover:bg-white/5'
                 }`}
               >
-                {option === 'all' && 'All'}
-                {option === 'favorites' && '⭐ Favorites'}
-                {option === 'appts' && '📅 Appointments'}
-                {option === 'missing-data' && '⚠️ Missing Data'}
+                {label}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-gray-700 mr-2">Sort:</span>
-            {(['score', 'recent', 'arv', 'custom'] as SortOption[]).map(option => (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-muted)] mr-1">Sort</span>
+            {([
+              { k: 'score', label: 'Score' },
+              { k: 'recent', label: 'Recent' },
+              { k: 'arv', label: 'ARV' },
+              { k: 'custom', label: 'Custom' },
+            ] as { k: SortOption; label: string }[]).map(({ k, label }) => (
               <button
-                key={option}
-                onClick={() => handleSort(option)}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
-                  sortBy === option
-                    ? 'bg-[#E32E2E] text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:border-[#E32E2E]'
+                key={k}
+                onClick={() => setSortBy(k)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors ${
+                  sortBy === k
+                    ? 'bg-[var(--ck-surface-hi)] text-[var(--ck-text)] border border-[var(--ck-border-strong)]'
+                    : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] hover:bg-white/5'
                 }`}
               >
-                {option === 'score' && 'Score'}
-                {option === 'recent' && 'Recent'}
-                {option === 'arv' && 'ARV'}
-                {option === 'custom' && 'Custom Order'}
+                {label}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Cards Grid */}
-        {hotLoading ? (
-          <div className="text-center py-16">
-            <div className="text-gray-400 text-lg">Ranking opportunities...</div>
-          </div>
-        ) : filteredOpps.length === 0 ? (
-          <div className="text-center py-16 bg-gray-50 rounded-lg border-2 border-gray-200">
-            <p className="text-gray-600 mb-4">No opportunities match your filter</p>
+        {/* List */}
+        {isLoading ? (
+          <div className="py-16 text-center text-sm text-[var(--ck-text-muted)]">Ranking opportunities…</div>
+        ) : visibleOpps.length === 0 ? (
+          <div className="py-16 text-center ck-card">
+            <Icon name="inbox" size="text-3xl" className="text-[var(--ck-text-dim)] block mx-auto mb-2" />
+            <p className="text-sm text-[var(--ck-text-muted)] mb-4">No opportunities match your filter</p>
             <button
               onClick={() => setFilterBy('all')}
-              className="px-4 py-2 bg-black text-white font-bold rounded-lg"
+              className="px-4 py-2 bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] text-[var(--ck-text)] text-sm font-bold rounded-lg"
             >
               Show All
             </button>
@@ -332,22 +271,22 @@ export default function OpportunitiesPageV2() {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
+            onDragStart={(e) => setActiveId(e.active.id as string)}
             onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
+            onDragCancel={() => setActiveId(null)}
           >
             <SortableContext
-              items={filteredOpps.map(opp => opp.leadId)}
-              strategy={rectSortingStrategy}
+              items={visibleOpps.map((o) => o.leadId)}
+              strategy={verticalListSortingStrategy}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredOpps.map((opp, index) => (
-                  <HotOpportunityCardCompact
+              <div className="space-y-1.5">
+                {visibleOpps.map((opp, idx) => (
+                  <HotOpportunityRow
                     key={opp.leadId}
                     opp={opp}
-                    variant={index % 4 === 0 ? 'white' : index % 4 === 1 ? 'grey' : index % 4 === 2 ? 'lightgrey' : 'red'}
+                    rank={idx + 1}
                     onCall={(phone, leadId) => handleCall(phone, leadId, opp.sellerName)}
-                    onSms={(leadId, phone) => handleSms(leadId, phone, opp.sellerName)}
+                    onSms={(leadId, phone) => handleSms(leadId, phone)}
                     onEmail={handleEmail}
                   />
                 ))}
@@ -355,10 +294,10 @@ export default function OpportunitiesPageV2() {
             </SortableContext>
             <DragOverlay>
               {activeId ? (
-                <div className="opacity-50 scale-105 shadow-2xl">
-                  <HotOpportunityCardCompact
-                    opp={filteredOpps.find(o => o.leadId === activeId)!}
-                    variant="white"
+                <div className="opacity-80 scale-[1.02] shadow-2xl">
+                  <HotOpportunityRow
+                    opp={visibleOpps.find((o) => o.leadId === activeId)!}
+                    rank={visibleOpps.findIndex((o) => o.leadId === activeId) + 1}
                     onCall={handleCall}
                     onSms={handleSms}
                     onEmail={handleEmail}

@@ -1,7 +1,6 @@
 'use client'
 
 import { Icon } from '@/components/ui/icon'
-import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -36,51 +35,35 @@ function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
-function taskColorClasses(task: Task) {
+// Task type → dark-theme chip treatment. Each tone uses a translucent tinted
+// background plus a solid left rail in the same hue so tasks remain scannable
+// against the dark grid. Colors pass the "no emoji, keep status signals"
+// rule — overdue red, appointment emerald, follow-up amber, etc.
+function taskChipStyle(task: Task) {
   if (task.status === 'overdue') {
-    return {
-      bg: 'bg-error-container/40',
-      border: 'border-error',
-      text: 'text-on-error-container',
-    }
+    return 'bg-[#E32E2E]/20 border-l-2 border-[#E32E2E] text-[#FCA5A5]'
   }
   switch (task.type) {
     case 'appointment':
+      return 'bg-emerald-500/20 border-l-2 border-emerald-400 text-emerald-300'
     case 'follow_up':
-      return {
-        bg: 'bg-secondary-container/30',
-        border: 'border-secondary',
-        text: 'text-on-secondary-container',
-      }
+      return 'bg-yellow-400/20 border-l-2 border-yellow-400 text-yellow-300'
     case 'send_offer':
-      return {
-        bg: 'bg-primary-fixed/40',
-        border: 'border-primary',
-        text: 'text-on-primary-fixed',
-      }
+      return 'bg-violet-500/20 border-l-2 border-violet-400 text-violet-300'
     case 'review':
     case 'task':
-      return {
-        bg: 'bg-surface-container-highest',
-        border: 'border-outline',
-        text: 'text-on-surface-variant',
-      }
     default:
-      return {
-        bg: 'bg-surface-container-highest',
-        border: 'border-outline',
-        text: 'text-on-surface-variant',
-      }
+      return 'bg-white/8 border-l-2 border-[var(--ck-border-strong)] text-[var(--ck-text)]'
   }
 }
 
 function taskTypeLabel(task: Task) {
-  if (task.status === 'overdue') return 'OVERDUE'
+  if (task.status === 'overdue') return 'Overdue'
   switch (task.type) {
     case 'follow_up': return 'Follow-up'
-    case 'appointment': return 'Appointment'
-    case 'send_offer': return 'Send Offer'
-    case 'review': return 'Review Comps'
+    case 'appointment': return 'Appt'
+    case 'send_offer': return 'Offer'
+    case 'review': return 'Review'
     case 'task': return 'Task'
     default: return task.type
   }
@@ -103,24 +86,23 @@ export function MonthView({
   function getTasksForDate(date: Date) {
     return tasks.filter((t) => {
       if (!t.due_date) return false
-      const d = new Date(t.due_date)
-      return isSameDay(d, date)
+      return isSameDay(new Date(t.due_date), date)
     })
   }
 
   return (
-    <div className="bg-surface-container-lowest rounded-xl shadow-[0px_8px_24px_rgba(25,28,29,0.06)] overflow-hidden">
+    <div className="ck-card overflow-hidden">
       {/* Days of week header */}
-      <div className="grid grid-cols-7 border-b border-outline-variant/10 bg-surface-container-low/50">
+      <div className="grid grid-cols-7 border-b border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
         {DAYS_OF_WEEK.map((day) => (
-          <div key={day} className="py-3 text-center text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+          <div key={day} className="py-2.5 text-center text-[10px] font-black uppercase tracking-[0.2em] text-[var(--ck-text-muted)]">
             {day}
           </div>
         ))}
       </div>
 
       {/* Calendar grid */}
-      <div className="grid grid-cols-7 min-h-[700px]">
+      <div className="grid grid-cols-7 auto-rows-[minmax(110px,1fr)]">
         {cells.map((cell, idx) => {
           const isToday = cell.isCurrentMonth && isSameDay(cell.date, today)
           const cellTasks = getTasksForDate(cell.date)
@@ -130,62 +112,55 @@ export function MonthView({
           return (
             <div
               key={idx}
-              className={cn(
-                'p-2 group hover:bg-surface-container-low transition-colors',
-                !isLastCol && 'border-r border-outline-variant/10',
-                !isLastRow && 'border-b border-outline-variant/10',
-                !cell.isCurrentMonth && 'bg-surface-container-low/20 opacity-50',
-                isToday && 'bg-surface-container-low'
-              )}
+              className={[
+                'relative p-2 group transition-colors',
+                !isLastCol && 'border-r border-[var(--ck-border)]',
+                !isLastRow && 'border-b border-[var(--ck-border)]',
+                !cell.isCurrentMonth && 'opacity-40',
+                isToday ? 'bg-[#E32E2E]/5' : 'hover:bg-white/[0.03]',
+              ].filter(Boolean).join(' ')}
             >
-              {isToday ? (
-                <span className="text-xs font-bold bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center -mt-0.5 -ml-0.5">
-                  {cell.day}
-                </span>
-              ) : (
-                <span className={cn('text-xs font-bold', cell.isCurrentMonth ? 'text-on-surface' : 'text-on-surface-variant')}>
-                  {cell.day}
-                </span>
-              )}
+              {/* Day number */}
+              <div className="flex items-center justify-between mb-1.5">
+                {isToday ? (
+                  <span className="text-[11px] font-black bg-[#E32E2E] text-white w-6 h-6 rounded-full flex items-center justify-center tabular-nums">
+                    {cell.day}
+                  </span>
+                ) : (
+                  <span className={`text-[11px] font-bold tabular-nums ${cell.isCurrentMonth ? 'text-[var(--ck-text)]' : 'text-[var(--ck-text-dim)]'}`}>
+                    {cell.day}
+                  </span>
+                )}
+                {cellTasks.length > 0 && !isToday && (
+                  <span className="text-[9px] font-bold text-[var(--ck-text-dim)] tabular-nums">
+                    {cellTasks.length}
+                  </span>
+                )}
+              </div>
 
-              {cellTasks.slice(0, 2).map((task) => {
-                const colors = taskColorClasses(task)
-                return (
-                  <div
+              {/* Task chips — show up to 3 */}
+              <div className="space-y-1">
+                {cellTasks.slice(0, 3).map((task) => (
+                  <button
                     key={task.id}
                     onClick={(e) => { e.stopPropagation(); onTaskClick?.(task) }}
-                    className={cn(
-                      'mt-2 p-1.5 border-l-4 text-[10px] font-bold rounded-sm flex flex-col gap-0.5',
-                      colors.bg,
-                      colors.border,
-                      colors.text,
-                      'cursor-pointer hover:opacity-80'
-                    )}
+                    className={`w-full px-1.5 py-1 text-left text-[10px] font-semibold rounded-sm flex items-center gap-1 truncate hover:brightness-125 transition-all ${taskChipStyle(task)}`}
                   >
                     {task.status === 'overdue' && (
-                      <span className="flex items-center gap-1">
-                        <Icon name="priority_high" size="text-[12px]" /> OVERDUE
-                      </span>
+                      <Icon name="priority_high" size="text-[10px]" className="flex-shrink-0" />
                     )}
-                    <span className="truncate">
-                      {task.status !== 'overdue' && `${taskTypeLabel(task)}: `}
-                      {task.title}
+                    <span className="uppercase tracking-wider text-[8px] font-black opacity-70 flex-shrink-0">
+                      {taskTypeLabel(task)}
                     </span>
-                    {task.assigned_to && (
-                      <div className="flex mt-0.5 -space-x-1">
-                        <div className="w-4 h-4 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[8px] text-slate-700">
-                          {task.assigned_to.slice(0, 2).toUpperCase()}
-                        </div>
-                      </div>
-                    )}
+                    <span className="truncate">{task.title}</span>
+                  </button>
+                ))}
+                {cellTasks.length > 3 && (
+                  <div className="text-[9px] font-bold text-[var(--ck-text-muted)] pl-1.5">
+                    +{cellTasks.length - 3} more
                   </div>
-                )
-              })}
-              {cellTasks.length > 2 && (
-                <div className="mt-1 text-[9px] font-semibold text-on-surface-variant">
-                  +{cellTasks.length - 2} more
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )
         })}

@@ -92,52 +92,87 @@ function CalendarContent() {
 
       {selectedTask && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4"
           onClick={() => setSelectedTask(null)}
         >
           <div
-            className="bg-white rounded-xl p-6 shadow-2xl w-96 max-w-[90vw]"
+            className="ck-card w-full max-w-md shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-between items-start mb-4">
-              <h2 className="font-bold text-lg text-primary">{selectedTask.title}</h2>
-              <button onClick={() => setSelectedTask(null)} className="text-slate-400 hover:text-slate-600">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-[var(--ck-border)]">
+              <h2 className="font-black text-lg text-[var(--ck-text)] leading-tight">{selectedTask.title}</h2>
+              <button
+                onClick={() => setSelectedTask(null)}
+                className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] hover:bg-white/5 transition-colors"
+                aria-label="Close"
+              >
                 ✕
               </button>
             </div>
-            <div className="space-y-3 text-sm">
-              <div><span className="font-semibold text-slate-600">Type:</span> <span className="capitalize">{selectedTask.type.replace(/_/g, ' ')}</span></div>
+
+            {/* Body: label + value rows */}
+            <div className="px-5 py-4 space-y-2.5">
+              <DetailRow label="Type">
+                <span className="capitalize text-[var(--ck-text)]">{selectedTask.type.replace(/_/g, ' ')}</span>
+              </DetailRow>
               {selectedTask.due_date && (
-                <div><span className="font-semibold text-slate-600">Due:</span> {new Date(selectedTask.due_date).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                <DetailRow label="Due">
+                  <span className="text-[var(--ck-text)] tabular-nums">
+                    {new Date(selectedTask.due_date).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </span>
+                </DetailRow>
               )}
               {selectedTask.description && (
-                <div><span className="font-semibold text-slate-600">Details:</span> {selectedTask.description}</div>
+                <DetailRow label="Details">
+                  <span className="text-[var(--ck-text)] leading-relaxed">{selectedTask.description}</span>
+                </DetailRow>
               )}
               {selectedTask.contact && (
-                <div><span className="font-semibold text-slate-600">Contact:</span> {toProperCase(selectedTask.contact.first_name || '')} {toProperCase(selectedTask.contact.last_name || '')}</div>
+                <DetailRow label="Contact">
+                  <span className="text-[var(--ck-text)]">
+                    {toProperCase(selectedTask.contact.first_name || '')} {toProperCase(selectedTask.contact.last_name || '')}
+                  </span>
+                </DetailRow>
               )}
               {selectedTask.property_address && (
-                <div><span className="font-semibold text-slate-600">Property:</span> {selectedTask.property_address}</div>
+                <DetailRow label="Property">
+                  <span className="text-[var(--ck-text)]">{selectedTask.property_address}</span>
+                </DetailRow>
               )}
               {selectedTask.assigned_to && (
-                <div><span className="font-semibold text-slate-600">Assigned:</span> {selectedTask.assigned_to}</div>
+                <DetailRow label="Assigned">
+                  <span className="text-[var(--ck-text)]">{selectedTask.assigned_to}</span>
+                </DetailRow>
               )}
-              <div><span className="font-semibold text-slate-600">Status:</span> <span className={selectedTask.status === 'overdue' ? 'text-red-600 font-bold' : ''}>{selectedTask.status}</span></div>
+              <DetailRow label="Status">
+                {selectedTask.status === 'overdue' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#E32E2E]/20 text-[#FCA5A5] text-[11px] font-black uppercase tracking-wider">
+                    Overdue
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-yellow-400/15 text-yellow-300 text-[11px] font-black uppercase tracking-wider">
+                    {selectedTask.status}
+                  </span>
+                )}
+              </DetailRow>
             </div>
-            <div className="mt-4 flex gap-2">
+
+            {/* Actions */}
+            <div className="px-5 py-4 border-t border-[var(--ck-border)] flex gap-2">
               <button
                 onClick={() => {
                   setEditingTask(selectedTask)
                   setSelectedTask(null)
                 }}
-                className="flex-1 py-2 bg-slate-100 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-200 transition-all"
+                className="flex-1 py-2.5 bg-[var(--ck-surface-elev)] hover:bg-[var(--ck-surface-hi)] border border-[var(--ck-border)] text-[var(--ck-text)] rounded-lg font-bold text-sm transition-colors"
               >
                 Edit Task
               </button>
               {selectedTask.contact_id && (
                 <a
                   href={`/leads/${selectedTask.contact_id}`}
-                  className="flex-1 text-center py-2 bg-primary text-white rounded-lg font-semibold text-sm hover:opacity-90 transition-all"
+                  className="flex-1 text-center py-2.5 bg-[#E32E2E] hover:bg-[#C42626] text-white rounded-lg font-bold text-sm transition-colors"
                 >
                   View Lead Profile →
                 </a>
@@ -185,8 +220,20 @@ function CalendarContent() {
 
 export default function CalendarPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-on-surface-variant">Loading calendar...</div>}>
+    <Suspense fallback={<div className="p-8 text-[var(--ck-text-muted)]">Loading calendar...</div>}>
       <CalendarContent />
     </Suspense>
+  )
+}
+
+// ─── Label + value row — dim label, bright value ──────────────────
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-3 text-sm">
+      <span className="w-20 flex-shrink-0 text-[10px] font-black uppercase tracking-[0.15em] text-[var(--ck-text-muted)]">
+        {label}
+      </span>
+      <div className="flex-1 min-w-0 text-sm">{children}</div>
+    </div>
   )
 }

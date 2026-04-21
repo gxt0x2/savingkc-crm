@@ -866,6 +866,7 @@ export default function LeadDetailPage() {
   const [manifestRowId, setManifestRowId] = useState<string | null>(null)
   const [manifestFinancials, setManifestFinancials] = useState<Record<string, number | null>>({ back_taxes: null, liens_amount: null, mortgage_balance: null })
   const [manifestProperty, setManifestProperty] = useState<Record<string, any> | null>(null)
+  const [ownerDeceased, setOwnerDeceased] = useState<boolean>(false)
   const [zestimate, setZestimate] = useState<number | null>(null)
   const [assessedValue, setAssessedValue] = useState<number | null>(null)
   const [redfinEstimate, setRedfinEstimate] = useState<number | null>(null)
@@ -942,6 +943,25 @@ export default function LeadDetailPage() {
     if (id) fetchLead()
   }, [id, refreshTick])
 
+  // The manifest's owner.deceased can drift (we've seen manifests built from
+  // the wrong owner's prospect). Fall back to prospects.is_deceased so the
+  // heirs panel appears whenever any linked prospect is flagged deceased.
+  useEffect(() => {
+    if (!id) return
+    async function fetchProspectDeceased() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('prospects')
+        .select('is_deceased')
+        .eq('lead_id', id)
+        .limit(50)
+      if ((data ?? []).some((r: { is_deceased: boolean | null }) => r.is_deceased)) {
+        setOwnerDeceased(true)
+      }
+    }
+    fetchProspectDeceased()
+  }, [id])
+
   useEffect(() => {
     async function fetchManifestId() {
       try {
@@ -957,6 +977,11 @@ export default function LeadDetailPage() {
           })
           // Store property object for PropertyDetailsCard manifest fallback
           setManifestProperty(data.manifest.manifest?.property || null)
+          // Track deceased flag for the heirs section.
+          // Additive only: if the manifest says deceased we flip to true, but
+          // never flip back to false — the prospects-table fetch is the other
+          // source and the OR must hold across both.
+          if (data.manifest.manifest?.owner?.deceased) setOwnerDeceased(true)
           // Two independent values: live Zillow zestimate and county/tax assessed value.
           const m = data.manifest.manifest || {}
           const property = m.property || {}

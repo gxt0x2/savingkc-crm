@@ -6,8 +6,6 @@ import type { HotOpportunityData } from '@/types/hot-opportunity'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-type CardVariant = 'white' | 'grey' | 'lightgrey' | 'red'
-
 function dollars(amount?: number | null): string {
   if (amount == null) return '--'
   return '$' + Math.round(amount / 1000) + 'K'
@@ -15,13 +13,13 @@ function dollars(amount?: number | null): string {
 
 export function HotOpportunityCardCompact({
   opp,
-  variant,
+  index = 0,
   onCall,
   onSms,
   onEmail,
 }: {
   opp: HotOpportunityData
-  variant: CardVariant
+  index?: number
   onCall?: (phone: string, leadId: string) => void
   onSms?: (leadId: string, phone?: string) => void
   onEmail?: (email?: string) => void
@@ -41,24 +39,23 @@ export function HotOpportunityCardCompact({
     opacity: isDragging ? 0.5 : 1,
   }
 
-  const variantStyles = {
-    white: 'bg-white border-2 border-gray-200',
-    grey: 'bg-gray-100 border-2 border-gray-300',
-    lightgrey: 'bg-gray-50 border-2 border-gray-200',
-    red: 'bg-[#FFF5F5] border-2 border-[#E32E2E]',
-  }
-
   const scoreColor = opp.score.composite >= 75
     ? 'bg-[#E32E2E] text-white'
     : opp.score.composite >= 50
     ? 'bg-gray-800 text-white'
     : 'bg-gray-400 text-white'
 
+  // Alternating surface elevation so adjacent cards read as distinct without
+  // introducing arbitrary color variants. Even indices sit on --ck-surface,
+  // odd indices lift to --ck-surface-elev. Both are brand-dark; the contrast
+  // is deliberate but quiet.
+  const surfaceClass = index % 2 === 0 ? 'ck-card' : 'ck-card-elev'
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`${variantStyles[variant]} rounded-lg overflow-hidden hover:shadow-xl transition-all group`}
+      className={`${surfaceClass} overflow-hidden shadow-sm hover:shadow-lg transition-all group`}
     >
       {/* Drag handle indicator */}
       <div
@@ -100,10 +97,10 @@ export function HotOpportunityCardCompact({
 
         {/* Ari Insight */}
         {opp.hotSignal && (
-          <div className="bg-gray-100 border border-gray-200 rounded-lg p-2.5 mb-3">
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-sm">🦊</span>
-              <span className="text-[9px] font-bold text-gray-600 uppercase">Ari</span>
+          <div className="bg-gray-50 rounded-lg p-2.5 mb-3 border-l-2 border-[#E32E2E]">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Icon name="auto_awesome" size="text-xs" className="text-[#E32E2E]" />
+              <span className="text-[9px] font-black text-gray-600 uppercase tracking-wider">Ari</span>
             </div>
             <p className="text-xs text-gray-800 leading-snug line-clamp-3">
               {opp.hotSignal}
@@ -177,47 +174,46 @@ export function HotOpportunityCardCompact({
         )}
         </Link>
 
-        {/* Quick Actions */}
+        {/* Quick Actions — hierarchy: Call (primary) > SMS > Email */}
         <div className="grid grid-cols-3 gap-1.5">
           <button
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              console.log('[CALL BTN] Clicked - phone:', opp.phone, 'leadId:', opp.leadId, 'onCall exists:', !!onCall)
               if (opp.phone) {
                 onCall?.(opp.phone, opp.leadId)
               }
             }}
             disabled={!opp.phone}
-            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#E32E2E] text-white font-bold text-xs hover:bg-[#C42626] transition-colors disabled:opacity-40 disabled:bg-gray-300 shadow-sm"
           >
             <Icon name="call" size="text-sm" />
+            Call
           </button>
           <button
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              console.log('[SMS BTN] Clicked - leadId:', opp.leadId, 'phone:', opp.phone, 'onSms exists:', !!onSms)
               if (opp.phone) {
                 onSms?.(opp.leadId, opp.phone)
               }
             }}
             disabled={!opp.phone}
-            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-black text-white font-bold text-xs hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
           >
             <Icon name="chat" size="text-sm" />
+            SMS
           </button>
           <button
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              console.log('[EMAIL BTN] Clicked - email:', opp.email, 'onEmail exists:', !!onEmail)
               if (opp.email) {
                 onEmail?.(opp.email)
               }
             }}
             disabled={!opp.email}
-            className="flex items-center justify-center gap-1 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:bg-gray-300"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 font-bold text-xs hover:border-gray-400 hover:bg-gray-50 transition-colors disabled:opacity-40"
           >
             <Icon name="mail" size="text-sm" />
           </button>

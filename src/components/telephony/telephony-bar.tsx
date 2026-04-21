@@ -31,11 +31,25 @@ interface RecentCall {
   metadata: { duration?: number } | null
 }
 
+// A single entry in the heir-dialer queue. The property stays pinned (leadId +
+// propertyAddress + deceasedOwnerName) while heirName/relation/phone rotate per
+// item.
+export interface HeirQueueItem {
+  prospect_phone_id: string
+  phone: string
+  heirName: string
+  relation: string
+  leadId: string
+  propertyAddress: string
+  deceasedOwnerName: string
+}
+
 interface DialerPanelProps {
   open: boolean
   onClose: () => void
   onStatusChange?: (status: CallStatus) => void
   pendingDial?: { phone: string; name: string; leadId: string } | null
+  pendingQueue?: HeirQueueItem[] | null
 }
 
 function useCallTimer(active: boolean) {
@@ -84,7 +98,7 @@ const priorityColors: Record<string, string> = {
   cold: 'bg-cyan-500/20 text-cyan-300',
 }
 
-export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: DialerPanelProps) {
+export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendingQueue }: DialerPanelProps) {
   const [status, setStatus] = useState<CallStatus>('offline')
   const [dialNumber, setDialNumber] = useState('')
   const [muted, setMuted] = useState(false)
@@ -111,6 +125,14 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
   const [showDisposition, setShowDisposition] = useState(false)
   const lastCallPhoneRef = useRef<string>('')
 
+  // Heir queue mode — when active, the property stays pinned across calls and
+  // each disposition advances to the next heir phone.
+  const [queue, setQueue] = useState<HeirQueueItem[] | null>(null)
+  const [queueIndex, setQueueIndex] = useState(0)
+  const queueItem = queue && queue[queueIndex] ? queue[queueIndex] : null
+  const queueMode = queue !== null && queue.length > 0
+  const activeQueueItemRef = useRef<HeirQueueItem | null>(null)
+
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
     if (open && pendingDial?.phone) {
@@ -129,6 +151,41 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
       setSearchResults([])
     }
   }, [open, pendingDial])
+
+  // Broadcast queue state so the /dialer page (or any other surface) can
+  // render its own "Now calling" indicator without importing the bar.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('heir-queue-state', {
+      detail: {
+        queueItem,
+        queueIndex,
+        queueLength: queue?.length ?? 0,
+        status,
+      },
+    }))
+  }, [queueItem, queueIndex, queue, status])
+
+  // Handle pendingQueue from HeirsSection — open heir-dialer queue mode.
+  useEffect(() => {
+    if (open && pendingQueue && pendingQueue.length > 0) {
+      setQueue(pendingQueue)
+      setQueueIndex(0)
+      const first = pendingQueue[0]
+      setSelectedLead({
+        id: first.leadId,
+        full_name: first.heirName,
+        phone: first.phone,
+        property_address: first.propertyAddress,
+        city: null,
+        station: null,
+        priority: null,
+        updated_at: new Date().toISOString(),
+      })
+      setDialNumber(first.phone)
+      setSearchQuery('')
+      setSearchResults([])
+    }
+  }, [open, pendingQueue])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
@@ -279,6 +336,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
     setStatusLogged('calling')
     setError(null)
     lastCallPhoneRef.current = number
+    // Snapshot the queue item at call start so the disposition (which fires
+    // after disconnect, possibly after advance) logs against the right heir.
+    activeQueueItemRef.current = queueItem
     log(`calling ${number}`)
     try {
       const call = await deviceRef.current.connect({
@@ -296,6 +356,13 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
         setStatusLogged('on_call')
       })
 
+      const heirMeta = activeQueueItemRef.current
+        ? {
+            heir_name: activeQueueItemRef.current.heirName,
+            heir_relation: activeQueueItemRef.current.relation,
+            prospect_phone_id: activeQueueItemRef.current.prospect_phone_id,
+          }
+        : null
       fetch('/api/call-log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -304,6 +371,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
           event: 'started',
           agent: 'Ernest',
           lead_id: selectedLead?.id || null,
+          ...heirMeta,
         }),
       }).catch(() => {})
 
@@ -318,6 +386,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
             duration,
             agent: 'Ernest',
             lead_id: selectedLead?.id || null,
+            ...heirMeta,
           }),
         }).catch(() => {})
         callRef.current = null
@@ -380,22 +449,108 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
 
   async function handleDisposition(disposition: DispositionType, notes?: string) {
     if (!selectedLead) return
+    const activeItem = activeQueueItemRef.current
     try {
-      await fetch('/api/leads', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: selectedLead.id,
-          activity: {
-            type: 'call',
+      if (activeItem) {
+        // Heir-dialer path: log to prospect_phones + activity feed via our own
+        // endpoint (which handles both writes in one call).
+        await fetch('/api/heirs/attempt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prospect_phone_id: activeItem.prospect_phone_id,
             disposition,
             notes,
-            phone: lastCallPhoneRef.current,
-          },
-        }),
-      })
+            lead_id: activeItem.leadId,
+            agent: 'Ernest',
+          }),
+        })
+        window.dispatchEvent(new CustomEvent('heir-attempt-logged', {
+          detail: { leadId: activeItem.leadId, prospectPhoneId: activeItem.prospect_phone_id },
+        }))
+      } else {
+        await fetch('/api/leads', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: selectedLead.id,
+            activity: {
+              type: 'call',
+              disposition,
+              notes,
+              phone: lastCallPhoneRef.current,
+            },
+          }),
+        })
+      }
       window.dispatchEvent(new CustomEvent('crm:disposition-logged', { detail: { leadId: selectedLead.id } }))
     } catch {}
+
+    // Advance the heir queue after disposition is logged.
+    if (queueMode) advanceQueue()
+    activeQueueItemRef.current = null
+  }
+
+  function advanceQueue() {
+    if (!queue) return
+    const next = queueIndex + 1
+    if (next >= queue.length) {
+      // Queue complete — let listeners (e.g. /dialer page) advance to the
+      // next lead before we reset local state.
+      const finishedLeadId = queue[queueIndex]?.leadId
+      if (finishedLeadId) {
+        window.dispatchEvent(new CustomEvent('heir-queue-complete', {
+          detail: { leadId: finishedLeadId },
+        }))
+      }
+      setQueue(null)
+      setQueueIndex(0)
+      setSelectedLead(null)
+      setDialNumber('')
+      return
+    }
+    setQueueIndex(next)
+    const item = queue[next]
+    setSelectedLead({
+      id: item.leadId,
+      full_name: item.heirName,
+      phone: item.phone,
+      property_address: item.propertyAddress,
+      city: null,
+      station: null,
+      priority: null,
+      updated_at: new Date().toISOString(),
+    })
+    setDialNumber(item.phone)
+  }
+
+  function skipQueueItem() {
+    advanceQueue()
+  }
+
+  function prevQueueItem() {
+    if (!queue || queueIndex === 0) return
+    const prev = queueIndex - 1
+    setQueueIndex(prev)
+    const item = queue[prev]
+    setSelectedLead({
+      id: item.leadId,
+      full_name: item.heirName,
+      phone: item.phone,
+      property_address: item.propertyAddress,
+      city: null,
+      station: null,
+      priority: null,
+      updated_at: new Date().toISOString(),
+    })
+    setDialNumber(item.phone)
+  }
+
+  function endQueue() {
+    setQueue(null)
+    setQueueIndex(0)
+    setSelectedLead(null)
+    setDialNumber('')
   }
 
   function handleRedial(call: RecentCall) {
@@ -460,6 +615,60 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial }: Dial
             <Icon name="close" size="text-xl" />
           </button>
         </div>
+
+        {/* Pinned property header — visible across the whole queue */}
+        {queueMode && queueItem && (
+          <div
+            className="px-5 py-3 bg-[#1c1c1c] border-b-2 border-[#E32E2E]"
+            style={{ borderLeft: '3px solid #E32E2E' }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#E32E2E] mb-0.5">
+                  Heir queue · {queueIndex + 1} of {queue!.length}
+                </p>
+                <p className="text-sm font-bold text-white truncate">
+                  {queueItem.deceasedOwnerName} <span className="text-white/40 font-normal">(deceased)</span>
+                </p>
+                {queueItem.propertyAddress && (
+                  <p className="text-[11px] text-white/50 truncate">{queueItem.propertyAddress}</p>
+                )}
+              </div>
+              <button
+                onClick={endQueue}
+                className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-md px-2 py-1 transition-colors"
+                title="End heir queue — back to normal dialer"
+              >
+                End
+              </button>
+            </div>
+            <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-white truncate">
+                  {queueItem.heirName}
+                  <span className="text-white/40 font-normal capitalize"> · {queueItem.relation}</span>
+                </p>
+                <p className="text-[10px] font-mono text-white/50">{formatPhone(queueItem.phone)}</p>
+              </div>
+              <button
+                onClick={prevQueueItem}
+                disabled={queueIndex === 0 || isOnCall}
+                className="flex-shrink-0 w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed text-white/70 flex items-center justify-center transition-colors"
+                title="Previous heir"
+              >
+                <Icon name="skip_previous" size="text-sm" />
+              </button>
+              <button
+                onClick={skipQueueItem}
+                disabled={isOnCall}
+                className="flex-shrink-0 w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed text-white/70 flex items-center justify-center transition-colors"
+                title="Skip without logging"
+              >
+                <Icon name="skip_next" size="text-sm" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">

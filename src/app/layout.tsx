@@ -27,14 +27,14 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${inter.variable} light`}>
+    <html lang="en" className={`${inter.variable} dark`}>
       <head>
         <link
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
           rel="stylesheet"
         />
       </head>
-      <body className="bg-background text-on-surface antialiased min-h-screen font-sans">
+      <body className="ck-dark bg-background text-on-surface antialiased min-h-screen font-sans">
         <Providers>
           {children}
         </Providers>
