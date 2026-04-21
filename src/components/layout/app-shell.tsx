@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { NavTabs } from './nav-tab'
+import { ModeSwitcher } from './mode-switcher'
 import { DialerPanel, CallStatus } from '@/components/telephony/telephony-bar'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
+import { useAppMode } from '@/hooks/use-app-mode'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -14,6 +17,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [dialerStatus, setDialerStatus] = useState<CallStatus>('offline')
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
+  const { mode, setMode } = useAppMode()
+  const router = useRouter()
 
   // Auto-open dialer on incoming call
   useEffect(() => {
@@ -101,7 +106,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {/* Brand */}
             <div className="flex items-center gap-2">
               <img src="/logo.png" alt="Saving KC" className="h-9 w-auto" />
+            </div>
 
+            {/* Mode Switcher — desktop only */}
+            <div className="hidden md:block">
+              <ModeSwitcher
+                mode={mode}
+                onChange={(m) => {
+                  setMode(m)
+                  router.push(m === 'dispositions' ? '/dispo/buyers' : '/dashboard')
+                }}
+              />
             </div>
 
             {/* Nav Tabs — desktop only */}
@@ -212,6 +227,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
         <div className="p-4">
+          <div className="mb-4">
+            <ModeSwitcher
+              mode={mode}
+              onChange={(m) => {
+                setMode(m)
+                setDrawerOpen(false)
+                router.push(m === 'dispositions' ? '/dispo/buyers' : '/dashboard')
+              }}
+            />
+          </div>
           <NavTabs onNavigate={() => setDrawerOpen(false)} mobile />
         </div>
       </div>
