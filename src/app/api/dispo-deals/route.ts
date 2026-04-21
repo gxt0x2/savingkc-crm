@@ -10,32 +10,41 @@ let bootstrapped = false
 async function ensureTable() {
   if (bootstrapped) return
   const db = supabaseAdmin()
-  try {
-    await db.rpc('exec_sql', {
-      sql_query: `
-        CREATE TABLE IF NOT EXISTS dispo_deals (
-          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-          lead_id uuid NOT NULL REFERENCES leads(id),
-          stage text NOT NULL DEFAULT 'new'
-            CHECK (stage IN ('new','marketing','offers_in','negotiating','under_contract','closed','dead')),
-          entered_at timestamptz NOT NULL DEFAULT now(),
-          assignment_fee numeric,
-          close_date date,
-          accepted_offer_id uuid,
-          accepted_buyer_id uuid,
-          notes text,
-          created_at timestamptz NOT NULL DEFAULT now(),
-          updated_at timestamptz NOT NULL DEFAULT now()
-        );
 
-        CREATE INDEX IF NOT EXISTS idx_dispo_deals_stage ON dispo_deals(stage);
-        CREATE INDEX IF NOT EXISTS idx_dispo_deals_lead ON dispo_deals(lead_id);
-      `,
-    })
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS dispo_deals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      lead_id uuid NOT NULL REFERENCES leads(id),
+      stage text NOT NULL DEFAULT 'new'
+        CHECK (stage IN ('new','marketing','offers_in','negotiating','under_contract','closed','dead')),
+      entered_at timestamptz NOT NULL DEFAULT now(),
+      assignment_fee numeric,
+      close_date date,
+      accepted_offer_id uuid,
+      accepted_buyer_id uuid,
+      notes text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_dispo_deals_stage ON dispo_deals(stage)`,
+    `CREATE INDEX IF NOT EXISTS idx_dispo_deals_lead ON dispo_deals(lead_id)`,
+  ]
+
+  try {
+    for (const sql of statements) {
+      const { error } = await db.rpc('exec_sql', { sql_query: sql })
+      if (error) {
+        console.error('[dispo-deals] Bootstrap SQL error:', error.message)
+      }
+    }
     bootstrapped = true
   } catch (e) {
-    console.error('[dispo-deals] Bootstrap error (may be OK if table exists):', e)
-    bootstrapped = true
+    console.error('[dispo-deals] Bootstrap error:', e)
+    // Check if table exists by trying a count
+    const { error: testErr } = await db.from('dispo_deals').select('id', { count: 'exact', head: true })
+    if (!testErr) {
+      bootstrapped = true
+    }
   }
 }
 
