@@ -398,6 +398,13 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
   const [manifest, setManifest] = useState<ManifestData>({})
   const [loading, setLoading] = useState(true)
   const [open, toggleOpen] = useCardCollapse('favorite-or-fool')
+  const [refreshTick, setRefreshTick] = useState(0)
+
+  useEffect(() => {
+    function bump() { setRefreshTick((t) => t + 1) }
+    window.addEventListener('crm:lead-refresh', bump)
+    return () => window.removeEventListener('crm:lead-refresh', bump)
+  }, [])
 
   useEffect(() => {
     async function fetchManifest() {
@@ -413,7 +420,7 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
       setLoading(false)
     }
     fetchManifest()
-  }, [leadId])
+  }, [leadId, refreshTick])
 
   const result = diagnose(manifest, {
     leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation,

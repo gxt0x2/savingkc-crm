@@ -52,9 +52,19 @@ export async function POST(request: Request) {
       return NextResponse.json(fallback(lead, manifest, activities ?? []))
     }
 
+    const today = new Date()
+    const todayReadable = `${today.toLocaleDateString('en-US', { weekday: 'short' })} ${today.toLocaleDateString('en-US', { month: 'long' })} ${today.getDate()}`
+    const todayISO = today.toISOString().slice(0, 10)
+
     const system = `You are the next-action engine for a Kansas City real estate wholesaling team.
 Your job: read the ENTIRE context below — manifest, every transcript summary + quotes, every pending
 task, every note, every email — then write a rich, specific next-action brief for the agent.
+
+TODAY: ${todayReadable} (${todayISO}). In the detail passage, format every calendar date as
+"Wed April 30th" — short weekday + full month + day with ordinal suffix. The dateTime field
+MUST still be strict ISO 8601 with timezone. If the source data has a vague date like
+"end of the month" or "around the 28th", resolve it to a concrete day using today as the
+anchor. Never leave vague dates in the passage.
 
 Treat this like a briefing memo, not a chat message. The agent is about to pick up the phone; your
 job is to tell them exactly what the seller said, when they agreed to reconnect, and what to prep

@@ -250,25 +250,30 @@ async function generateBriefing(
     }
 
     if (extracted) {
-      // Check if fields are truly empty (null, undefined, or empty string after trimming)
+      // Any field truly empty means the generation did NOT understand the data.
+      // Returning canned filler like "Schedule call to assess opportunity" was
+      // the "generic mush" Ernest kept seeing — it hides that the LLM bailed.
+      // Throw so we either retry (POST path) or return an explicit error.
       const hasSituation = extracted.situation?.trim()
       const hasMotivation = extracted.motivation?.trim()
       const hasStrategy = extracted.strategy?.trim()
-
+      if (!hasSituation || !hasMotivation || !hasStrategy) {
+        throw new Error('Briefing fields empty — incomplete LLM output')
+      }
       briefing = {
-        situation: hasSituation || 'Lead data insufficient for situation assessment',
-        motivation: hasMotivation || 'Contact needed to gauge motivation level',
-        strategy: hasStrategy || 'Schedule call to assess opportunity and build rapport',
+        situation: hasSituation,
+        motivation: hasMotivation,
+        strategy: hasStrategy,
       }
     } else {
       throw new Error('Could not extract briefing from response')
     }
-  } catch {
-    briefing = {
-      situation: content.slice(0, 500) || 'Unable to generate situation summary',
-      motivation: 'Motivation assessment unavailable',
-      strategy: 'Strategy unavailable',
-    }
+  } catch (err) {
+    // Don't cache garbage. Bubble up so the caller (GET/POST handler)
+    // returns an error and the UI can show a retry state instead of
+    // silently persisting "Motivation assessment unavailable" mush.
+    console.error('[generate-briefing] extraction failed:', (err as Error).message, 'raw:', content.slice(0, 300))
+    throw new Error(`briefing_extraction_failed: ${(err as Error).message}`)
   }
 
   // Final sanitization: ensure no nested JSON or label prefixes in fields

@@ -1,8 +1,40 @@
 import { NextResponse } from 'next/server'
+import twilio from 'twilio'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { supabase } from '@/lib/supabase-lazy'
+
+// WebRTC-initiated calls record against the parent leg whose To/From are
+// client identifiers rather than the dialed number. When the lookup-by-phone
+// falls through, we ask Twilio for the child legs and match on their `to`.
+async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | null> {
+  const acct = process.env.TWILIO_ACCOUNT_SID
+  const authToken = process.env.TWILIO_AUTH_TOKEN
+  const apiKey = process.env.TWILIO_API_KEY
+  const apiSecret = process.env.TWILIO_API_SECRET
+  if (!acct) return null
+  let client: ReturnType<typeof twilio> | null = null
+  if (apiKey && apiSecret) {
+    client = twilio(apiKey, apiSecret, { accountSid: acct })
+  } else if (authToken) {
+    client = twilio(acct, authToken)
+  }
+  if (!client) return null
+  try {
+    const children = await client.calls.list({ parentCallSid: callSid, limit: 5 })
+    for (const child of children) {
+      if (!child.to) continue
+      const phone = child.to.replace(/[^\d+]/g, '')
+      if (!phone) continue
+      const { data } = await supabase.from('leads').select('id').eq('phone', phone).limit(1).maybeSingle()
+      if (data?.id) return data.id
+    }
+  } catch (err) {
+    console.error('[recording-callback] child-leg lookup failed', (err as Error).message)
+  }
+  return null
+}
 
 /**
  * Twilio recording status callback.
@@ -55,12 +87,20 @@ export async function POST(req: Request) {
         .select('id')
         .eq('phone', cleanPhone)
         .limit(1)
-        .single()
+        .maybeSingle()
       leadId = lead?.id || null
     }
 
+    // Fallback: WebRTC parent legs have empty To — look at child legs via Twilio
+    if (!leadId && callSid) {
+      leadId = await resolveLeadIdFromChildLegs(callSid)
+      if (leadId) {
+        console.log(`[recording-callback] Resolved lead ${leadId} via child-leg lookup`)
+      }
+    }
+
     if (!leadId) {
-      console.log(`[recording-callback] No lead found for phone ${cleanPhone}, skipping transcript`)
+      console.log(`[recording-callback] No lead found (phone=${cleanPhone || 'none'} callSid=${callSid}), skipping transcript`)
       return NextResponse.json({ ok: true, skipped: 'no_lead' })
     }
 
@@ -124,14 +164,25 @@ async function processRecording(
       metadata: { source: 'call_analysis', analysis },
     })
 
-    // 6. Update lead fields from analysis
-    const leadUpdates: Record<string, any> = {}
+    // 6. Update lead fields from analysis (+ denormalized last-call snapshot)
+    const leadUpdates: Record<string, any> = {
+      transcript,
+      call_duration_seconds: duration,
+      updated_at: new Date().toISOString(),
+    }
     if (analysis.motivationScore) leadUpdates.motivation_score = analysis.motivationScore
     if (analysis.conditionOverall) leadUpdates.property_condition = analysis.conditionOverall
     if (analysis.sellerAsking) leadUpdates.asking_price = analysis.sellerAsking
-    if (Object.keys(leadUpdates).length > 0) {
-      await supabase.from('leads').update(leadUpdates).eq('id', leadId)
-    }
+    if (typeof analysis.opportunity_score === 'number') leadUpdates.opportunity_score = analysis.opportunity_score
+    if (analysis.classification) leadUpdates.classification = analysis.classification
+    await supabase.from('leads').update(leadUpdates).eq('id', leadId)
+  } else {
+    // No analysis available but still refresh the transcript + duration
+    await supabase.from('leads').update({
+      transcript,
+      call_duration_seconds: duration,
+      updated_at: new Date().toISOString(),
+    }).eq('id', leadId)
   }
 
   // 7. Update manifest with transcript + analysis
@@ -153,6 +204,11 @@ async function processRecording(
           sentiment: analysis.sentiment,
           rapportLevel: analysis.rapportLevel,
           verbatimQuotes: analysis.verbatimQuotes,
+          // Feed the Pain Points component: pull from keyLeverage + emotionalDrivers
+          painPoints: [
+            ...(analysis.keyLeverage || []),
+            ...(analysis.emotionalDrivers || []),
+          ].filter(Boolean),
         } : null,
       })
 
@@ -188,6 +244,78 @@ async function processRecording(
         }
         if (analysis.coOwners?.length) {
           manifest.owner.coOwners = analysis.coOwners
+        }
+
+        // ── Structured situation fields consumed by SellerGoals, PainPoints,
+        //    FavoriteOrFool. These were missing, so those UI cards never
+        //    reflected a new conversation even when transcription succeeded.
+        if (!manifest.situation) manifest.situation = {}
+        if (!manifest.situation.motivation) manifest.situation.motivation = {}
+        if (!manifest.situation.timeline) manifest.situation.timeline = {}
+        if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
+
+        if (analysis.urgency) manifest.situation.motivation.urgencyLevel = analysis.urgency
+        if (analysis.motivationScore) manifest.situation.motivation.score = analysis.motivationScore
+        if (analysis.motivationSignals?.length) {
+          const existing: string[] = manifest.situation.motivation.signals || []
+          for (const s of analysis.motivationSignals) {
+            if (!existing.includes(s)) existing.push(s)
+          }
+          manifest.situation.motivation.signals = existing
+        }
+        if (analysis.emotionalDrivers?.length) {
+          manifest.situation.motivation.emotionalDrivers = analysis.emotionalDrivers
+          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+          if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
+          manifest.ariIntelligence.sellerProfile.emotionalDrivers = analysis.emotionalDrivers
+        }
+
+        if (analysis.targetCloseDate) manifest.situation.timeline.preferredClosing = analysis.targetCloseDate
+        if (analysis.hardDeadline !== undefined) manifest.situation.timeline.hardDeadline = analysis.hardDeadline
+        if (analysis.deadlineReason) manifest.situation.timeline.deadlineReason = analysis.deadlineReason
+        if (analysis.urgency) {
+          manifest.situation.timeline.flexibility =
+            analysis.urgency === 'critical' || analysis.urgency === 'high' ? 'tight' :
+            analysis.urgency === 'medium' ? 'moderate' : 'flexible'
+        }
+
+        if (analysis.sellerAsking != null) manifest.situation.priceExpectations.sellerAsking = analysis.sellerAsking
+        if (analysis.sellerFloor != null) manifest.situation.priceExpectations.sellerFloor = analysis.sellerFloor
+        if (analysis.priceFlexibility) manifest.situation.priceExpectations.flexibility = analysis.priceFlexibility
+        if (analysis.priceAnchor) manifest.situation.priceExpectations.anchor = analysis.priceAnchor
+
+        if (!manifest.property) manifest.property = {}
+        if (!manifest.property.condition) manifest.property.condition = {}
+        if (analysis.conditionOverall) manifest.property.condition.overall = analysis.conditionOverall
+        if (analysis.repairsNotes) manifest.property.condition.repairsNotes = analysis.repairsNotes
+        if (analysis.vacant === true) manifest.property.vacant = true
+
+        if (analysis.situationType?.length) {
+          if (!manifest.situation.type) manifest.situation.type = []
+          for (const t of analysis.situationType) {
+            if (!manifest.situation.type.includes(t)) manifest.situation.type.push(t)
+          }
+        }
+        if (analysis.blockers?.length) {
+          if (!manifest.situation.blockers) manifest.situation.blockers = []
+          for (const b of analysis.blockers) {
+            if (!manifest.situation.blockers.includes(b)) manifest.situation.blockers.push(b)
+          }
+        }
+
+        if (analysis.dealConfidenceScore != null) {
+          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+          if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
+          manifest.ariIntelligence.dealIntelligence.confidenceScore = analysis.dealConfidenceScore
+        }
+        if (analysis.followUpAction) {
+          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+          if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
+          manifest.ariIntelligence.recommendedActions.unshift({
+            action: analysis.followUpAction,
+            reason: 'transcript_analysis',
+            when: analysis.followUpDateTime || null,
+          })
         }
       }
 
