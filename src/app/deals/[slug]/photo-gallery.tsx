@@ -204,12 +204,11 @@ export default function PhotoGallery({
                 alt="Street View"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
-              <div className="absolute inset-0 bg-black/50 group-hover:bg-black/35 transition-colors" />
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <div className="flex items-center gap-2.5 text-white font-bold text-sm tracking-widest drop-shadow-lg">
-                  <IconPegman className="w-6 h-6 drop-shadow-lg" />
-                  STREET VIEW
-                </div>
+              <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60 group-hover:from-black/40 group-hover:via-black/15 group-hover:to-black/40 transition-all" />
+              {/* Top-right badge */}
+              <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20">
+                <IconPegman className="w-5 h-5 text-white" />
+                <span className="text-white font-bold text-xs tracking-wider">STREET VIEW</span>
               </div>
             </div>
 
@@ -223,11 +222,12 @@ export default function PhotoGallery({
                 alt="Map View"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
-              <div className="absolute inset-0 bg-black/50 group-hover:bg-black/35 transition-colors" />
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <div className="flex items-center gap-2.5 text-white font-bold text-sm tracking-widest drop-shadow-lg">
-                  <IconLocationPin className="w-6 h-6 drop-shadow-lg" />
-                  MAP VIEW
+              <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60 group-hover:from-black/40 group-hover:via-black/15 group-hover:to-black/40 transition-all" />
+              {/* Center badge */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="flex items-center gap-2 bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20">
+                  <IconLocationPin className="w-5 h-5 text-white" />
+                  <span className="text-white font-bold text-xs tracking-wider">MAP VIEW</span>
                 </div>
               </div>
             </div>
