@@ -330,9 +330,9 @@ export default async function DealPage({
           </div>
 
           {/* RIGHT SIDEBAR */}
-          <div className="space-y-5">
+          <div className="space-y-5 sticky top-6">
             {/* Pricing Card */}
-            <div className={`${card} p-6 sticky top-6`}>
+            <div className={`${card} p-6`}>
               {dealPage.show_asking_price !== false && askingPrice && (
                 <div className="mb-5">
                   <p className="text-[13px] text-[#888] mb-1">Price</p>
