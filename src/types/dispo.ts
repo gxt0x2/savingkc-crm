@@ -105,6 +105,12 @@ export interface BuyerOffer {
   lead?: { id: string; property_address: string; full_name: string }
 }
 
+export interface InspectionReport {
+  name: string
+  url: string
+  uploaded_at: string
+}
+
 export interface DealPage {
   id: string
   lead_id: string
@@ -112,6 +118,8 @@ export interface DealPage {
   title: string | null
   description: string | null
   photos: string[]
+  videos: string[]
+  inspection_reports: InspectionReport[]
   show_address: boolean
   show_arv: boolean
   show_repair_estimate: boolean
@@ -125,6 +133,16 @@ export interface DealPage {
   unique_visitors: number
   accept_offers: boolean
   offer_deadline: string | null
+  contract_close_date: string | null
+  earnest_money: number | null
+  inspection_period_days: number | null
+  financing_terms: string | null
+  repair_estimate_low: number | null
+  repair_estimate_high: number | null
+  property_condition: string | null
+  parking: string | null
+  contract_notes: string | null
+  assignment_fee: number | null
   created_at: string
   updated_at: string
 }

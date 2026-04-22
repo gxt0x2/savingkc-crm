@@ -40,12 +40,12 @@ export async function POST(
     const data = validation.data
     const db = supabaseAdmin()
 
-    // Fetch the deal page
+    // Fetch the deal page — fixed: was .eq('status', 'active')
     const { data: dealPage, error: dealError } = await db
       .from('deal_pages')
       .select('id, lead_id, slug')
       .eq('slug', slug)
-      .eq('status', 'active')
+      .eq('is_active', true)
       .single()
 
     if (dealError || !dealPage) {

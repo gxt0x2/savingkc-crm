@@ -44,7 +44,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { lead_id, title, description, photos } = body
+    const {
+      lead_id, title, description, photos,
+      contract_close_date, earnest_money, inspection_period_days,
+      financing_terms, repair_estimate_low, repair_estimate_high,
+      property_condition, parking, contract_notes, assignment_fee,
+      videos, inspection_reports,
+    } = body
 
     if (!lead_id) {
       return NextResponse.json({ error: 'lead_id is required' }, { status: 400 })
@@ -78,6 +84,8 @@ export async function POST(req: NextRequest) {
       title: title || defaultTitle,
       description: description || null,
       photos: photos || [],
+      videos: videos || [],
+      inspection_reports: inspection_reports || [],
       is_active: true,
       view_count: 0,
       unique_visitors: 0,
@@ -87,6 +95,16 @@ export async function POST(req: NextRequest) {
       show_assignment_fee: body.show_assignment_fee ?? false,
       accept_offers: body.accept_offers ?? true,
       requires_registration: body.requires_registration ?? false,
+      contract_close_date: contract_close_date || null,
+      earnest_money: earnest_money ?? null,
+      inspection_period_days: inspection_period_days ?? null,
+      financing_terms: financing_terms || null,
+      repair_estimate_low: repair_estimate_low ?? null,
+      repair_estimate_high: repair_estimate_high ?? null,
+      property_condition: property_condition || null,
+      parking: parking || null,
+      contract_notes: contract_notes || null,
+      assignment_fee: assignment_fee ?? null,
     }
 
     const { data: dealPage, error: insertError } = await db
