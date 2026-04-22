@@ -576,32 +576,52 @@ function EditDealPageModal({ deal, onClose, onSaved }: { deal: DealPage; onClose
     show_assignment_fee: deal.show_assignment_fee,
     accept_offers: deal.accept_offers,
   })
-  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [importingPhotos, setImportingPhotos] = useState(false)
+  const [photoUrl, setPhotoUrl] = useState('')
+  const [photoImportStatus, setPhotoImportStatus] = useState<string | null>(null)
   const [uploadingReport, setUploadingReport] = useState(false)
   const [photos, setPhotos] = useState<string[]>(deal.photos || [])
   const [reports, setReports] = useState<InspectionReport[]>(deal.inspection_reports || [])
-  const photoRef = useRef<HTMLInputElement | null>(null)
   const reportRef = useRef<HTMLInputElement | null>(null)
 
   function set(key: string, value: string | boolean) {
     setForm(prev => ({ ...prev, [key]: value }))
   }
 
-  async function uploadPhoto(files: FileList | null) {
-    if (!files || files.length === 0) return
-    setUploadingPhoto(true)
-    for (const file of Array.from(files)) {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('deal_page_id', deal.id)
-      fd.append('type', 'photo')
-      const res = await fetch('/api/deals/upload', { method: 'POST', body: fd })
-      if (res.ok) {
-        const { url } = await res.json()
-        setPhotos(prev => [...prev, url])
+  async function importPhotoUrls() {
+    const raw = photoUrl.trim()
+    if (!raw) return
+    // Support comma/newline/space separated URLs
+    const urls = raw.split(/[\s,\n]+/).filter(u => u.startsWith('http'))
+    if (urls.length === 0) { setPhotoImportStatus('No valid URLs found'); return }
+    setImportingPhotos(true)
+    setPhotoImportStatus(`Importing ${urls.length} photo${urls.length > 1 ? 's' : ''}...`)
+    try {
+      const res = await fetch('/api/deals/import-photos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deal_page_id: deal.id, urls }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setPhotoImportStatus(`Error: ${data.error || 'Import failed'}`)
+        return
       }
+      const data = await res.json()
+      // Refresh photos from server
+      const dpRes = await fetch(`/api/deals/${deal.id}`)
+      if (dpRes.ok) {
+        const dp = await dpRes.json()
+        if (dp.photos) setPhotos(dp.photos)
+      }
+      setPhotoUrl('')
+      setPhotoImportStatus(`Imported ${data.imported} photo${data.imported !== 1 ? 's' : ''}${data.failed ? `, ${data.failed} failed` : ''}`)
+      setTimeout(() => setPhotoImportStatus(null), 4000)
+    } catch {
+      setPhotoImportStatus('Import failed — check the URL')
+    } finally {
+      setImportingPhotos(false)
     }
-    setUploadingPhoto(false)
   }
 
   async function uploadReport(files: FileList | null) {
@@ -685,10 +705,10 @@ function EditDealPageModal({ deal, onClose, onSaved }: { deal: DealPage; onClose
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none" />
           </div>
 
-          {/* Photos — drag to reorder, first = cover */}
+          {/* Photos — import via URL, drag to reorder */}
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">
-              Photos ({photos.length}) <span className="font-normal text-slate-400">— drag to reorder, first = cover photo</span>
+              Photos ({photos.length}) {photos.length > 0 && <span className="font-normal text-slate-400">— drag to reorder, first = cover</span>}
             </label>
             {photos.length > 0 && (
               <div className="grid grid-cols-4 gap-2 mb-2">
@@ -712,7 +732,7 @@ function EditDealPageModal({ deal, onClose, onSaved }: { deal: DealPage; onClose
                     className={cn(
                       'relative group cursor-grab active:cursor-grabbing rounded-lg overflow-hidden',
                       i === 0 ? 'ring-2 ring-teal-500' : '',
-                      i < 5 ? 'ring-1 ring-blue-200' : ''
+                      i < 5 && i > 0 ? 'ring-1 ring-blue-200' : ''
                     )}
                   >
                     <img src={url} alt="" className="w-full h-16 object-cover" />
@@ -730,17 +750,29 @@ function EditDealPageModal({ deal, onClose, onSaved }: { deal: DealPage; onClose
                 ))}
               </div>
             )}
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={() => photoRef.current?.click()}
-                className="text-xs text-primary hover:underline font-semibold">
-                {uploadingPhoto ? 'Uploading...' : '+ Add Photos'}
+            {/* URL import input */}
+            <div className="flex gap-2 items-center">
+              <input
+                type="text"
+                value={photoUrl}
+                onChange={e => setPhotoUrl(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); importPhotoUrls() } }}
+                placeholder="Paste image URL(s) — comma or space separated"
+                className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                disabled={importingPhotos}
+              />
+              <button
+                type="button"
+                onClick={importPhotoUrls}
+                disabled={importingPhotos || !photoUrl.trim()}
+                className="bg-primary text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 whitespace-nowrap"
+              >
+                {importingPhotos ? 'Importing...' : 'Import'}
               </button>
-              {photos.length > 1 && (
-                <span className="text-[10px] text-slate-400">Drag thumbnails to set cover & grid order</span>
-              )}
             </div>
-            <input ref={photoRef} type="file" multiple accept="image/*" className="hidden"
-              onChange={e => uploadPhoto(e.target.files)} />
+            {photoImportStatus && (
+              <p className={cn('text-xs mt-1', photoImportStatus.startsWith('Error') ? 'text-red-500' : 'text-green-600')}>{photoImportStatus}</p>
+            )}
           </div>
 
           {/* Inspection Reports */}
