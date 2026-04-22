@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { validateInput, buyerOfferSchema } from '@/lib/validation-schemas'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { sendPushToAgents } from '@/lib/push-notifications'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -156,13 +158,64 @@ export async function POST(
       .eq('status', 'sent')
 
     if (broadcasts && broadcasts.length > 0) {
-      // Increment on the most recent broadcast
       const latest = broadcasts[0]
       await db
         .from('deal_broadcasts')
         .update({ offers_received: (latest.offers_received || 0) + 1 })
         .eq('id', latest.id)
     }
+
+    // ── Notifications (fire-and-forget) ──
+    const fmtAmount = `$${data.offer_amount.toLocaleString()}`
+    const leadAddress = await db
+      .from('leads')
+      .select('property_address, city, state')
+      .eq('id', dealPage.lead_id)
+      .single()
+      .then(r => {
+        const l = r.data
+        return l ? [l.property_address, l.city, l.state].filter(Boolean).join(', ') : 'a property'
+      })
+
+    const notifTitle = `New Offer: ${fmtAmount}`
+    const notifBody = `${data.buyer_name} offered ${fmtAmount} on ${leadAddress}`
+
+    // 1) Push notification to all agents
+    sendPushToAgents({
+      title: notifTitle,
+      body: notifBody,
+      url: '/dispo/offers',
+      tag: `offer-${offer.id}`,
+    }).catch(() => {})
+
+    // 2) In-app notification
+    db.from('notifications')
+      .insert({
+        type: 'offer',
+        title: notifTitle,
+        body: notifBody,
+        url: '/dispo/offers',
+        metadata: {
+          offer_id: offer.id,
+          deal_page_id: dealPage.id,
+          lead_id: dealPage.lead_id,
+          buyer_name: data.buyer_name,
+          offer_amount: data.offer_amount,
+          financing_type: data.financing_type,
+        },
+      })
+      .then(({ error: notifErr }) => {
+        if (notifErr) console.error('[offer] In-app notification failed:', notifErr.message)
+      })
+
+    // 3) SMS to Ernest
+    const NOTIFY_PHONE = '+18413737722'
+    const smsFrom = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+    safeSendSMS({
+      to: NOTIFY_PHONE,
+      from: smsFrom,
+      body: `🏠 NEW OFFER\n${fmtAmount} from ${data.buyer_name}\n${leadAddress}\nFinancing: ${data.financing_type || 'cash'}\nEMD: $${(data.earnest_money || 0).toLocaleString()}\n\nView: https://crm.savingkc.com/dispo/offers`,
+    }).catch(() => {})
 
     return NextResponse.json(
       {

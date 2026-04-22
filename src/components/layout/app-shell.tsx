@@ -10,6 +10,7 @@ import { DialerPanel, CallStatus, HeirQueueItem } from '@/components/telephony/t
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import { useAppMode } from '@/hooks/use-app-mode'
+import { NotificationBell } from './notification-bell'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -203,6 +204,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   'bg-transparent ring-0'
                 }`} />
               </button>
+              <NotificationBell />
               <div className="relative" ref={profileMenuRef}>
                 {profilePhotoUrl ? (
                   <button
