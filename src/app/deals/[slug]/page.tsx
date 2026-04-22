@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
+import PhotoGallery from './photo-gallery'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,19 +71,33 @@ export default async function DealPage({
     lead?.sqft && { label: 'Sq Ft', value: fmtNum(lead.sqft) },
   ].filter(Boolean) as { label: string; value: string }[]
 
-  // Additional details
+  // Additional details grid
   const details = [
-    lead?.property_type && { label: 'Property Type', value: lead.property_type },
-    dealPage.parking && { label: 'Parking', value: dealPage.parking },
-    lead?.year_built && { label: 'Year Built', value: String(lead.year_built) },
-    lead?.lot_size && { label: 'Lot Size', value: String(lead.lot_size) },
-    lead?.county && { label: 'County', value: lead.county },
-  ].filter(Boolean) as { label: string; value: string }[]
+    { label: 'Property Type', value: lead?.property_type || '—' },
+    { label: 'Parking', value: dealPage.parking || '—' },
+    { label: 'Year Built', value: lead?.year_built ? String(lead.year_built) : '—' },
+    { label: 'Lot Size', value: lead?.lot_size ? String(lead.lot_size) : '—' },
+    { label: 'County', value: lead?.county || '—' },
+  ]
+
+  // Contract terms data
+  const hasContractTerms = dealPage.contract_close_date || dealPage.earnest_money != null ||
+    dealPage.inspection_period_days != null || dealPage.financing_terms ||
+    (dealPage.show_assignment_fee && dealPage.assignment_fee != null)
+
+  // Repair estimate
+  const hasRepairEstimate = dealPage.repair_estimate_low != null || dealPage.repair_estimate_high != null
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#f8f9fa] text-gray-900" style={{ colorScheme: 'light' }}>
+      {/* Force light theme override */}
+      <style>{`
+        html, body { background: #f8f9fa !important; color: #111827 !important; color-scheme: light !important; }
+        .ck-dark { background: #f8f9fa !important; color: #111827 !important; }
+      `}</style>
+
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
+      <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <img src="/logo.png" alt="Saving KC Homebuyers" className="h-8 w-auto" />
           <span className="text-[11px] font-semibold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">Deal Page</span>
@@ -90,38 +105,8 @@ export default async function DealPage({
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
-        {/* Photo Gallery */}
-        {photos.length > 0 && (
-          <div className="mb-6">
-            {photos.length === 1 ? (
-              <div className="rounded-xl overflow-hidden">
-                <img src={photos[0]} alt="Property" className="w-full h-[400px] object-cover" />
-              </div>
-            ) : photos.length === 2 ? (
-              <div className="grid grid-cols-2 gap-2 rounded-xl overflow-hidden">
-                {photos.slice(0, 2).map((url, i) => (
-                  <img key={i} src={url} alt={`Property ${i + 1}`} className="w-full h-[350px] object-cover" />
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-4 grid-rows-2 gap-2 rounded-xl overflow-hidden" style={{ height: '420px' }}>
-                {/* Large hero photo */}
-                <div className="col-span-2 row-span-2">
-                  <img src={photos[0]} alt="Property" className="w-full h-full object-cover" />
-                </div>
-                {/* Secondary photos */}
-                {photos.slice(1, 5).map((url, i) => (
-                  <div key={i} className="col-span-1 row-span-1">
-                    <img src={url} alt={`Property ${i + 2}`} className="w-full h-full object-cover" />
-                  </div>
-                ))}
-              </div>
-            )}
-            {photos.length > 5 && (
-              <p className="text-xs text-gray-400 mt-2 text-right">+{photos.length - 5} more photos</p>
-            )}
-          </div>
-        )}
+        {/* Photo Gallery with Lightbox */}
+        <PhotoGallery photos={photos} />
 
         {/* Location + Stats Row */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
@@ -148,7 +133,7 @@ export default async function DealPage({
 
         {/* Stats Bar */}
         {statItems.length > 0 && (
-          <div className="flex items-center gap-0 mb-6 border border-gray-200 rounded-lg overflow-hidden bg-white">
+          <div className="flex items-center gap-0 mb-6 border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
             {statItems.map((item, i) => (
               <div key={i} className={`flex-1 text-center py-3 ${i > 0 ? 'border-l border-gray-200' : ''}`}>
                 <p className="text-lg font-bold text-gray-900">{item.value}</p>
@@ -162,33 +147,31 @@ export default async function DealPage({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* LEFT COLUMN */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Overview */}
-            {dealPage.description && (
-              <section className="bg-white border border-gray-200 rounded-xl p-6">
-                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Overview</h2>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{dealPage.description}</p>
-              </section>
-            )}
+            {/* Overview / Description */}
+            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Overview</h2>
+              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                {dealPage.description || 'No description provided.'}
+              </p>
+            </section>
 
             {/* Additional Details */}
-            {details.length > 0 && (
-              <section className="bg-white border border-gray-200 rounded-xl p-6">
-                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Additional Details</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  {details.map(({ label, value }) => (
-                    <div key={label}>
-                      <p className="text-[11px] text-gray-400 font-medium uppercase">{label}</p>
-                      <p className="text-sm font-semibold text-gray-900 mt-0.5">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Additional Details</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                {details.map(({ label, value }) => (
+                  <div key={label}>
+                    <p className="text-[11px] text-gray-400 font-medium uppercase">{label}</p>
+                    <p className="text-sm font-semibold text-gray-900 mt-0.5">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
 
             {/* Contract Terms */}
-            {(dealPage.contract_close_date || dealPage.earnest_money || dealPage.inspection_period_days || dealPage.financing_terms || dealPage.assignment_fee) && (
-              <section className="bg-white border border-gray-200 rounded-xl p-6">
-                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Contract Terms</h2>
+            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Contract Terms</h2>
+              {hasContractTerms ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   {dealPage.contract_close_date && (
                     <div>
@@ -223,17 +206,20 @@ export default async function DealPage({
                     </div>
                   )}
                 </div>
-                {dealPage.contract_notes && (
-                  <p className="text-sm text-gray-500 mt-4 pt-4 border-t border-gray-100">{dealPage.contract_notes}</p>
-                )}
-              </section>
-            )}
+              ) : (
+                <p className="text-sm text-gray-400 italic">Contract terms not yet provided.</p>
+              )}
+              {dealPage.contract_notes && (
+                <p className="text-sm text-gray-500 mt-4 pt-4 border-t border-gray-100">{dealPage.contract_notes}</p>
+              )}
+            </section>
 
-            {/* Repair Estimate */}
-            {(dealPage.repair_estimate_low != null || dealPage.repair_estimate_high != null) && (
-              <section className="bg-white border border-gray-200 rounded-xl p-6">
-                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Repair Estimate</h2>
-                <div className="flex items-center gap-3">
+            {/* Financing / Repair Estimate */}
+            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Financing Info</h2>
+              {hasRepairEstimate ? (
+                <div>
+                  <p className="text-[11px] text-gray-400 font-medium uppercase mb-1">Estimated Repair Cost</p>
                   {dealPage.repair_estimate_low != null && dealPage.repair_estimate_high != null ? (
                     <p className="text-lg font-bold text-gray-900">
                       {fmt(dealPage.repair_estimate_low)} – {fmt(dealPage.repair_estimate_high)}
@@ -244,20 +230,22 @@ export default async function DealPage({
                     </p>
                   )}
                 </div>
-              </section>
-            )}
+              ) : (
+                <p className="text-sm text-gray-400 italic">Repair estimates not yet provided.</p>
+              )}
+            </section>
 
             {/* Property Condition */}
-            {dealPage.property_condition && (
-              <section className="bg-white border border-gray-200 rounded-xl p-6">
-                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Property Condition</h2>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{dealPage.property_condition}</p>
-              </section>
-            )}
+            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Property Condition</h2>
+              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                {dealPage.property_condition || 'Condition details not yet provided.'}
+              </p>
+            </section>
 
             {/* Videos */}
             {videos.length > 0 && (
-              <section className="bg-white border border-gray-200 rounded-xl p-6">
+              <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                 <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Videos</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {videos.map((url, i) => (
@@ -270,9 +258,9 @@ export default async function DealPage({
             )}
 
             {/* Inspection Reports */}
-            {inspectionReports.length > 0 && (
-              <section className="bg-white border border-gray-200 rounded-xl p-6">
-                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Inspection Reports</h2>
+            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Inspection Reports</h2>
+              {inspectionReports.length > 0 ? (
                 <div className="space-y-2">
                   {inspectionReports.map((report, i) => (
                     <a
@@ -295,14 +283,16 @@ export default async function DealPage({
                     </a>
                   ))}
                 </div>
-              </section>
-            )}
+              ) : (
+                <p className="text-sm text-gray-400 italic">No inspection reports uploaded.</p>
+              )}
+            </section>
           </div>
 
           {/* RIGHT SIDEBAR */}
           <div className="space-y-4">
             {/* Pricing Card */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 sticky top-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm sticky top-6">
               {dealPage.show_asking_price !== false && askingPrice && (
                 <div className="mb-4">
                   <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Price</p>
@@ -341,7 +331,7 @@ export default async function DealPage({
             </div>
 
             {/* Wholesaler Card */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center">
                   <span className="text-lg font-bold text-teal-700">SK</span>
