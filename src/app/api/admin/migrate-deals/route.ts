@@ -26,7 +26,7 @@ export async function POST() {
 
   for (const sql of migrations) {
     try {
-      const { error } = await db.rpc('exec_sql', { sql })
+      const { error } = await db.rpc('exec_sql', { sql_query: sql })
       if (error) {
         results.push({ sql: sql.substring(0, 60) + '...', error: error.message })
       } else {
