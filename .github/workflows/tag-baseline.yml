@@ -1,0 +1,52 @@
+name: Tag baseline on merge to main
+
+# Every commit that lands on main gets an auto-tag so there's always a
+# concrete rollback point. Tag format: baseline-YYYY.MM.DD-HHMM-<sha7>
+# (UTC). Sortable, unique across multiple same-day merges.
+#
+# Rollback: git reset --hard <tag>  OR  vercel promote <deploy> --prod
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write  # required to push tags
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so tag messages can reference merge context
+
+      - name: Create annotated baseline tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          STAMP=$(date -u +'%Y.%m.%d-%H%M')
+          TAG="baseline-${STAMP}-${SHORT_SHA}"
+
+          SUBJECT=$(git log -1 --pretty=%s)
+          AUTHOR=$(git log -1 --pretty=%an)
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$TAG" -m "Auto baseline on push to main
+
+          Commit: ${SHORT_SHA}
+          Subject: ${SUBJECT}
+          Author: ${AUTHOR}
+
+          Rollback options:
+            git reset --hard ${TAG}
+            vercel promote <matching-deployment-url> --prod
+          "
+          git push origin "$TAG"
+          echo "Tagged: $TAG"
