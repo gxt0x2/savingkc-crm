@@ -685,14 +685,43 @@ function EditDealPageModal({ deal, onClose, onSaved }: { deal: DealPage; onClose
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none" />
           </div>
 
-          {/* Photos */}
+          {/* Photos — drag to reorder, first = cover */}
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Photos ({photos.length})</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              Photos ({photos.length}) <span className="font-normal text-slate-400">— drag to reorder, first = cover photo</span>
+            </label>
             {photos.length > 0 && (
               <div className="grid grid-cols-4 gap-2 mb-2">
                 {photos.map((url, i) => (
-                  <div key={i} className="relative group">
-                    <img src={url} alt="" className="w-full h-16 object-cover rounded-lg" />
+                  <div
+                    key={url}
+                    draggable
+                    onDragStart={e => { e.dataTransfer.setData('text/plain', String(i)); e.dataTransfer.effectAllowed = 'move' }}
+                    onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      const from = Number(e.dataTransfer.getData('text/plain'))
+                      if (from === i) return
+                      setPhotos(prev => {
+                        const arr = [...prev]
+                        const [moved] = arr.splice(from, 1)
+                        arr.splice(i, 0, moved)
+                        return arr
+                      })
+                    }}
+                    className={cn(
+                      'relative group cursor-grab active:cursor-grabbing rounded-lg overflow-hidden',
+                      i === 0 ? 'ring-2 ring-teal-500' : '',
+                      i < 5 ? 'ring-1 ring-blue-200' : ''
+                    )}
+                  >
+                    <img src={url} alt="" className="w-full h-16 object-cover" />
+                    {i === 0 && (
+                      <span className="absolute bottom-0 left-0 right-0 bg-teal-600/90 text-white text-[9px] font-bold text-center py-0.5">COVER</span>
+                    )}
+                    {i >= 1 && i <= 4 && (
+                      <span className="absolute bottom-0 left-0 right-0 bg-blue-600/70 text-white text-[9px] text-center py-0.5">#{i + 1}</span>
+                    )}
                     <button type="button"
                       onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
                       className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
@@ -701,10 +730,15 @@ function EditDealPageModal({ deal, onClose, onSaved }: { deal: DealPage; onClose
                 ))}
               </div>
             )}
-            <button type="button" onClick={() => photoRef.current?.click()}
-              className="text-xs text-primary hover:underline font-semibold">
-              {uploadingPhoto ? 'Uploading...' : '+ Add Photos'}
-            </button>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => photoRef.current?.click()}
+                className="text-xs text-primary hover:underline font-semibold">
+                {uploadingPhoto ? 'Uploading...' : '+ Add Photos'}
+              </button>
+              {photos.length > 1 && (
+                <span className="text-[10px] text-slate-400">Drag thumbnails to set cover & grid order</span>
+              )}
+            </div>
             <input ref={photoRef} type="file" multiple accept="image/*" className="hidden"
               onChange={e => uploadPhoto(e.target.files)} />
           </div>
