@@ -26,7 +26,20 @@ function IconPegman({ className = '' }: { className?: string }) {
   )
 }
 
-/* Google Maps location pin icon (Material Design "place") */
+/* Google Maps folded map with pin icon (multi-color) */
+function IconGoogleMap({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 64 64" fill="none">
+      <path d="M8 18l16-8v36l-16 8V18z" fill="#FBBC04" />
+      <path d="M24 10l16 8v36l-16-8V10z" fill="#34A853" />
+      <path d="M40 18l16-8v36l-16 8V18z" fill="#4285F4" />
+      <path d="M32 6c-5.52 0-10 4.48-10 10 0 7.5 10 18 10 18s10-10.5 10-18c0-5.52-4.48-10-10-10z" fill="#EA4335" />
+      <circle cx="32" cy="16" r="4" fill="white" />
+    </svg>
+  )
+}
+
+/* Google Maps pin icon (single color, for modals) */
 function IconLocationPin({ className = '' }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -214,21 +227,15 @@ export default function PhotoGallery({
 
             {/* Map View — col 2, row 2 */}
             <div
-              className="cursor-pointer relative group overflow-hidden"
+              className="cursor-pointer relative group overflow-hidden bg-[#e8e4de]"
               onClick={() => setMapViewOpen(true)}
             >
-              <img
-                src={mapStaticUrl!}
-                alt="Map View"
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60 group-hover:from-black/40 group-hover:via-black/15 group-hover:to-black/40 transition-all" />
-              {/* Center badge */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex items-center gap-2 bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20">
-                  <IconLocationPin className="w-5 h-5 text-white" />
-                  <span className="text-white font-bold text-xs tracking-wider">MAP VIEW</span>
-                </div>
+              {/* Styled map background instead of broken static image */}
+              <div className="absolute inset-0 bg-gradient-to-br from-[#d4e8d0] via-[#e8e4de] to-[#d0dce8] group-hover:brightness-95 transition-all" />
+              {/* Centered colorful map icon + label */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                <IconGoogleMap className="w-12 h-12 drop-shadow-md" />
+                <span className="text-[#333] font-bold text-[11px] tracking-wider mt-1">MAP VIEW</span>
               </div>
             </div>
 
