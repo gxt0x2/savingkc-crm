@@ -24,6 +24,7 @@ import { AriChat } from '@/components/leads/ari-chat'
 import { MailTracker } from '@/components/leads/mail-tracker'
 import { NextAction } from '@/components/leads/next-action'
 import { MissingInfoCard } from '@/components/leads/missing-info-card'
+import { EmailThread } from '@/components/leads/email-thread'
 import { CockpitModal } from '@/components/ui/cockpit-modal'
 import { SortableColumn } from '@/components/ui/sortable-column'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
@@ -1748,6 +1749,10 @@ export default function LeadDetailPage() {
                     onLogged={refreshAll}
                   />
                 ),
+              },
+              {
+                id: 'email-thread',
+                node: <EmailThread leadId={id} />,
               },
               {
                 id: 'activity-feed',
