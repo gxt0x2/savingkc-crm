@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
 import PhotoGallery from './photo-gallery'
+import InquiryModal from './inquiry-modal'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,10 +15,6 @@ function fmt(n: number | null | undefined): string {
 function fmtNum(n: number | null | undefined): string {
   if (n == null) return '—'
   return n.toLocaleString('en-US')
-}
-
-function daysSince(iso: string): number {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24))
 }
 
 /* ── Outline icon components (thin, strokeWidth 1.5, matching InvestorLift) ── */
@@ -108,7 +105,6 @@ export default async function DealPage({
   const arv = lead?.arv
   const grossMargin = askingPrice && arv ? arv - askingPrice : null
 
-  const daysOnPage = daysSince(dealPage.created_at)
   const viewCount = (dealPage.view_count || 0) + 1
 
   // Stats
@@ -159,10 +155,6 @@ export default async function DealPage({
             </div>
           )}
           <div className="flex items-center gap-5 text-[13px] text-[#999]">
-            <span className="flex items-center gap-1.5">
-              <IconCalendar className="w-[14px] h-[14px]" />
-              {daysOnPage} day{daysOnPage !== 1 ? 's' : ''} on IL
-            </span>
             <span className="flex items-center gap-1.5">
               <IconEye className="w-[14px] h-[14px]" />
               {viewCount} view{viewCount !== 1 ? 's' : ''}
@@ -372,7 +364,14 @@ export default async function DealPage({
               {/* CTA Buttons */}
               <div className="space-y-2.5">
                 {dealPage.accept_offers && (
-                  <OfferForm slug={slug} askingPrice={askingPrice} />
+                  <OfferForm
+                    slug={slug}
+                    askingPrice={askingPrice}
+                    arv={arv}
+                    photo={photos[0]}
+                    propertyAddress={lead?.property_address || title}
+                    location={lead ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ') : ''}
+                  />
                 )}
                 <ShareButton />
               </div>
@@ -381,19 +380,11 @@ export default async function DealPage({
             {/* Wholesaler Card */}
             <div className={`${card} p-6`}>
               <div className="flex flex-col items-center text-center mb-4">
-                <div className="w-14 h-14 bg-gradient-to-br from-teal-400 to-teal-600 rounded-full flex items-center justify-center mb-3">
-                  <span className="text-[18px] font-bold text-white">SK</span>
-                </div>
+                <img src="/logo.png" alt="Saving KC Homebuyers" className="w-14 h-14 rounded-full object-cover mb-3" />
                 <p className="text-[15px] font-semibold text-[#1a1a1a]">Ernest Dodson</p>
-                <p className="text-[13px] text-[#888] mt-0.5">Saving KC</p>
+                <p className="text-[13px] text-[#888] mt-0.5">Saving KC Homebuyers</p>
               </div>
-              <a
-                href="mailto:deals@savingkc.com"
-                className="w-full flex items-center justify-center gap-2 border border-[#ddd] text-[#444] hover:border-[#bbb] hover:bg-[#fafafa] rounded-xl px-4 py-2.5 text-[14px] font-medium transition-all"
-              >
-                <IconMail className="w-4 h-4" />
-                Send Inquiry
-              </a>
+              <InquiryModal propertyAddress={lead?.property_address || title} />
             </div>
           </div>
         </div>
