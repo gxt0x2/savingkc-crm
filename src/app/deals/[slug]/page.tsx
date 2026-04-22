@@ -63,12 +63,12 @@ export default async function DealPage({
   const daysOnPage = daysSince(dealPage.created_at)
   const viewCount = (dealPage.view_count || 0) + 1
 
-  // Stats bar items with flat icons
+  // Stats bar items with outline icons (matching InvestorLift reference)
   const statItems = [
-    lead?.beds != null && { label: 'Beds', value: String(lead.beds), icon: <svg className="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2V10c0-2.21-1.79-4-4-4z"/></svg> },
-    lead?.baths_full != null && { label: 'Baths', value: String(lead.baths_full), icon: <svg className="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M7 7c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2zm13 4h-1V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v1H2v7c0 2.21 1.79 4 4 4v2h2v-2h8v2h2v-2c2.21 0 4-1.79 4-4v-2h-2zm-3-6v1h-4V5h4z"/></svg> },
-    lead?.baths_half != null && lead.baths_half > 0 && { label: 'Half-Bath', value: String(lead.baths_half), icon: <svg className="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg> },
-    lead?.sqft && { label: 'Sq.Ft', value: fmtNum(lead.sqft), icon: <svg className="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg> },
+    lead?.beds != null && { label: 'Beds', value: String(lead.beds), icon: <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 19V9a1 1 0 011-1h4a2 2 0 012 2v0a2 2 0 002 2h0a2 2 0 002-2v0a2 2 0 012-2h4a1 1 0 011 1v10M3 19h18M3 19v-2h18v2M5 8V5a1 1 0 011-1h3" /></svg> },
+    lead?.baths_full != null && { label: 'Baths', value: String(lead.baths_full), icon: <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M5 12a2 2 0 00-2 2v1a4 4 0 004 4h10a4 4 0 004-4v-1a2 2 0 00-2-2M5 12V7a3 3 0 013-3v0a3 3 0 013 3v1" /></svg> },
+    lead?.baths_half != null && lead.baths_half > 0 && { label: 'Half-Bath', value: String(lead.baths_half), icon: <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M5 12a2 2 0 00-2 2v1a4 4 0 004 4h10a4 4 0 004-4v-1a2 2 0 00-2-2M5 12V7a3 3 0 013-3v0a3 3 0 013 3v1M12 16v3" /></svg> },
+    lead?.sqft && { label: 'Sq.Ft', value: fmtNum(lead.sqft), icon: <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" /></svg> },
   ].filter(Boolean) as { label: string; value: string; icon: React.ReactNode }[]
 
   // Additional details grid with flat icons
@@ -130,34 +130,39 @@ export default async function DealPage({
           </div>
         </div>
 
-        {/* Stats Bar */}
-        {statItems.length > 0 && (
-          <div className="flex items-center gap-0 mb-6 border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
-            {statItems.map((item, i) => (
-              <div key={i} className={`flex-1 flex flex-col items-center py-3 ${i > 0 ? 'border-l border-gray-200' : ''}`}>
-                {item.icon}
-                <p className="text-[11px] text-gray-500 font-medium mt-1">{item.label}</p>
-                <p className="text-lg font-bold text-gray-900">{item.value}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Main 2-col layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* LEFT COLUMN */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Overview / Description */}
-            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Overview</h2>
-              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
-                {dealPage.description || 'No description provided.'}
-              </p>
+            {/* Stats + Overview — combined card like InvestorLift */}
+            <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+              {statItems.length > 0 && (
+                <>
+                  <div className="flex items-center">
+                    {statItems.map((item, i) => (
+                      <div key={i} className={`flex-1 flex items-center gap-3 px-5 py-4 ${i > 0 ? 'border-l border-gray-100' : ''}`}>
+                        {item.icon}
+                        <div>
+                          <p className="text-xs text-gray-500 font-medium">{item.label}</p>
+                          <p className="text-lg font-bold text-gray-900 leading-tight">{item.value}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border-t border-gray-100" />
+                </>
+              )}
+              <div className="p-6">
+                <h2 className="text-base font-bold text-gray-900 mb-3">Overview</h2>
+                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                  {dealPage.description || 'No description provided.'}
+                </p>
+              </div>
             </section>
 
             {/* Additional Details */}
             <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Additional Details</h2>
+              <h2 className="text-base font-bold text-gray-900 mb-4">Additional details</h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {details.map(({ label, value, icon }) => (
                   <div key={label} className="flex items-start gap-2">
@@ -173,7 +178,7 @@ export default async function DealPage({
 
             {/* Contract Terms */}
             <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Contract Terms</h2>
+              <h2 className="text-base font-bold text-gray-900 mb-4">Contract Terms</h2>
               {hasContractTerms ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   {dealPage.contract_close_date && (
@@ -219,7 +224,7 @@ export default async function DealPage({
 
             {/* Financing / Repair Estimate */}
             <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Financing Info</h2>
+              <h2 className="text-base font-bold text-gray-900 mb-3">Financing Information</h2>
               {hasRepairEstimate ? (
                 <div className="flex items-start gap-2">
                   <svg className="w-4 h-4 text-gray-400 mt-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg>
@@ -243,7 +248,7 @@ export default async function DealPage({
 
             {/* Property Condition */}
             <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Property Condition & Systems</h2>
+              <h2 className="text-base font-bold text-gray-900 mb-3">Property Condition & Systems</h2>
               <div className="flex items-start gap-2">
                 <svg className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5 0 1.29-.69 2.42-1.73 3.04L15 14h-2v-1.5l1.27-1.27c.6-.36 1.23-1 1.23-1.73 0-1.1-.9-2-2-2s-2 .9-2 2H9.5C9.5 7.57 10.57 6 12 6zm-1.5 10h3v2h-3v-2z"/></svg>
                 <div>
@@ -258,7 +263,7 @@ export default async function DealPage({
             {/* Videos */}
             {videos.length > 0 && (
               <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Videos</h2>
+                <h2 className="text-base font-bold text-gray-900 mb-4">Videos</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {videos.map((url, i) => (
                     <video key={i} controls className="w-full rounded-lg" preload="metadata">
@@ -271,7 +276,7 @@ export default async function DealPage({
 
             {/* Inspection Reports */}
             <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Inspection Reports</h2>
+              <h2 className="text-base font-bold text-gray-900 mb-4">Inspection Reports</h2>
               {inspectionReports.length > 0 ? (
                 <div className="space-y-2">
                   {inspectionReports.map((report, i) => (
