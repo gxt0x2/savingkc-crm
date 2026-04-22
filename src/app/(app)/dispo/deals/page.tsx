@@ -65,7 +65,8 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
 
   function handlePhotoFiles(files: FileList | null) {
     if (!files) return
-    const arr = Array.from(files).filter(f => f.type.startsWith('image/'))
+    const webTypes = ['image/jpeg', 'image/png', 'image/webp']
+    const arr = Array.from(files).filter(f => webTypes.includes(f.type))
     setPendingPhotos(prev => [...prev, ...arr])
     arr.forEach(f => {
       const reader = new FileReader()
@@ -267,7 +268,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
                 ref={photoInputRef}
                 type="file"
                 multiple
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                 className="hidden"
                 onChange={e => handlePhotoFiles(e.target.files)}
               />
@@ -705,7 +706,7 @@ function EditDealPageModal({ deal, onClose, onSaved }: { deal: DealPage; onClose
               className="text-xs text-primary hover:underline font-semibold">
               {uploadingPhoto ? 'Uploading...' : '+ Add Photos'}
             </button>
-            <input ref={photoRef} type="file" multiple accept="image/*" className="hidden"
+            <input ref={photoRef} type="file" multiple accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" className="hidden"
               onChange={e => uploadPhoto(e.target.files)} />
           </div>
 

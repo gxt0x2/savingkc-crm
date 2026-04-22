@@ -12,7 +12,7 @@ const MAX_SIZES: Record<string, number> = {
 }
 
 const ALLOWED_TYPES: Record<string, string[]> = {
-  photo: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
+  photo: ['image/jpeg', 'image/png', 'image/webp'],
   video: ['video/mp4', 'video/quicktime', 'video/webm'],
   inspection_report: ['application/pdf'],
 }
