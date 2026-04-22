@@ -209,7 +209,7 @@ export async function POST(
       })
 
     // 3) SMS to Ernest
-    const NOTIFY_PHONE = '+18413737722'
+    const NOTIFY_PHONE = '+18166088588'
     const smsFrom = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
     safeSendSMS({
       to: NOTIFY_PHONE,
