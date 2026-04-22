@@ -76,6 +76,39 @@ interface FullLead {
   asking_price: number | null
   repair_estimate: number | null
   assignment_fee: number | null
+  garage_spaces: number | null
+  basement_type: string | null
+  stories: number | null
+  last_sale_price: number | null
+  tax_assessment: number | null
+}
+
+function buildAutoTitle(d: FullLead): string {
+  const parts: string[] = []
+  if (d.beds) parts.push(`${d.beds}BR`)
+  if (d.baths_full) parts.push(`${d.baths_full}BA`)
+  const type = d.property_type || 'Home'
+  if (parts.length > 0) return `${parts.join('/')} ${type} — ${d.city || ''}`
+  return d.property_address || 'Investment Opportunity'
+}
+
+function buildAutoDescription(d: FullLead): string {
+  const lines: string[] = []
+  const type = d.property_type || 'property'
+  const addr = d.property_address || 'this property'
+  let intro = `Great investment opportunity at ${addr}.`
+  if (d.beds && d.baths_full) {
+    intro = `${d.beds}-bedroom, ${d.baths_full}-bath ${type.toLowerCase()} at ${addr}.`
+  }
+  lines.push(intro)
+  const details: string[] = []
+  if (d.sqft) details.push(`${d.sqft.toLocaleString()} sq ft`)
+  if (d.lot_size) details.push(`${d.lot_size} acre lot`)
+  if (d.year_built) details.push(`built in ${d.year_built}`)
+  if (d.garage_spaces) details.push(`${d.garage_spaces}-car garage`)
+  if (d.basement_type && d.basement_type !== 'None') details.push(`${d.basement_type.toLowerCase()} basement`)
+  if (details.length > 0) lines.push(`Features: ${details.join(', ')}.`)
+  return lines.join(' ')
 }
 
 function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
@@ -123,10 +156,18 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [addrState, setAddrState] = useState('')
   const [zipCode, setZipCode] = useState('')
 
+  // Step 4: Deal Info (extra fields)
+  const [lotSize, setLotSize] = useState('')
+  const [garageSpaces, setGarageSpaces] = useState('')
+  const [basementType, setBasementType] = useState('')
+  const [stories, setStories] = useState('')
+
   // Step 6: Photos
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
+  const [photoUrls, setPhotoUrls] = useState('')
+  const [pendingPhotoUrls, setPendingPhotoUrls] = useState<string[]>([])
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
@@ -175,20 +216,45 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
       if (!res.ok) return
       const data: FullLead = await res.json()
       setFullLead(data)
-      // Pre-populate fields from lead data
-      setTitle(data.property_address ?? '')
+
+      // --- Pre-populate EVERYTHING possible from lead data ---
+
+      // Step 1: Description — auto-generate smart title & description
+      setTitle(buildAutoTitle(data))
+      setDescription(buildAutoDescription(data))
+
+      // Step 2: Deal Value
       if (data.arv) setArvEstimate(String(data.arv))
-      if (data.offer_amount) setAskingPrice(String(data.offer_amount))
       if (data.repair_estimate) {
         setRepairEstimateLow(String(Math.round(data.repair_estimate * 0.7)))
         setRepairEstimateHigh(String(data.repair_estimate))
       }
+
+      // Step 3: Deal Price
+      // offer_amount = our offer to seller = purchase price (private)
+      // asking_price = seller's asking price — we use this as our sell price to buyers
+      if (data.asking_price) setAskingPrice(String(data.asking_price))
+      else if (data.arv) setAskingPrice(String(Math.round(data.arv * 0.75))) // default 75% ARV
+      if (data.offer_amount) setPurchasePrice(String(data.offer_amount))
+      if (data.offer_amount) setMinimumEmd(String(Math.round(data.offer_amount * 0.02))) // 2% EMD default
+
+      // Step 4: Deal Info
       if (data.property_type) setPropertyType(data.property_type)
       if (data.beds) setBedrooms(String(data.beds))
       if (data.baths_full) setFullBathrooms(String(data.baths_full))
       if (data.baths_half != null) setHalfBathrooms(String(data.baths_half))
       if (data.sqft) setSquareFootage(String(data.sqft))
       if (data.year_built) setYearBuilt(String(data.year_built))
+      if (data.lot_size) setLotSize(String(data.lot_size))
+      if (data.garage_spaces) setGarageSpaces(String(data.garage_spaces))
+      if (data.basement_type) setBasementType(data.basement_type)
+      if (data.stories) setStories(String(data.stories))
+      // Map garage_spaces to parking type
+      if (data.garage_spaces && data.garage_spaces > 0 && !data.basement_type) {
+        setParkingType('Garage')
+      }
+
+      // Step 5: Address
       if (data.property_address) setStreetAddress(data.property_address)
       if (data.city) setCity(data.city)
       if (data.state) setAddrState(data.state)
@@ -226,7 +292,9 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           show_asking_price: true,
           lead_updates: {
             arv: arvEstimate ? Number(arvEstimate) : undefined,
-            offer_amount: askingPrice ? Number(askingPrice) : undefined,
+            offer_amount: purchasePrice ? Number(purchasePrice) : undefined,
+            asking_price: askingPrice ? Number(askingPrice) : undefined,
+            repair_estimate: repairEstimateHigh ? Number(repairEstimateHigh) : undefined,
             beds: bedrooms ? Number(bedrooms) : undefined,
             baths_full: fullBathrooms ? Number(fullBathrooms) : undefined,
             baths_half: halfBathrooms ? Number(halfBathrooms) : undefined,
@@ -247,7 +315,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
       }
       const { deal } = await res.json()
 
-      // Upload photos if any
+      // Upload local file photos
       if (deal?.id && pendingPhotos.length > 0) {
         for (const photo of pendingPhotos) {
           const fd = new FormData()
@@ -256,6 +324,15 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           fd.append('type', 'photo')
           await fetch('/api/deals/upload', { method: 'POST', body: fd })
         }
+      }
+
+      // Import URL-based photos (Google Photos links, etc.)
+      if (deal?.id && pendingPhotoUrls.length > 0) {
+        await fetch('/api/deals/import-photos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deal_page_id: deal.id, urls: pendingPhotoUrls }),
+        })
       }
 
       onCreated()
@@ -333,10 +410,13 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   }
 
   function renderStep1() {
+    const hasPrefill = !!fullLead
     return (
       <>
         <h3 className="text-xl font-bold text-slate-900 text-center">Enter Deal Description</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">What makes your deal a great investment?</p>
+        <p className="text-sm text-slate-500 text-center mb-2">
+          {hasPrefill ? 'Auto-generated from property data. Edit as needed.' : 'What makes your deal a great investment?'}
+        </p>
         <div>
           <label className={labelCls}>Deal Title</label>
           <input
@@ -471,40 +551,65 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     return (
       <>
         <h3 className="text-xl font-bold text-slate-900 text-center">Deal Info</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">Let&apos;s take a moment to make sure all of our property data is accurate.</p>
-        <div>
-          <label className={labelCls}>Property Type</label>
-          <select className={selectCls} value={propertyType} onChange={e => setPropertyType(e.target.value)}>
-            <option value="">Select Property Type...</option>
-            {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className={labelCls}>Parking Type</label>
-          <select className={selectCls} value={parkingType} onChange={e => setParkingType(e.target.value)}>
-            <option value="">Select Parking Type...</option>
-            {PARKING_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className={labelCls}>Bedrooms</label>
-          <input type="number" className={inputCls} value={bedrooms} onChange={e => setBedrooms(e.target.value)} placeholder="e.g. 3" />
-        </div>
-        <div>
-          <label className={labelCls}>Full Bathrooms</label>
-          <input type="number" className={inputCls} value={fullBathrooms} onChange={e => setFullBathrooms(e.target.value)} placeholder="e.g. 2" />
-        </div>
-        <div>
-          <label className={labelCls}>Half Bathrooms (Optional)</label>
-          <input type="number" className={inputCls} value={halfBathrooms} onChange={e => setHalfBathrooms(e.target.value)} placeholder="0" />
-        </div>
-        <div>
-          <label className={labelCls}>Square Footage</label>
-          <input type="number" className={inputCls} value={squareFootage} onChange={e => setSquareFootage(e.target.value)} placeholder="e.g. 1800" />
-        </div>
-        <div>
-          <label className={labelCls}>Year Built</label>
-          <input type="number" className={inputCls} value={yearBuilt} onChange={e => setYearBuilt(e.target.value)} placeholder="e.g. 1990" />
+        <p className="text-sm text-slate-500 text-center mb-2">Verify the property details are accurate.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className={labelCls}>Property Type</label>
+            <select className={selectCls} value={propertyType} onChange={e => setPropertyType(e.target.value)}>
+              <option value="">Select Property Type...</option>
+              {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Parking Type</label>
+            <select className={selectCls} value={parkingType} onChange={e => setParkingType(e.target.value)}>
+              <option value="">Select Parking Type...</option>
+              {PARKING_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Bedrooms</label>
+            <input type="number" className={inputCls} value={bedrooms} onChange={e => setBedrooms(e.target.value)} placeholder="e.g. 3" />
+          </div>
+          <div>
+            <label className={labelCls}>Full Bathrooms</label>
+            <input type="number" className={inputCls} value={fullBathrooms} onChange={e => setFullBathrooms(e.target.value)} placeholder="e.g. 2" />
+          </div>
+          <div>
+            <label className={labelCls}>Half Bathrooms</label>
+            <input type="number" className={inputCls} value={halfBathrooms} onChange={e => setHalfBathrooms(e.target.value)} placeholder="0" />
+          </div>
+          <div>
+            <label className={labelCls}>Square Footage</label>
+            <input type="number" className={inputCls} value={squareFootage} onChange={e => setSquareFootage(e.target.value)} placeholder="e.g. 1800" />
+          </div>
+          <div>
+            <label className={labelCls}>Year Built</label>
+            <input type="number" className={inputCls} value={yearBuilt} onChange={e => setYearBuilt(e.target.value)} placeholder="e.g. 1990" />
+          </div>
+          <div>
+            <label className={labelCls}>Lot Size (acres)</label>
+            <input type="number" step="0.01" className={inputCls} value={lotSize} onChange={e => setLotSize(e.target.value)} placeholder="e.g. 0.25" />
+          </div>
+          <div>
+            <label className={labelCls}>Garage Spaces</label>
+            <input type="number" className={inputCls} value={garageSpaces} onChange={e => setGarageSpaces(e.target.value)} placeholder="e.g. 2" />
+          </div>
+          <div>
+            <label className={labelCls}>Stories</label>
+            <input type="number" step="0.5" className={inputCls} value={stories} onChange={e => setStories(e.target.value)} placeholder="e.g. 2" />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Basement</label>
+            <select className={selectCls} value={basementType} onChange={e => setBasementType(e.target.value)}>
+              <option value="">None</option>
+              <option value="Full">Full</option>
+              <option value="Partial">Partial</option>
+              <option value="Finished">Finished</option>
+              <option value="Unfinished">Unfinished</option>
+              <option value="Walkout">Walkout</option>
+            </select>
+          </div>
         </div>
       </>
     )
@@ -550,24 +655,41 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     )
   }
 
+  function addPhotoUrls() {
+    const raw = photoUrls.trim()
+    if (!raw) return
+    // Support comma/newline/space separated URLs
+    const urls = raw.split(/[\s,\n]+/).filter(u => u.startsWith('http'))
+    if (urls.length === 0) return
+    setPendingPhotoUrls(prev => [...prev, ...urls])
+    setPhotoUrls('')
+  }
+
+  function removePhotoUrl(idx: number) {
+    setPendingPhotoUrls(prev => prev.filter((_, i) => i !== idx))
+  }
+
   function renderStep6() {
+    const totalPhotos = pendingPhotos.length + pendingPhotoUrls.length
     return (
       <>
         <h3 className="text-xl font-bold text-slate-900 text-center">Photos</h3>
         <p className="text-sm text-slate-500 text-center mb-2">Add property photos to attract buyers.</p>
+
+        {/* File upload */}
         <div
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
           onDrop={e => { e.preventDefault(); setDragOver(false); handlePhotoFiles(e.dataTransfer.files) }}
           onClick={() => photoInputRef.current?.click()}
           className={cn(
-            'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
+            'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
             dragOver ? 'border-primary bg-primary/5' : 'border-slate-200 hover:border-slate-300'
           )}
         >
-          <Icon name="add_photo_alternate" className="text-4xl text-slate-300 mb-2" />
+          <Icon name="add_photo_alternate" className="text-3xl text-slate-300 mb-1" />
           <p className="text-sm text-slate-500">Drop photos here or click to browse</p>
-          <p className="text-xs text-slate-400 mt-1">JPG, PNG, WebP up to 10MB</p>
+          <p className="text-xs text-slate-400 mt-0.5">JPG, PNG, WebP up to 10MB</p>
           <input
             ref={photoInputRef}
             type="file"
@@ -577,10 +699,12 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
             onChange={e => handlePhotoFiles(e.target.files)}
           />
         </div>
+
+        {/* Local file previews */}
         {photoPreviews.length > 0 && (
           <div className="grid grid-cols-4 gap-2">
             {photoPreviews.map((src, i) => (
-              <div key={i} className="relative group">
+              <div key={`file-${i}`} className="relative group">
                 <img src={src} alt="" className="w-full h-20 object-cover rounded-lg" />
                 <button
                   type="button"
@@ -593,7 +717,52 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
             ))}
           </div>
         )}
-        <p className="text-xs text-slate-400 text-center">{pendingPhotos.length} photo{pendingPhotos.length !== 1 ? 's' : ''} selected</p>
+
+        {/* URL import — Google Photos, direct links, etc. */}
+        <div className="border-t border-slate-100 pt-4">
+          <label className={labelCls}>
+            <Icon name="link" size="text-sm" className="inline mr-1 align-text-bottom" />
+            Import from URL
+          </label>
+          <p className="text-xs text-slate-500 mb-2">Paste Google Photos links, image URLs, or share links — images are auto-converted to JPEG.</p>
+          <div className="flex gap-2">
+            <textarea
+              className={inputCls + ' resize-none flex-1'}
+              rows={2}
+              value={photoUrls}
+              onChange={e => setPhotoUrls(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addPhotoUrls() } }}
+              placeholder="Paste image URL(s) — one per line or comma separated"
+            />
+            <button
+              type="button"
+              onClick={addPhotoUrls}
+              disabled={!photoUrls.trim()}
+              className="self-end bg-[#1a1a2e] text-white text-xs font-semibold px-4 py-2.5 rounded-lg hover:bg-[#16162a] disabled:opacity-40 whitespace-nowrap"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+
+        {/* Queued URL previews */}
+        {pendingPhotoUrls.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-slate-600">{pendingPhotoUrls.length} URL{pendingPhotoUrls.length !== 1 ? 's' : ''} queued for import</p>
+            {pendingPhotoUrls.map((url, i) => (
+              <div key={`url-${i}`} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-1.5 text-xs">
+                <Icon name="image" size="text-sm" className="text-slate-400 flex-shrink-0" />
+                <span className="flex-1 truncate text-slate-600">{url}</span>
+                <button type="button" onClick={() => removePhotoUrl(i)} className="text-slate-400 hover:text-red-500 flex-shrink-0">&times;</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="text-xs text-slate-400 text-center">
+          {totalPhotos} photo{totalPhotos !== 1 ? 's' : ''} ready
+          {pendingPhotoUrls.length > 0 && <span> ({pendingPhotoUrls.length} will be imported & converted on create)</span>}
+        </p>
       </>
     )
   }
