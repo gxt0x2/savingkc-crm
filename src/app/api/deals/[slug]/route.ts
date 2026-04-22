@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 
@@ -180,5 +180,32 @@ export async function PATCH(
       { error: 'Internal error' },
       { status: 500, headers: corsHeaders }
     )
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/deals/:slug (ADMIN)
+// Permanently delete a deal page. Accepts slug or ID.
+// ---------------------------------------------------------------------------
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  try {
+    const { slug } = await params
+    const db = supabaseAdmin()
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug)
+
+    const col = isUuid ? 'id' : 'slug'
+    const { error } = await db.from('deal_pages').delete().eq(col, slug)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500, headers: corsHeaders })
+    }
+
+    return NextResponse.json({ ok: true }, { headers: corsHeaders })
+  } catch (err) {
+    console.error('[deals/:slug DELETE] Unexpected error:', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500, headers: corsHeaders })
   }
 }

@@ -846,12 +846,14 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
 // ---------------------------------------------------------------------------
 // Deal Page Card
 // ---------------------------------------------------------------------------
-function DealPageCard({ page, onToggle, onCopied, onEdit }: {
+function DealPageCard({ page, onToggle, onCopied, onEdit, onDelete }: {
   page: DealPage & { property_address?: string }
   onToggle: (id: string, active: boolean) => void
   onCopied: () => void
   onEdit: (page: DealPage) => void
+  onDelete: (id: string) => void
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const url = getDealPageUrl(page.slug)
 
   function copyLink() {
@@ -947,6 +949,33 @@ function DealPageCard({ page, onToggle, onCopied, onEdit }: {
             View
           </a>
         </div>
+
+        {/* Delete */}
+        {confirmDelete ? (
+          <div className="mt-2 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <p className="text-xs text-red-700 flex-1">Delete this deal page permanently?</p>
+            <button
+              onClick={() => { onDelete(page.id); setConfirmDelete(false) }}
+              className="text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded px-2.5 py-1"
+            >
+              Delete
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="text-xs font-semibold text-slate-600 hover:text-slate-800"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="mt-2 w-full flex items-center justify-center gap-1.5 text-slate-400 hover:text-red-500 text-xs py-1 transition-colors"
+          >
+            <Icon name="delete" size="text-xs" />
+            Delete
+          </button>
+        )}
       </div>
     </div>
   )
@@ -1353,6 +1382,16 @@ export default function DealPagesPage() {
     }
   }
 
+  async function handleDelete(id: string) {
+    try {
+      const res = await fetch(`/api/deals/${id}`, { method: 'DELETE' })
+      if (!res.ok) return
+      setPages(prev => prev.filter(p => p.id !== id))
+    } catch {
+      // silently ignore
+    }
+  }
+
   function handleCopied() {
     setCopyFeedback(true)
     setTimeout(() => setCopyFeedback(false), 2000)
@@ -1424,6 +1463,7 @@ export default function DealPagesPage() {
               onToggle={handleToggle}
               onCopied={handleCopied}
               onEdit={setEditingDeal}
+              onDelete={handleDelete}
             />
           ))}
         </div>
