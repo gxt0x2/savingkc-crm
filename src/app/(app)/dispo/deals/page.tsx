@@ -25,43 +25,116 @@ interface Lead {
   full_name: string | null
 }
 
+// ---------------------------------------------------------------------------
+// Constants for dropdowns
+// ---------------------------------------------------------------------------
+const PROPERTY_TYPES = [
+  'Attached', 'Commercial', 'Condo', 'Detached', 'Development', 'Industrial',
+  'Land', 'Manufactured', 'Mobile Home', 'Multifamily', 'Office', 'Recreational',
+  'Semi-detached', 'Single-Family', 'Storage', 'Townhouse',
+]
+const PARKING_TYPES = [
+  'Driveway', 'Garage', 'Off street', 'On street', 'Attached Garage',
+  'Unassigned', 'Street', 'Detached Garage', 'Assigned', 'Carport',
+]
+const REHAB_SCOPES = ['Full Rehab', 'Major Repair', 'Light Rehab', 'Turn Key']
+const US_STATES = [
+  'Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut',
+  'Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa',
+  'Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan',
+  'Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire',
+  'New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio',
+  'Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota',
+  'Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia',
+  'Wisconsin','Wyoming',
+]
+const STEP_LABELS = ['Lead', 'Description', 'Value', 'Price', 'Info', 'Address', 'Photos']
+const TOTAL_STEPS = STEP_LABELS.length
+
+// Shared input class
+const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20'
+const selectCls = inputCls + ' appearance-none bg-white'
+const labelCls = 'block text-sm font-semibold text-slate-700 mb-1'
+
+interface FullLead {
+  id: string
+  full_name: string | null
+  property_address: string | null
+  city: string | null
+  state: string | null
+  zip: string | null
+  county: string | null
+  property_type: string | null
+  beds: number | null
+  baths_full: number | null
+  baths_half: number | null
+  sqft: number | null
+  lot_size: number | null
+  year_built: number | null
+  arv: number | null
+  offer_amount: number | null
+  asking_price: number | null
+  repair_estimate: number | null
+  assignment_fee: number | null
+}
+
 function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [step, setStep] = useState(0)
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Step 0: Lead search
   const [leadSearch, setLeadSearch] = useState('')
   const [leads, setLeads] = useState<Lead[]>([])
   const [searching, setSearching] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [fullLead, setFullLead] = useState<FullLead | null>(null)
+  const [loadingLead, setLoadingLead] = useState(false)
+
+  // Step 1: Description
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [showAddress, setShowAddress] = useState(true)
-  const [showArv, setShowArv] = useState(true)
-  const [showAskingPrice, setShowAskingPrice] = useState(true)
-  const [showAssignmentFee, setShowAssignmentFee] = useState(false)
-  const [acceptOffers, setAcceptOffers] = useState(true)
-  const [requiresRegistration, setRequiresRegistration] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  // Contract terms
-  const [contractCloseDate, setContractCloseDate] = useState('')
-  const [earnestMoney, setEarnestMoney] = useState('')
-  const [inspectionPeriodDays, setInspectionPeriodDays] = useState('')
-  const [financingTerms, setFinancingTerms] = useState('')
+
+  // Step 2: Deal Value
+  const [arvEstimate, setArvEstimate] = useState('')
+  const [rehabScope, setRehabScope] = useState('')
   const [repairEstimateLow, setRepairEstimateLow] = useState('')
   const [repairEstimateHigh, setRepairEstimateHigh] = useState('')
-  const [propertyCondition, setPropertyCondition] = useState('')
-  const [parking, setParking] = useState('')
-  const [contractNotes, setContractNotes] = useState('')
-  const [assignmentFee, setAssignmentFee] = useState('')
-  // File uploads
-  const [uploadingPhotos, setUploadingPhotos] = useState(false)
-  const [uploadingReport, setUploadingReport] = useState(false)
+
+  // Step 3: Deal Price
+  const [askingPrice, setAskingPrice] = useState('')
+  const [purchasePrice, setPurchasePrice] = useState('')
+  const [minimumEmd, setMinimumEmd] = useState('')
+
+  // Step 4: Deal Info
+  const [propertyType, setPropertyType] = useState('')
+  const [parkingType, setParkingType] = useState('')
+  const [bedrooms, setBedrooms] = useState('')
+  const [fullBathrooms, setFullBathrooms] = useState('')
+  const [halfBathrooms, setHalfBathrooms] = useState('')
+  const [squareFootage, setSquareFootage] = useState('')
+  const [yearBuilt, setYearBuilt] = useState('')
+
+  // Step 5: Address
+  const [streetAddress, setStreetAddress] = useState('')
+  const [unit, setUnit] = useState('')
+  const [city, setCity] = useState('')
+  const [county, setCounty] = useState('')
+  const [addrState, setAddrState] = useState('')
+  const [zipCode, setZipCode] = useState('')
+
+  // Step 6: Photos
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
-  const [pendingReports, setPendingReports] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
-  const reportInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Computed profit potential
+  const profitPotential = (askingPrice && purchasePrice)
+    ? Number(askingPrice) - Number(purchasePrice)
+    : 0
 
   function handlePhotoFiles(files: FileList | null) {
     if (!files) return
@@ -74,19 +147,9 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     })
   }
 
-  function handleReportFiles(files: FileList | null) {
-    if (!files) return
-    const arr = Array.from(files).filter(f => f.type === 'application/pdf')
-    setPendingReports(prev => [...prev, ...arr])
-  }
-
   function removePhoto(idx: number) {
     setPendingPhotos(prev => prev.filter((_, i) => i !== idx))
     setPhotoPreviews(prev => prev.filter((_, i) => i !== idx))
-  }
-
-  function removeReport(idx: number) {
-    setPendingReports(prev => prev.filter((_, i) => i !== idx))
   }
 
   function debouncedSearchLeads(q: string) {
@@ -105,6 +168,37 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     }, 400)
   }
 
+  async function fetchFullLead(leadId: string) {
+    setLoadingLead(true)
+    try {
+      const res = await fetch(`/api/leads/${leadId}`)
+      if (!res.ok) return
+      const data: FullLead = await res.json()
+      setFullLead(data)
+      // Pre-populate fields from lead data
+      setTitle(data.property_address ?? '')
+      if (data.arv) setArvEstimate(String(data.arv))
+      if (data.offer_amount) setAskingPrice(String(data.offer_amount))
+      if (data.repair_estimate) {
+        setRepairEstimateLow(String(Math.round(data.repair_estimate * 0.7)))
+        setRepairEstimateHigh(String(data.repair_estimate))
+      }
+      if (data.property_type) setPropertyType(data.property_type)
+      if (data.beds) setBedrooms(String(data.beds))
+      if (data.baths_full) setFullBathrooms(String(data.baths_full))
+      if (data.baths_half != null) setHalfBathrooms(String(data.baths_half))
+      if (data.sqft) setSquareFootage(String(data.sqft))
+      if (data.year_built) setYearBuilt(String(data.year_built))
+      if (data.property_address) setStreetAddress(data.property_address)
+      if (data.city) setCity(data.city)
+      if (data.state) setAddrState(data.state)
+      if (data.zip) setZipCode(data.zip)
+      if (data.county) setCounty(data.county)
+    } finally {
+      setLoadingLead(false)
+    }
+  }
+
   useEffect(() => { return () => { if (debounceRef.current) clearTimeout(debounceRef.current) } }, [])
 
   async function handleCreate() {
@@ -119,22 +213,32 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           lead_id: selectedLead.id,
           title: title || null,
           description: description || null,
-          show_address: showAddress,
-          show_arv: showArv,
-          show_asking_price: showAskingPrice,
-          show_assignment_fee: showAssignmentFee,
-          accept_offers: acceptOffers,
-          requires_registration: requiresRegistration,
-          contract_close_date: contractCloseDate || null,
-          earnest_money: earnestMoney ? Number(earnestMoney) : null,
-          inspection_period_days: inspectionPeriodDays ? Number(inspectionPeriodDays) : null,
-          financing_terms: financingTerms || null,
           repair_estimate_low: repairEstimateLow ? Number(repairEstimateLow) : null,
           repair_estimate_high: repairEstimateHigh ? Number(repairEstimateHigh) : null,
-          property_condition: propertyCondition || null,
-          parking: parking || null,
-          contract_notes: contractNotes || null,
-          assignment_fee: assignmentFee ? Number(assignmentFee) : null,
+          property_condition: rehabScope || null,
+          asking_price: askingPrice ? Number(askingPrice) : null,
+          purchase_price: purchasePrice ? Number(purchasePrice) : null,
+          earnest_money: minimumEmd ? Number(minimumEmd) : null,
+          parking: parkingType || null,
+          accept_offers: true,
+          show_address: true,
+          show_arv: true,
+          show_asking_price: true,
+          lead_updates: {
+            arv: arvEstimate ? Number(arvEstimate) : undefined,
+            offer_amount: askingPrice ? Number(askingPrice) : undefined,
+            beds: bedrooms ? Number(bedrooms) : undefined,
+            baths_full: fullBathrooms ? Number(fullBathrooms) : undefined,
+            baths_half: halfBathrooms ? Number(halfBathrooms) : undefined,
+            sqft: squareFootage ? Number(squareFootage) : undefined,
+            year_built: yearBuilt ? Number(yearBuilt) : undefined,
+            property_type: propertyType || undefined,
+            property_address: streetAddress || undefined,
+            city: city || undefined,
+            state: addrState || undefined,
+            zip: zipCode || undefined,
+            county: county || undefined,
+          },
         }),
       })
       if (!res.ok) {
@@ -143,20 +247,13 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
       }
       const { deal } = await res.json()
 
-      // Upload photos & reports if any
-      if (deal?.id && (pendingPhotos.length > 0 || pendingReports.length > 0)) {
+      // Upload photos if any
+      if (deal?.id && pendingPhotos.length > 0) {
         for (const photo of pendingPhotos) {
           const fd = new FormData()
           fd.append('file', photo)
           fd.append('deal_page_id', deal.id)
           fd.append('type', 'photo')
-          await fetch('/api/deals/upload', { method: 'POST', body: fd })
-        }
-        for (const report of pendingReports) {
-          const fd = new FormData()
-          fd.append('file', report)
-          fd.append('deal_page_id', deal.id)
-          fd.append('type', 'inspection_report')
           await fetch('/api/deals/upload', { method: 'POST', body: fd })
         }
       }
@@ -169,273 +266,408 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     }
   }
 
+  function canAdvance(): boolean {
+    if (step === 0) return !!selectedLead && !loadingLead
+    return true
+  }
+
+  function goNext() {
+    if (step < TOTAL_STEPS - 1) setStep(step + 1)
+    else handleCreate()
+  }
+
+  function goBack() {
+    if (step > 0) setStep(step - 1)
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step renderers
+  // ---------------------------------------------------------------------------
+  function renderStep0() {
+    return (
+      <>
+        <h3 className="text-xl font-bold text-slate-900 text-center">Select Lead</h3>
+        <p className="text-sm text-slate-500 text-center mb-2">Which property are you creating a deal for?</p>
+        <div className="relative">
+          <input
+            className={inputCls}
+            value={leadSearch}
+            onChange={e => { setLeadSearch(e.target.value); debouncedSearchLeads(e.target.value) }}
+            placeholder="Search by address or name..."
+            autoFocus
+          />
+          {searching && (
+            <div className="absolute inset-y-0 right-3 flex items-center">
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+        </div>
+        {leads.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            {leads.map(lead => (
+              <button
+                key={lead.id}
+                onClick={() => {
+                  setSelectedLead(lead)
+                  setLeads([])
+                  setLeadSearch(lead.property_address ?? lead.id)
+                  fetchFullLead(lead.id)
+                }}
+                className="w-full text-left px-3 py-2.5 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
+              >
+                <p className="font-medium text-slate-900">{lead.property_address ?? 'Unknown address'}</p>
+                <p className="text-xs text-slate-500">{lead.full_name ?? ''}</p>
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedLead && (
+          <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-lg px-3 py-2.5">
+            <Icon name="check_circle" size="text-base" />
+            {selectedLead.property_address}
+            {loadingLead && <span className="text-xs text-slate-500 ml-auto">Loading details...</span>}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  function renderStep1() {
+    return (
+      <>
+        <h3 className="text-xl font-bold text-slate-900 text-center">Enter Deal Description</h3>
+        <p className="text-sm text-slate-500 text-center mb-2">What makes your deal a great investment?</p>
+        <div>
+          <label className={labelCls}>Deal Title</label>
+          <input
+            className={inputCls}
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Beautiful 3BR/2BA Family Home"
+            autoFocus
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Deal Description</label>
+          <textarea
+            className={inputCls + ' resize-y min-h-[120px]'}
+            rows={5}
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="e.g., quick and easy flip, cash flowing rental, great curb appeal..."
+          />
+        </div>
+      </>
+    )
+  }
+
+  function renderStep2() {
+    const isNonTurnKey = rehabScope && rehabScope !== 'Turn Key'
+    return (
+      <>
+        <h3 className="text-xl font-bold text-slate-900 text-center">Deal Value</h3>
+        <div>
+          <label className={labelCls}>ARV Estimate</label>
+          <input
+            type="number"
+            className={inputCls}
+            value={arvEstimate}
+            onChange={e => setArvEstimate(e.target.value)}
+            placeholder="e.g. $250,000"
+            autoFocus
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Rehab Scope</label>
+          <select
+            className={selectCls}
+            value={rehabScope}
+            onChange={e => setRehabScope(e.target.value)}
+          >
+            <option value="">Select Rehab Scope...</option>
+            {REHAB_SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Repair Estimate (Low End)</label>
+          <input
+            type="number"
+            className={inputCls}
+            value={repairEstimateLow}
+            onChange={e => setRepairEstimateLow(e.target.value)}
+            placeholder="e.g. $15,000"
+          />
+          {isNonTurnKey && !repairEstimateLow && (
+            <p className="text-xs text-red-500 mt-1">Repair estimate is required for non-turnkey deals</p>
+          )}
+        </div>
+        <div>
+          <label className={labelCls}>Repair Estimate (High End)</label>
+          <input
+            type="number"
+            className={inputCls}
+            value={repairEstimateHigh}
+            onChange={e => setRepairEstimateHigh(e.target.value)}
+            placeholder="e.g. $25,000"
+          />
+          {isNonTurnKey && !repairEstimateHigh && (
+            <p className="text-xs text-red-500 mt-1">Repair estimate is required for non-turnkey deals</p>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  function renderStep3() {
+    return (
+      <>
+        <h3 className="text-xl font-bold text-slate-900 text-center">Deal Price</h3>
+        <p className="text-sm text-slate-500 text-center mb-2">Let&apos;s calculate how much you could earn.</p>
+        <div>
+          <label className={labelCls}>How much do you want to sell it for?</label>
+          <input
+            type="number"
+            className={inputCls}
+            value={askingPrice}
+            onChange={e => setAskingPrice(e.target.value)}
+            placeholder="e.g. $250,000"
+            autoFocus
+          />
+        </div>
+        <div>
+          <label className={labelCls}>What&apos;s your purchase price?</label>
+          <input
+            type="number"
+            className={inputCls}
+            value={purchasePrice}
+            onChange={e => setPurchasePrice(e.target.value)}
+            placeholder="e.g. $200,000"
+          />
+          <p className="text-xs text-slate-500 mt-1">Buyers will NOT see your purchase price</p>
+        </div>
+        <div>
+          <label className={labelCls}>Minimum EMD</label>
+          <input
+            type="number"
+            className={inputCls}
+            value={minimumEmd}
+            onChange={e => setMinimumEmd(e.target.value)}
+            placeholder="e.g. $10,000"
+          />
+        </div>
+        <div className="pt-2">
+          <p className="text-base font-semibold text-slate-900">
+            Profit Potential:{' '}
+            <span className={profitPotential > 0 ? 'text-emerald-600' : profitPotential < 0 ? 'text-red-500' : 'text-slate-900'}>
+              ${profitPotential.toLocaleString()}
+            </span>
+          </p>
+        </div>
+      </>
+    )
+  }
+
+  function renderStep4() {
+    return (
+      <>
+        <h3 className="text-xl font-bold text-slate-900 text-center">Deal Info</h3>
+        <p className="text-sm text-slate-500 text-center mb-2">Let&apos;s take a moment to make sure all of our property data is accurate.</p>
+        <div>
+          <label className={labelCls}>Property Type</label>
+          <select className={selectCls} value={propertyType} onChange={e => setPropertyType(e.target.value)}>
+            <option value="">Select Property Type...</option>
+            {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Parking Type</label>
+          <select className={selectCls} value={parkingType} onChange={e => setParkingType(e.target.value)}>
+            <option value="">Select Parking Type...</option>
+            {PARKING_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Bedrooms</label>
+          <input type="number" className={inputCls} value={bedrooms} onChange={e => setBedrooms(e.target.value)} placeholder="e.g. 3" />
+        </div>
+        <div>
+          <label className={labelCls}>Full Bathrooms</label>
+          <input type="number" className={inputCls} value={fullBathrooms} onChange={e => setFullBathrooms(e.target.value)} placeholder="e.g. 2" />
+        </div>
+        <div>
+          <label className={labelCls}>Half Bathrooms (Optional)</label>
+          <input type="number" className={inputCls} value={halfBathrooms} onChange={e => setHalfBathrooms(e.target.value)} placeholder="0" />
+        </div>
+        <div>
+          <label className={labelCls}>Square Footage</label>
+          <input type="number" className={inputCls} value={squareFootage} onChange={e => setSquareFootage(e.target.value)} placeholder="e.g. 1800" />
+        </div>
+        <div>
+          <label className={labelCls}>Year Built</label>
+          <input type="number" className={inputCls} value={yearBuilt} onChange={e => setYearBuilt(e.target.value)} placeholder="e.g. 1990" />
+        </div>
+      </>
+    )
+  }
+
+  function renderStep5() {
+    return (
+      <>
+        <h3 className="text-xl font-bold text-slate-900 text-center">Deal Address</h3>
+        <p className="text-sm text-slate-500 text-center mb-2">Confirm the property address.</p>
+        <div>
+          <label className={labelCls}>Street Address</label>
+          <input className={inputCls} value={streetAddress} onChange={e => setStreetAddress(e.target.value)} placeholder="123 Main St" autoFocus />
+        </div>
+        <div>
+          <label className={labelCls}>Unit</label>
+          <input className={inputCls} value={unit} onChange={e => setUnit(e.target.value)} placeholder="A, 101, etc." />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>City</label>
+            <input className={inputCls} value={city} onChange={e => setCity(e.target.value)} placeholder="Kansas City" />
+          </div>
+          <div>
+            <label className={labelCls}>County</label>
+            <input className={inputCls} value={county} onChange={e => setCounty(e.target.value)} placeholder="Jackson County" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>State</label>
+            <select className={selectCls} value={addrState} onChange={e => setAddrState(e.target.value)}>
+              <option value="">Select State...</option>
+              {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>ZIP Code</label>
+            <input className={inputCls} value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="64112" />
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  function renderStep6() {
+    return (
+      <>
+        <h3 className="text-xl font-bold text-slate-900 text-center">Photos</h3>
+        <p className="text-sm text-slate-500 text-center mb-2">Add property photos to attract buyers.</p>
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); handlePhotoFiles(e.dataTransfer.files) }}
+          onClick={() => photoInputRef.current?.click()}
+          className={cn(
+            'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
+            dragOver ? 'border-primary bg-primary/5' : 'border-slate-200 hover:border-slate-300'
+          )}
+        >
+          <Icon name="add_photo_alternate" className="text-4xl text-slate-300 mb-2" />
+          <p className="text-sm text-slate-500">Drop photos here or click to browse</p>
+          <p className="text-xs text-slate-400 mt-1">JPG, PNG, WebP up to 10MB</p>
+          <input
+            ref={photoInputRef}
+            type="file"
+            multiple
+            accept="image/*"
+            className="hidden"
+            onChange={e => handlePhotoFiles(e.target.files)}
+          />
+        </div>
+        {photoPreviews.length > 0 && (
+          <div className="grid grid-cols-4 gap-2">
+            {photoPreviews.map((src, i) => (
+              <div key={i} className="relative group">
+                <img src={src} alt="" className="w-full h-20 object-cover rounded-lg" />
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); removePhoto(i) }}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-slate-400 text-center">{pendingPhotos.length} photo{pendingPhotos.length !== 1 ? 's' : ''} selected</p>
+      </>
+    )
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+  const stepRenderers = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4, renderStep5, renderStep6]
+  const isLastStep = step === TOTAL_STEPS - 1
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">Create Deal Page</h2>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+        {/* Header with progress */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-slate-900">New Deal</h2>
+            <span className="text-xs text-slate-400">Step {step + 1} of {TOTAL_STEPS}</span>
+          </div>
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
-        <div className="px-6 py-4 space-y-4">
+
+        {/* Step indicators */}
+        <div className="px-6 pt-3 pb-1 flex-shrink-0">
+          <div className="flex gap-1">
+            {STEP_LABELS.map((label, i) => (
+              <div key={label} className="flex-1 flex flex-col items-center">
+                <div className={cn(
+                  'h-1 w-full rounded-full transition-colors',
+                  i <= step ? 'bg-[#E32E2E]' : 'bg-slate-100'
+                )} />
+                <span className={cn(
+                  'text-[9px] mt-1 transition-colors',
+                  i === step ? 'text-[#E32E2E] font-semibold' : i < step ? 'text-slate-500' : 'text-slate-300'
+                )}>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Step content */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
           )}
+          {stepRenderers[step]()}
+        </div>
 
-          {/* Lead Search */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Select Lead *</label>
-            <div className="relative">
-              <input
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                value={leadSearch}
-                onChange={e => { setLeadSearch(e.target.value); debouncedSearchLeads(e.target.value) }}
-                placeholder="Search by address or name..."
-              />
-              {searching && (
-                <div className="absolute inset-y-0 right-3 flex items-center">
-                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-            </div>
-            {leads.length > 0 && (
-              <div className="mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                {leads.map(lead => (
-                  <button
-                    key={lead.id}
-                    onClick={() => {
-                      setSelectedLead(lead)
-                      setLeads([])
-                      setLeadSearch(lead.property_address ?? lead.id)
-                      setTitle(lead.property_address ?? '')
-                    }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
-                  >
-                    <p className="font-medium text-slate-900">{lead.property_address ?? 'Unknown address'}</p>
-                    <p className="text-xs text-slate-500">{lead.full_name ?? ''}</p>
-                  </button>
-                ))}
-              </div>
-            )}
-            {selectedLead && (
-              <div className="mt-2 flex items-center gap-2 bg-primary/10 text-primary text-xs font-semibold rounded-lg px-3 py-2">
-                <Icon name="check_circle" size="text-sm" />
-                {selectedLead.property_address}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Page Title</label>
-            <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="Great deal in 64112..."
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
-            <textarea
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
-              rows={3}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Describe the deal..."
-            />
-          </div>
-
-          {/* Photo Upload */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Photos</label>
-            <div
-              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={e => { e.preventDefault(); setDragOver(false); handlePhotoFiles(e.dataTransfer.files) }}
-              onClick={() => photoInputRef.current?.click()}
-              className={cn(
-                'border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors',
-                dragOver ? 'border-primary bg-primary/5' : 'border-slate-200 hover:border-slate-300'
-              )}
-            >
-              <Icon name="add_photo_alternate" className="text-2xl text-slate-400 mb-1" />
-              <p className="text-xs text-slate-500">Drop photos here or click to browse</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">JPG, PNG, WebP up to 10MB</p>
-              <input
-                ref={photoInputRef}
-                type="file"
-                multiple
-                accept="image/*"
-                className="hidden"
-                onChange={e => handlePhotoFiles(e.target.files)}
-              />
-            </div>
-            {photoPreviews.length > 0 && (
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                {photoPreviews.map((src, i) => (
-                  <div key={i} className="relative group">
-                    <img src={src} alt="" className="w-full h-16 object-cover rounded-lg" />
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(i)}
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Inspection Reports */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Inspection Reports (PDF)</label>
+        {/* Footer with Back / Next */}
+        <div className="flex gap-3 px-6 py-4 border-t border-slate-100 flex-shrink-0">
+          {step > 0 ? (
             <button
-              type="button"
-              onClick={() => reportInputRef.current?.click()}
-              className="w-full border border-dashed border-slate-200 hover:border-slate-300 rounded-lg p-3 text-center transition-colors"
+              onClick={goBack}
+              className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-semibold"
             >
-              <Icon name="upload_file" className="text-xl text-slate-400 mb-0.5" />
-              <p className="text-xs text-slate-500">Click to upload PDF reports</p>
-              <input
-                ref={reportInputRef}
-                type="file"
-                multiple
-                accept="application/pdf"
-                className="hidden"
-                onChange={e => handleReportFiles(e.target.files)}
-              />
+              Back
             </button>
-            {pendingReports.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {pendingReports.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-1.5 text-xs">
-                    <Icon name="description" size="text-sm" className="text-red-400" />
-                    <span className="flex-1 truncate text-slate-700">{f.name}</span>
-                    <button type="button" onClick={() => removeReport(i)} className="text-slate-400 hover:text-red-500">&times;</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Contract Terms */}
-          <div>
-            <p className="text-xs font-bold text-slate-600 mb-2">Contract Terms</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Close Date</label>
-                <input type="date" value={contractCloseDate} onChange={e => setContractCloseDate(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Earnest Money ($)</label>
-                <input type="number" value={earnestMoney} onChange={e => setEarnestMoney(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder="5000" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Inspection Period (days)</label>
-                <input type="number" value={inspectionPeriodDays} onChange={e => setInspectionPeriodDays(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder="10" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Financing Terms</label>
-                <input type="text" value={financingTerms} onChange={e => setFinancingTerms(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder="Cash, seller financing..." />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Assignment Fee ($)</label>
-                <input type="number" value={assignmentFee} onChange={e => setAssignmentFee(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder="10000" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Property Condition</label>
-                <select value={propertyCondition} onChange={e => setPropertyCondition(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
-                  <option value="">Select...</option>
-                  <option value="Excellent">Excellent</option>
-                  <option value="Good">Good</option>
-                  <option value="Fair">Fair</option>
-                  <option value="Poor">Poor</option>
-                  <option value="Needs Full Rehab">Needs Full Rehab</option>
-                  <option value="Teardown">Teardown</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Parking</label>
-                <input type="text" value={parking} onChange={e => setParking(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder="2 car garage" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Repair Est. Low ($)</label>
-                <input type="number" value={repairEstimateLow} onChange={e => setRepairEstimateLow(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder="15000" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Repair Est. High ($)</label>
-                <input type="number" value={repairEstimateHigh} onChange={e => setRepairEstimateHigh(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder="30000" />
-              </div>
-            </div>
-            <div className="mt-3">
-              <label className="block text-[10px] text-slate-500 mb-0.5">Contract Notes</label>
-              <textarea rows={2} value={contractNotes} onChange={e => setContractNotes(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
-                placeholder="Any notes about the contract..." />
-            </div>
-          </div>
-
-          {/* Visibility toggles */}
-          <div>
-            <p className="text-xs font-bold text-slate-600 mb-2">Show on Page</p>
-            <div className="space-y-2">
-              {[
-                { label: 'Property Address', val: showAddress, set: setShowAddress },
-                { label: 'ARV', val: showArv, set: setShowArv },
-                { label: 'Asking Price', val: showAskingPrice, set: setShowAskingPrice },
-                { label: 'Assignment Fee', val: showAssignmentFee, set: setShowAssignmentFee },
-                { label: 'Accept Offers', val: acceptOffers, set: setAcceptOffers },
-                { label: 'Require Registration to View', val: requiresRegistration, set: setRequiresRegistration },
-              ].map(({ label, val, set }) => (
-                <label key={label} className="flex items-center gap-3 cursor-pointer">
-                  <div
-                    onClick={() => set(!val)}
-                    className={cn(
-                      'relative w-9 h-5 rounded-full transition-colors cursor-pointer',
-                      val ? 'bg-[#E32E2E]' : 'bg-slate-200'
-                    )}
-                  >
-                    <span className={cn(
-                      'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform',
-                      val ? 'translate-x-4' : 'translate-x-0'
-                    )} />
-                  </div>
-                  <span className="text-sm text-slate-700">{label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-2 pb-1">
+          ) : (
             <button
               onClick={onClose}
-              className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold"
+              className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-semibold"
             >
               Cancel
             </button>
-            <button
-              onClick={handleCreate}
-              disabled={creating || !selectedLead}
-              className="flex-1 bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
-            >
-              {creating ? 'Creating…' : 'Create Page'}
-            </button>
-          </div>
+          )}
+          <button
+            onClick={goNext}
+            disabled={!canAdvance() || creating}
+            className="flex-1 bg-[#1a1a2e] text-white hover:bg-[#16162a] rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-50 transition-colors"
+          >
+            {creating ? 'Creating...' : isLastStep ? 'Create Deal' : 'Next'}
+          </button>
         </div>
       </div>
     </div>

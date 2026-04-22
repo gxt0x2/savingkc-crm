@@ -50,6 +50,9 @@ export async function POST(req: NextRequest) {
       financing_terms, repair_estimate_low, repair_estimate_high,
       property_condition, parking, contract_notes, assignment_fee,
       videos, inspection_reports,
+      asking_price, purchase_price,
+      // Lead property updates (from wizard)
+      lead_updates,
     } = body
 
     if (!lead_id) {
@@ -105,6 +108,26 @@ export async function POST(req: NextRequest) {
       parking: parking || null,
       contract_notes: contract_notes || null,
       assignment_fee: assignment_fee ?? null,
+      asking_price: asking_price ?? null,
+      purchase_price: purchase_price ?? null,
+    }
+
+    // Update lead property details if provided
+    if (lead_updates && typeof lead_updates === 'object') {
+      const allowedLeadFields = [
+        'beds', 'baths_full', 'baths_half', 'sqft', 'lot_size', 'year_built',
+        'property_type', 'property_address', 'city', 'state', 'zip', 'county',
+        'arv', 'offer_amount', 'asking_price', 'repair_estimate',
+      ]
+      const updates: Record<string, unknown> = {}
+      for (const key of allowedLeadFields) {
+        if (key in lead_updates && lead_updates[key] !== undefined) {
+          updates[key] = lead_updates[key]
+        }
+      }
+      if (Object.keys(updates).length > 0) {
+        await db.from('leads').update(updates).eq('id', lead_id)
+      }
     }
 
     const { data: dealPage, error: insertError } = await db

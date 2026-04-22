@@ -145,6 +145,7 @@ export async function PATCH(
       'contract_close_date', 'earnest_money', 'inspection_period_days',
       'financing_terms', 'repair_estimate_low', 'repair_estimate_high',
       'property_condition', 'parking', 'contract_notes', 'assignment_fee',
+      'asking_price', 'purchase_price',
     ]
 
     const updates: Record<string, unknown> = {}
