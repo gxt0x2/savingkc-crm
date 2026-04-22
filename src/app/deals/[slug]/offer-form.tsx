@@ -29,6 +29,8 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
     offer_amount: '',
     earnest_money: '',
     buyer_name: '',
+    buyer_phone: '',
+    buyer_email: '',
     notes: '',
   })
 
@@ -51,6 +53,8 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
           financing_type: form.financing_type || undefined,
           notes: form.notes || undefined,
           buyer_name: form.buyer_name,
+          buyer_phone: form.buyer_phone,
+          buyer_email: form.buyer_email,
         }),
       })
 
@@ -135,28 +139,24 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
                 <div>
                   <label className="block text-[13px] font-medium text-[#666] mb-2">Financing Type</label>
                   <div className="flex rounded-xl border border-[#e0e0e0] overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => set('financing_type', 'cash')}
-                      className={`flex-1 py-2.5 text-[14px] font-medium transition-colors ${
-                        form.financing_type === 'cash'
-                          ? 'bg-[#E32E2E] text-white'
-                          : 'bg-white text-[#666] hover:bg-[#fafafa]'
-                      }`}
-                    >
-                      Cash
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => set('financing_type', 'lender_financing')}
-                      className={`flex-1 py-2.5 text-[14px] font-medium border-l border-[#e0e0e0] transition-colors ${
-                        form.financing_type === 'lender_financing'
-                          ? 'bg-[#E32E2E] text-white'
-                          : 'bg-white text-[#666] hover:bg-[#fafafa]'
-                      }`}
-                    >
-                      Lender Financing
-                    </button>
+                    {([
+                      ['cash', 'Cash'],
+                      ['hard_money', 'Hard Money'],
+                      ['conventional', 'Conventional'],
+                    ] as const).map(([val, label], i) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => set('financing_type', val)}
+                        className={`flex-1 py-2.5 text-[13px] font-medium transition-colors ${i > 0 ? 'border-l border-[#e0e0e0]' : ''} ${
+                          form.financing_type === val
+                            ? 'bg-[#E32E2E] text-white'
+                            : 'bg-white text-[#666] hover:bg-[#fafafa]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -206,6 +206,32 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
                     className={input}
                     placeholder="Company name"
                   />
+                </div>
+
+                {/* Phone + Email row */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#666] mb-1.5">Phone *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={form.buyer_phone}
+                      onChange={e => set('buyer_phone', e.target.value)}
+                      className={input}
+                      placeholder="(555) 555-5555"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#666] mb-1.5">Email *</label>
+                    <input
+                      type="email"
+                      required
+                      value={form.buyer_email}
+                      onChange={e => set('buyer_email', e.target.value)}
+                      className={input}
+                      placeholder="you@company.com"
+                    />
+                  </div>
                 </div>
 
                 {/* Add comment */}
