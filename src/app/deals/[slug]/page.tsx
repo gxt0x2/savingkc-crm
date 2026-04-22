@@ -380,7 +380,7 @@ export default async function DealPage({
             {/* Wholesaler Card */}
             <div className={`${card} p-6`}>
               <div className="flex flex-col items-center text-center mb-4">
-                <img src="/logo.png" alt="Saving KC Homebuyers" className="w-14 h-14 rounded-full object-cover mb-3" />
+                <img src="/ernest-profile.png" alt="Ernest Dodson" className="w-14 h-14 rounded-full object-cover mb-3" />
                 <p className="text-[15px] font-semibold text-[#1a1a1a]">Ernest Dodson</p>
                 <p className="text-[13px] text-[#888] mt-0.5">Saving KC Homebuyers</p>
               </div>
