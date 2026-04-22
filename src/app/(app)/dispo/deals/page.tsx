@@ -48,13 +48,48 @@ const US_STATES = [
   'Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia',
   'Wisconsin','Wyoming',
 ]
-const STEP_LABELS = ['Lead', 'Description', 'Value', 'Price', 'Info', 'Address', 'Photos']
+const STEP_LABELS = ['Lead', 'Description', 'Value', 'Price', 'Info', 'Address', 'Terms', 'Photos']
 const TOTAL_STEPS = STEP_LABELS.length
 
 // Shared input class
 const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20'
 const selectCls = inputCls + ' appearance-none bg-white'
 const labelCls = 'block text-sm font-semibold text-slate-700 mb-1'
+
+interface ManifestData {
+  property?: {
+    condition?: string | null
+    occupancy?: string | null
+    known_issues?: string[] | null
+    bedrooms?: number | null
+    bathrooms?: number | null
+    sqft?: number | null
+    year_built?: number | null
+    lot_size_sqft?: number | null
+    property_type?: string | null
+  }
+  financials?: {
+    estimated_arv?: number | null
+    estimated_repair_cost?: number | null
+    estimated_spread?: number | null
+    seller_asking_price?: number | null
+    seller_floor_price?: number | null
+    our_max_offer?: number | null
+    mortgage_balance?: number | null
+    back_taxes_owed?: number | null
+    liens_total?: number | null
+  }
+  situation?: {
+    life_event_type?: string | null
+    timeline_raw?: string | null
+    opportunity_flags?: { label: string; notes?: string | null }[] | null
+  }
+  motivation?: {
+    score?: number | null
+    primary_driver?: string | null
+    urgency_signals?: string[] | null
+  }
+}
 
 interface FullLead {
   id: string
@@ -81,6 +116,7 @@ interface FullLead {
   stories: number | null
   last_sale_price: number | null
   tax_assessment: number | null
+  manifest: ManifestData | null
 }
 
 function buildAutoTitle(d: FullLead): string {
@@ -88,27 +124,95 @@ function buildAutoTitle(d: FullLead): string {
   if (d.beds) parts.push(`${d.beds}BR`)
   if (d.baths_full) parts.push(`${d.baths_full}BA`)
   const type = d.property_type || 'Home'
-  if (parts.length > 0) return `${parts.join('/')} ${type} — ${d.city || ''}`
-  return d.property_address || 'Investment Opportunity'
+  const loc = d.city || ''
+  const bedBath = parts.length > 0 ? `${parts.join('/')} ${type}` : type
+
+  // Calculate discount off ARV for headline
+  const arv = d.arv || d.manifest?.financials?.estimated_arv
+  const sellPrice = d.asking_price || (arv ? Math.round(arv * 0.75) : null)
+  let discount = ''
+  if (arv && sellPrice && sellPrice < arv) {
+    const pct = Math.round(((arv - sellPrice) / arv) * 100)
+    if (pct >= 10) discount = `${pct}% Below Market `
+  }
+
+  // Determine rehab indicator
+  const repairCost = d.repair_estimate || d.manifest?.financials?.estimated_repair_cost
+  let rehabTag = ''
+  if (repairCost) {
+    if (repairCost <= 15000) rehabTag = ' | Light Rehab'
+    else if (repairCost <= 40000) rehabTag = ' | Value-Add'
+    else rehabTag = ' | Major Upside'
+  }
+
+  if (loc) return `${discount}${bedBath} in ${loc}${rehabTag}`
+  return d.property_address ? `${discount}${bedBath} — ${d.property_address}${rehabTag}` : `Investment Opportunity — ${bedBath}`
 }
 
 function buildAutoDescription(d: FullLead): string {
+  const m = d.manifest
   const lines: string[] = []
   const type = d.property_type || 'property'
   const addr = d.property_address || 'this property'
-  let intro = `Great investment opportunity at ${addr}.`
-  if (d.beds && d.baths_full) {
-    intro = `${d.beds}-bedroom, ${d.baths_full}-bath ${type.toLowerCase()} at ${addr}.`
+  const arv = d.arv || m?.financials?.estimated_arv
+
+  // Hook line for cash buyers
+  if (arv) {
+    lines.push(`Cash buyer opportunity — ${type.toLowerCase()} at ${addr} with $${arv.toLocaleString()} ARV.\n`)
+  } else {
+    lines.push(`Cash buyer opportunity — ${type.toLowerCase()} at ${addr}.\n`)
   }
-  lines.push(intro)
-  const details: string[] = []
-  if (d.sqft) details.push(`${d.sqft.toLocaleString()} sq ft`)
-  if (d.lot_size) details.push(`${d.lot_size} acre lot`)
-  if (d.year_built) details.push(`built in ${d.year_built}`)
-  if (d.garage_spaces) details.push(`${d.garage_spaces}-car garage`)
-  if (d.basement_type && d.basement_type !== 'None') details.push(`${d.basement_type.toLowerCase()} basement`)
-  if (details.length > 0) lines.push(`Features: ${details.join(', ')}.`)
-  return lines.join(' ')
+
+  // Property highlights
+  const highlights: string[] = []
+  if (d.beds && d.baths_full) highlights.push(`${d.beds} bed / ${d.baths_full} bath${d.baths_half ? ` + ${d.baths_half} half` : ''}`)
+  if (d.sqft) highlights.push(`${d.sqft.toLocaleString()} sq ft`)
+  if (d.lot_size) highlights.push(`${d.lot_size} acre lot`)
+  if (d.year_built) highlights.push(`Built ${d.year_built}`)
+  if (d.garage_spaces && d.garage_spaces > 0) highlights.push(`${d.garage_spaces}-car garage`)
+  if (d.basement_type && d.basement_type !== 'None') highlights.push(`${d.basement_type} basement`)
+  if (d.stories) highlights.push(`${d.stories} ${d.stories === 1 ? 'story' : 'stories'}`)
+  if (highlights.length > 0) {
+    lines.push('PROPERTY HIGHLIGHTS:')
+    highlights.forEach(h => lines.push(`- ${h}`))
+    lines.push('')
+  }
+
+  // Financial highlights
+  const finHighlights: string[] = []
+  if (arv) finHighlights.push(`ARV: $${arv.toLocaleString()}`)
+  const repairCost = d.repair_estimate || m?.financials?.estimated_repair_cost
+  if (repairCost) finHighlights.push(`Est. Repairs: $${repairCost.toLocaleString()}`)
+  const spread = m?.financials?.estimated_spread
+  if (spread && spread > 0) finHighlights.push(`Estimated Spread: $${spread.toLocaleString()}`)
+  if (finHighlights.length > 0) {
+    lines.push('DEAL NUMBERS:')
+    finHighlights.forEach(h => lines.push(`- ${h}`))
+    lines.push('')
+  }
+
+  // Situation / opportunity from manifest
+  const condition = m?.property?.condition
+  if (condition && condition !== 'unknown') {
+    lines.push(`CONDITION: ${condition.charAt(0).toUpperCase() + condition.slice(1)}`)
+  }
+  const occupancy = m?.property?.occupancy
+  if (occupancy && occupancy !== 'unknown') {
+    const label = occupancy.replace(/_/g, ' ')
+    lines.push(`OCCUPANCY: ${label.charAt(0).toUpperCase() + label.slice(1)}`)
+  }
+  const knownIssues = m?.property?.known_issues
+  if (knownIssues && knownIssues.length > 0) {
+    lines.push('\nKNOWN ITEMS:')
+    knownIssues.forEach(issue => lines.push(`- ${issue}`))
+  }
+  const flags = m?.situation?.opportunity_flags
+  if (flags && flags.length > 0) {
+    lines.push('\nOPPORTUNITY:')
+    flags.forEach(f => lines.push(`- ${f.label}${f.notes ? `: ${f.notes}` : ''}`))
+  }
+
+  return lines.join('\n')
 }
 
 function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
@@ -161,8 +265,20 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [garageSpaces, setGarageSpaces] = useState('')
   const [basementType, setBasementType] = useState('')
   const [stories, setStories] = useState('')
+  const [propertyCondition, setPropertyCondition] = useState('')
 
-  // Step 6: Photos
+  // Step 6: Terms
+  const [contractCloseDate, setContractCloseDate] = useState('')
+  const [earnestMoney, setEarnestMoney] = useState('')
+  const [inspectionDays, setInspectionDays] = useState('')
+  const [financingTerms, setFinancingTerms] = useState('')
+  const [postOccupancy, setPostOccupancy] = useState('')
+  const [addendums, setAddendums] = useState('')
+  const [amendments, setAmendments] = useState('')
+  const [contractNotes, setContractNotes] = useState('')
+  const [assignmentFee, setAssignmentFee] = useState('')
+
+  // Step 7: Photos
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
@@ -216,40 +332,62 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
       if (!res.ok) return
       const data: FullLead = await res.json()
       setFullLead(data)
+      const m = data.manifest
 
-      // --- Pre-populate EVERYTHING possible from lead data ---
+      // --- Pre-populate EVERYTHING possible from lead + manifest data ---
 
-      // Step 1: Description — auto-generate smart title & description
+      // Step 1: Description — cash-buyer-focused title & bullet-point description
       setTitle(buildAutoTitle(data))
       setDescription(buildAutoDescription(data))
 
       // Step 2: Deal Value
-      if (data.arv) setArvEstimate(String(data.arv))
-      if (data.repair_estimate) {
-        setRepairEstimateLow(String(Math.round(data.repair_estimate * 0.7)))
-        setRepairEstimateHigh(String(data.repair_estimate))
+      const arv = data.arv || m?.financials?.estimated_arv
+      if (arv) setArvEstimate(String(arv))
+      const repairEst = data.repair_estimate || m?.financials?.estimated_repair_cost
+      if (repairEst) {
+        setRepairEstimateLow(String(Math.round(repairEst * 0.7)))
+        setRepairEstimateHigh(String(repairEst))
+      }
+      // Auto-set rehab scope from repair cost
+      if (repairEst && !rehabScope) {
+        if (repairEst <= 10000) setRehabScope('Turn Key')
+        else if (repairEst <= 25000) setRehabScope('Light Rehab')
+        else if (repairEst <= 50000) setRehabScope('Major Repair')
+        else setRehabScope('Full Rehab')
+      }
+      // Auto-set property condition from manifest
+      const mCondition = m?.property?.condition
+      if (mCondition && mCondition !== 'unknown') {
+        const condMap: Record<string, string> = {
+          excellent: 'Excellent', good: 'Good', fair: 'Fair',
+          poor: 'Poor', distressed: 'Needs Full Rehab',
+        }
+        if (condMap[mCondition]) setPropertyCondition(condMap[mCondition])
       }
 
       // Step 3: Deal Price
-      // offer_amount = our offer to seller = purchase price (private)
-      // asking_price = seller's asking price — we use this as our sell price to buyers
       if (data.asking_price) setAskingPrice(String(data.asking_price))
-      else if (data.arv) setAskingPrice(String(Math.round(data.arv * 0.75))) // default 75% ARV
+      else if (arv) setAskingPrice(String(Math.round(arv * 0.75)))
       if (data.offer_amount) setPurchasePrice(String(data.offer_amount))
-      if (data.offer_amount) setMinimumEmd(String(Math.round(data.offer_amount * 0.02))) // 2% EMD default
+      else if (m?.financials?.our_max_offer) setPurchasePrice(String(m.financials.our_max_offer))
+      const pp = data.offer_amount || m?.financials?.our_max_offer
+      if (pp) setMinimumEmd(String(Math.round(pp * 0.02)))
 
       // Step 4: Deal Info
       if (data.property_type) setPropertyType(data.property_type)
       if (data.beds) setBedrooms(String(data.beds))
+      else if (m?.property?.bedrooms) setBedrooms(String(m.property.bedrooms))
       if (data.baths_full) setFullBathrooms(String(data.baths_full))
+      else if (m?.property?.bathrooms) setFullBathrooms(String(m.property.bathrooms))
       if (data.baths_half != null) setHalfBathrooms(String(data.baths_half))
       if (data.sqft) setSquareFootage(String(data.sqft))
+      else if (m?.property?.sqft) setSquareFootage(String(m.property.sqft))
       if (data.year_built) setYearBuilt(String(data.year_built))
+      else if (m?.property?.year_built) setYearBuilt(String(m.property.year_built))
       if (data.lot_size) setLotSize(String(data.lot_size))
       if (data.garage_spaces) setGarageSpaces(String(data.garage_spaces))
       if (data.basement_type) setBasementType(data.basement_type)
       if (data.stories) setStories(String(data.stories))
-      // Map garage_spaces to parking type
       if (data.garage_spaces && data.garage_spaces > 0 && !data.basement_type) {
         setParkingType('Garage')
       }
@@ -260,6 +398,16 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
       if (data.state) setAddrState(data.state)
       if (data.zip) setZipCode(data.zip)
       if (data.county) setCounty(data.county)
+
+      // Step 7: Terms — defaults
+      if (!contractCloseDate) {
+        // Default 30 days from now
+        const d30 = new Date()
+        d30.setDate(d30.getDate() + 30)
+        setContractCloseDate(d30.toISOString().split('T')[0])
+      }
+      if (!inspectionDays) setInspectionDays('10')
+      if (!financingTerms) setFinancingTerms('Cash — no financing contingency')
     } finally {
       setLoadingLead(false)
     }
@@ -281,11 +429,21 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           description: description || null,
           repair_estimate_low: repairEstimateLow ? Number(repairEstimateLow) : null,
           repair_estimate_high: repairEstimateHigh ? Number(repairEstimateHigh) : null,
-          property_condition: rehabScope || null,
+          property_condition: propertyCondition || rehabScope || null,
           asking_price: askingPrice ? Number(askingPrice) : null,
           purchase_price: purchasePrice ? Number(purchasePrice) : null,
-          earnest_money: minimumEmd ? Number(minimumEmd) : null,
+          earnest_money: (earnestMoney || minimumEmd) ? Number(earnestMoney || minimumEmd) : null,
           parking: parkingType || null,
+          contract_close_date: contractCloseDate || null,
+          inspection_period_days: inspectionDays ? Number(inspectionDays) : null,
+          financing_terms: financingTerms || null,
+          contract_notes: [
+            postOccupancy ? `POST-OCCUPANCY: ${postOccupancy}` : '',
+            addendums ? `ADDENDUMS: ${addendums}` : '',
+            amendments ? `AMENDMENTS: ${amendments}` : '',
+            contractNotes || '',
+          ].filter(Boolean).join('\n\n') || null,
+          assignment_fee: assignmentFee ? Number(assignmentFee) : null,
           accept_offers: true,
           show_address: true,
           show_arv: true,
@@ -655,6 +813,72 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     )
   }
 
+  function renderStep6Terms() {
+    return (
+      <>
+        <h3 className="text-xl font-bold text-slate-900 text-center">Terms & Conditions</h3>
+        <p className="text-sm text-slate-500 text-center mb-2">Contract terms, addendums, and special conditions.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Contract Close Date</label>
+            <input type="date" className={inputCls} value={contractCloseDate} onChange={e => setContractCloseDate(e.target.value)} autoFocus />
+          </div>
+          <div>
+            <label className={labelCls}>Earnest Money ($)</label>
+            <input type="number" className={inputCls} value={earnestMoney || minimumEmd} onChange={e => setEarnestMoney(e.target.value)} placeholder="e.g. 5000" />
+          </div>
+          <div>
+            <label className={labelCls}>Inspection Period (days)</label>
+            <input type="number" className={inputCls} value={inspectionDays} onChange={e => setInspectionDays(e.target.value)} placeholder="e.g. 10" />
+          </div>
+          <div>
+            <label className={labelCls}>Assignment Fee ($)</label>
+            <input type="number" className={inputCls} value={assignmentFee} onChange={e => setAssignmentFee(e.target.value)} placeholder="e.g. 10000" />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Financing Terms</label>
+            <input className={inputCls} value={financingTerms} onChange={e => setFinancingTerms(e.target.value)} placeholder="Cash — no financing contingency" />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Property Condition</label>
+            <select className={selectCls} value={propertyCondition} onChange={e => setPropertyCondition(e.target.value)}>
+              <option value="">Select...</option>
+              <option value="Excellent">Excellent</option>
+              <option value="Good">Good</option>
+              <option value="Fair">Fair</option>
+              <option value="Poor">Poor</option>
+              <option value="Needs Full Rehab">Needs Full Rehab</option>
+              <option value="Teardown">Teardown</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 pt-3 space-y-3">
+          <div>
+            <label className={labelCls}>Post-Occupancy Terms</label>
+            <textarea className={inputCls + ' resize-y min-h-[60px]'} rows={2} value={postOccupancy} onChange={e => setPostOccupancy(e.target.value)}
+              placeholder="e.g. Seller may remain 30 days post-close at $0 rent..." />
+          </div>
+          <div>
+            <label className={labelCls}>Addendums</label>
+            <textarea className={inputCls + ' resize-y min-h-[60px]'} rows={2} value={addendums} onChange={e => setAddendums(e.target.value)}
+              placeholder="e.g. Lead paint disclosure, as-is addendum..." />
+          </div>
+          <div>
+            <label className={labelCls}>Amendments</label>
+            <textarea className={inputCls + ' resize-y min-h-[60px]'} rows={2} value={amendments} onChange={e => setAmendments(e.target.value)}
+              placeholder="e.g. Close date extended to 5/15/2026..." />
+          </div>
+          <div>
+            <label className={labelCls}>Additional Contract Notes</label>
+            <textarea className={inputCls + ' resize-y min-h-[60px]'} rows={2} value={contractNotes} onChange={e => setContractNotes(e.target.value)}
+              placeholder="Any other terms, contingencies, or notes for buyers..." />
+          </div>
+        </div>
+      </>
+    )
+  }
+
   function addPhotoUrls() {
     const raw = photoUrls.trim()
     if (!raw) return
@@ -669,7 +893,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     setPendingPhotoUrls(prev => prev.filter((_, i) => i !== idx))
   }
 
-  function renderStep6() {
+  function renderStep7Photos() {
     const totalPhotos = pendingPhotos.length + pendingPhotoUrls.length
     return (
       <>
@@ -738,7 +962,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
               type="button"
               onClick={addPhotoUrls}
               disabled={!photoUrls.trim()}
-              className="self-end bg-[#1a1a2e] text-white text-xs font-semibold px-4 py-2.5 rounded-lg hover:bg-[#16162a] disabled:opacity-40 whitespace-nowrap"
+              className="self-end bg-[#E32E2E] text-white text-xs font-semibold px-4 py-2.5 rounded-lg hover:bg-[#C42626] disabled:opacity-40 whitespace-nowrap"
             >
               Add
             </button>
@@ -770,7 +994,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-  const stepRenderers = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4, renderStep5, renderStep6]
+  const stepRenderers = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4, renderStep5, renderStep6Terms, renderStep7Photos]
   const isLastStep = step === TOTAL_STEPS - 1
 
   return (
@@ -833,7 +1057,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           <button
             onClick={goNext}
             disabled={!canAdvance() || creating}
-            className="flex-1 bg-[#1a1a2e] text-white hover:bg-[#16162a] rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-50 transition-colors"
+            className="flex-1 bg-[#E32E2E] text-white hover:bg-[#C42626] rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-50 transition-colors"
           >
             {creating ? 'Creating...' : isLastStep ? 'Create Deal' : 'Next'}
           </button>
@@ -846,14 +1070,12 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
 // ---------------------------------------------------------------------------
 // Deal Page Card
 // ---------------------------------------------------------------------------
-function DealPageCard({ page, onToggle, onCopied, onEdit, onDelete }: {
+function DealPageCard({ page, onToggle, onCopied, onEdit }: {
   page: DealPage & { property_address?: string }
   onToggle: (id: string, active: boolean) => void
   onCopied: () => void
   onEdit: (page: DealPage) => void
-  onDelete: (id: string) => void
 }) {
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const url = getDealPageUrl(page.slug)
 
   function copyLink() {
@@ -950,32 +1172,6 @@ function DealPageCard({ page, onToggle, onCopied, onEdit, onDelete }: {
           </a>
         </div>
 
-        {/* Delete */}
-        {confirmDelete ? (
-          <div className="mt-2 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-            <p className="text-xs text-red-700 flex-1">Delete this deal page permanently?</p>
-            <button
-              onClick={() => { onDelete(page.id); setConfirmDelete(false) }}
-              className="text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded px-2.5 py-1"
-            >
-              Delete
-            </button>
-            <button
-              onClick={() => setConfirmDelete(false)}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-800"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="mt-2 w-full flex items-center justify-center gap-1.5 text-slate-400 hover:text-red-500 text-xs py-1 transition-colors"
-          >
-            <Icon name="delete" size="text-xs" />
-            Delete
-          </button>
-        )}
       </div>
     </div>
   )
@@ -984,9 +1180,10 @@ function DealPageCard({ page, onToggle, onCopied, onEdit, onDelete }: {
 // ---------------------------------------------------------------------------
 // Edit Deal Page Modal
 // ---------------------------------------------------------------------------
-function EditDealPageModal({ deal, onClose, onSaved }: { deal: DealPage; onClose: () => void; onSaved: () => void }) {
+function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPage; onClose: () => void; onSaved: () => void; onDelete: (id: string) => void }) {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [form, setForm] = useState({
     title: deal.title || '',
     description: deal.description || '',
@@ -1325,6 +1522,30 @@ function EditDealPageModal({ deal, onClose, onSaved }: { deal: DealPage; onClose
             </div>
           </div>
 
+          {/* Delete zone */}
+          <div className="border-t border-slate-100 pt-3">
+            {confirmDelete ? (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <p className="text-xs text-red-700 flex-1">Permanently delete this deal page?</p>
+                <button
+                  onClick={() => { onDelete(deal.id); onClose() }}
+                  className="text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded px-2.5 py-1"
+                >
+                  Delete
+                </button>
+                <button onClick={() => setConfirmDelete(false)} className="text-xs font-semibold text-slate-600 hover:text-slate-800">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)}
+                className="w-full flex items-center justify-center gap-1.5 text-slate-400 hover:text-red-500 text-xs py-1.5 transition-colors">
+                <Icon name="delete" size="text-xs" />
+                Delete Deal Page
+              </button>
+            )}
+          </div>
+
           <div className="flex gap-3 pt-2 pb-1">
             <button onClick={onClose}
               className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold">
@@ -1411,6 +1632,7 @@ export default function DealPagesPage() {
           deal={editingDeal}
           onClose={() => setEditingDeal(null)}
           onSaved={() => { setEditingDeal(null); fetchPages() }}
+          onDelete={(id) => { handleDelete(id); setEditingDeal(null) }}
         />
       )}
 
@@ -1463,7 +1685,6 @@ export default function DealPagesPage() {
               onToggle={handleToggle}
               onCopied={handleCopied}
               onEdit={setEditingDeal}
-              onDelete={handleDelete}
             />
           ))}
         </div>
