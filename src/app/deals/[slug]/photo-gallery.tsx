@@ -14,20 +14,23 @@ interface PhotoGalleryProps {
 
 const GMAPS_KEY = 'AIzaSyB0_wshDWSFFVuEiuUmhslBYcpWG3ooLPc'
 
-/* ── Inline SVG icons ── */
-function IconStreetPerson({ className = '' }: { className?: string }) {
+/* ── Google-style filled SVG icons ── */
+
+/* Google Street View pegman icon (Material Design "streetview") */
+function IconPegman({ className = '' }: { className?: string }) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <circle cx="12" cy="5" r="2.5" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5v4m0 0l-3 5m3-5l3 5m-6-4h6" />
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="4" r="2" />
+      <path d="M12 7c-1.1 0-2 .9-2 2v5h1.5v6h3v-6H16V9c0-1.1-.9-2-2-2z" />
     </svg>
   )
 }
 
-function IconMapPin({ className = '' }: { className?: string }) {
+/* Google Maps location pin icon (Material Design "place") */
+function IconLocationPin({ className = '' }: { className?: string }) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
     </svg>
   )
 }
@@ -201,10 +204,10 @@ export default function PhotoGallery({
                 alt="Street View"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
-              <div className="absolute inset-0 bg-black/40 group-hover:bg-black/25 transition-colors" />
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                <div className="flex items-center gap-2 text-white font-semibold text-sm tracking-wider">
-                  <IconStreetPerson className="w-5 h-5" />
+              <div className="absolute inset-0 bg-black/50 group-hover:bg-black/35 transition-colors" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="flex items-center gap-2.5 text-white font-bold text-sm tracking-widest drop-shadow-lg">
+                  <IconPegman className="w-6 h-6 drop-shadow-lg" />
                   STREET VIEW
                 </div>
               </div>
@@ -220,10 +223,10 @@ export default function PhotoGallery({
                 alt="Map View"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
-              <div className="absolute inset-0 bg-black/40 group-hover:bg-black/25 transition-colors" />
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                <div className="flex items-center gap-2 text-white font-semibold text-sm tracking-wider">
-                  <IconMapPin className="w-5 h-5" />
+              <div className="absolute inset-0 bg-black/50 group-hover:bg-black/35 transition-colors" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="flex items-center gap-2.5 text-white font-bold text-sm tracking-widest drop-shadow-lg">
+                  <IconLocationPin className="w-6 h-6 drop-shadow-lg" />
                   MAP VIEW
                 </div>
               </div>
@@ -299,7 +302,7 @@ export default function PhotoGallery({
           >
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
               <div className="flex items-center gap-2 min-w-0">
-                <IconStreetPerson className="w-5 h-5 text-gray-600 shrink-0" />
+                <IconPegman className="w-5 h-5 text-gray-600 shrink-0" />
                 <div className="min-w-0">
                   <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">Street View</p>
                   <p className="text-sm font-bold text-gray-900 truncate">{fullAddress}</p>
@@ -345,7 +348,7 @@ export default function PhotoGallery({
           >
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
               <div className="flex items-center gap-2 min-w-0">
-                <IconMapPin className="w-5 h-5 text-gray-600 shrink-0" />
+                <IconLocationPin className="w-5 h-5 text-gray-600 shrink-0" />
                 <div className="min-w-0">
                   <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">Map View</p>
                   <p className="text-sm font-bold text-gray-900 truncate">{fullAddress}</p>
