@@ -20,6 +20,54 @@ function daysSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24))
 }
 
+/* ── Outline icon components (thin, strokeWidth 1.5, matching InvestorLift) ── */
+
+function IconBed({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 19v-8.5a1.5 1.5 0 011.5-1.5h4A1.5 1.5 0 0110 10.5V12h4v-1.5A1.5 1.5 0 0115.5 9h4a1.5 1.5 0 011.5 1.5V19M3 19h18M3 17h18M5 9V5.5A1.5 1.5 0 016.5 4H9" /></svg>
+}
+function IconBath({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4 12h16M4 12v4a4 4 0 004 4h8a4 4 0 004-4v-4M4 12V7a3 3 0 013-3h0a3 3 0 013 3v1M7 20v1m10-1v1" /></svg>
+}
+function IconHalfBath({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4 12h16M4 12v4a4 4 0 004 4h8a4 4 0 004-4v-4M4 12V7a3 3 0 013-3h0a3 3 0 013 3v1M12 16v5" /></svg>
+}
+function IconHome({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" /></svg>
+}
+function IconPin({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
+}
+function IconCar({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.588-.75H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" /></svg>
+}
+function IconCalendar({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+}
+function IconExpand({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9m11.25-5.25v4.5m0-4.5h-4.5m4.5 0L15 9m-11.25 11.25v-4.5m0 4.5h4.5m-4.5 0L9 15m11.25 5.25v-4.5m0 4.5h-4.5m4.5 0L15 15" /></svg>
+}
+function IconWrench({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17l-5.1 5.1a2.121 2.121 0 11-3-3l5.1-5.1m3-3l1.58-1.58a2.25 2.25 0 013.18 0l.09.09a2.25 2.25 0 010 3.18l-1.58 1.58m-4.27-4.27l4.27 4.27M21 11.25c0 .621-.111 1.216-.315 1.767a2.228 2.228 0 01-1.574-.6l-3.47-3.47a2.228 2.228 0 01-.6-1.574A7.46 7.46 0 0021 11.25zM3 11.25a7.46 7.46 0 015.96-7.317 2.228 2.228 0 01-.6 1.574l-3.47 3.47a2.228 2.228 0 01-1.574.6A7.46 7.46 0 013 11.25z" /></svg>
+}
+function IconShield({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+}
+function IconDoc({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+}
+function IconDownload({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+}
+function IconEye({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+}
+function IconMail({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
+}
+
+/* ── Card wrapper — consistent styling ── */
+const card = 'bg-white border border-[#eaeaea] rounded-2xl'
+
 export default async function DealPage({
   params,
 }: {
@@ -63,210 +111,199 @@ export default async function DealPage({
   const daysOnPage = daysSince(dealPage.created_at)
   const viewCount = (dealPage.view_count || 0) + 1
 
-  // Stats bar items with outline icons (matching InvestorLift reference)
+  // Stats
   const statItems = [
-    lead?.beds != null && { label: 'Beds', value: String(lead.beds), icon: <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 19V9a1 1 0 011-1h4a2 2 0 012 2v0a2 2 0 002 2h0a2 2 0 002-2v0a2 2 0 012-2h4a1 1 0 011 1v10M3 19h18M3 19v-2h18v2M5 8V5a1 1 0 011-1h3" /></svg> },
-    lead?.baths_full != null && { label: 'Baths', value: String(lead.baths_full), icon: <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M5 12a2 2 0 00-2 2v1a4 4 0 004 4h10a4 4 0 004-4v-1a2 2 0 00-2-2M5 12V7a3 3 0 013-3v0a3 3 0 013 3v1" /></svg> },
-    lead?.baths_half != null && lead.baths_half > 0 && { label: 'Half-Bath', value: String(lead.baths_half), icon: <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M5 12a2 2 0 00-2 2v1a4 4 0 004 4h10a4 4 0 004-4v-1a2 2 0 00-2-2M5 12V7a3 3 0 013-3v0a3 3 0 013 3v1M12 16v3" /></svg> },
-    lead?.sqft && { label: 'Sq.Ft', value: fmtNum(lead.sqft), icon: <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" /></svg> },
+    lead?.beds != null && { label: 'Beds', value: String(lead.beds), icon: <IconBed className="w-6 h-6" /> },
+    lead?.baths_full != null && { label: 'Baths', value: String(lead.baths_full), icon: <IconBath className="w-6 h-6" /> },
+    lead?.baths_half != null && lead.baths_half > 0 && { label: 'Half-Bath', value: String(lead.baths_half), icon: <IconHalfBath className="w-6 h-6" /> },
+    lead?.sqft && { label: 'Sq.Ft', value: fmtNum(lead.sqft), icon: <IconHome className="w-6 h-6" /> },
   ].filter(Boolean) as { label: string; value: string; icon: React.ReactNode }[]
 
-  // Additional details grid with flat icons
+  // Details
   const details = [
-    { label: 'Type', value: lead?.property_type || '—', icon: <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg> },
-    { label: 'Parking', value: dealPage.parking || '—', icon: <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg> },
-    { label: 'Built', value: lead?.year_built ? String(lead.year_built) : '—', icon: <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z"/></svg> },
-    { label: 'Lot size', value: lead?.lot_size ? String(lead.lot_size) : '—', icon: <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M19 12h-2v3h-3v2h5v-5zM7 9h3V7H5v5h2V9zm14-6H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16.01H3V4.99h18v14.02z"/></svg> },
-    { label: 'County', value: lead?.county || '—', icon: <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg> },
+    { label: 'Type', value: lead?.property_type || '—', icon: <IconHome className="w-[18px] h-[18px]" /> },
+    { label: 'Parking', value: dealPage.parking || '—', icon: <IconCar className="w-[18px] h-[18px]" /> },
+    { label: 'Built in', value: lead?.year_built ? String(lead.year_built) : '—', icon: <IconCalendar className="w-[18px] h-[18px]" /> },
+    { label: 'Lot size', value: lead?.lot_size ? String(lead.lot_size) : '—', icon: <IconExpand className="w-[18px] h-[18px]" /> },
   ]
 
-  // Contract terms data
   const hasContractTerms = dealPage.contract_close_date || dealPage.earnest_money != null ||
     dealPage.inspection_period_days != null || dealPage.financing_terms ||
     (dealPage.show_assignment_fee && dealPage.assignment_fee != null)
 
-  // Repair estimate
   const hasRepairEstimate = dealPage.repair_estimate_low != null || dealPage.repair_estimate_high != null
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] text-gray-900">
+    <div className="min-h-screen bg-white text-[#1a1a1a]" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+      <header className="border-b border-[#eaeaea]">
+        <div className="max-w-[1120px] mx-auto px-6 py-3.5 flex items-center gap-3">
           <img src="/logo.png" alt="Saving KC Homebuyers" className="h-8 w-auto" />
-          <span className="text-[11px] font-semibold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">Deal Page</span>
+          <span className="text-[11px] font-medium text-teal-600 bg-teal-50 px-2.5 py-0.5 rounded-full tracking-wide">Deal Page</span>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
-        {/* Photo Gallery with Lightbox */}
+      <main className="max-w-[1120px] mx-auto px-6 py-8">
+        {/* Photo Gallery */}
         <PhotoGallery photos={photos} />
 
-        {/* Location + Stats Row */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">{title}</h1>
-            {dealPage.show_address !== false && lead && (
-              <div className="flex items-center gap-1.5 mt-1 text-gray-500 text-sm">
-                <svg className="w-4 h-4 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-                </svg>
-                <span>
-                  {[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}
-                  {lead.zip && ` ${lead.zip}`}
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-4 text-xs text-gray-400">
-            <span className="flex items-center gap-1">
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z"/></svg>
-              {daysOnPage} day{daysOnPage !== 1 ? 's' : ''} on page
+        {/* Location row */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
+          {dealPage.show_address !== false && lead && (
+            <div className="flex items-center gap-1.5 text-[14px] text-[#444]">
+              <IconPin className="w-[18px] h-[18px] text-[#999]" />
+              <span>
+                {[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}
+                {lead.zip && ` ${lead.zip}`}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center gap-5 text-[13px] text-[#999]">
+            <span className="flex items-center gap-1.5">
+              <IconCalendar className="w-[14px] h-[14px]" />
+              {daysOnPage} day{daysOnPage !== 1 ? 's' : ''} on IL
             </span>
-            <span className="flex items-center gap-1">
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+            <span className="flex items-center gap-1.5">
+              <IconEye className="w-[14px] h-[14px]" />
               {viewCount} view{viewCount !== 1 ? 's' : ''}
             </span>
           </div>
         </div>
 
         {/* Main 2-col layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* LEFT COLUMN */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Stats + Overview — combined card like InvestorLift */}
-            <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+          <div className="lg:col-span-2 space-y-5">
+
+            {/* Stats + Overview — combined card */}
+            <section className={card}>
               {statItems.length > 0 && (
-                <>
-                  <div className="flex items-center">
-                    {statItems.map((item, i) => (
-                      <div key={i} className={`flex-1 flex items-center gap-3 px-5 py-4 ${i > 0 ? 'border-l border-gray-100' : ''}`}>
-                        {item.icon}
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium">{item.label}</p>
-                          <p className="text-lg font-bold text-gray-900 leading-tight">{item.value}</p>
-                        </div>
+                <div className="flex">
+                  {statItems.map((item, i) => (
+                    <div key={i} className={`flex-1 flex items-center gap-3.5 px-6 py-5 ${i > 0 ? 'border-l border-[#f0f0f0]' : ''}`}>
+                      <span className="text-[#555]">{item.icon}</span>
+                      <div>
+                        <p className="text-[13px] text-[#888] leading-none">{item.label}</p>
+                        <p className="text-[20px] font-bold text-[#1a1a1a] leading-tight mt-0.5">{item.value}</p>
                       </div>
-                    ))}
-                  </div>
-                  <div className="border-t border-gray-100" />
-                </>
+                    </div>
+                  ))}
+                </div>
               )}
-              <div className="p-6">
-                <h2 className="text-base font-bold text-gray-900 mb-3">Overview</h2>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+              {statItems.length > 0 && <div className="border-t border-[#f0f0f0]" />}
+              <div className="px-6 py-6">
+                <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-3">Overview</h2>
+                <p className="text-[14px] text-[#555] leading-[1.7] whitespace-pre-wrap">
                   {dealPage.description || 'No description provided.'}
                 </p>
               </div>
             </section>
 
-            {/* Additional Details */}
-            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-4">Additional details</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {/* Additional details */}
+            <section className={`${card} px-6 py-6`}>
+              <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-5">Additional details</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-y-5 gap-x-4">
                 {details.map(({ label, value, icon }) => (
-                  <div key={label} className="flex items-start gap-2">
-                    <span className="mt-0.5">{icon}</span>
+                  <div key={label} className="flex items-start gap-2.5">
+                    <span className="text-[#999] mt-0.5">{icon}</span>
                     <div>
-                      <p className="text-[11px] text-gray-400 font-medium">{label}</p>
-                      <p className="text-sm font-semibold text-gray-900">{value}</p>
+                      <p className="text-[13px] text-[#888] leading-none">{label}</p>
+                      <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">{value}</p>
                     </div>
                   </div>
                 ))}
               </div>
             </section>
 
-            {/* Contract Terms */}
-            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-4">Contract Terms</h2>
-              {hasContractTerms ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  {dealPage.contract_close_date && (
-                    <div>
-                      <p className="text-[11px] text-gray-400 font-medium uppercase">Close Date</p>
-                      <p className="text-sm font-semibold text-gray-900 mt-0.5">
-                        {new Date(dealPage.contract_close_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </p>
-                    </div>
-                  )}
-                  {dealPage.earnest_money != null && (
-                    <div>
-                      <p className="text-[11px] text-gray-400 font-medium uppercase">Earnest Money</p>
-                      <p className="text-sm font-semibold text-gray-900 mt-0.5">{fmt(dealPage.earnest_money)}</p>
-                    </div>
-                  )}
-                  {dealPage.inspection_period_days != null && (
-                    <div>
-                      <p className="text-[11px] text-gray-400 font-medium uppercase">Inspection Period</p>
-                      <p className="text-sm font-semibold text-gray-900 mt-0.5">{dealPage.inspection_period_days} days</p>
-                    </div>
-                  )}
-                  {dealPage.financing_terms && (
-                    <div>
-                      <p className="text-[11px] text-gray-400 font-medium uppercase">Financing</p>
-                      <p className="text-sm font-semibold text-gray-900 mt-0.5">{dealPage.financing_terms}</p>
-                    </div>
-                  )}
-                  {dealPage.show_assignment_fee && dealPage.assignment_fee != null && (
-                    <div>
-                      <p className="text-[11px] text-gray-400 font-medium uppercase">Assignment Fee</p>
-                      <p className="text-sm font-semibold text-gray-900 mt-0.5">{fmt(dealPage.assignment_fee)}</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 italic">Contract terms not yet provided.</p>
-              )}
-              {dealPage.contract_notes && (
-                <p className="text-sm text-gray-500 mt-4 pt-4 border-t border-gray-100">{dealPage.contract_notes}</p>
-              )}
-            </section>
-
-            {/* Financing / Repair Estimate */}
-            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-3">Financing Information</h2>
-              {hasRepairEstimate ? (
-                <div className="flex items-start gap-2">
-                  <svg className="w-4 h-4 text-gray-400 mt-0.5" viewBox="0 0 24 24" fill="currentColor"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg>
-                  <div>
-                  <p className="text-[11px] text-gray-400 font-medium uppercase mb-1">Repair Estimate</p>
-                  {dealPage.repair_estimate_low != null && dealPage.repair_estimate_high != null ? (
-                    <p className="text-lg font-bold text-gray-900">
-                      {fmt(dealPage.repair_estimate_low)} – {fmt(dealPage.repair_estimate_high)}
-                    </p>
-                  ) : (
-                    <p className="text-lg font-bold text-gray-900">
-                      {fmt(dealPage.repair_estimate_low ?? dealPage.repair_estimate_high)}
-                    </p>
-                  )}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 italic">Repair estimates not yet provided.</p>
-              )}
-            </section>
-
-            {/* Property Condition */}
-            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-3">Property Condition & Systems</h2>
-              <div className="flex items-start gap-2">
-                <svg className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5 0 1.29-.69 2.42-1.73 3.04L15 14h-2v-1.5l1.27-1.27c.6-.36 1.23-1 1.23-1.73 0-1.1-.9-2-2-2s-2 .9-2 2H9.5C9.5 7.57 10.57 6 12 6zm-1.5 10h3v2h-3v-2z"/></svg>
+            {/* Property Condition & Systems */}
+            <section className={`${card} px-6 py-6`}>
+              <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-4">Property Condition & Systems</h2>
+              <div className="flex items-start gap-2.5">
+                <IconShield className="w-[18px] h-[18px] text-[#999] mt-0.5" />
                 <div>
-                  <p className="text-[11px] text-gray-400 font-medium mb-1">Property Condition</p>
-                  <p className="text-sm font-semibold text-gray-900">
+                  <p className="text-[13px] text-[#888] leading-none">Property Condition</p>
+                  <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">
                     {dealPage.property_condition || 'Not specified'}
                   </p>
                 </div>
               </div>
             </section>
 
+            {/* Financing Information */}
+            <section className={`${card} px-6 py-6`}>
+              <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-4">Financing Information</h2>
+              {hasRepairEstimate ? (
+                <div className="flex items-start gap-2.5">
+                  <IconWrench className="w-[18px] h-[18px] text-[#999] mt-0.5" />
+                  <div>
+                    <p className="text-[13px] text-[#888] leading-none">Repair Estimate</p>
+                    {dealPage.repair_estimate_low != null && dealPage.repair_estimate_high != null ? (
+                      <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">
+                        {fmt(dealPage.repair_estimate_low)} - {fmt(dealPage.repair_estimate_high)}
+                      </p>
+                    ) : (
+                      <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">
+                        {fmt(dealPage.repair_estimate_low ?? dealPage.repair_estimate_high)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[14px] text-[#999]">Repair estimates not yet provided.</p>
+              )}
+            </section>
+
+            {/* Contract Terms */}
+            {hasContractTerms && (
+              <section className={`${card} px-6 py-6`}>
+                <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-5">Contract Terms</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-5 gap-x-4">
+                  {dealPage.contract_close_date && (
+                    <div>
+                      <p className="text-[13px] text-[#888] leading-none">Close Date</p>
+                      <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">
+                        {new Date(dealPage.contract_close_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    </div>
+                  )}
+                  {dealPage.earnest_money != null && (
+                    <div>
+                      <p className="text-[13px] text-[#888] leading-none">Earnest Money</p>
+                      <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">{fmt(dealPage.earnest_money)}</p>
+                    </div>
+                  )}
+                  {dealPage.inspection_period_days != null && (
+                    <div>
+                      <p className="text-[13px] text-[#888] leading-none">Inspection Period</p>
+                      <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">{dealPage.inspection_period_days} days</p>
+                    </div>
+                  )}
+                  {dealPage.financing_terms && (
+                    <div>
+                      <p className="text-[13px] text-[#888] leading-none">Financing</p>
+                      <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">{dealPage.financing_terms}</p>
+                    </div>
+                  )}
+                  {dealPage.show_assignment_fee && dealPage.assignment_fee != null && (
+                    <div>
+                      <p className="text-[13px] text-[#888] leading-none">Assignment Fee</p>
+                      <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">{fmt(dealPage.assignment_fee)}</p>
+                    </div>
+                  )}
+                </div>
+                {dealPage.contract_notes && (
+                  <p className="text-[14px] text-[#666] mt-5 pt-5 border-t border-[#f0f0f0] leading-[1.7]">{dealPage.contract_notes}</p>
+                )}
+              </section>
+            )}
+
             {/* Videos */}
             {videos.length > 0 && (
-              <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                <h2 className="text-base font-bold text-gray-900 mb-4">Videos</h2>
+              <section className={`${card} px-6 py-6`}>
+                <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-4">Videos</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {videos.map((url, i) => (
-                    <video key={i} controls className="w-full rounded-lg" preload="metadata">
+                    <video key={i} controls className="w-full rounded-xl" preload="metadata">
                       <source src={url} />
                     </video>
                   ))}
@@ -275,9 +312,9 @@ export default async function DealPage({
             )}
 
             {/* Inspection Reports */}
-            <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-4">Inspection Reports</h2>
-              {inspectionReports.length > 0 ? (
+            {inspectionReports.length > 0 && (
+              <section className={`${card} px-6 py-6`}>
+                <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-4">Inspection Reports</h2>
                 <div className="space-y-2">
                   {inspectionReports.map((report, i) => (
                     <a
@@ -285,61 +322,55 @@ export default async function DealPage({
                       href={report.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[#f0f0f0] hover:border-[#ddd] hover:bg-[#fafafa] transition-all"
                     >
-                      <svg className="w-5 h-5 text-red-500 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
-                      </svg>
+                      <IconDoc className="w-5 h-5 text-red-400 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{report.name}</p>
-                        <p className="text-xs text-gray-400">PDF</p>
+                        <p className="text-[14px] font-medium text-[#1a1a1a] truncate">{report.name}</p>
+                        <p className="text-[12px] text-[#999]">PDF</p>
                       </div>
-                      <svg className="w-4 h-4 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                      </svg>
+                      <IconDownload className="w-4 h-4 text-[#bbb] flex-shrink-0" />
                     </a>
                   ))}
                 </div>
-              ) : (
-                <p className="text-sm text-gray-400 italic">No inspection reports uploaded.</p>
-              )}
-            </section>
+              </section>
+            )}
           </div>
 
           {/* RIGHT SIDEBAR */}
-          <div className="space-y-4">
+          <div className="space-y-5">
             {/* Pricing Card */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm sticky top-6">
+            <div className={`${card} p-6 sticky top-6`}>
               {dealPage.show_asking_price !== false && askingPrice && (
-                <div className="mb-4">
-                  <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Price</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-1">{fmt(askingPrice)}</p>
+                <div className="mb-5">
+                  <p className="text-[13px] text-[#888] mb-1">Price</p>
+                  <p className="text-[28px] font-bold text-[#1a1a1a] tracking-tight">{fmt(askingPrice)}</p>
                 </div>
               )}
 
-              <div className="space-y-3 mb-5">
+              <div className="space-y-3 mb-6">
                 {dealPage.show_arv !== false && arv && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-500">ARV</span>
-                    <span className="text-sm font-bold text-gray-900">{fmt(arv)}</span>
+                    <span className="text-[14px] text-[#888]">ARV</span>
+                    <span className="text-[14px] font-semibold text-[#1a1a1a]">{fmt(arv)}</span>
                   </div>
                 )}
                 {dealPage.show_arv !== false && grossMargin && grossMargin > 0 && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-500">Gross Margin</span>
-                    <span className="text-sm font-bold text-emerald-600">{fmt(grossMargin)}</span>
+                    <span className="text-[14px] text-[#888]">Gross margin</span>
+                    <span className="text-[14px] font-semibold text-[#1a1a1a]">{fmt(grossMargin)}</span>
                   </div>
                 )}
                 {dealPage.show_assignment_fee && dealPage.assignment_fee != null && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-500">Assignment Fee</span>
-                    <span className="text-sm font-bold text-gray-900">{fmt(dealPage.assignment_fee)}</span>
+                    <span className="text-[14px] text-[#888]">Assignment Fee</span>
+                    <span className="text-[14px] font-semibold text-[#1a1a1a]">{fmt(dealPage.assignment_fee)}</span>
                   </div>
                 )}
               </div>
 
               {/* CTA Buttons */}
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {dealPage.accept_offers && (
                   <OfferForm slug={slug} askingPrice={askingPrice} />
                 )}
@@ -348,23 +379,19 @@ export default async function DealPage({
             </div>
 
             {/* Wholesaler Card */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center">
-                  <span className="text-lg font-bold text-teal-700">SK</span>
+            <div className={`${card} p-6`}>
+              <div className="flex flex-col items-center text-center mb-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-teal-400 to-teal-600 rounded-full flex items-center justify-center mb-3">
+                  <span className="text-[18px] font-bold text-white">SK</span>
                 </div>
-                <div>
-                  <p className="font-bold text-gray-900 text-sm">Saving KC Homebuyers</p>
-                  <p className="text-xs text-gray-500">Kansas City, MO</p>
-                </div>
+                <p className="text-[15px] font-semibold text-[#1a1a1a]">Ernest Dodson</p>
+                <p className="text-[13px] text-[#888] mt-0.5">Saving KC</p>
               </div>
               <a
                 href="mailto:deals@savingkc.com"
-                className="w-full flex items-center justify-center gap-2 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors"
+                className="w-full flex items-center justify-center gap-2 border border-[#ddd] text-[#444] hover:border-[#bbb] hover:bg-[#fafafa] rounded-xl px-4 py-2.5 text-[14px] font-medium transition-all"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
-                </svg>
+                <IconMail className="w-4 h-4" />
                 Send Inquiry
               </a>
             </div>
@@ -372,8 +399,8 @@ export default async function DealPage({
         </div>
 
         {/* Footer */}
-        <div className="text-center pt-12 pb-6">
-          <p className="text-xs text-gray-400">
+        <div className="text-center pt-16 pb-8">
+          <p className="text-[12px] text-[#ccc]">
             Powered by Saving KC Homebuyers
           </p>
         </div>
