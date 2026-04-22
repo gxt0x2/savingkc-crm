@@ -89,13 +89,7 @@ export default async function DealPage({
   const hasRepairEstimate = dealPage.repair_estimate_low != null || dealPage.repair_estimate_high != null
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] text-gray-900" style={{ colorScheme: 'light' }}>
-      {/* Force light theme override */}
-      <style>{`
-        html, body { background: #f8f9fa !important; color: #111827 !important; color-scheme: light !important; }
-        .ck-dark { background: #f8f9fa !important; color: #111827 !important; }
-      `}</style>
-
+    <div className="min-h-screen bg-[#f8f9fa] text-gray-900">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">

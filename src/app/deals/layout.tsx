@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import ForceLight from './force-light'
 
 export const metadata: Metadata = {
   title: 'Deal Page | Saving KC Homebuyers',
@@ -7,8 +8,9 @@ export const metadata: Metadata = {
 
 export default function DealsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-white text-gray-900 min-h-screen" style={{ colorScheme: 'light' }}>
+    <>
+      <ForceLight />
       {children}
-    </div>
+    </>
   )
 }
