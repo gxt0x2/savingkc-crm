@@ -4,13 +4,66 @@ import { useState, useEffect, useCallback } from 'react'
 
 interface PhotoGalleryProps {
   photos: string[]
+  propertyAddress?: string
+  city?: string
+  state?: string
+  zip?: string
+  county?: string
+  showAddress?: boolean
 }
 
-export default function PhotoGallery({ photos }: PhotoGalleryProps) {
+const GMAPS_KEY = 'AIzaSyB0_wshDWSFFVuEiuUmhslBYcpWG3ooLPc'
+
+/* ── Inline SVG icons ── */
+function IconStreetPerson({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <circle cx="12" cy="5" r="2.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5v4m0 0l-3 5m3-5l3 5m-6-4h6" />
+    </svg>
+  )
+}
+
+function IconMapPin({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
+    </svg>
+  )
+}
+
+export default function PhotoGallery({
+  photos,
+  propertyAddress,
+  city,
+  state,
+  zip,
+  showAddress = true,
+}: PhotoGalleryProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [gridView, setGridView] = useState(false)
+  const [streetViewOpen, setStreetViewOpen] = useState(false)
+  const [mapViewOpen, setMapViewOpen] = useState(false)
+  const [streetViewEmbedUrl, setStreetViewEmbedUrl] = useState<string | null>(null)
 
+  const fullAddress = [propertyAddress, city, state, zip].filter(Boolean).join(', ')
+  const encodedAddress = encodeURIComponent(fullAddress)
+  const hasAddress = showAddress && fullAddress.length > 0
+
+  const streetViewStaticUrl = hasAddress
+    ? `https://maps.googleapis.com/maps/api/streetview?size=800x400&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
+    : null
+
+  const mapStaticUrl = hasAddress
+    ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodedAddress}&zoom=16&size=600x400&maptype=roadmap&markers=color:red%7C${encodedAddress}&key=${GMAPS_KEY}`
+    : null
+
+  const mapEmbedUrl = hasAddress
+    ? `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
+    : null
+
+  /* ── Lightbox handlers ── */
   const openLightbox = useCallback((index: number) => {
     setCurrentIndex(index)
     setGridView(false)
@@ -31,64 +84,188 @@ export default function PhotoGallery({ photos }: PhotoGalleryProps) {
 
   // Keyboard navigation
   useEffect(() => {
-    if (!lightboxOpen) return
+    if (!lightboxOpen && !streetViewOpen && !mapViewOpen) return
     function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') closeLightbox()
-      if (e.key === 'ArrowRight') goNext()
-      if (e.key === 'ArrowLeft') goPrev()
+      if (e.key === 'Escape') {
+        if (streetViewOpen) setStreetViewOpen(false)
+        else if (mapViewOpen) setMapViewOpen(false)
+        else closeLightbox()
+      }
+      if (lightboxOpen && !streetViewOpen && !mapViewOpen) {
+        if (e.key === 'ArrowRight') goNext()
+        if (e.key === 'ArrowLeft') goPrev()
+      }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [lightboxOpen, closeLightbox, goNext, goPrev])
+  }, [lightboxOpen, streetViewOpen, mapViewOpen, closeLightbox, goNext, goPrev])
 
-  // Lock body scroll when lightbox is open
+  // Lock body scroll when any modal is open
   useEffect(() => {
-    if (lightboxOpen) {
+    if (lightboxOpen || streetViewOpen || mapViewOpen) {
       document.body.style.overflow = 'hidden'
     } else {
       document.body.style.overflow = ''
     }
     return () => { document.body.style.overflow = '' }
-  }, [lightboxOpen])
+  }, [lightboxOpen, streetViewOpen, mapViewOpen])
+
+  /* ── Street View modal opener (geocode → embed URL) ── */
+  async function openStreetView() {
+    setStreetViewOpen(true)
+    if (streetViewEmbedUrl) return
+    try {
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GMAPS_KEY}`
+      )
+      const data = await res.json()
+      const loc = data.results?.[0]?.geometry?.location
+      if (loc) {
+        setStreetViewEmbedUrl(
+          `https://www.google.com/maps/embed/v1/streetview?key=${GMAPS_KEY}&location=${loc.lat},${loc.lng}&fov=90&heading=0&pitch=0`
+        )
+      } else {
+        setStreetViewEmbedUrl(
+          `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
+        )
+      }
+    } catch {
+      setStreetViewEmbedUrl(
+        `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
+      )
+    }
+  }
 
   if (photos.length === 0) return null
 
-  // Gallery layout: 1 hero (left, tall) + up to 4 small (right grid)
-  const hero = photos[0]
-  const thumbs = photos.slice(1, 5)
-  const remaining = photos.length - 5
+  const showMapTiles = hasAddress && photos.length >= 4
+  const remaining = photos.length - 4
 
   return (
     <>
-      {/* Gallery Grid */}
+      {/* ── Gallery Grid ── */}
       <div className="mb-6 relative">
         {photos.length === 1 ? (
-          <div
-            className="rounded-xl overflow-hidden cursor-pointer"
-            onClick={() => openLightbox(0)}
-          >
-            <img src={hero} alt="Property" className="w-full h-[400px] object-cover" />
+          /* Single photo */
+          <div className="rounded-xl overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
+            <img src={photos[0]} alt="Property" className="w-full h-[400px] object-cover" />
           </div>
         ) : photos.length === 2 ? (
-          <div className="grid grid-cols-2 gap-2 rounded-xl overflow-hidden">
+          /* Two photos */
+          <div className="grid grid-cols-2 gap-1 rounded-xl overflow-hidden">
             {photos.slice(0, 2).map((url, i) => (
               <div key={i} className="cursor-pointer" onClick={() => openLightbox(i)}>
                 <img src={url} alt={`Property ${i + 1}`} className="w-full h-[350px] object-cover" />
               </div>
             ))}
           </div>
+        ) : showMapTiles ? (
+          /* ── InvestorLift-style grid with Street View + Map View ──
+             Layout (4 cols × 2 rows):
+             [Hero col1 row1-2] [Photo2 col2 row1] [StreetView col3-4 row1]
+             [Hero continues  ] [MapView col2 row2] [Photo3 col3] [Photo4+more col4]
+          */
+          <div
+            className="grid gap-1 rounded-xl overflow-hidden"
+            style={{
+              gridTemplateColumns: '45% 1fr 1fr 1fr',
+              gridTemplateRows: '1fr 1fr',
+              height: '420px',
+            }}
+          >
+            {/* Hero — col 1, row 1-2 */}
+            <div
+              className="row-span-2 cursor-pointer relative group"
+              onClick={() => openLightbox(0)}
+            >
+              <img src={photos[0]} alt="Property" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+            </div>
+
+            {/* Photo 2 — col 2, row 1 */}
+            <div
+              className="cursor-pointer relative group"
+              onClick={() => openLightbox(1)}
+            >
+              <img src={photos[1]} alt="Property 2" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+            </div>
+
+            {/* Street View — col 3-4, row 1 */}
+            <div
+              className="col-span-2 cursor-pointer relative group overflow-hidden"
+              onClick={openStreetView}
+            >
+              <img
+                src={streetViewStaticUrl!}
+                alt="Street View"
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-black/40 group-hover:bg-black/25 transition-colors" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                <div className="flex items-center gap-2 text-white font-semibold text-sm tracking-wider">
+                  <IconStreetPerson className="w-5 h-5" />
+                  STREET VIEW
+                </div>
+              </div>
+            </div>
+
+            {/* Map View — col 2, row 2 */}
+            <div
+              className="cursor-pointer relative group overflow-hidden"
+              onClick={() => setMapViewOpen(true)}
+            >
+              <img
+                src={mapStaticUrl!}
+                alt="Map View"
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-black/40 group-hover:bg-black/25 transition-colors" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                <div className="flex items-center gap-2 text-white font-semibold text-sm tracking-wider">
+                  <IconMapPin className="w-5 h-5" />
+                  MAP VIEW
+                </div>
+              </div>
+            </div>
+
+            {/* Photo 3 — col 3, row 2 */}
+            <div
+              className="cursor-pointer relative group"
+              onClick={() => openLightbox(2)}
+            >
+              <img src={photos[2]} alt="Property 3" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+            </div>
+
+            {/* Photo 4 + "X more" — col 4, row 2 */}
+            <div
+              className="cursor-pointer relative group"
+              onClick={() => { if (remaining > 0) { setGridView(true); setLightboxOpen(true) } else { openLightbox(3) } }}
+            >
+              <img src={photos[3]} alt="Property 4" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+              {remaining > 0 && (
+                <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur text-gray-900 text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md flex items-center gap-1.5 pointer-events-none">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                  </svg>
+                  {remaining} more
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
-          <div className="grid grid-cols-4 grid-rows-2 gap-2 rounded-xl overflow-hidden" style={{ height: '420px' }}>
-            {/* Hero photo */}
+          /* Standard 2×2 grid (3+ photos, no address) */
+          <div className="grid grid-cols-4 grid-rows-2 gap-1 rounded-xl overflow-hidden" style={{ height: '420px' }}>
             <div
               className="col-span-2 row-span-2 cursor-pointer relative group"
               onClick={() => openLightbox(0)}
             >
-              <img src={hero} alt="Property" className="w-full h-full object-cover" />
+              <img src={photos[0]} alt="Property" className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
-            {/* Secondary photos */}
-            {thumbs.map((url, i) => (
+            {photos.slice(1, 5).map((url, i) => (
               <div
                 key={i}
                 className="col-span-1 row-span-1 cursor-pointer relative group"
@@ -98,35 +275,105 @@ export default function PhotoGallery({ photos }: PhotoGalleryProps) {
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
               </div>
             ))}
+            {photos.length > 5 && (
+              <button
+                onClick={() => { setGridView(true); setLightboxOpen(true) }}
+                className="absolute bottom-4 right-4 bg-white/95 backdrop-blur text-gray-900 text-sm font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-white transition-colors flex items-center gap-2"
+              >
+                Show all {photos.length} photos
+              </button>
+            )}
           </div>
-        )}
-
-        {/* Show all photos button */}
-        {photos.length > 5 && (
-          <button
-            onClick={() => { setGridView(true); setLightboxOpen(true) }}
-            className="absolute bottom-4 right-4 bg-white/95 backdrop-blur text-gray-900 text-sm font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-white transition-colors flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
-            Show all {photos.length} photos
-          </button>
-        )}
-        {photos.length >= 3 && photos.length <= 5 && (
-          <button
-            onClick={() => { setGridView(true); setLightboxOpen(true) }}
-            className="absolute bottom-4 right-4 bg-white/95 backdrop-blur text-gray-900 text-sm font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-white transition-colors flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
-            View all photos
-          </button>
         )}
       </div>
 
-      {/* Lightbox Modal */}
+      {/* ── Street View Modal ── */}
+      {streetViewOpen && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setStreetViewOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl bg-white"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <IconStreetPerson className="w-5 h-5 text-gray-600 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">Street View</p>
+                  <p className="text-sm font-bold text-gray-900 truncate">{fullAddress}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setStreetViewOpen(false)}
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors text-gray-500"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {streetViewEmbedUrl ? (
+              <iframe
+                src={streetViewEmbedUrl}
+                width="100%"
+                height="500"
+                style={{ border: 0, display: 'block' }}
+                allowFullScreen
+                loading="lazy"
+                title="Street View"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[500px] text-sm text-gray-400 bg-gray-50">
+                Loading…
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Map View Modal ── */}
+      {mapViewOpen && mapEmbedUrl && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setMapViewOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl bg-white"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <IconMapPin className="w-5 h-5 text-gray-600 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">Map View</p>
+                  <p className="text-sm font-bold text-gray-900 truncate">{fullAddress}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMapViewOpen(false)}
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors text-gray-500"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <iframe
+              src={mapEmbedUrl}
+              width="100%"
+              height="500"
+              style={{ border: 0, display: 'block' }}
+              allowFullScreen
+              loading="lazy"
+              title="Map View"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Lightbox Modal ── */}
       {lightboxOpen && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
           {/* Top bar */}
@@ -181,7 +428,6 @@ export default function PhotoGallery({ photos }: PhotoGalleryProps) {
           ) : (
             /* Single View */
             <div className="flex-1 flex items-center justify-center relative px-16">
-              {/* Prev button */}
               <button
                 onClick={goPrev}
                 className="absolute left-4 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-white"
@@ -191,14 +437,12 @@ export default function PhotoGallery({ photos }: PhotoGalleryProps) {
                 </svg>
               </button>
 
-              {/* Image */}
               <img
                 src={photos[currentIndex]}
                 alt={`Photo ${currentIndex + 1}`}
                 className="max-h-[80vh] max-w-full object-contain rounded-lg"
               />
 
-              {/* Next button */}
               <button
                 onClick={goNext}
                 className="absolute right-4 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-white"
@@ -210,7 +454,7 @@ export default function PhotoGallery({ photos }: PhotoGalleryProps) {
             </div>
           )}
 
-          {/* Bottom thumbnails strip (single view only) */}
+          {/* Bottom thumbnails strip */}
           {!gridView && photos.length > 1 && (
             <div className="px-4 py-3 overflow-x-auto">
               <div className="flex gap-2 justify-center">

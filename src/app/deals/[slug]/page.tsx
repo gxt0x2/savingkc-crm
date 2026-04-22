@@ -141,16 +141,26 @@ export default async function DealPage({
 
       <main className="max-w-[1120px] mx-auto px-6 py-8">
         {/* Photo Gallery */}
-        <PhotoGallery photos={photos} />
+        <PhotoGallery
+          photos={photos}
+          propertyAddress={lead?.property_address}
+          city={lead?.city}
+          state={lead?.state}
+          zip={lead?.zip}
+          county={lead?.county}
+          showAddress={dealPage.show_address !== false}
+        />
 
-        {/* Location row */}
+        {/* Location row — full address */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
-          {dealPage.show_address !== false && lead && (
+          {lead && (
             <div className="flex items-center gap-1.5 text-[14px] text-[#444]">
               <IconPin className="w-[18px] h-[18px] text-[#999]" />
               <span>
-                {[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}
-                {lead.zip && ` ${lead.zip}`}
+                {dealPage.show_address !== false && lead.property_address
+                  ? `${lead.property_address}, ${[lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}`
+                  : `${[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}`
+                }
               </span>
             </div>
           )}
