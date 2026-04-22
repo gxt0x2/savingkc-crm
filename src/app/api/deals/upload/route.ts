@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import sharp from 'sharp'
 
 const BUCKET = 'deal-assets'
 
@@ -12,7 +13,7 @@ const MAX_SIZES: Record<string, number> = {
 }
 
 const ALLOWED_TYPES: Record<string, string[]> = {
-  photo: ['image/jpeg', 'image/png', 'image/webp'],
+  photo: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
   video: ['video/mp4', 'video/quicktime', 'video/webm'],
   inspection_report: ['application/pdf'],
 }
@@ -75,19 +76,31 @@ export async function POST(req: NextRequest) {
       await db.storage.createBucket(BUCKET, { public: true })
     }
 
-    // Upload file
-    const ext = file.name.split('.').pop() || 'bin'
+    // Upload file — convert photos to JPEG for browser compatibility
     const timestamp = Date.now()
+    const arrayBuffer = await file.arrayBuffer()
+    let buffer: Uint8Array = new Uint8Array(arrayBuffer)
+    let contentType = file.type
+    let ext = file.name.split('.').pop() || 'bin'
+
+    if (type === 'photo') {
+      const converted = await sharp(Buffer.from(arrayBuffer))
+        .jpeg({ quality: 85, mozjpeg: true })
+        .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
+        .rotate()
+        .toBuffer()
+      buffer = new Uint8Array(converted)
+      contentType = 'image/jpeg'
+      ext = 'jpg'
+    }
+
     const safeName = `${timestamp}.${ext}`
     const path = `${dealPageId}/${type}/${safeName}`
-
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
 
     const { error: uploadError } = await db.storage
       .from(BUCKET)
       .upload(path, buffer, {
-        contentType: file.type,
+        contentType,
         upsert: false,
       })
 
