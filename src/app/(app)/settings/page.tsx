@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { GmailConnect } from '@/components/settings/gmail-connect'
 
 interface AgentProfile {
   email: string
@@ -212,6 +213,9 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-8">
+        {/* Gmail Sync */}
+        <GmailConnect />
+
         {/* Agent Switcher (Owner only) */}
         {isOwner && allProfiles.length > 1 && (
           <section className="bg-red-50 border border-red-200/40 rounded-2xl p-4 shadow-sm">
