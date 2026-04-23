@@ -4,6 +4,7 @@ import OfferForm from './offer-form'
 import ShareButton from './share-button'
 import PhotoGallery from './photo-gallery'
 import InquiryModal from './inquiry-modal'
+import { PageViewTracker } from './track-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -131,6 +132,8 @@ export default async function DealPage({
 
   return (
     <div className="min-h-screen bg-white text-[#1a1a1a]" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+      <PageViewTracker slug={slug} />
+
       {/* Header */}
       <header className="border-b border-[#eaeaea]">
         <div className="max-w-[1120px] mx-auto px-6 py-3.5 flex items-center gap-3">
@@ -149,6 +152,7 @@ export default async function DealPage({
           zip={lead?.zip}
           county={lead?.county}
           showAddress={dealPage.show_address !== false}
+          slug={slug}
         />
 
         {/* Location row — full address */}
@@ -383,7 +387,7 @@ export default async function DealPage({
                     location={lead ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ') : ''}
                   />
                 )}
-                <ShareButton />
+                <ShareButton slug={slug} />
               </div>
             </div>
 

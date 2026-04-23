@@ -1,12 +1,19 @@
 'use client'
 
 import { useState } from 'react'
+import { trackEvent } from './track-events'
 
-export default function ShareButton() {
+export default function ShareButton({ slug }: { slug?: string }) {
   const [copied, setCopied] = useState(false)
 
   function handleCopy() {
-    navigator.clipboard.writeText(window.location.href).catch(() => {})
+    // Generate a simple share code so visits via this link can be attributed
+    const shareCode = Math.random().toString(36).slice(2, 10)
+    const url = new URL(window.location.href)
+    url.searchParams.set('s', shareCode)
+    navigator.clipboard.writeText(url.toString()).catch(() => {})
+
+    if (slug) trackEvent(slug, 'share_click', { share_code: shareCode })
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

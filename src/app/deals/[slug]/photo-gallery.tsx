@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { trackEvent } from './track-events'
 
 interface PhotoGalleryProps {
   photos: string[]
@@ -10,6 +11,7 @@ interface PhotoGalleryProps {
   zip?: string
   county?: string
   showAddress?: boolean
+  slug?: string
 }
 
 const GMAPS_KEY = 'AIzaSyB0_wshDWSFFVuEiuUmhslBYcpWG3ooLPc'
@@ -55,6 +57,7 @@ export default function PhotoGallery({
   state,
   zip,
   showAddress = true,
+  slug,
 }: PhotoGalleryProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -84,7 +87,8 @@ export default function PhotoGallery({
     setCurrentIndex(index)
     setGridView(false)
     setLightboxOpen(true)
-  }, [])
+    if (slug) trackEvent(slug, 'photo_open', { index })
+  }, [slug])
 
   const closeLightbox = useCallback(() => {
     setLightboxOpen(false)
@@ -129,6 +133,7 @@ export default function PhotoGallery({
   /* ── Street View modal opener (geocode → embed URL) ── */
   async function openStreetView() {
     setStreetViewOpen(true)
+    if (slug) trackEvent(slug, 'street_view_open')
     if (streetViewEmbedUrl) return
     try {
       const res = await fetch(
@@ -228,7 +233,7 @@ export default function PhotoGallery({
             {/* Map View — col 2, row 2 */}
             <div
               className="cursor-pointer relative group overflow-hidden bg-[#e8e4de]"
-              onClick={() => setMapViewOpen(true)}
+              onClick={() => { setMapViewOpen(true); if (slug) trackEvent(slug, 'map_view_open') }}
             >
               {/* Styled map background instead of broken static image */}
               <div className="absolute inset-0 bg-gradient-to-br from-[#d4e8d0] via-[#e8e4de] to-[#d0dce8] group-hover:brightness-95 transition-all" />

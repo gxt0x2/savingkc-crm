@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { DealPage, InspectionReport } from '@/types/dispo'
+import { DealStatsPanel } from '@/components/deals/deal-stats-panel'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1077,6 +1078,17 @@ function DealPageCard({ page, onToggle, onCopied, onEdit }: {
   onEdit: (page: DealPage) => void
 }) {
   const url = getDealPageUrl(page.slug)
+  const [liveStats, setLiveStats] = useState<{ views: number; unique_visitors: number; offers_submitted: number; shares: number } | null>(null)
+  const [statsOpen, setStatsOpen] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    fetch(`/api/deals/${page.slug}/stats`)
+      .then(r => r.json())
+      .then(d => { if (alive && d.summary) setLiveStats(d.summary) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [page.slug])
 
   function copyLink() {
     navigator.clipboard.writeText(url).catch(() => {})
@@ -1113,21 +1125,39 @@ function DealPageCard({ page, onToggle, onCopied, onEdit }: {
           </label>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
+        {/* Live stats (falls back to stored view_count until events accumulate) */}
+        <div className="grid grid-cols-4 gap-2 mb-3">
           <div className="text-center bg-slate-50 rounded-lg py-2">
-            <p className="text-lg font-bold text-slate-900">{page.view_count}</p>
+            <p className="text-lg font-bold text-slate-900">{liveStats?.views ?? page.view_count}</p>
             <p className="text-[10px] text-slate-500">Views</p>
           </div>
           <div className="text-center bg-slate-50 rounded-lg py-2">
-            <p className="text-lg font-bold text-slate-900">{page.unique_visitors}</p>
-            <p className="text-[10px] text-slate-500">Visitors</p>
+            <p className="text-lg font-bold text-slate-900">{liveStats?.unique_visitors ?? page.unique_visitors}</p>
+            <p className="text-[10px] text-slate-500">Unique</p>
           </div>
           <div className="text-center bg-slate-50 rounded-lg py-2">
-            <p className="text-lg font-bold text-slate-900">—</p>
+            <p className="text-lg font-bold text-slate-900">{liveStats?.shares ?? 0}</p>
+            <p className="text-[10px] text-slate-500">Shares</p>
+          </div>
+          <div className="text-center bg-slate-50 rounded-lg py-2">
+            <p className="text-lg font-bold text-[#E32E2E]">{liveStats?.offers_submitted ?? 0}</p>
             <p className="text-[10px] text-slate-500">Offers</p>
           </div>
         </div>
+
+        {/* Expandable full stats panel */}
+        <button
+          onClick={() => setStatsOpen(!statsOpen)}
+          className="w-full flex items-center justify-center gap-1.5 text-[11px] font-semibold text-slate-600 hover:text-slate-900 py-1.5 mb-3 border-t border-b border-slate-100 transition-colors"
+        >
+          <Icon name={statsOpen ? 'expand_less' : 'analytics'} size="text-xs" />
+          {statsOpen ? 'Hide analytics' : 'View full analytics'}
+        </button>
+        {statsOpen && (
+          <div className="mb-3">
+            <DealStatsPanel slug={page.slug} />
+          </div>
+        )}
 
         {/* Tags */}
         <div className="flex flex-wrap gap-1 mb-4">

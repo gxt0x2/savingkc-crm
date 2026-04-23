@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { trackEvent } from './track-events'
 
 interface OfferFormProps {
   slug: string
@@ -74,7 +75,7 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
   if (!open) {
     return (
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => { setOpen(true); trackEvent(slug, 'offer_modal_open') }}
         className="w-full bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-xl px-4 py-3 text-[14px] font-semibold transition-colors"
       >
         Make offer
@@ -264,7 +265,7 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
 
       {/* The trigger button */}
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => { setOpen(true); trackEvent(slug, 'offer_modal_open') }}
         className="w-full bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-xl px-4 py-3 text-[14px] font-semibold transition-colors"
       >
         Make offer
