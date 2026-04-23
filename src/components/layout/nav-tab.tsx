@@ -14,11 +14,11 @@ const acquisitionTabs = [
 
 const dispoTabs = [
   { label: 'Pipeline', href: '/dispo/pipeline', icon: 'route' },
-  { label: 'Buyers', href: '/dispo/buyers', icon: 'group' },
   { label: 'Deal Pages', href: '/dispo/deals', icon: 'description' },
+  { label: 'Buyers & Vendors', href: '/dispo/buyers', icon: 'group' },
   { label: 'Broadcasts', href: '/dispo/broadcasts', icon: 'campaign' },
   { label: 'Offers', href: '/dispo/offers', icon: 'local_offer' },
-  { label: 'Vendors', href: '/dispo/vendors', icon: 'store' },
+  { label: 'KPIs', href: '/dashboard', icon: 'insights' },
 ]
 
 interface NavTabsProps {
@@ -38,11 +38,10 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
     if (href === '/calendar' && pathname?.startsWith('/calendar')) return true
     if (href === '/dispo/pipeline' && pathname?.startsWith('/dispo/pipeline')) return true
-    if (href === '/dispo/buyers' && pathname?.startsWith('/dispo/buyers')) return true
+    if (href === '/dispo/buyers' && (pathname?.startsWith('/dispo/buyers') || pathname?.startsWith('/dispo/vendors'))) return true
     if (href === '/dispo/broadcasts' && pathname?.startsWith('/dispo/broadcasts')) return true
     if (href === '/dispo/deals' && pathname?.startsWith('/dispo/deals')) return true
     if (href === '/dispo/offers' && pathname?.startsWith('/dispo/offers')) return true
-    if (href === '/dispo/vendors' && pathname?.startsWith('/dispo/vendors')) return true
     return false
   }
 
