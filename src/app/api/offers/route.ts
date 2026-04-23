@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     let query = supabaseAdmin()
       .from('buyer_offers')
       .select(
-        '*, buyers:buyer_id(id, first_name, last_name, company_name, email, phone, tier), leads:lead_id(id, property_address, city, state, zip, arv, offer_amount), deal_pages:deal_page_id(id, slug, title)',
+        '*, buyers:buyer_id(id, name, company, email, phone), leads:lead_id(id, property_address, city, state, zip, arv, offer_amount), deal_pages:deal_page_id(id, slug, title)',
         { count: 'exact' }
       )
       .order('created_at', { ascending: false })
@@ -110,7 +110,7 @@ export async function PATCH(req: NextRequest) {
       .update(updates)
       .eq('id', id)
       .select(
-        '*, buyers:buyer_id(id, first_name, last_name, company_name, email, phone), leads:lead_id(id, property_address, city)'
+        '*, buyers:buyer_id(id, name, company, email, phone), leads:lead_id(id, property_address, city)'
       )
       .single()
 
@@ -192,26 +192,16 @@ export async function POST(req: NextRequest) {
       if (!buyer_name) {
         return NextResponse.json({ error: 'buyer_id or buyer_name required' }, { status: 400 })
       }
-      const parts = String(buyer_name).trim().split(/\s+/)
-      const firstName = parts[0]
-      const lastName = parts.slice(1).join(' ') || ''
       const normalized = buyer_phone ? String(buyer_phone).replace(/\D/g, '') : ''
       const e164 = normalized.length === 10 ? `+1${normalized}` : normalized.length === 11 ? `+${normalized}` : null
 
       const { data: newBuyer, error: createErr } = await db
         .from('buyers')
         .insert({
-          first_name: firstName,
-          last_name: lastName,
-          company_name: buyer_company || null,
+          name: String(buyer_name).trim(),
+          company: buyer_company || null,
           phone: e164,
           email: buyer_email ? String(buyer_email).toLowerCase() : null,
-          status: 'active',
-          tier: 'new',
-          source: 'manual_crm_entry',
-          sms_opted_in: true,
-          email_opted_in: true,
-          deals_closed: 0,
         })
         .select('id')
         .single()
@@ -251,7 +241,7 @@ export async function POST(req: NextRequest) {
         status: status || 'pending',
       })
       .select(
-        '*, buyers:buyer_id(id, first_name, last_name, company_name, email, phone), leads:lead_id(id, property_address, city)'
+        '*, buyers:buyer_id(id, name, company, email, phone), leads:lead_id(id, property_address, city)'
       )
       .single()
 

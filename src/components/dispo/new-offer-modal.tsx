@@ -13,9 +13,8 @@ interface LeadOption {
 
 interface BuyerOption {
   id: string
-  first_name: string | null
-  last_name: string | null
-  company_name: string | null
+  name: string | null
+  company: string | null
   email: string | null
   phone: string | null
 }
@@ -209,7 +208,7 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
               <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                 <div>
                   <p className="text-sm font-semibold text-slate-900">
-                    {selectedBuyer.company_name || `${selectedBuyer.first_name || ''} ${selectedBuyer.last_name || ''}`.trim()}
+                    {selectedBuyer.name || selectedBuyer.company || 'Buyer'}
                   </p>
                   <p className="text-xs text-slate-500">{selectedBuyer.email || selectedBuyer.phone}</p>
                 </div>
@@ -252,7 +251,7 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
                         className="w-full text-left px-3 py-2 hover:bg-slate-50"
                       >
                         <p className="text-sm font-semibold text-slate-900">
-                          {b.company_name || `${b.first_name || ''} ${b.last_name || ''}`.trim()}
+                          {b.name || b.company || 'Buyer'}
                         </p>
                         <p className="text-xs text-slate-500">{b.email || b.phone}</p>
                       </button>

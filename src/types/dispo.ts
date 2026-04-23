@@ -36,6 +36,9 @@ export interface Buyer {
   tags: string[]
   created_at: string
   updated_at: string
+  // Canonical DB fields (actual table uses these)
+  name?: string | null
+  company?: string | null
 }
 
 export interface DealBroadcast {

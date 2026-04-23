@@ -91,23 +91,12 @@ export async function POST(
 
     // Create new buyer if not found
     if (!buyerId) {
-      const nameParts = data.buyer_name.trim().split(/\s+/)
-      const firstName = nameParts[0]
-      const lastName = nameParts.slice(1).join(' ') || ''
-
       const { data: newBuyer, error: buyerError } = await db
         .from('buyers')
         .insert({
-          first_name: firstName,
-          last_name: lastName,
+          name: data.buyer_name.trim(),
           phone: normalizedPhone,
           email: data.buyer_email.toLowerCase(),
-          status: 'active',
-          tier: 'new',
-          source: 'deal_page_offer',
-          sms_opted_in: true,
-          email_opted_in: true,
-          deals_closed: 0,
         })
         .select('id')
         .single()

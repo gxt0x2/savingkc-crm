@@ -218,7 +218,7 @@ function OfferDetail({
       {confirm === 'accept' && (
         <ConfirmDialog
           title="Accept Offer?"
-          message={`Accept ${buyer ? `${buyer.first_name} ${buyer.last_name}'s` : 'this'} offer of ${formatCurrency(offer.offer_amount)}? This cannot be undone.`}
+          message={`Accept ${buyer ? `${buyer.name || 'this buyer'}'s` : 'this'} offer of ${formatCurrency(offer.offer_amount)}? This cannot be undone.`}
           confirmLabel="Accept Offer"
           confirmClass="bg-emerald-600 text-white hover:bg-emerald-500"
           onConfirm={handleAccept}
@@ -228,7 +228,7 @@ function OfferDetail({
       {confirm === 'reject' && (
         <ConfirmDialog
           title="Reject Offer?"
-          message={`Reject ${buyer ? `${buyer.first_name} ${buyer.last_name}'s` : 'this'} offer of ${formatCurrency(offer.offer_amount)}?`}
+          message={`Reject ${buyer ? `${buyer.name || 'this buyer'}'s` : 'this'} offer of ${formatCurrency(offer.offer_amount)}?`}
           confirmLabel="Reject"
           confirmClass="bg-red-600 text-white hover:bg-red-500"
           withReason
@@ -286,8 +286,8 @@ function OfferDetail({
             <div className="bg-white border border-slate-200 rounded-lg p-3 mb-4 flex items-center gap-4">
               <div>
                 <p className="text-xs font-bold text-slate-500 mb-0.5">Buyer</p>
-                <p className="text-sm font-semibold text-slate-900">{buyer.first_name} {buyer.last_name}</p>
-                {buyer.company_name && <p className="text-xs text-slate-500">{buyer.company_name}</p>}
+                <p className="text-sm font-semibold text-slate-900">{buyer.name || 'Buyer'}</p>
+                {buyer.company && <p className="text-xs text-slate-500">{buyer.company}</p>}
               </div>
               <div className="flex items-center gap-2 ml-auto">
                 {buyer.phone && (
@@ -510,7 +510,7 @@ export default function OffersPage() {
                         {offer.lead?.property_address ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-slate-700">
-                        {offer.buyer ? `${offer.buyer.first_name} ${offer.buyer.last_name}` : '—'}
+                        {offer.buyer ? (offer.buyer.name || '—') : '—'}
                       </td>
                       <td className="px-4 py-3 font-bold text-slate-900">
                         {formatCurrency(offer.offer_amount)}
