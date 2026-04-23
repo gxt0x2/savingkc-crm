@@ -64,6 +64,10 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
         throw new Error(data.error || 'Failed to submit offer')
       }
 
+      trackEvent(slug, 'offer_submit', {
+        amount: Number(form.offer_amount),
+        financing: form.financing_type,
+      })
       setSubmitted(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit offer')

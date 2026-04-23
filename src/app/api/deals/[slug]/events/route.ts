@@ -20,11 +20,15 @@ const VALID_EVENTS = [
   'share_visit',
   'offer_modal_open',
   'offer_submit_started',
+  'offer_submit',
   'photo_open',
   'street_view_open',
   'map_view_open',
   'inquiry_modal_open',
   'inquiry_submit',
+  'click',
+  'section_view',
+  'conversion',
 ] as const
 
 // POST /api/deals/:slug/events
@@ -37,7 +41,7 @@ export async function POST(
   try {
     const { slug } = await params
     const body = await req.json()
-    const { event_type, ref_code, metadata } = body
+    const { event_type, ref_code, metadata, session_id, x_pct, y_pct, scroll_pct, section, element_tag, element_text } = body
 
     if (!event_type || !VALID_EVENTS.includes(event_type)) {
       return NextResponse.json(
@@ -77,6 +81,13 @@ export async function POST(
       referrer,
       ref_code: ref_code || null,
       metadata: metadata || {},
+      session_id: session_id || null,
+      x_pct: typeof x_pct === 'number' ? x_pct : null,
+      y_pct: typeof y_pct === 'number' ? y_pct : null,
+      scroll_pct: typeof scroll_pct === 'number' ? scroll_pct : null,
+      section: section || null,
+      element_tag: element_tag || null,
+      element_text: element_text ? String(element_text).slice(0, 100) : null,
     })
 
     return NextResponse.json({ ok: true }, { headers: corsHeaders })

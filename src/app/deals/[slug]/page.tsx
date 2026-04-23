@@ -4,7 +4,7 @@ import OfferForm from './offer-form'
 import ShareButton from './share-button'
 import PhotoGallery from './photo-gallery'
 import InquiryModal from './inquiry-modal'
-import { PageViewTracker } from './track-events'
+import { DealTracker } from './tracker'
 
 export const dynamic = 'force-dynamic'
 
@@ -132,7 +132,7 @@ export default async function DealPage({
 
   return (
     <div className="min-h-screen bg-white text-[#1a1a1a]" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
-      <PageViewTracker slug={slug} />
+      <DealTracker slug={slug} />
 
       {/* Header */}
       <header className="border-b border-[#eaeaea]">
@@ -182,7 +182,7 @@ export default async function DealPage({
           <div className="lg:col-span-2 space-y-5">
 
             {/* Stats + Overview — combined card */}
-            <section className={card}>
+            <section className={card} data-track-section="overview">
               {statItems.length > 0 && (
                 <div className="flex">
                   {statItems.map((item, i) => (
@@ -206,7 +206,7 @@ export default async function DealPage({
             </section>
 
             {/* Additional details */}
-            <section className={`${card} px-6 py-6`}>
+            <section className={`${card} px-6 py-6`} data-track-section="details">
               <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-5">Additional details</h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-y-5 gap-x-4">
                 {details.map(({ label, value, icon }) => (
@@ -222,7 +222,7 @@ export default async function DealPage({
             </section>
 
             {/* Property Condition & Systems */}
-            <section className={`${card} px-6 py-6`}>
+            <section className={`${card} px-6 py-6`} data-track-section="condition">
               <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-4">Property Condition & Systems</h2>
               <div className="flex items-start gap-2.5">
                 <IconShield className="w-[18px] h-[18px] text-[#999] mt-0.5" />
@@ -236,7 +236,7 @@ export default async function DealPage({
             </section>
 
             {/* Financing Information */}
-            <section className={`${card} px-6 py-6`}>
+            <section className={`${card} px-6 py-6`} data-track-section="financing">
               <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-4">Financing Information</h2>
               {hasRepairEstimate ? (
                 <div className="flex items-start gap-2.5">
@@ -261,7 +261,7 @@ export default async function DealPage({
 
             {/* Contract Terms */}
             {hasContractTerms && (
-              <section className={`${card} px-6 py-6`}>
+              <section className={`${card} px-6 py-6`} data-track-section="contract">
                 <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-5">Contract Terms</h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-5 gap-x-4">
                   {dealPage.contract_close_date && (

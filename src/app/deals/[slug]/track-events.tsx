@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect } from 'react'
-
+// Legacy shim — pre-tracker components can keep calling trackEvent() directly.
+// Use DealTracker for full session tracking; this is just for ad-hoc events.
 export function trackEvent(
   slug: string,
   event_type: string,
@@ -15,23 +15,5 @@ export function trackEvent(
       body: JSON.stringify({ event_type, metadata, ref_code }),
       keepalive: true,
     }).catch(() => {})
-  } catch {
-    /* ignore */
-  }
-}
-
-/* Client component that fires page_view + share_visit on mount */
-export function PageViewTracker({ slug }: { slug: string }) {
-  useEffect(() => {
-    // Check for share ref param (e.g., ?s=abc123)
-    const params = new URLSearchParams(window.location.search)
-    const refCode = params.get('s') || params.get('ref')
-
-    trackEvent(slug, 'page_view', { url: window.location.pathname }, refCode)
-    if (refCode) {
-      trackEvent(slug, 'share_visit', { ref_code: refCode }, refCode)
-    }
-  }, [slug])
-
-  return null
+  } catch { /* ignore */ }
 }
