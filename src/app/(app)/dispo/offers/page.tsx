@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import type { BuyerOffer } from '@/types/dispo'
+import { NewOfferModal } from '@/components/dispo/new-offer-modal'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -369,6 +370,7 @@ export default function OffersPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [newOfferOpen, setNewOfferOpen] = useState(false)
 
   async function fetchOffers() {
     setLoading(true)
@@ -426,7 +428,21 @@ export default function OffersPage() {
             {loading ? 'Loading…' : `${filtered.length} offer${filtered.length !== 1 ? 's' : ''}`}
           </p>
         </div>
+        <button
+          onClick={() => setNewOfferOpen(true)}
+          className="bg-[#E32E2E] hover:bg-[#c72626] text-white text-sm font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+        >
+          <Icon name="add" size="text-base" />
+          New Offer
+        </button>
       </div>
+
+      {newOfferOpen && (
+        <NewOfferModal
+          onClose={() => setNewOfferOpen(false)}
+          onCreated={() => { setFeedback('Offer created'); setTimeout(() => setFeedback(null), 2500); fetchOffers() }}
+        />
+      )}
 
       {/* Status filters */}
       <div className="mb-4 flex flex-wrap gap-1">

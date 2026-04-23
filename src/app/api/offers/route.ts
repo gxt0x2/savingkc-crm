@@ -125,3 +125,144 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/offers — manually create an offer from the CRM
+// Body: {
+//   lead_id, offer_amount,
+//   deal_page_id?, buyer_id?,
+//   buyer_name?, buyer_phone?, buyer_email?, buyer_company?,
+//   earnest_money?, close_days?, inspection_days?, financing_type?, notes?,
+//   status? (default 'pending')
+// }
+// If buyer_id is not provided, resolves or creates a buyer from name/phone/email.
+// ---------------------------------------------------------------------------
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const {
+      lead_id,
+      deal_page_id,
+      offer_amount,
+      earnest_money,
+      close_days,
+      inspection_days,
+      financing_type,
+      notes,
+      status,
+      buyer_id: bodyBuyerId,
+      buyer_name,
+      buyer_phone,
+      buyer_email,
+      buyer_company,
+    } = body
+
+    if (!lead_id) return NextResponse.json({ error: 'lead_id required' }, { status: 400 })
+    if (offer_amount == null || Number(offer_amount) <= 0) {
+      return NextResponse.json({ error: 'offer_amount required' }, { status: 400 })
+    }
+
+    const db = supabaseAdmin()
+
+    // Verify lead exists
+    const { data: lead, error: leadErr } = await db
+      .from('leads')
+      .select('id')
+      .eq('id', lead_id)
+      .single()
+    if (leadErr || !lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
+    // Resolve buyer: explicit buyer_id > phone match > email match > new buyer
+    let buyerId: string | null = bodyBuyerId || null
+
+    if (!buyerId && buyer_phone) {
+      const normalized = String(buyer_phone).replace(/\D/g, '')
+      const e164 = normalized.length === 10 ? `+1${normalized}` : normalized.length === 11 ? `+${normalized}` : null
+      if (e164) {
+        const { data } = await db.from('buyers').select('id').eq('phone', e164).limit(1).single()
+        if (data) buyerId = data.id
+      }
+    }
+    if (!buyerId && buyer_email) {
+      const { data } = await db.from('buyers').select('id').eq('email', String(buyer_email).toLowerCase()).limit(1).single()
+      if (data) buyerId = data.id
+    }
+
+    if (!buyerId) {
+      if (!buyer_name) {
+        return NextResponse.json({ error: 'buyer_id or buyer_name required' }, { status: 400 })
+      }
+      const parts = String(buyer_name).trim().split(/\s+/)
+      const firstName = parts[0]
+      const lastName = parts.slice(1).join(' ') || ''
+      const normalized = buyer_phone ? String(buyer_phone).replace(/\D/g, '') : ''
+      const e164 = normalized.length === 10 ? `+1${normalized}` : normalized.length === 11 ? `+${normalized}` : null
+
+      const { data: newBuyer, error: createErr } = await db
+        .from('buyers')
+        .insert({
+          first_name: firstName,
+          last_name: lastName,
+          company_name: buyer_company || null,
+          phone: e164,
+          email: buyer_email ? String(buyer_email).toLowerCase() : null,
+          status: 'active',
+          tier: 'new',
+          source: 'manual_crm_entry',
+          sms_opted_in: true,
+          email_opted_in: true,
+          deals_closed: 0,
+        })
+        .select('id')
+        .single()
+      if (createErr) {
+        console.error('[offers POST] Create buyer error:', createErr)
+        return NextResponse.json({ error: 'Failed to create buyer' }, { status: 500 })
+      }
+      buyerId = newBuyer.id
+    }
+
+    // Resolve deal_page_id: use provided OR look up by lead_id
+    let dealPageId: string | null = deal_page_id || null
+    if (!dealPageId) {
+      const { data: dp } = await db
+        .from('deal_pages')
+        .select('id')
+        .eq('lead_id', lead_id)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (dp) dealPageId = dp.id
+    }
+
+    const { data: offer, error: insertErr } = await db
+      .from('buyer_offers')
+      .insert({
+        deal_page_id: dealPageId,
+        lead_id,
+        buyer_id: buyerId,
+        offer_amount: Number(offer_amount),
+        earnest_money: earnest_money != null ? Number(earnest_money) : null,
+        close_days: close_days != null ? Number(close_days) : null,
+        inspection_days: inspection_days != null ? Number(inspection_days) : null,
+        financing_type: financing_type || null,
+        notes: notes || null,
+        status: status || 'pending',
+      })
+      .select(
+        '*, buyers:buyer_id(id, first_name, last_name, company_name, email, phone), leads:lead_id(id, property_address, city)'
+      )
+      .single()
+
+    if (insertErr) {
+      console.error('[offers POST] Insert error:', insertErr)
+      return NextResponse.json({ error: insertErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ offer }, { status: 201 })
+  } catch (err) {
+    console.error('[offers POST] Unexpected error:', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
