@@ -83,6 +83,8 @@ export default function PhotoGallery({
   const [streetViewOpen, setStreetViewOpen] = useState(false)
   const [mapViewOpen, setMapViewOpen] = useState(false)
   const [streetViewEmbedUrl, setStreetViewEmbedUrl] = useState<string | null>(null)
+  const [streetViewError, setStreetViewError] = useState<string | null>(null)
+  const [streetStaticBroken, setStreetStaticBroken] = useState(false)
   const [mapStaticBroken, setMapStaticBroken] = useState(false)
 
   const fullAddress = [propertyAddress, city, state, zip].filter(Boolean).join(', ')
@@ -178,30 +180,34 @@ export default function PhotoGallery({
     return () => { document.body.style.overflow = '' }
   }, [lightboxOpen, streetViewOpen, mapViewOpen])
 
-  /* ── Street View modal opener (geocode → embed URL) ── */
+  /* ── Street View modal opener (geocode → embed URL) ──
+     Needs Geocoding API + Maps Embed API enabled in Google Cloud
+     Console. If either is missing/blocked we fall back to a clean
+     "Open in Google Maps" link instead of dumping Google's raw
+     error JSON into an iframe. */
   async function openStreetView() {
     setStreetViewOpen(true)
     if (slug) trackEvent(slug, 'street_view_open')
-    if (streetViewEmbedUrl) return
+    if (streetViewEmbedUrl || streetViewError) return
     try {
       const res = await fetch(
         `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GMAPS_KEY}`
       )
       const data = await res.json()
+      if (data.error_message || data.status === 'REQUEST_DENIED') {
+        setStreetViewError(data.error_message || 'Geocoding is not enabled on this Google Cloud project.')
+        return
+      }
       const loc = data.results?.[0]?.geometry?.location
       if (loc) {
         setStreetViewEmbedUrl(
           `https://www.google.com/maps/embed/v1/streetview?key=${GMAPS_KEY}&location=${loc.lat},${loc.lng}&fov=90&heading=0&pitch=0`
         )
       } else {
-        setStreetViewEmbedUrl(
-          `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
-        )
+        setStreetViewError('No street view available for this address.')
       }
-    } catch {
-      setStreetViewEmbedUrl(
-        `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
-      )
+    } catch (err) {
+      setStreetViewError(err instanceof Error ? err.message : 'Could not load street view.')
     }
   }
 
@@ -290,14 +296,21 @@ export default function PhotoGallery({
               className="col-span-2 cursor-pointer relative group overflow-hidden"
               onClick={openStreetView}
             >
-              <img
-                src={streetViewStaticUrl!}
-                alt="Street View"
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                decoding="async"
-                fetchPriority="high"
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60 group-hover:from-black/40 group-hover:via-black/15 group-hover:to-black/40 transition-all" />
+              {streetStaticBroken ? (
+                <div className="absolute inset-0 bg-gradient-to-br from-[#3a4a5a] via-[#2a3a4a] to-[#1a2a3a] flex items-center justify-center">
+                  <IconPegman className="w-12 h-12 text-white/40" />
+                </div>
+              ) : (
+                <img
+                  src={streetViewStaticUrl!}
+                  alt="Street View"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  decoding="async"
+                  fetchPriority="high"
+                  onError={() => setStreetStaticBroken(true)}
+                />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60 group-hover:from-black/40 group-hover:via-black/15 group-hover:to-black/40 transition-all pointer-events-none" />
               {/* Top-right badge */}
               <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20">
                 <IconPegman className="w-5 h-5 text-white" />
@@ -455,6 +468,24 @@ export default function PhotoGallery({
                 loading="lazy"
                 title="Street View"
               />
+            ) : streetViewError ? (
+              <div className="flex flex-col items-center justify-center gap-3 h-[500px] bg-gray-50 px-8 text-center">
+                <IconPegman className="w-10 h-10 text-gray-400" />
+                <p className="text-sm font-semibold text-gray-700 max-w-md">
+                  Inline Street View isn't available right now.
+                </p>
+                <p className="text-xs text-gray-500 max-w-md">
+                  Enable <span className="font-mono">Geocoding API</span> and <span className="font-mono">Maps Embed API</span> in Google Cloud Console to render it inline. In the meantime, open the location in Google Maps.
+                </p>
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+                >
+                  Open in Google Maps
+                </a>
+              </div>
             ) : (
               <div className="flex items-center justify-center h-[500px] text-sm text-gray-400 bg-gray-50">
                 Loading…
