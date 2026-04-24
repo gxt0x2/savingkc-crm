@@ -118,7 +118,7 @@ function groupOffersByProperty(offers: BuyerOffer[]) {
 // ---------------------------------------------------------------------------
 function statusBadge(status: BuyerOffer['status']) {
   const map: Record<BuyerOffer['status'], string> = {
-    pending: 'bg-slate-500/25 text-slate-300',
+    pending: 'bg-fuchsia-500/20 text-fuchsia-400',
     submitted: 'bg-amber-500/20 text-amber-300',
     reviewing: 'bg-yellow-500/20 text-yellow-400',
     countered: 'bg-purple-500/20 text-purple-400',
