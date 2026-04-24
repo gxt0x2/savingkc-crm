@@ -104,8 +104,10 @@ export interface BuyerOffer {
   decided_at: string | null
   created_at: string
   updated_at: string
+  is_top_pick?: boolean
   buyer?: Buyer
   lead?: { id: string; property_address: string; full_name: string }
+  deal_page?: { id: string; slug: string; title: string | null; asking_price?: number | null } | null
 }
 
 export interface InspectionReport {

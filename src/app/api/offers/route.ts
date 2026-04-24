@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     let query = supabaseAdmin()
       .from('buyer_offers')
       .select(
-        '*, buyer:buyer_id(id, name, company, email, phone), lead:lead_id(id, property_address, city, state, zip, arv, offer_amount, full_name), deal_page:deal_page_id(id, slug, title)',
+        '*, buyer:buyer_id(id, name, company, email, phone), lead:lead_id(id, property_address, city, state, zip, arv, offer_amount, full_name), deal_page:deal_page_id(id, slug, title, asking_price)',
         { count: 'exact' }
       )
       .order('created_at', { ascending: false })
