@@ -1,10 +1,31 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import type { BuyerOffer } from '@/types/dispo'
 import { NewOfferModal } from '@/components/dispo/new-offer-modal'
+
+// Group offers by property (lead_id). Within each group, sort by amount desc
+// so the top offer is first. Groups themselves are sorted by most recent
+// activity so the hottest property rises to the top.
+function groupOffersByProperty(offers: BuyerOffer[]) {
+  const byLead = new Map<string, { lead: BuyerOffer['lead']; offers: BuyerOffer[] }>()
+  for (const offer of offers) {
+    if (!byLead.has(offer.lead_id)) {
+      byLead.set(offer.lead_id, { lead: offer.lead, offers: [] })
+    }
+    byLead.get(offer.lead_id)!.offers.push(offer)
+  }
+  for (const group of byLead.values()) {
+    group.offers.sort((a, b) => b.offer_amount - a.offer_amount)
+  }
+  return Array.from(byLead.values()).sort((a, b) => {
+    const aNewest = Math.max(...a.offers.map(o => new Date(o.submitted_at).getTime()))
+    const bNewest = Math.max(...b.offers.map(o => new Date(o.submitted_at).getTime()))
+    return bNewest - aNewest
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -222,7 +243,7 @@ function OfferDetail({
           title="Accept Offer?"
           message={`Accept ${buyer ? `${buyer.name || 'this buyer'}'s` : 'this'} offer of ${formatCurrency(offer.offer_amount)}? This cannot be undone.`}
           confirmLabel="Accept Offer"
-          confirmClass="bg-emerald-600 text-white hover:bg-emerald-500"
+          confirmClass="bg-[var(--ck-success)] text-white hover:opacity-90"
           onConfirm={handleAccept}
           onCancel={() => setConfirm(null)}
         />
@@ -232,7 +253,7 @@ function OfferDetail({
           title="Reject Offer?"
           message={`Reject ${buyer ? `${buyer.name || 'this buyer'}'s` : 'this'} offer of ${formatCurrency(offer.offer_amount)}?`}
           confirmLabel="Reject"
-          confirmClass="bg-red-600 text-white hover:bg-red-500"
+          confirmClass="bg-[#E32E2E] text-white hover:bg-[#c72626]"
           withReason
           onConfirm={handleReject}
           onCancel={() => setConfirm(null)}
@@ -326,21 +347,21 @@ function OfferDetail({
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setConfirm('accept')}
-                className="flex items-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-500 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+                className="flex items-center gap-1.5 bg-[var(--ck-success)] text-white hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
               >
                 <Icon name="check_circle" size="text-sm" />
                 Accept
               </button>
               <button
                 onClick={() => setShowCounter(true)}
-                className="flex items-center gap-1.5 bg-purple-600 text-white hover:bg-purple-500 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+                className="flex items-center gap-1.5 bg-[var(--ck-warn)] text-[#0a0a0a] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
               >
                 <Icon name="swap_horizontal_circle" size="text-sm" />
                 Counter
               </button>
               <button
                 onClick={() => setConfirm('reject')}
-                className="flex items-center gap-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+                className="flex items-center gap-1.5 bg-[#E32E2E]/10 border border-[#E32E2E]/40 text-[var(--ck-accent-bright)] hover:bg-[#E32E2E]/20 hover:border-[#E32E2E]/60 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
               >
                 <Icon name="cancel" size="text-sm" />
                 Reject
@@ -487,7 +508,6 @@ export default function OffersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Deal Address</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Buyer</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Offer Amount</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Close Days</th>
@@ -498,60 +518,89 @@ export default function OffersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(offer => (
-                  <>
-                    <tr
-                      key={offer.id}
-                      className={cn(
-                        'border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer',
-                        expandedId === offer.id && 'bg-slate-50'
-                      )}
-                      onClick={() => setExpandedId(expandedId === offer.id ? null : offer.id)}
-                    >
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        {offer.lead?.property_address ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {offer.buyer ? (offer.buyer.name || '—') : '—'}
-                      </td>
-                      <td className="px-4 py-3 font-bold text-slate-900">
-                        {formatCurrency(offer.offer_amount)}
-                        {offer.counter_amount != null && (
-                          <span className="ml-2 text-xs font-normal text-purple-600">
-                            Counter: {formatCurrency(offer.counter_amount)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">
-                        {offer.close_days != null ? `${offer.close_days}d` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 hidden md:table-cell">
-                        {offer.financing_type ?? '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize', statusBadge(offer.status))}>
-                          {offer.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-400 text-xs hidden lg:table-cell whitespace-nowrap">
-                        {formatDate(offer.submitted_at)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Icon
-                          name={expandedId === offer.id ? 'expand_less' : 'expand_more'}
-                          className="text-slate-400"
-                        />
-                      </td>
-                    </tr>
-                    {expandedId === offer.id && (
-                      <tr key={`${offer.id}-detail`} className="border-b border-slate-100">
-                        <td colSpan={8} className="p-0">
-                          <OfferDetail offer={offer} onAction={handleAction} />
+                {groupOffersByProperty(filtered).map(group => {
+                  const leadId = group.offers[0].lead_id
+                  const address = group.lead?.property_address ?? 'Unknown property'
+                  const isCompetitive = group.offers.length > 1
+                  const topId = group.offers[0].id
+                  return (
+                    <Fragment key={leadId}>
+                      <tr className="bg-slate-100 border-y border-slate-200">
+                        <td colSpan={7} className="px-4 py-2">
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                            <Icon name="home" size="text-sm" className="text-slate-500" />
+                            <span>{address}</span>
+                            <span className="ml-1 text-slate-500 font-semibold normal-case tracking-normal">
+                              · {group.offers.length} offer{group.offers.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
                         </td>
                       </tr>
-                    )}
-                  </>
-                ))}
+                      {group.offers.map(offer => {
+                        const isTop = isCompetitive && offer.id === topId
+                        return (
+                          <Fragment key={offer.id}>
+                            <tr
+                              className={cn(
+                                'border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer',
+                                expandedId === offer.id && 'bg-slate-50'
+                              )}
+                              onClick={() => setExpandedId(expandedId === offer.id ? null : offer.id)}
+                            >
+                              <td className="px-4 py-3 text-slate-700">
+                                {offer.buyer ? (offer.buyer.name || '—') : '—'}
+                              </td>
+                              <td className="px-4 py-3 font-bold text-slate-900">
+                                <span className="inline-flex items-center gap-1.5">
+                                  {isTop && (
+                                    <Icon
+                                      name="star"
+                                      size="text-base"
+                                      className="text-amber-400"
+                                    />
+                                  )}
+                                  <span>{formatCurrency(offer.offer_amount)}</span>
+                                </span>
+                                {offer.counter_amount != null && (
+                                  <span className="ml-2 text-xs font-normal text-amber-500">
+                                    Counter: {formatCurrency(offer.counter_amount)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">
+                                {offer.close_days != null ? `${offer.close_days}d` : '—'}
+                              </td>
+                              <td className="px-4 py-3 text-slate-500 hidden md:table-cell">
+                                {offer.financing_type ?? '—'}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize', statusBadge(offer.status))}>
+                                  {offer.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-slate-400 text-xs hidden lg:table-cell whitespace-nowrap">
+                                {formatDate(offer.submitted_at)}
+                              </td>
+                              <td className="px-4 py-3">
+                                <Icon
+                                  name={expandedId === offer.id ? 'expand_less' : 'expand_more'}
+                                  className="text-slate-400"
+                                />
+                              </td>
+                            </tr>
+                            {expandedId === offer.id && (
+                              <tr className="border-b border-slate-100">
+                                <td colSpan={7} className="p-0">
+                                  <OfferDetail offer={offer} onAction={handleAction} />
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        )
+                      })}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
