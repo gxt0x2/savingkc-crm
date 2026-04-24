@@ -14,7 +14,7 @@ interface PhotoGalleryProps {
   slug?: string
 }
 
-const GMAPS_KEY = 'AIzaSyB0_wshDWSFFVuEiuUmhslBYcpWG3ooLPc'
+const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''
 
 // Supabase Image Render transform: /object/public/... → /render/image/public/...
 // Serves resized WebP with long cache headers instead of the original 700KB+

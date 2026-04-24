@@ -65,7 +65,7 @@ export function PropertyHero({
   const encodedAddress = encodeURIComponent(fullAddress || property.address)
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`
   const zillowUrl = `https://www.zillow.com/homes/${encodeURIComponent(fullAddress || property.address)}`
-  const GMAPS_KEY = 'AIzaSyB0_wshDWSFFVuEiuUmhslBYcpWG3ooLPc'
+  const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x320&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
   const [showStreetView, setShowStreetView] = useState(false)
   const [streetViewEmbedUrl, setStreetViewEmbedUrl] = useState<string | null>(null)
