@@ -72,19 +72,6 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       maximumFractionDigits: 2,
     })
 
-    // Governing law / venue summary — dynamic by property location. Section 10
-    // of the contract already handles Kansas venue as a fallback clause, but
-    // the summary row at the top of page 1 needs to show the right state and
-    // county for the specific property.
-    const STATE_NAMES: Record<string, string> = {
-      MO: 'Missouri', KS: 'Kansas', IL: 'Illinois', IA: 'Iowa',
-      NE: 'Nebraska', AR: 'Arkansas', OK: 'Oklahoma',
-    }
-    const stateCode = (offer.lead?.state || '').trim().toUpperCase()
-    const stateFull = STATE_NAMES[stateCode] || offer.lead?.state || 'Missouri'
-    const county = (offer.lead?.county || '').replace(/\s+county$/i, '').trim() || 'Jackson'
-    const governingLaw = `${stateFull} law; ${county} County, ${stateFull}`
-
     // Submitter roles match the DocuSeal template exactly: Assignor, Assignee.
     const submission = await createSubmission({
       templateId: ASSIGNMENT_TEMPLATE_ID,
@@ -101,7 +88,6 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             'Effective Date': effectiveDate,
             'Purchase Price': priceFormatted,
             'Closing Date': closingDate,
-            'Governing Law': governingLaw,
           },
         },
         {
