@@ -24,6 +24,8 @@ interface Props {
   side?: 'acquisitions' | 'dispositions' | 'both'
   defaultDocType?: DocType
   title?: string
+  // Collapsed by default — header shows file count; click to expand
+  defaultCollapsed?: boolean
 }
 
 function formatDate(iso: string) {
@@ -40,7 +42,9 @@ export function DocumentManager({
   side = 'both',
   defaultDocType = 'other',
   title = 'Documents',
+  defaultCollapsed = false,
 }: Props) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const [docs, setDocs] = useState<DocumentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -132,16 +136,29 @@ export function DocumentManager({
 
   return (
     <div className="bg-[var(--ck-surface)] border border-[var(--ck-border)] rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
+      <button
+        type="button"
+        onClick={() => setCollapsed(v => !v)}
+        className={cn(
+          'w-full flex items-center justify-between px-4 py-3 bg-[var(--ck-surface-elev)] hover:bg-[var(--ck-surface-hi)] transition-colors text-left',
+          !collapsed && 'border-b border-[var(--ck-border)]'
+        )}
+      >
         <div className="flex items-center gap-2">
           <Icon name="folder" size="text-base" className="text-[var(--ck-text-muted)]" />
           <h3 className="text-sm font-bold text-[var(--ck-text)]">{title}</h3>
           <span className="text-xs text-[var(--ck-text-muted)]">
-            · {docs.length} file{docs.length !== 1 ? 's' : ''}
+            · {loading ? '…' : `${docs.length} file${docs.length !== 1 ? 's' : ''}`}
           </span>
         </div>
-      </div>
+        <Icon
+          name={collapsed ? 'expand_more' : 'expand_less'}
+          size="text-lg"
+          className="text-[var(--ck-text-muted)]"
+        />
+      </button>
 
+      {!collapsed && <>
       {/* Dropzone / pending-upload form */}
       <div className="p-4 border-b border-[var(--ck-border)]">
         {pendingFile ? (
@@ -360,6 +377,7 @@ export function DocumentManager({
           ))}
         </ul>
       )}
+      </>}
     </div>
   )
 }

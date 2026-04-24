@@ -1764,6 +1764,7 @@ export default function LeadDetailPage() {
                     side="acquisitions"
                     defaultDocType="purchase_contract"
                     title="Lead Documents"
+                    defaultCollapsed
                   />
                 ),
               },

@@ -478,6 +478,7 @@ function OfferDetail({
               side="dispositions"
               defaultDocType="proof_of_funds"
               title="Offer Documents"
+              defaultCollapsed
             />
           </div>
 
