@@ -16,6 +16,24 @@ interface PhotoGalleryProps {
 
 const GMAPS_KEY = 'AIzaSyB0_wshDWSFFVuEiuUmhslBYcpWG3ooLPc'
 
+// Supabase Image Render transform: /object/public/... → /render/image/public/...
+// Serves resized WebP with long cache headers instead of the original 700KB+
+// JPEGs with cache-control: no-cache. Massive perf win for grids + thumbnails.
+function img(url: string, width: number, quality = 72): string {
+  if (!url) return url
+  const rendered = url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')
+  if (rendered === url) return url // non-Supabase URL, leave alone
+  const sep = rendered.includes('?') ? '&' : '?'
+  return `${rendered}${sep}width=${width}&quality=${quality}&resize=contain`
+}
+
+// Hint a resource to start downloading before the JS handler runs.
+function preloadImage(url: string) {
+  if (typeof window === 'undefined') return
+  const i = new Image()
+  i.src = url
+}
+
 /* ── Google-style filled SVG icons ── */
 
 /* Google Street View pegman icon (Material Design "streetview") */
@@ -102,6 +120,16 @@ export default function PhotoGallery({
     setCurrentIndex(i => (i - 1 + photos.length) % photos.length)
   }, [photos.length])
 
+  // Preload next + prev photos when the lightbox is on a given frame, so
+  // arrow nav feels instant.
+  useEffect(() => {
+    if (!lightboxOpen || gridView || photos.length <= 1) return
+    const next = (currentIndex + 1) % photos.length
+    const prev = (currentIndex - 1 + photos.length) % photos.length
+    preloadImage(img(photos[next], 1800))
+    preloadImage(img(photos[prev], 1800))
+  }, [lightboxOpen, gridView, currentIndex, photos])
+
   // Keyboard navigation
   useEffect(() => {
     if (!lightboxOpen && !streetViewOpen && !mapViewOpen) return
@@ -169,14 +197,27 @@ export default function PhotoGallery({
         {photos.length === 1 ? (
           /* Single photo */
           <div className="rounded-xl overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
-            <img src={photos[0]} alt="Property" className="w-full h-[400px] object-cover" />
+            <img
+              src={img(photos[0], 1400)}
+              alt="Property"
+              className="w-full h-[400px] object-cover"
+              decoding="async"
+              fetchPriority="high"
+            />
           </div>
         ) : photos.length === 2 ? (
           /* Two photos */
           <div className="grid grid-cols-2 gap-1 rounded-xl overflow-hidden">
             {photos.slice(0, 2).map((url, i) => (
               <div key={i} className="cursor-pointer" onClick={() => openLightbox(i)}>
-                <img src={url} alt={`Property ${i + 1}`} className="w-full h-[350px] object-cover" />
+                <img
+                  src={img(url, 900)}
+                  alt={`Property ${i + 1}`}
+                  className="w-full h-[350px] object-cover"
+                  decoding="async"
+                  fetchPriority={i === 0 ? 'high' : 'auto'}
+                  loading={i === 0 ? 'eager' : 'lazy'}
+                />
               </div>
             ))}
           </div>
@@ -199,7 +240,13 @@ export default function PhotoGallery({
               className="row-span-2 cursor-pointer relative group"
               onClick={() => openLightbox(0)}
             >
-              <img src={photos[0]} alt="Property" className="w-full h-full object-cover" />
+              <img
+                src={img(photos[0], 1200)}
+                alt="Property"
+                className="w-full h-full object-cover"
+                decoding="async"
+                fetchPriority="high"
+              />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
 
@@ -208,7 +255,13 @@ export default function PhotoGallery({
               className="cursor-pointer relative group"
               onClick={() => openLightbox(1)}
             >
-              <img src={photos[1]} alt="Property 2" className="w-full h-full object-cover" />
+              <img
+                src={img(photos[1], 600)}
+                alt="Property 2"
+                className="w-full h-full object-cover"
+                decoding="async"
+                loading="lazy"
+              />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
 
@@ -221,6 +274,8 @@ export default function PhotoGallery({
                 src={streetViewStaticUrl!}
                 alt="Street View"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                decoding="async"
+                loading="lazy"
               />
               <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60 group-hover:from-black/40 group-hover:via-black/15 group-hover:to-black/40 transition-all" />
               {/* Top-right badge */}
@@ -249,7 +304,13 @@ export default function PhotoGallery({
               className="cursor-pointer relative group"
               onClick={() => openLightbox(2)}
             >
-              <img src={photos[2]} alt="Property 3" className="w-full h-full object-cover" />
+              <img
+                src={img(photos[2], 500)}
+                alt="Property 3"
+                className="w-full h-full object-cover"
+                decoding="async"
+                loading="lazy"
+              />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
 
@@ -258,7 +319,13 @@ export default function PhotoGallery({
               className="cursor-pointer relative group"
               onClick={() => { if (remaining > 0) { setGridView(true); setLightboxOpen(true) } else { openLightbox(3) } }}
             >
-              <img src={photos[3]} alt="Property 4" className="w-full h-full object-cover" />
+              <img
+                src={img(photos[3], 500)}
+                alt="Property 4"
+                className="w-full h-full object-cover"
+                decoding="async"
+                loading="lazy"
+              />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
               {remaining > 0 && (
                 <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur text-gray-900 text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md flex items-center gap-1.5 pointer-events-none">
@@ -277,7 +344,13 @@ export default function PhotoGallery({
               className="col-span-2 row-span-2 cursor-pointer relative group"
               onClick={() => openLightbox(0)}
             >
-              <img src={photos[0]} alt="Property" className="w-full h-full object-cover" />
+              <img
+                src={img(photos[0], 1200)}
+                alt="Property"
+                className="w-full h-full object-cover"
+                decoding="async"
+                fetchPriority="high"
+              />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
             {photos.slice(1, 5).map((url, i) => (
@@ -286,7 +359,13 @@ export default function PhotoGallery({
                 className="col-span-1 row-span-1 cursor-pointer relative group"
                 onClick={() => openLightbox(i + 1)}
               >
-                <img src={url} alt={`Property ${i + 2}`} className="w-full h-full object-cover" />
+                <img
+                  src={img(url, 500)}
+                  alt={`Property ${i + 2}`}
+                  className="w-full h-full object-cover"
+                  decoding="async"
+                  loading="lazy"
+                />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
               </div>
             ))}
@@ -432,10 +511,16 @@ export default function PhotoGallery({
                 {photos.map((url, i) => (
                   <div
                     key={i}
-                    className="cursor-pointer aspect-[4/3] rounded-lg overflow-hidden"
+                    className="cursor-pointer aspect-[4/3] rounded-lg overflow-hidden bg-neutral-900"
                     onClick={() => { setCurrentIndex(i); setGridView(false) }}
                   >
-                    <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover hover:opacity-80 transition-opacity" />
+                    <img
+                      src={img(url, 500)}
+                      alt={`Photo ${i + 1}`}
+                      className="w-full h-full object-cover hover:opacity-80 transition-opacity"
+                      decoding="async"
+                      loading="lazy"
+                    />
                   </div>
                 ))}
               </div>
@@ -453,9 +538,11 @@ export default function PhotoGallery({
               </button>
 
               <img
-                src={photos[currentIndex]}
+                src={img(photos[currentIndex], 1800)}
                 alt={`Photo ${currentIndex + 1}`}
                 className="max-h-[80vh] max-w-full object-contain rounded-lg"
+                decoding="async"
+                fetchPriority="high"
               />
 
               <button
@@ -481,7 +568,13 @@ export default function PhotoGallery({
                       i === currentIndex ? 'ring-2 ring-white opacity-100' : 'opacity-50 hover:opacity-75'
                     }`}
                   >
-                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <img
+                      src={img(url, 160)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      decoding="async"
+                      loading="lazy"
+                    />
                   </button>
                 ))}
               </div>
