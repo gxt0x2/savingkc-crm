@@ -49,7 +49,9 @@ export function DocumentManager({
   const [pendingType, setPendingType] = useState<DocType>(defaultDocType)
   const [pendingNotes, setPendingNotes] = useState('')
   const [uploading, setUploading] = useState(false)
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const cameraRef = useRef<HTMLInputElement | null>(null)
+  const photoRef = useRef<HTMLInputElement | null>(null)
+  const fileRef = useRef<HTMLInputElement | null>(null)
 
   const types = DOC_TYPES.filter(t => side === 'both' || t.side === side || t.side === 'both')
 
@@ -95,7 +97,7 @@ export function DocumentManager({
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Upload failed')
       setPendingFile(null)
       setPendingNotes('')
-      if (inputRef.current) inputRef.current.value = ''
+      ;[cameraRef, photoRef, fileRef].forEach(r => { if (r.current) r.current.value = '' })
       await fetchDocs()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed')
@@ -152,7 +154,7 @@ export function DocumentManager({
               </div>
               <button
                 type="button"
-                onClick={() => { setPendingFile(null); if (inputRef.current) inputRef.current.value = '' }}
+                onClick={() => { setPendingFile(null); ;[cameraRef, photoRef, fileRef].forEach(r => { if (r.current) r.current.value = '' }) }}
                 className="text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] p-1"
               >
                 <Icon name="close" size="text-base" />
@@ -189,7 +191,7 @@ export function DocumentManager({
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => { setPendingFile(null); if (inputRef.current) inputRef.current.value = '' }}
+                onClick={() => { setPendingFile(null); ;[cameraRef, photoRef, fileRef].forEach(r => { if (r.current) r.current.value = '' }) }}
                 className="text-sm font-semibold text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] px-4 py-2"
               >
                 Cancel
@@ -206,7 +208,7 @@ export function DocumentManager({
             </div>
           </div>
         ) : (
-          <label
+          <div
             onDragOver={e => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
             onDrop={e => {
@@ -215,22 +217,74 @@ export function DocumentManager({
               handleFiles(e.dataTransfer.files)
             }}
             className={cn(
-              'flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors',
+              'rounded-lg border-2 border-dashed px-4 py-5 transition-colors',
               dragOver
-                ? 'border-[#E32E2E]/60 bg-[#E32E2E]/5 text-[var(--ck-accent-bright)]'
-                : 'border-[var(--ck-border-strong)] text-[var(--ck-text-muted)] hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]'
+                ? 'border-[#E32E2E]/60 bg-[#E32E2E]/5'
+                : 'border-[var(--ck-border-strong)] hover:border-[#E32E2E]/40'
             )}
           >
-            <Icon name="cloud_upload" size="text-2xl" />
-            <p className="text-sm font-semibold">Drop a file or click to browse</p>
-            <p className="text-xs">PDF, images, Word, etc. Max 50 MB.</p>
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex items-center gap-2 text-[var(--ck-text-muted)]">
+                <Icon name="cloud_upload" size="text-xl" />
+                <p className="text-sm font-semibold">
+                  Drop a file here, or pick a source
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => cameraRef.current?.click()}
+                  className="flex items-center gap-1.5 bg-[var(--ck-surface-elev)] border border-[var(--ck-border-strong)] hover:border-[#E32E2E]/50 hover:text-[var(--ck-accent-bright)] text-[var(--ck-text)] rounded-lg px-3 py-2 text-xs font-semibold transition-colors"
+                >
+                  <Icon name="photo_camera" size="text-base" />
+                  Take Photo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => photoRef.current?.click()}
+                  className="flex items-center gap-1.5 bg-[var(--ck-surface-elev)] border border-[var(--ck-border-strong)] hover:border-[#E32E2E]/50 hover:text-[var(--ck-accent-bright)] text-[var(--ck-text)] rounded-lg px-3 py-2 text-xs font-semibold transition-colors"
+                >
+                  <Icon name="photo_library" size="text-base" />
+                  Photos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-1.5 bg-[var(--ck-surface-elev)] border border-[var(--ck-border-strong)] hover:border-[#E32E2E]/50 hover:text-[var(--ck-accent-bright)] text-[var(--ck-text)] rounded-lg px-3 py-2 text-xs font-semibold transition-colors"
+                >
+                  <Icon name="folder_open" size="text-base" />
+                  Files
+                </button>
+              </div>
+              <p className="text-[11px] text-[var(--ck-text-dim)]">
+                Files includes iCloud Drive, Google Drive, Dropbox, etc. when those apps are installed. Max 50 MB.
+              </p>
+            </div>
+            {/* Camera capture — opens the camera directly on iOS/Android */}
             <input
-              ref={inputRef}
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={e => handleFiles(e.target.files)}
+            />
+            {/* Photo library — opens Photos on mobile, filtered picker on desktop */}
+            <input
+              ref={photoRef}
+              type="file"
+              accept="image/*,video/*"
+              className="hidden"
+              onChange={e => handleFiles(e.target.files)}
+            />
+            {/* Any file — opens the Files app on iOS with Drive/Dropbox/iCloud */}
+            <input
+              ref={fileRef}
               type="file"
               className="hidden"
               onChange={e => handleFiles(e.target.files)}
             />
-          </label>
+          </div>
         )}
 
         {error && (
