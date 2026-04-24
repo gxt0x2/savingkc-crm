@@ -6,25 +6,111 @@ import { cn, formatCurrency } from '@/lib/utils'
 import type { BuyerOffer } from '@/types/dispo'
 import { NewOfferModal } from '@/components/dispo/new-offer-modal'
 
-// Group offers by property (lead_id). Within each group, sort by amount desc
-// so the top offer is first. Groups themselves are sorted by most recent
-// activity so the hottest property rises to the top.
+// Score an offer 0-100 on how well it aligns with our goals (clean, fast,
+// well-priced close) and the seller's (hit or beat asking). Weights:
+//   Price 40 · Financing 25 · Close speed 20 · Earnest money 10 · Inspection 5
+// `groupMaxAmount` anchors relative price within the same property when no
+// asking price is set; `askingPrice` (from deal_pages) is preferred when
+// available.
+function scoreOffer(
+  offer: BuyerOffer,
+  groupMaxAmount: number,
+  askingPrice: number | null | undefined
+): { total: number; breakdown: { label: string; points: number; detail: string }[] } {
+  const priceAnchor = askingPrice && askingPrice > 0 ? askingPrice : groupMaxAmount
+  const pricePct = priceAnchor > 0 ? offer.offer_amount / priceAnchor : 0
+  // Cap at 110% of anchor getting full 40 pts; scale below
+  const pricePts = Math.max(0, Math.min(40, Math.round((pricePct / 1.1) * 40)))
+
+  const financingMap: Record<string, number> = {
+    cash: 25,
+    hard_money: 18,
+    private_money: 15,
+    conventional: 8,
+  }
+  const financingPts = financingMap[offer.financing_type ?? ''] ?? 6
+  const financingDetail = offer.financing_type ? offer.financing_type.replace('_', ' ') : 'unknown'
+
+  const days = offer.close_days
+  let closePts = 8
+  if (days != null) {
+    if (days <= 7) closePts = 20
+    else if (days <= 14) closePts = 16
+    else if (days <= 21) closePts = 12
+    else if (days <= 30) closePts = 8
+    else closePts = 4
+  }
+
+  const emPct = offer.earnest_money && offer.offer_amount > 0
+    ? offer.earnest_money / offer.offer_amount
+    : 0
+  let earnestPts = 2
+  if (emPct >= 0.05) earnestPts = 10
+  else if (emPct >= 0.02) earnestPts = 8
+  else if (emPct >= 0.01) earnestPts = 5
+  else if (emPct > 0) earnestPts = 3
+
+  const insp = offer.inspection_days
+  let inspPts = 2
+  if (insp != null) {
+    if (insp === 0) inspPts = 5
+    else if (insp <= 5) inspPts = 4
+    else if (insp <= 10) inspPts = 3
+    else if (insp <= 14) inspPts = 2
+    else inspPts = 1
+  }
+
+  return {
+    total: pricePts + financingPts + closePts + earnestPts + inspPts,
+    breakdown: [
+      { label: 'Price', points: pricePts, detail: `${Math.round(pricePct * 100)}% of ${askingPrice ? 'ask' : 'top bid'}` },
+      { label: 'Financing', points: financingPts, detail: financingDetail },
+      { label: 'Close speed', points: closePts, detail: days != null ? `${days}d` : 'n/a' },
+      { label: 'Earnest money', points: earnestPts, detail: emPct > 0 ? `${(emPct * 100).toFixed(1)}%` : 'none' },
+      { label: 'Inspection', points: inspPts, detail: insp != null ? `${insp}d` : 'n/a' },
+    ],
+  }
+}
+
+// Group offers by property (lead_id). Within each group, the starred offer
+// is decided by manual `is_top_pick` override if set, else the highest
+// scoreOffer() result. Offers inside each group sort by score desc; groups
+// sort by most recent activity so the hottest property rises.
 function groupOffersByProperty(offers: BuyerOffer[]) {
-  const byLead = new Map<string, { lead: BuyerOffer['lead']; offers: BuyerOffer[] }>()
+  const byLead = new Map<string, { lead: BuyerOffer['lead']; offers: BuyerOffer[]; askingPrice: number | null }>()
   for (const offer of offers) {
     if (!byLead.has(offer.lead_id)) {
-      byLead.set(offer.lead_id, { lead: offer.lead, offers: [] })
+      byLead.set(offer.lead_id, {
+        lead: offer.lead,
+        offers: [],
+        askingPrice: offer.deal_page?.asking_price ?? null,
+      })
     }
     byLead.get(offer.lead_id)!.offers.push(offer)
   }
-  for (const group of byLead.values()) {
-    group.offers.sort((a, b) => b.offer_amount - a.offer_amount)
-  }
-  return Array.from(byLead.values()).sort((a, b) => {
-    const aNewest = Math.max(...a.offers.map(o => new Date(o.submitted_at).getTime()))
-    const bNewest = Math.max(...b.offers.map(o => new Date(o.submitted_at).getTime()))
+  const groups = Array.from(byLead.values()).map(g => {
+    const maxAmount = Math.max(...g.offers.map(o => o.offer_amount))
+    const withScores = g.offers.map(offer => ({
+      offer,
+      score: scoreOffer(offer, maxAmount, g.askingPrice),
+    }))
+    withScores.sort((a, b) => b.score.total - a.score.total)
+    const manualTop = withScores.find(x => x.offer.is_top_pick)
+    const topId = manualTop ? manualTop.offer.id : withScores[0]?.offer.id ?? null
+    return {
+      lead: g.lead,
+      askingPrice: g.askingPrice,
+      scored: withScores,
+      topId,
+      isManualTop: Boolean(manualTop),
+    }
+  })
+  groups.sort((a, b) => {
+    const aNewest = Math.max(...a.scored.map(s => new Date(s.offer.submitted_at).getTime()))
+    const bNewest = Math.max(...b.scored.map(s => new Date(s.offer.submitted_at).getTime()))
     return bNewest - aNewest
   })
+  return groups
 }
 
 // ---------------------------------------------------------------------------
@@ -413,6 +499,34 @@ export default function OffersPage() {
 
   useEffect(() => { fetchOffers() }, [statusFilter])
 
+  async function handleToggleTopPick(offer: BuyerOffer) {
+    const next = !offer.is_top_pick
+    // Optimistic local update — star flips instantly, server reconciles
+    setOffers(prev => prev.map(o => {
+      if (o.id === offer.id) return { ...o, is_top_pick: next }
+      if (next && o.lead_id === offer.lead_id) return { ...o, is_top_pick: false }
+      return o
+    }))
+    try {
+      const res = await fetch(`/api/offers/${offer.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_top_pick: next }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to update top pick')
+      }
+      setFeedback(next ? 'Marked as top pick' : 'Cleared top pick')
+      setTimeout(() => setFeedback(null), 2000)
+    } catch (err) {
+      // Revert optimistic update on failure
+      fetchOffers()
+      setFeedback(err instanceof Error ? err.message : 'Failed to update top pick')
+      setTimeout(() => setFeedback(null), 3000)
+    }
+  }
+
   async function handleAction(
     offerId: string,
     newStatus: BuyerOffer['status'],
@@ -519,10 +633,9 @@ export default function OffersPage() {
               </thead>
               <tbody>
                 {groupOffersByProperty(filtered).map(group => {
-                  const leadId = group.offers[0].lead_id
+                  const leadId = group.scored[0].offer.lead_id
                   const address = group.lead?.property_address ?? 'Unknown property'
-                  const isCompetitive = group.offers.length > 1
-                  const topId = group.offers[0].id
+                  const isCompetitive = group.scored.length > 1
                   return (
                     <Fragment key={leadId}>
                       <tr className="bg-slate-100 border-y border-slate-200">
@@ -531,18 +644,27 @@ export default function OffersPage() {
                             <Icon name="home" size="text-sm" className="text-slate-500" />
                             <span>{address}</span>
                             <span className="ml-1 text-slate-500 font-semibold normal-case tracking-normal">
-                              · {group.offers.length} offer{group.offers.length !== 1 ? 's' : ''}
+                              · {group.scored.length} offer{group.scored.length !== 1 ? 's' : ''}
+                              {group.askingPrice != null && (
+                                <span className="ml-2 text-slate-400">· ask {formatCurrency(group.askingPrice)}</span>
+                              )}
+                              {group.isManualTop && (
+                                <span className="ml-2 text-amber-600">· manual top pick</span>
+                              )}
                             </span>
                           </div>
                         </td>
                       </tr>
-                      {group.offers.map(offer => {
-                        const isTop = isCompetitive && offer.id === topId
+                      {group.scored.map(({ offer, score }) => {
+                        const isTop = isCompetitive && offer.id === group.topId
+                        const canToggle = isCompetitive
+                        const tooltip = `Fit score ${score.total}/100\n` +
+                          score.breakdown.map(b => `  ${b.label}: ${b.points} (${b.detail})`).join('\n')
                         return (
                           <Fragment key={offer.id}>
                             <tr
                               className={cn(
-                                'border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer',
+                                'group border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer',
                                 expandedId === offer.id && 'bg-slate-50'
                               )}
                               onClick={() => setExpandedId(expandedId === offer.id ? null : offer.id)}
@@ -550,12 +672,21 @@ export default function OffersPage() {
                               <td className="px-4 py-3 text-slate-700">
                                 <span className="inline-flex items-center gap-1.5">
                                   <span>{offer.buyer ? (offer.buyer.name || '—') : '—'}</span>
-                                  {isTop && (
-                                    <Icon
-                                      name="star"
-                                      size="text-base"
-                                      className="text-amber-400"
-                                    />
+                                  {canToggle && (
+                                    <button
+                                      type="button"
+                                      title={isTop ? `Top pick — click to clear\n\n${tooltip}` : `Click to make this the top pick\n\n${tooltip}`}
+                                      onClick={(e) => { e.stopPropagation(); handleToggleTopPick(offer) }}
+                                      className={cn(
+                                        'inline-flex items-center justify-center rounded hover:bg-amber-500/10 transition-colors',
+                                        isTop ? 'text-amber-400' : 'text-slate-300 opacity-0 group-hover:opacity-100 hover:text-amber-400'
+                                      )}
+                                    >
+                                      <Icon name={isTop ? 'star' : 'star_border'} size="text-base" />
+                                    </button>
+                                  )}
+                                  {!canToggle && isTop && (
+                                    <Icon name="star" size="text-base" className="text-amber-400" />
                                   )}
                                 </span>
                               </td>
