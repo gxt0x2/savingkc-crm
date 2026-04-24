@@ -77,12 +77,12 @@ export function AssignmentPreviewModal({ offer, onClose, onSent }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-md flex items-center justify-center p-4"
       onClick={handleCancel}
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="bg-[var(--ck-surface)] border border-[var(--ck-border)] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col"
+        className="bg-[var(--ck-surface)] border border-[var(--ck-border)] rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] max-h-[1000px] flex flex-col"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--ck-border)]">
           <div>
