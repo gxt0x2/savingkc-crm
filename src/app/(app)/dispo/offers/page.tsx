@@ -548,10 +548,8 @@ export default function OffersPage() {
                               onClick={() => setExpandedId(expandedId === offer.id ? null : offer.id)}
                             >
                               <td className="px-4 py-3 text-slate-700">
-                                {offer.buyer ? (offer.buyer.name || '—') : '—'}
-                              </td>
-                              <td className="px-4 py-3 font-bold text-slate-900">
                                 <span className="inline-flex items-center gap-1.5">
+                                  <span>{offer.buyer ? (offer.buyer.name || '—') : '—'}</span>
                                   {isTop && (
                                     <Icon
                                       name="star"
@@ -559,8 +557,10 @@ export default function OffersPage() {
                                       className="text-amber-400"
                                     />
                                   )}
-                                  <span>{formatCurrency(offer.offer_amount)}</span>
                                 </span>
+                              </td>
+                              <td className="px-4 py-3 font-bold text-slate-900">
+                                {formatCurrency(offer.offer_amount)}
                                 {offer.counter_amount != null && (
                                   <span className="ml-2 text-xs font-normal text-amber-500">
                                     Counter: {formatCurrency(offer.counter_amount)}
