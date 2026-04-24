@@ -88,17 +88,36 @@ export default function PhotoGallery({
   const encodedAddress = encodeURIComponent(fullAddress)
   const hasAddress = showAddress && fullAddress.length > 0
 
+  // Static map/streetview from Google. Sized 2x the rendered tile (~360px wide
+  // displayed) for retina; scale=2 doubles density which is what makes them
+  // visibly sharp without going full 800x400. Also preconnect at first render.
   const streetViewStaticUrl = hasAddress
-    ? `https://maps.googleapis.com/maps/api/streetview?size=800x400&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
+    ? `https://maps.googleapis.com/maps/api/streetview?size=400x240&scale=2&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
     : null
 
   const mapStaticUrl = hasAddress
-    ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodedAddress}&zoom=16&size=600x400&maptype=roadmap&markers=color:red%7C${encodedAddress}&key=${GMAPS_KEY}`
+    ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodedAddress}&zoom=16&size=300x300&scale=2&maptype=roadmap&markers=color:red%7C${encodedAddress}&key=${GMAPS_KEY}`
     : null
 
   const mapEmbedUrl = hasAddress
     ? `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
     : null
+
+  useEffect(() => {
+    if (!hasAddress || typeof document === 'undefined') return
+    // preconnect so the TLS + DNS handshake is done before <img> requests fire
+    const hosts = ['https://maps.googleapis.com', 'https://maps.gstatic.com']
+    const links: HTMLLinkElement[] = []
+    hosts.forEach(href => {
+      const l = document.createElement('link')
+      l.rel = 'preconnect'
+      l.href = href
+      l.crossOrigin = ''
+      document.head.appendChild(l)
+      links.push(l)
+    })
+    return () => { links.forEach(l => l.remove()) }
+  }, [hasAddress])
 
   /* ── Lightbox handlers ── */
   const openLightbox = useCallback((index: number) => {
@@ -275,7 +294,7 @@ export default function PhotoGallery({
                 alt="Street View"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 decoding="async"
-                loading="lazy"
+                fetchPriority="high"
               />
               <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60 group-hover:from-black/40 group-hover:via-black/15 group-hover:to-black/40 transition-all" />
               {/* Top-right badge */}
@@ -290,12 +309,21 @@ export default function PhotoGallery({
               className="cursor-pointer relative group overflow-hidden bg-[#e8e4de]"
               onClick={() => { setMapViewOpen(true); if (slug) trackEvent(slug, 'map_view_open') }}
             >
-              {/* Styled map background instead of broken static image */}
-              <div className="absolute inset-0 bg-gradient-to-br from-[#d4e8d0] via-[#e8e4de] to-[#d0dce8] group-hover:brightness-95 transition-all" />
-              {/* Centered colorful map icon + label */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-                <IconGoogleMap className="w-12 h-12 drop-shadow-md" />
-                <span className="text-[#333] font-bold text-[11px] tracking-wider mt-1">MAP VIEW</span>
+              {mapStaticUrl ? (
+                <img
+                  src={mapStaticUrl}
+                  alt="Map"
+                  className="absolute inset-0 w-full h-full object-cover group-hover:brightness-95 transition-all"
+                  decoding="async"
+                  fetchPriority="high"
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-[#d4e8d0] via-[#e8e4de] to-[#d0dce8] group-hover:brightness-95 transition-all" />
+              )}
+              {/* Overlay icon + label badge so the map preview is recognizable */}
+              <div className="absolute bottom-2 right-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20">
+                <IconGoogleMap className="w-3.5 h-3.5" />
+                <span className="text-white font-bold text-[10px] tracking-wider">MAP VIEW</span>
               </div>
             </div>
 
