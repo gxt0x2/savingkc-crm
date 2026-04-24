@@ -62,6 +62,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     const assigneeName = offer.buyer.name || offer.buyer.company || 'Buyer'
     const assigneeEntity = offer.buyer.company || offer.buyer.name || 'Buyer'
 
+    // Contract reads "$397,000" or "$397,000.50" — commas always, cents only
+    // when the amount actually has them. DocuSeal's "number" field type
+    // accepts a string value and displays it verbatim.
+    const amountNum = Number(offer.offer_amount)
+    const hasCents = amountNum % 1 !== 0
+    const priceFormatted = amountNum.toLocaleString('en-US', {
+      minimumFractionDigits: hasCents ? 2 : 0,
+      maximumFractionDigits: 2,
+    })
+
     // Submitter roles match the DocuSeal template exactly: Assignor, Assignee.
     const submission = await createSubmission({
       templateId: ASSIGNMENT_TEMPLATE_ID,
@@ -76,7 +86,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             'Assignee Name (header)': assigneeName,
             'Property Address': address,
             'Effective Date': effectiveDate,
-            'Purchase Price': offer.offer_amount,
+            'Purchase Price': priceFormatted,
             'Closing Date': closingDate,
           },
         },
@@ -90,7 +100,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             'Assignee Name (header)': assigneeName,
             'Property Address': address,
             'Effective Date': effectiveDate,
-            'Purchase Price': offer.offer_amount,
+            'Purchase Price': priceFormatted,
             'Closing Date': closingDate,
             'Assignee Entity': assigneeEntity,
             'Printed Name': assigneeName,
