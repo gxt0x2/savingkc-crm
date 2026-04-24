@@ -52,12 +52,12 @@ const CATEGORIES: { value: VendorCategory | 'all'; label: string; icon: string }
 
 const CATEGORY_COLORS: Record<VendorCategory, string> = {
   contractor: 'bg-orange-500/20 text-orange-300',
-  escrow:     'bg-sky-500/20 text-sky-300',
+  escrow:     'bg-amber-500/20 text-amber-300',
   title:      'bg-purple-500/20 text-purple-300',
   cleanout:   'bg-teal-500/20 text-teal-300',
   dumpster:   'bg-amber-500/20 text-amber-300',
-  inspector:  'bg-cyan-500/20 text-cyan-300',
-  appraiser:  'bg-indigo-500/20 text-indigo-300',
+  inspector:  'bg-fuchsia-500/20 text-fuchsia-300',
+  appraiser:  'bg-yellow-500/20 text-yellow-300',
   attorney:   'bg-rose-500/20 text-rose-300',
   other:      'bg-slate-500/20 text-slate-300',
 }
@@ -212,7 +212,7 @@ function AddVendorModal({ onClose, onSuccess }: AddVendorModalProps) {
     }
   }
 
-  const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20'
+  const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30'
   const labelCls = 'block text-xs font-semibold text-slate-600 mb-1'
 
   return (
@@ -332,7 +332,7 @@ function AddVendorModal({ onClose, onSuccess }: AddVendorModalProps) {
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="flex-1 bg-primary text-white hover:bg-primary/90 disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
+              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
             >
               {mutation.isPending ? 'Saving…' : 'Add Vendor'}
             </button>
@@ -419,7 +419,7 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
     }
   }
 
-  const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20'
+  const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30'
   const labelCls = 'block text-xs font-semibold text-slate-600 mb-1'
 
   return (
@@ -551,7 +551,7 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
               type="submit"
               form="edit-vendor-form"
               disabled={updateMutation.isPending}
-              className="flex-1 bg-primary text-white hover:bg-primary/90 disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
+              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
             >
               {updateMutation.isPending ? 'Saving…' : 'Save Changes'}
             </button>
@@ -628,7 +628,7 @@ export function VendorsView() {
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-bold shadow-sm transition-colors"
+          className="flex items-center gap-2 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-bold shadow-sm transition-colors"
         >
           <Icon name="add" size="text-lg" />
           Add Vendor
@@ -640,7 +640,7 @@ export function VendorsView() {
         <div className="relative flex-1 max-w-sm">
           <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
           <input
-            className="w-full bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] rounded-lg pl-9 pr-4 py-2 text-sm text-[var(--ck-text)] placeholder:text-[var(--ck-text-muted)] focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] rounded-lg pl-9 pr-4 py-2 text-sm text-[var(--ck-text)] placeholder:text-[var(--ck-text-muted)] focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
             placeholder="Search vendors…"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -657,8 +657,8 @@ export function VendorsView() {
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors',
               category === c.value
-                ? 'bg-primary text-white border-primary'
-                : 'bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)] border-[var(--ck-border)] hover:border-primary/50 hover:text-[var(--ck-text)]'
+                ? 'bg-[#E32E2E] text-white border-[#E32E2E]'
+                : 'bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)] border-[var(--ck-border)] hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]'
             )}
           >
             <Icon name={c.icon} size="text-sm" />

@@ -53,7 +53,7 @@ const STEP_LABELS = ['Lead', 'Description', 'Value', 'Price', 'Info', 'Address',
 const TOTAL_STEPS = STEP_LABELS.length
 
 // Shared input class
-const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20'
+const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30'
 const selectCls = inputCls + ' appearance-none bg-white'
 const labelCls = 'block text-sm font-semibold text-slate-700 mb-1'
 
@@ -534,7 +534,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           />
           {searching && (
             <div className="absolute inset-y-0 right-3 flex items-center">
-              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-[#E32E2E] border-t-transparent rounded-full animate-spin" />
             </div>
           )}
         </div>
@@ -909,7 +909,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           onClick={() => photoInputRef.current?.click()}
           className={cn(
             'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
-            dragOver ? 'border-primary bg-primary/5' : 'border-slate-200 hover:border-slate-300'
+            dragOver ? 'border-[#E32E2E] bg-[#E32E2E]/5' : 'border-slate-200 hover:border-slate-300'
           )}
         >
           <Icon name="add_photo_alternate" className="text-3xl text-slate-300 mb-1" />
@@ -1354,12 +1354,12 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Title</label>
             <input value={form.title} onChange={e => set('title', e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
             <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none" />
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none" />
           </div>
 
           {/* Photos — import via URL, drag to reorder */}
@@ -1389,7 +1389,7 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
                     className={cn(
                       'relative group cursor-grab active:cursor-grabbing rounded-lg overflow-hidden',
                       i === 0 ? 'ring-2 ring-teal-500' : '',
-                      i < 5 && i > 0 ? 'ring-1 ring-blue-200' : ''
+                      i < 5 && i > 0 ? 'ring-1 ring-amber-300' : ''
                     )}
                   >
                     <img src={url} alt="" className="w-full h-16 object-cover" />
@@ -1397,7 +1397,7 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
                       <span className="absolute bottom-0 left-0 right-0 bg-teal-600/90 text-white text-[9px] font-bold text-center py-0.5">COVER</span>
                     )}
                     {i >= 1 && i <= 4 && (
-                      <span className="absolute bottom-0 left-0 right-0 bg-blue-600/70 text-white text-[9px] text-center py-0.5">#{i + 1}</span>
+                      <span className="absolute bottom-0 left-0 right-0 bg-amber-600/70 text-white text-[9px] text-center py-0.5">#{i + 1}</span>
                     )}
                     <button type="button"
                       onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
@@ -1415,14 +1415,14 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
                 onChange={e => setPhotoUrl(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); importPhotoUrls() } }}
                 placeholder="Paste image URL(s) — comma or space separated"
-                className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
                 disabled={importingPhotos}
               />
               <button
                 type="button"
                 onClick={importPhotoUrls}
                 disabled={importingPhotos || !photoUrl.trim()}
-                className="bg-primary text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 whitespace-nowrap"
+                className="bg-[#E32E2E] text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-[#c72626] disabled:opacity-50 whitespace-nowrap"
               >
                 {importingPhotos ? 'Importing...' : 'Import'}
               </button>
@@ -1462,32 +1462,32 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
               <div>
                 <label className="block text-[10px] text-slate-500 mb-0.5">Close Date</label>
                 <input type="date" value={form.contract_close_date} onChange={e => set('contract_close_date', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
               </div>
               <div>
                 <label className="block text-[10px] text-slate-500 mb-0.5">Earnest Money ($)</label>
                 <input type="number" value={form.earnest_money} onChange={e => set('earnest_money', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
               </div>
               <div>
                 <label className="block text-[10px] text-slate-500 mb-0.5">Inspection (days)</label>
                 <input type="number" value={form.inspection_period_days} onChange={e => set('inspection_period_days', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
               </div>
               <div>
                 <label className="block text-[10px] text-slate-500 mb-0.5">Financing</label>
                 <input type="text" value={form.financing_terms} onChange={e => set('financing_terms', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
               </div>
               <div>
                 <label className="block text-[10px] text-slate-500 mb-0.5">Assignment Fee ($)</label>
                 <input type="number" value={form.assignment_fee} onChange={e => set('assignment_fee', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
               </div>
               <div>
                 <label className="block text-[10px] text-slate-500 mb-0.5">Condition</label>
                 <select value={form.property_condition} onChange={e => set('property_condition', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30">
                   <option value="">Select...</option>
                   <option value="Excellent">Excellent</option>
                   <option value="Good">Good</option>
@@ -1500,25 +1500,25 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
               <div>
                 <label className="block text-[10px] text-slate-500 mb-0.5">Parking</label>
                 <input type="text" value={form.parking} onChange={e => set('parking', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mt-3">
               <div>
                 <label className="block text-[10px] text-slate-500 mb-0.5">Repair Est. Low ($)</label>
                 <input type="number" value={form.repair_estimate_low} onChange={e => set('repair_estimate_low', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
               </div>
               <div>
                 <label className="block text-[10px] text-slate-500 mb-0.5">Repair Est. High ($)</label>
                 <input type="number" value={form.repair_estimate_high} onChange={e => set('repair_estimate_high', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
               </div>
             </div>
             <div className="mt-3">
               <label className="block text-[10px] text-slate-500 mb-0.5">Contract Notes</label>
               <textarea rows={2} value={form.contract_notes} onChange={e => set('contract_notes', e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none" />
+                className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none" />
             </div>
           </div>
 
@@ -1582,7 +1582,7 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
               Cancel
             </button>
             <button onClick={handleSave} disabled={saving}
-              className="flex-1 bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60">
+              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60">
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
@@ -1701,7 +1701,7 @@ export default function DealPagesPage() {
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="bg-primary text-white hover:bg-primary/90 rounded-lg px-5 py-2.5 text-sm font-semibold"
+            className="bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-5 py-2.5 text-sm font-semibold"
           >
             Create First Deal Page
           </button>
