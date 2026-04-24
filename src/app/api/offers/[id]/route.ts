@@ -14,7 +14,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
     const body = await req.json()
-    const { status, counter_amount, counter_notes, is_top_pick } = body
+    const {
+      status,
+      counter_amount,
+      counter_notes,
+      is_top_pick,
+      offer_amount,
+      earnest_money,
+      close_days,
+      inspection_days,
+      financing_type,
+      notes,
+    } = body
 
     const db = supabaseAdmin()
 
@@ -50,6 +61,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (counter_amount != null) updates.counter_amount = counter_amount
         if (counter_notes != null) updates.counter_notes = counter_notes
       }
+    }
+
+    if (offer_amount !== undefined) {
+      const n = Number(offer_amount)
+      if (!Number.isFinite(n) || n <= 0) {
+        return NextResponse.json({ error: 'offer_amount must be positive' }, { status: 400 })
+      }
+      updates.offer_amount = n
+    }
+    if (earnest_money !== undefined) {
+      updates.earnest_money = earnest_money === null || earnest_money === '' ? null : Number(earnest_money)
+    }
+    if (close_days !== undefined) {
+      updates.close_days = close_days === null || close_days === '' ? null : Number(close_days)
+    }
+    if (inspection_days !== undefined) {
+      updates.inspection_days = inspection_days === null || inspection_days === '' ? null : Number(inspection_days)
+    }
+    if (financing_type !== undefined) {
+      updates.financing_type = financing_type || null
+    }
+    if (notes !== undefined) {
+      updates.notes = notes || null
     }
 
     if (is_top_pick !== undefined) {
