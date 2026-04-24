@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { formatCurrency } from '@/lib/utils'
 import type { BuyerOffer } from '@/types/dispo'
+
+function formatContractDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
 
 // Two-step flow so the user sees the actual filled DocuSeal contract before
 // the buyer ever gets an email:
@@ -103,29 +108,79 @@ export function AssignmentPreviewModal({ offer, onClose, onSent }: Props) {
           </button>
         </div>
 
-        <div className="flex-1 overflow-hidden bg-white">
+        <div className="flex-1 overflow-y-auto bg-[var(--ck-bg)] px-6 py-5 text-sm">
           {loading ? (
-            <div className="h-full flex items-center justify-center text-slate-500 text-sm">
+            <div className="h-full flex items-center justify-center text-[var(--ck-text-muted)]">
               <Icon name="hourglass_top" size="text-xl" className="mr-2 animate-spin" />
               Generating preview…
             </div>
           ) : error ? (
-            <div className="h-full flex items-center justify-center p-8">
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 max-w-md">
-                {error}
+            <div className="bg-[#E32E2E]/10 border border-[#E32E2E]/40 text-[var(--ck-accent-bright)] rounded-lg px-4 py-3">
+              {error}
+            </div>
+          ) : (() => {
+            const today = new Date().toISOString().slice(0, 10)
+            const closeDays = offer.close_days ?? 0
+            const closing = new Date(Date.now() + closeDays * 86_400_000).toISOString().slice(0, 10)
+            const address = [offer.lead?.property_address].filter(Boolean).join('')
+            const assigneeName = offer.buyer?.name || offer.buyer?.company || 'Buyer'
+            const assigneeEntity = offer.buyer?.company || offer.buyer?.name || 'Buyer'
+            const rows: { label: string; value: string; signer: 'Assignor' | 'Assignee' | 'Both' | 'Buyer fills' }[] = [
+              { label: 'Assignee Name (header)', value: assigneeName, signer: 'Assignor' },
+              { label: 'Property Address', value: address || '—', signer: 'Assignor' },
+              { label: 'Effective Date', value: formatContractDate(today), signer: 'Assignor' },
+              { label: 'Purchase Price', value: formatCurrency(offer.offer_amount), signer: 'Assignor' },
+              { label: 'Closing Date', value: formatContractDate(closing), signer: 'Assignor' },
+              { label: 'Assignee Entity', value: assigneeEntity, signer: 'Assignee' },
+              { label: 'Printed Name', value: assigneeName, signer: 'Assignee' },
+              { label: 'Email', value: offer.buyer?.email || '—', signer: 'Assignee' },
+              { label: 'Phone', value: offer.buyer?.phone || '—', signer: 'Buyer fills' },
+              { label: 'Title', value: '', signer: 'Buyer fills' },
+              { label: 'Initials / Signatures / Signature Dates', value: '', signer: 'Both' },
+            ]
+            return (
+              <div className="space-y-4">
+                <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 text-[var(--ck-text)]">
+                  <Icon name="info" size="text-lg" className="text-amber-400 mt-0.5" />
+                  <div className="text-xs leading-relaxed">
+                    DocuSeal blocks inline preview from external origins, so the full rendered contract opens in a new tab. Use the table below to sanity-check the prefill, then open the full preview before sending.
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-[var(--ck-border)] overflow-hidden">
+                  <div className="grid grid-cols-[1fr_1.4fr_auto] gap-0 text-[11px] font-bold uppercase tracking-wider bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)] px-4 py-2">
+                    <div>Field</div>
+                    <div>Prefilled value</div>
+                    <div>Who</div>
+                  </div>
+                  {rows.map((r, i) => (
+                    <div
+                      key={r.label}
+                      className={`grid grid-cols-[1fr_1.4fr_auto] gap-0 px-4 py-2.5 text-[var(--ck-text)] ${i % 2 === 0 ? 'bg-[var(--ck-surface)]' : 'bg-[var(--ck-surface-elev)]'}`}
+                    >
+                      <div className="text-[var(--ck-text-muted)] text-xs pr-3">{r.label}</div>
+                      <div className={`text-sm font-semibold pr-3 ${r.value ? '' : 'text-[var(--ck-text-dim)] italic font-normal'}`}>
+                        {r.value || 'buyer fills at signing'}
+                      </div>
+                      <div className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase">{r.signer}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {preview?.embedSrc && (
+                  <a
+                    href={preview.embedSrc}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-[var(--ck-surface-elev)] border border-[var(--ck-border-strong)] hover:border-[#E32E2E]/50 hover:text-[var(--ck-accent-bright)] text-[var(--ck-text)] rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors"
+                  >
+                    <Icon name="open_in_new" size="text-base" />
+                    Open full contract preview in new tab
+                  </a>
+                )}
               </div>
-            </div>
-          ) : preview?.embedSrc ? (
-            <iframe
-              src={preview.embedSrc}
-              title="Assignment preview"
-              className="w-full h-full border-0"
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center text-slate-500 text-sm p-8">
-              Preview unavailable — open directly in DocuSeal to verify.
-            </div>
-          )}
+            )
+          })()}
         </div>
 
         <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
