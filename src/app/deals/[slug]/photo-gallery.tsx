@@ -83,6 +83,7 @@ export default function PhotoGallery({
   const [streetViewOpen, setStreetViewOpen] = useState(false)
   const [mapViewOpen, setMapViewOpen] = useState(false)
   const [streetViewEmbedUrl, setStreetViewEmbedUrl] = useState<string | null>(null)
+  const [mapStaticBroken, setMapStaticBroken] = useState(false)
 
   const fullAddress = [propertyAddress, city, state, zip].filter(Boolean).join(', ')
   const encodedAddress = encodeURIComponent(fullAddress)
@@ -309,22 +310,30 @@ export default function PhotoGallery({
               className="cursor-pointer relative group overflow-hidden bg-[#e8e4de]"
               onClick={() => { setMapViewOpen(true); if (slug) trackEvent(slug, 'map_view_open') }}
             >
-              {mapStaticUrl ? (
-                <img
-                  src={mapStaticUrl}
-                  alt="Map"
-                  className="absolute inset-0 w-full h-full object-cover group-hover:brightness-95 transition-all"
-                  decoding="async"
-                  fetchPriority="high"
-                />
+              {mapStaticUrl && !mapStaticBroken ? (
+                <>
+                  <img
+                    src={mapStaticUrl}
+                    alt="Map"
+                    className="absolute inset-0 w-full h-full object-cover group-hover:brightness-95 transition-all"
+                    decoding="async"
+                    fetchPriority="high"
+                    onError={() => setMapStaticBroken(true)}
+                  />
+                  <div className="absolute bottom-2 right-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20">
+                    <IconGoogleMap className="w-3.5 h-3.5" />
+                    <span className="text-white font-bold text-[10px] tracking-wider">MAP VIEW</span>
+                  </div>
+                </>
               ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-[#d4e8d0] via-[#e8e4de] to-[#d0dce8] group-hover:brightness-95 transition-all" />
+                <>
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#d4e8d0] via-[#e8e4de] to-[#d0dce8] group-hover:brightness-95 transition-all" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                    <IconGoogleMap className="w-12 h-12 drop-shadow-md" />
+                    <span className="text-[#333] font-bold text-[11px] tracking-wider mt-1">MAP VIEW</span>
+                  </div>
+                </>
               )}
-              {/* Overlay icon + label badge so the map preview is recognizable */}
-              <div className="absolute bottom-2 right-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20">
-                <IconGoogleMap className="w-3.5 h-3.5" />
-                <span className="text-white font-bold text-[10px] tracking-wider">MAP VIEW</span>
-              </div>
             </div>
 
             {/* Photo 3 — col 3, row 2 */}
