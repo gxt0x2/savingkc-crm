@@ -6,6 +6,7 @@ import { cn, formatCurrency } from '@/lib/utils'
 import type { BuyerOffer } from '@/types/dispo'
 import { NewOfferModal } from '@/components/dispo/new-offer-modal'
 import { EditOfferModal } from '@/components/dispo/edit-offer-modal'
+import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
 
 // Score an offer 0-100 on how well it aligns with our goals (clean, fast,
 // well-priced close) and the seller's (hit or beat asking). Weights:
@@ -129,6 +130,33 @@ function statusBadge(status: BuyerOffer['status']) {
     expired: 'bg-orange-500/20 text-orange-400',
   }
   return map[status] ?? 'bg-slate-500/25 text-slate-300'
+}
+
+// Assignment state → high-contrast pill. Dark-theme friendly: brand red
+// for "Signed", amber for "Sent", slate outline for "Not sent".
+function assignmentBadge(offer: BuyerOffer): { label: string; className: string; icon: string } | null {
+  if (offer.assignment_signed_at) {
+    return {
+      label: 'Assignment Signed',
+      className: 'bg-[#E32E2E] text-white border border-[#E32E2E] shadow-[0_0_0_1px_rgba(227,46,46,0.3)]',
+      icon: 'verified',
+    }
+  }
+  if (offer.assignment_sent_at) {
+    return {
+      label: 'Assignment Sent',
+      className: 'bg-amber-400/25 text-amber-300 border border-amber-400/50',
+      icon: 'outgoing_mail',
+    }
+  }
+  if (offer.status === 'accepted') {
+    return {
+      label: 'Assignment Not Sent',
+      className: 'bg-transparent text-[var(--ck-text-muted)] border border-dashed border-[var(--ck-border-strong)]',
+      icon: 'description',
+    }
+  }
+  return null
 }
 
 function formatDate(iso: string | null) {
@@ -310,6 +338,7 @@ function OfferDetail({
   const [confirm, setConfirm] = useState<'accept' | 'reject' | null>(null)
   const [showCounter, setShowCounter] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [showAssignment, setShowAssignment] = useState(false)
 
   const buyer = offer.buyer
   const lead = offer.lead
@@ -361,6 +390,13 @@ function OfferDetail({
           offer={offer}
           onClose={() => setShowEdit(false)}
           onSaved={() => { setShowEdit(false); onEdited() }}
+        />
+      )}
+      {showAssignment && (
+        <AssignmentPreviewModal
+          offer={offer}
+          onClose={() => setShowAssignment(false)}
+          onSent={() => { setShowAssignment(false); onEdited() }}
         />
       )}
 
@@ -448,6 +484,32 @@ function OfferDetail({
               <Icon name="edit" size="text-sm" />
               Edit
             </button>
+            {offer.status === 'accepted' && !offer.assignment_sent_at && (
+              <button
+                onClick={() => setShowAssignment(true)}
+                className="flex items-center gap-1.5 bg-[#E32E2E] hover:bg-[#c72626] text-white rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+              >
+                <Icon name="description" size="text-sm" />
+                Send Assignment
+              </button>
+            )}
+            {offer.assignment_sent_at && !offer.assignment_signed_at && (
+              <span className="inline-flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/40 text-amber-300 rounded-lg px-4 py-2 text-sm font-semibold">
+                <Icon name="outgoing_mail" size="text-sm" />
+                Awaiting buyer signature
+              </span>
+            )}
+            {offer.assignment_signed_at && offer.assignment_document_url && (
+              <a
+                href={offer.assignment_document_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 bg-[var(--ck-success)] text-white hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
+              >
+                <Icon name="verified" size="text-sm" />
+                View signed contract
+              </a>
+            )}
             {canAct && (
               <>
                 <button
@@ -725,9 +787,20 @@ export default function OffersPage() {
                                 {offer.financing_type ?? '—'}
                               </td>
                               <td className="px-4 py-3">
-                                <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize', statusBadge(offer.status))}>
-                                  {offer.status}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize', statusBadge(offer.status))}>
+                                    {offer.status}
+                                  </span>
+                                  {(() => {
+                                    const ab = assignmentBadge(offer)
+                                    return ab ? (
+                                      <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap', ab.className)}>
+                                        <Icon name={ab.icon} size="text-[13px]" />
+                                        {ab.label}
+                                      </span>
+                                    ) : null
+                                  })()}
+                                </div>
                               </td>
                               <td className="px-4 py-3 text-slate-400 text-xs hidden lg:table-cell whitespace-nowrap">
                                 {formatDate(offer.submitted_at)}

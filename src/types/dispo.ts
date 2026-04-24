@@ -105,6 +105,11 @@ export interface BuyerOffer {
   created_at: string
   updated_at: string
   is_top_pick?: boolean
+  assignment_submission_id?: string | null
+  assignment_assignee_submitter_id?: string | null
+  assignment_sent_at?: string | null
+  assignment_signed_at?: string | null
+  assignment_document_url?: string | null
   buyer?: Buyer
   lead?: { id: string; property_address: string; full_name: string }
   deal_page?: { id: string; slug: string; title: string | null; asking_price?: number | null } | null
