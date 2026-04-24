@@ -7,6 +7,7 @@ import type { BuyerOffer } from '@/types/dispo'
 import { NewOfferModal } from '@/components/dispo/new-offer-modal'
 import { EditOfferModal } from '@/components/dispo/edit-offer-modal'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
+import { DocumentManager } from '@/components/documents/document-manager'
 
 // Score an offer 0-100 on how well it aligns with our goals (clean, fast,
 // well-priced close) and the seller's (hit or beat asking). Weights:
@@ -468,6 +469,17 @@ function OfferDetail({
               <p className="text-xs text-slate-500">{lead.full_name}</p>
             </div>
           )}
+
+          {/* Documents */}
+          <div className="mb-4">
+            <DocumentManager
+              entityType="offer"
+              entityId={offer.id}
+              side="dispositions"
+              defaultDocType="proof_of_funds"
+              title="Offer Documents"
+            />
+          </div>
 
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2">

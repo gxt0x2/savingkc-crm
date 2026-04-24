@@ -9,6 +9,7 @@ import { PainPoints } from '@/components/leads/pain-points'
 import { FavoriteOrFool } from '@/components/leads/favorite-or-fool'
 import { PropertyHero } from '@/components/leads/property-hero'
 import { ActivityFeed } from '@/components/leads/activity-feed'
+import { DocumentManager } from '@/components/documents/document-manager'
 import { PropertyDetailsCard } from '@/components/leads/property-details-card'
 import { TemperatureBadge } from '@/components/leads/temperature-badge'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
@@ -1753,6 +1754,18 @@ export default function LeadDetailPage() {
               {
                 id: 'email-thread',
                 node: <EmailThread leadId={id} />,
+              },
+              {
+                id: 'documents',
+                node: (
+                  <DocumentManager
+                    entityType="lead"
+                    entityId={id}
+                    side="acquisitions"
+                    defaultDocType="purchase_contract"
+                    title="Lead Documents"
+                  />
+                ),
               },
               {
                 id: 'activity-feed',
