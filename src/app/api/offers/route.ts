@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     let query = supabaseAdmin()
       .from('buyer_offers')
       .select(
-        '*, buyers:buyer_id(id, name, company, email, phone), leads:lead_id(id, property_address, city, state, zip, arv, offer_amount), deal_pages:deal_page_id(id, slug, title)',
+        '*, buyer:buyer_id(id, name, company, email, phone), lead:lead_id(id, property_address, city, state, zip, arv, offer_amount, full_name), deal_page:deal_page_id(id, slug, title)',
         { count: 'exact' }
       )
       .order('created_at', { ascending: false })
@@ -110,7 +110,7 @@ export async function PATCH(req: NextRequest) {
       .update(updates)
       .eq('id', id)
       .select(
-        '*, buyers:buyer_id(id, name, company, email, phone), leads:lead_id(id, property_address, city)'
+        '*, buyer:buyer_id(id, name, company, email, phone), lead:lead_id(id, property_address, city, full_name)'
       )
       .single()
 
@@ -241,7 +241,7 @@ export async function POST(req: NextRequest) {
         status: status || 'pending',
       })
       .select(
-        '*, buyers:buyer_id(id, name, company, email, phone), leads:lead_id(id, property_address, city)'
+        '*, buyer:buyer_id(id, name, company, email, phone), lead:lead_id(id, property_address, city, full_name)'
       )
       .single()
 

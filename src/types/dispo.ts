@@ -96,7 +96,7 @@ export interface BuyerOffer {
   financing_type: string | null
   contingencies: string | null
   notes: string | null
-  status: 'submitted' | 'reviewing' | 'countered' | 'accepted' | 'rejected' | 'withdrawn'
+  status: 'pending' | 'submitted' | 'reviewing' | 'countered' | 'accepted' | 'rejected' | 'withdrawn' | 'expired'
   counter_amount: number | null
   counter_notes: string | null
   submitted_at: string

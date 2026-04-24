@@ -11,14 +11,16 @@ import { NewOfferModal } from '@/components/dispo/new-offer-modal'
 // ---------------------------------------------------------------------------
 function statusBadge(status: BuyerOffer['status']) {
   const map: Record<BuyerOffer['status'], string> = {
-    submitted: 'bg-sky-500/20 text-sky-300',
-    reviewing: 'bg-amber-500/20 text-amber-300',
-    countered: 'bg-purple-500/20 text-purple-300',
-    accepted: 'bg-emerald-500/20 text-emerald-300',
-    rejected: 'bg-red-500/20 text-red-300',
+    pending: 'bg-cyan-500/20 text-cyan-400',
+    submitted: 'bg-sky-500/20 text-sky-400',
+    reviewing: 'bg-amber-500/20 text-amber-400',
+    countered: 'bg-purple-500/20 text-purple-400',
+    accepted: 'bg-emerald-500/20 text-emerald-400',
+    rejected: 'bg-red-500/20 text-red-400',
     withdrawn: 'bg-slate-500/20 text-slate-400',
+    expired: 'bg-orange-500/20 text-orange-400',
   }
-  return map[status] ?? 'bg-slate-100 text-slate-500'
+  return map[status] ?? 'bg-slate-500/20 text-slate-400'
 }
 
 function formatDate(iso: string | null) {
