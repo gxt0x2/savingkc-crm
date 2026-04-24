@@ -118,16 +118,16 @@ function groupOffersByProperty(offers: BuyerOffer[]) {
 // ---------------------------------------------------------------------------
 function statusBadge(status: BuyerOffer['status']) {
   const map: Record<BuyerOffer['status'], string> = {
-    pending: 'bg-cyan-500/20 text-cyan-400',
-    submitted: 'bg-sky-500/20 text-sky-400',
-    reviewing: 'bg-amber-500/20 text-amber-400',
+    pending: 'bg-slate-500/25 text-slate-300',
+    submitted: 'bg-amber-500/20 text-amber-300',
+    reviewing: 'bg-yellow-500/20 text-yellow-400',
     countered: 'bg-purple-500/20 text-purple-400',
     accepted: 'bg-emerald-500/20 text-emerald-400',
-    rejected: 'bg-red-500/20 text-red-400',
-    withdrawn: 'bg-slate-500/20 text-slate-400',
+    rejected: 'bg-[#E32E2E]/20 text-[#f87171]',
+    withdrawn: 'bg-zinc-500/20 text-zinc-400',
     expired: 'bg-orange-500/20 text-orange-400',
   }
-  return map[status] ?? 'bg-slate-500/20 text-slate-400'
+  return map[status] ?? 'bg-slate-500/25 text-slate-300'
 }
 
 function formatDate(iso: string | null) {
@@ -197,7 +197,7 @@ function CounterModal({
               <span className="absolute inset-y-0 left-3 flex items-center text-slate-400 text-sm font-semibold">$</span>
               <input
                 type="number"
-                className="w-full border border-slate-200 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full border border-slate-200 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 focus:border-[#E32E2E]/60"
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 placeholder="150000"
@@ -207,7 +207,7 @@ function CounterModal({
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Notes</label>
             <textarea
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 focus:border-[#E32E2E]/60 resize-none"
               rows={3}
               value={notes}
               onChange={e => setNotes(e.target.value)}
@@ -225,7 +225,7 @@ function CounterModal({
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
+              className="flex-1 bg-[var(--ck-warn)] text-[#0a0a0a] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 transition-opacity"
             >
               {loading ? 'Sending…' : 'Send Counter'}
             </button>
@@ -267,7 +267,7 @@ function ConfirmDialog({
           <div className="mb-4">
             <label className="block text-xs font-semibold text-slate-600 mb-1">Reason (optional)</label>
             <textarea
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 focus:border-[#E32E2E]/60 resize-none"
               rows={2}
               value={reason}
               onChange={e => setReason(e.target.value)}
@@ -590,7 +590,7 @@ export default function OffersPage() {
             className={cn(
               'px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
               statusFilter === val
-                ? 'bg-primary text-white'
+                ? 'bg-[#E32E2E] text-white'
                 : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
             )}
           >
