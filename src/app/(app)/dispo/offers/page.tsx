@@ -330,15 +330,16 @@ function OfferDetail({
   offer,
   onAction,
   onEdited,
+  onStartAssignment,
 }: {
   offer: BuyerOffer
   onAction: (offerId: string, newStatus: BuyerOffer['status'], extra?: Record<string, unknown>) => void
   onEdited: () => void
+  onStartAssignment: () => void
 }) {
   const [confirm, setConfirm] = useState<'accept' | 'reject' | null>(null)
   const [showCounter, setShowCounter] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
-  const [showAssignment, setShowAssignment] = useState(false)
 
   const buyer = offer.buyer
   const lead = offer.lead
@@ -390,13 +391,6 @@ function OfferDetail({
           offer={offer}
           onClose={() => setShowEdit(false)}
           onSaved={() => { setShowEdit(false); onEdited() }}
-        />
-      )}
-      {showAssignment && (
-        <AssignmentPreviewModal
-          offer={offer}
-          onClose={() => setShowAssignment(false)}
-          onSent={() => { setShowAssignment(false); onEdited() }}
         />
       )}
 
@@ -486,7 +480,7 @@ function OfferDetail({
             </button>
             {offer.status === 'accepted' && !offer.assignment_sent_at && (
               <button
-                onClick={() => setShowAssignment(true)}
+                onClick={onStartAssignment}
                 className="flex items-center gap-1.5 bg-[#E32E2E] hover:bg-[#c72626] text-white rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
               >
                 <Icon name="description" size="text-sm" />
@@ -562,6 +556,7 @@ export default function OffersPage() {
   const [error, setError] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [newOfferOpen, setNewOfferOpen] = useState(false)
+  const [assignmentOffer, setAssignmentOffer] = useState<BuyerOffer | null>(null)
 
   async function fetchOffers() {
     setLoading(true)
@@ -660,6 +655,14 @@ export default function OffersPage() {
         <NewOfferModal
           onClose={() => setNewOfferOpen(false)}
           onCreated={() => { setFeedback('Offer created'); setTimeout(() => setFeedback(null), 2500); fetchOffers() }}
+        />
+      )}
+
+      {assignmentOffer && (
+        <AssignmentPreviewModal
+          offer={assignmentOffer}
+          onClose={() => setAssignmentOffer(null)}
+          onSent={() => { setAssignmentOffer(null); setFeedback('Assignment sent'); setTimeout(() => setFeedback(null), 2500); fetchOffers() }}
         />
       )}
 
@@ -793,12 +796,29 @@ export default function OffersPage() {
                                   </span>
                                   {(() => {
                                     const ab = assignmentBadge(offer)
-                                    return ab ? (
-                                      <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap', ab.className)}>
+                                    if (!ab) return null
+                                    const isActionable = !offer.assignment_sent_at
+                                    const cls = cn(
+                                      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap',
+                                      ab.className,
+                                      isActionable && 'cursor-pointer hover:border-[#E32E2E]/70 hover:text-[var(--ck-accent-bright)] transition-colors'
+                                    )
+                                    return isActionable ? (
+                                      <button
+                                        type="button"
+                                        onClick={e => { e.stopPropagation(); setAssignmentOffer(offer) }}
+                                        className={cls}
+                                        title="Start assignment wizard"
+                                      >
+                                        <Icon name={ab.icon} size="text-[13px]" />
+                                        {ab.label}
+                                      </button>
+                                    ) : (
+                                      <span className={cls}>
                                         <Icon name={ab.icon} size="text-[13px]" />
                                         {ab.label}
                                       </span>
-                                    ) : null
+                                    )
                                   })()}
                                 </div>
                               </td>
@@ -819,6 +839,7 @@ export default function OffersPage() {
                                     offer={offer}
                                     onAction={handleAction}
                                     onEdited={() => { setFeedback('Offer updated'); setTimeout(() => setFeedback(null), 2000); fetchOffers() }}
+                                    onStartAssignment={() => setAssignmentOffer(offer)}
                                   />
                                 </td>
                               </tr>
