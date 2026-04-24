@@ -10,7 +10,7 @@ import type { DispoDeal, DispoStage } from '@/types/dispo'
 // ---------------------------------------------------------------------------
 const STAGES: { key: DispoStage | 'all'; label: string; icon: string; color: string }[] = [
   { key: 'all', label: 'All', icon: 'view_list', color: 'bg-slate-600' },
-  { key: 'new', label: 'New', icon: 'fiber_new', color: 'bg-cyan-600' },
+  { key: 'new', label: 'New', icon: 'fiber_new', color: 'bg-fuchsia-600' },
   { key: 'marketing', label: 'Marketing', icon: 'campaign', color: 'bg-violet-600' },
   { key: 'offers_in', label: 'Offers In', icon: 'local_offer', color: 'bg-amber-600' },
   { key: 'negotiating', label: 'Negotiating', icon: 'handshake', color: 'bg-orange-600' },
@@ -25,7 +25,7 @@ function stageConfig(stage: DispoStage) {
 
 function stageBadgeClass(stage: DispoStage): string {
   const map: Record<DispoStage, string> = {
-    new: 'bg-cyan-500/20 text-cyan-400',
+    new: 'bg-fuchsia-500/20 text-fuchsia-400',
     marketing: 'bg-violet-500/20 text-violet-400',
     offers_in: 'bg-amber-500/20 text-amber-400',
     negotiating: 'bg-orange-500/20 text-orange-400',

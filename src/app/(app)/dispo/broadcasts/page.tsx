@@ -12,7 +12,7 @@ import type { DealBroadcast, BroadcastRecipient } from '@/types/dispo'
 function statusBadge(status: DealBroadcast['status']) {
   const map: Record<DealBroadcast['status'], string> = {
     draft: 'bg-slate-500/20 text-slate-300',
-    scheduled: 'bg-sky-500/20 text-sky-300',
+    scheduled: 'bg-amber-500/20 text-amber-300',
     sending: 'bg-amber-500/20 text-amber-300',
     sent: 'bg-emerald-500/20 text-emerald-300',
     cancelled: 'bg-red-500/20 text-red-300',
@@ -43,13 +43,13 @@ function RecipientRow({ recipient }: { recipient: BroadcastRecipient }) {
 
   function smsBadge() {
     if (recipient.sms_replied) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">Replied</span>
-    if (recipient.sms_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/20 text-sky-300">Sent</span>
+    if (recipient.sms_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300">Sent</span>
     return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">Not sent</span>
   }
 
   function emailBadge() {
     if (recipient.email_clicked_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">Clicked</span>
-    if (recipient.email_opened_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/20 text-sky-300">Opened</span>
+    if (recipient.email_opened_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300">Opened</span>
     if (recipient.email_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">Sent</span>
     return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">—</span>
   }
@@ -164,7 +164,7 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
           {!showSendForm ? (
             <button
               onClick={() => setShowSendForm(true)}
-              className="bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2"
+              className="bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2"
             >
               <Icon name="send" size="text-sm" />
               Send Broadcast
@@ -175,7 +175,7 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">SMS Body</label>
                 <textarea
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none"
                   rows={3}
                   value={smsBody}
                   onChange={e => setSmsBody(e.target.value)}
@@ -185,7 +185,7 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Email Subject</label>
                 <input
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
                   value={emailSubject}
                   onChange={e => setEmailSubject(e.target.value)}
                   placeholder="New Deal Available — 64112"
@@ -194,7 +194,7 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Email Body</label>
                 <textarea
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none"
                   rows={4}
                   value={emailBody}
                   onChange={e => setEmailBody(e.target.value)}
@@ -211,7 +211,7 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
                 <button
                   onClick={handleSend}
                   disabled={sendBroadcast.isPending}
-                  className="bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 flex items-center gap-2"
+                  className="bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 flex items-center gap-2"
                 >
                   <Icon name="send" size="text-sm" />
                   {sendBroadcast.isPending ? 'Sending…' : `Send to ${broadcast.total_recipients} buyers`}
@@ -313,14 +313,14 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
             <label className="block text-xs font-semibold text-slate-600 mb-1">Search Lead by Address</label>
             <div className="relative">
               <input
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
                 value={leadSearch}
                 onChange={e => { setLeadSearch(e.target.value); debouncedSearchLeads(e.target.value) }}
                 placeholder="123 Main St..."
               />
               {searching && (
                 <div className="absolute inset-y-0 right-3 flex items-center">
-                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-[#E32E2E] border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
             </div>
@@ -339,7 +339,7 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
               </div>
             )}
             {selectedLead && (
-              <div className="mt-2 flex items-center gap-2 bg-primary/10 text-primary text-xs font-semibold rounded-lg px-3 py-2">
+              <div className="mt-2 flex items-center gap-2 bg-[#E32E2E]/10 text-primary text-xs font-semibold rounded-lg px-3 py-2">
                 <Icon name="check_circle" size="text-sm" />
                 {selectedLead.property_address}
               </div>
@@ -358,7 +358,7 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
                   key={opt.val}
                   className={cn(
                     'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
-                    broadcastType === opt.val ? 'border-primary bg-primary/5' : 'border-slate-200 hover:bg-slate-50'
+                    broadcastType === opt.val ? 'border-[#E32E2E] bg-[#E32E2E]/5' : 'border-slate-200 hover:bg-slate-50'
                   )}
                 >
                   <input
@@ -388,7 +388,7 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
             <button
               onClick={handleCreate}
               disabled={createBroadcast.isPending || !selectedLead}
-              className="flex-1 bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
+              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
             >
               {createBroadcast.isPending ? 'Creating…' : 'Create Broadcast'}
             </button>
@@ -428,7 +428,7 @@ export default function BroadcastsPage() {
         </div>
         <button
           onClick={() => setShowNew(true)}
-          className="flex items-center gap-2 bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-semibold self-start sm:self-auto"
+          className="flex items-center gap-2 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold self-start sm:self-auto"
         >
           <Icon name="campaign" size="text-sm" />
           New Broadcast
@@ -445,7 +445,7 @@ export default function BroadcastsPage() {
           <p className="text-slate-400 text-sm mt-1 mb-6">Create a broadcast to blast your buyers about a new deal</p>
           <button
             onClick={() => setShowNew(true)}
-            className="bg-primary text-white hover:bg-primary/90 rounded-lg px-5 py-2.5 text-sm font-semibold"
+            className="bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-5 py-2.5 text-sm font-semibold"
           >
             Create First Broadcast
           </button>
@@ -472,7 +472,7 @@ export default function BroadcastsPage() {
                       key={bc.id}
                       className={cn(
                         'hover:bg-slate-50 transition-colors cursor-pointer',
-                        selectedId === bc.id && 'bg-primary/5'
+                        selectedId === bc.id && 'bg-[#E32E2E]/5'
                       )}
                       onClick={() => setSelectedId(selectedId === bc.id ? null : bc.id)}
                     >
