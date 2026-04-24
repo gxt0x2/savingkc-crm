@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import type { BuyerOffer } from '@/types/dispo'
 import { NewOfferModal } from '@/components/dispo/new-offer-modal'
+import { EditOfferModal } from '@/components/dispo/edit-offer-modal'
 
 // Score an offer 0-100 on how well it aligns with our goals (clean, fast,
 // well-priced close) and the seller's (hit or beat asking). Weights:
@@ -300,12 +301,15 @@ function ConfirmDialog({
 function OfferDetail({
   offer,
   onAction,
+  onEdited,
 }: {
   offer: BuyerOffer
   onAction: (offerId: string, newStatus: BuyerOffer['status'], extra?: Record<string, unknown>) => void
+  onEdited: () => void
 }) {
   const [confirm, setConfirm] = useState<'accept' | 'reject' | null>(null)
   const [showCounter, setShowCounter] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
 
   const buyer = offer.buyer
   const lead = offer.lead
@@ -350,6 +354,13 @@ function OfferDetail({
           offer={offer}
           onClose={() => setShowCounter(false)}
           onCountered={() => { setShowCounter(false); onAction(offer.id, 'countered') }}
+        />
+      )}
+      {showEdit && (
+        <EditOfferModal
+          offer={offer}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); onEdited() }}
         />
       )}
 
@@ -429,31 +440,40 @@ function OfferDetail({
           )}
 
           {/* Action buttons */}
-          {canAct && (
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setConfirm('accept')}
-                className="flex items-center gap-1.5 bg-[var(--ck-success)] text-white hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
-              >
-                <Icon name="check_circle" size="text-sm" />
-                Accept
-              </button>
-              <button
-                onClick={() => setShowCounter(true)}
-                className="flex items-center gap-1.5 bg-[var(--ck-warn)] text-[#0a0a0a] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
-              >
-                <Icon name="swap_horizontal_circle" size="text-sm" />
-                Counter
-              </button>
-              <button
-                onClick={() => setConfirm('reject')}
-                className="flex items-center gap-1.5 bg-[#E32E2E]/10 border border-[#E32E2E]/40 text-[var(--ck-accent-bright)] hover:bg-[#E32E2E]/20 hover:border-[#E32E2E]/60 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
-              >
-                <Icon name="cancel" size="text-sm" />
-                Reject
-              </button>
-            </div>
-          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setShowEdit(true)}
+              className="flex items-center gap-1.5 bg-transparent border border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-slate-400 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+            >
+              <Icon name="edit" size="text-sm" />
+              Edit
+            </button>
+            {canAct && (
+              <>
+                <button
+                  onClick={() => setConfirm('accept')}
+                  className="flex items-center gap-1.5 bg-[var(--ck-success)] text-white hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
+                >
+                  <Icon name="check_circle" size="text-sm" />
+                  Accept
+                </button>
+                <button
+                  onClick={() => setShowCounter(true)}
+                  className="flex items-center gap-1.5 bg-[var(--ck-warn)] text-[#0a0a0a] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
+                >
+                  <Icon name="swap_horizontal_circle" size="text-sm" />
+                  Counter
+                </button>
+                <button
+                  onClick={() => setConfirm('reject')}
+                  className="flex items-center gap-1.5 bg-[#E32E2E]/10 border border-[#E32E2E]/40 text-[var(--ck-accent-bright)] hover:bg-[#E32E2E]/20 hover:border-[#E32E2E]/60 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+                >
+                  <Icon name="cancel" size="text-sm" />
+                  Reject
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </>
@@ -722,7 +742,11 @@ export default function OffersPage() {
                             {expandedId === offer.id && (
                               <tr className="border-b border-slate-100">
                                 <td colSpan={7} className="p-0">
-                                  <OfferDetail offer={offer} onAction={handleAction} />
+                                  <OfferDetail
+                                    offer={offer}
+                                    onAction={handleAction}
+                                    onEdited={() => { setFeedback('Offer updated'); setTimeout(() => setFeedback(null), 2000); fetchOffers() }}
+                                  />
                                 </td>
                               </tr>
                             )}
