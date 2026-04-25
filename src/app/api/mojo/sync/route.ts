@@ -420,6 +420,14 @@ async function processPhase2Intelligence(
       }
       if (analysisResult.coOwners && analysisResult.coOwners.length > 0) {
         manifest.owner.coOwners = mergeArrays(manifest.owner.coOwners, analysisResult.coOwners)
+        if (leadId) {
+          try {
+            const { syncCoOwners } = await import('@/lib/co-owners')
+            await syncCoOwners({ leadId, names: analysisResult.coOwners, source: 'ai_extraction' })
+          } catch (e) {
+            console.error('[mojo sync] co-owners table write failed:', e)
+          }
+        }
       }
       if (analysisResult.outOfState !== undefined && analysisResult.outOfState !== null) {
         manifest.owner.outOfState = analysisResult.outOfState

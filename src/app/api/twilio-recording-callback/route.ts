@@ -6,6 +6,7 @@ import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { supabase } from '@/lib/supabase-lazy'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
+import { syncCoOwners } from '@/lib/co-owners'
 
 // WebRTC-initiated calls record against the parent leg whose To/From are
 // client identifiers rather than the dialed number. When the lookup-by-phone
@@ -202,6 +203,12 @@ async function processRecording(
         source: 'crm_call',
         sourceCallId: recordingSid,
       })
+    }
+
+    // Cascade co-owners to the relational table so we can query
+    // "all leads with co-owner X" without scanning manifest JSON.
+    if (analysis.coOwners?.length) {
+      await syncCoOwners({ leadId, names: analysis.coOwners, source: 'ai_extraction' })
     }
   } else {
     // No analysis available but still refresh the transcript + duration
