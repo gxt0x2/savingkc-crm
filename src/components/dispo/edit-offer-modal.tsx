@@ -2,17 +2,21 @@
 
 import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { useIsAdmin } from '@/hooks/use-is-admin'
 import type { BuyerOffer } from '@/types/dispo'
 
 interface Props {
   offer: BuyerOffer
   onClose: () => void
   onSaved: () => void
+  onDeleted?: () => void
 }
 
-export function EditOfferModal({ offer, onClose, onSaved }: Props) {
+export function EditOfferModal({ offer, onClose, onSaved, onDeleted }: Props) {
   const [submitting, setSubmitting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { isAdmin } = useIsAdmin()
 
   const [form, setForm] = useState({
     offer_amount: String(offer.offer_amount ?? ''),
@@ -61,6 +65,32 @@ export function EditOfferModal({ offer, onClose, onSaved }: Props) {
       setError(err instanceof Error ? err.message : 'Failed to update offer')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleDelete() {
+    const buyerName = offer.buyer?.name || 'this buyer'
+    const propertyAddress = offer.lead?.property_address || 'this property'
+    const ok = window.confirm(
+      `Permanently delete this offer from ${buyerName} on ${propertyAddress}? This cannot be undone.`
+    )
+    if (!ok) return
+
+    setError(null)
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/offers/${offer.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to delete offer')
+      }
+      if (onDeleted) onDeleted()
+      else onSaved()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete offer')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -165,17 +195,33 @@ export function EditOfferModal({ offer, onClose, onSaved }: Props) {
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50">
-          <button type="button" onClick={onClose} className="text-sm font-semibold text-slate-600 hover:text-slate-900 px-4 py-2">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="bg-[#E32E2E] hover:bg-[#c72626] text-white text-sm font-bold px-5 py-2 rounded-lg disabled:opacity-50 transition-colors"
-          >
-            {submitting ? 'Saving…' : 'Save Changes'}
-          </button>
+        <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50">
+          <div>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting || submitting}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#E32E2E] hover:bg-[#E32E2E]/10 px-3 py-2 rounded-lg disabled:opacity-50 transition-colors"
+                title="Delete this offer"
+              >
+                <Icon name="delete" size="text-base" />
+                {deleting ? 'Deleting…' : 'Delete Offer'}
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onClose} className="text-sm font-semibold text-slate-600 hover:text-slate-900 px-4 py-2">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || deleting}
+              className="bg-[#E32E2E] hover:bg-[#c72626] text-white text-sm font-bold px-5 py-2 rounded-lg disabled:opacity-50 transition-colors"
+            >
+              {submitting ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
         </div>
       </form>
     </div>
