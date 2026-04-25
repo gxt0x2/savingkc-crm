@@ -335,15 +335,26 @@ function buildContext(lead: any, manifest: any, activities: any[], canonicalAppo
       weekday: 'short', month: 'long', day: 'numeric',
       hour: 'numeric', minute: '2-digit', hour12: true,
     })
-    const ct = new Date(apptDate.toLocaleString('en-US', { timeZone: 'America/Chicago' }))
-    const offsetMin = (apptDate.getTime() - ct.getTime()) / 60000
-    const offHr = Math.floor(Math.abs(offsetMin) / 60)
-    const offMin = Math.abs(offsetMin) % 60
-    const sign = offsetMin >= 0 ? '-' : '+'
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const y = ct.getFullYear(), mo = pad(ct.getMonth() + 1), d = pad(ct.getDate())
-    const hh = pad(ct.getHours()), mm = pad(ct.getMinutes()), ss = pad(ct.getSeconds())
-    const ctIsoFinal = `${y}-${mo}-${d}T${hh}:${mm}:${ss}${sign}${pad(offHr)}:${pad(offMin)}`
+    // Build a strict CT ISO using Intl.DateTimeFormat parts — avoids the
+    // "local TZ already is Chicago" bug where the offset calculation
+    // collapsed to 00:00.
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false, timeZoneName: 'longOffset',
+    })
+    const fmtParts = fmt.formatToParts(apptDate)
+    const get = (t: string) => fmtParts.find(p => p.type === t)?.value || ''
+    const offsetRaw = get('timeZoneName').replace(/^GMT/, '') || '-05:00'
+    // longOffset can produce 'GMT-5' instead of '-05:00' on some runtimes.
+    const offsetMatch = offsetRaw.match(/^([+-])(\d{1,2})(?::?(\d{2}))?$/)
+    const offsetIso = offsetMatch
+      ? `${offsetMatch[1]}${String(offsetMatch[2]).padStart(2, '0')}:${offsetMatch[3] ?? '00'}`
+      : '-05:00'
+    let hh = get('hour')
+    if (hh === '24') hh = '00' // some Node versions emit 24:00:00
+    const ctIsoFinal = `${get('year')}-${get('month')}-${get('day')}T${hh}:${get('minute')}:${get('second')}${offsetIso}`
     parts.push(
       `\n## CANONICAL APPOINTMENT (use this as the next action when in the future)`,
       `Local time (Central): ${apptCT} CT`,
