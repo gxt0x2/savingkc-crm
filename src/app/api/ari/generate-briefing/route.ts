@@ -377,6 +377,25 @@ async function generateBriefing(
     })
     .eq('id', manifestId)
 
+  // Dual-write to relational briefings table — readers fall back to
+  // manifest until enough leads are migrated. Step 4 of the demote-the-
+  // manifest plan.
+  if (leadId) {
+    try {
+      const { saveBriefing } = await import('@/lib/briefings')
+      await saveBriefing({
+        leadId,
+        situation: sanitizedBriefing.situation || null,
+        motivation: sanitizedBriefing.motivation || null,
+        strategy: sanitizedBriefing.strategy || null,
+        generatedFrom: dataSources,
+        generatedBy: 'system:ari',
+      })
+    } catch (e) {
+      console.error('[generate-briefing] briefings table write failed:', e)
+    }
+  }
+
   return sanitizedBriefing
 }
 
