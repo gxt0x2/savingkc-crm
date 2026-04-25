@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import twilio from 'twilio'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
@@ -334,7 +335,6 @@ async function processRecording(
         // the lead page, NextAction, and ghost-protocol all see a single
         // structured record instead of guessing from prose.
         if (analysis.appointmentDateTime) {
-          const { randomUUID } = await import('crypto')
           manifest.pipeline = manifest.pipeline || {}
           manifest.pipeline.appointment = {
             appointmentId: randomUUID(),
