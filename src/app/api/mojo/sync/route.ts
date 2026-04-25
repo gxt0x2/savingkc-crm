@@ -1118,6 +1118,18 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         leadBackfill.transcript = latestTranscript.fullTranscript
       }
 
+      // Cascade pipeline.appointment to the relational lead row so the lead
+      // page and next-action engine read appointments from one source of
+      // truth. Manifest stays authoritative for richer fields (status,
+      // ghost protocol, automation log).
+      const apptScheduledAt = manifest.pipeline?.appointment?.scheduledAt
+      if (apptScheduledAt) {
+        leadBackfill.appointment_date = apptScheduledAt
+        if (manifest.pipeline.appointment.notes) {
+          leadBackfill.appointment_notes = String(manifest.pipeline.appointment.notes).slice(0, 2000)
+        }
+      }
+
       if (Object.keys(leadBackfill).length > 0) {
         await supabase.from('leads').update(leadBackfill).eq('id', leadId)
         console.log(`[queue] Cascaded ${Object.keys(leadBackfill).length} fields to lead ${leadId}: ${Object.keys(leadBackfill).join(', ')}`)
