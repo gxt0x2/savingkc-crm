@@ -4,13 +4,12 @@ import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import type { BuyerOffer } from '@/types/dispo'
 
-// Two-step flow so the user sees the actual filled DocuSeal contract before
-// the buyer ever gets an email:
+// Two-step flow:
 //   1. On open, POST /api/offers/:id/assignment — creates a DocuSeal
-//      submission with send_email:false and returns the Assignee's
-//      embed_src. We iframe it as the preview.
-//   2. User clicks "Send to Buyer" → POST .../send to trigger the email.
-//      User clicks "Cancel" → DELETE to archive the DocuSeal submission.
+//      submission with send_email:false. We iframe the Assignor's embed_src
+//      so the user (Ernest) signs as Assignor first.
+//   2. After signing, click "Send to Buyer" → POST .../send to trigger the
+//      Assignee email invite. Click "Cancel" → DELETE to archive.
 interface Props {
   offer: BuyerOffer
   onClose: () => void
@@ -37,7 +36,7 @@ export function AssignmentPreviewModal({ offer, onClose, onSent }: Props) {
         if (!cancelled) {
           setPreview({
             submissionId: data.submissionId,
-            embedSrc: data.assignee?.embedSrc ?? null,
+            embedSrc: data.assignor?.embedSrc ?? null,
             assigneeEmail: data.assignee?.email ?? null,
           })
         }
@@ -142,7 +141,7 @@ export function AssignmentPreviewModal({ offer, onClose, onSent }: Props) {
 
         <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
           <p className="text-xs text-[var(--ck-text-muted)]">
-            Review the contract above. Clicking Send will email the buyer a signing link.
+            Sign as Assignor above. Clicking Send will email the buyer their signing link.
           </p>
           <div className="flex items-center gap-2">
             <button
