@@ -420,14 +420,6 @@ async function processPhase2Intelligence(
       }
       if (analysisResult.coOwners && analysisResult.coOwners.length > 0) {
         manifest.owner.coOwners = mergeArrays(manifest.owner.coOwners, analysisResult.coOwners)
-        if (leadId) {
-          try {
-            const { syncCoOwners } = await import('@/lib/co-owners')
-            await syncCoOwners({ leadId, names: analysisResult.coOwners, source: 'ai_extraction' })
-          } catch (e) {
-            console.error('[mojo sync] co-owners table write failed:', e)
-          }
-        }
       }
       if (analysisResult.outOfState !== undefined && analysisResult.outOfState !== null) {
         manifest.owner.outOfState = analysisResult.outOfState
@@ -1152,6 +1144,20 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
           })
         } catch (e) {
           console.error('[mojo sync] appointment upsert failed:', e)
+        }
+      }
+
+      // Cascade co-owners from manifest into the relational table so we can
+      // query "all leads with co-owner X" without scanning manifest JSON.
+      const coOwners = (manifest.owner?.coOwners || []).filter(
+        (n: unknown): n is string => typeof n === 'string' && n.trim().length > 1,
+      )
+      if (coOwners.length > 0) {
+        try {
+          const { syncCoOwners } = await import('@/lib/co-owners')
+          await syncCoOwners({ leadId, names: coOwners, source: 'ai_extraction' })
+        } catch (e) {
+          console.error('[mojo sync] co-owners table write failed:', e)
         }
       }
 
