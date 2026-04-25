@@ -175,6 +175,17 @@ async function processRecording(
     if (analysis.sellerAsking) leadUpdates.asking_price = analysis.sellerAsking
     if (typeof analysis.opportunity_score === 'number') leadUpdates.opportunity_score = analysis.opportunity_score
     if (analysis.classification) leadUpdates.classification = analysis.classification
+
+    // Promote AI-extracted appointment to the relational lead row so the lead
+    // page, next-action engine, and any future appointments dashboard read
+    // from one source of truth instead of digging through manifest JSON.
+    if (analysis.appointmentDateTime) {
+      leadUpdates.appointment_date = analysis.appointmentDateTime
+      const apptType = analysis.appointmentType ? `${analysis.appointmentType} appointment` : 'Appointment'
+      const summary = analysis.aiSummary || analysis.summary || analysis.followUpAction || ''
+      leadUpdates.appointment_notes = summary ? `${apptType} — ${summary}` : apptType
+    }
+
     await supabase.from('leads').update(leadUpdates).eq('id', leadId)
   } else {
     // No analysis available but still refresh the transcript + duration
@@ -316,6 +327,30 @@ async function processRecording(
             reason: 'transcript_analysis',
             when: analysis.followUpDateTime || null,
           })
+        }
+
+        // Mirror of mojo/sync: when the analyzer extracts a concrete
+        // appointment, write it as the canonical pipeline.appointment so
+        // the lead page, NextAction, and ghost-protocol all see a single
+        // structured record instead of guessing from prose.
+        if (analysis.appointmentDateTime) {
+          const { randomUUID } = await import('crypto')
+          manifest.pipeline = manifest.pipeline || {}
+          manifest.pipeline.appointment = {
+            appointmentId: randomUUID(),
+            type: (analysis.appointmentType as 'phone_call' | 'in_person' | 'google_meet') || 'phone_call',
+            scheduledAt: analysis.appointmentDateTime,
+            createdAt: new Date().toISOString(),
+            status: 'scheduled',
+            confirmationCount: 0,
+            lastSellerResponse: null,
+            ghostRiskScore: 0,
+            ghostProtocolActive: false,
+            automationLog: [],
+            assignedTo: 'casey',
+            address: null,
+            notes: analysis.aiSummary || analysis.summary || analysis.followUpAction || 'Extracted from CRM call transcript',
+          }
         }
       }
 
