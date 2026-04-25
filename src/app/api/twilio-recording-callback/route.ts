@@ -5,6 +5,7 @@ import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { supabase } from '@/lib/supabase-lazy'
+import { upsertAppointmentFromCall } from '@/lib/appointments'
 
 // WebRTC-initiated calls record against the parent leg whose To/From are
 // client identifiers rather than the dialed number. When the lookup-by-phone
@@ -184,10 +185,24 @@ async function processRecording(
       leadUpdates.appointment_date = analysis.appointmentDateTime
       const apptType = analysis.appointmentType ? `${analysis.appointmentType} appointment` : 'Appointment'
       const summary = analysis.aiSummary || analysis.summary || analysis.followUpAction || ''
-      leadUpdates.appointment_notes = summary ? `${apptType} — ${summary}` : apptType
+      leadUpdates.appointment_notes = summary ? `${apptType}. ${summary}` : apptType
     }
 
     await supabase.from('leads').update(leadUpdates).eq('id', leadId)
+
+    // Also upsert into the dedicated appointments table (canonical source of
+    // truth going forward). leads.appointment_date stays as a denormalized
+    // cache of the next upcoming appointment.
+    if (analysis.appointmentDateTime) {
+      await upsertAppointmentFromCall({
+        leadId,
+        scheduledAt: analysis.appointmentDateTime,
+        type: (analysis.appointmentType as 'phone_call' | 'in_person' | 'google_meet') || 'phone_call',
+        notes: leadUpdates.appointment_notes as string,
+        source: 'crm_call',
+        sourceCallId: recordingSid,
+      })
+    }
   } else {
     // No analysis available but still refresh the transcript + duration
     await supabase.from('leads').update({

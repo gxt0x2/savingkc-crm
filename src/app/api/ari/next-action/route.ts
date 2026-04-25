@@ -27,7 +27,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'leadId required' }, { status: 400 })
     }
 
-    const [{ data: lead }, { data: manifestRow }, { data: activities }] = await Promise.all([
+    const nowIso = new Date().toISOString()
+    const [{ data: lead }, { data: manifestRow }, { data: activities }, { data: nextAppt }] = await Promise.all([
       supabase.from('leads').select('*').eq('id', leadId).maybeSingle(),
       supabase.from('manifests').select('manifest').eq('lead_id', leadId).limit(1).maybeSingle(),
       supabase
@@ -36,6 +37,15 @@ export async function POST(request: Request) {
         .eq('lead_id', leadId)
         .order('created_at', { ascending: false })
         .limit(100),
+      supabase
+        .from('appointments')
+        .select('*')
+        .eq('lead_id', leadId)
+        .in('status', ['scheduled', 'confirmed', 'rescheduled'])
+        .gte('scheduled_at', nowIso)
+        .order('scheduled_at', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
     ])
 
     if (!lead) {
@@ -44,7 +54,14 @@ export async function POST(request: Request) {
 
     const manifest = manifestRow?.manifest
     const firstName = String(lead.full_name || '').trim().split(/\s+/)[0] || 'the seller'
-    const context = buildContext(lead, manifest, activities ?? [])
+    // Prefer appointments table (canonical) — fall back to lead.appointment_date
+    // for leads that haven't been re-touched since the table was added.
+    const canonicalAppointment = nextAppt
+      ? { scheduledAt: nextAppt.scheduled_at, type: nextAppt.type, address: nextAppt.address, notes: nextAppt.notes }
+      : lead.appointment_date
+        ? { scheduledAt: lead.appointment_date, type: 'phone_call', address: null, notes: lead.appointment_notes ?? null }
+        : null
+    const context = buildContext(lead, manifest, activities ?? [], canonicalAppointment)
 
     const groqKey = process.env.GROQ_API_KEY
     if (!groqKey) {
@@ -284,7 +301,14 @@ ${context}`
 // Feeds the LLM a deep, organized dossier. Pulls ALL pending tasks, ALL
 // transcripts (with generous per-item budgets), ALL notes/emails/sms,
 // agenda recommendations, full situation, agent commitments, etc.
-function buildContext(lead: any, manifest: any, activities: any[]): string {
+interface CanonicalAppointment {
+  scheduledAt: string
+  type: string | null
+  address: string | null
+  notes: string | null
+}
+
+function buildContext(lead: any, manifest: any, activities: any[], canonicalAppointment?: CanonicalAppointment | null): string {
   const parts: string[] = []
 
   // ── Identity ─────────────────────────────────────────────────────────
@@ -300,60 +324,75 @@ function buildContext(lead: any, manifest: any, activities: any[]): string {
   if (lead.motivation_score != null) parts.push(`Motivation score (0-10): ${lead.motivation_score}`)
   if (lead.seller_situation) parts.push(`Seller situation (lead row): ${truncate(String(lead.seller_situation), 1000)}`)
 
-  // ── Canonical appointment (single source of truth on lead row) ──────
-  // When this is set, treat it as the next action — overrides any older
-  // recommendedActions prose in the manifest below. Pre-render the time in
+  // ── Canonical appointment (from appointments table when present) ─────
+  // When this is set, treat it as the next action. Pre-render the time in
   // America/Chicago so the LLM doesn't have to do timezone math (it gets
   // it wrong — drops the offset, leaves the digits, ends up off by 5h).
-  if (lead.appointment_date) {
-    const apptDate = new Date(lead.appointment_date)
+  if (canonicalAppointment?.scheduledAt) {
+    const apptDate = new Date(canonicalAppointment.scheduledAt)
     const apptCT = apptDate.toLocaleString('en-US', {
       timeZone: 'America/Chicago',
       weekday: 'short', month: 'long', day: 'numeric',
       hour: 'numeric', minute: '2-digit', hour12: true,
     })
-    // Build the strict CT ISO (with -05:00 or -06:00 depending on DST) so
-    // the dateTime field returned to the UI is correct without the model
-    // having to compute it.
     const ct = new Date(apptDate.toLocaleString('en-US', { timeZone: 'America/Chicago' }))
     const offsetMin = (apptDate.getTime() - ct.getTime()) / 60000
     const offHr = Math.floor(Math.abs(offsetMin) / 60)
     const offMin = Math.abs(offsetMin) % 60
     const sign = offsetMin >= 0 ? '-' : '+'
-    const ctIso = apptDate.toISOString().slice(0, 19).replace('T', 'T') // placeholder; real ISO below
     const pad = (n: number) => String(n).padStart(2, '0')
     const y = ct.getFullYear(), mo = pad(ct.getMonth() + 1), d = pad(ct.getDate())
     const hh = pad(ct.getHours()), mm = pad(ct.getMinutes()), ss = pad(ct.getSeconds())
     const ctIsoFinal = `${y}-${mo}-${d}T${hh}:${mm}:${ss}${sign}${pad(offHr)}:${pad(offMin)}`
-    void ctIso
     parts.push(
       `\n## CANONICAL APPOINTMENT (use this as the next action when in the future)`,
       `Local time (Central): ${apptCT} CT`,
       `Strict ISO with CT offset (use this VERBATIM in the dateTime field — do NOT transform): ${ctIsoFinal}`,
     )
-    if (lead.appointment_notes) {
-      parts.push(`Appointment notes: ${truncate(String(lead.appointment_notes), 600)}`)
+    if (canonicalAppointment.type) parts.push(`Type: ${canonicalAppointment.type}`)
+    if (canonicalAppointment.address) parts.push(`Location: ${canonicalAppointment.address}`)
+    if (canonicalAppointment.notes) {
+      parts.push(`Appointment notes: ${truncate(String(canonicalAppointment.notes), 600)}`)
     }
   }
 
   if (lead.notes) parts.push(`\nCRM NOTES (lead row):\n${truncate(String(lead.notes), 2000)}`)
 
   if (manifest) {
-    // ── Pipeline appointment ──────────────────────────────────────────
     parts.push(`\n## PIPELINE & SCHEDULE`)
-    const appt = manifest.pipeline?.appointment
-    if (appt?.scheduledAt) {
-      parts.push(
-        `Appointment: ${appt.scheduledAt} · type=${appt.type || '?'} · status=${appt.status || '?'} · location=${appt.location || '?'}${appt.notes ? ' · notes=' + truncate(String(appt.notes), 400) : ''}`
-      )
+    // Only include manifest.pipeline.appointment as a fallback when the
+    // canonical appointment isn't available — avoids the LLM seeing two
+    // appointments and picking the wrong one.
+    if (!canonicalAppointment) {
+      const appt = manifest.pipeline?.appointment
+      if (appt?.scheduledAt) {
+        parts.push(
+          `Appointment (manifest fallback): ${appt.scheduledAt} · type=${appt.type || '?'} · status=${appt.status || '?'} · location=${appt.location || '?'}${appt.notes ? ' · notes=' + truncate(String(appt.notes), 400) : ''}`
+        )
+      }
     }
 
     // ── AI-extracted follow-ups from call analyzer ───────────────────
-    const rec = manifest.ariIntelligence?.recommendedActions || []
-    if (rec.length) {
-      parts.push(`\nRECOMMENDED ACTIONS (from call analyzer):`)
-      for (const r of rec.slice(0, 10)) {
-        parts.push(`- "${r.action || '?'}" · when=${r.dateTime || '?'} · why=${truncate(String(r.reason || ''), 250)}`)
+    // recommendedActions is append-only with no dedup, so it accumulates
+    // contradictory entries over time. Filter aggressively before showing
+    // to the LLM: when there's a canonical appointment, only show recs
+    // scheduled AFTER it (post-appointment follow-ups). When there isn't,
+    // keep the most recent 3 only.
+    const rec: any[] = manifest.ariIntelligence?.recommendedActions || []
+    const cutoffMs = canonicalAppointment ? new Date(canonicalAppointment.scheduledAt).getTime() : 0
+    const keep = rec
+      .filter(r => {
+        if (!canonicalAppointment) return true
+        const w = r.when || r.dateTime
+        if (!w) return false
+        const t = new Date(w).getTime()
+        return Number.isFinite(t) && t > cutoffMs
+      })
+      .slice(0, canonicalAppointment ? 2 : 3)
+    if (keep.length) {
+      parts.push(`\nFOLLOW-UPS (post-appointment recommendations only):`)
+      for (const r of keep) {
+        parts.push(`- "${r.action || '?'}" · when=${r.when || r.dateTime || '?'} · why=${truncate(String(r.reason || ''), 250)}`)
       }
     }
 
