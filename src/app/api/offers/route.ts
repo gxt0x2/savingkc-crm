@@ -250,6 +250,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: insertErr.message }, { status: 500 })
     }
 
+    // Auto-link to dispo pipeline so a new offer always shows up there.
+    // Insert a dispo_deals row at 'offers_in' if none exists for this lead;
+    // bump an existing 'new'/'marketing' row to 'offers_in'; leave later
+    // stages (negotiating/under_contract/closed/dead) alone.
+    try {
+      const { data: existingDeal } = await db
+        .from('dispo_deals')
+        .select('id, stage')
+        .eq('lead_id', lead_id)
+        .maybeSingle()
+
+      if (!existingDeal) {
+        await db.from('dispo_deals').insert({ lead_id, stage: 'offers_in' })
+      } else if (existingDeal.stage === 'new' || existingDeal.stage === 'marketing') {
+        await db
+          .from('dispo_deals')
+          .update({ stage: 'offers_in', updated_at: new Date().toISOString() })
+          .eq('id', existingDeal.id)
+      }
+    } catch (e) {
+      console.error('[offers POST] dispo pipeline link failed:', e)
+    }
+
     return NextResponse.json({ offer }, { status: 201 })
   } catch (err) {
     console.error('[offers POST] Unexpected error:', err)

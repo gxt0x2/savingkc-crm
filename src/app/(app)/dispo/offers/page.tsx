@@ -392,6 +392,7 @@ function OfferDetail({
           offer={offer}
           onClose={() => setShowEdit(false)}
           onSaved={() => { setShowEdit(false); onEdited() }}
+          onDeleted={() => { setShowEdit(false); onEdited() }}
         />
       )}
 

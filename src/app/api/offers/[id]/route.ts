@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { isCurrentUserAdmin } from '@/lib/auth/admin'
 
 // PATCH /api/offers/[id]
 // Supports updating status (+ counter fields) and toggling is_top_pick.
@@ -123,6 +124,39 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ offer })
   } catch (err) {
     console.error('[offers PATCH /:id] Unexpected error:', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+// DELETE /api/offers/[id]
+// Admin-only. Hard-deletes the buyer_offers row. If any dispo_deals row
+// pointed at this offer as accepted_offer_id, that pointer is cleared
+// first so the foreign reference doesn't dangle.
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    if (!(await isCurrentUserAdmin())) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const { id } = await params
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+    const db = supabaseAdmin()
+
+    await db
+      .from('dispo_deals')
+      .update({ accepted_offer_id: null, accepted_buyer_id: null })
+      .eq('accepted_offer_id', id)
+
+    const { error } = await db.from('buyer_offers').delete().eq('id', id)
+    if (error) {
+      console.error('[offers DELETE /:id] Supabase error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('[offers DELETE /:id] Unexpected error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }
