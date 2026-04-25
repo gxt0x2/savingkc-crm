@@ -1128,6 +1128,23 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         if (appt.notes) {
           leadBackfill.appointment_notes = String(appt.notes).slice(0, 2000)
         }
+        // Mirror to the appointments table so /appointments queries and the
+        // next-action engine see one canonical record.
+        try {
+          const { upsertAppointmentFromCall } = await import('@/lib/appointments')
+          await upsertAppointmentFromCall({
+            leadId,
+            scheduledAt: appt.scheduledAt,
+            type: (appt.type as 'phone_call' | 'in_person' | 'google_meet') || 'phone_call',
+            address: appt.address ?? null,
+            notes: typeof appt.notes === 'string' ? appt.notes : null,
+            source: 'mojo_sync',
+            sourceCallId: call.record_id ? String(call.record_id) : null,
+            assignedTo: appt.assignedTo ?? null,
+          })
+        } catch (e) {
+          console.error('[mojo sync] appointment upsert failed:', e)
+        }
       }
 
       if (Object.keys(leadBackfill).length > 0) {
