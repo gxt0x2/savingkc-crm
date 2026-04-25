@@ -299,6 +299,16 @@ function buildContext(lead: any, manifest: any, activities: any[]): string {
   if (lead.priority) parts.push(`Priority: ${lead.priority}`)
   if (lead.motivation_score != null) parts.push(`Motivation score (0-10): ${lead.motivation_score}`)
   if (lead.seller_situation) parts.push(`Seller situation (lead row): ${truncate(String(lead.seller_situation), 1000)}`)
+
+  // ── Canonical appointment (single source of truth on lead row) ──────
+  // When this is set, treat it as the next action — overrides any older
+  // recommendedActions prose in the manifest below.
+  if (lead.appointment_date) {
+    parts.push(
+      `\n## CANONICAL APPOINTMENT (use this as the next action when in the future):\nappointment_date=${lead.appointment_date}${lead.appointment_notes ? ' · notes=' + truncate(String(lead.appointment_notes), 600) : ''}`
+    )
+  }
+
   if (lead.notes) parts.push(`\nCRM NOTES (lead row):\n${truncate(String(lead.notes), 2000)}`)
 
   if (manifest) {
