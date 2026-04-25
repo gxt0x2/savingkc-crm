@@ -1122,11 +1122,11 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       // page and next-action engine read appointments from one source of
       // truth. Manifest stays authoritative for richer fields (status,
       // ghost protocol, automation log).
-      const apptScheduledAt = manifest.pipeline?.appointment?.scheduledAt
-      if (apptScheduledAt) {
-        leadBackfill.appointment_date = apptScheduledAt
-        if (manifest.pipeline.appointment.notes) {
-          leadBackfill.appointment_notes = String(manifest.pipeline.appointment.notes).slice(0, 2000)
+      const appt = manifest.pipeline?.appointment
+      if (appt?.scheduledAt) {
+        leadBackfill.appointment_date = appt.scheduledAt
+        if (appt.notes) {
+          leadBackfill.appointment_notes = String(appt.notes).slice(0, 2000)
         }
       }
 

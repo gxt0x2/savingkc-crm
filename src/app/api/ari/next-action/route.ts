@@ -302,11 +302,38 @@ function buildContext(lead: any, manifest: any, activities: any[]): string {
 
   // ── Canonical appointment (single source of truth on lead row) ──────
   // When this is set, treat it as the next action — overrides any older
-  // recommendedActions prose in the manifest below.
+  // recommendedActions prose in the manifest below. Pre-render the time in
+  // America/Chicago so the LLM doesn't have to do timezone math (it gets
+  // it wrong — drops the offset, leaves the digits, ends up off by 5h).
   if (lead.appointment_date) {
+    const apptDate = new Date(lead.appointment_date)
+    const apptCT = apptDate.toLocaleString('en-US', {
+      timeZone: 'America/Chicago',
+      weekday: 'short', month: 'long', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    })
+    // Build the strict CT ISO (with -05:00 or -06:00 depending on DST) so
+    // the dateTime field returned to the UI is correct without the model
+    // having to compute it.
+    const ct = new Date(apptDate.toLocaleString('en-US', { timeZone: 'America/Chicago' }))
+    const offsetMin = (apptDate.getTime() - ct.getTime()) / 60000
+    const offHr = Math.floor(Math.abs(offsetMin) / 60)
+    const offMin = Math.abs(offsetMin) % 60
+    const sign = offsetMin >= 0 ? '-' : '+'
+    const ctIso = apptDate.toISOString().slice(0, 19).replace('T', 'T') // placeholder; real ISO below
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const y = ct.getFullYear(), mo = pad(ct.getMonth() + 1), d = pad(ct.getDate())
+    const hh = pad(ct.getHours()), mm = pad(ct.getMinutes()), ss = pad(ct.getSeconds())
+    const ctIsoFinal = `${y}-${mo}-${d}T${hh}:${mm}:${ss}${sign}${pad(offHr)}:${pad(offMin)}`
+    void ctIso
     parts.push(
-      `\n## CANONICAL APPOINTMENT (use this as the next action when in the future):\nappointment_date=${lead.appointment_date}${lead.appointment_notes ? ' · notes=' + truncate(String(lead.appointment_notes), 600) : ''}`
+      `\n## CANONICAL APPOINTMENT (use this as the next action when in the future)`,
+      `Local time (Central): ${apptCT} CT`,
+      `Strict ISO with CT offset (use this VERBATIM in the dateTime field — do NOT transform): ${ctIsoFinal}`,
     )
+    if (lead.appointment_notes) {
+      parts.push(`Appointment notes: ${truncate(String(lead.appointment_notes), 600)}`)
+    }
   }
 
   if (lead.notes) parts.push(`\nCRM NOTES (lead row):\n${truncate(String(lead.notes), 2000)}`)
