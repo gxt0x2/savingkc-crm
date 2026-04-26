@@ -91,14 +91,15 @@ Only start this phase if Phases 1 and 2 are complete.
 
 ## KEY CREDENTIALS (for wiring integrations)
 
-- **Supabase URL:** https://fprrknfyzlthbxewnwmi.supabase.co
-- **Supabase Service Role Key:** eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwcnJrbmZ5emx0aGJ4ZXdud21pIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3MTI2NywiZXhwIjoyMDg2MTQ3MjY3fQ.y4WbIp6fQKSpo83BZ8SxlsQXeEDY6NisvAhAr5SUZ0A
-- **Twilio SID:** ACa20f2f747d263115871f6053f42912e7
-- **Twilio Auth:** 030043bdc9efeb169b0a517f4b78ff91
-- **Twilio From:** +18163077835
-- **Dialer server:** https://dialer.savingkc.com (running locally at port 3847)
-- **Cloudflare API Token:** zRJNXCn2J-f6RToKL3FL9qCMglLhWuBiAJnkCOvC
-- **ElevenLabs Key:** sk_0b89a086d4644cac50524717c24550d2f051837cd8f9149c
+Use environment variables only. Do not place live credentials in docs or code.
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_PHONE_NUMBER`
+- `CLOUDFLARE_API_TOKEN`
+- `ELEVENLABS_API_KEY`
 
 ## DEPLOYMENT
 
