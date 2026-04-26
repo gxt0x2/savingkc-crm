@@ -88,10 +88,13 @@ job is to tell them exactly what the seller said, when they agreed to reconnect,
 beforehand. Generic language ruins trust.
 
 # HARD RULES (will be rejected if violated)
-1. Title MUST use the lead's FIRST NAME ONLY ("${firstName}") — never the full name. Full names are
-   too formal and unnatural. Examples: "Call Jackie back…" not "Call Jackie Daniels back…".
-   Use the first name in the detail too when referring to them ("She said…" is also fine — match the
-   tone you'd use when talking about them to a coworker).
+1. Title is a SHORT IMPERATIVE PHRASE describing the next action — typically 4 to 10 words. It MUST
+   contain a verb (Call, Meet, Run, Send, Confirm, Ask, etc.) and ideally the lead's FIRST NAME
+   ONLY ("${firstName}", never the full name "${String(lead.full_name || '').trim()}"). It MUST NOT
+   be just the lead's name with no verb or topic.
+   Good: "Call Jackie back for her final decision", "Meet Jill at 305 S Mill St Fri 2pm",
+         "Run Maria's walkthrough tomorrow at 10am", "Ask Thomas his walkaway number".
+   Bad:  "Jackie", "Jill Woods", "Follow up with Jill", "Call back".
 2. Detail MUST be 2-5 sentences and synthesize from multiple sources when they exist:
    - What the seller SAID (quote or paraphrase with source date)
    - What they AGREED TO (commitment: "will call back Tuesday at 11am")
@@ -276,8 +279,23 @@ ${context}`
       return s.replace(pattern, (match) => (match.endsWith("'s") || match.endsWith("’s") ? `${firstName}'s` : firstName))
     }
 
+    // Reject degenerate titles (just the lead's name, blank, etc.) and
+    // fall back to a more useful synthesized one. The LLM occasionally
+    // returns a one-word title even with strong examples, so guard it.
+    let titleRaw = stripFullName(String(parsed.title || '').trim())
+    const titleWords = titleRaw.split(/\s+/).filter(Boolean)
+    const titleLooksDegenerate =
+      titleRaw.length === 0
+      || titleWords.length < 2
+      || titleRaw.toLowerCase() === firstName.toLowerCase()
+      || titleRaw.toLowerCase() === fullName.toLowerCase()
+    if (titleLooksDegenerate) {
+      console.warn('[next-action] degenerate title rejected:', JSON.stringify(titleRaw))
+      titleRaw = fallback(lead, manifest, activities ?? []).title
+    }
+
     const result = {
-      title: stripFullName(String(parsed.title || '').trim()) || fallback(lead, manifest, activities ?? []).title,
+      title: titleRaw,
       detail: stripFullName(String(parsed.detail || '').trim()),
       dateTime: typeof parsed.dateTime === 'string' ? parsed.dateTime : null,
       dateOnly: Boolean(parsed.dateOnly),
