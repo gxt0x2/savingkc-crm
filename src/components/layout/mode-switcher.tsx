@@ -10,15 +10,21 @@ interface ModeSwitcherProps {
 
 export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
   return (
-    <div className="flex items-center bg-slate-100 rounded-full p-0.5 text-xs font-semibold">
+    <div
+      className="flex items-center rounded-full p-0.5 text-xs font-semibold"
+      style={{ background: 'var(--ck-surface-elev)' }}
+    >
       <button
         onClick={() => onChange('acquisitions')}
         className={cn(
           'px-3 py-1 rounded-full transition-all whitespace-nowrap',
           mode === 'acquisitions'
-            ? 'bg-white text-slate-900 shadow-sm'
-            : 'text-slate-500 hover:text-slate-700'
+            ? 'shadow-sm text-[var(--ck-text)]'
+            : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
         )}
+        style={mode === 'acquisitions'
+          ? { background: 'var(--ck-surface)' }
+          : undefined}
       >
         Acquisitions
       </button>
@@ -27,9 +33,12 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
         className={cn(
           'px-3 py-1 rounded-full transition-all whitespace-nowrap',
           mode === 'dispositions'
-            ? 'bg-white text-slate-900 shadow-sm'
-            : 'text-slate-500 hover:text-slate-700'
+            ? 'shadow-sm text-[var(--ck-text)]'
+            : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
         )}
+        style={mode === 'dispositions'
+          ? { background: 'var(--ck-surface)' }
+          : undefined}
       >
         Dispositions
       </button>

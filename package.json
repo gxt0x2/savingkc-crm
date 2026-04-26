@@ -10,7 +10,11 @@
     "test": "vitest",
     "test:ci": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:acceptance": "tsx scripts/migration/99_acceptance.mts"
+    "test:acceptance": "tsx scripts/migration/99_acceptance.mts",
+    "test:smoke:theme": "playwright test tests/smoke/theme-and-nav.spec.ts",
+    "gate:theme": "node scripts/ci/check-theme-guard.mjs",
+    "gate:routes": "node scripts/ci/check-route-integrity.mjs",
+    "gate:twilio": "node scripts/ci/check-twilio-token-health.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

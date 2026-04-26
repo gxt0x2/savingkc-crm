@@ -121,7 +121,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top Navbar */}
-      <header className="sticky top-0 w-full z-40 bg-white border-b border-slate-200 shadow-sm">
+      <header
+        className="sticky top-0 w-full z-40 border-b shadow-sm"
+        style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+      >
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           {/* LEFT: hamburger + logo */}
           <div className="flex items-center gap-3 flex-shrink-0">
@@ -180,12 +183,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
-              className="hidden sm:flex items-center gap-2 bg-slate-100 hover:bg-slate-200 rounded-full pl-3 pr-2 py-1.5 text-sm text-slate-500 w-48 md:w-64 transition-colors"
+              className="hidden sm:flex items-center gap-2 rounded-full pl-3 pr-2 py-1.5 text-sm w-48 md:w-64 transition-colors text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]"
+              style={{ background: 'var(--ck-surface-elev)' }}
               aria-label="Open search"
             >
-              <Icon name="search" size="text-lg" className="text-slate-400" />
+              <Icon name="search" size="text-lg" className="text-[var(--ck-text-dim)]" />
               <span className="flex-1 text-left">Search leads…</span>
-              <kbd className="hidden md:inline-block text-[10px] font-bold text-slate-400 bg-white border border-slate-200 rounded px-1.5 py-0.5">
+              <kbd
+                className="hidden md:inline-block text-[10px] font-bold rounded px-1.5 py-0.5"
+                style={{
+                  color: 'var(--ck-text-dim)',
+                  background: 'var(--ck-surface)',
+                  border: '1px solid var(--ck-border)',
+                }}
+              >
                 ⌘K
               </kbd>
             </button>
@@ -272,17 +283,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile Drawer */}
       <div
-        className={`fixed top-0 left-0 z-50 h-full w-72 bg-white shadow-2xl transform transition-transform duration-300 md:hidden ${
+        className={`fixed top-0 left-0 z-50 h-full w-72 shadow-2xl transform transition-transform duration-300 md:hidden ${
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
+        style={{ background: 'var(--ck-surface)' }}
       >
-        <div className="flex items-center justify-between px-4 h-16 border-b border-slate-200">
+        <div
+          className="flex items-center justify-between px-4 h-16 border-b"
+          style={{ borderColor: 'var(--ck-border)' }}
+        >
           <div className="flex items-center gap-2">
             <img src="/logo.png" alt="Saving KC" className="h-9 w-auto" />
 
           </div>
           <button
-            className="p-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
+            className="p-2 rounded-lg transition-colors text-[var(--ck-text-muted)] hover:bg-white/5"
             onClick={() => setDrawerOpen(false)}
           >
             <Icon name="close" size="text-xl" />
