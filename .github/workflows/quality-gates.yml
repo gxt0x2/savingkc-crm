@@ -9,6 +9,9 @@ on:
 jobs:
   gate-build-and-theme:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,6 +46,7 @@ jobs:
         with:
           name: smoke-screenshots
           path: |
+            test-results
             test-results/smoke
             playwright-report
           if-no-files-found: warn
