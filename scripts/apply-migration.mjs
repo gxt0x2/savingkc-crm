@@ -6,8 +6,13 @@ import { dirname, join } from 'path'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const SUPABASE_URL = 'https://fprrknfyzlthbxewnwmi.supabase.co'
-const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwcnJrbmZ5emx0aGJ4ZXdud21pIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3MTI2NywiZXhwIjoyMDg2MTQ3MjY3fQ.y4WbIp6fQKSpo83BZ8SxlsQXeEDY6NisvAhAr5SUZ0A'
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+  console.error('Missing required env vars: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY')
+  process.exit(1)
+}
 
 const migrationPath = join(__dirname, '..', 'supabase', 'migrations', '20260328_manifests_table.sql')
 const sql = readFileSync(migrationPath, 'utf8')
