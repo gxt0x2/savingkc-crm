@@ -45,6 +45,22 @@ const DEFAULT_PROFILE: AgentProfile = {
   office_hours: { enabled: true, start: '08:00', end: '17:00', timezone: 'America/Chicago' },
 }
 
+function formatBuildTimestamp(ts: string): string {
+  if (!ts) return 'Unknown'
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ts
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  })
+}
+
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -63,6 +79,13 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function SettingsPage() {
+  const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'
+  const releaseSha = process.env.NEXT_PUBLIC_RELEASE_SHA || 'local'
+  const shortSha = releaseSha === 'local' ? 'local' : releaseSha.slice(0, 7)
+  const buildTime = process.env.NEXT_PUBLIC_BUILD_TIME || ''
+  const deployEnv = (process.env.NEXT_PUBLIC_DEPLOY_ENV || 'development').toLowerCase()
+  const envLabel = deployEnv === 'production' ? 'Production' : deployEnv === 'preview' ? 'Preview' : 'Development'
+
   const { user } = useAuth()
   const [profile, setProfile] = useState<AgentProfile>(DEFAULT_PROFILE)
   const [allProfiles, setAllProfiles] = useState<AgentProfile[]>([])
@@ -511,7 +534,15 @@ export default function SettingsPage() {
           <div className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-on-surface-variant">CRM Version</span>
-              <span className="font-semibold">3.1.0 (Settings Overhaul)</span>
+              <span className="font-semibold font-mono text-xs">v{appVersion}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-on-surface-variant">Release Fingerprint</span>
+              <span className="font-semibold font-mono text-xs">{shortSha}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-on-surface-variant">Build Time</span>
+              <span className="font-semibold font-mono text-xs">{formatBuildTimestamp(buildTime)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-on-surface-variant">Database</span>
@@ -523,8 +554,8 @@ export default function SettingsPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-on-surface-variant">Environment</span>
-              <span className="inline-flex items-center gap-1 font-semibold text-secondary">
-                <span className="w-2 h-2 rounded-full bg-secondary" /> Production
+              <span className={`inline-flex items-center gap-1 font-semibold ${deployEnv === 'production' ? 'text-secondary' : 'text-amber-500'}`}>
+                <span className={`w-2 h-2 rounded-full ${deployEnv === 'production' ? 'bg-secondary' : 'bg-amber-500'}`} /> {envLabel}
               </span>
             </div>
           </div>
