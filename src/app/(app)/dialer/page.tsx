@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/icon'
 import { HeirsSection } from '@/components/leads/heirs-section'
 import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { createClient } from '@/lib/supabase/client'
+import { calculateTemperature } from '@/lib/lead-temperature'
 import { toProperCase, formatPhone } from '@/lib/format'
 
 // URL contract:
@@ -70,6 +71,71 @@ interface QueueState {
   queueIndex: number
   queueLength: number
   status: 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
+}
+
+interface DialerQueueLead {
+  id: string
+  full_name: string | null
+  phone: string | null
+  property_address: string | null
+  city: string | null
+  state: string | null
+  source: string | null
+  station: string | null
+  priority: string | null
+  seller_situation: string | null
+  motivation_score: number | null
+  appointment_date: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+interface QueueFollowup {
+  lead_id: string | null
+  metadata: { due_date?: string; status?: string } | null
+  created_at: string
+}
+
+interface QueueProspect {
+  lead_id: string | null
+  is_deceased: boolean | null
+  delinquent_years_category: string | null
+}
+
+type QueuePreset = 'followups_today' | 'warm_followups' | 'cold_prospecting' | 'tax_2yr' | 'deceased_3yr' | 'priority' | 'next_step' | 'custom'
+
+const QUEUE_PRESETS: Array<{ id: QueuePreset; label: string; icon: string; description: string }> = [
+  { id: 'followups_today', label: 'Follow-ups Today', icon: 'event_upcoming', description: 'Callbacks and next-step work due now.' },
+  { id: 'warm_followups', label: 'Warm Follow-ups', icon: 'local_fire_department', description: 'Hot, high-priority, qualified, and motivated sellers.' },
+  { id: 'cold_prospecting', label: 'Cold Prospecting', icon: 'ac_unit', description: 'Fresh or untouched records for outbound sessions.' },
+  { id: 'tax_2yr', label: '2-Year Tax Delinquent', icon: 'request_quote', description: 'Tax delinquent prospects marked around two years.' },
+  { id: 'deceased_3yr', label: '3+ Year Deceased Tax', icon: 'account_balance', description: 'Deceased-owner tax leads for the heir dialer workflow.' },
+  { id: 'priority', label: 'Priority Queue', icon: 'priority_high', description: 'High intent by priority or motivation score.' },
+  { id: 'next_step', label: 'Next-Step Date', icon: 'date_range', description: 'Leads with an appointment or next action date.' },
+  { id: 'custom', label: 'Custom Filters', icon: 'tune', description: 'Build a session from campaign, status, score, and search.' },
+]
+
+function dateKey(value: string | null | undefined) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+function queueLeadText(lead: DialerQueueLead) {
+  return [
+    lead.full_name,
+    lead.phone,
+    lead.property_address,
+    lead.city,
+    lead.state,
+    lead.source,
+    lead.station,
+    lead.priority,
+    lead.seller_situation,
+  ].filter(Boolean).join(' ').toLowerCase()
 }
 
 function compactDollars(n: number | null | undefined): string {
@@ -161,7 +227,7 @@ function DialerPageInner() {
         setLoading(false)
         return
       }
-      setResolveError('No lead_ids or cohort in the URL. Open the dialer from the leads list.')
+      setLeadIds([])
       setLoading(false)
     }
     resolveIds()
@@ -314,12 +380,16 @@ function DialerPageInner() {
 
   const isCallingNow = queueState?.queueItem && ['calling', 'on_call'].includes(queueState.status)
 
+  if (!loading && leadIds.length === 0 && !resolveError) {
+    return <DialerHome />
+  }
+
   if (resolveError) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center px-6">
         <div className="ck-card p-8 max-w-md text-center">
           <Icon name="error_outline" className="!text-4xl text-[#E32E2E] mb-3" />
-          <p className="text-sm font-bold text-[var(--ck-text)] mb-2">Can't start a dialing session</p>
+          <p className="text-sm font-bold text-[var(--ck-text)] mb-2">Cannot start a dialing session</p>
           <p className="text-xs text-[var(--ck-text-muted)] mb-6">{resolveError}</p>
           <Link
             href="/leads"
@@ -622,6 +692,391 @@ function DialerPageInner() {
           onSent={() => { setSmsTarget(null); refreshActivities() }}
         />
       )}
+    </div>
+  )
+}
+
+function DialerHome() {
+  const router = useRouter()
+  const [leads, setLeads] = useState<DialerQueueLead[]>([])
+  const [followups, setFollowups] = useState<QueueFollowup[]>([])
+  const [prospects, setProspects] = useState<QueueProspect[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [preset, setPreset] = useState<QueuePreset>('followups_today')
+  const [campaign, setCampaign] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [minMotivation, setMinMotivation] = useState(0)
+  const [search, setSearch] = useState('')
+  const [agent, setAgent] = useState('Casey')
+  const [mode, setMode] = useState<'power' | 'predictive'>('power')
+  const [pacing, setPacing] = useState(18)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      setError(null)
+      const supabase = createClient()
+      const [{ data: leadRows, error: leadError }, { data: followupRows }, { data: prospectRows }] = await Promise.all([
+        supabase
+          .from('leads')
+          .select('id, full_name, phone, property_address, city, state, source, station, priority, seller_situation, motivation_score, appointment_date, created_at, updated_at')
+          .not('phone', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(1000),
+        supabase
+          .from('lead_activities')
+          .select('lead_id, metadata, created_at')
+          .in('activity_type', ['task', 'follow_up', 'callback'])
+          .limit(400),
+        supabase
+          .from('prospects')
+          .select('lead_id, is_deceased, delinquent_years_category')
+          .not('lead_id', 'is', null)
+          .limit(2000),
+      ])
+
+      if (leadError) {
+        setError(leadError.message)
+        setLeads([])
+      } else {
+        setLeads((leadRows as DialerQueueLead[] | null) ?? [])
+      }
+      setFollowups((followupRows as QueueFollowup[] | null) ?? [])
+      setProspects((prospectRows as QueueProspect[] | null) ?? [])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const today = dateKey(new Date().toISOString())
+  const followupLeadIds = useMemo(() => {
+    return new Set(followups
+      .filter((task) => {
+        const status = task.metadata?.status || 'pending'
+        const dueDate = dateKey(task.metadata?.due_date)
+        return status !== 'completed' && Boolean(dueDate) && dueDate <= today
+      })
+      .map((task) => task.lead_id)
+      .filter(Boolean) as string[])
+  }, [followups, today])
+
+  const prospectByLeadId = useMemo(() => {
+    const map = new Map<string, QueueProspect[]>()
+    prospects.forEach((prospect) => {
+      if (!prospect.lead_id) return
+      map.set(prospect.lead_id, [...(map.get(prospect.lead_id) ?? []), prospect])
+    })
+    return map
+  }, [prospects])
+
+  const sourceOptions = useMemo(() => {
+    return ['all', ...Array.from(new Set(leads.map((lead) => lead.source).filter(Boolean) as string[])).sort()]
+  }, [leads])
+
+  const statusOptions = useMemo(() => {
+    return ['all', ...Array.from(new Set(leads.map((lead) => lead.station || 'intake'))).sort()]
+  }, [leads])
+
+  const queue = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return leads
+      .filter((lead) => {
+        const leadProspects = prospectByLeadId.get(lead.id) ?? []
+        const temp = calculateTemperature({ priority: lead.priority, station: lead.station, created_at: lead.created_at })
+        if (preset === 'followups_today') return followupLeadIds.has(lead.id) || dateKey(lead.appointment_date) === today
+        if (preset === 'warm_followups') return lead.priority === 'hot' || lead.priority === 'high' || (lead.motivation_score || 0) >= 5 || temp === 'hot' || temp === 'warm'
+        if (preset === 'cold_prospecting') return ['new', 'intake', 'not_contacted', '', null].includes(lead.station as string | null) && !['hot', 'high'].includes(lead.priority || '')
+        if (preset === 'tax_2yr') return leadProspects.some((prospect) => prospect.delinquent_years_category === '2yr')
+        if (preset === 'deceased_3yr') return leadProspects.some((prospect) => prospect.is_deceased && ['2yr', '3yr_plus'].includes(prospect.delinquent_years_category || ''))
+        if (preset === 'priority') return lead.priority === 'hot' || lead.priority === 'high' || (lead.motivation_score || 0) >= 7
+        if (preset === 'next_step') return Boolean(lead.appointment_date)
+        return true
+      })
+      .filter((lead) => campaign === 'all' || lead.source === campaign)
+      .filter((lead) => statusFilter === 'all' || (lead.station || 'intake') === statusFilter)
+      .filter((lead) => priorityFilter === 'all' || lead.priority === priorityFilter)
+      .filter((lead) => (lead.motivation_score || 0) >= minMotivation)
+      .filter((lead) => !query || queueLeadText(lead).includes(query))
+      .sort((a, b) => {
+        const aDue = followupLeadIds.has(a.id) ? 1 : 0
+        const bDue = followupLeadIds.has(b.id) ? 1 : 0
+        if (aDue !== bDue) return bDue - aDue
+        const aScore = (a.motivation_score || 0) + (a.priority === 'hot' ? 4 : a.priority === 'high' ? 2 : 0)
+        const bScore = (b.motivation_score || 0) + (b.priority === 'hot' ? 4 : b.priority === 'high' ? 2 : 0)
+        if (aScore !== bScore) return bScore - aScore
+        return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
+      })
+  }, [campaign, followupLeadIds, leads, minMotivation, preset, priorityFilter, prospectByLeadId, search, statusFilter, today])
+
+  const startQueue = useCallback(() => {
+    if (preset === 'deceased_3yr') {
+      router.push('/dialer?cohort=deceased-2-3yr')
+      return
+    }
+    const ids = queue.slice(0, 100).map((lead) => lead.id)
+    if (ids.length > 0) router.push(`/dialer?lead_ids=${ids.join(',')}`)
+  }, [preset, queue, router])
+
+  const currentLead = queue[0] ?? null
+
+  return (
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between mb-6">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-[#E32E2E] mb-2">Enterprise Dialer</p>
+          <h1 className="text-3xl font-black text-[var(--ck-text)] tracking-tight">Calling Command Center</h1>
+          <p className="mt-2 text-sm text-[var(--ck-text-muted)] max-w-2xl">
+            Choose the queue, set pacing, and launch into the existing Saving KC dialer and required disposition workflow.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={startQueue}
+            disabled={queue.length === 0}
+            className="inline-flex items-center gap-2 bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+          >
+            <Icon name="play_arrow" size="text-sm" /> Start Queue
+          </button>
+          {currentLead?.phone && (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-dialer', {
+                detail: { phone: currentLead.phone, name: currentLead.full_name || 'Unknown Lead', leadId: currentLead.id },
+              }))}
+              className="inline-flex items-center gap-2 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] px-4 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors"
+            >
+              <Icon name="phone_in_talk" size="text-sm" /> Call First
+            </button>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-xl border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-4 text-sm text-[#ffb4b4]">
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 mb-6">
+        <MetricCard label="Queue" value={loading ? '...' : String(queue.length)} detail="callable leads" icon="format_list_bulleted" />
+        <MetricCard label="Due Today" value={String(followupLeadIds.size)} detail="follow-ups and callbacks" icon="event_available" />
+        <MetricCard label="Agent" value={agent} detail={mode === 'predictive' ? 'predictive pacing' : 'power dialing'} icon="support_agent" />
+        <MetricCard label="Pace" value={`${pacing}s`} detail="between calls" icon="speed" />
+      </div>
+
+      <div className="grid grid-cols-12 gap-4 lg:gap-6">
+        <aside className="col-span-12 lg:col-span-4 xl:col-span-3 space-y-4">
+          <section className="ck-card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-black text-[var(--ck-text)]">Calling Queues</p>
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{queue.length}</span>
+            </div>
+            <div className="space-y-2">
+              {QUEUE_PRESETS.map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => setPreset(option.id)}
+                  className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                    preset === option.id
+                      ? 'bg-[#E32E2E]/10 border-[#E32E2E]/40'
+                      : 'bg-[var(--ck-surface-elev)] border-[var(--ck-border)] hover:border-[var(--ck-border-strong)]'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <Icon name={option.icon} size="text-lg" className={preset === option.id ? 'text-[#E32E2E]' : 'text-[var(--ck-text-dim)]'} />
+                    <div>
+                      <p className="text-sm font-bold text-[var(--ck-text)]">{option.label}</p>
+                      <p className="mt-1 text-xs leading-5 text-[var(--ck-text-muted)]">{option.description}</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="ck-card p-4">
+            <p className="text-sm font-black text-[var(--ck-text)] mb-4">Dialer Controls</p>
+            <div className="space-y-4">
+              <SegmentedControl value={mode} onChange={(value) => setMode(value as 'power' | 'predictive')} />
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Pace: {pacing}s</span>
+                <input type="range" min={mode === 'predictive' ? 6 : 12} max="90" value={pacing} onChange={(e) => setPacing(Number(e.target.value))} className="mt-2 w-full accent-[#E32E2E]" />
+              </label>
+              <DarkSelect label="Agent" value={agent} onChange={setAgent} options={['Casey', 'Gertha', 'Ernest']} />
+            </div>
+          </section>
+        </aside>
+
+        <main className="col-span-12 lg:col-span-8 xl:col-span-6 ck-card overflow-hidden">
+          <div className="border-b border-[var(--ck-border)] p-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <p className="text-lg font-black text-[var(--ck-text)]">{QUEUE_PRESETS.find((item) => item.id === preset)?.label}</p>
+                <p className="text-xs text-[var(--ck-text-muted)]">Launches into the current session page; dispositions stay in the existing modal.</p>
+              </div>
+              <div className="relative">
+                <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search queue"
+                  className="w-full xl:w-72 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] py-2 pl-10 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                />
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <DarkSelect label="Campaign" value={campaign} onChange={setCampaign} options={sourceOptions} />
+              <DarkSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={statusOptions} />
+              <DarkSelect label="Priority" value={priorityFilter} onChange={setPriorityFilter} options={['all', 'hot', 'high', 'normal']} />
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Motivation {minMotivation}+</span>
+                <input type="range" min="0" max="10" value={minMotivation} onChange={(e) => setMinMotivation(Number(e.target.value))} className="mt-3 w-full accent-[#E32E2E]" />
+              </label>
+            </div>
+          </div>
+
+          <div className="max-h-[720px] overflow-auto">
+            {loading ? (
+              <div className="p-8 text-center text-sm text-[var(--ck-text-muted)]">Loading queue...</div>
+            ) : queue.length === 0 ? (
+              <div className="p-8 text-center">
+                <Icon name="filter_alt_off" className="!text-4xl text-[var(--ck-text-dim)] mb-3" />
+                <p className="text-sm font-bold text-[var(--ck-text)]">No callable leads match this queue.</p>
+                <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Change the preset, campaign, status, score, or search filter.</p>
+              </div>
+            ) : (
+              queue.slice(0, 100).map((lead, index) => (
+                <div key={lead.id} className="grid gap-3 border-b border-[var(--ck-border)] p-4 lg:grid-cols-[42px_minmax(0,1fr)_150px_105px] lg:items-center hover:bg-white/[0.03] transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] flex items-center justify-center text-xs font-black text-[var(--ck-text-muted)]">{index + 1}</div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-black text-[var(--ck-text)]">{toProperCase(lead.full_name) || 'Unknown Lead'}</p>
+                      {followupLeadIds.has(lead.id) && <DarkPill tone="red">due</DarkPill>}
+                      {lead.priority && <DarkPill>{lead.priority}</DarkPill>}
+                      {lead.motivation_score ? <DarkPill>{lead.motivation_score}/10</DarkPill> : null}
+                    </div>
+                    <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{lead.property_address || lead.city || 'No property address'}</p>
+                    <p className="mt-1 truncate text-[10px] uppercase tracking-wider text-[var(--ck-text-dim)]">{lead.source || 'uncategorized'} · {lead.station || 'intake'}</p>
+                  </div>
+                  <p className="text-sm font-bold text-[var(--ck-text)] font-mono">{formatPhone(lead.phone || '')}</p>
+                  <button
+                    onClick={() => router.push(`/dialer?lead_ids=${lead.id}`)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[#E32E2E]/50 px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors"
+                  >
+                    <Icon name="play_arrow" size="text-sm" /> Open
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </main>
+
+        <aside className="col-span-12 xl:col-span-3 space-y-4">
+          <section className="ck-card p-5">
+            <p className="text-sm font-black text-[var(--ck-text)]">Now Ready</p>
+            {currentLead ? (
+              <div className="mt-4">
+                <p className="text-xl font-black text-[var(--ck-text)] leading-tight">{toProperCase(currentLead.full_name) || 'Unknown Lead'}</p>
+                <p className="mt-1 font-mono text-sm font-bold text-[#E32E2E]">{formatPhone(currentLead.phone || '')}</p>
+                <p className="mt-3 text-sm leading-6 text-[var(--ck-text-muted)]">{currentLead.property_address || currentLead.city || 'No property address on file.'}</p>
+                <button
+                  onClick={() => router.push(`/dialer?lead_ids=${currentLead.id}`)}
+                  className="mt-4 w-full inline-flex items-center justify-center gap-2 bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-3 rounded-lg text-xs font-black uppercase tracking-wider transition-colors"
+                >
+                  <Icon name="phone_in_talk" size="text-sm" /> Start This Lead
+                </button>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-[var(--ck-text-muted)]">Select a queue with callable leads.</p>
+            )}
+          </section>
+
+          <section className="ck-card p-5">
+            <p className="text-sm font-black text-[var(--ck-text)]">Outcome Controls</p>
+            <div className="mt-4 space-y-3">
+              <ComplianceRow icon="rule" label="Disposition required" value="Existing modal" />
+              <ComplianceRow icon="edit_note" label="Call notes" value="Timeline" />
+              <ComplianceRow icon="event_repeat" label="Callbacks" value="Outcome flow" />
+              <ComplianceRow icon="sell" label="Auto-tagging" value="Manifest sync" />
+              <ComplianceRow icon="fiber_manual_record" label="Recording" value="Twilio" />
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function MetricCard({ label, value, detail, icon }: { label: string; value: string; detail: string; icon: string }) {
+  return (
+    <div className="ck-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{label}</p>
+          <p className="mt-2 text-2xl font-black text-[var(--ck-text)]">{value}</p>
+          <p className="mt-1 text-xs text-[var(--ck-text-muted)]">{detail}</p>
+        </div>
+        <Icon name={icon} size="text-2xl" className="text-[#E32E2E]" />
+      </div>
+    </div>
+  )
+}
+
+function DarkSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
+  return (
+    <label className="block">
+      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>{option === 'all' ? 'All' : option.replace(/_/g, ' ')}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function SegmentedControl({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div>
+      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Mode</span>
+      <div className="mt-2 grid grid-cols-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
+        {['power', 'predictive'].map((option) => (
+          <button
+            key={option}
+            onClick={() => onChange(option)}
+            className={`rounded-md px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+              value === option ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+            }`}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function DarkPill({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'red' }) {
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${tone === 'red' ? 'bg-[#E32E2E]/15 text-[#ff7777]' : 'bg-white/5 text-[var(--ck-text-muted)]'}`}>
+      {children}
+    </span>
+  )
+}
+
+function ComplianceRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <Icon name={icon} size="text-base" className="text-[#E32E2E]" />
+        <span className="truncate text-xs font-bold text-[var(--ck-text)]">{label}</span>
+      </div>
+      <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">{value}</span>
     </div>
   )
 }
