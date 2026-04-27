@@ -110,6 +110,27 @@ function keylessMapEmbedUrl(address: string): string {
   return `https://maps.google.com/maps?q=${encodeURIComponent(address)}&z=18&t=k&output=embed`
 }
 
+function KeylessMapFrame({
+  address,
+  height,
+  title,
+}: {
+  address: string
+  height: number | string
+  title: string
+}) {
+  return (
+    <iframe
+      src={keylessMapEmbedUrl(address)}
+      width="100%"
+      height={typeof height === 'number' ? String(height) : height}
+      style={{ border: 0, display: 'block' }}
+      loading="lazy"
+      title={title}
+    />
+  )
+}
+
 function heading(from: { lat: () => number; lng: () => number }, to: { lat: () => number; lng: () => number }): number {
   const fromLat = from.lat() * Math.PI / 180
   const toLat = to.lat() * Math.PI / 180
@@ -229,15 +250,9 @@ export function StreetViewPanel({ address, height = 500 }: PanelProps) {
     }
   }, [address])
 
-  return (
-    <PanelShell
-      height={height}
-      refEl={ref}
-      loading={loading}
-      error={error}
-      fallbackUrl={googleMapsSearchUrl(address)}
-    />
-  )
+  if (error) return <KeylessMapFrame address={address} height={height} title="Street View fallback" />
+
+  return <PanelShell height={height} refEl={ref} loading={loading} error={error} fallbackUrl={googleMapsSearchUrl(address)} />
 }
 
 export function MapPanel({ address, height = 500 }: PanelProps) {
@@ -284,16 +299,7 @@ export function MapPanel({ address, height = 500 }: PanelProps) {
   }, [address])
 
   if (error) {
-    return (
-      <iframe
-        src={keylessMapEmbedUrl(address)}
-        width="100%"
-        height={typeof height === 'number' ? String(height) : height}
-        style={{ border: 0, display: 'block' }}
-        loading="lazy"
-        title="Map View"
-      />
-    )
+    return <KeylessMapFrame address={address} height={height} title="Map View" />
   }
 
   return <PanelShell height={height} refEl={ref} loading={loading} error={error} />
