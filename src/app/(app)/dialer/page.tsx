@@ -820,112 +820,66 @@ function DialerHome() {
   }, [preset, queue, router])
 
   const currentLead = queue[0] ?? null
+  const selectedPreset = QUEUE_PRESETS.find((item) => item.id === preset) ?? QUEUE_PRESETS[0]
+  const previewLeads = queue.slice(0, 25)
+  const hasFilters = campaign !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all' || minMotivation > 0 || search.trim().length > 0
+  const resetFilters = useCallback(() => {
+    setCampaign('all')
+    setStatusFilter('all')
+    setPriorityFilter('all')
+    setMinMotivation(0)
+    setSearch('')
+  }, [])
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between mb-6">
+    <div className="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-[#E32E2E] mb-2">Enterprise Dialer</p>
-          <h1 className="text-3xl font-black text-[var(--ck-text)] tracking-tight">Calling Command Center</h1>
-          <p className="mt-2 text-sm text-[var(--ck-text-muted)] max-w-2xl">
-            Choose the queue, set pacing, and launch into the existing Saving KC dialer and required disposition workflow.
-          </p>
+          <h1 className="text-2xl font-black text-[var(--ck-text)] tracking-tight">Calling Command Center</h1>
+          <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick a queue, confirm the session, start calling.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={startQueue}
-            disabled={queue.length === 0}
-            className="inline-flex items-center gap-2 bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
-          >
-            <Icon name="play_arrow" size="text-sm" /> Start Queue
-          </button>
-          {currentLead?.phone && (
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('open-dialer', {
-                detail: { phone: currentLead.phone, name: currentLead.full_name || 'Unknown Lead', leadId: currentLead.id },
-              }))}
-              className="inline-flex items-center gap-2 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] px-4 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors"
-            >
-              <Icon name="phone_in_talk" size="text-sm" /> Call First
-            </button>
-          )}
+        <div className="text-sm font-bold text-[var(--ck-text-muted)]">
+          {loading ? 'Loading queue...' : `${queue.length.toLocaleString()} ready`}
         </div>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-xl border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-4 text-sm text-[#ffb4b4]">
+        <div className="mb-4 rounded-lg border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-4 text-sm text-[#ffb4b4]">
           {error}
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 mb-6">
-        <MetricCard label="Queue" value={loading ? '...' : String(queue.length)} detail="callable leads" icon="format_list_bulleted" />
-        <MetricCard label="Due Today" value={String(followupLeadIds.size)} detail="follow-ups and callbacks" icon="event_available" />
-        <MetricCard label="Agent" value={agent} detail={mode === 'predictive' ? 'predictive pacing' : 'power dialing'} icon="support_agent" />
-        <MetricCard label="Pace" value={`${pacing}s`} detail="between calls" icon="speed" />
-      </div>
-
-      <div className="grid grid-cols-12 gap-4 lg:gap-6">
-        <aside className="col-span-12 lg:col-span-4 xl:col-span-3 space-y-4">
-          <section className="ck-card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-black text-[var(--ck-text)]">Calling Queues</p>
-              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{queue.length}</span>
-            </div>
-            <div className="space-y-2">
-              {QUEUE_PRESETS.map((option) => (
-                <button
-                  key={option.id}
-                  onClick={() => setPreset(option.id)}
-                  className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                    preset === option.id
-                      ? 'bg-[#E32E2E]/10 border-[#E32E2E]/40'
-                      : 'bg-[var(--ck-surface-elev)] border-[var(--ck-border)] hover:border-[var(--ck-border-strong)]'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <Icon name={option.icon} size="text-lg" className={preset === option.id ? 'text-[#E32E2E]' : 'text-[var(--ck-text-dim)]'} />
-                    <div>
-                      <p className="text-sm font-bold text-[var(--ck-text)]">{option.label}</p>
-                      <p className="mt-1 text-xs leading-5 text-[var(--ck-text-muted)]">{option.description}</p>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="ck-card p-4">
-            <p className="text-sm font-black text-[var(--ck-text)] mb-4">Dialer Controls</p>
-            <div className="space-y-4">
-              <SegmentedControl value={mode} onChange={(value) => setMode(value as 'power' | 'predictive')} />
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+        <main className="space-y-5">
+          <section className="ck-card p-5">
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px] md:items-end">
               <label className="block">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Pace: {pacing}s</span>
-                <input type="range" min={mode === 'predictive' ? 6 : 12} max="90" value={pacing} onChange={(e) => setPacing(Number(e.target.value))} className="mt-2 w-full accent-[#E32E2E]" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Calling Queue</span>
+                <select
+                  value={preset}
+                  onChange={(event) => setPreset(event.target.value as QueuePreset)}
+                  className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-3 text-base font-bold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                >
+                  {QUEUE_PRESETS.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
               </label>
-              <DarkSelect label="Agent" value={agent} onChange={setAgent} options={['Casey', 'Gertha', 'Ernest']} />
+              <button
+                onClick={startQueue}
+                disabled={queue.length === 0}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-4 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <Icon name="play_arrow" size="text-sm" /> Start Queue
+              </button>
             </div>
-          </section>
-        </aside>
 
-        <main className="col-span-12 lg:col-span-8 xl:col-span-6 ck-card overflow-hidden">
-          <div className="border-b border-[var(--ck-border)] p-4">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div>
-                <p className="text-lg font-black text-[var(--ck-text)]">{QUEUE_PRESETS.find((item) => item.id === preset)?.label}</p>
-                <p className="text-xs text-[var(--ck-text-muted)]">Launches into the current session page; dispositions stay in the existing modal.</p>
-              </div>
-              <div className="relative">
-                <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search queue"
-                  className="w-full xl:w-72 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] py-2 pl-10 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-                />
-              </div>
+            <div className="mt-3 flex flex-col gap-2 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+              <span>{selectedPreset.description}</span>
+              <span className="font-bold text-[var(--ck-text)]">{loading ? '...' : queue.length.toLocaleString()} leads</span>
             </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <DarkSelect label="Campaign" value={campaign} onChange={setCampaign} options={sourceOptions} />
               <DarkSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={statusOptions} />
               <DarkSelect label="Priority" value={priorityFilter} onChange={setPriorityFilter} options={['all', 'hot', 'high', 'normal']} />
@@ -934,90 +888,120 @@ function DialerHome() {
                 <input type="range" min="0" max="10" value={minMotivation} onChange={(e) => setMinMotivation(Number(e.target.value))} className="mt-3 w-full accent-[#E32E2E]" />
               </label>
             </div>
-          </div>
 
-          <div className="max-h-[720px] overflow-auto">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search name, phone, address, source"
+                  className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] py-2.5 pl-10 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                />
+              </div>
+              {hasFilters && (
+                <button onClick={resetFilters} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">
+                  Clear filters
+                </button>
+              )}
+            </div>
+          </section>
+
+          <section className="ck-card overflow-hidden">
+            <div className="flex items-center justify-between border-b border-[var(--ck-border)] px-5 py-4">
+              <div>
+                <p className="text-sm font-black text-[var(--ck-text)]">Queue Preview</p>
+                <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Showing the first {previewLeads.length} records in call order.</p>
+              </div>
+              <span className="text-xs font-bold text-[var(--ck-text-muted)]">{followupLeadIds.size.toLocaleString()} due</span>
+            </div>
+            <div className="max-h-[620px] overflow-auto">
             {loading ? (
               <div className="p-8 text-center text-sm text-[var(--ck-text-muted)]">Loading queue...</div>
             ) : queue.length === 0 ? (
               <div className="p-8 text-center">
-                <Icon name="filter_alt_off" className="!text-4xl text-[var(--ck-text-dim)] mb-3" />
                 <p className="text-sm font-bold text-[var(--ck-text)]">No callable leads match this queue.</p>
                 <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Change the preset, campaign, status, score, or search filter.</p>
               </div>
             ) : (
-              queue.slice(0, 100).map((lead, index) => (
-                <div key={lead.id} className="grid gap-3 border-b border-[var(--ck-border)] p-4 lg:grid-cols-[42px_minmax(0,1fr)_150px_105px] lg:items-center hover:bg-white/[0.03] transition-colors">
-                  <div className="h-9 w-9 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] flex items-center justify-center text-xs font-black text-[var(--ck-text-muted)]">{index + 1}</div>
+              previewLeads.map((lead, index) => (
+                <div key={lead.id} className="grid gap-3 border-b border-[var(--ck-border)] px-5 py-4 md:grid-cols-[34px_minmax(0,1fr)_145px_88px] md:items-center hover:bg-white/[0.03] transition-colors">
+                  <div className="text-xs font-black text-[var(--ck-text-dim)]">{index + 1}</div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-sm font-black text-[var(--ck-text)]">{toProperCase(lead.full_name) || 'Unknown Lead'}</p>
                       {followupLeadIds.has(lead.id) && <DarkPill tone="red">due</DarkPill>}
                       {lead.priority && <DarkPill>{lead.priority}</DarkPill>}
-                      {lead.motivation_score ? <DarkPill>{lead.motivation_score}/10</DarkPill> : null}
                     </div>
                     <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{lead.property_address || lead.city || 'No property address'}</p>
-                    <p className="mt-1 truncate text-[10px] uppercase tracking-wider text-[var(--ck-text-dim)]">{lead.source || 'uncategorized'} · {lead.station || 'intake'}</p>
+                    <p className="mt-1 truncate text-xs text-[var(--ck-text-dim)]">{lead.source || 'uncategorized'} / {lead.station || 'intake'}</p>
                   </div>
                   <p className="text-sm font-bold text-[var(--ck-text)] font-mono">{formatPhone(lead.phone || '')}</p>
                   <button
                     onClick={() => router.push(`/dialer?lead_ids=${lead.id}`)}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[#E32E2E]/50 px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors"
+                    className="inline-flex items-center justify-center rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[#E32E2E]/50"
                   >
-                    <Icon name="play_arrow" size="text-sm" /> Open
+                    Open
                   </button>
                 </div>
               ))
             )}
-          </div>
+            </div>
+          </section>
         </main>
 
-        <aside className="col-span-12 xl:col-span-3 space-y-4">
-          <section className="ck-card p-5">
-            <p className="text-sm font-black text-[var(--ck-text)]">Now Ready</p>
+        <aside className="ck-card p-5 lg:sticky lg:top-24">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-black text-[var(--ck-text)]">Session</p>
+              <p className="mt-1 text-xs text-[var(--ck-text-muted)]">{selectedPreset.label}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-3xl font-black text-[var(--ck-text)]">{loading ? '...' : queue.length.toLocaleString()}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">ready</p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-4">
+            <SegmentedControl value={mode} onChange={(value) => setMode(value as 'power' | 'predictive')} />
+            <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Pace: {pacing}s</span>
+              <input type="range" min={mode === 'predictive' ? 6 : 12} max="90" value={pacing} onChange={(e) => setPacing(Number(e.target.value))} className="mt-3 w-full accent-[#E32E2E]" />
+            </label>
+            <DarkSelect label="Agent" value={agent} onChange={setAgent} options={['Casey', 'Gertha', 'Ernest']} />
+          </div>
+
+          <button
+            onClick={startQueue}
+            disabled={queue.length === 0}
+            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            <Icon name="phone_in_talk" size="text-sm" /> Start Calling
+          </button>
+
+          <div className="mt-5 border-t border-[var(--ck-border)] pt-5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Next Up</p>
             {currentLead ? (
               <div className="mt-4">
-                <p className="text-xl font-black text-[var(--ck-text)] leading-tight">{toProperCase(currentLead.full_name) || 'Unknown Lead'}</p>
+                <p className="text-base font-black text-[var(--ck-text)] leading-tight">{toProperCase(currentLead.full_name) || 'Unknown Lead'}</p>
                 <p className="mt-1 font-mono text-sm font-bold text-[#E32E2E]">{formatPhone(currentLead.phone || '')}</p>
-                <p className="mt-3 text-sm leading-6 text-[var(--ck-text-muted)]">{currentLead.property_address || currentLead.city || 'No property address on file.'}</p>
+                <p className="mt-2 text-sm leading-6 text-[var(--ck-text-muted)]">{currentLead.property_address || currentLead.city || 'No property address on file.'}</p>
                 <button
                   onClick={() => router.push(`/dialer?lead_ids=${currentLead.id}`)}
-                  className="mt-4 w-full inline-flex items-center justify-center gap-2 bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-3 rounded-lg text-xs font-black uppercase tracking-wider transition-colors"
+                  className="mt-4 w-full rounded-lg border border-[var(--ck-border)] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[#E32E2E]/50"
                 >
-                  <Icon name="phone_in_talk" size="text-sm" /> Start This Lead
+                  Open Lead
                 </button>
               </div>
             ) : (
               <p className="mt-4 text-sm text-[var(--ck-text-muted)]">Select a queue with callable leads.</p>
             )}
-          </section>
+          </div>
 
-          <section className="ck-card p-5">
-            <p className="text-sm font-black text-[var(--ck-text)]">Outcome Controls</p>
-            <div className="mt-4 space-y-3">
-              <ComplianceRow icon="rule" label="Disposition required" value="Existing modal" />
-              <ComplianceRow icon="edit_note" label="Call notes" value="Timeline" />
-              <ComplianceRow icon="event_repeat" label="Callbacks" value="Outcome flow" />
-              <ComplianceRow icon="sell" label="Auto-tagging" value="Manifest sync" />
-              <ComplianceRow icon="fiber_manual_record" label="Recording" value="Twilio" />
-            </div>
-          </section>
+          <div className="mt-5 border-t border-[var(--ck-border)] pt-5 text-xs leading-6 text-[var(--ck-text-muted)]">
+            Disposition, notes, callbacks, tagging, recording, and follow-up scheduling stay in the existing call flow.
+          </div>
         </aside>
-      </div>
-    </div>
-  )
-}
-
-function MetricCard({ label, value, detail, icon }: { label: string; value: string; detail: string; icon: string }) {
-  return (
-    <div className="ck-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{label}</p>
-          <p className="mt-2 text-2xl font-black text-[var(--ck-text)]">{value}</p>
-          <p className="mt-1 text-xs text-[var(--ck-text-muted)]">{detail}</p>
-        </div>
-        <Icon name={icon} size="text-2xl" className="text-[#E32E2E]" />
       </div>
     </div>
   )
@@ -1066,18 +1050,6 @@ function DarkPill({ children, tone = 'neutral' }: { children: React.ReactNode; t
     <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${tone === 'red' ? 'bg-[#E32E2E]/15 text-[#ff7777]' : 'bg-white/5 text-[var(--ck-text-muted)]'}`}>
       {children}
     </span>
-  )
-}
-
-function ComplianceRow({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
-      <div className="flex items-center gap-2 min-w-0">
-        <Icon name={icon} size="text-base" className="text-[#E32E2E]" />
-        <span className="truncate text-xs font-bold text-[var(--ck-text)]">{label}</span>
-      </div>
-      <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">{value}</span>
-    </div>
   )
 }
 
