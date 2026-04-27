@@ -92,7 +92,14 @@ interface DialerQueueLead {
 
 interface QueueFollowup {
   lead_id: string | null
-  metadata: { due_date?: string; status?: string } | null
+  activity_type: string
+  metadata: { due_date?: string; status?: string; task_type?: string; title?: string } | null
+  created_at: string
+}
+
+interface QueueContactActivity {
+  lead_id: string | null
+  activity_type: string
   created_at: string
 }
 
@@ -102,10 +109,13 @@ interface QueueProspect {
   delinquent_years_category: string | null
 }
 
-type QueuePreset = 'followups_today' | 'warm_followups' | 'cold_prospecting' | 'tax_2yr' | 'deceased_3yr' | 'priority' | 'next_step' | 'custom'
+type QueuePreset = 'scheduled_today' | 'followups_today' | 'stale_30' | 'warm_followups' | 'cold_prospecting' | 'tax_2yr' | 'deceased_3yr' | 'priority' | 'next_step' | 'custom'
+type QueueSort = 'recommended' | 'due_first' | 'oldest_contact' | 'newest' | 'oldest' | 'motivation' | 'name'
 
 const QUEUE_PRESETS: Array<{ id: QueuePreset; label: string; icon: string; description: string }> = [
+  { id: 'scheduled_today', label: 'Calendar Scheduled Today', icon: 'today', description: 'Calendar tasks, callbacks, and appointments due today.' },
   { id: 'followups_today', label: 'Follow-ups Today', icon: 'event_upcoming', description: 'Callbacks and next-step work due now.' },
+  { id: 'stale_30', label: 'Not Contacted in 30 Days', icon: 'history', description: 'Callable leads with no recent call, SMS, or voicemail activity.' },
   { id: 'warm_followups', label: 'Warm Follow-ups', icon: 'local_fire_department', description: 'Hot, high-priority, qualified, and motivated sellers.' },
   { id: 'cold_prospecting', label: 'Cold Prospecting', icon: 'ac_unit', description: 'Fresh or untouched records for outbound sessions.' },
   { id: 'tax_2yr', label: '2-Year Tax Delinquent', icon: 'request_quote', description: 'Tax delinquent prospects marked around two years.' },
@@ -113,6 +123,16 @@ const QUEUE_PRESETS: Array<{ id: QueuePreset; label: string; icon: string; descr
   { id: 'priority', label: 'Priority Queue', icon: 'priority_high', description: 'High intent by priority or motivation score.' },
   { id: 'next_step', label: 'Next-Step Date', icon: 'date_range', description: 'Leads with an appointment or next action date.' },
   { id: 'custom', label: 'Custom Filters', icon: 'tune', description: 'Build a session from campaign, status, score, and search.' },
+]
+
+const QUEUE_SORTS: Array<{ id: QueueSort; label: string }> = [
+  { id: 'recommended', label: 'Recommended' },
+  { id: 'due_first', label: 'Due first' },
+  { id: 'oldest_contact', label: 'Longest since contact' },
+  { id: 'newest', label: 'Newest updated' },
+  { id: 'oldest', label: 'Oldest updated' },
+  { id: 'motivation', label: 'Motivation high to low' },
+  { id: 'name', label: 'Name A-Z' },
 ]
 
 function dateKey(value: string | null | undefined) {
@@ -136,6 +156,28 @@ function queueLeadText(lead: DialerQueueLead) {
     lead.priority,
     lead.seller_situation,
   ].filter(Boolean).join(' ').toLowerCase()
+}
+
+function daysSince(value: string | null | undefined) {
+  if (!value) return null
+  const time = new Date(value).getTime()
+  if (Number.isNaN(time)) return null
+  return Math.floor((Date.now() - time) / 86_400_000)
+}
+
+function lastContactLabel(value: string | null | undefined) {
+  const days = daysSince(value)
+  if (days == null) return 'No contact'
+  if (days === 0) return 'Today'
+  if (days === 1) return '1 day ago'
+  return `${days} days ago`
+}
+
+function formatSelectOption(option: string) {
+  if (option === 'all') return 'All'
+  const sort = QUEUE_SORTS.find((item) => item.id === option)
+  if (sort) return sort.label
+  return option.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function compactDollars(n: number | null | undefined): string {
@@ -700,15 +742,19 @@ function DialerHome() {
   const router = useRouter()
   const [leads, setLeads] = useState<DialerQueueLead[]>([])
   const [followups, setFollowups] = useState<QueueFollowup[]>([])
+  const [contactActivities, setContactActivities] = useState<QueueContactActivity[]>([])
   const [prospects, setProspects] = useState<QueueProspect[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [preset, setPreset] = useState<QueuePreset>('followups_today')
+  const [preset, setPreset] = useState<QueuePreset>('scheduled_today')
   const [campaign, setCampaign] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [minMotivation, setMinMotivation] = useState(0)
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState<QueueSort>('recommended')
+  const [visibleLimit, setVisibleLimit] = useState(25)
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(() => new Set())
   const [agent, setAgent] = useState('Casey')
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [pacing, setPacing] = useState(18)
@@ -718,7 +764,7 @@ function DialerHome() {
       setLoading(true)
       setError(null)
       const supabase = createClient()
-      const [{ data: leadRows, error: leadError }, { data: followupRows }, { data: prospectRows }] = await Promise.all([
+      const [{ data: leadRows, error: leadError }, { data: followupRows }, { data: contactRows }, { data: prospectRows }] = await Promise.all([
         supabase
           .from('leads')
           .select('id, full_name, phone, property_address, city, state, source, station, priority, seller_situation, motivation_score, appointment_date, created_at, updated_at')
@@ -727,9 +773,16 @@ function DialerHome() {
           .limit(1000),
         supabase
           .from('lead_activities')
-          .select('lead_id, metadata, created_at')
-          .in('activity_type', ['task', 'follow_up', 'callback'])
-          .limit(400),
+          .select('lead_id, activity_type, metadata, created_at')
+          .in('activity_type', ['task', 'appointment', 'follow_up', 'callback', 'send_offer'])
+          .limit(1000),
+        supabase
+          .from('lead_activities')
+          .select('lead_id, activity_type, created_at')
+          .in('activity_type', ['call', 'voicemail', 'sms', 'sms_sent', 'sms_received', 'sms_inbound'])
+          .not('lead_id', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(5000),
         supabase
           .from('prospects')
           .select('lead_id, is_deceased, delinquent_years_category')
@@ -744,6 +797,7 @@ function DialerHome() {
         setLeads((leadRows as DialerQueueLead[] | null) ?? [])
       }
       setFollowups((followupRows as QueueFollowup[] | null) ?? [])
+      setContactActivities((contactRows as QueueContactActivity[] | null) ?? [])
       setProspects((prospectRows as QueueProspect[] | null) ?? [])
       setLoading(false)
     }
@@ -761,6 +815,31 @@ function DialerHome() {
       .map((task) => task.lead_id)
       .filter(Boolean) as string[])
   }, [followups, today])
+
+  const scheduledTodayLeadIds = useMemo(() => {
+    const ids = new Set<string>()
+    followups.forEach((task) => {
+      const status = task.metadata?.status || 'pending'
+      if (status === 'completed') return
+      if (dateKey(task.metadata?.due_date) === today && task.lead_id) ids.add(task.lead_id)
+    })
+    leads.forEach((lead) => {
+      if (dateKey(lead.appointment_date) === today) ids.add(lead.id)
+    })
+    return ids
+  }, [followups, leads, today])
+
+  const lastContactByLeadId = useMemo(() => {
+    const map = new Map<string, string>()
+    contactActivities.forEach((activity) => {
+      if (!activity.lead_id) return
+      const current = map.get(activity.lead_id)
+      if (!current || new Date(activity.created_at).getTime() > new Date(current).getTime()) {
+        map.set(activity.lead_id, activity.created_at)
+      }
+    })
+    return map
+  }, [contactActivities])
 
   const prospectByLeadId = useMemo(() => {
     const map = new Map<string, QueueProspect[]>()
@@ -785,7 +864,11 @@ function DialerHome() {
       .filter((lead) => {
         const leadProspects = prospectByLeadId.get(lead.id) ?? []
         const temp = calculateTemperature({ priority: lead.priority, station: lead.station, created_at: lead.created_at })
+        const lastContact = lastContactByLeadId.get(lead.id)
+        const staleDays = daysSince(lastContact)
+        if (preset === 'scheduled_today') return scheduledTodayLeadIds.has(lead.id)
         if (preset === 'followups_today') return followupLeadIds.has(lead.id) || dateKey(lead.appointment_date) === today
+        if (preset === 'stale_30') return staleDays == null || staleDays >= 30
         if (preset === 'warm_followups') return lead.priority === 'hot' || lead.priority === 'high' || (lead.motivation_score || 0) >= 5 || temp === 'hot' || temp === 'warm'
         if (preset === 'cold_prospecting') return ['new', 'intake', 'not_contacted', '', null].includes(lead.station as string | null) && !['hot', 'high'].includes(lead.priority || '')
         if (preset === 'tax_2yr') return leadProspects.some((prospect) => prospect.delinquent_years_category === '2yr')
@@ -800,28 +883,44 @@ function DialerHome() {
       .filter((lead) => (lead.motivation_score || 0) >= minMotivation)
       .filter((lead) => !query || queueLeadText(lead).includes(query))
       .sort((a, b) => {
-        const aDue = followupLeadIds.has(a.id) ? 1 : 0
-        const bDue = followupLeadIds.has(b.id) ? 1 : 0
-        if (aDue !== bDue) return bDue - aDue
+        const aDue = followupLeadIds.has(a.id) || scheduledTodayLeadIds.has(a.id) ? 1 : 0
+        const bDue = followupLeadIds.has(b.id) || scheduledTodayLeadIds.has(b.id) ? 1 : 0
         const aScore = (a.motivation_score || 0) + (a.priority === 'hot' ? 4 : a.priority === 'high' ? 2 : 0)
         const bScore = (b.motivation_score || 0) + (b.priority === 'hot' ? 4 : b.priority === 'high' ? 2 : 0)
+        const aUpdated = new Date(a.updated_at || a.created_at).getTime()
+        const bUpdated = new Date(b.updated_at || b.created_at).getTime()
+        const aContact = lastContactByLeadId.get(a.id)
+        const bContact = lastContactByLeadId.get(b.id)
+        const aContactTime = aContact ? new Date(aContact).getTime() : 0
+        const bContactTime = bContact ? new Date(bContact).getTime() : 0
+
+        if (sortBy === 'due_first') return bDue - aDue || bScore - aScore || bUpdated - aUpdated
+        if (sortBy === 'oldest_contact') return aContactTime - bContactTime || bScore - aScore
+        if (sortBy === 'newest') return bUpdated - aUpdated
+        if (sortBy === 'oldest') return aUpdated - bUpdated
+        if (sortBy === 'motivation') return (b.motivation_score || 0) - (a.motivation_score || 0) || bScore - aScore
+        if (sortBy === 'name') return (a.full_name || '').localeCompare(b.full_name || '')
+        if (aDue !== bDue) return bDue - aDue
         if (aScore !== bScore) return bScore - aScore
-        return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
+        return bUpdated - aUpdated
       })
-  }, [campaign, followupLeadIds, leads, minMotivation, preset, priorityFilter, prospectByLeadId, search, statusFilter, today])
+  }, [campaign, followupLeadIds, lastContactByLeadId, leads, minMotivation, preset, priorityFilter, prospectByLeadId, scheduledTodayLeadIds, search, sortBy, statusFilter, today])
+
+  const selectedQueue = useMemo(() => {
+    return queue.filter((lead) => selectedLeadIds.has(lead.id))
+  }, [queue, selectedLeadIds])
 
   const startQueue = useCallback(() => {
-    if (preset === 'deceased_3yr') {
-      router.push('/dialer?cohort=deceased-2-3yr')
-      return
-    }
-    const ids = queue.slice(0, 100).map((lead) => lead.id)
+    const source = selectedQueue.length > 0 ? selectedQueue : queue
+    const ids = source.slice(0, 100).map((lead) => lead.id)
     if (ids.length > 0) router.push(`/dialer?lead_ids=${ids.join(',')}`)
-  }, [preset, queue, router])
+  }, [queue, router, selectedQueue])
 
-  const currentLead = queue[0] ?? null
+  const currentLead = selectedQueue[0] ?? queue[0] ?? null
   const selectedPreset = QUEUE_PRESETS.find((item) => item.id === preset) ?? QUEUE_PRESETS[0]
-  const previewLeads = queue.slice(0, 25)
+  const previewLeads = queue.slice(0, visibleLimit)
+  const selectedVisibleCount = previewLeads.filter((lead) => selectedLeadIds.has(lead.id)).length
+  const selectedCount = selectedQueue.length
   const hasFilters = campaign !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all' || minMotivation > 0 || search.trim().length > 0
   const resetFilters = useCallback(() => {
     setCampaign('all')
@@ -829,7 +928,24 @@ function DialerHome() {
     setPriorityFilter('all')
     setMinMotivation(0)
     setSearch('')
+    setSelectedLeadIds(new Set())
   }, [])
+  const toggleLeadSelection = useCallback((leadId: string) => {
+    setSelectedLeadIds((current) => {
+      const next = new Set(current)
+      if (next.has(leadId)) next.delete(leadId)
+      else next.add(leadId)
+      return next
+    })
+  }, [])
+  const selectVisibleLeads = useCallback(() => {
+    setSelectedLeadIds((current) => {
+      const next = new Set(current)
+      previewLeads.forEach((lead) => next.add(lead.id))
+      return next
+    })
+  }, [previewLeads])
+  const clearSelectedLeads = useCallback(() => setSelectedLeadIds(new Set()), [])
 
   return (
     <div className="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
@@ -839,7 +955,7 @@ function DialerHome() {
           <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick a queue, confirm the session, start calling.</p>
         </div>
         <div className="text-sm font-bold text-[var(--ck-text-muted)]">
-          {loading ? 'Loading queue...' : `${queue.length.toLocaleString()} ready`}
+          {loading ? 'Loading queue...' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} ready`}
         </div>
       </div>
 
@@ -857,7 +973,10 @@ function DialerHome() {
                 <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Calling Queue</span>
                 <select
                   value={preset}
-                  onChange={(event) => setPreset(event.target.value as QueuePreset)}
+                  onChange={(event) => {
+                    setPreset(event.target.value as QueuePreset)
+                    setSelectedLeadIds(new Set())
+                  }}
                   className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-3 text-base font-bold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
                 >
                   {QUEUE_PRESETS.map((option) => (
@@ -870,7 +989,7 @@ function DialerHome() {
                 disabled={queue.length === 0}
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-4 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
               >
-                <Icon name="play_arrow" size="text-sm" /> Start Queue
+                <Icon name="play_arrow" size="text-sm" /> {selectedCount > 0 ? `Start ${selectedCount}` : 'Start Queue'}
               </button>
             </div>
 
@@ -879,13 +998,15 @@ function DialerHome() {
               <span className="font-bold text-[var(--ck-text)]">{loading ? '...' : queue.length.toLocaleString()} leads</span>
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <DarkSelect label="Campaign" value={campaign} onChange={setCampaign} options={sourceOptions} />
-              <DarkSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={statusOptions} />
-              <DarkSelect label="Priority" value={priorityFilter} onChange={setPriorityFilter} options={['all', 'hot', 'high', 'normal']} />
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <DarkSelect label="Campaign" value={campaign} onChange={(value) => { setCampaign(value); setSelectedLeadIds(new Set()) }} options={sourceOptions} />
+              <DarkSelect label="Status" value={statusFilter} onChange={(value) => { setStatusFilter(value); setSelectedLeadIds(new Set()) }} options={statusOptions} />
+              <DarkSelect label="Priority" value={priorityFilter} onChange={(value) => { setPriorityFilter(value); setSelectedLeadIds(new Set()) }} options={['all', 'hot', 'high', 'normal']} />
+              <DarkSelect label="Sort" value={sortBy} onChange={(value) => setSortBy(value as QueueSort)} options={QUEUE_SORTS.map((item) => item.id)} />
+              <DarkSelect label="Show" value={String(visibleLimit)} onChange={(value) => setVisibleLimit(Number(value))} options={['25', '50', '100']} />
               <label className="block">
                 <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Motivation {minMotivation}+</span>
-                <input type="range" min="0" max="10" value={minMotivation} onChange={(e) => setMinMotivation(Number(e.target.value))} className="mt-3 w-full accent-[#E32E2E]" />
+                <input type="range" min="0" max="10" value={minMotivation} onChange={(e) => { setMinMotivation(Number(e.target.value)); setSelectedLeadIds(new Set()) }} className="mt-3 w-full accent-[#E32E2E]" />
               </label>
             </div>
 
@@ -894,7 +1015,10 @@ function DialerHome() {
                 <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
                 <input
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) => {
+                    setSearch(event.target.value)
+                    setSelectedLeadIds(new Set())
+                  }}
                   placeholder="Search name, phone, address, source"
                   className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] py-2.5 pl-10 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
                 />
@@ -904,16 +1028,28 @@ function DialerHome() {
                   Clear filters
                 </button>
               )}
+              <button onClick={selectVisibleLeads} disabled={previewLeads.length === 0} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:opacity-35">
+                Select shown
+              </button>
+              {selectedCount > 0 && (
+                <button onClick={clearSelectedLeads} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">
+                  Clear selected
+                </button>
+              )}
             </div>
           </section>
 
           <section className="ck-card overflow-hidden">
-            <div className="flex items-center justify-between border-b border-[var(--ck-border)] px-5 py-4">
+            <div className="flex flex-col gap-3 border-b border-[var(--ck-border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-black text-[var(--ck-text)]">Queue Preview</p>
-                <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Showing the first {previewLeads.length} records in call order.</p>
+                <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Showing {previewLeads.length} records. Check only the leads you want to call.</p>
               </div>
-              <span className="text-xs font-bold text-[var(--ck-text-muted)]">{followupLeadIds.size.toLocaleString()} due</span>
+              <div className="flex items-center gap-2 text-xs font-bold text-[var(--ck-text-muted)]">
+                <span>{selectedVisibleCount}/{previewLeads.length} shown selected</span>
+                <span className="hidden sm:inline">/</span>
+                <span>{selectedCount.toLocaleString()} total selected</span>
+              </div>
             </div>
             <div className="max-h-[620px] overflow-auto">
             {loading ? (
@@ -925,16 +1061,26 @@ function DialerHome() {
               </div>
             ) : (
               previewLeads.map((lead, index) => (
-                <div key={lead.id} className="grid gap-3 border-b border-[var(--ck-border)] px-5 py-4 md:grid-cols-[34px_minmax(0,1fr)_145px_88px] md:items-center hover:bg-white/[0.03] transition-colors">
+                <div key={lead.id} className="grid gap-3 border-b border-[var(--ck-border)] px-5 py-4 md:grid-cols-[28px_34px_minmax(0,1fr)_145px_88px] md:items-center hover:bg-white/[0.03] transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={selectedLeadIds.has(lead.id)}
+                    onChange={() => toggleLeadSelection(lead.id)}
+                    aria-label={`Select ${lead.full_name || 'lead'}`}
+                    className="h-4 w-4 rounded border-[var(--ck-border)] bg-[var(--ck-surface-elev)] accent-[#E32E2E]"
+                  />
                   <div className="text-xs font-black text-[var(--ck-text-dim)]">{index + 1}</div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-sm font-black text-[var(--ck-text)]">{toProperCase(lead.full_name) || 'Unknown Lead'}</p>
+                      {scheduledTodayLeadIds.has(lead.id) && <DarkPill tone="red">today</DarkPill>}
                       {followupLeadIds.has(lead.id) && <DarkPill tone="red">due</DarkPill>}
                       {lead.priority && <DarkPill>{lead.priority}</DarkPill>}
                     </div>
                     <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{lead.property_address || lead.city || 'No property address'}</p>
-                    <p className="mt-1 truncate text-xs text-[var(--ck-text-dim)]">{lead.source || 'uncategorized'} / {lead.station || 'intake'}</p>
+                    <p className="mt-1 truncate text-xs text-[var(--ck-text-dim)]">
+                      {lead.source || 'uncategorized'} / {lead.station || 'intake'} / last contact {lastContactLabel(lastContactByLeadId.get(lead.id))}
+                    </p>
                   </div>
                   <p className="text-sm font-bold text-[var(--ck-text)] font-mono">{formatPhone(lead.phone || '')}</p>
                   <button
@@ -957,8 +1103,8 @@ function DialerHome() {
               <p className="mt-1 text-xs text-[var(--ck-text-muted)]">{selectedPreset.label}</p>
             </div>
             <div className="text-right">
-              <p className="text-3xl font-black text-[var(--ck-text)]">{loading ? '...' : queue.length.toLocaleString()}</p>
-              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">ready</p>
+              <p className="text-3xl font-black text-[var(--ck-text)]">{loading ? '...' : (selectedCount || queue.length).toLocaleString()}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{selectedCount > 0 ? 'selected' : 'ready'}</p>
             </div>
           </div>
 
@@ -976,8 +1122,17 @@ function DialerHome() {
             disabled={queue.length === 0}
             className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
           >
-            <Icon name="phone_in_talk" size="text-sm" /> Start Calling
+            <Icon name="phone_in_talk" size="text-sm" /> {selectedCount > 0 ? `Start Selected (${selectedCount})` : 'Start Filtered Queue'}
           </button>
+
+          <div className="mt-3 flex items-center justify-between text-xs text-[var(--ck-text-muted)]">
+            <button onClick={selectVisibleLeads} disabled={previewLeads.length === 0} className="font-bold transition-colors hover:text-[var(--ck-text)] disabled:opacity-35">
+              Select shown
+            </button>
+            <button onClick={clearSelectedLeads} disabled={selectedCount === 0} className="font-bold transition-colors hover:text-[var(--ck-text)] disabled:opacity-35">
+              Clear
+            </button>
+          </div>
 
           <div className="mt-5 border-t border-[var(--ck-border)] pt-5">
             <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Next Up</p>
@@ -1017,7 +1172,7 @@ function DarkSelect({ label, value, onChange, options }: { label: string; value:
         className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
       >
         {options.map((option) => (
-          <option key={option} value={option}>{option === 'all' ? 'All' : option.replace(/_/g, ' ')}</option>
+          <option key={option} value={option}>{formatSelectOption(option)}</option>
         ))}
       </select>
     </label>
