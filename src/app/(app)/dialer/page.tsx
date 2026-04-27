@@ -112,6 +112,23 @@ interface QueueProspect {
 type QueuePreset = 'scheduled_today' | 'followups_today' | 'stale_30' | 'warm_followups' | 'cold_prospecting' | 'tax_2yr' | 'deceased_3yr' | 'priority' | 'next_step' | 'custom'
 type QueueSort = 'recommended' | 'due_first' | 'oldest_contact' | 'newest' | 'oldest' | 'motivation' | 'name'
 
+interface SavedDialerQueue {
+  id: string
+  name: string
+  preset: QueuePreset
+  campaign: string
+  statusFilter: string
+  priorityFilter: string
+  minMotivation: number
+  search: string
+  sortBy: QueueSort
+  visibleLimit: number
+  createdAt: string
+  updatedAt: string
+}
+
+const SAVED_QUEUE_STORAGE_KEY = 'savingkc:dialer:saved-queues:v1'
+
 const QUEUE_PRESETS: Array<{ id: QueuePreset; label: string; icon: string; description: string }> = [
   { id: 'scheduled_today', label: 'Calendar Scheduled Today', icon: 'today', description: 'Calendar tasks, callbacks, and appointments due today.' },
   { id: 'followups_today', label: 'Follow-ups Today', icon: 'event_upcoming', description: 'Callbacks and next-step work due now.' },
@@ -134,6 +151,46 @@ const QUEUE_SORTS: Array<{ id: QueueSort; label: string }> = [
   { id: 'motivation', label: 'Motivation high to low' },
   { id: 'name', label: 'Name A-Z' },
 ]
+
+function isQueuePreset(value: unknown): value is QueuePreset {
+  return typeof value === 'string' && QUEUE_PRESETS.some((item) => item.id === value)
+}
+
+function isQueueSort(value: unknown): value is QueueSort {
+  return typeof value === 'string' && QUEUE_SORTS.some((item) => item.id === value)
+}
+
+function readSavedDialerQueues(): SavedDialerQueue[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SAVED_QUEUE_STORAGE_KEY) || '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((item): item is Partial<SavedDialerQueue> => Boolean(item) && typeof item === 'object')
+      .filter((item) => typeof item.id === 'string' && typeof item.name === 'string' && isQueuePreset(item.preset) && isQueueSort(item.sortBy))
+      .map((item) => ({
+        id: item.id as string,
+        name: item.name as string,
+        preset: item.preset as QueuePreset,
+        campaign: typeof item.campaign === 'string' ? item.campaign : 'all',
+        statusFilter: typeof item.statusFilter === 'string' ? item.statusFilter : 'all',
+        priorityFilter: typeof item.priorityFilter === 'string' ? item.priorityFilter : 'all',
+        minMotivation: typeof item.minMotivation === 'number' ? item.minMotivation : 0,
+        search: typeof item.search === 'string' ? item.search : '',
+        sortBy: item.sortBy as QueueSort,
+        visibleLimit: typeof item.visibleLimit === 'number' ? item.visibleLimit : 25,
+        createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
+        updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString(),
+      }))
+  } catch {
+    return []
+  }
+}
+
+function createSavedDialerQueueId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return `queue-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
 
 function dateKey(value: string | null | undefined) {
   if (!value) return ''
@@ -755,6 +812,9 @@ function DialerHome() {
   const [sortBy, setSortBy] = useState<QueueSort>('recommended')
   const [visibleLimit, setVisibleLimit] = useState(25)
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(() => new Set())
+  const [savedQueues, setSavedQueues] = useState<SavedDialerQueue[]>(readSavedDialerQueues)
+  const [savedQueueName, setSavedQueueName] = useState('')
+  const [activeSavedQueueId, setActiveSavedQueueId] = useState('')
   const [agent, setAgent] = useState('Casey')
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [pacing, setPacing] = useState(18)
@@ -803,6 +863,11 @@ function DialerHome() {
     }
     load()
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(SAVED_QUEUE_STORAGE_KEY, JSON.stringify(savedQueues))
+  }, [savedQueues])
 
   const today = dateKey(new Date().toISOString())
   const followupLeadIds = useMemo(() => {
@@ -946,6 +1011,52 @@ function DialerHome() {
     })
   }, [previewLeads])
   const clearSelectedLeads = useCallback(() => setSelectedLeadIds(new Set()), [])
+  const applySavedQueue = useCallback((savedQueue: SavedDialerQueue) => {
+    setPreset(savedQueue.preset)
+    setCampaign(savedQueue.campaign)
+    setStatusFilter(savedQueue.statusFilter)
+    setPriorityFilter(savedQueue.priorityFilter)
+    setMinMotivation(savedQueue.minMotivation)
+    setSearch(savedQueue.search)
+    setSortBy(savedQueue.sortBy)
+    setVisibleLimit(savedQueue.visibleLimit)
+    setActiveSavedQueueId(savedQueue.id)
+    setSavedQueueName(savedQueue.name)
+    setSelectedLeadIds(new Set())
+  }, [])
+  const saveCurrentQueue = useCallback(() => {
+    const name = savedQueueName.trim() || selectedPreset.label
+    const now = new Date().toISOString()
+    const existingId = activeSavedQueueId && savedQueues.some((item) => item.id === activeSavedQueueId)
+      ? activeSavedQueueId
+      : createSavedDialerQueueId()
+    const savedQueue: SavedDialerQueue = {
+      id: existingId,
+      name,
+      preset,
+      campaign,
+      statusFilter,
+      priorityFilter,
+      minMotivation,
+      search,
+      sortBy,
+      visibleLimit,
+      createdAt: savedQueues.find((item) => item.id === existingId)?.createdAt || now,
+      updatedAt: now,
+    }
+    setSavedQueues((current) => {
+      const withoutCurrent = current.filter((item) => item.id !== existingId)
+      return [savedQueue, ...withoutCurrent].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    })
+    setActiveSavedQueueId(existingId)
+    setSavedQueueName(name)
+  }, [activeSavedQueueId, campaign, minMotivation, preset, priorityFilter, savedQueueName, savedQueues, search, selectedPreset.label, sortBy, statusFilter, visibleLimit])
+  const deleteSavedQueue = useCallback(() => {
+    if (!activeSavedQueueId) return
+    setSavedQueues((current) => current.filter((item) => item.id !== activeSavedQueueId))
+    setActiveSavedQueueId('')
+    setSavedQueueName('')
+  }, [activeSavedQueueId])
 
   return (
     <div className="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
@@ -996,6 +1107,53 @@ function DialerHome() {
             <div className="mt-3 flex flex-col gap-2 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
               <span>{selectedPreset.description}</span>
               <span className="font-bold text-[var(--ck-text)]">{loading ? '...' : queue.length.toLocaleString()} leads</span>
+            </div>
+
+            <div className="mt-5 border-t border-[var(--ck-border)] pt-4">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_112px_88px] md:items-end">
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Saved List</span>
+                  <select
+                    value={activeSavedQueueId}
+                    onChange={(event) => {
+                      const savedQueue = savedQueues.find((item) => item.id === event.target.value)
+                      if (savedQueue) applySavedQueue(savedQueue)
+                      else {
+                        setActiveSavedQueueId('')
+                        setSavedQueueName('')
+                      }
+                    }}
+                    className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                  >
+                    <option value="">Select list</option>
+                    {savedQueues.map((savedQueue) => (
+                      <option key={savedQueue.id} value={savedQueue.id}>{savedQueue.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">List Name</span>
+                  <input
+                    value={savedQueueName}
+                    onChange={(event) => setSavedQueueName(event.target.value)}
+                    placeholder={selectedPreset.label}
+                    className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                  />
+                </label>
+                <button
+                  onClick={saveCurrentQueue}
+                  className="rounded-lg border border-[#E32E2E]/45 bg-[#E32E2E]/10 px-3 py-2 text-xs font-black uppercase tracking-wider text-[#ff7777] transition-colors hover:border-[#E32E2E]"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={deleteSavedQueue}
+                  disabled={!activeSavedQueueId}
+                  className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
