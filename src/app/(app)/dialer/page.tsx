@@ -419,6 +419,19 @@ function DialerPageInner() {
     setCurrentIndex((i) => Math.max(i - 1, 0))
   }, [])
 
+  const closeSession = useCallback(() => {
+    const returnTo = params.get('return_to')
+    if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) {
+      router.push(returnTo)
+      return
+    }
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back()
+      return
+    }
+    router.push('/dialer')
+  }, [params, router])
+
   useEffect(() => {
     function onQueueComplete(e: Event) {
       const detail = (e as CustomEvent).detail
@@ -515,7 +528,7 @@ function DialerPageInner() {
       <div className="flex items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={() => router.push('/leads')}
+            onClick={closeSession}
             className="shrink-0 w-10 h-10 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text-muted)] flex items-center justify-center transition-colors"
             title="Exit session"
             aria-label="Exit session"
@@ -815,6 +828,7 @@ function DialerHome() {
   const [savedQueues, setSavedQueues] = useState<SavedDialerQueue[]>(readSavedDialerQueues)
   const [savedQueueName, setSavedQueueName] = useState('')
   const [activeSavedQueueId, setActiveSavedQueueId] = useState('')
+  const [showQueueControls, setShowQueueControls] = useState(false)
   const [agent, setAgent] = useState('Casey')
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [pacing, setPacing] = useState(18)
@@ -978,7 +992,7 @@ function DialerHome() {
   const startQueue = useCallback(() => {
     const source = selectedQueue.length > 0 ? selectedQueue : queue
     const ids = source.slice(0, 100).map((lead) => lead.id)
-    if (ids.length > 0) router.push(`/dialer?lead_ids=${ids.join(',')}`)
+    if (ids.length > 0) router.push(`/dialer?lead_ids=${ids.join(',')}&return_to=/dialer`)
   }, [queue, router, selectedQueue])
 
   const currentLead = selectedQueue[0] ?? queue[0] ?? null
@@ -987,6 +1001,7 @@ function DialerHome() {
   const selectedVisibleCount = previewLeads.filter((lead) => selectedLeadIds.has(lead.id)).length
   const selectedCount = selectedQueue.length
   const hasFilters = campaign !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all' || minMotivation > 0 || search.trim().length > 0
+  const activeFilterCount = [campaign !== 'all', statusFilter !== 'all', priorityFilter !== 'all', minMotivation > 0, search.trim().length > 0].filter(Boolean).length
   const resetFilters = useCallback(() => {
     setCampaign('all')
     setStatusFilter('all')
@@ -1109,92 +1124,108 @@ function DialerHome() {
               <span className="font-bold text-[var(--ck-text)]">{loading ? '...' : queue.length.toLocaleString()} leads</span>
             </div>
 
-            <div className="mt-5 border-t border-[var(--ck-border)] pt-4">
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_112px_88px] md:items-end">
-                <label className="block">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Saved List</span>
-                  <select
-                    value={activeSavedQueueId}
-                    onChange={(event) => {
-                      const savedQueue = savedQueues.find((item) => item.id === event.target.value)
-                      if (savedQueue) applySavedQueue(savedQueue)
-                      else {
-                        setActiveSavedQueueId('')
-                        setSavedQueueName('')
-                      }
-                    }}
-                    className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-                  >
-                    <option value="">Select list</option>
-                    {savedQueues.map((savedQueue) => (
-                      <option key={savedQueue.id} value={savedQueue.id}>{savedQueue.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">List Name</span>
-                  <input
-                    value={savedQueueName}
-                    onChange={(event) => setSavedQueueName(event.target.value)}
-                    placeholder={selectedPreset.label}
-                    className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-                  />
-                </label>
-                <button
-                  onClick={saveCurrentQueue}
-                  className="rounded-lg border border-[#E32E2E]/45 bg-[#E32E2E]/10 px-3 py-2 text-xs font-black uppercase tracking-wider text-[#ff7777] transition-colors hover:border-[#E32E2E]"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={deleteSavedQueue}
-                  disabled={!activeSavedQueueId}
-                  className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
+            <button
+              onClick={() => setShowQueueControls((value) => !value)}
+              className="mt-5 flex w-full items-center justify-between rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
+              aria-expanded={showQueueControls}
+            >
+              <span>
+                Saved lists and filters
+                {activeFilterCount > 0 && <span className="ml-2 text-[#ff7777]">{activeFilterCount} active</span>}
+              </span>
+              <Icon name={showQueueControls ? 'expand_less' : 'expand_more'} size="text-lg" />
+            </button>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-              <DarkSelect label="Campaign" value={campaign} onChange={(value) => { setCampaign(value); setSelectedLeadIds(new Set()) }} options={sourceOptions} />
-              <DarkSelect label="Status" value={statusFilter} onChange={(value) => { setStatusFilter(value); setSelectedLeadIds(new Set()) }} options={statusOptions} />
-              <DarkSelect label="Priority" value={priorityFilter} onChange={(value) => { setPriorityFilter(value); setSelectedLeadIds(new Set()) }} options={['all', 'hot', 'high', 'normal']} />
-              <DarkSelect label="Sort" value={sortBy} onChange={(value) => setSortBy(value as QueueSort)} options={QUEUE_SORTS.map((item) => item.id)} />
-              <DarkSelect label="Show" value={String(visibleLimit)} onChange={(value) => setVisibleLimit(Number(value))} options={['25', '50', '100']} />
-              <label className="block">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Motivation {minMotivation}+</span>
-                <input type="range" min="0" max="10" value={minMotivation} onChange={(e) => { setMinMotivation(Number(e.target.value)); setSelectedLeadIds(new Set()) }} className="mt-3 w-full accent-[#E32E2E]" />
-              </label>
-            </div>
+            {showQueueControls && (
+              <>
+                <div className="mt-3 border-t border-[var(--ck-border)] pt-4">
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_112px_88px] md:items-end">
+                    <label className="block">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Saved List</span>
+                      <select
+                        value={activeSavedQueueId}
+                        onChange={(event) => {
+                          const savedQueue = savedQueues.find((item) => item.id === event.target.value)
+                          if (savedQueue) applySavedQueue(savedQueue)
+                          else {
+                            setActiveSavedQueueId('')
+                            setSavedQueueName('')
+                          }
+                        }}
+                        className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                      >
+                        <option value="">Select list</option>
+                        {savedQueues.map((savedQueue) => (
+                          <option key={savedQueue.id} value={savedQueue.id}>{savedQueue.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">List Name</span>
+                      <input
+                        value={savedQueueName}
+                        onChange={(event) => setSavedQueueName(event.target.value)}
+                        placeholder={selectedPreset.label}
+                        className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                      />
+                    </label>
+                    <button
+                      onClick={saveCurrentQueue}
+                      className="rounded-lg border border-[#E32E2E]/45 bg-[#E32E2E]/10 px-3 py-2 text-xs font-black uppercase tracking-wider text-[#ff7777] transition-colors hover:border-[#E32E2E]"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={deleteSavedQueue}
+                      disabled={!activeSavedQueueId}
+                      className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-35"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
 
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="relative flex-1">
-                <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
-                <input
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value)
-                    setSelectedLeadIds(new Set())
-                  }}
-                  placeholder="Search name, phone, address, source"
-                  className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] py-2.5 pl-10 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-                />
-              </div>
-              {hasFilters && (
-                <button onClick={resetFilters} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">
-                  Clear filters
-                </button>
-              )}
-              <button onClick={selectVisibleLeads} disabled={previewLeads.length === 0} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:opacity-35">
-                Select shown
-              </button>
-              {selectedCount > 0 && (
-                <button onClick={clearSelectedLeads} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">
-                  Clear selected
-                </button>
-              )}
-            </div>
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                  <DarkSelect label="Campaign" value={campaign} onChange={(value) => { setCampaign(value); setSelectedLeadIds(new Set()) }} options={sourceOptions} />
+                  <DarkSelect label="Status" value={statusFilter} onChange={(value) => { setStatusFilter(value); setSelectedLeadIds(new Set()) }} options={statusOptions} />
+                  <DarkSelect label="Priority" value={priorityFilter} onChange={(value) => { setPriorityFilter(value); setSelectedLeadIds(new Set()) }} options={['all', 'hot', 'high', 'normal']} />
+                  <DarkSelect label="Sort" value={sortBy} onChange={(value) => setSortBy(value as QueueSort)} options={QUEUE_SORTS.map((item) => item.id)} />
+                  <DarkSelect label="Show" value={String(visibleLimit)} onChange={(value) => setVisibleLimit(Number(value))} options={['25', '50', '100']} />
+                  <label className="block">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Motivation {minMotivation}+</span>
+                    <input type="range" min="0" max="10" value={minMotivation} onChange={(e) => { setMinMotivation(Number(e.target.value)); setSelectedLeadIds(new Set()) }} className="mt-3 w-full accent-[#E32E2E]" />
+                  </label>
+                </div>
+
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="relative flex-1">
+                    <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
+                    <input
+                      value={search}
+                      onChange={(event) => {
+                        setSearch(event.target.value)
+                        setSelectedLeadIds(new Set())
+                      }}
+                      placeholder="Search name, phone, address, source"
+                      className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] py-2.5 pl-10 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                    />
+                  </div>
+                  {hasFilters && (
+                    <button onClick={resetFilters} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">
+                      Clear filters
+                    </button>
+                  )}
+                  <button onClick={selectVisibleLeads} disabled={previewLeads.length === 0} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:opacity-35">
+                    Select shown
+                  </button>
+                  {selectedCount > 0 && (
+                    <button onClick={clearSelectedLeads} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">
+                      Clear selected
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </section>
 
           <section className="ck-card overflow-hidden">
@@ -1242,7 +1273,7 @@ function DialerHome() {
                   </div>
                   <p className="text-sm font-bold text-[var(--ck-text)] font-mono">{formatPhone(lead.phone || '')}</p>
                   <button
-                    onClick={() => router.push(`/dialer?lead_ids=${lead.id}`)}
+                    onClick={() => router.push(`/dialer?lead_ids=${lead.id}&return_to=/dialer`)}
                     className="inline-flex items-center justify-center rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[#E32E2E]/50"
                   >
                     Open
@@ -1300,7 +1331,7 @@ function DialerHome() {
                 <p className="mt-1 font-mono text-sm font-bold text-[#E32E2E]">{formatPhone(currentLead.phone || '')}</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--ck-text-muted)]">{currentLead.property_address || currentLead.city || 'No property address on file.'}</p>
                 <button
-                  onClick={() => router.push(`/dialer?lead_ids=${currentLead.id}`)}
+                  onClick={() => router.push(`/dialer?lead_ids=${currentLead.id}&return_to=/dialer`)}
                   className="mt-4 w-full rounded-lg border border-[var(--ck-border)] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[#E32E2E]/50"
                 >
                   Open Lead
