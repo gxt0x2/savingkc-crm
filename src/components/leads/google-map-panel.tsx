@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
-const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY?.trim() ?? ''
+const BUILD_TIME_GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY?.trim() ?? ''
 
 interface LatLng {
   lat(): number
@@ -52,14 +52,34 @@ declare global {
   interface Window {
     google?: GoogleMapsApi
     __savingkcGmapsLoader?: Promise<GoogleMapsApi>
+    __savingkcGmapsKey?: string
   }
 }
 
-function loadMapsJs(): Promise<GoogleMapsApi> {
+async function getMapsKey(): Promise<string> {
+  if (BUILD_TIME_GMAPS_KEY) return BUILD_TIME_GMAPS_KEY
+  if (typeof window === 'undefined') throw new Error('Maps cannot load during SSR.')
+  if (window.__savingkcGmapsKey) return window.__savingkcGmapsKey
+
+  const res = await fetch('/api/google-maps-key', {
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  })
+  const data = await res.json().catch(() => null) as { key?: string; error?: string } | null
+  const key = data?.key?.trim()
+  if (!res.ok || !key) {
+    throw new Error(data?.error || 'Google Maps key is not configured.')
+  }
+
+  window.__savingkcGmapsKey = key
+  return key
+}
+
+async function loadMapsJs(): Promise<GoogleMapsApi> {
   if (typeof window === 'undefined') return Promise.reject(new Error('Maps cannot load during SSR.'))
-  if (!GMAPS_KEY) return Promise.reject(new Error('Google Maps key is not configured.'))
   if (window.google?.maps) return Promise.resolve(window.google)
   if (window.__savingkcGmapsLoader) return window.__savingkcGmapsLoader
+  const key = await getMapsKey()
 
   window.__savingkcGmapsLoader = new Promise((resolve, reject) => {
     const existing = document.getElementById('savingkc-gmaps-js') as HTMLScriptElement | null
@@ -71,7 +91,7 @@ function loadMapsJs(): Promise<GoogleMapsApi> {
 
     const script = document.createElement('script')
     script.id = 'savingkc-gmaps-js'
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GMAPS_KEY)}&v=weekly`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly`
     script.async = true
     script.defer = true
     script.onload = () => window.google ? resolve(window.google) : reject(new Error('Maps failed to initialize.'))
@@ -80,6 +100,14 @@ function loadMapsJs(): Promise<GoogleMapsApi> {
   })
 
   return window.__savingkcGmapsLoader
+}
+
+function googleMapsSearchUrl(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+}
+
+function keylessMapEmbedUrl(address: string): string {
+  return `https://maps.google.com/maps?q=${encodeURIComponent(address)}&z=18&t=k&output=embed`
 }
 
 function heading(from: { lat: () => number; lng: () => number }, to: { lat: () => number; lng: () => number }): number {
@@ -101,11 +129,13 @@ function PanelShell({
   refEl,
   loading,
   error,
+  fallbackUrl,
 }: {
   height: number | string
   refEl: RefObject<HTMLDivElement | null>
   loading: boolean
   error: string | null
+  fallbackUrl?: string
 }) {
   return (
     <div className="relative" style={{ width: '100%', height }}>
@@ -119,7 +149,16 @@ function PanelShell({
             pointerEvents: 'none',
           }}
         >
-          {error ?? 'Loading...'}
+          {error && fallbackUrl ? (
+            <a
+              href={fallbackUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-white/20"
+            >
+              Open in Google Maps
+            </a>
+          ) : error ?? 'Loading...'}
         </div>
       )}
     </div>
@@ -190,7 +229,15 @@ export function StreetViewPanel({ address, height = 500 }: PanelProps) {
     }
   }, [address])
 
-  return <PanelShell height={height} refEl={ref} loading={loading} error={error} />
+  return (
+    <PanelShell
+      height={height}
+      refEl={ref}
+      loading={loading}
+      error={error}
+      fallbackUrl={googleMapsSearchUrl(address)}
+    />
+  )
 }
 
 export function MapPanel({ address, height = 500 }: PanelProps) {
@@ -235,6 +282,19 @@ export function MapPanel({ address, height = 500 }: PanelProps) {
       cancelled = true
     }
   }, [address])
+
+  if (error) {
+    return (
+      <iframe
+        src={keylessMapEmbedUrl(address)}
+        width="100%"
+        height={typeof height === 'number' ? String(height) : height}
+        style={{ border: 0, display: 'block' }}
+        loading="lazy"
+        title="Map View"
+      />
+    )
+  }
 
   return <PanelShell height={height} refEl={ref} loading={loading} error={error} />
 }
