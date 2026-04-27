@@ -115,6 +115,7 @@ type QueueSort = 'recommended' | 'due_first' | 'oldest_contact' | 'newest' | 'ol
 interface SavedDialerQueue {
   id: string
   name: string
+  agent: string
   preset: QueuePreset
   campaign: string
   statusFilter: string
@@ -126,8 +127,6 @@ interface SavedDialerQueue {
   createdAt: string
   updatedAt: string
 }
-
-const SAVED_QUEUE_STORAGE_KEY = 'savingkc:dialer:saved-queues:v1'
 
 const QUEUE_PRESETS: Array<{ id: QueuePreset; label: string; icon: string; description: string }> = [
   { id: 'scheduled_today', label: 'Calendar Scheduled Today', icon: 'today', description: 'Calendar tasks, callbacks, and appointments due today.' },
@@ -151,46 +150,6 @@ const QUEUE_SORTS: Array<{ id: QueueSort; label: string }> = [
   { id: 'motivation', label: 'Motivation high to low' },
   { id: 'name', label: 'Name A-Z' },
 ]
-
-function isQueuePreset(value: unknown): value is QueuePreset {
-  return typeof value === 'string' && QUEUE_PRESETS.some((item) => item.id === value)
-}
-
-function isQueueSort(value: unknown): value is QueueSort {
-  return typeof value === 'string' && QUEUE_SORTS.some((item) => item.id === value)
-}
-
-function readSavedDialerQueues(): SavedDialerQueue[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(SAVED_QUEUE_STORAGE_KEY) || '[]')
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter((item): item is Partial<SavedDialerQueue> => Boolean(item) && typeof item === 'object')
-      .filter((item) => typeof item.id === 'string' && typeof item.name === 'string' && isQueuePreset(item.preset) && isQueueSort(item.sortBy))
-      .map((item) => ({
-        id: item.id as string,
-        name: item.name as string,
-        preset: item.preset as QueuePreset,
-        campaign: typeof item.campaign === 'string' ? item.campaign : 'all',
-        statusFilter: typeof item.statusFilter === 'string' ? item.statusFilter : 'all',
-        priorityFilter: typeof item.priorityFilter === 'string' ? item.priorityFilter : 'all',
-        minMotivation: typeof item.minMotivation === 'number' ? item.minMotivation : 0,
-        search: typeof item.search === 'string' ? item.search : '',
-        sortBy: item.sortBy as QueueSort,
-        visibleLimit: typeof item.visibleLimit === 'number' ? item.visibleLimit : 25,
-        createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
-        updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString(),
-      }))
-  } catch {
-    return []
-  }
-}
-
-function createSavedDialerQueueId() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
-  return `queue-${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
 
 function dateKey(value: string | null | undefined) {
   if (!value) return ''
@@ -825,13 +784,31 @@ function DialerHome() {
   const [sortBy, setSortBy] = useState<QueueSort>('recommended')
   const [visibleLimit, setVisibleLimit] = useState(25)
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(() => new Set())
-  const [savedQueues, setSavedQueues] = useState<SavedDialerQueue[]>(readSavedDialerQueues)
+  const [savedQueues, setSavedQueues] = useState<SavedDialerQueue[]>([])
   const [savedQueueName, setSavedQueueName] = useState('')
   const [activeSavedQueueId, setActiveSavedQueueId] = useState('')
+  const [savedQueueError, setSavedQueueError] = useState<string | null>(null)
   const [showQueueControls, setShowQueueControls] = useState(false)
   const [agent, setAgent] = useState('Casey')
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [pacing, setPacing] = useState(18)
+
+  const loadSavedQueues = useCallback(async () => {
+    setSavedQueueError(null)
+    try {
+      const response = await fetch('/api/dialer/saved-lists', { cache: 'no-store' })
+      const payload = await response.json()
+      if (!response.ok) {
+        setSavedQueueError(payload?.error || 'Could not load saved lists.')
+        setSavedQueues([])
+        return
+      }
+      setSavedQueues((payload.savedLists || []) as SavedDialerQueue[])
+    } catch {
+      setSavedQueueError('Could not load saved lists.')
+      setSavedQueues([])
+    }
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -879,9 +856,9 @@ function DialerHome() {
   }, [])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem(SAVED_QUEUE_STORAGE_KEY, JSON.stringify(savedQueues))
-  }, [savedQueues])
+    const timeout = window.setTimeout(() => { void loadSavedQueues() }, 0)
+    return () => window.clearTimeout(timeout)
+  }, [loadSavedQueues])
 
   const today = dateKey(new Date().toISOString())
   const followupLeadIds = useMemo(() => {
@@ -1028,6 +1005,7 @@ function DialerHome() {
   const clearSelectedLeads = useCallback(() => setSelectedLeadIds(new Set()), [])
   const applySavedQueue = useCallback((savedQueue: SavedDialerQueue) => {
     setPreset(savedQueue.preset)
+    setAgent(savedQueue.agent)
     setCampaign(savedQueue.campaign)
     setStatusFilter(savedQueue.statusFilter)
     setPriorityFilter(savedQueue.priorityFilter)
@@ -1039,39 +1017,57 @@ function DialerHome() {
     setSavedQueueName(savedQueue.name)
     setSelectedLeadIds(new Set())
   }, [])
-  const saveCurrentQueue = useCallback(() => {
+  const saveCurrentQueue = useCallback(async () => {
     const name = savedQueueName.trim() || selectedPreset.label
-    const now = new Date().toISOString()
-    const existingId = activeSavedQueueId && savedQueues.some((item) => item.id === activeSavedQueueId)
-      ? activeSavedQueueId
-      : createSavedDialerQueueId()
-    const savedQueue: SavedDialerQueue = {
-      id: existingId,
-      name,
-      preset,
-      campaign,
-      statusFilter,
-      priorityFilter,
-      minMotivation,
-      search,
-      sortBy,
-      visibleLimit,
-      createdAt: savedQueues.find((item) => item.id === existingId)?.createdAt || now,
-      updatedAt: now,
+    const existingId = activeSavedQueueId && savedQueues.some((item) => item.id === activeSavedQueueId) ? activeSavedQueueId : undefined
+    const response = await fetch('/api/dialer/saved-lists', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: existingId,
+        agent,
+        name,
+        preset,
+        campaign,
+        statusFilter,
+        priorityFilter,
+        minMotivation,
+        search,
+        sortBy,
+        visibleLimit,
+      }),
+    })
+    const payload = await response.json()
+    if (!response.ok) {
+      setSavedQueueError(payload?.error || 'Could not save list.')
+      return
     }
+    const savedQueue = payload.savedList as SavedDialerQueue
     setSavedQueues((current) => {
-      const withoutCurrent = current.filter((item) => item.id !== existingId)
+      const withoutCurrent = current.filter((item) => item.id !== savedQueue.id)
       return [savedQueue, ...withoutCurrent].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     })
-    setActiveSavedQueueId(existingId)
-    setSavedQueueName(name)
-  }, [activeSavedQueueId, campaign, minMotivation, preset, priorityFilter, savedQueueName, savedQueues, search, selectedPreset.label, sortBy, statusFilter, visibleLimit])
-  const deleteSavedQueue = useCallback(() => {
+    setActiveSavedQueueId(savedQueue.id)
+    setSavedQueueName(savedQueue.name)
+    setSavedQueueError(null)
+  }, [activeSavedQueueId, agent, campaign, minMotivation, preset, priorityFilter, savedQueueName, savedQueues, search, selectedPreset.label, sortBy, statusFilter, visibleLimit])
+  const deleteSavedQueue = useCallback(async () => {
     if (!activeSavedQueueId) return
+    const response = await fetch(`/api/dialer/saved-lists?id=${encodeURIComponent(activeSavedQueueId)}`, { method: 'DELETE' })
+    const payload = await response.json()
+    if (!response.ok) {
+      setSavedQueueError(payload?.error || 'Could not delete list.')
+      return
+    }
     setSavedQueues((current) => current.filter((item) => item.id !== activeSavedQueueId))
     setActiveSavedQueueId('')
     setSavedQueueName('')
+    setSavedQueueError(null)
   }, [activeSavedQueueId])
+
+  const selectedSavedQueue: SavedDialerQueue | null = activeSavedQueueId
+    ? savedQueues.find((item) => item.id === activeSavedQueueId) ?? null
+    : null
 
   return (
     <div className="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
@@ -1156,7 +1152,7 @@ function DialerHome() {
                       >
                         <option value="">Select list</option>
                         {savedQueues.map((savedQueue) => (
-                          <option key={savedQueue.id} value={savedQueue.id}>{savedQueue.name}</option>
+                          <option key={savedQueue.id} value={savedQueue.id}>{savedQueue.name} ({savedQueue.agent})</option>
                         ))}
                       </select>
                     </label>
@@ -1183,6 +1179,14 @@ function DialerHome() {
                       Delete
                     </button>
                   </div>
+                  {savedQueueError && (
+                    <p className="mt-3 text-xs font-bold text-[#ff7777]">{savedQueueError}</p>
+                  )}
+                  {selectedSavedQueue && !savedQueueError && (
+                    <p className="mt-3 text-xs text-[var(--ck-text-muted)]">
+                      Loaded from database for {selectedSavedQueue.agent}. Updated {formatActivityTime(selectedSavedQueue.updatedAt)}.
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
