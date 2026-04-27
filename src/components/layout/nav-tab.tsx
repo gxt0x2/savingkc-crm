@@ -8,6 +8,7 @@ import { useAppMode } from '@/hooks/use-app-mode'
 const acquisitionTabs = [
   { label: 'ARI', href: '/ari', icon: 'assistant' },
   { label: 'Hot Opps', href: '/opportunities', icon: 'local_fire_department' },
+  { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },
   { label: 'KPIs', href: '/dashboard', icon: 'insights' },
   { label: 'Calendar', href: '/calendar', icon: 'calendar_today' },
 ]
@@ -35,6 +36,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
     if (pathname === href) return true
     if (href === '/ari' && pathname?.startsWith('/ari')) return true
     if (href === '/opportunities' && (pathname?.startsWith('/opportunities') || pathname?.startsWith('/leads'))) return true
+    if (href === '/dialer' && pathname?.startsWith('/dialer')) return true
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
     if (href === '/calendar' && pathname?.startsWith('/calendar')) return true
     if (href === '/dispo/pipeline' && pathname?.startsWith('/dispo/pipeline')) return true
