@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { trackEvent } from './track-events'
+import { MapPanel, StreetViewPanel } from '@/components/leads/google-map-panel'
 
 interface PhotoGalleryProps {
   photos: string[]
@@ -82,8 +83,6 @@ export default function PhotoGallery({
   const [gridView, setGridView] = useState(false)
   const [streetViewOpen, setStreetViewOpen] = useState(false)
   const [mapViewOpen, setMapViewOpen] = useState(false)
-  const [streetViewEmbedUrl, setStreetViewEmbedUrl] = useState<string | null>(null)
-  const [streetViewError, setStreetViewError] = useState<string | null>(null)
   const [streetStaticBroken, setStreetStaticBroken] = useState(false)
   const [mapStaticBroken, setMapStaticBroken] = useState(false)
 
@@ -100,10 +99,6 @@ export default function PhotoGallery({
 
   const mapStaticUrl = hasAddress
     ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodedAddress}&zoom=16&size=300x300&scale=2&maptype=roadmap&markers=color:red%7C${encodedAddress}&key=${GMAPS_KEY}`
-    : null
-
-  const mapEmbedUrl = hasAddress
-    ? `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
     : null
 
   useEffect(() => {
@@ -180,35 +175,9 @@ export default function PhotoGallery({
     return () => { document.body.style.overflow = '' }
   }, [lightboxOpen, streetViewOpen, mapViewOpen])
 
-  /* ── Street View modal opener (geocode → embed URL) ──
-     Needs Geocoding API + Maps Embed API enabled in Google Cloud
-     Console. If either is missing/blocked we fall back to a clean
-     "Open in Google Maps" link instead of dumping Google's raw
-     error JSON into an iframe. */
-  async function openStreetView() {
+  function openStreetView() {
     setStreetViewOpen(true)
     if (slug) trackEvent(slug, 'street_view_open')
-    if (streetViewEmbedUrl || streetViewError) return
-    try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GMAPS_KEY}`
-      )
-      const data = await res.json()
-      if (data.error_message || data.status === 'REQUEST_DENIED') {
-        setStreetViewError(data.error_message || 'Geocoding is not enabled on this Google Cloud project.')
-        return
-      }
-      const loc = data.results?.[0]?.geometry?.location
-      if (loc) {
-        setStreetViewEmbedUrl(
-          `https://www.google.com/maps/embed/v1/streetview?key=${GMAPS_KEY}&location=${loc.lat},${loc.lng}&fov=90&heading=0&pitch=0`
-        )
-      } else {
-        setStreetViewError('No street view available for this address.')
-      }
-    } catch (err) {
-      setStreetViewError(err instanceof Error ? err.message : 'Could not load street view.')
-    }
   }
 
   if (photos.length === 0) return null
@@ -458,45 +427,13 @@ export default function PhotoGallery({
                 </svg>
               </button>
             </div>
-            {streetViewEmbedUrl ? (
-              <iframe
-                src={streetViewEmbedUrl}
-                width="100%"
-                height="500"
-                style={{ border: 0, display: 'block' }}
-                allowFullScreen
-                loading="lazy"
-                title="Street View"
-              />
-            ) : streetViewError ? (
-              <div className="flex flex-col items-center justify-center gap-3 h-[500px] bg-gray-50 px-8 text-center">
-                <IconPegman className="w-10 h-10 text-gray-400" />
-                <p className="text-sm font-semibold text-gray-700 max-w-md">
-                  Inline Street View isn't available right now.
-                </p>
-                <p className="text-xs text-gray-500 max-w-md">
-                  Enable <span className="font-mono">Geocoding API</span> and <span className="font-mono">Maps Embed API</span> in Google Cloud Console to render it inline. In the meantime, open the location in Google Maps.
-                </p>
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
-                >
-                  Open in Google Maps
-                </a>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-[500px] text-sm text-gray-400 bg-gray-50">
-                Loading…
-              </div>
-            )}
+            <StreetViewPanel address={fullAddress} height={500} />
           </div>
         </div>
       )}
 
       {/* ── Map View Modal ── */}
-      {mapViewOpen && mapEmbedUrl && (
+      {mapViewOpen && hasAddress && (
         <div
           className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4"
           onClick={() => setMapViewOpen(false)}
@@ -522,15 +459,7 @@ export default function PhotoGallery({
                 </svg>
               </button>
             </div>
-            <iframe
-              src={mapEmbedUrl}
-              width="100%"
-              height="500"
-              style={{ border: 0, display: 'block' }}
-              allowFullScreen
-              loading="lazy"
-              title="Map View"
-            />
+            <MapPanel address={fullAddress} height={500} />
           </div>
         </div>
       )}

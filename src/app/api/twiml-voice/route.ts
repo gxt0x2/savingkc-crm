@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
-const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
-const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
+const env = (name: string) => process.env[name]?.trim() ?? ''
+
+const TWILIO_PHONE = env('TWILIO_PHONE_NUMBER') || '+18163077835'
+const BASE_URL = env('NEXT_PUBLIC_APP_URL') || 'https://crm.savingkc.com'
+const ERNEST_PHONE = env('ERNEST_PHONE') || '+18162262552'
+const CASEY_PHONE = env('CASEY_PHONE') || '+18167564943'
 
 // Outbound caller ID per agent identity
 const AGENT_CALLER_IDS: Record<string, string> = {
@@ -29,6 +31,15 @@ const COLD_CALL_NUMBERS = new Set([
   '+18166536616',
 ])
 
+function normalizeUsPhone(value: string): string {
+  const cleaned = value.trim()
+  const digits = cleaned.replace(/\D/g, '')
+  if (cleaned.startsWith('+')) return `+${digits}`
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return digits
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.formData()
@@ -38,7 +49,7 @@ export async function POST(req: Request) {
 
   // ── OUTBOUND: browser/SDK-initiated call ──
   if (from && from.startsWith('client:')) {
-    const sanitizedTo = to ? to.replace(/[^\d+]/g, '') : ''
+    const sanitizedTo = to ? normalizeUsPhone(to) : ''
     if (!sanitizedTo) {
       const errorTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response><Say>No destination number provided.</Say></Response>`

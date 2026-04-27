@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@/components/ui/icon'
+import { StreetViewPanel } from '@/components/leads/google-map-panel'
 
 interface PropertyDetails {
   address: string
@@ -68,36 +69,14 @@ export function PropertyHero({
   const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x320&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
   const [showStreetView, setShowStreetView] = useState(false)
-  const [streetViewEmbedUrl, setStreetViewEmbedUrl] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  async function openStreetView() {
+  function openStreetView() {
     setShowStreetView(true)
-    if (streetViewEmbedUrl) return
-    try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GMAPS_KEY}`
-      )
-      const data = await res.json()
-      const loc = data.results?.[0]?.geometry?.location
-      if (loc) {
-        setStreetViewEmbedUrl(
-          `https://www.google.com/maps/embed/v1/streetview?key=${GMAPS_KEY}&location=${loc.lat},${loc.lng}&fov=90&heading=0&pitch=0`
-        )
-      } else {
-        setStreetViewEmbedUrl(
-          `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
-        )
-      }
-    } catch {
-      setStreetViewEmbedUrl(
-        `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}`
-      )
-    }
   }
 
   const streetViewModal = showStreetView && (
@@ -133,24 +112,7 @@ export function PropertyHero({
             <Icon name="close" className="!text-base" />
           </button>
         </div>
-        {streetViewEmbedUrl ? (
-          <iframe
-            src={streetViewEmbedUrl}
-            width="100%"
-            height="500"
-            style={{ border: 0, display: 'block' }}
-            allowFullScreen
-            loading="lazy"
-            title="Street View"
-          />
-        ) : (
-          <div
-            className="flex items-center justify-center h-[500px] text-sm"
-            style={{ background: 'var(--ck-surface-elev)', color: 'var(--ck-text-muted)' }}
-          >
-            Loading…
-          </div>
-        )}
+        <StreetViewPanel address={fullAddress || property.address} height={500} />
       </div>
     </div>
   )

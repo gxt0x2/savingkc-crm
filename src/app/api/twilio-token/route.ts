@@ -13,13 +13,17 @@ const AGENT_CALLER_IDS: Record<string, string> = {
 }
 const DEFAULT_CALLER_ID = '+18163077835' // fallback: main Twilio number
 
+function env(name: string): string {
+  return process.env[name]?.trim() ?? ''
+}
+
 async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID!
+  const accountSid = env('TWILIO_ACCOUNT_SID')
   // Use API Key credentials (more reliable than rotating auth tokens)
-  const apiKey = process.env.TWILIO_API_KEY!
-  const apiSecret = process.env.TWILIO_API_SECRET!
+  const apiKey = env('TWILIO_API_KEY')
+  const apiSecret = env('TWILIO_API_SECRET')
   const creds = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
-  const voiceUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}/api/twiml-voice`
+  const voiceUrl = `${env('NEXT_PUBLIC_APP_URL') || 'https://crm.savingkc.com'}/api/twiml-voice`
 
   try {
     const listRes = await fetch(
@@ -62,7 +66,7 @@ async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
     return data.sid
   } catch {
     // Fallback to known SID if API call fails
-    return process.env.TWILIO_TWIML_APP_SID
+    return env('TWILIO_TWIML_APP_SID')
   }
 }
 
@@ -93,9 +97,9 @@ export async function GET() {
       incomingAllow: true,
     })
     const token = new AccessToken(
-      process.env.TWILIO_ACCOUNT_SID!,
-      process.env.TWILIO_API_KEY!,
-      process.env.TWILIO_API_SECRET!,
+      env('TWILIO_ACCOUNT_SID'),
+      env('TWILIO_API_KEY'),
+      env('TWILIO_API_SECRET'),
       { identity, ttl: 3600 }
     )
     token.addGrant(voiceGrant)
