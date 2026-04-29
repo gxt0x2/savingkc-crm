@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { ensureTcFileForOffer } from '@/lib/tc'
 
 // ---------------------------------------------------------------------------
 // GET /api/offers?status=xxx
@@ -35,7 +36,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ offers: data ?? [], total: count ?? 0 })
+    const offers = data ?? []
+    const offerIds = offers.map((offer) => offer.id)
+    const { data: tcFiles } = offerIds.length > 0
+      ? await supabaseAdmin()
+          .from('tc_files')
+          .select('id, buyer_offer_id, status, risk_level, next_action, closing_scheduled_at, file_number')
+          .in('buyer_offer_id', offerIds)
+      : { data: [] }
+    const tcByOffer = new Map((tcFiles ?? []).map((file) => [file.buyer_offer_id, file]))
+
+    return NextResponse.json({
+      offers: offers.map((offer) => ({ ...offer, tc_file: tcByOffer.get(offer.id) ?? null })),
+      total: count ?? 0,
+    })
   } catch (err) {
     console.error('[offers GET] Unexpected error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
@@ -117,6 +131,45 @@ export async function PATCH(req: NextRequest) {
     if (updateError) {
       console.error('[offers PATCH] Supabase error:', updateError)
       return NextResponse.json({ error: updateError.message }, { status: 500 })
+    }
+
+    if (status === 'accepted') {
+      try {
+        const { data: deal } = await db
+          .from('dispo_deals')
+          .select('id, stage')
+          .eq('lead_id', offer.lead_id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (deal) {
+          await db
+            .from('dispo_deals')
+            .update({
+              stage: deal.stage === 'closed' ? 'closed' : 'under_contract',
+              accepted_offer_id: offer.id,
+              accepted_buyer_id: offer.buyer_id,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', deal.id)
+        } else {
+          await db.from('dispo_deals').insert({
+            lead_id: offer.lead_id,
+            stage: 'under_contract',
+            accepted_offer_id: offer.id,
+            accepted_buyer_id: offer.buyer_id,
+          })
+        }
+
+        await ensureTcFileForOffer(db, offer.id, {
+          status: 'not_opened',
+          actor: 'ernest',
+          eventType: 'offer_accepted',
+        })
+      } catch (e) {
+        console.error('[offers PATCH] TC file creation failed:', e)
+      }
     }
 
     return NextResponse.json({ offer })

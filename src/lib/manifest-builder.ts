@@ -325,6 +325,24 @@ export interface ManifestScoring {
   scored_by: 'ai' | 'disposition' | 'notes'
 }
 
+export interface ManifestClosing {
+  tc_file_id?: string | null
+  title_company?: string | null
+  title_contact?: {
+    name?: string | null
+    role?: string | null
+    email?: string | null
+    phone?: string | null
+  } | null
+  file_number?: string | null
+  status?: string | null
+  risk_level?: string | null
+  closing_scheduled_at?: string | null
+  emd_confirmed_at?: string | null
+  hud_received_at?: string | null
+  next_action?: string | null
+}
+
 export interface ManifestV2 {
   manifestId: string
   version: 2
@@ -360,6 +378,7 @@ export interface ManifestV2 {
   lastMailDate?: string
   dispositionTier?: number
   scoring?: ManifestScoring
+  closing?: ManifestClosing
 }
 
 export interface BuildManifestInput {

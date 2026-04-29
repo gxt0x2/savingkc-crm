@@ -126,9 +126,18 @@ export async function GET(req: NextRequest) {
           }
         }
 
+        const { data: tcFile } = await db
+          .from('tc_files')
+          .select('id, status, risk_level, next_action, closing_scheduled_at, file_number')
+          .eq('dispo_deal_id', deal.id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
         return {
           ...deal,
           deal_page: dealPage ?? null,
+          tc_file: tcFile ?? null,
           broadcasts_count: bcCount ?? 0,
           offers_count: offerCount ?? 0,
           accepted_buyer,

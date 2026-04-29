@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { usePathname } from 'next/navigation'
 
 export type AppMode = 'acquisitions' | 'dispositions'
 
@@ -14,7 +15,24 @@ function getStoredMode(): AppMode {
 }
 
 export function useAppMode() {
+  const pathname = usePathname()
   const [mode, setModeState] = useState<AppMode>(getStoredMode)
+
+  useEffect(() => {
+    if (pathname?.startsWith('/dispo')) {
+      setModeState('dispositions')
+      localStorage.setItem(STORAGE_KEY, 'dispositions')
+    } else if (
+      pathname?.startsWith('/ari') ||
+      pathname?.startsWith('/opportunities') ||
+      pathname?.startsWith('/leads') ||
+      pathname?.startsWith('/dialer') ||
+      pathname?.startsWith('/pipeline')
+    ) {
+      setModeState('acquisitions')
+      localStorage.setItem(STORAGE_KEY, 'acquisitions')
+    }
+  }, [pathname])
 
   useEffect(() => {
     const handler = (m: AppMode) => setModeState(m)
