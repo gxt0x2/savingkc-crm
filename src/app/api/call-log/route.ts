@@ -72,21 +72,23 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const limitParam = Number(searchParams.get('limit') || '10')
-    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 50) : 10
+    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 10
 
     const { data, error } = await supabase
       .from('lead_activities')
       .select('id, lead_id, agent, description, metadata, created_at')
       .eq('activity_type', 'call')
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .range(0, limit)
 
     if (error) {
       console.error('[call-log] recent calls query failed:', error.message)
       return NextResponse.json({ error: 'Failed to load recent calls' }, { status: 500 })
     }
 
-    const activities = (data || []) as CallActivity[]
+    const rows = (data || []) as CallActivity[]
+    const hasMore = rows.length > limit
+    const activities = rows.slice(0, limit)
     const leadIds = Array.from(new Set(activities.map((a) => a.lead_id).filter(Boolean))) as string[]
     const leadNames = new Map<string, string>()
 
@@ -129,7 +131,7 @@ export async function GET(req: Request) {
       }
     })
 
-    return NextResponse.json({ calls })
+    return NextResponse.json({ calls, hasMore, limit })
   } catch (err) {
     console.error('[call-log] GET error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

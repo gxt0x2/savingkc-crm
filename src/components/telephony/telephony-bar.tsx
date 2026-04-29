@@ -198,6 +198,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   // Recent calls
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
   const [recentCallsError, setRecentCallsError] = useState<string | null>(null)
+  const [recentCallsLimit, setRecentCallsLimit] = useState(5)
+  const [recentCallsHasMore, setRecentCallsHasMore] = useState(false)
+  const [recentCallsLoading, setRecentCallsLoading] = useState(false)
 
   // Caller ID display
   const [callerIdDisplay, setCallerIdDisplay] = useState<string>('')
@@ -392,18 +395,23 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     if (!open) return
     async function loadRecent() {
       setRecentCallsError(null)
+      setRecentCallsLoading(true)
       try {
-        const res = await fetch('/api/call-log?limit=5')
+        const res = await fetch(`/api/call-log?limit=${recentCallsLimit}`)
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data.error || 'Unable to load recent calls')
         setRecentCalls(data.calls || [])
+        setRecentCallsHasMore(Boolean(data.hasMore))
       } catch (err) {
         setRecentCalls([])
+        setRecentCallsHasMore(false)
         setRecentCallsError(err instanceof Error ? err.message : 'Unable to load recent calls')
+      } finally {
+        setRecentCallsLoading(false)
       }
     }
     loadRecent()
-  }, [open])
+  }, [open, recentCallsLimit])
 
   const callStartRef = useRef<number>(0)
 
@@ -972,9 +980,11 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-[10px] font-black text-white/35 uppercase tracking-widest">Recent Calls</h3>
-                <span className="text-[10px] text-white/25">{recentCalls.length}</span>
+                <span className="text-[10px] text-white/25">
+                  {recentCalls.length}{recentCallsHasMore ? '+' : ''}
+                </span>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 max-h-[360px] overflow-y-auto pr-1">
                 {recentCalls.map((call) => {
                   const direction = callDirection(call)
                   const outcome = callOutcome(call)
@@ -1033,6 +1043,16 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                   )
                 })}
               </div>
+              {recentCallsHasMore && (
+                <button
+                  type="button"
+                  onClick={() => setRecentCallsLimit((limit) => Math.min(limit + 10, 100))}
+                  disabled={recentCallsLoading || recentCallsLimit >= 100}
+                  className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-white/55 hover:bg-white/10 hover:text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {recentCallsLoading ? 'Loading...' : 'Load More Calls'}
+                </button>
+              )}
             </section>
           )}
 
