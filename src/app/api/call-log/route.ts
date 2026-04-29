@@ -8,9 +8,15 @@ import { onCommunicationEvent } from '@/lib/manifest-sync'
 type CallActivity = {
   id: string
   lead_id: string | null
+  agent: string | null
   description: string | null
   metadata: Record<string, unknown> | null
   created_at: string
+}
+
+const AGENT_CALLER_IDS: Record<string, string> = {
+  ernest: '+18166088588',
+  casey: '+18167277667',
 }
 
 function metadataPhone(metadata: Record<string, unknown> | null): string | null {
@@ -36,6 +42,11 @@ function metadataNumber(metadata: Record<string, unknown> | null, keys: string[]
     if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
   }
   return null
+}
+
+function callerIdForAgent(agent: string | null): string | null {
+  if (!agent) return null
+  return AGENT_CALLER_IDS[agent.toLowerCase()] || null
 }
 
 function deriveOutcome(activity: CallActivity): string | null {
@@ -65,7 +76,7 @@ export async function GET(req: Request) {
 
     const { data, error } = await supabase
       .from('lead_activities')
-      .select('id, lead_id, description, metadata, created_at')
+      .select('id, lead_id, agent, description, metadata, created_at')
       .eq('activity_type', 'call')
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -95,15 +106,17 @@ export async function GET(req: Request) {
     }
 
     const calls = activities.map((activity) => {
-      const from = metadataString(activity.metadata, ['from'])
       const to = metadataString(activity.metadata, ['to', 'calledNumber'])
       const direction = metadataString(activity.metadata, ['direction'])
+      const from = metadataString(activity.metadata, ['from']) ||
+        (direction?.includes('outbound') ? callerIdForAgent(activity.agent) : null)
       const outcome = deriveOutcome(activity)
 
       return {
         id: activity.id,
         lead_id: activity.lead_id,
         lead_name: activity.lead_id ? leadNames.get(activity.lead_id) || null : null,
+        agent: activity.agent,
         phone: metadataPhone(activity.metadata),
         from,
         to,
@@ -128,7 +141,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { phone, event, duration, agent, lead_id, heir_name, heir_relation, prospect_phone_id } = body
+    const { phone, event, duration, agent, from, lead_id, heir_name, heir_relation, prospect_phone_id } = body
 
     if (!phone) {
       return NextResponse.json({ error: 'phone required' }, { status: 400 })
@@ -166,6 +179,7 @@ export async function POST(req: Request) {
         agent: agent || 'System',
         metadata: {
           direction: 'outbound',
+          from,
           to: cleanPhone,
           status: 'initiated',
           source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
@@ -182,6 +196,7 @@ export async function POST(req: Request) {
         agent: agent || 'System',
         metadata: {
           direction: 'outbound',
+          from,
           to: cleanPhone,
           status: 'completed',
           duration: duration || 0,

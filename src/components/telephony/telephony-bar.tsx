@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { formatPhone } from '@/lib/format'
+import { formatPhone, toProperCase } from '@/lib/format'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { DispositionModal, DispositionType } from './disposition-modal'
 
@@ -26,6 +26,7 @@ interface RecentCall {
   id: string
   lead_id: string | null
   lead_name: string | null
+  agent: string | null
   phone: string | null
   from: string | null
   to: string | null
@@ -140,6 +141,24 @@ function callOutcome(call: RecentCall) {
     return { label: formatOutcome(raw), icon: 'pending', className: 'text-white/45 bg-white/5' }
   }
   return { label: formatOutcome(raw), icon: 'help', className: 'text-white/35 bg-white/5' }
+}
+
+function callerIdLabel(phone: string | null) {
+  if (!phone) return null
+  const known = TWILIO_NUMBERS.find((n) => n.value === phone)
+  if (!known) return formatPhone(phone)
+  return known.label.split('—')[0].trim()
+}
+
+function displayCallName(call: RecentCall) {
+  if (call.lead_name) return toProperCase(call.lead_name)
+  const phone = call.phone || call.from || call.to
+  return phone ? formatPhone(phone) : 'Unknown'
+}
+
+function displayAgentName(agent: string | null) {
+  if (!agent || agent === 'System') return null
+  return toProperCase(agent)
 }
 
 const stationColors: Record<string, string> = {
@@ -435,6 +454,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
           phone: number,
           event: 'started',
           agent: 'Ernest',
+          from: callerIdDisplay || null,
           lead_id: selectedLead?.id || null,
           ...heirMeta,
         }),
@@ -450,6 +470,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             event: 'ended',
             duration,
             agent: 'Ernest',
+            from: callerIdDisplay || null,
             lead_id: selectedLead?.id || null,
             ...heirMeta,
           }),
@@ -959,6 +980,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                   const outcome = callOutcome(call)
                   const duration = call.duration || call.metadata?.duration || null
                   const displayPhone = call.phone || call.to || call.from
+                  const displayName = displayCallName(call)
+                  const agentName = displayAgentName(call.agent)
+                  const fromLabel = call.from ? callerIdLabel(call.from) : null
                   return (
                     <button
                       key={call.id}
@@ -975,13 +999,16 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="text-sm text-white/85 font-semibold truncate">
-                              {call.lead_name || displayPhone || 'Unknown'}
+                              {displayName}
                             </p>
                             <span className="text-[10px] text-white/30 flex-shrink-0">{formatTimeAgo(call.created_at)}</span>
                           </div>
                           <div className="mt-1 flex items-center gap-1.5 min-w-0 text-[10px] text-white/35">
+                            {call.direction?.includes('outbound') && agentName && (
+                              <span className="truncate">{agentName}</span>
+                            )}
                             {call.from && (
-                              <span className="truncate">From {formatPhone(call.from)}</span>
+                              <span className="truncate">From {fromLabel}</span>
                             )}
                             {call.from && call.to && <span className="text-white/15">→</span>}
                             {call.to && (
