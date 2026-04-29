@@ -592,6 +592,17 @@ export default function PipelinePage() {
                           <Icon name={stageConfig(deal.stage).icon} size="text-xs" />
                           {stageConfig(deal.stage).label}
                         </span>
+                        {deal.tc_file && (
+                          <span className={cn(
+                            'mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold',
+                            deal.tc_file.risk_level === 'blocked'
+                              ? 'bg-[#E32E2E]/15 text-[#ff8b8b]'
+                              : 'bg-emerald-500/15 text-emerald-300'
+                          )}>
+                            <Icon name="fact_check" size="text-xs" />
+                            TC {deal.tc_file.status.replace(/_/g, ' ')}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-[var(--ck-text-muted)] hidden sm:table-cell">
                         {arv}
