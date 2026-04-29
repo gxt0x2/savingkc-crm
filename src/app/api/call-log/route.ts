@@ -19,6 +19,11 @@ const AGENT_CALLER_IDS: Record<string, string> = {
   casey: '+18167277667',
 }
 
+const CALLER_ID_AGENTS: Record<string, string> = {
+  '+18166088588': 'Ernest',
+  '+18167277667': 'Casey',
+}
+
 function metadataPhone(metadata: Record<string, unknown> | null): string | null {
   if (!metadata) return null
   const value = metadata.to || metadata.from || metadata.phone || metadata.calledNumber
@@ -46,7 +51,14 @@ function metadataNumber(metadata: Record<string, unknown> | null, keys: string[]
 
 function callerIdForAgent(agent: string | null): string | null {
   if (!agent) return null
-  return AGENT_CALLER_IDS[agent.toLowerCase()] || null
+  const lower = agent.toLowerCase()
+  if (lower.includes('ernest')) return AGENT_CALLER_IDS.ernest
+  if (lower.includes('casey')) return AGENT_CALLER_IDS.casey
+  return null
+}
+
+function agentForCallerId(from: unknown): string | null {
+  return typeof from === 'string' ? CALLER_ID_AGENTS[from] || null : null
 }
 
 function deriveOutcome(activity: CallActivity): string | null {
@@ -144,6 +156,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
     const { phone, event, duration, agent, from, lead_id, heir_name, heir_relation, prospect_phone_id } = body
+    const logAgent = agentForCallerId(from) || agent || 'System'
 
     if (!phone) {
       return NextResponse.json({ error: 'phone required' }, { status: 400 })
@@ -178,7 +191,7 @@ export async function POST(req: Request) {
         lead_id: leadId,
         activity_type: 'call',
         description: isHeirCall ? `Outbound call to ${heirLabel}` : `Outbound call to ${leadName}`,
-        agent: agent || 'System',
+        agent: logAgent,
         metadata: {
           direction: 'outbound',
           from,
@@ -195,7 +208,7 @@ export async function POST(req: Request) {
         description: isHeirCall
           ? `Outbound call to ${heirLabel} — ${duration || 0}s`
           : `Outbound call to ${leadName} — ${duration || 0}s`,
-        agent: agent || 'System',
+        agent: logAgent,
         metadata: {
           direction: 'outbound',
           from,

@@ -161,6 +161,12 @@ function displayAgentName(agent: string | null) {
   return toProperCase(agent)
 }
 
+function agentNameForCallerId(phone: string | null) {
+  if (phone === '+18166088588') return 'Ernest'
+  if (phone === '+18167277667') return 'Casey'
+  return null
+}
+
 const stationColors: Record<string, string> = {
   intake: 'bg-blue-500/20 text-blue-300',
   qualifying: 'bg-amber-500/20 text-amber-300',
@@ -431,6 +437,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     // Snapshot the queue item at call start so the disposition (which fires
     // after disconnect, possibly after advance) logs against the right heir.
     activeQueueItemRef.current = queueItem
+    const callAgent = agentNameForCallerId(callerIdDisplay) || 'Ernest'
     log(`calling ${number}`)
     try {
       const call = await deviceRef.current.connect({
@@ -461,7 +468,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         body: JSON.stringify({
           phone: number,
           event: 'started',
-          agent: 'Ernest',
+          agent: callAgent,
           from: callerIdDisplay || null,
           lead_id: selectedLead?.id || null,
           ...heirMeta,
@@ -477,7 +484,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             phone: number,
             event: 'ended',
             duration,
-            agent: 'Ernest',
+            agent: callAgent,
             from: callerIdDisplay || null,
             lead_id: selectedLead?.id || null,
             ...heirMeta,
@@ -556,7 +563,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             disposition,
             notes,
             lead_id: activeItem.leadId,
-            agent: 'Ernest',
+            agent: agentNameForCallerId(callerIdDisplay) || 'Ernest',
           }),
         })
         window.dispatchEvent(new CustomEvent('heir-attempt-logged', {
