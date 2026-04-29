@@ -27,8 +27,13 @@ interface RecentCall {
   lead_id: string | null
   lead_name: string | null
   phone: string | null
+  from: string | null
+  to: string | null
+  direction: string | null
+  outcome: string | null
+  duration: number | null
   created_at: string
-  metadata: { duration?: number } | null
+  metadata: { duration?: number; callStatus?: string; status?: string; outcome?: string; direction?: string } | null
 }
 
 // A single entry in the heir-dialer queue. The property stays pinned (leadId +
@@ -88,6 +93,53 @@ function formatDuration(secs: number) {
   const m = Math.floor(secs / 60)
   const s = secs % 60
   return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function formatOutcome(value?: string | null) {
+  if (!value) return 'Unknown'
+  return value
+    .replace(/[_-]/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function callDirection(call: RecentCall) {
+  const direction = call.direction || call.metadata?.direction || ''
+  if (direction.includes('inbound')) {
+    return { label: 'Inbound', icon: 'call_received', className: 'text-sky-300 bg-sky-500/10' }
+  }
+  if (direction.includes('outbound')) {
+    return { label: 'Outbound', icon: 'call_made', className: 'text-emerald-300 bg-emerald-500/10' }
+  }
+  return { label: 'Call', icon: 'call', className: 'text-white/45 bg-white/5' }
+}
+
+function callOutcome(call: RecentCall) {
+  const raw = (call.outcome || call.metadata?.outcome || call.metadata?.callStatus || call.metadata?.status || '').toLowerCase()
+  if (raw.includes('missed') || raw.includes('no-answer') || raw.includes('no answer')) {
+    return { label: formatOutcome(raw || 'missed'), icon: 'phone_missed', className: 'text-red-300 bg-red-500/10' }
+  }
+  if (raw.includes('busy')) {
+    return { label: 'Busy', icon: 'phone_disabled', className: 'text-amber-300 bg-amber-500/10' }
+  }
+  if (raw.includes('voicemail')) {
+    return { label: formatOutcome(raw), icon: 'voicemail', className: 'text-violet-300 bg-violet-500/10' }
+  }
+  if (raw.includes('non_seller') || raw.includes('non seller')) {
+    return { label: 'Non Seller', icon: 'support_agent', className: 'text-cyan-300 bg-cyan-500/10' }
+  }
+  if (raw.includes('received') || raw.includes('routed')) {
+    return { label: formatOutcome(raw), icon: 'radio_button_checked', className: 'text-sky-300 bg-sky-500/10' }
+  }
+  if (raw.includes('spam')) {
+    return { label: 'Spam', icon: 'block', className: 'text-red-300 bg-red-500/10' }
+  }
+  if (raw.includes('completed') || raw.includes('connected')) {
+    return { label: formatOutcome(raw), icon: 'check_circle', className: 'text-emerald-300 bg-emerald-500/10' }
+  }
+  if (raw.includes('initiated') || raw.includes('pending')) {
+    return { label: formatOutcome(raw), icon: 'pending', className: 'text-white/45 bg-white/5' }
+  }
+  return { label: formatOutcome(raw), icon: 'help', className: 'text-white/35 bg-white/5' }
 }
 
 const stationColors: Record<string, string> = {
@@ -896,43 +948,74 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
           {/* Recent Calls (when idle) */}
           {!isOnCall && status !== 'incoming' && recentCalls.length > 0 && (
-            <div>
-              <h3 className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Recent Calls</h3>
-              <div className="space-y-1">
-                {recentCalls.map((call) => (
-                  <button
-                    key={call.id}
-                    onClick={() => handleRedial(call)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0">
-                      <Icon name="call" className="text-white/30" size="text-sm" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white/80 font-medium truncate">
-                        {call.lead_name || call.phone || 'Unknown'}
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-white/30">{formatTimeAgo(call.created_at)}</span>
-                        {call.metadata?.duration && (
-                          <span className="text-[10px] text-white/30">{formatDuration(call.metadata.duration)}</span>
-                        )}
-                      </div>
-                    </div>
-                    <Icon name="call" className="text-white/20" size="text-sm" />
-                  </button>
-                ))}
+            <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-[10px] font-black text-white/35 uppercase tracking-widest">Recent Calls</h3>
+                <span className="text-[10px] text-white/25">{recentCalls.length}</span>
               </div>
-            </div>
+              <div className="space-y-1">
+                {recentCalls.map((call) => {
+                  const direction = callDirection(call)
+                  const outcome = callOutcome(call)
+                  const duration = call.duration || call.metadata?.duration || null
+                  const displayPhone = call.phone || call.to || call.from
+                  return (
+                    <button
+                      key={call.id}
+                      onClick={() => handleRedial(call)}
+                      className="w-full rounded-lg px-2.5 py-2 hover:bg-white/5 transition-colors text-left"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${direction.className}`}
+                          title={direction.label}
+                        >
+                          <Icon name={direction.icon} size="text-sm" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm text-white/85 font-semibold truncate">
+                              {call.lead_name || displayPhone || 'Unknown'}
+                            </p>
+                            <span className="text-[10px] text-white/30 flex-shrink-0">{formatTimeAgo(call.created_at)}</span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-1.5 min-w-0 text-[10px] text-white/35">
+                            {call.from && (
+                              <span className="truncate">From {formatPhone(call.from)}</span>
+                            )}
+                            {call.from && call.to && <span className="text-white/15">→</span>}
+                            {call.to && (
+                              <span className="truncate">To {formatPhone(call.to)}</span>
+                            )}
+                            {!call.from && !call.to && displayPhone && (
+                              <span className="truncate">{formatPhone(displayPhone)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div
+                          className={`flex items-center gap-1 rounded-md px-1.5 py-1 flex-shrink-0 ${outcome.className}`}
+                          title={outcome.label}
+                        >
+                          <Icon name={outcome.icon} size="text-xs" />
+                          {duration !== null && (
+                            <span className="text-[10px] font-bold">{formatDuration(duration)}</span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
           )}
 
           {!isOnCall && status !== 'incoming' && recentCalls.length === 0 && (
-            <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
-              <h3 className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-1">Recent Calls</h3>
+            <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <h3 className="text-[10px] font-black text-white/35 uppercase tracking-widest mb-1">Recent Calls</h3>
               <p className="text-xs text-white/45">
                 {recentCallsError || 'No recent call activity found.'}
               </p>
-            </div>
+            </section>
           )}
 
           {/* Reconnect button when offline */}

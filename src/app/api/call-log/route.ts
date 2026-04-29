@@ -19,6 +19,44 @@ function metadataPhone(metadata: Record<string, unknown> | null): string | null 
   return typeof value === 'string' && value.trim() ? value : null
 }
 
+function metadataString(metadata: Record<string, unknown> | null, keys: string[]): string | null {
+  if (!metadata) return null
+  for (const key of keys) {
+    const value = metadata[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return null
+}
+
+function metadataNumber(metadata: Record<string, unknown> | null, keys: string[]): number | null {
+  if (!metadata) return null
+  for (const key of keys) {
+    const value = metadata[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
+  }
+  return null
+}
+
+function deriveOutcome(activity: CallActivity): string | null {
+  const explicit = metadataString(activity.metadata, ['outcome', 'callStatus', 'dialStatus', 'status'])
+  if (explicit) return explicit
+
+  const tag = metadataString(activity.metadata, ['tag', 'source', 'trigger'])?.toLowerCase() || ''
+  const description = activity.description?.toLowerCase() || ''
+
+  if (tag.includes('voicemail') || description.includes('voicemail')) return 'voicemail'
+  if (tag.includes('no_input') || description.includes('no ivr input')) return 'no_answer'
+  if (tag.includes('non_lead') || description.includes('non-seller')) return 'non_seller'
+  if (tag.includes('spam')) return 'spam'
+  if (description.includes('connected')) return 'connected'
+  if (description.includes('missed')) return 'missed'
+  if (description.includes('outbound call')) return 'completed'
+  if (description.includes('inbound call')) return 'received'
+
+  return null
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
@@ -56,15 +94,27 @@ export async function GET(req: Request) {
       }
     }
 
-    const calls = activities.map((activity) => ({
-      id: activity.id,
-      lead_id: activity.lead_id,
-      lead_name: activity.lead_id ? leadNames.get(activity.lead_id) || null : null,
-      phone: metadataPhone(activity.metadata),
-      created_at: activity.created_at,
-      metadata: activity.metadata,
-      description: activity.description,
-    }))
+    const calls = activities.map((activity) => {
+      const from = metadataString(activity.metadata, ['from'])
+      const to = metadataString(activity.metadata, ['to', 'calledNumber'])
+      const direction = metadataString(activity.metadata, ['direction'])
+      const outcome = deriveOutcome(activity)
+
+      return {
+        id: activity.id,
+        lead_id: activity.lead_id,
+        lead_name: activity.lead_id ? leadNames.get(activity.lead_id) || null : null,
+        phone: metadataPhone(activity.metadata),
+        from,
+        to,
+        direction,
+        outcome,
+        duration: metadataNumber(activity.metadata, ['duration', 'callDuration']),
+        created_at: activity.created_at,
+        metadata: activity.metadata,
+        description: activity.description,
+      }
+    })
 
     return NextResponse.json({ calls })
   } catch (err) {
