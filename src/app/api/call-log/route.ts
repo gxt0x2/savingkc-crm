@@ -5,6 +5,74 @@ import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
 
 
+type CallActivity = {
+  id: string
+  lead_id: string | null
+  description: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+
+function metadataPhone(metadata: Record<string, unknown> | null): string | null {
+  if (!metadata) return null
+  const value = metadata.to || metadata.from || metadata.phone || metadata.calledNumber
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const limitParam = Number(searchParams.get('limit') || '10')
+    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 50) : 10
+
+    const { data, error } = await supabase
+      .from('lead_activities')
+      .select('id, lead_id, description, metadata, created_at')
+      .eq('activity_type', 'call')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      console.error('[call-log] recent calls query failed:', error.message)
+      return NextResponse.json({ error: 'Failed to load recent calls' }, { status: 500 })
+    }
+
+    const activities = (data || []) as CallActivity[]
+    const leadIds = Array.from(new Set(activities.map((a) => a.lead_id).filter(Boolean))) as string[]
+    const leadNames = new Map<string, string>()
+
+    if (leadIds.length > 0) {
+      const { data: leads, error: leadsError } = await supabase
+        .from('leads')
+        .select('id, full_name, phone')
+        .in('id', leadIds)
+
+      if (leadsError) {
+        console.error('[call-log] lead lookup failed:', leadsError.message)
+      } else {
+        for (const lead of leads || []) {
+          if (lead.id) leadNames.set(lead.id, lead.full_name || lead.phone || 'Unknown')
+        }
+      }
+    }
+
+    const calls = activities.map((activity) => ({
+      id: activity.id,
+      lead_id: activity.lead_id,
+      lead_name: activity.lead_id ? leadNames.get(activity.lead_id) || null : null,
+      phone: metadataPhone(activity.metadata),
+      created_at: activity.created_at,
+      metadata: activity.metadata,
+      description: activity.description,
+    }))
+
+    return NextResponse.json({ calls })
+  } catch (err) {
+    console.error('[call-log] GET error:', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
 
 // Log outbound calls from the telephony bar
 export async function POST(req: Request) {

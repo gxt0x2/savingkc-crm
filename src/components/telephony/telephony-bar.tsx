@@ -55,9 +55,18 @@ interface DialerPanelProps {
 function useCallTimer(active: boolean) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
-    if (!active) { setSeconds(0); return }
+    if (!active) return
+    const resetId = requestAnimationFrame(() => setSeconds(0))
     const id = setInterval(() => setSeconds((s) => s + 1), 1000)
-    return () => clearInterval(id)
+    return () => {
+      cancelAnimationFrame(resetId)
+      clearInterval(id)
+    }
+  }, [active])
+  useEffect(() => {
+    if (active) return
+    const id = requestAnimationFrame(() => setSeconds(0))
+    return () => cancelAnimationFrame(id)
   }, [active])
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
   const ss = String(seconds % 60).padStart(2, '0')
@@ -117,6 +126,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
   // Recent calls
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
+  const [recentCallsError, setRecentCallsError] = useState<string | null>(null)
 
   // Caller ID display
   const [callerIdDisplay, setCallerIdDisplay] = useState<string>('')
@@ -227,7 +237,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             if (refreshData.callerId) setCallerIdDisplay(refreshData.callerId)
             log('token refreshed')
           }
-        } catch (e) {
+        } catch {
           log('token refresh failed')
         }
       })
@@ -310,13 +320,16 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   useEffect(() => {
     if (!open) return
     async function loadRecent() {
+      setRecentCallsError(null)
       try {
         const res = await fetch('/api/call-log?limit=5')
-        if (res.ok) {
-          const data = await res.json()
-          setRecentCalls(data.calls || [])
-        }
-      } catch {}
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || 'Unable to load recent calls')
+        setRecentCalls(data.calls || [])
+      } catch (err) {
+        setRecentCalls([])
+        setRecentCallsError(err instanceof Error ? err.message : 'Unable to load recent calls')
+      }
     }
     loadRecent()
   }, [open])
@@ -910,6 +923,15 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {!isOnCall && status !== 'incoming' && recentCalls.length === 0 && (
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+              <h3 className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-1">Recent Calls</h3>
+              <p className="text-xs text-white/45">
+                {recentCallsError || 'No recent call activity found.'}
+              </p>
             </div>
           )}
 
