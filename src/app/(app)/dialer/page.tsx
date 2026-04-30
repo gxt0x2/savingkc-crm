@@ -889,7 +889,10 @@ function DialerHome() {
             setError(prospectError.message)
             setProspects((deceasedProspectRows as QueueProspect[] | null) ?? [])
           } else {
-            setProspects((prospectRows as QueueProspect[] | null) ?? [])
+            setProspects([
+              ...((deceasedProspectRows as QueueProspect[] | null) ?? []),
+              ...((prospectRows as QueueProspect[] | null) ?? []),
+            ])
           }
         } else {
           setProspects([])
