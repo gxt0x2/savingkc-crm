@@ -17,11 +17,26 @@ function env(name: string): string {
   return process.env[name]?.trim() ?? ''
 }
 
+function twilioEnv(name: string): string {
+  return env(name)
+    .replace(/\\[rnt]/g, '')
+    .replace(/\s+/g, '')
+}
+
+function requireTwilioEnv(name: string, expectedPrefix?: string): string {
+  const value = twilioEnv(name)
+  if (!value) throw new Error(`${name} is not configured`)
+  if (expectedPrefix && !value.startsWith(expectedPrefix)) {
+    throw new Error(`${name} is malformed`)
+  }
+  return value
+}
+
 async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
-  const accountSid = env('TWILIO_ACCOUNT_SID')
+  const accountSid = requireTwilioEnv('TWILIO_ACCOUNT_SID', 'AC')
   // Use API Key credentials (more reliable than rotating auth tokens)
-  const apiKey = env('TWILIO_API_KEY')
-  const apiSecret = env('TWILIO_API_SECRET')
+  const apiKey = requireTwilioEnv('TWILIO_API_KEY', 'SK')
+  const apiSecret = requireTwilioEnv('TWILIO_API_SECRET')
   const creds = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
   const voiceUrl = `${env('NEXT_PUBLIC_APP_URL') || 'https://crm.savingkc.com'}/api/twiml-voice`
 
@@ -66,7 +81,7 @@ async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
     return data.sid
   } catch {
     // Fallback to known SID if API call fails
-    return env('TWILIO_TWIML_APP_SID')
+    return twilioEnv('TWILIO_TWIML_APP_SID')
   }
 }
 
@@ -91,15 +106,18 @@ export async function GET() {
     const identity = email.includes('casey') ? 'casey' : email.includes('ernest') ? 'ernest' : 'crm-user'
     const callerId = AGENT_CALLER_IDS[email] || DEFAULT_CALLER_ID
 
+    const accountSid = requireTwilioEnv('TWILIO_ACCOUNT_SID', 'AC')
+    const apiKey = requireTwilioEnv('TWILIO_API_KEY', 'SK')
+    const apiSecret = requireTwilioEnv('TWILIO_API_SECRET')
     const twimlAppSid = await getOrCreateTwimlAppSid()
     const voiceGrant = new VoiceGrant({
       outgoingApplicationSid: twimlAppSid,
       incomingAllow: true,
     })
     const token = new AccessToken(
-      env('TWILIO_ACCOUNT_SID'),
-      env('TWILIO_API_KEY'),
-      env('TWILIO_API_SECRET'),
+      accountSid,
+      apiKey,
+      apiSecret,
       { identity, ttl: 3600 }
     )
     token.addGrant(voiceGrant)
