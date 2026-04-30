@@ -224,7 +224,9 @@ function buildLeadBundle(row) {
       state: propertyState,
       zip: propertyZip,
       county: COUNTY,
-      source: 'smartskip-deceased-3yr',
+      // leads.source has a CHECK constraint (manual / mojo_call / inbound_*).
+      // Campaign provenance is preserved on prospects.source_file + source_sheet.
+      source: 'manual',
     },
     prospect: {
       parcel_id: syntheticParcelId(row),
