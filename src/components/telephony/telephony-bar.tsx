@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { formatPhone } from '@/lib/format'
+import { formatPhone, toProperCase } from '@/lib/format'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { DispositionModal, DispositionType } from './disposition-modal'
 
@@ -26,9 +26,15 @@ interface RecentCall {
   id: string
   lead_id: string | null
   lead_name: string | null
+  agent: string | null
   phone: string | null
+  from: string | null
+  to: string | null
+  direction: string | null
+  outcome: string | null
+  duration: number | null
   created_at: string
-  metadata: { duration?: number } | null
+  metadata: { duration?: number; callStatus?: string; status?: string; outcome?: string; direction?: string } | null
 }
 
 // A single entry in the heir-dialer queue. The property stays pinned (leadId +
@@ -55,9 +61,18 @@ interface DialerPanelProps {
 function useCallTimer(active: boolean) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
-    if (!active) { setSeconds(0); return }
+    if (!active) return
+    const resetId = requestAnimationFrame(() => setSeconds(0))
     const id = setInterval(() => setSeconds((s) => s + 1), 1000)
-    return () => clearInterval(id)
+    return () => {
+      cancelAnimationFrame(resetId)
+      clearInterval(id)
+    }
+  }, [active])
+  useEffect(() => {
+    if (active) return
+    const id = requestAnimationFrame(() => setSeconds(0))
+    return () => cancelAnimationFrame(id)
   }, [active])
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
   const ss = String(seconds % 60).padStart(2, '0')
@@ -79,6 +94,77 @@ function formatDuration(secs: number) {
   const m = Math.floor(secs / 60)
   const s = secs % 60
   return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function formatOutcome(value?: string | null) {
+  if (!value) return 'Unknown'
+  return value
+    .replace(/[_-]/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function callDirection(call: RecentCall) {
+  const direction = call.direction || call.metadata?.direction || ''
+  if (direction.includes('inbound')) {
+    return { label: 'Inbound', icon: 'call_received', className: 'text-sky-300 bg-sky-500/10' }
+  }
+  if (direction.includes('outbound')) {
+    return { label: 'Outbound', icon: 'call_made', className: 'text-emerald-300 bg-emerald-500/10' }
+  }
+  return { label: 'Call', icon: 'call', className: 'text-white/45 bg-white/5' }
+}
+
+function callOutcome(call: RecentCall) {
+  const raw = (call.outcome || call.metadata?.outcome || call.metadata?.callStatus || call.metadata?.status || '').toLowerCase()
+  if (raw.includes('missed') || raw.includes('no-answer') || raw.includes('no answer')) {
+    return { label: formatOutcome(raw || 'missed'), icon: 'phone_missed', className: 'text-red-300 bg-red-500/10' }
+  }
+  if (raw.includes('busy')) {
+    return { label: 'Busy', icon: 'phone_disabled', className: 'text-amber-300 bg-amber-500/10' }
+  }
+  if (raw.includes('voicemail')) {
+    return { label: formatOutcome(raw), icon: 'voicemail', className: 'text-violet-300 bg-violet-500/10' }
+  }
+  if (raw.includes('non_seller') || raw.includes('non seller')) {
+    return { label: 'Non Seller', icon: 'support_agent', className: 'text-cyan-300 bg-cyan-500/10' }
+  }
+  if (raw.includes('received') || raw.includes('routed')) {
+    return { label: formatOutcome(raw), icon: 'radio_button_checked', className: 'text-sky-300 bg-sky-500/10' }
+  }
+  if (raw.includes('spam')) {
+    return { label: 'Spam', icon: 'block', className: 'text-red-300 bg-red-500/10' }
+  }
+  if (raw.includes('completed') || raw.includes('connected')) {
+    return { label: formatOutcome(raw), icon: 'check_circle', className: 'text-emerald-300 bg-emerald-500/10' }
+  }
+  if (raw.includes('initiated') || raw.includes('pending')) {
+    return { label: formatOutcome(raw), icon: 'pending', className: 'text-white/45 bg-white/5' }
+  }
+  return { label: formatOutcome(raw), icon: 'help', className: 'text-white/35 bg-white/5' }
+}
+
+function callerIdLabel(phone: string | null) {
+  if (!phone) return null
+  const known = TWILIO_NUMBERS.find((n) => n.value === phone)
+  if (!known) return formatPhone(phone)
+  return known.label.split('—')[0].trim()
+}
+
+function displayCallName(call: RecentCall) {
+  if (call.lead_name) return toProperCase(call.lead_name)
+  const phone = call.phone || call.from || call.to
+  return phone ? formatPhone(phone) : 'Unknown'
+}
+
+function displayAgentName(agent: string | null) {
+  if (!agent || agent === 'System') return null
+  return toProperCase(agent)
+}
+
+function agentNameForCallerId(phone: string | null) {
+  if (phone === '+18166088588') return 'Ernest'
+  if (phone === '+18167277667') return 'Casey'
+  return null
 }
 
 const stationColors: Record<string, string> = {
@@ -117,6 +203,10 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
   // Recent calls
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
+  const [recentCallsError, setRecentCallsError] = useState<string | null>(null)
+  const [recentCallsLimit, setRecentCallsLimit] = useState(5)
+  const [recentCallsHasMore, setRecentCallsHasMore] = useState(false)
+  const [recentCallsLoading, setRecentCallsLoading] = useState(false)
 
   // Caller ID display
   const [callerIdDisplay, setCallerIdDisplay] = useState<string>('')
@@ -227,7 +317,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             if (refreshData.callerId) setCallerIdDisplay(refreshData.callerId)
             log('token refreshed')
           }
-        } catch (e) {
+        } catch {
           log('token refresh failed')
         }
       })
@@ -310,16 +400,24 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   useEffect(() => {
     if (!open) return
     async function loadRecent() {
+      setRecentCallsError(null)
+      setRecentCallsLoading(true)
       try {
-        const res = await fetch('/api/call-log?limit=5')
-        if (res.ok) {
-          const data = await res.json()
-          setRecentCalls(data.calls || [])
-        }
-      } catch {}
+        const res = await fetch(`/api/call-log?limit=${recentCallsLimit}`)
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || 'Unable to load recent calls')
+        setRecentCalls(data.calls || [])
+        setRecentCallsHasMore(Boolean(data.hasMore))
+      } catch (err) {
+        setRecentCalls([])
+        setRecentCallsHasMore(false)
+        setRecentCallsError(err instanceof Error ? err.message : 'Unable to load recent calls')
+      } finally {
+        setRecentCallsLoading(false)
+      }
     }
     loadRecent()
-  }, [open])
+  }, [open, recentCallsLimit])
 
   const callStartRef = useRef<number>(0)
 
@@ -339,6 +437,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     // Snapshot the queue item at call start so the disposition (which fires
     // after disconnect, possibly after advance) logs against the right heir.
     activeQueueItemRef.current = queueItem
+    const callAgent = agentNameForCallerId(callerIdDisplay) || 'Ernest'
     log(`calling ${number}`)
     try {
       const call = await deviceRef.current.connect({
@@ -369,7 +468,8 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         body: JSON.stringify({
           phone: number,
           event: 'started',
-          agent: 'Ernest',
+          agent: callAgent,
+          from: callerIdDisplay || null,
           lead_id: selectedLead?.id || null,
           ...heirMeta,
         }),
@@ -384,7 +484,8 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             phone: number,
             event: 'ended',
             duration,
-            agent: 'Ernest',
+            agent: callAgent,
+            from: callerIdDisplay || null,
             lead_id: selectedLead?.id || null,
             ...heirMeta,
           }),
@@ -462,7 +563,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             disposition,
             notes,
             lead_id: activeItem.leadId,
-            agent: 'Ernest',
+            agent: agentNameForCallerId(callerIdDisplay) || 'Ernest',
           }),
         })
         window.dispatchEvent(new CustomEvent('heir-attempt-logged', {
@@ -883,34 +984,92 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
           {/* Recent Calls (when idle) */}
           {!isOnCall && status !== 'incoming' && recentCalls.length > 0 && (
-            <div>
-              <h3 className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Recent Calls</h3>
-              <div className="space-y-1">
-                {recentCalls.map((call) => (
-                  <button
-                    key={call.id}
-                    onClick={() => handleRedial(call)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0">
-                      <Icon name="call" className="text-white/30" size="text-sm" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white/80 font-medium truncate">
-                        {call.lead_name || call.phone || 'Unknown'}
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-white/30">{formatTimeAgo(call.created_at)}</span>
-                        {call.metadata?.duration && (
-                          <span className="text-[10px] text-white/30">{formatDuration(call.metadata.duration)}</span>
-                        )}
-                      </div>
-                    </div>
-                    <Icon name="call" className="text-white/20" size="text-sm" />
-                  </button>
-                ))}
+            <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-[10px] font-black text-white/35 uppercase tracking-widest">Recent Calls</h3>
+                <span className="text-[10px] text-white/25">
+                  {recentCalls.length}{recentCallsHasMore ? '+' : ''}
+                </span>
               </div>
-            </div>
+              <div className="space-y-1 max-h-[360px] overflow-y-auto pr-1">
+                {recentCalls.map((call) => {
+                  const direction = callDirection(call)
+                  const outcome = callOutcome(call)
+                  const duration = call.duration || call.metadata?.duration || null
+                  const displayPhone = call.phone || call.to || call.from
+                  const displayName = displayCallName(call)
+                  const agentName = displayAgentName(call.agent)
+                  const fromLabel = call.from ? callerIdLabel(call.from) : null
+                  return (
+                    <button
+                      key={call.id}
+                      onClick={() => handleRedial(call)}
+                      className="w-full rounded-lg px-2.5 py-2 hover:bg-white/5 transition-colors text-left"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${direction.className}`}
+                          title={direction.label}
+                        >
+                          <Icon name={direction.icon} size="text-sm" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm text-white/85 font-semibold truncate">
+                              {displayName}
+                            </p>
+                            <span className="text-[10px] text-white/30 flex-shrink-0">{formatTimeAgo(call.created_at)}</span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-1.5 min-w-0 text-[10px] text-white/35">
+                            {call.direction?.includes('outbound') && agentName && (
+                              <span className="truncate">{agentName}</span>
+                            )}
+                            {call.from && (
+                              <span className="truncate">From {fromLabel}</span>
+                            )}
+                            {call.from && call.to && <span className="text-white/15">→</span>}
+                            {call.to && (
+                              <span className="truncate">To {formatPhone(call.to)}</span>
+                            )}
+                            {!call.from && !call.to && displayPhone && (
+                              <span className="truncate">{formatPhone(displayPhone)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div
+                          className={`flex items-center gap-1 rounded-md px-1.5 py-1 flex-shrink-0 ${outcome.className}`}
+                          title={outcome.label}
+                        >
+                          <Icon name={outcome.icon} size="text-xs" />
+                          {duration !== null && (
+                            <span className="text-[10px] font-bold">{formatDuration(duration)}</span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+              {recentCallsHasMore && (
+                <button
+                  type="button"
+                  onClick={() => setRecentCallsLimit((limit) => Math.min(limit + 10, 100))}
+                  disabled={recentCallsLoading || recentCallsLimit >= 100}
+                  className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-white/55 hover:bg-white/10 hover:text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {recentCallsLoading ? 'Loading...' : 'Load More Calls'}
+                </button>
+              )}
+            </section>
+          )}
+
+          {!isOnCall && status !== 'incoming' && recentCalls.length === 0 && (
+            <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <h3 className="text-[10px] font-black text-white/35 uppercase tracking-widest mb-1">Recent Calls</h3>
+              <p className="text-xs text-white/45">
+                {recentCallsError || 'No recent call activity found.'}
+              </p>
+            </section>
           )}
 
           {/* Reconnect button when offline */}

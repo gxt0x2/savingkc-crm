@@ -14,7 +14,7 @@ const AGENT_CALLER_IDS: Record<string, string> = {
 const DEFAULT_CALLER_ID = '+18163077835' // fallback: main Twilio number
 
 function env(name: string): string {
-  return process.env[name]?.trim() ?? ''
+  return process.env[name]?.replace(/\\n/g, '').trim() ?? ''
 }
 
 function twilioEnv(name: string): string {

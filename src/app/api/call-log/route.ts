@@ -5,12 +5,158 @@ import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
 
 
+type CallActivity = {
+  id: string
+  lead_id: string | null
+  agent: string | null
+  description: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+
+const AGENT_CALLER_IDS: Record<string, string> = {
+  ernest: '+18166088588',
+  casey: '+18167277667',
+}
+
+const CALLER_ID_AGENTS: Record<string, string> = {
+  '+18166088588': 'Ernest',
+  '+18167277667': 'Casey',
+}
+
+function metadataPhone(metadata: Record<string, unknown> | null): string | null {
+  if (!metadata) return null
+  const value = metadata.to || metadata.from || metadata.phone || metadata.calledNumber
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function metadataString(metadata: Record<string, unknown> | null, keys: string[]): string | null {
+  if (!metadata) return null
+  for (const key of keys) {
+    const value = metadata[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return null
+}
+
+function metadataNumber(metadata: Record<string, unknown> | null, keys: string[]): number | null {
+  if (!metadata) return null
+  for (const key of keys) {
+    const value = metadata[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
+  }
+  return null
+}
+
+function callerIdForAgent(agent: string | null): string | null {
+  if (!agent) return null
+  const lower = agent.toLowerCase()
+  if (lower.includes('ernest')) return AGENT_CALLER_IDS.ernest
+  if (lower.includes('casey')) return AGENT_CALLER_IDS.casey
+  return null
+}
+
+function agentForCallerId(from: unknown): string | null {
+  return typeof from === 'string' ? CALLER_ID_AGENTS[from] || null : null
+}
+
+function deriveOutcome(activity: CallActivity): string | null {
+  const explicit = metadataString(activity.metadata, ['outcome', 'callStatus', 'dialStatus', 'status'])
+  if (explicit) return explicit
+
+  const tag = metadataString(activity.metadata, ['tag', 'source', 'trigger'])?.toLowerCase() || ''
+  const description = activity.description?.toLowerCase() || ''
+
+  if (tag.includes('voicemail') || description.includes('voicemail')) return 'voicemail'
+  if (tag.includes('no_input') || description.includes('no ivr input')) return 'no_answer'
+  if (tag.includes('non_lead') || description.includes('non-seller')) return 'non_seller'
+  if (tag.includes('spam')) return 'spam'
+  if (description.includes('connected')) return 'connected'
+  if (description.includes('missed')) return 'missed'
+  if (description.includes('outbound call')) return 'completed'
+  if (description.includes('inbound call')) return 'received'
+
+  return null
+}
+
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const limitParam = Number(searchParams.get('limit') || '10')
+    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 10
+
+    const { data, error } = await supabase
+      .from('lead_activities')
+      .select('id, lead_id, agent, description, metadata, created_at')
+      .eq('activity_type', 'call')
+      .order('created_at', { ascending: false })
+      .range(0, limit)
+
+    if (error) {
+      console.error('[call-log] recent calls query failed:', error.message)
+      return NextResponse.json({ error: 'Failed to load recent calls' }, { status: 500 })
+    }
+
+    const rows = (data || []) as CallActivity[]
+    const hasMore = rows.length > limit
+    const activities = rows.slice(0, limit)
+    const leadIds = Array.from(new Set(activities.map((a) => a.lead_id).filter(Boolean))) as string[]
+    const leadNames = new Map<string, string>()
+
+    if (leadIds.length > 0) {
+      const { data: leads, error: leadsError } = await supabase
+        .from('leads')
+        .select('id, full_name, phone')
+        .in('id', leadIds)
+
+      if (leadsError) {
+        console.error('[call-log] lead lookup failed:', leadsError.message)
+      } else {
+        for (const lead of leads || []) {
+          if (lead.id) leadNames.set(lead.id, lead.full_name || lead.phone || 'Unknown')
+        }
+      }
+    }
+
+    const calls = activities.map((activity) => {
+      const to = metadataString(activity.metadata, ['to', 'calledNumber'])
+      const direction = metadataString(activity.metadata, ['direction'])
+      const from = metadataString(activity.metadata, ['from']) ||
+        (direction?.includes('outbound') ? callerIdForAgent(activity.agent) : null)
+      const outcome = deriveOutcome(activity)
+
+      return {
+        id: activity.id,
+        lead_id: activity.lead_id,
+        lead_name: activity.lead_id ? leadNames.get(activity.lead_id) || null : null,
+        agent: activity.agent,
+        phone: metadataPhone(activity.metadata),
+        from,
+        to,
+        direction,
+        outcome,
+        duration: metadataNumber(activity.metadata, ['duration', 'callDuration']),
+        created_at: activity.created_at,
+        metadata: activity.metadata,
+        description: activity.description,
+      }
+    })
+
+    return NextResponse.json({ calls, hasMore, limit })
+  } catch (err) {
+    console.error('[call-log] GET error:', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
 
 // Log outbound calls from the telephony bar
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { phone, event, duration, agent, lead_id, heir_name, heir_relation, prospect_phone_id } = body
+    const { phone, event, duration, agent, from, lead_id, heir_name, heir_relation, prospect_phone_id } = body
+    const logAgent = agentForCallerId(from) || agent || 'System'
 
     if (!phone) {
       return NextResponse.json({ error: 'phone required' }, { status: 400 })
@@ -45,9 +191,10 @@ export async function POST(req: Request) {
         lead_id: leadId,
         activity_type: 'call',
         description: isHeirCall ? `Outbound call to ${heirLabel}` : `Outbound call to ${leadName}`,
-        agent: agent || 'System',
+        agent: logAgent,
         metadata: {
           direction: 'outbound',
+          from,
           to: cleanPhone,
           status: 'initiated',
           source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
@@ -61,9 +208,10 @@ export async function POST(req: Request) {
         description: isHeirCall
           ? `Outbound call to ${heirLabel} — ${duration || 0}s`
           : `Outbound call to ${leadName} — ${duration || 0}s`,
-        agent: agent || 'System',
+        agent: logAgent,
         metadata: {
           direction: 'outbound',
+          from,
           to: cleanPhone,
           status: 'completed',
           duration: duration || 0,
