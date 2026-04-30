@@ -248,9 +248,9 @@ function buildLeadBundle(row) {
       owner_age: parseInt(row['Age'], 10) || null,
       email_1: emails[0] || null,
       email_2: emails[1] || null,
-      source_sheet: 'Johnson County 3 Yr Deceased Jan 2026',
-      source_file: SOURCE_FILE,
-      raw_data: row, // archive full skip trace blob for backup-promotion later
+      // source_sheet / source_file / raw_data omitted: not present on prod
+      // prospects schema. Backup phones live in the original CSV; promote a
+      // raw_data column via migration if we want in-CRM archival later.
     },
     phones: topPhones.map((p) => ({
       phone: p.number,
@@ -343,7 +343,7 @@ async function main() {
   console.log(`Importable leads:    ${bundles.length}`)
   console.log(`Skipped:             ${skipped.length}`)
   console.log(`Top-tier phones:     ${totalDialQueue}  (avg ${(totalDialQueue / bundles.length).toFixed(1)} per lead)`)
-  console.log(`Archived phones:     ${totalArchived}  (kept in prospects.raw_data)\n`)
+  console.log(`Trimmed phones:      ${totalArchived}  (kept only in source CSV; restore via re-import if needed)\n`)
 
   if (skipped.length > 0) {
     console.log('Skipped leads:')
