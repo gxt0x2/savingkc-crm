@@ -153,6 +153,18 @@ const QUEUE_SORTS: Array<{ id: QueueSort; label: string }> = [
 
 const DIALER_LEAD_SELECT = 'id, full_name, phone, property_address, city, state, source, station, priority, seller_situation, motivation_score, appointment_date, created_at, updated_at'
 
+async function fetchDeceasedQueue() {
+  const response = await fetch('/api/dialer/deceased-queue', { cache: 'no-store' })
+  const payload = await response.json()
+  if (!response.ok) {
+    throw new Error(payload?.error || 'Could not load deceased tax queue.')
+  }
+  return {
+    leadIds: (payload.leadIds || []) as string[],
+    prospects: (payload.prospects || []) as QueueProspect[],
+  }
+}
+
 function dateKey(value: string | null | undefined) {
   if (!value) return ''
   const date = new Date(value)
@@ -272,18 +284,12 @@ function DialerPageInner() {
       }
       const cohort = params.get('cohort')
       if (cohort === 'deceased-2-3yr') {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from('prospects')
-          .select('lead_id')
-          .eq('is_deceased', true)
-          .in('delinquent_years_category', ['2yr', '3yr_plus'])
-          .not('lead_id', 'is', null)
-        if (error) { setResolveError(error.message); setLoading(false); return }
-        const ids = Array.from(new Set<string>((data ?? [])
-          .map((r: { lead_id: string | null }) => r.lead_id)
-          .filter((v): v is string => Boolean(v))))
-        setLeadIds(ids)
+        try {
+          const queue = await fetchDeceasedQueue()
+          setLeadIds(queue.leadIds)
+        } catch (error) {
+          setResolveError(error instanceof Error ? error.message : 'Could not load deceased tax queue.')
+        }
         setLoading(false)
         return
       }
@@ -817,7 +823,8 @@ function DialerHome() {
       setLoading(true)
       setError(null)
       const supabase = createClient()
-      const [{ data: leadRows, error: leadError }, { data: followupRows }, { data: contactRows }, { data: deceasedProspectRows }] = await Promise.all([
+      const deceasedQueuePromise = fetchDeceasedQueue().catch((error) => ({ error }))
+      const [{ data: leadRows, error: leadError }, { data: followupRows }, { data: contactRows }, deceasedQueue] = await Promise.all([
         supabase
           .from('leads')
           .select(DIALER_LEAD_SELECT)
@@ -836,14 +843,12 @@ function DialerHome() {
           .not('lead_id', 'is', null)
           .order('created_at', { ascending: false })
           .limit(5000),
-        supabase
-          .from('prospects')
-          .select('lead_id, is_deceased, delinquent_years_category')
-          .eq('is_deceased', true)
-          .in('delinquent_years_category', ['2yr', '3yr_plus'])
-          .not('lead_id', 'is', null)
-          .limit(5000),
+        deceasedQueuePromise,
       ])
+      const deceasedProspectRows = 'prospects' in deceasedQueue ? deceasedQueue.prospects : []
+      if ('error' in deceasedQueue) {
+        setError(deceasedQueue.error instanceof Error ? deceasedQueue.error.message : 'Could not load deceased tax queue.')
+      }
 
       if (leadError) {
         setError(leadError.message)
