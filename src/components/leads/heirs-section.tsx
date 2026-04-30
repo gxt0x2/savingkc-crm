@@ -36,19 +36,27 @@ export interface Heir {
   phones: HeirPhone[]
 }
 
+export interface HeirDialerSettings {
+  callerId?: string | null
+  agent?: string | null
+  mode?: 'power' | 'predictive' | string | null
+  pacing?: number | null
+}
+
 interface HeirsSectionProps {
   leadId: string
   deceasedOwnerName: string
   propertyAddress: string
   defaultExpanded?: boolean
   collapsible?: boolean
+  dialerSettings?: HeirDialerSettings
   /** When provided, a chat-bubble button appears next to each phone and calls this with (heirName, phone). */
   onSmsPhone?: (args: { heirName: string; relation: string; phone: string }) => void
 }
 
-function dispatchHeirQueue(queue: HeirDialerQueueItem[]) {
+function dispatchHeirQueue(queue: HeirDialerQueueItem[], settings?: HeirDialerSettings) {
   if (queue.length === 0) return
-  window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: { queue } }))
+  window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: { queue, settings } }))
 }
 
 function phoneIcon(type: string | null): string {
@@ -95,6 +103,7 @@ export function HeirsSection({
   propertyAddress,
   defaultExpanded = false,
   collapsible = true,
+  dialerSettings,
   onSmsPhone,
 }: HeirsSectionProps) {
   const [heirs, setHeirs] = useState<Heir[]>([])
@@ -195,11 +204,11 @@ export function HeirsSection({
 
   function queueAll() {
     const queue: HeirDialerQueueItem[] = heirs.flatMap(buildQueueForHeir)
-    dispatchHeirQueue(queue)
+    dispatchHeirQueue(queue, dialerSettings)
   }
 
   function queueHeir(heir: Heir) {
-    dispatchHeirQueue(buildQueueForHeir(heir))
+    dispatchHeirQueue(buildQueueForHeir(heir), dialerSettings)
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
@@ -211,7 +220,7 @@ export function HeirsSection({
       leadId,
       propertyAddress,
       deceasedOwnerName,
-    }])
+    }], dialerSettings)
   }
 
   return (
@@ -368,7 +377,10 @@ function HeirRow({
   // override by clicking the row header; that override resets whenever the
   // active heir changes so attention follows the live call.
   const [userToggled, setUserToggled] = useState(false)
-  useEffect(() => { setUserToggled(false) }, [isActive])
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setUserToggled(false))
+    return () => cancelAnimationFrame(id)
+  }, [isActive])
   const expanded = isActive ? !userToggled : userToggled
 
   const statusDotColor = isActive

@@ -50,12 +50,20 @@ export interface HeirQueueItem {
   deceasedOwnerName: string
 }
 
+export interface DialerSettings {
+  callerId?: string | null
+  agent?: string | null
+  mode?: 'power' | 'predictive' | string | null
+  pacing?: number | null
+}
+
 interface DialerPanelProps {
   open: boolean
   onClose: () => void
   onStatusChange?: (status: CallStatus) => void
   pendingDial?: { phone: string; name: string; leadId: string } | null
   pendingQueue?: HeirQueueItem[] | null
+  pendingSettings?: DialerSettings | null
 }
 
 function useCallTimer(active: boolean) {
@@ -167,6 +175,11 @@ function agentNameForCallerId(phone: string | null) {
   return null
 }
 
+function callerIdDisplayLabel(phone: string | null) {
+  if (!phone) return 'Default'
+  return TWILIO_NUMBERS.find((n) => n.value === phone)?.label || formatPhone(phone)
+}
+
 const stationColors: Record<string, string> = {
   intake: 'bg-blue-500/20 text-blue-300',
   qualifying: 'bg-amber-500/20 text-amber-300',
@@ -184,7 +197,7 @@ const priorityColors: Record<string, string> = {
   cold: 'bg-cyan-500/20 text-cyan-300',
 }
 
-export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendingQueue }: DialerPanelProps) {
+export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendingQueue, pendingSettings }: DialerPanelProps) {
   const [status, setStatus] = useState<CallStatus>('offline')
   const [dialNumber, setDialNumber] = useState('')
   const [muted, setMuted] = useState(false)
@@ -211,6 +224,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
   // Caller ID display
   const [callerIdDisplay, setCallerIdDisplay] = useState<string>('')
+  const [sessionAgent, setSessionAgent] = useState<string | null>(null)
+  const [callMode, setCallMode] = useState<'power' | 'predictive'>('power')
+  const [callPacing, setCallPacing] = useState(18)
 
   // Disposition
   const [showDisposition, setShowDisposition] = useState(false)
@@ -278,6 +294,18 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     }
   }, [open, pendingQueue])
 
+  useEffect(() => {
+    if (!open || !pendingSettings) return
+    if (pendingSettings.callerId) setCallerIdDisplay(pendingSettings.callerId)
+    if (pendingSettings.agent) setSessionAgent(pendingSettings.agent)
+    if (pendingSettings.mode === 'power' || pendingSettings.mode === 'predictive') {
+      setCallMode(pendingSettings.mode)
+    }
+    if (typeof pendingSettings.pacing === 'number' && Number.isFinite(pendingSettings.pacing)) {
+      setCallPacing(pendingSettings.pacing)
+    }
+  }, [open, pendingSettings])
+
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
   }
@@ -300,7 +328,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       const { token, callerId: cid } = data
-      if (cid) setCallerIdDisplay(cid)
+      if (cid) setCallerIdDisplay((current) => current || cid)
       log('token received')
 
       const device = new Device(token, { logLevel: 1 })
@@ -315,7 +343,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
           const refreshData = await refreshRes.json()
           if (refreshData.token) {
             device.updateToken(refreshData.token)
-            if (refreshData.callerId) setCallerIdDisplay(refreshData.callerId)
+            if (refreshData.callerId) setCallerIdDisplay((current) => current || refreshData.callerId)
             log('token refreshed')
           }
         } catch {
@@ -438,11 +466,16 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     // Snapshot the queue item at call start so the disposition (which fires
     // after disconnect, possibly after advance) logs against the right heir.
     activeQueueItemRef.current = queueItem
-    const callAgent = agentNameForCallerId(callerIdDisplay) || 'Ernest'
+    const callAgent = sessionAgent || agentNameForCallerId(callerIdDisplay) || 'Ernest'
     log(`calling ${number}`)
     try {
       const call = await deviceRef.current.connect({
-        params: { To: number },
+        params: {
+          To: number,
+          ...(callerIdDisplay && { CallerId: callerIdDisplay }),
+          CallMode: callMode,
+          Pace: String(callPacing),
+        },
       })
       callRef.current = call
       callStartRef.current = Date.now()
@@ -471,6 +504,8 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
           event: 'started',
           agent: callAgent,
           from: callerIdDisplay || null,
+          call_mode: callMode,
+          pace: callPacing,
           lead_id: selectedLead?.id || null,
           ...heirMeta,
         }),
@@ -487,6 +522,8 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             duration,
             agent: callAgent,
             from: callerIdDisplay || null,
+            call_mode: callMode,
+            pace: callPacing,
             lead_id: selectedLead?.id || null,
             ...heirMeta,
           }),
@@ -564,7 +601,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             disposition,
             notes,
             lead_id: activeItem.leadId,
-            agent: agentNameForCallerId(callerIdDisplay) || 'Ernest',
+            agent: sessionAgent || agentNameForCallerId(callerIdDisplay) || 'Ernest',
           }),
         })
         window.dispatchEvent(new CustomEvent('heir-attempt-logged', {
@@ -1028,14 +1065,56 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                   </button>
                 ))}
               </div>
-              {callerIdDisplay && (
-                <div className="border-t border-white/15 pt-5">
-                  <p className="mb-3 text-xl font-black uppercase tracking-[0.18em] text-white/55">Calling From</p>
-                  <div className="rounded-2xl border border-white/10 bg-[#141416] px-4 py-3 text-sm font-bold text-white/70">
-                    {TWILIO_NUMBERS.find(n => n.value === callerIdDisplay)?.label || formatPhone(callerIdDisplay)}
+              <div className="grid gap-3 border-t border-white/15 pt-5 md:grid-cols-[minmax(0,1fr)_220px]">
+                <label className="block">
+                  <span className="mb-3 block text-xl font-black uppercase tracking-[0.18em] text-white/55">Calling From</span>
+                  <select
+                    value={callerIdDisplay}
+                    onChange={(event) => setCallerIdDisplay(event.target.value)}
+                    disabled={isOnCall}
+                    className="h-[52px] w-full rounded-2xl border border-white/10 bg-[#141416] px-4 py-3 text-sm font-bold text-white/80 outline-none transition-colors focus:border-[#E32E2E]/60 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Calling from"
+                  >
+                    <option value="">Default caller ID</option>
+                    {callerIdDisplay && !TWILIO_NUMBERS.some((number) => number.value === callerIdDisplay) && (
+                      <option value={callerIdDisplay}>{callerIdDisplayLabel(callerIdDisplay)}</option>
+                    )}
+                    {TWILIO_NUMBERS.map((number) => (
+                      <option key={number.value} value={number.value}>{number.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <div>
+                  <span className="mb-3 block text-xl font-black uppercase tracking-[0.18em] text-white/55">Call Hammer</span>
+                  <div className="grid grid-cols-2 rounded-2xl border border-white/10 bg-[#141416] p-1">
+                    {(['power', 'predictive'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setCallMode(mode)}
+                        className={`rounded-xl px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+                          callMode === mode ? 'bg-[#8B2228] text-white' : 'text-white/45 hover:text-white/75'
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
                   </div>
+                  <label className="mt-3 block">
+                    <span className="mb-2 block text-[11px] font-black uppercase tracking-widest text-white/45">Pace: {callPacing}s</span>
+                    <input
+                      type="range"
+                      min={callMode === 'predictive' ? 6 : 12}
+                      max="90"
+                      value={callPacing}
+                      onChange={(event) => setCallPacing(Number(event.target.value))}
+                      className="w-full accent-[#E32E2E]"
+                      aria-label="Call pace"
+                    />
+                  </label>
                 </div>
-              )}
+              </div>
               <div className="grid grid-cols-[1fr_auto_1fr] items-center pt-1">
                 <span />
                 <button

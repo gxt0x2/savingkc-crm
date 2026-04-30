@@ -9,6 +9,7 @@ import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { createClient } from '@/lib/supabase/client'
 import { calculateTemperature } from '@/lib/lead-temperature'
 import { toProperCase, formatPhone } from '@/lib/format'
+import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
 // URL contract:
 //   /dialer?lead_ids=<uuid>,<uuid>,...
@@ -151,6 +152,12 @@ const QUEUE_SORTS: Array<{ id: QueueSort; label: string }> = [
   { id: 'name', label: 'Name A-Z' },
 ]
 
+function defaultCallerIdForAgent(agent: string): string {
+  if (agent === 'Ernest') return '+18166088588'
+  if (agent === 'Casey') return '+18167277667'
+  return '+18163077835'
+}
+
 const DIALER_LEAD_SELECT = 'id, full_name, phone, property_address, city, state, source, station, priority, seller_situation, motivation_score, appointment_date, created_at, updated_at'
 
 async function fetchDeceasedQueue() {
@@ -204,6 +211,8 @@ function lastContactLabel(value: string | null | undefined) {
 }
 
 function formatSelectOption(option: string) {
+  const twilioNumber = TWILIO_NUMBERS.find((number) => number.value === option)
+  if (twilioNumber) return twilioNumber.label
   if (option === 'all') return 'All'
   const sort = QUEUE_SORTS.find((item) => item.id === option)
   if (sort) return sort.label
@@ -248,6 +257,10 @@ function activityIcon(type: string, metadata: Record<string, unknown> | null): s
 function DialerPageInner() {
   const router = useRouter()
   const params = useSearchParams()
+  const callerIdParam = params.get('caller_id')
+  const agentParam = params.get('agent')
+  const modeParam = params.get('mode')
+  const pacingParam = params.get('pacing')
   const [leadIds, setLeadIds] = useState<string[]>([])
   const [leads, setLeads] = useState<Record<string, LeadSummary>>({})
   const [prospects, setProspects] = useState<Record<string, ProspectSummary | null>>({})
@@ -269,6 +282,12 @@ function DialerPageInner() {
   const currentLead: LeadSummary | null = currentLeadId ? leads[currentLeadId] ?? null : null
   const currentProspect: ProspectSummary | null = currentLeadId ? prospects[currentLeadId] ?? null : null
   const currentManifest: ManifestShape | null = currentLeadId ? manifests[currentLeadId] ?? null : null
+  const dialerSettings = useMemo(() => ({
+    callerId: callerIdParam || null,
+    agent: agentParam || null,
+    mode: modeParam === 'predictive' ? 'predictive' : 'power',
+    pacing: pacingParam ? Number(pacingParam) : null,
+  }), [agentParam, callerIdParam, modeParam, pacingParam])
 
   // Resolve cohort → lead_ids
   useEffect(() => {
@@ -746,6 +765,7 @@ function DialerPageInner() {
               propertyAddress={situsAddress}
               defaultExpanded
               collapsible={false}
+              dialerSettings={dialerSettings}
               onSmsPhone={setSmsTarget}
             />
           )}
@@ -798,6 +818,7 @@ function DialerHome() {
   const [savedQueueError, setSavedQueueError] = useState<string | null>(null)
   const [showQueueControls, setShowQueueControls] = useState(false)
   const [agent, setAgent] = useState('Casey')
+  const [selectedCallerId, setSelectedCallerId] = useState(defaultCallerIdForAgent('Casey'))
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [pacing, setPacing] = useState(18)
 
@@ -1019,8 +1040,18 @@ function DialerHome() {
   const startQueue = useCallback(() => {
     const source = selectedQueue.length > 0 ? selectedQueue : queue
     const ids = source.slice(0, 100).map((lead) => lead.id)
-    if (ids.length > 0) router.push(`/dialer?lead_ids=${ids.join(',')}&return_to=/dialer`)
-  }, [queue, router, selectedQueue])
+    if (ids.length > 0) {
+      const nextParams = new URLSearchParams({
+        lead_ids: ids.join(','),
+        return_to: '/dialer',
+        caller_id: selectedCallerId,
+        agent,
+        mode,
+        pacing: String(pacing),
+      })
+      router.push(`/dialer?${nextParams.toString()}`)
+    }
+  }, [agent, mode, pacing, queue, router, selectedCallerId, selectedQueue])
 
   const currentLead = selectedQueue[0] ?? queue[0] ?? null
   const selectedPreset = QUEUE_PRESETS.find((item) => item.id === preset) ?? QUEUE_PRESETS[0]
@@ -1056,6 +1087,7 @@ function DialerHome() {
   const applySavedQueue = useCallback((savedQueue: SavedDialerQueue) => {
     setPreset(savedQueue.preset)
     setAgent(savedQueue.agent)
+    setSelectedCallerId(defaultCallerIdForAgent(savedQueue.agent))
     setCampaign(savedQueue.campaign)
     setStatusFilter(savedQueue.statusFilter)
     setPriorityFilter(savedQueue.priorityFilter)
@@ -1327,7 +1359,17 @@ function DialerHome() {
                   </div>
                   <p className="text-sm font-bold text-[var(--ck-text)] font-mono">{formatPhone(lead.phone || '')}</p>
                   <button
-                    onClick={() => router.push(`/dialer?lead_ids=${lead.id}&return_to=/dialer`)}
+                    onClick={() => {
+                      const nextParams = new URLSearchParams({
+                        lead_ids: lead.id,
+                        return_to: '/dialer',
+                        caller_id: selectedCallerId,
+                        agent,
+                        mode,
+                        pacing: String(pacing),
+                      })
+                      router.push(`/dialer?${nextParams.toString()}`)
+                    }}
                     className="inline-flex items-center justify-center rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[#E32E2E]/50"
                   >
                     Open
@@ -1357,7 +1399,16 @@ function DialerHome() {
               <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Pace: {pacing}s</span>
               <input type="range" min={mode === 'predictive' ? 6 : 12} max="90" value={pacing} onChange={(e) => setPacing(Number(e.target.value))} className="mt-3 w-full accent-[#E32E2E]" />
             </label>
-            <DarkSelect label="Agent" value={agent} onChange={setAgent} options={['Casey', 'Gertha', 'Ernest']} />
+            <DarkSelect
+              label="Agent"
+              value={agent}
+              onChange={(value) => {
+                setAgent(value)
+                setSelectedCallerId(defaultCallerIdForAgent(value))
+              }}
+              options={['Casey', 'Gertha', 'Ernest']}
+            />
+            <DarkSelect label="Calling From" value={selectedCallerId} onChange={setSelectedCallerId} options={TWILIO_NUMBERS.map((number) => number.value)} />
           </div>
 
           <button
@@ -1385,7 +1436,17 @@ function DialerHome() {
                 <p className="mt-1 font-mono text-sm font-bold text-[#E32E2E]">{formatPhone(currentLead.phone || '')}</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--ck-text-muted)]">{currentLead.property_address || currentLead.city || 'No property address on file.'}</p>
                 <button
-                  onClick={() => router.push(`/dialer?lead_ids=${currentLead.id}&return_to=/dialer`)}
+                  onClick={() => {
+                    const nextParams = new URLSearchParams({
+                      lead_ids: currentLead.id,
+                      return_to: '/dialer',
+                      caller_id: selectedCallerId,
+                      agent,
+                      mode,
+                      pacing: String(pacing),
+                    })
+                    router.push(`/dialer?${nextParams.toString()}`)
+                  }}
                   className="mt-4 w-full rounded-lg border border-[var(--ck-border)] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[#E32E2E]/50"
                 >
                   Open Lead
@@ -1425,7 +1486,7 @@ function DarkSelect({ label, value, onChange, options }: { label: string; value:
 function SegmentedControl({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
     <div>
-      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Mode</span>
+      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Call Hammer</span>
       <div className="mt-2 grid grid-cols-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
         {['power', 'predictive'].map((option) => (
           <button
