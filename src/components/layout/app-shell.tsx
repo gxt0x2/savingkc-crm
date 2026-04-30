@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { NavTabs } from './nav-tab'
 import { CommandPalette } from './command-palette'
 import { ModeSwitcher } from './mode-switcher'
-import { DialerPanel, CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar'
+import { DialerPanel, type CallStatus, type DialerSettings, type HeirQueueItem } from '@/components/telephony/telephony-bar'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import { useAppMode } from '@/hooks/use-app-mode'
@@ -38,12 +38,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Auto-open dialer on incoming call
   useEffect(() => {
-    if (dialerStatus === 'incoming') setShowDialer(true)
+    if (dialerStatus !== 'incoming') return
+    const id = requestAnimationFrame(() => setShowDialer(true))
+    return () => cancelAnimationFrame(id)
   }, [dialerStatus])
 
   // Listen for open-dialer custom events (from ARI page click-to-call)
   const [pendingDialLead, setPendingDialLead] = useState<{ phone: string; name: string; leadId: string } | null>(null)
   const [pendingQueue, setPendingQueue] = useState<HeirQueueItem[] | null>(null)
+  const [pendingDialerSettings, setPendingDialerSettings] = useState<DialerSettings | null>(null)
 
   useEffect(() => {
     function handleOpenDialer(e: Event) {
@@ -51,6 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (detail?.phone) {
         setPendingDialLead({ phone: detail.phone, name: detail.name || '', leadId: detail.leadId || '' })
         setPendingQueue(null)
+        setPendingDialerSettings(detail.settings || null)
         setShowDialer(true)
       }
     }
@@ -59,6 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (Array.isArray(detail?.queue) && detail.queue.length > 0) {
         setPendingQueue(detail.queue)
         setPendingDialLead(null)
+        setPendingDialerSettings(detail.settings || null)
         setShowDialer(true)
       }
     }
@@ -86,14 +91,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         } else if (!data.profile) {
           console.log('[AppShell] Profile not found, attempting to link')
           // Profile not found by email — try linking Google OAuth to existing agent_profile
-          const meta = (user as any).user_metadata || {}
+          const meta = user.user_metadata as { full_name?: string; name?: string; phone?: string } | undefined
           const linkRes = await fetch('/api/auth/link-profile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               email: user.email,
-              name: meta.full_name || meta.name || '',
-              phone: meta.phone || '',
+              name: meta?.full_name || meta?.name || '',
+              phone: meta?.phone || '',
             }),
           })
           if (linkRes.ok) {
@@ -326,10 +331,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Dialer Panel — Twilio softphone */}
       <DialerPanel
         open={showDialer}
-        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null) }}
+        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingDialerSettings(null) }}
         onStatusChange={setDialerStatus}
         pendingDial={pendingDialLead}
         pendingQueue={pendingQueue}
+        pendingSettings={pendingDialerSettings}
       />
 
       {/* ⌘K Command Palette — global search */}

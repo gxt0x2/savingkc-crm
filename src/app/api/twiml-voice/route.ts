@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
 const env = (name: string) => process.env[name]?.trim() ?? ''
 
@@ -30,6 +31,7 @@ const COLD_CALL_NUMBERS = new Set([
   '+18166408032',
   '+18166536616',
 ])
+const ALLOWED_OUTBOUND_CALLER_IDS: Set<string> = new Set(TWILIO_NUMBERS.map((number) => number.value))
 
 function normalizeUsPhone(value: string): string {
   const cleaned = value.trim()
@@ -46,6 +48,7 @@ export async function POST(req: Request) {
     const callSid = body.get('CallSid') as string
     const from = body.get('From') as string
     const to = body.get('To') as string
+    const requestedCallerId = body.get('CallerId') as string | null
 
   // ── OUTBOUND: browser/SDK-initiated call ──
   if (from && from.startsWith('client:')) {
@@ -58,7 +61,10 @@ export async function POST(req: Request) {
 
     // Use agent's company number as caller ID (from=client:ernest or client:casey)
     const identity = from.replace('client:', '').toLowerCase()
-    const callerId = AGENT_CALLER_IDS[identity] || TWILIO_PHONE
+    const normalizedRequestedCallerId = requestedCallerId ? normalizeUsPhone(requestedCallerId) : ''
+    const callerId = ALLOWED_OUTBOUND_CALLER_IDS.has(normalizedRequestedCallerId)
+      ? normalizedRequestedCallerId
+      : AGENT_CALLER_IDS[identity] || TWILIO_PHONE
 
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>

@@ -155,7 +155,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { phone, event, duration, agent, from, lead_id, heir_name, heir_relation, prospect_phone_id } = body
+    const { phone, event, duration, agent, from, call_mode, pace, lead_id, heir_name, heir_relation, prospect_phone_id } = body
     const logAgent = agentForCallerId(from) || agent || 'System'
 
     if (!phone) {
@@ -197,6 +197,8 @@ export async function POST(req: Request) {
           from,
           to: cleanPhone,
           status: 'initiated',
+          call_mode,
+          pace,
           source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
           ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id }),
         }
@@ -215,6 +217,8 @@ export async function POST(req: Request) {
           to: cleanPhone,
           status: 'completed',
           duration: duration || 0,
+          call_mode,
+          pace,
           source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
           ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id }),
         }
