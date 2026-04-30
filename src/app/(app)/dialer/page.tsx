@@ -151,6 +151,8 @@ const QUEUE_SORTS: Array<{ id: QueueSort; label: string }> = [
   { id: 'name', label: 'Name A-Z' },
 ]
 
+const DIALER_LEAD_SELECT = 'id, full_name, phone, property_address, city, state, source, station, priority, seller_situation, motivation_score, appointment_date, created_at, updated_at'
+
 function dateKey(value: string | null | undefined) {
   if (!value) return ''
   const date = new Date(value)
@@ -815,10 +817,10 @@ function DialerHome() {
       setLoading(true)
       setError(null)
       const supabase = createClient()
-      const [{ data: leadRows, error: leadError }, { data: followupRows }, { data: contactRows }, { data: prospectRows }] = await Promise.all([
+      const [{ data: leadRows, error: leadError }, { data: followupRows }, { data: contactRows }, { data: deceasedProspectRows }] = await Promise.all([
         supabase
           .from('leads')
-          .select('id, full_name, phone, property_address, city, state, source, station, priority, seller_situation, motivation_score, appointment_date, created_at, updated_at')
+          .select(DIALER_LEAD_SELECT)
           .not('phone', 'is', null)
           .order('updated_at', { ascending: false })
           .limit(1000),
@@ -837,19 +839,59 @@ function DialerHome() {
         supabase
           .from('prospects')
           .select('lead_id, is_deceased, delinquent_years_category')
+          .eq('is_deceased', true)
+          .in('delinquent_years_category', ['2yr', '3yr_plus'])
           .not('lead_id', 'is', null)
-          .limit(2000),
+          .limit(5000),
       ])
 
       if (leadError) {
         setError(leadError.message)
         setLeads([])
       } else {
-        setLeads((leadRows as DialerQueueLead[] | null) ?? [])
+        const baseLeads = (leadRows as DialerQueueLead[] | null) ?? []
+        const leadById = new Map(baseLeads.map((lead) => [lead.id, lead]))
+        const deceasedLeadIds = Array.from(new Set(((deceasedProspectRows as QueueProspect[] | null) ?? [])
+          .map((prospect) => prospect.lead_id)
+          .filter((id): id is string => Boolean(id))))
+        const missingDeceasedLeadIds = deceasedLeadIds.filter((id) => !leadById.has(id))
+
+        if (missingDeceasedLeadIds.length > 0) {
+          const { data: deceasedLeadRows, error: deceasedLeadError } = await supabase
+            .from('leads')
+            .select(DIALER_LEAD_SELECT)
+            .in('id', missingDeceasedLeadIds)
+            .not('phone', 'is', null)
+          if (deceasedLeadError) {
+            setError(deceasedLeadError.message)
+          } else {
+            ;((deceasedLeadRows as DialerQueueLead[] | null) ?? []).forEach((lead) => {
+              leadById.set(lead.id, lead)
+            })
+          }
+        }
+
+        const mergedLeads = Array.from(leadById.values())
+        setLeads(mergedLeads)
+
+        if (mergedLeads.length > 0) {
+          const { data: prospectRows, error: prospectError } = await supabase
+            .from('prospects')
+            .select('lead_id, is_deceased, delinquent_years_category')
+            .in('lead_id', mergedLeads.map((lead) => lead.id))
+            .limit(Math.max(2000, mergedLeads.length * 3))
+          if (prospectError) {
+            setError(prospectError.message)
+            setProspects((deceasedProspectRows as QueueProspect[] | null) ?? [])
+          } else {
+            setProspects((prospectRows as QueueProspect[] | null) ?? [])
+          }
+        } else {
+          setProspects([])
+        }
       }
       setFollowups((followupRows as QueueFollowup[] | null) ?? [])
       setContactActivities((contactRows as QueueContactActivity[] | null) ?? [])
-      setProspects((prospectRows as QueueProspect[] | null) ?? [])
       setLoading(false)
     }
     load()
