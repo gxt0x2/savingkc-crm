@@ -11,6 +11,7 @@ import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { NotificationBell } from './notification-bell'
+import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -42,15 +43,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [dialerStatus])
 
   // Listen for open-dialer custom events (from ARI page click-to-call)
-  const [pendingDialLead, setPendingDialLead] = useState<{ phone: string; name: string; leadId: string } | null>(null)
+  const [pendingDialLead, setPendingDialLead] = useState<{ phone: string; name: string; leadId: string; callerId?: string | null } | null>(null)
   const [pendingQueue, setPendingQueue] = useState<HeirQueueItem[] | null>(null)
+  const [pendingQueueCallerId, setPendingQueueCallerId] = useState<string | null>(null)
+  const [pendingQueueCallerPlan, setPendingQueueCallerPlan] = useState<DialerCallerPlan | null>(null)
 
   useEffect(() => {
     function handleOpenDialer(e: Event) {
       const detail = (e as CustomEvent).detail
       if (detail?.phone) {
-        setPendingDialLead({ phone: detail.phone, name: detail.name || '', leadId: detail.leadId || '' })
+        setPendingDialLead({
+          phone: detail.phone,
+          name: detail.name || '',
+          leadId: detail.leadId || '',
+          callerId: typeof detail.callerId === 'string' ? detail.callerId : null,
+        })
         setPendingQueue(null)
+        setPendingQueueCallerId(null)
+        setPendingQueueCallerPlan(null)
         setShowDialer(true)
       }
     }
@@ -58,6 +68,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const detail = (e as CustomEvent).detail
       if (Array.isArray(detail?.queue) && detail.queue.length > 0) {
         setPendingQueue(detail.queue)
+        const callerId = typeof detail.callerId === 'string' ? detail.callerId : null
+        setPendingQueueCallerId(callerId)
+        setPendingQueueCallerPlan(normalizeDialerCallerPlan(detail.callerPlan, callerId || ''))
         setPendingDialLead(null)
         setShowDialer(true)
       }
@@ -326,10 +339,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Dialer Panel — Twilio softphone */}
       <DialerPanel
         open={showDialer}
-        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null) }}
+        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null) }}
         onStatusChange={setDialerStatus}
         pendingDial={pendingDialLead}
         pendingQueue={pendingQueue}
+        pendingQueueCallerId={pendingQueueCallerId}
+        pendingQueueCallerPlan={pendingQueueCallerPlan}
       />
 
       {/* ⌘K Command Palette — global search */}

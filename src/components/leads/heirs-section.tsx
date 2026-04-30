@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone, toProperCase } from '@/lib/format'
+import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 
 // Dialer queue item — sent to DialerPanel so it can cycle through heirs while
 // the property stays pinned. `leadId` is the property's lead_id, never the
@@ -42,13 +43,19 @@ interface HeirsSectionProps {
   propertyAddress: string
   defaultExpanded?: boolean
   collapsible?: boolean
+  dialerCallerId?: string | null
+  dialerCallerPlan?: Partial<DialerCallerPlan> | null
   /** When provided, a chat-bubble button appears next to each phone and calls this with (heirName, phone). */
   onSmsPhone?: (args: { heirName: string; relation: string; phone: string }) => void
 }
 
-function dispatchHeirQueue(queue: HeirDialerQueueItem[]) {
+function dispatchHeirQueue(queue: HeirDialerQueueItem[], callerId?: string | null, callerPlan?: Partial<DialerCallerPlan> | null) {
   if (queue.length === 0) return
-  window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: { queue } }))
+  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan } = { queue }
+  if (typeof callerId === 'string' && callerId.trim()) detail.callerId = callerId.trim()
+  const normalizedPlan = normalizeDialerCallerPlan(callerPlan, typeof callerId === 'string' ? callerId.trim() : '')
+  detail.callerPlan = normalizedPlan
+  window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail }))
 }
 
 function phoneIcon(type: string | null): string {
@@ -95,6 +102,8 @@ export function HeirsSection({
   propertyAddress,
   defaultExpanded = false,
   collapsible = true,
+  dialerCallerId = null,
+  dialerCallerPlan = null,
   onSmsPhone,
 }: HeirsSectionProps) {
   const [heirs, setHeirs] = useState<Heir[]>([])
@@ -195,11 +204,11 @@ export function HeirsSection({
 
   function queueAll() {
     const queue: HeirDialerQueueItem[] = heirs.flatMap(buildQueueForHeir)
-    dispatchHeirQueue(queue)
+    dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan)
   }
 
   function queueHeir(heir: Heir) {
-    dispatchHeirQueue(buildQueueForHeir(heir))
+    dispatchHeirQueue(buildQueueForHeir(heir), dialerCallerId, dialerCallerPlan)
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
@@ -211,7 +220,7 @@ export function HeirsSection({
       leadId,
       propertyAddress,
       deceasedOwnerName,
-    }])
+    }], dialerCallerId, dialerCallerPlan)
   }
 
   return (
