@@ -207,6 +207,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   const [recentCallsLimit, setRecentCallsLimit] = useState(5)
   const [recentCallsHasMore, setRecentCallsHasMore] = useState(false)
   const [recentCallsLoading, setRecentCallsLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<'dial' | 'recent'>('dial')
 
   // Caller ID display
   const [callerIdDisplay, setCallerIdDisplay] = useState<string>('')
@@ -657,7 +658,16 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   function handleRedial(call: RecentCall) {
     if (call.phone) {
       setDialNumber(call.phone)
+      setActiveTab('dial')
     }
+  }
+
+  function appendDialDigit(value: string) {
+    setDialNumber((current) => `${current}${value}`)
+  }
+
+  function deleteDialDigit() {
+    setDialNumber((current) => current.slice(0, -1))
   }
 
   const statusDotColor: Record<CallStatus, string> = {
@@ -679,41 +689,56 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   }
 
   const isOnCall = status === 'on_call' || status === 'calling'
+  const displayDialNumber = dialNumber.trim() ? formatPhone(dialNumber) : '(816) 555-0000'
+  const dialpadKeys = [
+    { value: '1', letters: '' },
+    { value: '2', letters: 'A B C' },
+    { value: '3', letters: 'D E F' },
+    { value: '4', letters: 'G H I' },
+    { value: '5', letters: 'J K L' },
+    { value: '6', letters: 'M N O' },
+    { value: '7', letters: 'P Q R S' },
+    { value: '8', letters: 'T U V' },
+    { value: '9', letters: 'W X Y Z' },
+    { value: '*', letters: '' },
+    { value: '0', letters: '+' },
+    { value: '#', letters: '' },
+  ]
 
   return (
     <>
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 z-[60] bg-black/20 backdrop-blur-[2px] transition-opacity"
+          className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-md transition-opacity"
           onClick={onClose}
         />
       )}
 
       {/* Panel */}
       <div
-        className={`fixed top-0 right-0 z-[70] h-full w-[420px] max-w-[calc(100vw-1rem)] bg-[#0F172A] shadow-2xl transform transition-transform duration-300 ease-out flex flex-col ${
-          open ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed left-1/2 top-1/2 z-[70] flex max-h-[calc(100vh-2rem)] w-[700px] max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-col overflow-hidden rounded-[36px] border border-white/15 bg-[#1b1b1e] shadow-[0_28px_90px_rgba(0,0,0,0.55)] transition-all duration-200 ease-out ${
+          open ? '-translate-y-1/2 scale-100 opacity-100' : '-translate-y-[46%] scale-95 opacity-0 pointer-events-none'
         }`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <h2 className="text-white font-black text-lg tracking-tight">Dialer</h2>
+        <div className="relative flex flex-col items-center gap-3 px-9 pb-5 pt-8">
+          <div className="flex flex-col items-center gap-3">
+            <h2 className="text-3xl font-black tracking-tight text-white">Dialer</h2>
             <button
               onClick={() => { deviceInitialized.current = false; initDevice() }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 transition-colors hover:bg-white/15"
               title="Click to reconnect"
             >
               <div className={`w-2 h-2 rounded-full ${statusDotColor[status]} ${status === 'connecting' ? 'animate-pulse' : ''}`} />
-              <span className="text-[10px] font-bold text-white/70 uppercase tracking-wider">{statusLabel[status]}</span>
+              <span className="text-sm font-bold text-white/55">{statusLabel[status]}</span>
             </button>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            className="absolute right-7 top-7 flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white/45 transition-colors hover:bg-white/15 hover:text-white"
           >
-            <Icon name="close" size="text-xl" />
+            <Icon name="close" size="text-4xl" />
           </button>
         </div>
 
@@ -772,27 +797,48 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         )}
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-9 pb-8 pt-2 space-y-5">
           {/* Error banner */}
           {error && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
-              <Icon name="error" className="text-red-400" size="text-sm" />
-              <span className="text-xs text-red-300 flex-1">{error}</span>
-              <button onClick={() => { setError(null); initDevice() }} className="text-[10px] font-bold text-red-300 hover:text-white uppercase">
+            <div className="flex items-center gap-4 rounded-2xl border border-[#E32E2E]/70 bg-[#E32E2E]/15 px-5 py-4">
+              <Icon name="error" className="text-[#ff7777]" size="text-4xl" />
+              <span className="flex-1 text-xl text-[#ffb4b4]">{error}</span>
+              <button onClick={() => { setError(null); initDevice() }} className="text-sm font-black uppercase text-[#ffb4b4] hover:text-white">
                 Retry
               </button>
             </div>
           )}
 
-          {/* Search */}
           {!isOnCall && status !== 'incoming' && (
+            <div className="grid rounded-2xl bg-[#303035] p-1">
+              <div className="grid grid-cols-2">
+                {(['dial', 'recent'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
+                    className={`h-14 rounded-xl text-2xl font-black transition-colors ${
+                      activeTab === tab
+                        ? 'bg-[#6d6d72] text-white shadow-sm'
+                        : 'text-white/45 hover:text-white/70'
+                    }`}
+                  >
+                    {tab === 'dial' ? 'Dial' : 'Recent'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Search */}
+          {!isOnCall && status !== 'incoming' && activeTab === 'dial' && (
             <div className="relative">
               <div className="relative">
-                <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                <span className="absolute inset-y-0 left-5 flex items-center pointer-events-none">
                   {searching ? (
-                    <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
                   ) : (
-                    <Icon name="search" className="text-white/40" size="text-lg" />
+                    <Icon name="search" className="text-white/40" size="text-4xl" />
                   )}
                 </span>
                 <input
@@ -800,7 +846,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search leads by name, phone, address..."
-                  className="w-full bg-white/10 text-white placeholder-white/40 rounded-lg pl-10 pr-4 py-2.5 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all"
+                  className="h-[74px] w-full rounded-2xl border border-white/10 bg-[#141416] pl-16 pr-5 text-3xl text-white placeholder:text-white/35 focus:border-[#E32E2E]/50 focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/20"
                 />
               </div>
 
@@ -842,7 +888,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
           )}
 
           {/* Selected Lead Context Card */}
-          {selectedLead && !isOnCall && status !== 'incoming' && (
+          {selectedLead && !isOnCall && status !== 'incoming' && activeTab === 'dial' && (
             <div className="bg-white/5 border border-white/10 rounded-lg p-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
@@ -950,40 +996,71 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
           )}
 
           {/* Dial Section (when not on call and not incoming) */}
-          {!isOnCall && status !== 'incoming' && (
-            <div className="space-y-3">
-              <div className="relative">
-                <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                  <Icon name="call" className="text-white/30" size="text-lg" />
-                </span>
-                <input
-                  type="tel"
-                  value={dialNumber}
-                  onChange={(e) => setDialNumber(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && makeCall()}
-                  placeholder="+1 (816) 555-0000"
-                  className="w-full bg-white/5 text-white placeholder-white/30 rounded-lg pl-10 pr-4 py-3 text-lg font-mono tracking-wider border border-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all"
-                />
+          {!isOnCall && status !== 'incoming' && activeTab === 'dial' && (
+            <div className="space-y-5">
+              <input
+                type="tel"
+                value={dialNumber}
+                onChange={(e) => setDialNumber(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && makeCall()}
+                placeholder="+1 (816) 555-0000"
+                className="sr-only"
+                aria-label="Phone number"
+              />
+              <div className="px-3 text-center">
+                <p className="font-mono text-[54px] font-light tracking-[0.04em] text-white">
+                  {displayDialNumber}
+                </p>
+              </div>
+              <div className="mx-auto grid max-w-[500px] grid-cols-3 gap-x-14 gap-y-5">
+                {dialpadKeys.map((key) => (
+                  <button
+                    key={key.value}
+                    type="button"
+                    onClick={() => appendDialDigit(key.value)}
+                    className="flex h-[116px] w-[116px] flex-col items-center justify-center rounded-full bg-[#323238] text-white transition-colors hover:bg-[#3d3d43] active:bg-[#4a4a50]"
+                    aria-label={`Dial ${key.value}`}
+                  >
+                    <span className="text-5xl font-light leading-none">{key.value}</span>
+                    {key.letters && (
+                      <span className="mt-2 text-base font-black tracking-[0.22em] text-white/55">{key.letters}</span>
+                    )}
+                  </button>
+                ))}
               </div>
               {callerIdDisplay && (
-                <div className="flex items-center justify-center gap-1.5 text-[10px] text-white/40 font-medium">
-                  <Icon name="phone_forwarded" size="text-xs" />
-                  <span>Calling from: {TWILIO_NUMBERS.find(n => n.value === callerIdDisplay)?.label || formatPhone(callerIdDisplay)}</span>
+                <div className="border-t border-white/15 pt-5">
+                  <p className="mb-3 text-xl font-black uppercase tracking-[0.18em] text-white/55">Calling From</p>
+                  <div className="rounded-2xl border border-white/10 bg-[#141416] px-4 py-3 text-sm font-bold text-white/70">
+                    {TWILIO_NUMBERS.find(n => n.value === callerIdDisplay)?.label || formatPhone(callerIdDisplay)}
+                  </div>
                 </div>
               )}
-              <button
-                onClick={makeCall}
-                disabled={!dialNumber.trim() || status === 'connecting'}
-                className="w-full py-3.5 bg-emerald-500 text-white font-black rounded-lg hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
-              >
-                <Icon name="call" size="text-lg" />
-                {status === 'offline' ? 'Call (Phone)' : 'Call'}
-              </button>
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center pt-1">
+                <span />
+                <button
+                  onClick={makeCall}
+                  disabled={!dialNumber.trim() || status === 'connecting'}
+                  className="flex h-[116px] w-[116px] items-center justify-center rounded-full bg-[#8B2228] text-white shadow-[0_14px_35px_rgba(139,34,40,0.3)] transition-colors hover:bg-[#A72A31] disabled:cursor-not-allowed disabled:opacity-35"
+                  aria-label={status === 'offline' ? 'Call using phone' : 'Call'}
+                >
+                  <Icon name="call" size="text-4xl" />
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteDialDigit}
+                  disabled={!dialNumber}
+                  className="ml-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/5 text-white/40 transition-colors hover:bg-white/10 hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-30"
+                  aria-label="Delete digit"
+                >
+                  <Icon name="backspace" size="text-3xl" />
+                </button>
+              </div>
             </div>
           )}
 
           {/* Recent Calls (when idle) */}
-          {!isOnCall && status !== 'incoming' && recentCalls.length > 0 && (
+          {!isOnCall && status !== 'incoming' && activeTab === 'recent' && recentCalls.length > 0 && (
             <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-[10px] font-black text-white/35 uppercase tracking-widest">Recent Calls</h3>
@@ -1063,7 +1140,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             </section>
           )}
 
-          {!isOnCall && status !== 'incoming' && recentCalls.length === 0 && (
+          {!isOnCall && status !== 'incoming' && activeTab === 'recent' && recentCalls.length === 0 && (
             <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
               <h3 className="text-[10px] font-black text-white/35 uppercase tracking-widest mb-1">Recent Calls</h3>
               <p className="text-xs text-white/45">
