@@ -754,28 +754,28 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
       {/* Panel */}
       <div
-        className={`fixed left-1/2 top-1/2 z-[70] flex max-h-[calc(100vh-2rem)] w-[700px] max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-col overflow-hidden rounded-[36px] border border-white/15 bg-[#1b1b1e] shadow-[0_28px_90px_rgba(0,0,0,0.55)] transition-all duration-200 ease-out ${
+        className={`fixed left-1/2 top-1/2 z-[70] flex max-h-[calc(100vh-1rem)] w-[520px] max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-col overflow-hidden rounded-[28px] border border-white/15 bg-[#1b1b1e] shadow-[0_24px_70px_rgba(0,0,0,0.55)] transition-all duration-200 ease-out ${
           open ? '-translate-y-1/2 scale-100 opacity-100' : '-translate-y-[46%] scale-95 opacity-0 pointer-events-none'
         }`}
       >
         {/* Header */}
-        <div className="relative flex flex-col items-center gap-3 px-9 pb-5 pt-8">
-          <div className="flex flex-col items-center gap-3">
-            <h2 className="text-3xl font-black tracking-tight text-white">Dialer</h2>
+        <div className="relative flex flex-col items-center gap-2 px-6 pb-4 pt-5">
+          <div className="flex flex-col items-center gap-2">
+            <h2 className="text-2xl font-black tracking-tight text-white">Dialer</h2>
             <button
               onClick={() => { deviceInitialized.current = false; initDevice() }}
-              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 transition-colors hover:bg-white/15"
+              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 py-1 transition-colors hover:bg-white/15"
               title="Click to reconnect"
             >
               <div className={`w-2 h-2 rounded-full ${statusDotColor[status]} ${status === 'connecting' ? 'animate-pulse' : ''}`} />
-              <span className="text-sm font-bold text-white/55">{statusLabel[status]}</span>
+              <span className="text-xs font-bold text-white/55">{statusLabel[status]}</span>
             </button>
           </div>
           <button
             onClick={onClose}
-            className="absolute right-7 top-7 flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white/45 transition-colors hover:bg-white/15 hover:text-white"
+            className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white/45 transition-colors hover:bg-white/15 hover:text-white"
           >
-            <Icon name="close" size="text-4xl" />
+            <Icon name="close" size="text-3xl" />
           </button>
         </div>
 
@@ -834,12 +834,12 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         )}
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-9 pb-8 pt-2 space-y-5">
+        <div className="flex-1 overflow-y-auto px-6 pb-5 pt-1 space-y-4">
           {/* Error banner */}
           {error && (
-            <div className="flex items-center gap-4 rounded-2xl border border-[#E32E2E]/70 bg-[#E32E2E]/15 px-5 py-4">
-              <Icon name="error" className="text-[#ff7777]" size="text-4xl" />
-              <span className="flex-1 text-xl text-[#ffb4b4]">{error}</span>
+            <div className="flex items-center gap-3 rounded-xl border border-[#E32E2E]/70 bg-[#E32E2E]/15 px-4 py-3">
+              <Icon name="error" className="text-[#ff7777]" size="text-2xl" />
+              <span className="flex-1 text-sm text-[#ffb4b4]">{error}</span>
               <button onClick={() => { setError(null); initDevice() }} className="text-sm font-black uppercase text-[#ffb4b4] hover:text-white">
                 Retry
               </button>
@@ -847,14 +847,14 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
           )}
 
           {!isOnCall && status !== 'incoming' && (
-            <div className="grid rounded-2xl bg-[#303035] p-1">
+            <div className="grid rounded-xl bg-[#303035] p-1">
               <div className="grid grid-cols-2">
                 {(['dial', 'recent'] as const).map((tab) => (
                   <button
                     key={tab}
                     type="button"
                     onClick={() => setActiveTab(tab)}
-                    className={`h-14 rounded-xl text-2xl font-black transition-colors ${
+                    className={`h-11 rounded-lg text-lg font-black transition-colors ${
                       activeTab === tab
                         ? 'bg-[#6d6d72] text-white shadow-sm'
                         : 'text-white/45 hover:text-white/70'
@@ -873,9 +873,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
               <div className="relative">
                 <span className="absolute inset-y-0 left-5 flex items-center pointer-events-none">
                   {searching ? (
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
                   ) : (
-                    <Icon name="search" className="text-white/40" size="text-4xl" />
+                    <Icon name="search" className="text-white/40" size="text-2xl" />
                   )}
                 </span>
                 <input
@@ -883,7 +883,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search leads by name, phone, address..."
-                  className="h-[74px] w-full rounded-2xl border border-white/10 bg-[#141416] pl-16 pr-5 text-3xl text-white placeholder:text-white/35 focus:border-[#E32E2E]/50 focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/20"
+                  className="h-12 w-full rounded-xl border border-white/10 bg-[#141416] pl-12 pr-4 text-base text-white placeholder:text-white/35 focus:border-[#E32E2E]/50 focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/20"
                 />
               </div>
 
@@ -1034,7 +1034,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
           {/* Dial Section (when not on call and not incoming) */}
           {!isOnCall && status !== 'incoming' && activeTab === 'dial' && (
-            <div className="space-y-5">
+            <div className="space-y-4">
               <input
                 type="tel"
                 value={dialNumber}
@@ -1044,35 +1044,35 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                 className="sr-only"
                 aria-label="Phone number"
               />
-              <div className="px-3 text-center">
-                <p className="font-mono text-[54px] font-light tracking-[0.04em] text-white">
+              <div className="px-2 text-center">
+                <p className="font-mono text-[clamp(28px,8vw,36px)] font-light tracking-[0.04em] text-white">
                   {displayDialNumber}
                 </p>
               </div>
-              <div className="mx-auto grid max-w-[500px] grid-cols-3 gap-x-14 gap-y-5">
+              <div className="mx-auto grid max-w-[336px] grid-cols-3 gap-x-4 gap-y-3 sm:gap-x-8">
                 {dialpadKeys.map((key) => (
                   <button
                     key={key.value}
                     type="button"
                     onClick={() => appendDialDigit(key.value)}
-                    className="flex h-[116px] w-[116px] flex-col items-center justify-center rounded-full bg-[#323238] text-white transition-colors hover:bg-[#3d3d43] active:bg-[#4a4a50]"
+                    className="flex h-[clamp(64px,22vw,80px)] w-[clamp(64px,22vw,80px)] flex-col items-center justify-center rounded-full bg-[#323238] text-white transition-colors hover:bg-[#3d3d43] active:bg-[#4a4a50]"
                     aria-label={`Dial ${key.value}`}
                   >
-                    <span className="text-5xl font-light leading-none">{key.value}</span>
+                    <span className="text-4xl font-light leading-none">{key.value}</span>
                     {key.letters && (
-                      <span className="mt-2 text-base font-black tracking-[0.22em] text-white/55">{key.letters}</span>
+                      <span className="mt-1 text-[11px] font-black tracking-[0.22em] text-white/55">{key.letters}</span>
                     )}
                   </button>
                 ))}
               </div>
-              <div className="grid gap-3 border-t border-white/15 pt-5 md:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="grid gap-3 border-t border-white/15 pt-4 md:grid-cols-[minmax(0,1fr)_170px]">
                 <label className="block">
-                  <span className="mb-3 block text-xl font-black uppercase tracking-[0.18em] text-white/55">Calling From</span>
+                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-white/55">Calling From</span>
                   <select
                     value={callerIdDisplay}
                     onChange={(event) => setCallerIdDisplay(event.target.value)}
                     disabled={isOnCall}
-                    className="h-[52px] w-full rounded-2xl border border-white/10 bg-[#141416] px-4 py-3 text-sm font-bold text-white/80 outline-none transition-colors focus:border-[#E32E2E]/60 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-11 w-full rounded-xl border border-white/10 bg-[#141416] px-3 py-2 text-sm font-bold text-white/80 outline-none transition-colors focus:border-[#E32E2E]/60 disabled:cursor-not-allowed disabled:opacity-60"
                     aria-label="Calling from"
                   >
                     <option value="">Default caller ID</option>
@@ -1086,14 +1086,14 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                 </label>
 
                 <div>
-                  <span className="mb-3 block text-xl font-black uppercase tracking-[0.18em] text-white/55">Call Hammer</span>
-                  <div className="grid grid-cols-2 rounded-2xl border border-white/10 bg-[#141416] p-1">
+                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-white/55">Call Hammer</span>
+                  <div className="grid grid-cols-2 rounded-xl border border-white/10 bg-[#141416] p-1">
                     {(['power', 'predictive'] as const).map((mode) => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => setCallMode(mode)}
-                        className={`rounded-xl px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+                        className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wider transition-colors ${
                           callMode === mode ? 'bg-[#8B2228] text-white' : 'text-white/45 hover:text-white/75'
                         }`}
                       >
@@ -1120,19 +1120,19 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                 <button
                   onClick={makeCall}
                   disabled={!dialNumber.trim() || status === 'connecting'}
-                  className="flex h-[116px] w-[116px] items-center justify-center rounded-full bg-[#8B2228] text-white shadow-[0_14px_35px_rgba(139,34,40,0.3)] transition-colors hover:bg-[#A72A31] disabled:cursor-not-allowed disabled:opacity-35"
+                  className="flex h-[clamp(68px,22vw,80px)] w-[clamp(68px,22vw,80px)] items-center justify-center rounded-full bg-[#8B2228] text-white shadow-[0_14px_35px_rgba(139,34,40,0.3)] transition-colors hover:bg-[#A72A31] disabled:cursor-not-allowed disabled:opacity-35"
                   aria-label={status === 'offline' ? 'Call using phone' : 'Call'}
                 >
-                  <Icon name="call" size="text-4xl" />
+                  <Icon name="call" size="text-3xl" />
                 </button>
                 <button
                   type="button"
                   onClick={deleteDialDigit}
                   disabled={!dialNumber}
-                  className="ml-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/5 text-white/40 transition-colors hover:bg-white/10 hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-30"
+                  className="ml-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/5 text-white/40 transition-colors hover:bg-white/10 hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-30"
                   aria-label="Delete digit"
                 >
-                  <Icon name="backspace" size="text-3xl" />
+                  <Icon name="backspace" size="text-2xl" />
                 </button>
               </div>
             </div>
