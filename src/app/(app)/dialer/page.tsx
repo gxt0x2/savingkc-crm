@@ -136,6 +136,8 @@ interface SavedDialerQueue {
   redialCallerId?: string | null
   startBehavior?: 'resume' | 'top'
   optionalFilters?: OptionalDialingFilters
+  useCallHammer?: boolean
+  useVoicemailCallHammer?: boolean
   campaign: string
   statusFilter: string
   priorityFilter: string
@@ -210,6 +212,8 @@ type SavedListLocalMeta = {
   redialCallerId?: string | null
   startBehavior?: 'resume' | 'top'
   optionalFilters?: OptionalDialingFilters
+  useCallHammer?: boolean
+  useVoicemailCallHammer?: boolean
   sessionLeadIds?: string[]
   resumeIndex?: number
   resumeLeadId?: string | null
@@ -287,6 +291,8 @@ function patchSavedListMeta(id: string, patch: SavedListLocalMeta) {
     redialCallerId: normalizedPlan.redialCallerId,
     startBehavior: patch.startBehavior ?? existing.startBehavior ?? 'resume',
     optionalFilters: normalizeOptionalFilters(patch.optionalFilters ?? existing.optionalFilters ?? DEFAULT_OPTIONAL_FILTERS),
+    useCallHammer: patch.useCallHammer ?? existing.useCallHammer ?? false,
+    useVoicemailCallHammer: patch.useVoicemailCallHammer ?? existing.useVoicemailCallHammer ?? false,
     sessionLeadIds: patch.sessionLeadIds ? normalizeLocalLeadIds(patch.sessionLeadIds) : existing.sessionLeadIds,
     resumeIndex: patch.resumeIndex !== undefined
       ? Math.max(0, Math.floor(patch.resumeIndex))
@@ -321,6 +327,8 @@ function mergeSavedQueueWithLocalMeta(queue: SavedDialerQueue): SavedDialerQueue
     redialCallerId: normalizedPlan.redialCallerId,
     startBehavior: local.startBehavior ?? queue.startBehavior ?? 'resume',
     optionalFilters: normalizeOptionalFilters(local.optionalFilters ?? queue.optionalFilters ?? DEFAULT_OPTIONAL_FILTERS),
+    useCallHammer: local.useCallHammer ?? queue.useCallHammer ?? false,
+    useVoicemailCallHammer: local.useVoicemailCallHammer ?? queue.useVoicemailCallHammer ?? false,
     sessionLeadIds: local.sessionLeadIds && local.sessionLeadIds.length > 0
       ? local.sessionLeadIds
       : queue.sessionLeadIds,
@@ -488,6 +496,12 @@ function DialerPageInner() {
   const sessionRotateEveryParam = params.get('rotation_every')
   const sessionRotationNumbersParam = params.get('rotation_numbers')
   const sessionRedialCallerId = params.get('redial_caller_id')?.trim() || ''
+  const sessionCallHammerParam = params.get('call_hammer')
+  const sessionUseCallHammer = sessionCallHammerParam === '1'
+    ? true
+    : sessionCallHammerParam === '0'
+    ? false
+    : true
   const sessionCallerPlan = useMemo(() => {
     const plan = normalizeDialerCallerPlan({
       mode: sessionCallerModeParam === 'rotation' ? 'rotation' : 'static',
@@ -1160,6 +1174,7 @@ function DialerPageInner() {
               propertyAddress={situsAddress}
               dialerCallerId={sessionCallerId || null}
               dialerCallerPlan={sessionCallerPlan}
+              callHammerEnabled={sessionUseCallHammer}
               defaultExpanded
               collapsible={false}
               onSmsPhone={setSmsTarget}
@@ -1214,6 +1229,7 @@ function DialerHome() {
   const [savedQueueError, setSavedQueueError] = useState<string | null>(null)
   const [showQueueControls, setShowQueueControls] = useState(false)
   const [showOptionalFilters, setShowOptionalFilters] = useState(false)
+  const [showWizardAdvanced, setShowWizardAdvanced] = useState(false)
   const [agent, setAgent] = useState('Casey')
   const [callerId, setCallerId] = useState<string>(DEFAULT_DIALER_CALLER_ID)
   const [callerMode, setCallerMode] = useState<CallerIdMode>('static')
@@ -1503,6 +1519,7 @@ function DialerHome() {
     savedListId?: string,
     callerIdValue?: string,
     callerPlanInput?: Partial<DialerCallerPlan> | null,
+    callHammerSettings?: { useCallHammer?: boolean; useVoicemailCallHammer?: boolean } | null,
   ) => {
     const query = new URLSearchParams()
     query.set('lead_ids', ids.join(','))
@@ -1515,6 +1532,8 @@ function DialerHome() {
     query.set('rotation_every', String(callerPlan.rotateEveryCalls || DEFAULT_ROTATION_EVERY_CALLS))
     if (callerPlan.rotationCallerIds.length > 0) query.set('rotation_numbers', callerPlan.rotationCallerIds.join(','))
     if (callerPlan.redialCallerId) query.set('redial_caller_id', callerPlan.redialCallerId)
+    query.set('call_hammer', callHammerSettings?.useCallHammer ? '1' : '0')
+    query.set('voicemail_call_hammer', callHammerSettings?.useVoicemailCallHammer ? '1' : '0')
     return `/dialer?${query.toString()}`
   }, [])
 
@@ -1557,6 +1576,8 @@ function DialerHome() {
         redialCallerId: callerPlan.redialCallerId,
         startBehavior,
         optionalFilters,
+        useCallHammer,
+        useVoicemailCallHammer,
         sessionLeadIds: ids,
         resumeIndex: startIndex,
         resumeLeadId: ids[startIndex] || null,
@@ -1569,6 +1590,8 @@ function DialerHome() {
         body: JSON.stringify({
           id: activeSavedQueueId,
           callerId: callerPlan.staticCallerId,
+          useCallHammer,
+          useVoicemailCallHammer,
           sessionLeadIds: ids,
           resumeIndex: startIndex,
           resumeLeadId: ids[startIndex] || null,
@@ -1577,8 +1600,15 @@ function DialerHome() {
       })
     }
 
-    router.push(buildSessionUrl(ids, startIndex, activeSavedQueueId || undefined, callerPlan.staticCallerId, callerPlan))
-  }, [activeSavedQueueId, buildSessionUrl, callerPlan, optionalFilters, queue, router, selectedQueue, selectedSavedQueue, startBehavior])
+    router.push(buildSessionUrl(
+      ids,
+      startIndex,
+      activeSavedQueueId || undefined,
+      callerPlan.staticCallerId,
+      callerPlan,
+      { useCallHammer, useVoicemailCallHammer },
+    ))
+  }, [activeSavedQueueId, buildSessionUrl, callerPlan, optionalFilters, queue, router, selectedQueue, selectedSavedQueue, startBehavior, useCallHammer, useVoicemailCallHammer])
 
   const resumeSavedQueue = useCallback(() => {
     if (!selectedSavedQueue) return
@@ -1601,9 +1631,21 @@ function DialerHome() {
       rotationCallerIds: resumePlan.rotationCallerIds,
       rotateEveryCalls: resumePlan.rotateEveryCalls,
       redialCallerId: resumePlan.redialCallerId,
+      useCallHammer: selectedSavedQueue.useCallHammer ?? useCallHammer,
+      useVoicemailCallHammer: selectedSavedQueue.useVoicemailCallHammer ?? useVoicemailCallHammer,
     })
-    router.push(buildSessionUrl(ids, resumeIndex, selectedSavedQueue.id, resumePlan.staticCallerId, resumePlan))
-  }, [buildSessionUrl, callerId, callerMode, redialCallerId, rotateEveryCalls, rotationCallerIds, router, selectedSavedQueue])
+    router.push(buildSessionUrl(
+      ids,
+      resumeIndex,
+      selectedSavedQueue.id,
+      resumePlan.staticCallerId,
+      resumePlan,
+      {
+        useCallHammer: selectedSavedQueue.useCallHammer ?? useCallHammer,
+        useVoicemailCallHammer: selectedSavedQueue.useVoicemailCallHammer ?? useVoicemailCallHammer,
+      },
+    ))
+  }, [buildSessionUrl, callerId, callerMode, redialCallerId, rotateEveryCalls, rotationCallerIds, router, selectedSavedQueue, useCallHammer, useVoicemailCallHammer])
 
   const currentLead = selectedQueue[0] ?? queue[0] ?? null
   const selectedPreset = QUEUE_PRESETS.find((item) => item.id === preset) ?? QUEUE_PRESETS[0]
@@ -1675,6 +1717,8 @@ function DialerHome() {
     const savedOptionalFilters = normalizeOptionalFilters(savedQueue.optionalFilters || DEFAULT_OPTIONAL_FILTERS)
     setOptionalFilters(savedOptionalFilters)
     setOptionalFiltersDraft(savedOptionalFilters)
+    setUseCallHammer(savedQueue.useCallHammer ?? false)
+    setUseVoicemailCallHammer(savedQueue.useVoicemailCallHammer ?? false)
     setCampaign(savedQueue.campaign)
     setStatusFilter(savedQueue.statusFilter)
     setPriorityFilter(savedQueue.priorityFilter)
@@ -1704,6 +1748,8 @@ function DialerHome() {
         redialCallerId: redialCallerId || null,
         startBehavior,
         optionalFilters,
+        useCallHammer,
+        useVoicemailCallHammer,
         campaign,
         statusFilter,
         priorityFilter,
@@ -1727,6 +1773,8 @@ function DialerHome() {
       redialCallerId: redialCallerId || null,
       startBehavior,
       optionalFilters,
+      useCallHammer,
+      useVoicemailCallHammer,
     })
     const mergedSavedQueue = mergeSavedQueueWithLocalMeta(savedQueue)
     setSavedQueues((current) => {
@@ -1736,7 +1784,7 @@ function DialerHome() {
     setActiveSavedQueueId(mergedSavedQueue.id)
     setSavedQueueName(mergedSavedQueue.name)
     setSavedQueueError(null)
-  }, [activeSavedQueueId, agent, callerId, callerMode, campaign, minMotivation, optionalFilters, preset, priorityFilter, redialCallerId, rotateEveryCalls, rotationCallerIds, savedQueueName, savedQueues, search, selectedPreset.label, sortBy, startBehavior, statusFilter, visibleLimit])
+  }, [activeSavedQueueId, agent, callerId, callerMode, campaign, minMotivation, optionalFilters, preset, priorityFilter, redialCallerId, rotateEveryCalls, rotationCallerIds, savedQueueName, savedQueues, search, selectedPreset.label, sortBy, startBehavior, statusFilter, useCallHammer, useVoicemailCallHammer, visibleLimit])
   const deleteSavedQueue = useCallback(async () => {
     if (!activeSavedQueueId) return
     const response = await fetch(`/api/dialer/saved-lists?id=${encodeURIComponent(activeSavedQueueId)}`, { method: 'DELETE' })
@@ -2038,7 +2086,14 @@ function DialerHome() {
                   </div>
                   <p className="text-sm font-bold text-[var(--ck-text)] font-mono">{formatPhone(lead.phone || '')}</p>
                   <button
-                    onClick={() => router.push(buildSessionUrl([lead.id], 0, activeSavedQueueId || undefined, callerPlan.staticCallerId, callerPlan))}
+                    onClick={() => router.push(buildSessionUrl(
+                      [lead.id],
+                      0,
+                      activeSavedQueueId || undefined,
+                      callerPlan.staticCallerId,
+                      callerPlan,
+                      { useCallHammer, useVoicemailCallHammer },
+                    ))}
                     className="inline-flex items-center justify-center rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[#E32E2E]/50"
                   >
                     Open
@@ -2143,53 +2198,63 @@ function DialerHome() {
                 </label>
               </div>
 
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Message Settings</p>
-                <div className="mt-2 space-y-2">
-                  <DarkSelect label="Voicemail Drop" value={voicemailDrop} onChange={setVoicemailDrop} options={['none', 'default']} />
-                  <DarkSelect label="Callback Message" value={callbackDrop} onChange={setCallbackDrop} options={['none', 'default']} />
-                </div>
-              </div>
+              <button
+                onClick={() => setShowWizardAdvanced((current) => !current)}
+                className="w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-left text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Icon name={showWizardAdvanced ? 'expand_less' : 'expand_more'} size="text-base" />
+                  {showWizardAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings'}
+                </span>
+              </button>
 
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Line Settings</p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <label className="block">
-                    <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Lines</span>
-                    <input
-                      value={lineDialCount}
-                      readOnly
-                      className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Rings</span>
-                    <select
-                      value={String(ringCount)}
-                      onChange={(event) => setRingCount(Math.max(1, Number(event.target.value) || 6))}
-                      className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]"
-                    >
-                      {['3', '4', '5', '6', '7', '8'].map((value) => (
-                        <option key={value} value={value}>{value} rings</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </div>
+              {showWizardAdvanced && (
+                <div className="space-y-5 border-t border-[var(--ck-border)] pt-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Message Settings</p>
+                    <div className="mt-2 space-y-2">
+                      <DarkSelect label="Voicemail Drop" value={voicemailDrop} onChange={setVoicemailDrop} options={['none', 'default']} />
+                      <DarkSelect label="Callback Message" value={callbackDrop} onChange={setCallbackDrop} options={['none', 'default']} />
+                    </div>
+                  </div>
 
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Call Hammer Settings</p>
-                <div className="mt-2 space-y-2 text-sm text-[var(--ck-text-muted)]">
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={useCallHammer} onChange={(event) => setUseCallHammer(event.target.checked)} className="h-4 w-4 accent-[#E32E2E]" />
-                    <span>Use Call Hammer</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={useVoicemailCallHammer} onChange={(event) => setUseVoicemailCallHammer(event.target.checked)} className="h-4 w-4 accent-[#E32E2E]" />
-                    <span>Voicemail Call Hammer</span>
-                  </label>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Line Settings</p>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Lines</span>
+                        <input
+                          value={lineDialCount}
+                          readOnly
+                          className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Rings</span>
+                        <select
+                          value={String(ringCount)}
+                          onChange={(event) => setRingCount(Math.max(1, Number(event.target.value) || 6))}
+                          className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]"
+                        >
+                          {['3', '4', '5', '6', '7', '8'].map((value) => (
+                            <option key={value} value={value}>{value} rings</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Voicemail Call Hammer</p>
+                    <div className="mt-2 space-y-2 text-sm text-[var(--ck-text-muted)]">
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={useVoicemailCallHammer} onChange={(event) => setUseVoicemailCallHammer(event.target.checked)} className="h-4 w-4 accent-[#E32E2E]" />
+                        <span>Enable voicemail call hammer mode</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </section>
 
@@ -2206,6 +2271,21 @@ function DialerHome() {
                 <input type="radio" name="startBehavior" checked={startBehavior === 'top'} onChange={() => setStartBehavior('top')} className="mt-1 h-4 w-4 accent-[#E32E2E]" />
                 <span>Call this list top to bottom regardless of where I last left off.</span>
               </label>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+              <label className="flex items-center justify-between gap-3 text-sm text-[var(--ck-text)]">
+                <span className="font-semibold">Use Call Hammer</span>
+                <input
+                  type="checkbox"
+                  checked={useCallHammer}
+                  onChange={(event) => setUseCallHammer(event.target.checked)}
+                  className="h-4 w-4 accent-[#E32E2E]"
+                />
+              </label>
+              <p className="mt-2 text-[11px] text-[var(--ck-text-muted)]">
+                On: call all available numbers for each contact. Off: call only the first listed number.
+              </p>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -2278,7 +2358,14 @@ function DialerHome() {
                   <p className="text-sm font-semibold text-[var(--ck-text)] leading-tight">{toProperCase(currentLead.full_name) || 'Unknown Lead'}</p>
                   <p className="mt-1 text-xs font-mono text-[#E32E2E]">{formatPhone(currentLead.phone || '')}</p>
                   <button
-                    onClick={() => router.push(buildSessionUrl([currentLead.id], 0, activeSavedQueueId || undefined, callerPlan.staticCallerId, callerPlan))}
+                    onClick={() => router.push(buildSessionUrl(
+                      [currentLead.id],
+                      0,
+                      activeSavedQueueId || undefined,
+                      callerPlan.staticCallerId,
+                      callerPlan,
+                      { useCallHammer, useVoicemailCallHammer },
+                    ))}
                     className="mt-3 w-full rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]"
                   >
                     Open Lead

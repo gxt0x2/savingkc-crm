@@ -6,7 +6,9 @@ ALTER TABLE dialer_saved_lists
   ADD COLUMN IF NOT EXISTS rotate_every_calls INTEGER NOT NULL DEFAULT 50 CHECK (rotate_every_calls >= 1),
   ADD COLUMN IF NOT EXISTS redial_caller_id TEXT,
   ADD COLUMN IF NOT EXISTS start_behavior TEXT NOT NULL DEFAULT 'resume',
-  ADD COLUMN IF NOT EXISTS optional_filters JSONB NOT NULL DEFAULT '{}'::jsonb;
+  ADD COLUMN IF NOT EXISTS optional_filters JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS call_hammer BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS voicemail_call_hammer BOOLEAN NOT NULL DEFAULT false;
 
 DO $$
 BEGIN

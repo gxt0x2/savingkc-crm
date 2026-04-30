@@ -37,6 +37,8 @@ interface DialerSavedListRow {
   redial_caller_id?: string | null
   start_behavior?: string | null
   optional_filters?: unknown
+  call_hammer?: boolean | null
+  voicemail_call_hammer?: boolean | null
   campaign: string
   status_filter: string
   priority_filter: string
@@ -123,6 +125,8 @@ function toClient(row: DialerSavedListRow) {
     redialCallerId: callerPlan.redialCallerId,
     startBehavior,
     optionalFilters: normalizeOptionalFilters(row.optional_filters),
+    useCallHammer: Boolean(row.call_hammer),
+    useVoicemailCallHammer: Boolean(row.voicemail_call_hammer),
     campaign: row.campaign,
     statusFilter: row.status_filter,
     priorityFilter: row.priority_filter,
@@ -169,6 +173,8 @@ function normalizeBody(body: Record<string, unknown>) {
   )
   const startBehavior = body?.startBehavior === 'top' ? 'top' : 'resume'
   const optionalFilters = normalizeOptionalFilters(body?.optionalFilters)
+  const useCallHammer = Boolean(body?.useCallHammer)
+  const useVoicemailCallHammer = Boolean(body?.useVoicemailCallHammer)
 
   return {
     id: typeof body?.id === 'string' && body.id ? body.id : undefined,
@@ -182,6 +188,8 @@ function normalizeBody(body: Record<string, unknown>) {
     redial_caller_id: callerPlan.redialCallerId,
     start_behavior: startBehavior,
     optional_filters: optionalFilters,
+    call_hammer: useCallHammer,
+    voicemail_call_hammer: useVoicemailCallHammer,
     campaign: cleanText(body?.campaign, 'all'),
     status_filter: cleanText(body?.statusFilter, 'all'),
     priority_filter: cleanText(body?.priorityFilter, 'all'),
@@ -228,6 +236,8 @@ export async function POST(req: NextRequest) {
     'redial_caller_id',
     'start_behavior',
     'optional_filters',
+    'call_hammer',
+    'voicemail_call_hammer',
   ]
   const hasModernColumnError = modernColumns.some((column) => hasMissingColumnError(error, column))
 
@@ -260,6 +270,8 @@ export async function POST(req: NextRequest) {
     redial_caller_id: row.redial_caller_id,
     start_behavior: row.start_behavior,
     optional_filters: row.optional_filters,
+    call_hammer: row.call_hammer,
+    voicemail_call_hammer: row.voicemail_call_hammer,
   } as DialerSavedListRow
 
   return NextResponse.json({ savedList: toClient(mergedRow), schemaFallback: true })
@@ -307,6 +319,14 @@ export async function PATCH(req: NextRequest) {
     updates.optional_filters = normalizeOptionalFilters(body.optionalFilters)
   }
 
+  if ('useCallHammer' in body) {
+    updates.call_hammer = Boolean(body.useCallHammer)
+  }
+
+  if ('useVoicemailCallHammer' in body) {
+    updates.voicemail_call_hammer = Boolean(body.useVoicemailCallHammer)
+  }
+
   if (Array.isArray(body?.sessionLeadIds)) {
     updates.session_lead_ids = normalizeLeadIds(body.sessionLeadIds)
   }
@@ -351,6 +371,8 @@ export async function PATCH(req: NextRequest) {
     'redial_caller_id',
     'start_behavior',
     'optional_filters',
+    'call_hammer',
+    'voicemail_call_hammer',
     'session_lead_ids',
     'resume_index',
     'resume_lead_id',
@@ -393,6 +415,12 @@ export async function PATCH(req: NextRequest) {
     optional_filters: body?.optionalFilters !== undefined
       ? normalizeOptionalFilters(body.optionalFilters)
       : (existing as DialerSavedListRow).optional_filters,
+    call_hammer: body?.useCallHammer !== undefined
+      ? Boolean(body.useCallHammer)
+      : (existing as DialerSavedListRow).call_hammer,
+    voicemail_call_hammer: body?.useVoicemailCallHammer !== undefined
+      ? Boolean(body.useVoicemailCallHammer)
+      : (existing as DialerSavedListRow).voicemail_call_hammer,
     session_lead_ids: Array.isArray(body?.sessionLeadIds) ? normalizeLeadIds(body.sessionLeadIds) : (existing as DialerSavedListRow).session_lead_ids,
     resume_index: body?.resumeIndex !== undefined ? Number(body.resumeIndex) : (existing as DialerSavedListRow).resume_index,
     resume_lead_id: body?.resumeLeadId !== undefined
