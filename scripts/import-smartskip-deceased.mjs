@@ -300,15 +300,34 @@ async function applyBundle(supabase, bundle) {
     leadId = newLead.id
   }
 
-  // 2. Prospect — upsert by (parcel_id, county)
+  // 2. Prospect — manual select-then-insert/update by (parcel_id, county). The
+  // prod prospects table has indexes on those columns but no unique constraint,
+  // so .upsert(onConflict: ...) fails with "no unique or exclusion constraint".
   const prospectRow = { ...bundle.prospect, lead_id: leadId }
-  const { data: prospectUpsert, error: pErr } = await supabase
+  const { data: existingProspect } = await supabase
     .from('prospects')
-    .upsert(prospectRow, { onConflict: 'parcel_id,county' })
     .select('id')
-    .single()
-  if (pErr) throw new Error(`prospects upsert: ${pErr.message}`)
-  const prospectId = prospectUpsert.id
+    .eq('parcel_id', prospectRow.parcel_id)
+    .eq('county', prospectRow.county)
+    .maybeSingle()
+
+  let prospectId
+  if (existingProspect?.id) {
+    prospectId = existingProspect.id
+    const { error: updErr } = await supabase
+      .from('prospects')
+      .update(prospectRow)
+      .eq('id', prospectId)
+    if (updErr) throw new Error(`prospects update: ${updErr.message}`)
+  } else {
+    const { data: newProspect, error: insErr } = await supabase
+      .from('prospects')
+      .insert(prospectRow)
+      .select('id')
+      .single()
+    if (insErr) throw new Error(`prospects insert: ${insErr.message}`)
+    prospectId = newProspect.id
+  }
 
   // 3. Phones — clear any prior heir/owner rows for this prospect, then insert
   // top 5. We only nuke unattempted rows so call history isn't lost.
