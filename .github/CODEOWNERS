@@ -1,0 +1,10 @@
+* @gxt0x2
+
+/src/app/api/twilio* @gxt0x2
+/src/app/api/ivr/ @gxt0x2
+/src/app/api/workers/ @gxt0x2
+/src/app/api/cron/ @gxt0x2
+/src/lib/supabase/ @gxt0x2
+/supabase/migrations/ @gxt0x2
+/.github/ @gxt0x2
+/vercel.json @gxt0x2

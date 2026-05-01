@@ -1,0 +1,37 @@
+name: Bug report
+description: Report a broken CRM workflow.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What broke, in plain English?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who is blocked, and how urgent is it?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What should someone click or run to see the issue?
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback or workaround
+      description: Any known safe workaround?

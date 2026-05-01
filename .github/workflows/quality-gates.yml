@@ -2,9 +2,14 @@ name: Quality Gates
 
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - codex/dialer-v2-current-crm
   push:
-    branches: [main]
+    branches:
+      - main
+      - codex/dialer-v2-current-crm
+  workflow_dispatch:
 
 jobs:
   gate-build-and-theme:
@@ -66,10 +71,11 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Skip health check when env vars are not configured
+      - name: Require Twilio health config
         if: env.TWILIO_HEALTH_BASE_URL == ''
-        run: echo "TWILIO_HEALTH_BASE_URL is not configured; passing check as no-op."
+        run: |
+          echo "TWILIO_HEALTH_BASE_URL is not configured."
+          exit 1
 
       - name: Twilio token health gate
-        if: env.TWILIO_HEALTH_BASE_URL != ''
         run: node scripts/ci/check-twilio-token-health.mjs
