@@ -17,6 +17,15 @@ const STATUS_TABS: { key: TcStatus | 'all' | 'blocked'; label: string }[] = [
   { key: 'blocked', label: 'Blocked' },
 ]
 
+type QueueKey = 'drafts' | 'calls' | 'exceptions' | 'files'
+
+const QUEUE_TABS: { key: QueueKey; label: string; icon: string }[] = [
+  { key: 'drafts', label: 'Drafts', icon: 'edit_note' },
+  { key: 'calls', label: 'Calls', icon: 'phone_in_talk' },
+  { key: 'exceptions', label: 'Exceptions', icon: 'report' },
+  { key: 'files', label: 'Files', icon: 'folder_open' },
+]
+
 const STATUS_OPTIONS: TcStatus[] = [
   'not_opened',
   'opening_package_needed',
@@ -66,6 +75,163 @@ interface TcDocumentTemplate {
   subject: string | null
   body: string
   sort_order?: number
+}
+
+const STATUS_TEMPLATE_AUDIENCES: Record<TcStatus, TcDocumentTemplate['audience'][]> = {
+  not_opened: ['internal'],
+  opening_package_needed: ['title', 'seller'],
+  opened: ['title', 'buyer'],
+  emd_pending: ['buyer', 'title'],
+  title_work: ['title', 'internal'],
+  clear_to_close: ['title', 'buyer', 'seller'],
+  scheduled: ['buyer', 'seller', 'title'],
+  closed: ['seller', 'internal'],
+  cancelled: ['internal'],
+}
+
+const CALL_TASK_TYPES = new Set([
+  'send_opening_package',
+  'confirm_emd',
+  'confirm_file_number',
+  'confirm_title_clear',
+  'schedule_closing',
+  'collect_hud',
+])
+
+interface DraftQueueItem {
+  id: string
+  file: TcFile
+  template: TcDocumentTemplate
+  reason: string
+}
+
+interface CallQueueItem {
+  id: string
+  file: TcFile
+  task: TcTask
+  recipientName: string
+  recipientRole: string
+  recipientPhone: string | null
+}
+
+interface ExceptionQueueItem {
+  id: string
+  file: TcFile
+  title: string
+  severity: 'watch' | 'urgent' | 'blocked'
+  detail: string
+}
+
+function buyerName(file: TcFile) {
+  return file.offer?.buyer?.name || file.offer?.buyer?.company || 'No buyer'
+}
+
+function propertyLabel(file: TcFile) {
+  return file.lead?.property_address || 'No address'
+}
+
+function draftReason(status: TcStatus, audience: TcDocumentTemplate['audience']) {
+  if (status === 'opening_package_needed' && audience === 'title') return 'Open title file'
+  if (status === 'opening_package_needed' && audience === 'seller') return 'Seller closing handoff'
+  if (status === 'emd_pending') return 'EMD follow-up'
+  if (status === 'title_work') return 'Title status push'
+  if (status === 'clear_to_close') return 'Closing coordination'
+  if (status === 'scheduled') return 'Closing confirmation'
+  return statusLabel(status)
+}
+
+function templateText(template: TcDocumentTemplate) {
+  return [template.subject ? `Subject: ${template.subject}` : '', template.body]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function buildDraftQueue(files: TcFile[], templates: TcDocumentTemplate[]): DraftQueueItem[] {
+  return files.flatMap((file) => {
+    if (file.status === 'closed' || file.status === 'cancelled') return []
+    const audiences = STATUS_TEMPLATE_AUDIENCES[file.status] ?? []
+    const matches = templates
+      .filter((template) => template.template_type === 'email' && audiences.includes(template.audience))
+      .slice(0, 3)
+
+    return matches.map((template) => ({
+      id: `${file.id}-${template.id}`,
+      file,
+      template,
+      reason: draftReason(file.status, template.audience),
+    }))
+  })
+}
+
+function buildCallQueue(files: TcFile[]): CallQueueItem[] {
+  return files.flatMap((file) => {
+    const tasks = (file.tasks ?? []).filter((task) =>
+      (task.status === 'open' || task.status === 'blocked') && CALL_TASK_TYPES.has(task.task_type)
+    )
+
+    return tasks.map((task) => ({
+      id: `${file.id}-${task.id}`,
+      file,
+      task,
+      recipientName: file.title_contact?.name || file.title_company?.name || buyerName(file),
+      recipientRole: file.title_contact?.role || (file.title_company ? 'Title' : 'Buyer'),
+      recipientPhone: file.title_contact?.phone || file.title_company?.office_phone || file.offer?.buyer?.phone || null,
+    }))
+  }).sort((left, right) => {
+    if (left.task.status === right.task.status) return propertyLabel(left.file).localeCompare(propertyLabel(right.file))
+    return left.task.status === 'blocked' ? -1 : 1
+  })
+}
+
+function buildExceptionQueue(files: TcFile[]): ExceptionQueueItem[] {
+  const exceptions: ExceptionQueueItem[] = []
+
+  for (const file of files) {
+    if (file.risk_level !== 'normal') {
+      exceptions.push({
+        id: `${file.id}-risk`,
+        file,
+        title: `${statusLabel(file.risk_level)} risk`,
+        severity: file.risk_level,
+        detail: file.risk_reason || file.next_action || 'Review TC file status.',
+      })
+    }
+
+    for (const task of file.tasks ?? []) {
+      if (task.status === 'blocked') {
+        exceptions.push({
+          id: `${file.id}-${task.id}`,
+          file,
+          title: task.label,
+          severity: 'blocked',
+          detail: task.notes || 'Blocked checklist item.',
+        })
+      }
+    }
+
+    if (file.status !== 'not_opened' && file.status !== 'closed' && file.status !== 'cancelled' && !file.title_company_id) {
+      exceptions.push({
+        id: `${file.id}-missing-title`,
+        file,
+        title: 'Title company missing',
+        severity: 'watch',
+        detail: file.next_action || 'Assign title before the file advances.',
+      })
+    }
+  }
+
+  return exceptions.sort((left, right) => {
+    const weights = { blocked: 0, urgent: 1, watch: 2 }
+    return weights[left.severity] - weights[right.severity]
+  })
+}
+
+function EmptyQueue({ children }: { children: string }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-[#141414] px-4 py-10 text-center text-sm text-[var(--ck-text-muted)]">
+      {children}
+    </div>
+  )
 }
 
 function DetailDrawer({
@@ -166,11 +332,7 @@ function DetailDrawer({
   }
 
   async function copyTemplate(template: TcDocumentTemplate) {
-    const text = [
-      template.subject ? `Subject: ${template.subject}` : '',
-      template.body,
-    ].filter(Boolean).join('\n\n')
-    await navigator.clipboard.writeText(text)
+    await navigator.clipboard.writeText(templateText(template))
     setCopiedSlug(template.slug)
     setTimeout(() => setCopiedSlug(null), 1600)
   }
@@ -412,11 +574,13 @@ function DetailDrawer({
 
 export default function TransactionCoordinatorPage() {
   const [files, setFiles] = useState<TcFile[]>([])
-  const [activeTab, setActiveTab] = useState<TcStatus | 'all' | 'blocked'>('all')
+  const [activeQueue, setActiveQueue] = useState<QueueKey>('drafts')
+  const [fileStatusFilter, setFileStatusFilter] = useState<TcStatus | 'all' | 'blocked'>('all')
   const [selected, setSelected] = useState<TcFile | null>(null)
   const [templates, setTemplates] = useState<TcDocumentTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [copiedQueueId, setCopiedQueueId] = useState<string | null>(null)
 
   async function fetchFiles() {
     setError(null)
@@ -436,6 +600,12 @@ export default function TransactionCoordinatorPage() {
     }
   }
 
+  async function copyDraft(item: DraftQueueItem) {
+    await navigator.clipboard.writeText(templateText(item.template))
+    setCopiedQueueId(item.id)
+    setTimeout(() => setCopiedQueueId(null), 1600)
+  }
+
   async function fetchTemplates() {
     const res = await fetch('/api/tc/document-templates')
     if (!res.ok) return
@@ -449,11 +619,15 @@ export default function TransactionCoordinatorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const filtered = useMemo(() => {
-    if (activeTab === 'all') return files
-    if (activeTab === 'blocked') return files.filter((file) => file.risk_level === 'blocked')
-    return files.filter((file) => file.status === activeTab)
-  }, [activeTab, files])
+  const draftQueue = useMemo(() => buildDraftQueue(files, templates), [files, templates])
+  const callQueue = useMemo(() => buildCallQueue(files), [files])
+  const exceptionQueue = useMemo(() => buildExceptionQueue(files), [files])
+
+  const filteredFiles = useMemo(() => {
+    if (fileStatusFilter === 'all') return files
+    if (fileStatusFilter === 'blocked') return files.filter((file) => file.risk_level === 'blocked')
+    return files.filter((file) => file.status === fileStatusFilter)
+  }, [fileStatusFilter, files])
 
   const stats = useMemo(() => ({
     open: files.filter((file) => file.status !== 'closed' && file.status !== 'cancelled').length,
@@ -462,24 +636,32 @@ export default function TransactionCoordinatorPage() {
     fees: files.reduce((sum, file) => sum + (file.assignment_fee ?? 0), 0),
   }), [files])
 
+  const queueCounts: Record<QueueKey, number> = {
+    drafts: draftQueue.length,
+    calls: callQueue.length,
+    exceptions: exceptionQueue.length,
+    files: stats.open,
+  }
+
   return (
     <main className="min-h-screen bg-[#0f0f0f] text-white">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black tracking-tight">Transaction Coordinator</h1>
-            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Assigned deals from contract through title, HUD, and revenue.</p>
+            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Drafts, call agendas, exceptions, and closing files.</p>
           </div>
           <button onClick={fetchFiles} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/5">
             <Icon name="refresh" size="text-sm" /> Refresh
           </button>
         </div>
 
-        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
           {[
+            ['Drafts', draftQueue.length],
+            ['Calls', callQueue.length],
+            ['Exceptions', exceptionQueue.length],
             ['Open files', stats.open],
-            ['Blocked', stats.blocked],
-            ['Scheduled', stats.scheduled],
             ['Assignment fees', formatCurrency(stats.fees)],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
@@ -490,59 +672,193 @@ export default function TransactionCoordinatorPage() {
         </div>
 
         <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-          {STATUS_TABS.map((tab) => (
+          {QUEUE_TABS.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => setActiveQueue(tab.key)}
               className={cn(
-                'whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black transition-colors',
-                activeTab === tab.key ? 'bg-[#E32E2E] text-white' : 'border border-white/10 text-[var(--ck-text-muted)] hover:bg-white/5 hover:text-white'
+                'inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black transition-colors',
+                activeQueue === tab.key ? 'bg-[#E32E2E] text-white' : 'border border-white/10 text-[var(--ck-text-muted)] hover:bg-white/5 hover:text-white'
               )}
             >
+              <Icon name={tab.icon} size="text-base" />
               {tab.label}
+              <span className={cn(
+                'rounded-full px-2 py-0.5 text-[10px]',
+                activeQueue === tab.key ? 'bg-black/20 text-white' : 'bg-white/5 text-[var(--ck-text-muted)]'
+              )}>
+                {queueCounts[tab.key]}
+              </span>
             </button>
           ))}
         </div>
 
         {error && <div className="mb-4 rounded-lg border border-[#E32E2E]/40 bg-[#E32E2E]/10 px-4 py-3 text-sm text-[#ff8b8b]">{error}</div>}
 
-        <div className="overflow-hidden rounded-lg border border-white/10 bg-[#141414]">
-          <div className="grid grid-cols-[1.4fr_1fr_0.9fr_0.7fr_0.6fr_1.2fr] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">
-            <span>Property</span>
-            <span>Buyer</span>
-            <span>Title</span>
-            <span>Closing</span>
-            <span>Risk</span>
-            <span>Next Action</span>
-          </div>
-          {loading ? (
-            <div className="px-4 py-10 text-center text-sm text-[var(--ck-text-muted)]">Loading TC files...</div>
-          ) : filtered.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-[var(--ck-text-muted)]">No TC files in this view.</div>
+        {loading ? (
+          <EmptyQueue>Loading TC queues...</EmptyQueue>
+        ) : activeQueue === 'drafts' ? (
+          draftQueue.length === 0 ? (
+            <EmptyQueue>No draft approvals queued.</EmptyQueue>
           ) : (
-            <div className="divide-y divide-white/10">
-              {filtered.map((file) => (
+            <div className="grid gap-3 xl:grid-cols-2">
+              {draftQueue.map((item) => (
+                <div key={item.id} className="rounded-lg border border-white/10 bg-[#141414] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-white">{propertyLabel(item.file)}</p>
+                      <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{buyerName(item.file)} · {statusLabel(item.file.status)}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black uppercase text-[var(--ck-text-muted)]">
+                      {item.reason}
+                    </span>
+                  </div>
+                  <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
+                    <p className="text-sm font-bold text-white">{item.template.title}</p>
+                    <p className="mt-1 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">
+                      {item.template.audience} · {item.template.template_type}
+                    </p>
+                    {item.template.subject && <p className="mt-2 truncate text-xs text-[var(--ck-text-muted)]">{item.template.subject}</p>}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => copyDraft(item)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#E32E2E] px-3 py-2 text-xs font-black text-white"
+                    >
+                      <Icon name={copiedQueueId === item.id ? 'check' : 'content_copy'} size="text-sm" />
+                      {copiedQueueId === item.id ? 'Copied' : 'Copy Draft'}
+                    </button>
+                    <button
+                      onClick={() => setSelected(item.file)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/5"
+                    >
+                      <Icon name="folder_open" size="text-sm" />
+                      Open File
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : activeQueue === 'calls' ? (
+          callQueue.length === 0 ? (
+            <EmptyQueue>No call agendas queued.</EmptyQueue>
+          ) : (
+            <div className="grid gap-3 xl:grid-cols-2">
+              {callQueue.map((item) => (
+                <div key={item.id} className="rounded-lg border border-white/10 bg-[#141414] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-white">{item.recipientName}</p>
+                      <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{item.recipientRole} · {item.recipientPhone || 'No phone'}</p>
+                    </div>
+                    <span className={cn('shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase', item.task.status === 'blocked' ? riskClass('blocked') : 'border-white/10 bg-white/5 text-[var(--ck-text-muted)]')}>
+                      {item.task.status}
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-2 rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm">
+                    <p className="font-bold text-white">{item.task.label}</p>
+                    <p className="text-[var(--ck-text-muted)]">{propertyLabel(item.file)}</p>
+                    <p className="text-[var(--ck-text-muted)]">{statusLabel(item.file.status)} · {item.file.next_action || 'No next action'}</p>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {item.recipientPhone && (
+                      <a href={`tel:${item.recipientPhone}`} className="inline-flex items-center gap-1.5 rounded-lg bg-[#E32E2E] px-3 py-2 text-xs font-black text-white">
+                        <Icon name="call" size="text-sm" />
+                        Call
+                      </a>
+                    )}
+                    <button
+                      onClick={() => setSelected(item.file)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/5"
+                    >
+                      <Icon name="folder_open" size="text-sm" />
+                      Open File
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : activeQueue === 'exceptions' ? (
+          exceptionQueue.length === 0 ? (
+            <EmptyQueue>No exceptions queued.</EmptyQueue>
+          ) : (
+            <div className="space-y-3">
+              {exceptionQueue.map((item) => (
+                <div key={item.id} className="flex flex-col gap-4 rounded-lg border border-white/10 bg-[#141414] p-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className={cn('rounded-full border px-2 py-1 text-[10px] font-black uppercase', riskClass(item.severity))}>{item.severity}</span>
+                      <span className="truncate text-sm font-black text-white">{item.title}</span>
+                    </div>
+                    <p className="truncate text-sm text-[var(--ck-text-muted)]">{propertyLabel(item.file)} · {buyerName(item.file)}</p>
+                    <p className="mt-1 text-sm text-[var(--ck-text-muted)]">{item.detail}</p>
+                  </div>
+                  <button
+                    onClick={() => setSelected(item.file)}
+                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/5"
+                  >
+                    <Icon name="folder_open" size="text-sm" />
+                    Open File
+                  </button>
+                </div>
+              ))}
+            </div>
+          )
+        ) : (
+          <>
+            <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+              {STATUS_TABS.map((tab) => (
                 <button
-                  key={file.id}
-                  onClick={() => setSelected(file)}
-                  className="grid w-full grid-cols-[1.4fr_1fr_0.9fr_0.7fr_0.6fr_1.2fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-white/[0.04]"
+                  key={tab.key}
+                  onClick={() => setFileStatusFilter(tab.key)}
+                  className={cn(
+                    'whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black transition-colors',
+                    fileStatusFilter === tab.key ? 'bg-[#E32E2E] text-white' : 'border border-white/10 text-[var(--ck-text-muted)] hover:bg-white/5 hover:text-white'
+                  )}
                 >
-                  <span className="min-w-0">
-                    <span className="block truncate font-bold text-white">{file.lead?.property_address || 'No address'}</span>
-                    <span className="mt-1 block text-xs text-[var(--ck-text-muted)]">{statusLabel(file.status)} · {openTaskCount(file)} open tasks</span>
-                  </span>
-                  <span className="truncate text-[var(--ck-text-muted)]">{file.offer?.buyer?.name || file.offer?.buyer?.company || '—'}</span>
-                  <span className="truncate text-[var(--ck-text-muted)]">{file.title_company?.name || file.file_number || 'Not assigned'}</span>
-                  <span className="text-[var(--ck-text-muted)]">{formatDate(file.closing_scheduled_at)}</span>
-                  <span>
-                    <span className={cn('inline-flex rounded-full border px-2 py-1 text-[10px] font-black uppercase', riskClass(file.risk_level))}>{file.risk_level}</span>
-                  </span>
-                  <span className="truncate text-[var(--ck-text-muted)]">{file.next_action || '—'}</span>
+                  {tab.label}
                 </button>
               ))}
             </div>
-          )}
-        </div>
+            <div className="overflow-hidden rounded-lg border border-white/10 bg-[#141414]">
+              <div className="grid min-w-[900px] grid-cols-[1.4fr_1fr_0.9fr_0.7fr_0.6fr_1.2fr] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">
+                <span>Property</span>
+                <span>Buyer</span>
+                <span>Title</span>
+                <span>Closing</span>
+                <span>Risk</span>
+                <span>Next Action</span>
+              </div>
+              {filteredFiles.length === 0 ? (
+                <div className="px-4 py-10 text-center text-sm text-[var(--ck-text-muted)]">No TC files in this view.</div>
+              ) : (
+                <div className="divide-y divide-white/10 overflow-x-auto">
+                  {filteredFiles.map((file) => (
+                    <button
+                      key={file.id}
+                      onClick={() => setSelected(file)}
+                      className="grid min-w-[900px] w-full grid-cols-[1.4fr_1fr_0.9fr_0.7fr_0.6fr_1.2fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-white/[0.04]"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-bold text-white">{propertyLabel(file)}</span>
+                        <span className="mt-1 block text-xs text-[var(--ck-text-muted)]">{statusLabel(file.status)} · {openTaskCount(file)} open tasks</span>
+                      </span>
+                      <span className="truncate text-[var(--ck-text-muted)]">{buyerName(file)}</span>
+                      <span className="truncate text-[var(--ck-text-muted)]">{file.title_company?.name || file.file_number || 'Not assigned'}</span>
+                      <span className="text-[var(--ck-text-muted)]">{formatDate(file.closing_scheduled_at)}</span>
+                      <span>
+                        <span className={cn('inline-flex rounded-full border px-2 py-1 text-[10px] font-black uppercase', riskClass(file.risk_level))}>{file.risk_level}</span>
+                      </span>
+                      <span className="truncate text-[var(--ck-text-muted)]">{file.next_action || '—'}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {selected && (
