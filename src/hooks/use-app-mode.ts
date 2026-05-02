@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 
-export type AppMode = 'acquisitions' | 'dispositions'
+export type AppMode = 'acquisitions' | 'dispositions' | 'tc'
 
 const STORAGE_KEY = 'savingkc-app-mode'
 
@@ -15,6 +15,7 @@ function getStoredMode(): AppMode {
 }
 
 function getRouteMode(pathname: string | null): AppMode | null {
+  if (pathname?.startsWith('/dispo/tc')) return 'tc'
   if (pathname?.startsWith('/dispo')) return 'dispositions'
   if (
     pathname?.startsWith('/ari') ||

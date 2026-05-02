@@ -24,6 +24,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { mode, setMode } = useAppMode()
   const router = useRouter()
 
+  function routeForMode(nextMode: typeof mode) {
+    if (nextMode === 'dispositions') return '/dispo/pipeline'
+    if (nextMode === 'tc') return '/dispo/tc'
+    return '/dashboard'
+  }
+
+  const shellStyle = mode === 'tc'
+    ? ({
+        '--ck-bg': '#f6f7f9',
+        '--ck-surface': '#ffffff',
+        '--ck-surface-elev': '#f3f4f6',
+        '--ck-surface-hi': '#e9edf2',
+        '--ck-border': '#d8dee7',
+        '--ck-border-strong': '#b8c2d0',
+        '--ck-text': '#111827',
+        '--ck-text-muted': '#526173',
+        '--ck-text-dim': '#7a8798',
+        '--ck-accent': '#E32E2E',
+      } as React.CSSProperties)
+    : undefined
+
   // Global ⌘K / Ctrl+K to open command palette
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -124,7 +145,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [user?.email])
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col" style={shellStyle}>
       {/* Top Navbar */}
       <header
         className="sticky top-0 w-full z-40 border-b shadow-sm"
@@ -162,7 +183,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 src="/logo.png"
                 alt="Saving KC Homebuyers"
                 className="h-10 w-auto"
-                style={{ filter: 'url(#logo-dark-theme)' }}
+                style={mode === 'tc' ? undefined : { filter: 'url(#logo-dark-theme)' }}
               />
             </Link>
 
@@ -172,7 +193,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 mode={mode}
                 onChange={(m) => {
                   setMode(m)
-                  router.push(m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
+                  router.push(routeForMode(m))
                 }}
               />
             </div>
@@ -315,7 +336,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onChange={(m) => {
                 setMode(m)
                 setDrawerOpen(false)
-                router.push(m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
+                router.push(routeForMode(m))
               }}
             />
           </div>

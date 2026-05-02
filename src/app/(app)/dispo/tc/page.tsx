@@ -1028,12 +1028,13 @@ export default function TransactionCoordinatorPage() {
     : null
 
   return (
-    <main className="min-h-screen bg-[#0f0f0f] text-white">
+    <main className="tc-portal min-h-screen bg-[#f6f7f9] text-[#111827]">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-black tracking-tight">Transaction Coordinator</h1>
-            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Drafts, call agendas, exceptions, and closing files.</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E32E2E]">Reports to Dispositions</p>
+            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111827]">Transaction Coordination Portal</h1>
+            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Closing files, approved communications, call agendas, and exceptions.</p>
           </div>
           <button
             onClick={() => {
