@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { NavTabs } from './nav-tab'
 import { CommandPalette } from './command-palette'
 import { ModeSwitcher } from './mode-switcher'
@@ -23,6 +23,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth()
   const { mode, setMode } = useAppMode()
   const router = useRouter()
+  const pathname = usePathname()
+  const isTcPortal = pathname?.startsWith('/dispo/tc') ?? false
 
   function routeForMode(nextMode: typeof mode) {
     if (nextMode === 'dispositions') return '/dispo/pipeline'
@@ -30,7 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return '/dashboard'
   }
 
-  const shellStyle = mode === 'tc'
+  const shellStyle = isTcPortal
     ? ({
         '--ck-bg': '#f6f7f9',
         '--ck-surface': '#ffffff',
@@ -183,7 +185,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 src="/logo.png"
                 alt="Saving KC Homebuyers"
                 className="h-10 w-auto"
-                style={mode === 'tc' ? undefined : { filter: 'url(#logo-dark-theme)' }}
+                style={isTcPortal ? undefined : { filter: 'url(#logo-dark-theme)' }}
               />
             </Link>
 

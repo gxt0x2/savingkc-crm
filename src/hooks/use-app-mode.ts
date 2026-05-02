@@ -11,7 +11,9 @@ let listeners: Array<(mode: AppMode) => void> = []
 
 function getStoredMode(): AppMode {
   if (typeof window === 'undefined') return 'acquisitions'
-  return (localStorage.getItem(STORAGE_KEY) as AppMode) || 'acquisitions'
+  const stored = localStorage.getItem(STORAGE_KEY)
+  if (stored === 'dispositions') return 'dispositions'
+  return 'acquisitions'
 }
 
 function getRouteMode(pathname: string | null): AppMode | null {
@@ -22,7 +24,9 @@ function getRouteMode(pathname: string | null): AppMode | null {
     pathname?.startsWith('/opportunities') ||
     pathname?.startsWith('/leads') ||
     pathname?.startsWith('/dialer') ||
-    pathname?.startsWith('/pipeline')
+    pathname?.startsWith('/pipeline') ||
+    pathname?.startsWith('/dashboard') ||
+    pathname?.startsWith('/checklist')
   ) {
     return 'acquisitions'
   }
@@ -33,10 +37,11 @@ export function useAppMode() {
   const pathname = usePathname()
   const [mode, setModeState] = useState<AppMode>(getStoredMode)
   const routeMode = getRouteMode(pathname)
-  const effectiveMode = routeMode ?? mode
+  const storedMode = mode === 'tc' && routeMode !== 'tc' ? getStoredMode() : mode
+  const effectiveMode = routeMode ?? storedMode
 
   useEffect(() => {
-    if (routeMode) localStorage.setItem(STORAGE_KEY, routeMode)
+    if (routeMode && routeMode !== 'tc') localStorage.setItem(STORAGE_KEY, routeMode)
   }, [routeMode])
 
   useEffect(() => {
@@ -48,7 +53,7 @@ export function useAppMode() {
   }, [])
 
   const setMode = useCallback((newMode: AppMode) => {
-    localStorage.setItem(STORAGE_KEY, newMode)
+    if (newMode !== 'tc') localStorage.setItem(STORAGE_KEY, newMode)
     setModeState(newMode)
     listeners.forEach((l) => l(newMode))
   }, [])

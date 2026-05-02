@@ -41,7 +41,12 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { mode } = useAppMode()
-  const tabs = mode === 'tc' ? tcTabs : mode === 'dispositions' ? dispoTabs : acquisitionTabs
+  const isTcPortal = pathname?.startsWith('/dispo/tc') ?? false
+  const tabs = isTcPortal ? tcTabs : mode === 'dispositions' ? dispoTabs : acquisitionTabs
+  const activeText = isTcPortal ? 'text-[var(--ck-text)]' : 'text-white'
+  const inactiveText = isTcPortal
+    ? 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-[var(--ck-text)]'
+    : 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-white'
 
   function isActive(href: string): boolean {
     const baseHref = href.split('?')[0]
@@ -78,8 +83,8 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
               onClick={onNavigate}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-colors ${
                 active
-                  ? 'bg-[#E32E2E]/15 text-[var(--ck-text)] border-l-2 border-[#E32E2E]'
-                  : 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-[var(--ck-text)]'
+                  ? `bg-[#E32E2E]/15 ${activeText} border-l-2 border-[#E32E2E]`
+                  : inactiveText
               }`}
             >
               <Icon
@@ -107,8 +112,8 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
             onClick={onNavigate}
             className={`relative flex items-center gap-2 px-3 py-2 text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${
               active
-                ? 'bg-[#E32E2E]/15 text-[var(--ck-text)]'
-                : 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-[var(--ck-text)]'
+                ? `bg-[#E32E2E]/15 ${activeText}`
+                : inactiveText
             }`}
           >
             <Icon

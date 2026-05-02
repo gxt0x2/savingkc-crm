@@ -14,6 +14,7 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const active = PORTALS.find((portal) => portal.mode === mode) ?? PORTALS[0]
+  const activeLabel = active.shortLabel ?? active.label
 
   useEffect(() => {
     function onPointerDown(event: PointerEvent) {
@@ -35,7 +36,7 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex min-w-[260px] items-center justify-between gap-3 rounded-full border px-3 py-2 text-left transition-colors"
+        className="flex min-w-[190px] items-center justify-between gap-3 rounded-full border px-3 py-1.5 text-left transition-colors"
         style={{
           background: 'var(--ck-surface-elev)',
           borderColor: 'var(--ck-border)',
@@ -45,7 +46,7 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
         aria-expanded={open}
       >
         <span className="min-w-0">
-          <span className="block text-sm font-black leading-none">{active.label}</span>
+          <span className="block truncate text-sm font-black leading-none">{activeLabel}</span>
           <span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">{active.caption}</span>
         </span>
         <Icon name={open ? 'expand_less' : 'expand_more'} size="text-lg" className="shrink-0 text-[var(--ck-text-muted)]" />
@@ -95,6 +96,7 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
 const PORTALS: Array<{
   mode: AppMode
   label: string
+  shortLabel?: string
   caption: string
   description: string
   icon: string
@@ -116,6 +118,7 @@ const PORTALS: Array<{
   {
     mode: 'tc',
     label: 'Transaction Coordination',
+    shortLabel: 'TC Portal',
     caption: 'Reports to Dispositions',
     description: 'Closing files, drafts, calls, exceptions, and title work.',
     icon: 'assignment_turned_in',
