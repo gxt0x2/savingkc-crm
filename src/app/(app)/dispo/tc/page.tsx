@@ -68,6 +68,7 @@ function draftStatusClass(status: TcDraftStatus | 'missing') {
     pending: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
     approved: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
     rejected: 'bg-[#E32E2E]/15 text-[#ff8b8b] border-[#E32E2E]/40',
+    sending: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
     sent: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
     superseded: 'bg-white/5 text-[var(--ck-text-dim)] border-white/10',
   }
@@ -168,11 +169,11 @@ function draftKey(tcFileId: string, templateId: string | null) {
 }
 
 function buildDraftQueue(files: TcFile[], templates: TcDocumentTemplate[], drafts: TcDraft[]): DraftQueueItem[] {
-  const activeDrafts = new Map<string, TcDraft>()
+  const draftsByKey = new Map<string, TcDraft>()
   for (const draft of drafts) {
-    if (!draft.template_id || draft.status === 'rejected' || draft.status === 'sent' || draft.status === 'superseded') continue
+    if (!draft.template_id) continue
     const key = draftKey(draft.tc_file_id, draft.template_id)
-    if (!activeDrafts.has(key)) activeDrafts.set(key, draft)
+    if (!draftsByKey.has(key)) draftsByKey.set(key, draft)
   }
 
   return files.flatMap((file) => {
@@ -182,13 +183,17 @@ function buildDraftQueue(files: TcFile[], templates: TcDocumentTemplate[], draft
       .filter((template) => template.template_type === 'email' && audiences.includes(template.audience))
       .slice(0, 3)
 
-    return matches.map((template) => ({
-      id: `${file.id}-${template.id}`,
-      file,
-      template,
-      draft: activeDrafts.get(draftKey(file.id, template.id)) ?? null,
-      reason: draftReason(file.status, template.audience),
-    }))
+    return matches.flatMap((template) => {
+      const draft = draftsByKey.get(draftKey(file.id, template.id)) ?? null
+      if (draft?.status === 'sent' || draft?.status === 'superseded') return []
+      return [{
+        id: `${file.id}-${template.id}`,
+        file,
+        template,
+        draft: draft?.status === 'rejected' ? null : draft,
+        reason: draftReason(file.status, template.audience),
+      }]
+    })
   })
 }
 
@@ -620,11 +625,13 @@ function DraftDrawer({
   const [body, setBody] = useState(currentDraftBody(draft))
   const [rejectionNotes, setRejectionNotes] = useState(draft.rejection_notes ?? '')
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [sendState, setSendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const didMountRef = useRef(false)
   const lastPayloadRef = useRef('')
   const isLocked = draft.status !== 'pending'
+  const canSend = draft.status === 'approved' && !draft.sent_at
   const draftProperty = file?.lead?.property_address || draft.file?.lead?.property_address || 'No address'
   const draftFileLabel = file?.file_number || draft.file?.file_number || draftProperty
 
@@ -633,6 +640,7 @@ function DraftDrawer({
     setBody(currentDraftBody(draft))
     setRejectionNotes(draft.rejection_notes ?? '')
     setSaveState('idle')
+    setSendState(draft.status === 'sent' ? 'sent' : 'idle')
     setError(null)
     didMountRef.current = false
     lastPayloadRef.current = ''
@@ -718,6 +726,26 @@ function DraftDrawer({
     await patchDraft({ status: 'rejected', rejection_notes: notes })
   }
 
+  async function sendDraft() {
+    if (!canSend || sendState === 'sending') return
+    setSendState('sending')
+    setError(null)
+    const res = await fetch(`/api/tc/drafts/${draft.id}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm_send: true, actor: 'gertha' }),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      setSendState('error')
+      setError(data.error || 'Failed to send draft')
+      if (data.draft) onChanged(data.draft)
+      return
+    }
+    setSendState('sent')
+    onChanged(data.draft)
+  }
+
   async function copyDraftText() {
     await navigator.clipboard.writeText([subject ? `Subject: ${subject}` : '', body].filter(Boolean).join('\n\n'))
     setCopied(true)
@@ -752,6 +780,16 @@ function DraftDrawer({
 
         <div className="space-y-5 px-6 py-5">
           {error && <div className="rounded-lg border border-[#E32E2E]/40 bg-[#E32E2E]/10 px-3 py-2 text-sm text-[#ff8b8b]">{error}</div>}
+          {draft.delivery_error && draft.status !== 'sent' && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+              {draft.delivery_error}
+            </div>
+          )}
+          {draft.status === 'sent' && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+              Sent {formatDate(draft.sent_at)}{draft.delivery_provider ? ` via ${draft.delivery_provider}` : ''}
+            </div>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
@@ -821,9 +859,22 @@ function DraftDrawer({
                   Open File
                 </button>
               )}
-              <button disabled className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-[var(--ck-text-dim)] opacity-60">
-                <Icon name="send" size="text-sm" />
-                Send
+              <button
+                onClick={sendDraft}
+                disabled={!canSend || sendState === 'sending'}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black',
+                  canSend && sendState !== 'sending'
+                    ? 'bg-[#E32E2E] text-white'
+                    : 'cursor-not-allowed border border-white/10 text-[var(--ck-text-dim)] opacity-60'
+                )}
+              >
+                <Icon name={sendState === 'sent' || draft.status === 'sent' ? 'check' : 'send'} size="text-sm" />
+                {sendState === 'sending' || draft.status === 'sending'
+                  ? 'Sending...'
+                  : sendState === 'sent' || draft.status === 'sent'
+                    ? 'Sent'
+                    : 'Send Approved'}
               </button>
             </div>
 

@@ -8,7 +8,7 @@ import { logTcEvent } from '@/lib/tc'
 const updateDraftSchema = z.object({
   subject: z.string().nullable().optional(),
   edited_body: z.string().nullable().optional(),
-  status: z.enum(['pending', 'approved', 'rejected', 'sent', 'superseded']).optional(),
+  status: z.enum(['pending', 'approved', 'rejected', 'sending', 'sent', 'superseded']).optional(),
   rejection_notes: z.string().nullable().optional(),
   approved_by: z.string().min(1).optional(),
   actor: z.string().min(1).optional(),
