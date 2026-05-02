@@ -213,6 +213,43 @@ export type TcStatus =
 
 export type TcRiskLevel = 'normal' | 'watch' | 'urgent' | 'blocked'
 
+export type TcDraftStatus = 'pending' | 'approved' | 'rejected' | 'sent' | 'superseded'
+export type TcDraftChannel = 'email' | 'document' | 'sms'
+export type TcDraftRecipientRole = 'buyer' | 'seller' | 'title' | 'internal'
+
+export interface TcDraft {
+  id: string
+  tc_file_id: string
+  template_id: string | null
+  lead_id: string
+  channel: TcDraftChannel
+  recipient_role: TcDraftRecipientRole
+  recipient_email: string | null
+  recipient_phone: string | null
+  subject: string | null
+  draft_body: string
+  edited_body: string | null
+  approved_body: string | null
+  status: TcDraftStatus
+  rejection_notes: string | null
+  created_by: string
+  approved_by: string | null
+  created_at: string
+  updated_at: string
+  approved_at: string | null
+  sent_at: string | null
+  template?: {
+    id: string
+    slug: string
+    title: string
+    template_type: 'email' | 'document' | 'checklist'
+    audience: TcDraftRecipientRole
+    subject: string | null
+    body: string
+  } | null
+  file?: TcFile | null
+}
+
 export interface TcTask {
   id: string
   tc_file_id: string
@@ -253,6 +290,7 @@ export interface TcFile {
   created_at: string
   updated_at: string
   tasks?: TcTask[]
+  drafts?: TcDraft[]
   title_company?: { id: string; name: string; office_phone?: string | null; office_email?: string | null } | null
   title_contact?: { id: string; name: string; role?: string | null; email?: string | null; phone?: string | null } | null
   lead?: { id: string; full_name: string | null; property_address: string | null; city: string | null; state: string | null; zip: string | null } | null

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
-import type { TcFile, TcStatus, TcTask } from '@/types/dispo'
+import type { TcDraft, TcDraftStatus, TcFile, TcStatus, TcTask } from '@/types/dispo'
 
 const STATUS_TABS: { key: TcStatus | 'all' | 'blocked'; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -62,6 +62,18 @@ function riskClass(risk: string) {
   return map[risk] ?? map.normal
 }
 
+function draftStatusClass(status: TcDraftStatus | 'missing') {
+  const map: Record<TcDraftStatus | 'missing', string> = {
+    missing: 'bg-white/5 text-[var(--ck-text-muted)] border-white/10',
+    pending: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    approved: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    rejected: 'bg-[#E32E2E]/15 text-[#ff8b8b] border-[#E32E2E]/40',
+    sent: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+    superseded: 'bg-white/5 text-[var(--ck-text-dim)] border-white/10',
+  }
+  return map[status]
+}
+
 function openTaskCount(file: TcFile) {
   return file.tasks?.filter((task) => task.status === 'open' || task.status === 'blocked').length ?? 0
 }
@@ -102,6 +114,7 @@ interface DraftQueueItem {
   id: string
   file: TcFile
   template: TcDocumentTemplate
+  draft: TcDraft | null
   reason: string
 }
 
@@ -146,7 +159,22 @@ function templateText(template: TcDocumentTemplate) {
     .join('\n\n')
 }
 
-function buildDraftQueue(files: TcFile[], templates: TcDocumentTemplate[]): DraftQueueItem[] {
+function currentDraftBody(draft: TcDraft) {
+  return draft.edited_body || draft.approved_body || draft.draft_body
+}
+
+function draftKey(tcFileId: string, templateId: string | null) {
+  return `${tcFileId}:${templateId ?? 'custom'}`
+}
+
+function buildDraftQueue(files: TcFile[], templates: TcDocumentTemplate[], drafts: TcDraft[]): DraftQueueItem[] {
+  const activeDrafts = new Map<string, TcDraft>()
+  for (const draft of drafts) {
+    if (!draft.template_id || draft.status === 'rejected' || draft.status === 'sent' || draft.status === 'superseded') continue
+    const key = draftKey(draft.tc_file_id, draft.template_id)
+    if (!activeDrafts.has(key)) activeDrafts.set(key, draft)
+  }
+
   return files.flatMap((file) => {
     if (file.status === 'closed' || file.status === 'cancelled') return []
     const audiences = STATUS_TEMPLATE_AUDIENCES[file.status] ?? []
@@ -158,6 +186,7 @@ function buildDraftQueue(files: TcFile[], templates: TcDocumentTemplate[]): Draf
       id: `${file.id}-${template.id}`,
       file,
       template,
+      draft: activeDrafts.get(draftKey(file.id, template.id)) ?? null,
       reason: draftReason(file.status, template.audience),
     }))
   })
@@ -572,15 +601,268 @@ function DetailDrawer({
   )
 }
 
+function DraftDrawer({
+  draft,
+  file,
+  template,
+  onClose,
+  onChanged,
+  onOpenFile,
+}: {
+  draft: TcDraft
+  file: TcFile | null
+  template: TcDocumentTemplate | NonNullable<TcDraft['template']> | null
+  onClose: () => void
+  onChanged: (draft: TcDraft) => void
+  onOpenFile: (file: TcFile) => void
+}) {
+  const [subject, setSubject] = useState(draft.subject ?? '')
+  const [body, setBody] = useState(currentDraftBody(draft))
+  const [rejectionNotes, setRejectionNotes] = useState(draft.rejection_notes ?? '')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const didMountRef = useRef(false)
+  const lastPayloadRef = useRef('')
+  const isLocked = draft.status !== 'pending'
+  const draftProperty = file?.lead?.property_address || draft.file?.lead?.property_address || 'No address'
+  const draftFileLabel = file?.file_number || draft.file?.file_number || draftProperty
+
+  useEffect(() => {
+    setSubject(draft.subject ?? '')
+    setBody(currentDraftBody(draft))
+    setRejectionNotes(draft.rejection_notes ?? '')
+    setSaveState('idle')
+    setError(null)
+    didMountRef.current = false
+    lastPayloadRef.current = ''
+  }, [draft])
+
+  useEffect(() => {
+    if (isLocked) return
+    const payload = JSON.stringify({
+      subject: subject || null,
+      edited_body: body,
+      actor: 'gertha',
+    })
+
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      lastPayloadRef.current = payload
+      return
+    }
+    if (payload === lastPayloadRef.current) return
+
+    setSaveState('saving')
+    setError(null)
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/tc/drafts/${draft.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          signal: controller.signal,
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Autosave failed')
+        lastPayloadRef.current = payload
+        setSaveState('saved')
+        onChanged(data.draft)
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return
+        setSaveState('error')
+        setError(err instanceof Error ? err.message : 'Autosave failed')
+      }
+    }, 650)
+
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
+  }, [body, draft.id, isLocked, onChanged, subject])
+
+  async function patchDraft(payload: Record<string, unknown>) {
+    setSaveState('saving')
+    setError(null)
+    const res = await fetch(`/api/tc/drafts/${draft.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: subject || null,
+        edited_body: body,
+        actor: 'gertha',
+        ...payload,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      setSaveState('error')
+      setError(data.error || 'Failed to update draft')
+      return
+    }
+    setSaveState('saved')
+    onChanged(data.draft)
+  }
+
+  async function approveDraft() {
+    await patchDraft({ status: 'approved', approved_by: 'gertha' })
+  }
+
+  async function rejectDraft() {
+    const notes = rejectionNotes.trim()
+    if (!notes) {
+      setError('Add a rejection note before rejecting.')
+      return
+    }
+    await patchDraft({ status: 'rejected', rejection_notes: notes })
+  }
+
+  async function copyDraftText() {
+    await navigator.clipboard.writeText([subject ? `Subject: ${subject}` : '', body].filter(Boolean).join('\n\n'))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1600)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <div
+        className="h-full w-full max-w-2xl overflow-y-auto border-l border-[var(--ck-border)] bg-[#141414] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--ck-border)] bg-[#141414] px-6 py-5">
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className={cn('rounded-full border px-2 py-1 text-[10px] font-black uppercase', draftStatusClass(draft.status))}>
+                {draft.status}
+              </span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">
+                {saveState === 'saving' ? 'Autosaving...' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Autosave failed' : 'Draft review'}
+              </span>
+            </div>
+            <h2 className="truncate text-lg font-black text-white">{template?.title || 'TC Draft'}</h2>
+            <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">
+              {draftProperty} · {draft.recipient_role}
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-2 text-[var(--ck-text-muted)] hover:bg-white/5">
+            <Icon name="close" size="text-lg" />
+          </button>
+        </div>
+
+        <div className="space-y-5 px-6 py-5">
+          {error && <div className="rounded-lg border border-[#E32E2E]/40 bg-[#E32E2E]/10 px-3 py-2 text-sm text-[#ff8b8b]">{error}</div>}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">Recipient</p>
+              <p className="mt-1 truncate text-sm font-bold text-white">{draft.recipient_email || draft.recipient_phone || draft.recipient_role}</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">File</p>
+              <p className="mt-1 truncate text-sm font-bold text-white">{draftFileLabel}</p>
+            </div>
+          </div>
+
+          <label className="block space-y-1">
+            <span className="text-[10px] font-bold uppercase text-[var(--ck-text-dim)]">Subject</span>
+            <input
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              disabled={isLocked}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-[10px] font-bold uppercase text-[var(--ck-text-dim)]">Body</span>
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              disabled={isLocked}
+              rows={18}
+              className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-3 font-mono text-sm leading-6 text-white disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+
+          {draft.status === 'pending' && (
+            <label className="block space-y-1">
+              <span className="text-[10px] font-bold uppercase text-[var(--ck-text-dim)]">Rejection Notes</span>
+              <textarea
+                value={rejectionNotes}
+                onChange={(e) => setRejectionNotes(e.target.value)}
+                rows={3}
+                className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+              />
+            </label>
+          )}
+
+          {draft.rejection_notes && draft.status === 'rejected' && (
+            <div className="rounded-lg border border-[#E32E2E]/30 bg-[#E32E2E]/10 px-3 py-2 text-sm text-[#ffb3b3]">
+              {draft.rejection_notes}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={copyDraftText}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/5"
+              >
+                <Icon name={copied ? 'check' : 'content_copy'} size="text-sm" />
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+              {file && (
+                <button
+                  onClick={() => onOpenFile(file)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/5"
+                >
+                  <Icon name="folder_open" size="text-sm" />
+                  Open File
+                </button>
+              )}
+              <button disabled className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-[var(--ck-text-dim)] opacity-60">
+                <Icon name="send" size="text-sm" />
+                Send
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={rejectDraft}
+                disabled={draft.status !== 'pending'}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#E32E2E]/30 px-3 py-2 text-xs font-black text-[#ff8b8b] hover:bg-[#E32E2E]/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Icon name="close" size="text-sm" />
+                Reject
+              </button>
+              <button
+                onClick={approveDraft}
+                disabled={draft.status !== 'pending'}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#E32E2E] px-3 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Icon name="check" size="text-sm" />
+                Approve
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function TransactionCoordinatorPage() {
   const [files, setFiles] = useState<TcFile[]>([])
+  const [drafts, setDrafts] = useState<TcDraft[]>([])
   const [activeQueue, setActiveQueue] = useState<QueueKey>('drafts')
   const [fileStatusFilter, setFileStatusFilter] = useState<TcStatus | 'all' | 'blocked'>('all')
   const [selected, setSelected] = useState<TcFile | null>(null)
+  const [selectedDraft, setSelectedDraft] = useState<TcDraft | null>(null)
   const [templates, setTemplates] = useState<TcDocumentTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [copiedQueueId, setCopiedQueueId] = useState<string | null>(null)
+  const [draftActionId, setDraftActionId] = useState<string | null>(null)
 
   async function fetchFiles() {
     setError(null)
@@ -600,10 +882,53 @@ export default function TransactionCoordinatorPage() {
     }
   }
 
-  async function copyDraft(item: DraftQueueItem) {
-    await navigator.clipboard.writeText(templateText(item.template))
-    setCopiedQueueId(item.id)
-    setTimeout(() => setCopiedQueueId(null), 1600)
+  async function fetchDrafts() {
+    const res = await fetch('/api/tc/drafts?limit=200')
+    if (!res.ok) return
+    const data = await res.json()
+    setDrafts(data.drafts ?? [])
+    if (selectedDraft) {
+      const fresh = (data.drafts ?? []).find((draft: TcDraft) => draft.id === selectedDraft.id)
+      if (fresh) setSelectedDraft(fresh)
+    }
+  }
+
+  async function openDraft(item: DraftQueueItem) {
+    setDraftActionId(item.id)
+    setError(null)
+    try {
+      if (item.draft) {
+        setSelectedDraft(item.draft)
+        return
+      }
+
+      const res = await fetch('/api/tc/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tc_file_id: item.file.id,
+          template_id: item.template.id,
+          created_by: 'gertha',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to create draft')
+      setSelectedDraft({
+        ...data.draft,
+        file: item.file,
+        template: item.template,
+      })
+      await fetchDrafts()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open draft')
+    } finally {
+      setDraftActionId(null)
+    }
+  }
+
+  function handleDraftChanged(nextDraft: TcDraft) {
+    setDrafts((current) => [nextDraft, ...current.filter((draft) => draft.id !== nextDraft.id)])
+    setSelectedDraft(nextDraft)
   }
 
   async function fetchTemplates() {
@@ -616,10 +941,11 @@ export default function TransactionCoordinatorPage() {
   useEffect(() => {
     fetchFiles()
     fetchTemplates()
+    fetchDrafts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const draftQueue = useMemo(() => buildDraftQueue(files, templates), [files, templates])
+  const draftQueue = useMemo(() => buildDraftQueue(files, templates, drafts), [drafts, files, templates])
   const callQueue = useMemo(() => buildCallQueue(files), [files])
   const exceptionQueue = useMemo(() => buildExceptionQueue(files), [files])
 
@@ -643,6 +969,13 @@ export default function TransactionCoordinatorPage() {
     files: stats.open,
   }
 
+  const selectedDraftFile = selectedDraft
+    ? files.find((file) => file.id === selectedDraft.tc_file_id) ?? null
+    : null
+  const selectedDraftTemplate = selectedDraft
+    ? templates.find((template) => template.id === selectedDraft.template_id) ?? selectedDraft.template ?? null
+    : null
+
   return (
     <main className="min-h-screen bg-[#0f0f0f] text-white">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
@@ -651,7 +984,14 @@ export default function TransactionCoordinatorPage() {
             <h1 className="text-2xl font-black tracking-tight">Transaction Coordinator</h1>
             <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Drafts, call agendas, exceptions, and closing files.</p>
           </div>
-          <button onClick={fetchFiles} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/5">
+          <button
+            onClick={() => {
+              fetchFiles()
+              fetchDrafts()
+              fetchTemplates()
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/5"
+          >
             <Icon name="refresh" size="text-sm" /> Refresh
           </button>
         </div>
@@ -709,8 +1049,8 @@ export default function TransactionCoordinatorPage() {
                       <p className="truncate text-sm font-black text-white">{propertyLabel(item.file)}</p>
                       <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{buyerName(item.file)} · {statusLabel(item.file.status)}</p>
                     </div>
-                    <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black uppercase text-[var(--ck-text-muted)]">
-                      {item.reason}
+                    <span className={cn('shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase', draftStatusClass(item.draft?.status ?? 'missing'))}>
+                      {item.draft?.status ?? item.reason}
                     </span>
                   </div>
                   <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
@@ -719,14 +1059,16 @@ export default function TransactionCoordinatorPage() {
                       {item.template.audience} · {item.template.template_type}
                     </p>
                     {item.template.subject && <p className="mt-2 truncate text-xs text-[var(--ck-text-muted)]">{item.template.subject}</p>}
+                    {item.draft && <p className="mt-2 line-clamp-2 text-xs text-[var(--ck-text-muted)]">{currentDraftBody(item.draft)}</p>}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <button
-                      onClick={() => copyDraft(item)}
+                      onClick={() => openDraft(item)}
+                      disabled={draftActionId === item.id}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-[#E32E2E] px-3 py-2 text-xs font-black text-white"
                     >
-                      <Icon name={copiedQueueId === item.id ? 'check' : 'content_copy'} size="text-sm" />
-                      {copiedQueueId === item.id ? 'Copied' : 'Copy Draft'}
+                      <Icon name={item.draft ? 'edit' : 'add'} size="text-sm" />
+                      {draftActionId === item.id ? 'Opening...' : item.draft ? 'Open Draft' : 'Create Draft'}
                     </button>
                     <button
                       onClick={() => setSelected(item.file)}
@@ -868,6 +1210,20 @@ export default function TransactionCoordinatorPage() {
           onTemplatesChanged={fetchTemplates}
           onClose={() => setSelected(null)}
           onChanged={fetchFiles}
+        />
+      )}
+
+      {selectedDraft && (
+        <DraftDrawer
+          draft={selectedDraft}
+          file={selectedDraftFile}
+          template={selectedDraftTemplate}
+          onClose={() => setSelectedDraft(null)}
+          onChanged={handleDraftChanged}
+          onOpenFile={(file) => {
+            setSelectedDraft(null)
+            setSelected(file)
+          }}
         />
       )}
     </main>
