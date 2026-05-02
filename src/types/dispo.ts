@@ -213,7 +213,7 @@ export type TcStatus =
 
 export type TcRiskLevel = 'normal' | 'watch' | 'urgent' | 'blocked'
 
-export type TcDraftStatus = 'pending' | 'approved' | 'rejected' | 'sent' | 'superseded'
+export type TcDraftStatus = 'pending' | 'approved' | 'rejected' | 'sending' | 'sent' | 'superseded'
 export type TcDraftChannel = 'email' | 'document' | 'sms'
 export type TcDraftRecipientRole = 'buyer' | 'seller' | 'title' | 'internal'
 
@@ -238,6 +238,11 @@ export interface TcDraft {
   updated_at: string
   approved_at: string | null
   sent_at: string | null
+  delivery_started_at?: string | null
+  sent_by?: string | null
+  delivery_provider?: string | null
+  delivery_message_id?: string | null
+  delivery_error?: string | null
   template?: {
     id: string
     slug: string

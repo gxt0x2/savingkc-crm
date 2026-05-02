@@ -6,7 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { logTcEvent } from '@/lib/tc'
 import type { TcDraftRecipientRole, TcDraftStatus } from '@/types/dispo'
 
-const DRAFT_STATUSES = ['pending', 'approved', 'rejected', 'sent', 'superseded'] as const
+const DRAFT_STATUSES = ['pending', 'approved', 'rejected', 'sending', 'sent', 'superseded'] as const
 
 const createDraftSchema = z.object({
   tc_file_id: z.string().uuid(),
