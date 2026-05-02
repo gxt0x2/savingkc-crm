@@ -110,6 +110,7 @@ export interface BuyerOffer {
   assignment_sent_at?: string | null
   assignment_signed_at?: string | null
   assignment_document_url?: string | null
+  tc_file?: TcFile | null
   buyer?: Buyer
   lead?: { id: string; property_address: string; full_name: string }
   deal_page?: { id: string; slug: string; title: string | null; asking_price?: number | null } | null
@@ -193,7 +194,67 @@ export interface DispoDeal {
     sqft: number | null
   }
   deal_page?: { id: string; slug: string; is_active: boolean } | null
+  tc_file?: TcFile | null
   broadcasts_count?: number
   offers_count?: number
   accepted_buyer?: { id: string; first_name: string; last_name: string; company_name: string | null } | null
+}
+
+export type TcStatus =
+  | 'not_opened'
+  | 'opening_package_needed'
+  | 'opened'
+  | 'emd_pending'
+  | 'title_work'
+  | 'clear_to_close'
+  | 'scheduled'
+  | 'closed'
+  | 'cancelled'
+
+export type TcRiskLevel = 'normal' | 'watch' | 'urgent' | 'blocked'
+
+export interface TcTask {
+  id: string
+  tc_file_id: string
+  task_type: string
+  label: string
+  status: 'open' | 'done' | 'waived' | 'blocked'
+  due_at: string | null
+  completed_at: string | null
+  assigned_to: string | null
+  source: string
+  notes: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface TcFile {
+  id: string
+  lead_id: string
+  dispo_deal_id: string | null
+  buyer_offer_id: string | null
+  title_company_id: string | null
+  title_contact_id: string | null
+  file_number: string | null
+  status: TcStatus
+  opened_at: string | null
+  emd_due_at: string | null
+  emd_confirmed_at: string | null
+  title_clear_at: string | null
+  closing_scheduled_at: string | null
+  closing_completed_at: string | null
+  hud_received_at: string | null
+  assignment_fee: number | null
+  revenue_logged_at: string | null
+  next_action: string | null
+  risk_level: TcRiskLevel
+  risk_reason: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  tasks?: TcTask[]
+  title_company?: { id: string; name: string; office_phone?: string | null; office_email?: string | null } | null
+  title_contact?: { id: string; name: string; role?: string | null; email?: string | null; phone?: string | null } | null
+  lead?: { id: string; full_name: string | null; property_address: string | null; city: string | null; state: string | null; zip: string | null } | null
+  offer?: BuyerOffer | null
 }

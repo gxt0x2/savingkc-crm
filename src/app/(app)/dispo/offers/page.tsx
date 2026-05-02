@@ -1,6 +1,7 @@
 'use client'
 
-import { Fragment, useState, useEffect } from 'react'
+import { Fragment, useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import type { BuyerOffer } from '@/types/dispo'
@@ -158,6 +159,18 @@ function assignmentBadge(offer: BuyerOffer): { label: string; className: string;
     }
   }
   return null
+}
+
+function tcBadge(offer: BuyerOffer): { label: string; className: string } | null {
+  if (!offer.tc_file) return null
+  return {
+    label: `TC ${offer.tc_file.status.replace(/_/g, ' ')}`,
+    className: offer.tc_file.risk_level === 'blocked'
+      ? 'bg-[#E32E2E]/15 text-[#E32E2E] border border-[#E32E2E]/40'
+      : offer.tc_file.risk_level === 'urgent'
+        ? 'bg-orange-500/15 text-orange-500 border border-orange-500/40'
+        : 'bg-emerald-500/15 text-emerald-600 border border-emerald-500/30',
+  }
 }
 
 function formatDate(iso: string | null) {
@@ -472,6 +485,26 @@ function OfferDetail({
           )}
 
           {/* Documents */}
+          {offer.tc_file && (
+            <div className="bg-white border border-slate-200 rounded-lg p-3 mb-4">
+              <p className="text-xs font-bold text-slate-500 mb-1">Transaction Coordination</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-bold text-emerald-700">
+                  <Icon name="fact_check" size="text-sm" />
+                  {offer.tc_file.status.replace(/_/g, ' ')}
+                </span>
+                {offer.tc_file.closing_scheduled_at && (
+                  <span className="text-xs text-slate-500">Closing {formatDate(offer.tc_file.closing_scheduled_at)}</span>
+                )}
+                <Link href="/dispo/tc" className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-[#E32E2E] hover:underline">
+                  Open TC File
+                  <Icon name="arrow_forward" size="text-sm" />
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Documents */}
           <div className="mb-4">
             <DocumentManager
               entityType="offer"
@@ -572,7 +605,7 @@ export default function OffersPage() {
   const [newOfferOpen, setNewOfferOpen] = useState(false)
   const [assignmentOffer, setAssignmentOffer] = useState<BuyerOffer | null>(null)
 
-  async function fetchOffers() {
+  const fetchOffers = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -586,9 +619,9 @@ export default function OffersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [statusFilter])
 
-  useEffect(() => { fetchOffers() }, [statusFilter])
+  useEffect(() => { fetchOffers() }, [fetchOffers])
 
   async function handleToggleTopPick(offer: BuyerOffer) {
     const next = !offer.is_top_pick
@@ -832,6 +865,20 @@ export default function OffersPage() {
                                         <Icon name={ab.icon} size="text-[13px]" />
                                         {ab.label}
                                       </span>
+                                    )
+                                  })()}
+                                  {(() => {
+                                    const tb = tcBadge(offer)
+                                    if (!tb) return null
+                                    return (
+                                      <Link
+                                        href="/dispo/tc"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap', tb.className)}
+                                      >
+                                        <Icon name="fact_check" size="text-[13px]" />
+                                        {tb.label}
+                                      </Link>
                                     )
                                   })()}
                                 </div>

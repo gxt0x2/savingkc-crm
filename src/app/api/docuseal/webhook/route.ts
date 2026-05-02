@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { ensureTcFileForSignedAssignment } from '@/lib/tc'
 
 // POST /api/docuseal/webhook
 // DocuSeal emits events like form.completed, form.viewed, submission.completed.
@@ -50,6 +51,12 @@ export async function POST(req: NextRequest) {
           .from('buyer_offers')
           .update(updates)
           .eq('assignment_submission_id', String(submissionId))
+
+        if (updates.assignment_signed_at) {
+          await ensureTcFileForSignedAssignment(db, String(submissionId)).catch((err) => {
+            console.error('[docuseal webhook] TC file sync failed:', err)
+          })
+        }
       }
     }
 

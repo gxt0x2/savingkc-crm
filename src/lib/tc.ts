@@ -1,0 +1,308 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { updateManifestV2_1 } from '@/lib/manifest-sync'
+import type { ManifestV2 } from '@/lib/manifest-builder'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DbClient = SupabaseClient<any, 'public', any>
+
+export const TC_STATUSES = [
+  'not_opened',
+  'opening_package_needed',
+  'opened',
+  'emd_pending',
+  'title_work',
+  'clear_to_close',
+  'scheduled',
+  'closed',
+  'cancelled',
+] as const
+
+export type TcStatus = (typeof TC_STATUSES)[number]
+
+export const TC_RISK_LEVELS = ['normal', 'watch', 'urgent', 'blocked'] as const
+export type TcRiskLevel = (typeof TC_RISK_LEVELS)[number]
+
+export interface TcFileSummary {
+  id: string
+  lead_id: string
+  dispo_deal_id: string | null
+  buyer_offer_id: string | null
+  title_company_id: string | null
+  title_contact_id: string | null
+  file_number: string | null
+  status: TcStatus
+  opened_at: string | null
+  emd_due_at: string | null
+  emd_confirmed_at: string | null
+  title_clear_at: string | null
+  closing_scheduled_at: string | null
+  closing_completed_at: string | null
+  hud_received_at: string | null
+  assignment_fee: number | null
+  revenue_logged_at: string | null
+  next_action: string | null
+  risk_level: TcRiskLevel
+  risk_reason: string | null
+  notes: string | null
+}
+
+export const STANDARD_TC_TASKS = [
+  { task_type: 'send_opening_package', label: 'Send opening package to title' },
+  { task_type: 'confirm_assignment_signed', label: 'Confirm assignment contract fully signed' },
+  { task_type: 'confirm_emd', label: 'Confirm EMD receipt' },
+  { task_type: 'confirm_file_number', label: 'Confirm title file number' },
+  { task_type: 'confirm_title_clear', label: 'Confirm title clear' },
+  { task_type: 'schedule_closing', label: 'Schedule closing' },
+  { task_type: 'collect_hud', label: 'Collect HUD / settlement statement' },
+  { task_type: 'log_assignment_revenue', label: 'Log assignment revenue' },
+] as const
+
+export function isTcStatus(value: string): value is TcStatus {
+  return (TC_STATUSES as readonly string[]).includes(value)
+}
+
+export function isTcRiskLevel(value: string): value is TcRiskLevel {
+  return (TC_RISK_LEVELS as readonly string[]).includes(value)
+}
+
+export async function logTcEvent(
+  db: DbClient,
+  tcFileId: string,
+  eventType: string,
+  payload: Record<string, unknown> = {},
+  actor = 'system',
+) {
+  const { error } = await db.from('tc_events').insert({
+    tc_file_id: tcFileId,
+    event_type: eventType,
+    payload,
+    actor,
+  })
+  if (error) console.error('[tc] event log failed:', error)
+}
+
+export async function seedStandardTcTasks(db: DbClient, tcFileId: string) {
+  const { data: existing } = await db
+    .from('tc_tasks')
+    .select('task_type')
+    .eq('tc_file_id', tcFileId)
+
+  const existingTypes = new Set((existing ?? []).map((row: { task_type: string }) => row.task_type))
+  const rows = STANDARD_TC_TASKS
+    .filter((task) => !existingTypes.has(task.task_type))
+    .map((task) => ({
+      tc_file_id: tcFileId,
+      task_type: task.task_type,
+      label: task.label,
+      source: 'system',
+    }))
+
+  if (rows.length === 0) return
+  const { error } = await db.from('tc_tasks').insert(rows)
+  if (error) throw new Error(`Failed to seed TC tasks: ${error.message}`)
+}
+
+export async function syncTcStatusToManifest(db: DbClient, tcFileId: string) {
+  const { data: file } = await db
+    .from('tc_files')
+    .select(
+      '*, title_company:title_company_id(name), title_contact:title_contact_id(name, role, email, phone)'
+    )
+    .eq('id', tcFileId)
+    .maybeSingle()
+
+  if (!file?.lead_id) return
+
+  await updateManifestV2_1({
+    leadId: file.lead_id,
+    compute: (current: ManifestV2) => ({
+      closing: {
+        ...((current.closing ?? {}) as Record<string, unknown>),
+        tc_file_id: file.id,
+        title_company: file.title_company?.name ?? null,
+        title_contact: file.title_contact
+          ? {
+              name: file.title_contact.name ?? null,
+              role: file.title_contact.role ?? null,
+              email: file.title_contact.email ?? null,
+              phone: file.title_contact.phone ?? null,
+            }
+          : null,
+        file_number: file.file_number ?? null,
+        status: file.status,
+        risk_level: file.risk_level,
+        closing_scheduled_at: file.closing_scheduled_at ?? null,
+        emd_confirmed_at: file.emd_confirmed_at ?? null,
+        hud_received_at: file.hud_received_at ?? null,
+        next_action: file.next_action ?? null,
+      },
+    }),
+    actor: 'system',
+    reason: 'tc:sync-status',
+  }).catch((err) => {
+    console.error('[tc] manifest sync failed:', err)
+  })
+}
+
+async function findDispoDeal(db: DbClient, leadId: string, offerId: string | null) {
+  if (offerId) {
+    const { data } = await db
+      .from('dispo_deals')
+      .select('id, assignment_fee, close_date, accepted_offer_id, accepted_buyer_id, stage')
+      .eq('accepted_offer_id', offerId)
+      .maybeSingle()
+    if (data) return data
+  }
+
+  const { data } = await db
+    .from('dispo_deals')
+    .select('id, assignment_fee, close_date, accepted_offer_id, accepted_buyer_id, stage')
+    .eq('lead_id', leadId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data
+}
+
+export async function ensureTcFileForOffer(
+  db: DbClient,
+  offerId: string,
+  options: {
+    status?: TcStatus
+    actor?: string
+    eventType?: string
+    seedTasks?: boolean
+  } = {},
+): Promise<TcFileSummary | null> {
+  const { data: existing } = await db
+    .from('tc_files')
+    .select('*')
+    .eq('buyer_offer_id', offerId)
+    .maybeSingle()
+
+  if (existing) {
+    const updates: Record<string, unknown> = {}
+    if (options.status && existing.status !== 'closed' && existing.status !== options.status) {
+      updates.status = options.status
+      if (options.status !== 'not_opened' && !existing.opened_at) {
+        updates.opened_at = new Date().toISOString()
+      }
+    }
+
+    let file = existing
+    if (Object.keys(updates).length > 0) {
+      const { data: updated, error } = await db
+        .from('tc_files')
+        .update(updates)
+        .eq('id', existing.id)
+        .select()
+        .single()
+      if (error) throw new Error(`Failed to update TC file: ${error.message}`)
+      file = updated
+      await logTcEvent(db, file.id, options.eventType ?? 'tc_file_updated', updates, options.actor)
+    }
+    if (options.seedTasks) await seedStandardTcTasks(db, file.id)
+    await syncTcStatusToManifest(db, file.id)
+    return file as TcFileSummary
+  }
+
+  const { data: offer, error: offerError } = await db
+    .from('buyer_offers')
+    .select('id, lead_id, buyer_id, offer_amount, status, close_days')
+    .eq('id', offerId)
+    .single()
+  if (offerError || !offer) return null
+
+  const deal = await findDispoDeal(db, offer.lead_id, offer.id)
+  const status = options.status ?? 'not_opened'
+  const now = new Date()
+  const closingScheduledAt = offer.close_days
+    ? new Date(now.getTime() + Number(offer.close_days) * 86_400_000).toISOString()
+    : null
+
+  const { data: file, error } = await db
+    .from('tc_files')
+    .insert({
+      lead_id: offer.lead_id,
+      dispo_deal_id: deal?.id ?? null,
+      buyer_offer_id: offer.id,
+      status,
+      opened_at: status === 'not_opened' ? null : now.toISOString(),
+      closing_scheduled_at: closingScheduledAt,
+      assignment_fee: deal?.assignment_fee ?? null,
+      next_action: status === 'not_opened'
+        ? 'Send assignment contract and open with title'
+        : 'Send opening package to title',
+      risk_level: 'normal',
+    })
+    .select()
+    .single()
+
+  if (error) throw new Error(`Failed to create TC file: ${error.message}`)
+
+  await logTcEvent(db, file.id, options.eventType ?? 'tc_file_created', {
+    buyer_offer_id: offer.id,
+    lead_id: offer.lead_id,
+    status,
+  }, options.actor)
+
+  if (options.seedTasks) await seedStandardTcTasks(db, file.id)
+  await syncTcStatusToManifest(db, file.id)
+  return file as TcFileSummary
+}
+
+export async function ensureTcFileForSignedAssignment(db: DbClient, submissionId: string) {
+  const { data: offer } = await db
+    .from('buyer_offers')
+    .select('id')
+    .eq('assignment_submission_id', submissionId)
+    .maybeSingle()
+
+  if (!offer?.id) return null
+  return ensureTcFileForOffer(db, offer.id, {
+    status: 'opening_package_needed',
+    actor: 'docuseal',
+    eventType: 'assignment_signed',
+    seedTasks: true,
+  })
+}
+
+export async function maybeLogTcRevenue(db: DbClient, tcFileId: string) {
+  const { data: file } = await db
+    .from('tc_files')
+    .select('id, lead_id, assignment_fee, revenue_logged_at, closing_completed_at, lead:lead_id(property_address)')
+    .eq('id', tcFileId)
+    .maybeSingle()
+
+  type RevenueFileRow = {
+    id: string
+    lead_id: string
+    assignment_fee: number | string | null
+    revenue_logged_at: string | null
+    lead?: { property_address?: string | null } | { property_address?: string | null }[] | null
+  }
+  const revenueFile = file as RevenueFileRow | null
+  if (!revenueFile || revenueFile.revenue_logged_at || !revenueFile.assignment_fee || Number(revenueFile.assignment_fee) <= 0) return
+  const lead = Array.isArray(revenueFile.lead) ? revenueFile.lead[0] : revenueFile.lead
+
+  const now = new Date()
+  const { error } = await db.from('revenue_transactions').insert({
+    date: now.toISOString().slice(0, 10),
+    amount: Number(revenueFile.assignment_fee),
+    deal_id: revenueFile.lead_id,
+    property_address: lead?.property_address ?? null,
+    description: 'Assignment fee from TC closing',
+    source: 'closing',
+    metadata: { tc_file_id: revenueFile.id },
+  })
+  if (error) {
+    console.error('[tc] revenue insert failed:', error)
+    return
+  }
+
+  const { error: rpcError } = await db.rpc('increment_revenue', { amount: Number(revenueFile.assignment_fee) })
+  if (rpcError) console.error('[tc] increment_revenue failed:', rpcError)
+  const loggedAt = now.toISOString()
+  await db.from('tc_files').update({ revenue_logged_at: loggedAt }).eq('id', tcFileId)
+  await logTcEvent(db, tcFileId, 'revenue_logged', { amount: Number(revenueFile.assignment_fee) }, 'system')
+}

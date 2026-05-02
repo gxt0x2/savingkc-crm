@@ -48,12 +48,21 @@ export async function GET(
       .eq('lead_id', deal.lead_id)
       .order('offer_amount', { ascending: false })
 
+    const { data: tcFile } = await db
+      .from('tc_files')
+      .select('*, title_company:title_company_id(id, name), title_contact:title_contact_id(id, name, role, email, phone)')
+      .eq('dispo_deal_id', deal.id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
     return NextResponse.json({
       deal: {
         ...deal,
         deal_page: dealPage ?? null,
         broadcasts: broadcasts ?? [],
         offers: offers ?? [],
+        tc_file: tcFile ?? null,
       },
     })
   } catch (err) {

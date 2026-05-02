@@ -7,6 +7,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 // ============================================================================
 // TYPES
@@ -39,7 +40,7 @@ export interface BriefingEvent {
   description: string
   lead_id?: string
   action_url?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   read?: boolean
   dismissed?: boolean
   created_at?: string
@@ -94,7 +95,7 @@ export async function createBriefingEvents(
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
   const supabase = createClient(supabaseUrl, supabaseKey)
 
-  const { data, error } = await supabase.from('ari_briefing_events').insert(
+  const { error } = await supabase.from('ari_briefing_events').insert(
     events.map((e) => ({
       event_type: e.event_type,
       priority: e.priority,
@@ -166,7 +167,8 @@ export async function getBriefingEvents(options: {
     low: 3,
   }
 
-  const sorted = data.sort((a, b) => {
+  const tcEvents = await getTcRiskBriefingEvents(supabase)
+  const sorted = [...data, ...tcEvents].sort((a, b) => {
     const priorityDiff =
       priorityOrder[a.priority as BriefingPriority] -
       priorityOrder[b.priority as BriefingPriority]
@@ -179,6 +181,74 @@ export async function getBriefingEvents(options: {
   })
 
   return sorted.slice(0, limit)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getTcRiskBriefingEvents(supabase: SupabaseClient<any, 'public', any>): Promise<BriefingEvent[]> {
+  const now = new Date()
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
+  const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data } = await supabase
+    .from('tc_files')
+    .select('id, lead_id, status, risk_level, next_action, emd_due_at, closing_scheduled_at, hud_received_at, revenue_logged_at, lead:lead_id(property_address)')
+    .neq('status', 'closed')
+    .limit(25)
+
+  const events: BriefingEvent[] = []
+  type TcRiskRow = {
+    id: string
+    lead_id: string
+    status: string
+    risk_level: string
+    next_action: string | null
+    emd_due_at: string | null
+    closing_scheduled_at: string | null
+    lead?: { property_address?: string | null } | { property_address?: string | null }[] | null
+  }
+
+  for (const file of (data ?? []) as TcRiskRow[]) {
+    const lead = Array.isArray(file.lead) ? file.lead[0] : file.lead
+    const address = lead?.property_address || 'TC file'
+    if (file.risk_level === 'blocked') {
+      events.push({
+        id: `tc-blocked-${file.id}`,
+        event_type: 'closing_event',
+        priority: 'critical',
+        title: `TC blocked: ${address}`,
+        description: file.next_action || 'Transaction file is blocked and needs owner action.',
+        lead_id: file.lead_id,
+        action_url: '/dispo/tc',
+        metadata: { tc_file_id: file.id, status: file.status },
+        created_at: new Date().toISOString(),
+      })
+    } else if (file.emd_due_at && file.emd_due_at <= in24h && file.status !== 'emd_pending') {
+      events.push({
+        id: `tc-emd-${file.id}`,
+        event_type: 'closing_event',
+        priority: 'high',
+        title: `Confirm EMD: ${address}`,
+        description: 'EMD deadline is inside 24 hours. Confirm receipt or move the TC file to EMD pending.',
+        lead_id: file.lead_id,
+        action_url: '/dispo/tc',
+        metadata: { tc_file_id: file.id, emd_due_at: file.emd_due_at },
+        created_at: new Date().toISOString(),
+      })
+    } else if (file.closing_scheduled_at && file.closing_scheduled_at <= in7d && !['clear_to_close', 'scheduled'].includes(file.status)) {
+      events.push({
+        id: `tc-title-clear-${file.id}`,
+        event_type: 'closing_event',
+        priority: 'high',
+        title: `Title not clear: ${address}`,
+        description: 'Closing is within 7 days and the TC file is not clear to close.',
+        lead_id: file.lead_id,
+        action_url: '/dispo/tc',
+        metadata: { tc_file_id: file.id, closing_scheduled_at: file.closing_scheduled_at, status: file.status },
+        created_at: new Date().toISOString(),
+      })
+    }
+  }
+  return events
 }
 
 /**
