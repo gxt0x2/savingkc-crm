@@ -14,25 +14,29 @@ function getStoredMode(): AppMode {
   return (localStorage.getItem(STORAGE_KEY) as AppMode) || 'acquisitions'
 }
 
+function getRouteMode(pathname: string | null): AppMode | null {
+  if (pathname?.startsWith('/dispo')) return 'dispositions'
+  if (
+    pathname?.startsWith('/ari') ||
+    pathname?.startsWith('/opportunities') ||
+    pathname?.startsWith('/leads') ||
+    pathname?.startsWith('/dialer') ||
+    pathname?.startsWith('/pipeline')
+  ) {
+    return 'acquisitions'
+  }
+  return null
+}
+
 export function useAppMode() {
   const pathname = usePathname()
   const [mode, setModeState] = useState<AppMode>(getStoredMode)
+  const routeMode = getRouteMode(pathname)
+  const effectiveMode = routeMode ?? mode
 
   useEffect(() => {
-    if (pathname?.startsWith('/dispo')) {
-      setModeState('dispositions')
-      localStorage.setItem(STORAGE_KEY, 'dispositions')
-    } else if (
-      pathname?.startsWith('/ari') ||
-      pathname?.startsWith('/opportunities') ||
-      pathname?.startsWith('/leads') ||
-      pathname?.startsWith('/dialer') ||
-      pathname?.startsWith('/pipeline')
-    ) {
-      setModeState('acquisitions')
-      localStorage.setItem(STORAGE_KEY, 'acquisitions')
-    }
-  }, [pathname])
+    if (routeMode) localStorage.setItem(STORAGE_KEY, routeMode)
+  }, [routeMode])
 
   useEffect(() => {
     const handler = (m: AppMode) => setModeState(m)
@@ -49,9 +53,9 @@ export function useAppMode() {
   }, [])
 
   const toggle = useCallback(() => {
-    const next = mode === 'acquisitions' ? 'dispositions' : 'acquisitions'
+    const next = effectiveMode === 'acquisitions' ? 'dispositions' : 'acquisitions'
     setMode(next)
-  }, [mode, setMode])
+  }, [effectiveMode, setMode])
 
-  return { mode, setMode, toggle }
+  return { mode: effectiveMode, setMode, toggle }
 }

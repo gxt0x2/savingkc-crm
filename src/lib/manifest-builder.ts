@@ -219,7 +219,7 @@ export interface ManifestAuditEntry {
   timestamp: string
   agent: string
   action: string
-  details?: any
+  details?: unknown
 }
 
 export interface ManifestAgentNote {

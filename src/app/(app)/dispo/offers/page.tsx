@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useState, useEffect } from 'react'
+import { Fragment, useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
@@ -605,7 +605,7 @@ export default function OffersPage() {
   const [newOfferOpen, setNewOfferOpen] = useState(false)
   const [assignmentOffer, setAssignmentOffer] = useState<BuyerOffer | null>(null)
 
-  async function fetchOffers() {
+  const fetchOffers = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -619,9 +619,9 @@ export default function OffersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [statusFilter])
 
-  useEffect(() => { fetchOffers() }, [statusFilter])
+  useEffect(() => { fetchOffers() }, [fetchOffers])
 
   async function handleToggleTopPick(offer: BuyerOffer) {
     const next = !offer.is_top_pick

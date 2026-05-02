@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import type { DispoDeal, DispoStage } from '@/types/dispo'
@@ -347,14 +347,15 @@ export default function PipelinePage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const searchValueRef = useRef(search)
 
-  async function fetchDeals() {
+  const fetchDeals = useCallback(async (searchOverride = searchValueRef.current) => {
     setLoading(true)
     setError(null)
     try {
       const params = new URLSearchParams()
       if (stageFilter !== 'all') params.set('stage', stageFilter)
-      if (search.trim()) params.set('search', search.trim())
+      if (searchOverride.trim()) params.set('search', searchOverride.trim())
       const res = await fetch(`/api/dispo-deals?${params}`)
       if (!res.ok) throw new Error('Failed to fetch deals')
       const data = await res.json()
@@ -364,18 +365,19 @@ export default function PipelinePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [stageFilter])
 
   useEffect(() => {
     fetchDeals()
-  }, [stageFilter])
+  }, [fetchDeals])
 
   // Debounced search
   const searchRef = useRef<NodeJS.Timeout | null>(null)
   function handleSearch(q: string) {
+    searchValueRef.current = q
     setSearch(q)
     if (searchRef.current) clearTimeout(searchRef.current)
-    searchRef.current = setTimeout(() => fetchDeals(), 400)
+    searchRef.current = setTimeout(() => fetchDeals(q), 400)
   }
 
   async function handleStageChange(dealId: string, newStage: DispoStage) {

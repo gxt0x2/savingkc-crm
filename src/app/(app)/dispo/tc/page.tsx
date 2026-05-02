@@ -109,7 +109,7 @@ function DetailDrawer({
     setSaveState('idle')
     didMountRef.current = false
     lastPayloadRef.current = ''
-  }, [file.id])
+  }, [file.assignment_fee, file.closing_scheduled_at, file.file_number, file.id, file.next_action, file.status])
 
   useEffect(() => {
     const payload = JSON.stringify({

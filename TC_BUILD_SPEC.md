@@ -4,6 +4,19 @@
 **Target app:** `crm.savingkc.com`
 **Stack:** Next.js 16 App Router, React 19, Supabase, DocuSeal, Twilio
 **Written:** 2026-04-28
+**Reconciled:** 2026-05-02
+
+## 2026-05-02 Reconciliation
+
+This spec is the foundation layer for the broader TC Coordinator vision. The larger product target is still Gertha's three approval queues: document drafts, calls, and exceptions. This PR does not try to ship that whole system at once.
+
+Use this spec together with `docs/tc-coordinator-roadmap.md`:
+
+- This file defines the first production foundation: title companies, TC files, tasks, events, templates, accepted-offer hooks, assignment-signed hooks, and the `/dispo/tc` work surface.
+- The roadmap defines how this foundation evolves into the final approval queue system, email ingestion, phase engine, settlement auditor, and title auditor.
+- Do not copy older handoff paths such as `app/(authenticated)/tc/*`; this repo uses `src/app/(app)` and this foundation starts under `src/app/(app)/dispo`.
+- New manifest writes should prefer `updateManifestV2_1`; `updateManifestAndCascade` remains a legacy compatibility shim.
+- TC can use first-class tables for workflow records, but the manifest remains the source of truth for deal state and Ari-facing facts.
 
 ## Mission
 

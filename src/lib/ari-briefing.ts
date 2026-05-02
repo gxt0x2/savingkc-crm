@@ -40,7 +40,7 @@ export interface BriefingEvent {
   description: string
   lead_id?: string
   action_url?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   read?: boolean
   dismissed?: boolean
   created_at?: string
@@ -95,7 +95,7 @@ export async function createBriefingEvents(
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
   const supabase = createClient(supabaseUrl, supabaseKey)
 
-  const { data, error } = await supabase.from('ari_briefing_events').insert(
+  const { error } = await supabase.from('ari_briefing_events').insert(
     events.map((e) => ({
       event_type: e.event_type,
       priority: e.priority,
