@@ -262,7 +262,7 @@ function CallCard({ message }: { message: Message }) {
                 'w-10 h-10 rounded-full flex items-center justify-center',
                 isSent ? 'bg-white/20' : 'bg-slate-200'
               )}>
-                <Icon name="phone_missed" className={cn('text-lg', isSent ? 'text-white' : 'text-slate-500')} />
+                <Icon name="missed_call_badge" className="text-lg" />
               </div>
               <div className="flex-1">
                 <p className={cn('text-sm font-semibold', isSent ? 'text-white' : 'text-on-surface')}>

@@ -56,6 +56,41 @@ body {
   font-family: var(--font-sans);
 }
 
+/* SavingKC CRM — Apple-inspired dialer/disposition tokens */
+:root {
+  --skc-brand: #e11d2a;
+  --skc-brand-hover: #c8161f;
+  --skc-brand-soft: rgba(225, 29, 42, 0.12);
+  --skc-brand-soft-border: rgba(225, 29, 42, 0.3);
+
+  --skc-scrim: #000000;
+  --skc-surface-1: #1c1c1e;
+  --skc-surface-2: #2c2c2e;
+  --skc-surface-3: rgba(118, 118, 128, 0.24);
+  --skc-surface-soft: rgba(118, 118, 128, 0.16);
+
+  --skc-text-primary: #ffffff;
+  --skc-text-secondary: rgba(235, 235, 245, 0.85);
+  --skc-text-tertiary: rgba(235, 235, 245, 0.6);
+  --skc-text-quaternary: rgba(235, 235, 245, 0.3);
+
+  --skc-separator: rgba(84, 84, 88, 0.65);
+
+  --skc-success: #30d158;
+  --skc-warning: #ff9f0a;
+  --skc-info: #64d2ff;
+  --skc-danger: #ff453a;
+  --skc-purple: #bf5af2;
+
+  --skc-radius-modal: 22px;
+  --skc-radius-card: 14px;
+  --skc-radius-control: 10px;
+  --skc-radius-pill: 9px;
+  --skc-radius-tile: 7px;
+
+  --skc-font: -apple-system, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+}
+
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   display: inline-block;

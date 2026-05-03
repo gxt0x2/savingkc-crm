@@ -1,17 +1,49 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
+import type { CSSProperties } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { NavTabs } from './nav-tab'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CommandPalette } from './command-palette'
-import { ModeSwitcher } from './mode-switcher'
 import { DialerPanel, CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { NotificationBell } from './notification-bell'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
+
+const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
+const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
+
+function subscribeHydration() {
+  return () => {}
+}
+
+function getClientHydrationSnapshot() {
+  return true
+}
+
+function getServerHydrationSnapshot() {
+  return false
+}
+
+const TC_LIGHT_THEME = {
+  '--ck-bg': '#f6f7f9',
+  '--ck-surface': '#ffffff',
+  '--ck-surface-elev': '#f8fafc',
+  '--ck-surface-hi': '#eef2f7',
+  '--ck-border': '#d8dee9',
+  '--ck-border-strong': '#cad2df',
+  '--ck-text': '#111827',
+  '--ck-text-muted': '#4b5565',
+  '--ck-text-dim': '#7a8494',
+  '--ck-accent': '#E32E2E',
+  '--ck-accent-bright': '#c42626',
+  '--ck-warn': '#f59e0b',
+  '--ck-success': '#16a34a',
+  '--ck-info': '#2563eb',
+} as CSSProperties
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -20,10 +52,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [showDialer, setShowDialer] = useState(false)
   const [dialerStatus, setDialerStatus] = useState<CallStatus>('offline')
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
   const { mode, setMode } = useAppMode()
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
+  const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
+  const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar)
+
+  useEffect(() => {
+    const html = document.documentElement
+    const body = document.body
+
+    if (useTcLightTheme) {
+      html.classList.remove('dark')
+      body.classList.remove('ck-dark', 'bg-background', 'text-on-surface')
+      html.style.colorScheme = 'light'
+      body.style.background = '#f6f7f9'
+      body.style.color = '#111827'
+      return
+    }
+
+    html.classList.add('dark')
+    body.classList.add('ck-dark', 'bg-background', 'text-on-surface')
+    html.style.colorScheme = 'dark'
+    body.style.background = ''
+    body.style.color = ''
+  }, [useTcLightTheme])
 
   // Global ⌘K / Ctrl+K to open command palette
   useEffect(() => {
@@ -37,16 +95,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Auto-open dialer on incoming call
-  useEffect(() => {
-    if (dialerStatus === 'incoming') setShowDialer(true)
-  }, [dialerStatus])
-
   // Listen for open-dialer custom events (from ARI page click-to-call)
   const [pendingDialLead, setPendingDialLead] = useState<{ phone: string; name: string; leadId: string; callerId?: string | null } | null>(null)
   const [pendingQueue, setPendingQueue] = useState<HeirQueueItem[] | null>(null)
   const [pendingQueueCallerId, setPendingQueueCallerId] = useState<string | null>(null)
   const [pendingQueueCallerPlan, setPendingQueueCallerPlan] = useState<DialerCallerPlan | null>(null)
+
+  function handleDialerStatusChange(status: CallStatus) {
+    setDialerStatus(status)
+    if (status === 'incoming') setShowDialer(true)
+  }
 
   useEffect(() => {
     function handleOpenDialer(e: Event) {
@@ -99,7 +157,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         } else if (!data.profile) {
           console.log('[AppShell] Profile not found, attempting to link')
           // Profile not found by email — try linking Google OAuth to existing agent_profile
-          const meta = (user as any).user_metadata || {}
+          const meta = (user as { user_metadata?: { full_name?: string; name?: string; phone?: string } }).user_metadata || {}
           const linkRes = await fetch('/api/auth/link-profile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -132,7 +190,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [user?.email])
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div
+      suppressHydrationWarning
+      className={`min-h-screen flex flex-col ${useTcLightTheme ? 'bg-[#f6f7f9] text-[#111827]' : 'lead-cockpit'}`}
+      style={useTcLightTheme ? TC_LIGHT_THEME : undefined}
+    >
       {/* Top Navbar */}
       <header
         className="sticky top-0 w-full z-40 border-b shadow-sm"
@@ -143,7 +205,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3 flex-shrink-0">
             {/* Hamburger — mobile only */}
             <button
-              className="md:hidden p-2 text-[var(--ck-text-muted)] hover:bg-white/5 rounded-lg transition-colors"
+              className="md:hidden p-2 text-[var(--ck-text-muted)] hover:bg-[var(--ck-surface-hi)] rounded-lg transition-colors"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
             >
@@ -170,7 +232,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 src="/logo.png"
                 alt="Saving KC Homebuyers"
                 className="h-10 w-auto"
-                style={{ filter: 'url(#logo-dark-theme)' }}
+                suppressHydrationWarning
+                style={useTcLightTheme ? undefined : { filter: 'url(#logo-dark-theme)' }}
               />
             </Link>
 
@@ -180,7 +243,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 mode={mode}
                 onChange={(m) => {
                   setMode(m)
-                  router.push(m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
+                  router.push(m === 'tc' ? '/dispo/tc' : m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
                 }}
               />
             </div>
@@ -261,14 +324,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       href="/checklist"
                       onClick={() => setShowProfileMenu(false)}
-                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[var(--ck-text)] hover:bg-white/5 transition-colors"
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[var(--ck-text)] hover:bg-[var(--ck-surface-hi)] transition-colors"
                     >
                       <Icon name="checklist" size="text-lg" className="text-[var(--ck-text-muted)]" /> SOD / EOD
                     </Link>
                     <Link
                       href="/settings"
                       onClick={() => setShowProfileMenu(false)}
-                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[var(--ck-text)] hover:bg-white/5 transition-colors"
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[var(--ck-text)] hover:bg-[var(--ck-surface-hi)] transition-colors"
                     >
                       <Icon name="settings" size="text-lg" className="text-[var(--ck-text-muted)]" /> Settings
                     </Link>
@@ -310,7 +373,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           </div>
           <button
-            className="p-2 rounded-lg transition-colors text-[var(--ck-text-muted)] hover:bg-white/5"
+            className="p-2 rounded-lg transition-colors text-[var(--ck-text-muted)] hover:bg-[var(--ck-surface-hi)]"
             onClick={() => setDrawerOpen(false)}
           >
             <Icon name="close" size="text-xl" />
@@ -323,7 +386,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onChange={(m) => {
                 setMode(m)
                 setDrawerOpen(false)
-                router.push(m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
+                router.push(m === 'tc' ? '/dispo/tc' : m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
               }}
             />
           </div>
@@ -340,7 +403,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <DialerPanel
         open={showDialer}
         onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null) }}
-        onStatusChange={setDialerStatus}
+        onStatusChange={handleDialerStatusChange}
         pendingDial={pendingDialLead}
         pendingQueue={pendingQueue}
         pendingQueueCallerId={pendingQueueCallerId}

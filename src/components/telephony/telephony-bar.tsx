@@ -812,9 +812,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         }`}
       >
         <div
-          className={`w-[388px] max-w-[calc(100vw-1rem)] h-[min(92vh,860px)] bg-[var(--skc-surface-1)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-modal)] shadow-[0_24px_70px_rgba(0,0,0,0.62)] transform transition-all duration-300 ease-out flex flex-col pointer-events-auto ${
+          className={`w-[388px] max-w-[calc(100vw-1rem)] h-[min(92vh,860px)] bg-[var(--skc-surface-1)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-modal)] shadow-[0_24px_70px_rgba(0,0,0,0.62)] transform transition-all duration-300 ease-out flex flex-col ${
             open ? 'scale-100 translate-y-0' : 'scale-95 translate-y-2'
-          }`}
+          } ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
         >
         {/* Header */}
         <div className="grid grid-cols-[60px_1fr_60px] items-center px-4 pt-3.5 pb-2.5">

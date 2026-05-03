@@ -13,14 +13,15 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { getSupabaseAdminKey, getSupabaseUrl } from '@/lib/supabase/env'
 
 let _client: SupabaseClient | null = null
 
 function getClient(): SupabaseClient {
   if (_client) return _client
   _client = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    getSupabaseUrl(),
+    getSupabaseAdminKey(),
     { auth: { autoRefreshToken: false, persistSession: false } },
   )
   return _client
@@ -31,8 +32,8 @@ function getClient(): SupabaseClient {
 // references stay correct (e.g., chained `.from().select()` calls).
 export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_target, prop) {
-    const c = getClient() as any
-    const val = c[prop]
+    const c = getClient()
+    const val = (c as unknown as Record<PropertyKey, unknown>)[prop]
     return typeof val === 'function' ? val.bind(c) : val
   },
 })

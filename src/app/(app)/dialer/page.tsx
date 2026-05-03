@@ -528,17 +528,16 @@ function DialerPageInner() {
       }
       const cohort = params.get('cohort')
       if (cohort === 'deceased-2-3yr') {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from('prospects')
-          .select('lead_id')
-          .eq('is_deceased', true)
-          .in('delinquent_years_category', ['2yr', '3yr_plus'])
-          .not('lead_id', 'is', null)
-        if (error) { setResolveError(error.message); setLoading(false); return }
-        const ids = Array.from(new Set<string>((data ?? [])
-          .map((r: { lead_id: string | null }) => r.lead_id)
-          .filter((v): v is string => Boolean(v))))
+        const response = await fetch('/api/dialer/queue?cohort=deceased-2-3yr&ids_only=1', { cache: 'no-store' })
+        const payload = await response.json()
+        if (!response.ok) {
+          setResolveError(payload?.error || 'Could not resolve dialer cohort.')
+          setLoading(false)
+          return
+        }
+        const ids = Array.isArray(payload.leadIds)
+          ? payload.leadIds.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
+          : []
         setLeadIds(ids)
         setLoading(false)
         return
@@ -559,17 +558,18 @@ function DialerPageInner() {
   // Batch-load leads + prospects for the cohort
   useEffect(() => {
     if (leadIds.length === 0) return
-    const supabase = createClient()
 
     async function load() {
-      const [{ data: leadRows }, { data: prospectRows }] = await Promise.all([
-        supabase.from('leads')
-          .select('id, full_name, phone, email, property_address, city, state, zip, county, is_favorite')
-          .in('id', leadIds),
-        supabase.from('prospects')
-          .select('id, lead_id, owner_1, cumulative_due, earliest_delinquent_year, delinquent_years_category, total_market_value, zestimate, situs_street, situs_city, situs_state, situs_zip, mailing_street, mailing_city, mailing_state, mailing_zip, county')
-          .in('lead_id', leadIds),
-      ])
+      const response = await fetch(`/api/dialer/queue?lead_ids=${encodeURIComponent(leadIds.join(','))}`, { cache: 'no-store' })
+      const payload = await response.json()
+      if (!response.ok) {
+        setResolveError(payload?.error || 'Could not load dialer leads.')
+        setLeads({})
+        setProspects({})
+        return
+      }
+      const leadRows = payload.leads as (LeadSummary & DialerQueueLead)[] | null
+      const prospectRows = payload.prospects as (ProspectSummary & { lead_id: string })[] | null
       const leadMap: Record<string, LeadSummary> = {}
       ;(leadRows as LeadSummary[] | null)?.forEach((l) => { leadMap[l.id] = l })
       setLeads(leadMap)
@@ -1214,7 +1214,7 @@ function DialerHome() {
   const [prospects, setProspects] = useState<QueueProspect[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [preset, setPreset] = useState<QueuePreset>('scheduled_today')
+  const [preset, setPreset] = useState<QueuePreset>('custom')
   const [campaign, setCampaign] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
@@ -1282,42 +1282,29 @@ function DialerHome() {
     async function load() {
       setLoading(true)
       setError(null)
-      const supabase = createClient()
-      const [{ data: leadRows, error: leadError }, { data: followupRows }, { data: contactRows }, { data: prospectRows }] = await Promise.all([
-        supabase
-          .from('leads')
-          .select('id, full_name, phone, property_address, city, state, source, station, priority, seller_situation, motivation_score, appointment_date, created_at, updated_at')
-          .not('phone', 'is', null)
-          .order('updated_at', { ascending: false })
-          .limit(1000),
-        supabase
-          .from('lead_activities')
-          .select('lead_id, activity_type, metadata, created_at')
-          .in('activity_type', ['task', 'appointment', 'follow_up', 'callback', 'send_offer'])
-          .limit(1000),
-        supabase
-          .from('lead_activities')
-          .select('lead_id, activity_type, created_at')
-          .in('activity_type', ['call', 'voicemail', 'sms', 'sms_sent', 'sms_received', 'sms_inbound'])
-          .not('lead_id', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(5000),
-        supabase
-          .from('prospects')
-          .select('lead_id, is_deceased, delinquent_years_category')
-          .not('lead_id', 'is', null)
-          .limit(2000),
-      ])
-
-      if (leadError) {
-        setError(leadError.message)
+      try {
+        const response = await fetch('/api/dialer/queue', { cache: 'no-store' })
+        const payload = await response.json()
+        if (!response.ok) {
+          setError(payload?.error || 'Could not load dialer queue.')
+          setLeads([])
+          setFollowups([])
+          setContactActivities([])
+          setProspects([])
+          setLoading(false)
+          return
+        }
+        setLeads((payload.leads as DialerQueueLead[] | null) ?? [])
+        setFollowups((payload.followups as QueueFollowup[] | null) ?? [])
+        setContactActivities((payload.contactActivities as QueueContactActivity[] | null) ?? [])
+        setProspects((payload.prospects as QueueProspect[] | null) ?? [])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not load dialer queue.')
         setLeads([])
-      } else {
-        setLeads((leadRows as DialerQueueLead[] | null) ?? [])
+        setFollowups([])
+        setContactActivities([])
+        setProspects([])
       }
-      setFollowups((followupRows as QueueFollowup[] | null) ?? [])
-      setContactActivities((contactRows as QueueContactActivity[] | null) ?? [])
-      setProspects((prospectRows as QueueProspect[] | null) ?? [])
       setLoading(false)
     }
     load()

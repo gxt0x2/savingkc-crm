@@ -1,33 +1,26 @@
 {
-  "timestamp": "2026-04-03T02:01:35.900Z",
-  "totalFindings": 85,
+  "timestamp": "2026-04-30T12:32:02.057Z",
+  "totalFindings": 212,
   "findingsByType": {
-    "network-failure": 33,
-    "dead-link": 52
+    "network-failure": 20,
+    "console-error": 20,
+    "404-link": 24,
+    "dead-link": 139,
+    "non-200-response": 9
   },
   "findingsBySeverity": {
-    "high": 33,
-    "low": 52
+    "high": 44,
+    "medium": 29,
+    "low": 139
   },
   "findings": [
     {
       "page": "login",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/pipeline?_rsc=18t7j",
+      "message": "Network request failed: https://crm.savingkc.com/ari?_rsc=18t7j",
       "details": {
-        "url": "http://localhost:3002/pipeline?_rsc=18t7j",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/pipeline?_rsc=18t7j",
-      "details": {
-        "url": "http://localhost:3002/pipeline?_rsc=18t7j",
+        "url": "https://crm.savingkc.com/ari?_rsc=18t7j",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -36,9 +29,9 @@
       "page": "login",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/conversations?_rsc=18t7j",
+      "message": "Network request failed: https://crm.savingkc.com/api/settings?email=ernest%40savingkc.com",
       "details": {
-        "url": "http://localhost:3002/conversations?_rsc=18t7j",
+        "url": "https://crm.savingkc.com/api/settings?email=ernest%40savingkc.com",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -47,9 +40,9 @@
       "page": "/dashboard",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/conversations?_rsc=18t7j",
+      "message": "Network request failed: https://crm.savingkc.com/api/settings?email=ernest%40savingkc.com",
       "details": {
-        "url": "http://localhost:3002/conversations?_rsc=18t7j",
+        "url": "https://crm.savingkc.com/api/settings?email=ernest%40savingkc.com",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -58,9 +51,9 @@
       "page": "login",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/calendar?_rsc=18t7j",
+      "message": "Network request failed: https://crm.savingkc.com/api/dashboard/appointment-stats",
       "details": {
-        "url": "http://localhost:3002/calendar?_rsc=18t7j",
+        "url": "https://crm.savingkc.com/api/dashboard/appointment-stats",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -69,140 +62,87 @@
       "page": "/dashboard",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/calendar?_rsc=18t7j",
+      "message": "Network request failed: https://crm.savingkc.com/api/dashboard/appointment-stats",
       "details": {
-        "url": "http://localhost:3002/calendar?_rsc=18t7j",
+        "url": "https://crm.savingkc.com/api/dashboard/appointment-stats",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
     },
     {
       "page": "login",
-      "type": "network-failure",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: [AppShell] Error loading profile: TypeError: Failed to fetch\n    at https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js:1:63621\n    at https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js:1:64711\n    at iv (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:102969)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127008)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127053)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127053)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126988)",
+      "details": {
+        "text": "[AppShell] Error loading profile: TypeError: Failed to fetch\n    at https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js:1:63621\n    at https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js:1:64711\n    at iv (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:102969)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127008)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127053)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127053)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126988)",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js",
+          "lineNumber": 0,
+          "columnNumber": 64663
+        }
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: [AppShell] Error loading profile: TypeError: Failed to fetch\n    at https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js:1:63621\n    at https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js:1:64711\n    at iv (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:102969)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127008)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127053)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127053)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126988)",
+      "details": {
+        "text": "[AppShell] Error loading profile: TypeError: Failed to fetch\n    at https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js:1:63621\n    at https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js:1:64711\n    at iv (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:102969)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127008)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127053)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:127053)\n    at ud (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126670)\n    at up (https://crm.savingkc.com/_next/static/chunks/0qn2e.c8a14tn.js:1:126988)",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/02grt1w.8s~ub.js",
+          "lineNumber": 0,
+          "columnNumber": 64663
+        }
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "404-link",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads?_rsc=18t7j",
+      "message": "Link to potentially unknown route: /ari",
       "details": {
-        "url": "http://localhost:3002/leads?_rsc=18t7j",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
+        "href": "/ari",
+        "text": ""
       }
     },
     {
       "page": "/dashboard",
-      "type": "network-failure",
+      "type": "404-link",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads?_rsc=18t7j",
+      "message": "Link to potentially unknown route: /ari",
       "details": {
-        "url": "http://localhost:3002/leads?_rsc=18t7j",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
+        "href": "/ari",
+        "text": "assistantARI"
       }
     },
     {
-      "page": "login",
-      "type": "network-failure",
+      "page": "/dashboard",
+      "type": "404-link",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/api/dashboard/hot-leads",
+      "message": "Link to potentially unknown route: /dialer",
       "details": {
-        "url": "http://localhost:3002/api/dashboard/hot-leads",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/api/dashboard/hot-leads",
-      "details": {
-        "url": "http://localhost:3002/api/dashboard/hot-leads",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "login",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/api/dashboard/trends?period=daily&days=30",
-      "details": {
-        "url": "http://localhost:3002/api/dashboard/trends?period=daily&days=30",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/api/dashboard/trends?period=daily&days=30",
-      "details": {
-        "url": "http://localhost:3002/api/dashboard/trends?period=daily&days=30",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
+        "href": "/dialer",
+        "text": "phone_in_talkDialer"
       }
     },
     {
       "page": "/dashboard",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"notifications\"",
+      "message": "Button with no obvious handler: \"Acquisitions\"",
       "details": {
-        "text": "notifications"
+        "text": "Acquisitions"
       }
     },
     {
       "page": "/dashboard",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"daily\"",
+      "message": "Button with no obvious handler: \"Dispositions\"",
       "details": {
-        "text": "daily"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "dead-link",
-      "severity": "low",
-      "message": "Button with no obvious handler: \"weekly\"",
-      "details": {
-        "text": "weekly"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "dead-link",
-      "severity": "low",
-      "message": "Button with no obvious handler: \"monthly\"",
-      "details": {
-        "text": "monthly"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "dead-link",
-      "severity": "low",
-      "message": "Button with no obvious handler: \"Calls\"",
-      "details": {
-        "text": "Calls"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "dead-link",
-      "severity": "low",
-      "message": "Button with no obvious handler: \"SMS\"",
-      "details": {
-        "text": "SMS"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "dead-link",
-      "severity": "low",
-      "message": "Button with no obvious handler: \"Leads\"",
-      "details": {
-        "text": "Leads"
+        "text": "Dispositions"
       }
     },
     {
@@ -218,9 +158,18 @@
       "page": "/dashboard",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "message": "Button with no obvious handler: \"Dial\"",
       "details": {
-        "text": "callCall (Phone)"
+        "text": "Dial"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Recent\"",
+      "details": {
+        "text": "Recent"
       }
     },
     {
@@ -236,9 +185,9 @@
       "page": "login",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+      "message": "Network request failed: https://crm.savingkc.com/leads/0d61851e-f27d-4cc5-8d7d-1dff4fd00d75?_rsc=x43u9",
       "details": {
-        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+        "url": "https://crm.savingkc.com/leads/0d61851e-f27d-4cc5-8d7d-1dff4fd00d75?_rsc=x43u9",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -247,9 +196,9 @@
       "page": "/dashboard",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+      "message": "Network request failed: https://crm.savingkc.com/leads/0d61851e-f27d-4cc5-8d7d-1dff4fd00d75?_rsc=x43u9",
       "details": {
-        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+        "url": "https://crm.savingkc.com/leads/0d61851e-f27d-4cc5-8d7d-1dff4fd00d75?_rsc=x43u9",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -258,9 +207,9 @@
       "page": "/opportunities",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+      "message": "Network request failed: https://crm.savingkc.com/leads/0d61851e-f27d-4cc5-8d7d-1dff4fd00d75?_rsc=x43u9",
       "details": {
-        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=x43u9",
+        "url": "https://crm.savingkc.com/leads/0d61851e-f27d-4cc5-8d7d-1dff4fd00d75?_rsc=x43u9",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -269,9 +218,9 @@
       "page": "login",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+      "message": "Network request failed: https://crm.savingkc.com/leads/47e35386-9081-4e1c-86fc-f4a0c3eee09e?_rsc=x43u9",
       "details": {
-        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+        "url": "https://crm.savingkc.com/leads/47e35386-9081-4e1c-86fc-f4a0c3eee09e?_rsc=x43u9",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -280,9 +229,9 @@
       "page": "/dashboard",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+      "message": "Network request failed: https://crm.savingkc.com/leads/47e35386-9081-4e1c-86fc-f4a0c3eee09e?_rsc=x43u9",
       "details": {
-        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+        "url": "https://crm.savingkc.com/leads/47e35386-9081-4e1c-86fc-f4a0c3eee09e?_rsc=x43u9",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -291,9 +240,9 @@
       "page": "/opportunities",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+      "message": "Network request failed: https://crm.savingkc.com/leads/47e35386-9081-4e1c-86fc-f4a0c3eee09e?_rsc=x43u9",
       "details": {
-        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=x43u9",
+        "url": "https://crm.savingkc.com/leads/47e35386-9081-4e1c-86fc-f4a0c3eee09e?_rsc=x43u9",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -302,9 +251,9 @@
       "page": "login",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+      "message": "Network request failed: https://crm.savingkc.com/leads/da905efb-420a-42c6-84cf-43efd77f5f92?_rsc=x43u9",
       "details": {
-        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+        "url": "https://crm.savingkc.com/leads/da905efb-420a-42c6-84cf-43efd77f5f92?_rsc=x43u9",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -313,9 +262,9 @@
       "page": "/dashboard",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+      "message": "Network request failed: https://crm.savingkc.com/leads/da905efb-420a-42c6-84cf-43efd77f5f92?_rsc=x43u9",
       "details": {
-        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+        "url": "https://crm.savingkc.com/leads/da905efb-420a-42c6-84cf-43efd77f5f92?_rsc=x43u9",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
@@ -324,119 +273,68 @@
       "page": "/opportunities",
       "type": "network-failure",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
+      "message": "Network request failed: https://crm.savingkc.com/leads/da905efb-420a-42c6-84cf-43efd77f5f92?_rsc=x43u9",
       "details": {
-        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=x43u9",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "login",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
-      "details": {
-        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
-      "details": {
-        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
+        "url": "https://crm.savingkc.com/leads/da905efb-420a-42c6-84cf-43efd77f5f92?_rsc=x43u9",
         "method": "GET",
         "failure": "net::ERR_ABORTED"
       }
     },
     {
       "page": "/opportunities",
-      "type": "network-failure",
+      "type": "404-link",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
+      "message": "Link to potentially unknown route: /ari",
       "details": {
-        "url": "http://localhost:3002/leads/2e3b2b37-ebce-4078-86e8-540eab90ad47?_rsc=fucl5",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "login",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
-      "details": {
-        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
-      "details": {
-        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
+        "href": "/ari",
+        "text": ""
       }
     },
     {
       "page": "/opportunities",
-      "type": "network-failure",
+      "type": "404-link",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
+      "message": "Link to potentially unknown route: /ari",
       "details": {
-        "url": "http://localhost:3002/leads/e6d45fc5-061e-4972-b3c3-dc52b431a8b3?_rsc=fucl5",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "login",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
-      "details": {
-        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
-      }
-    },
-    {
-      "page": "/dashboard",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
-      "details": {
-        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
+        "href": "/ari",
+        "text": "assistantARI"
       }
     },
     {
       "page": "/opportunities",
-      "type": "network-failure",
+      "type": "404-link",
       "severity": "high",
-      "message": "Network request failed: http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
+      "message": "Link to potentially unknown route: /dialer",
       "details": {
-        "url": "http://localhost:3002/leads/54421ec0-e0d9-4524-b297-f5a534a0e054?_rsc=fucl5",
-        "method": "GET",
-        "failure": "net::ERR_ABORTED"
+        "href": "/dialer",
+        "text": "phone_in_talkDialer"
       }
     },
     {
       "page": "/opportunities",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"notifications\"",
+      "message": "Button with no obvious handler: \"Acquisitions\"",
       "details": {
-        "text": "notifications"
+        "text": "Acquisitions"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Dispositions\"",
+      "details": {
+        "text": "Dispositions"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"refreshRe-rank\"",
+      "details": {
+        "text": "refreshRe-rank"
       }
     },
     {
@@ -452,54 +350,72 @@
       "page": "/opportunities",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"list\"",
+      "message": "Button with no obvious handler: \"All\"",
       "details": {
-        "text": "list"
+        "text": "All"
       }
     },
     {
       "page": "/opportunities",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"grid_view\"",
+      "message": "Button with no obvious handler: \"Hot (75+)\"",
       "details": {
-        "text": "grid_view"
+        "text": "Hot (75+)"
       }
     },
     {
       "page": "/opportunities",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"filter_listFilter\"",
+      "message": "Button with no obvious handler: \"Appointments\"",
       "details": {
-        "text": "filter_listFilter"
+        "text": "Appointments"
       }
     },
     {
       "page": "/opportunities",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"more_vert\"",
+      "message": "Button with no obvious handler: \"Missing Data\"",
       "details": {
-        "text": "more_vert"
+        "text": "Missing Data"
       }
     },
     {
       "page": "/opportunities",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"more_vert\"",
+      "message": "Button with no obvious handler: \"Score\"",
       "details": {
-        "text": "more_vert"
+        "text": "Score"
       }
     },
     {
       "page": "/opportunities",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"more_vert\"",
+      "message": "Button with no obvious handler: \"Recent\"",
       "details": {
-        "text": "more_vert"
+        "text": "Recent"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ARV\"",
+      "details": {
+        "text": "ARV"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Custom\"",
+      "details": {
+        "text": "Custom"
       }
     },
     {
@@ -515,9 +431,18 @@
       "page": "/opportunities",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "message": "Button with no obvious handler: \"Dial\"",
       "details": {
-        "text": "callCall (Phone)"
+        "text": "Dial"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Recent\"",
+      "details": {
+        "text": "Recent"
       }
     },
     {
@@ -531,11 +456,50 @@
     },
     {
       "page": "/leads",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": ""
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": "assistantARI"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /dialer",
+      "details": {
+        "href": "/dialer",
+        "text": "phone_in_talkDialer"
+      }
+    },
+    {
+      "page": "/leads",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"notifications\"",
+      "message": "Button with no obvious handler: \"Acquisitions\"",
       "details": {
-        "text": "notifications"
+        "text": "Acquisitions"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Dispositions\"",
+      "details": {
+        "text": "Dispositions"
       }
     },
     {
@@ -587,9 +551,18 @@
       "page": "/leads",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "message": "Button with no obvious handler: \"Dial\"",
       "details": {
-        "text": "callCall (Phone)"
+        "text": "Dial"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Recent\"",
+      "details": {
+        "text": "Recent"
       }
     },
     {
@@ -603,11 +576,50 @@
     },
     {
       "page": "/conversations",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": ""
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": "assistantARI"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /dialer",
+      "details": {
+        "href": "/dialer",
+        "text": "phone_in_talkDialer"
+      }
+    },
+    {
+      "page": "/conversations",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"notifications\"",
+      "message": "Button with no obvious handler: \"Acquisitions\"",
       "details": {
-        "text": "notifications"
+        "text": "Acquisitions"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Dispositions\"",
+      "details": {
+        "text": "Dispositions"
       }
     },
     {
@@ -731,9 +743,18 @@
       "page": "/conversations",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "message": "Button with no obvious handler: \"Dial\"",
       "details": {
-        "text": "callCall (Phone)"
+        "text": "Dial"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Recent\"",
+      "details": {
+        "text": "Recent"
       }
     },
     {
@@ -746,30 +767,117 @@
       }
     },
     {
-      "page": "/calendar",
-      "type": "dead-link",
-      "severity": "low",
-      "message": "Button with no obvious handler: \"notifications\"",
+      "page": "login",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
       "details": {
-        "text": "notifications"
+        "url": "https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+      "details": {
+        "url": "https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+      "details": {
+        "url": "https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+      "details": {
+        "url": "https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+      "details": {
+        "url": "https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "network-failure",
+      "severity": "high",
+      "message": "Network request failed: https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+      "details": {
+        "url": "https://crm.savingkc.com/calendar?view=agenda&_rsc=197ey",
+        "method": "GET",
+        "failure": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": ""
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": "assistantARI"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /dialer",
+      "details": {
+        "href": "/dialer",
+        "text": "phone_in_talkDialer"
       }
     },
     {
       "page": "/calendar",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"chevron_left\"",
+      "message": "Button with no obvious handler: \"Acquisitions\"",
       "details": {
-        "text": "chevron_left"
+        "text": "Acquisitions"
       }
     },
     {
       "page": "/calendar",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"chevron_right\"",
+      "message": "Button with no obvious handler: \"Dispositions\"",
       "details": {
-        "text": "chevron_right"
+        "text": "Dispositions"
       }
     },
     {
@@ -785,6 +893,438 @@
       "page": "/calendar",
       "type": "dead-link",
       "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upCall Noemi Alarcon — schedule walkthrough on Main St property ($8-10k)\"",
+      "details": {
+        "text": "Follow-upCall Noemi Alarcon — schedule walkthrough on Main St property ($8-10k)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackFollow up call with Robert Kilgore — he asked Casey to call back\"",
+      "details": {
+        "text": "callbackFollow up call with Robert Kilgore — he asked Casey to call back"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upSchedule meeting with Patricia Daniels — historic building partnership opportunity\"",
+      "details": {
+        "text": "Follow-upSchedule meeting with Patricia Daniels — historic building partnership opportunity"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptSchedule Walkthrough: William Oconner (8/10)\"",
+      "details": {
+        "text": "ApptSchedule Walkthrough: William Oconner (8/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptSchedule Walkthrough: Jayan Abraham (7/10)\"",
+      "details": {
+        "text": "ApptSchedule Walkthrough: Jayan Abraham (7/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptSchedule Walkthrough: Phillip Douglass (8/10)\"",
+      "details": {
+        "text": "ApptSchedule Walkthrough: Phillip Douglass (8/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptSchedule Walkthrough: Michael Madden (8/10)\"",
+      "details": {
+        "text": "ApptSchedule Walkthrough: Michael Madden (8/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptSchedule Walkthrough: Zachary Hild (7/10)\"",
+      "details": {
+        "text": "ApptSchedule Walkthrough: Zachary Hild (7/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptSchedule Walkthrough: Larry Johnson (8/10)\"",
+      "details": {
+        "text": "ApptSchedule Walkthrough: Larry Johnson (8/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: Terry Howard (6/10)\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: Terry Howard (6/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: Jay Dills (6/10)\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: Jay Dills (6/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackCallback: Missed call from Robert Kilgore\"",
+      "details": {
+        "text": "callbackCallback: Missed call from Robert Kilgore"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: Paul Boesche (4/10)\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: Paul Boesche (4/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptCall appointment scheduled via website widget\"",
+      "details": {
+        "text": "ApptCall appointment scheduled via website widget"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: David Couch (6/10)\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: David Couch (6/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: Stephen Small (5/10)\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: Stephen Small (5/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: David Couch (6/10)\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: David Couch (6/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: Terry Howard (6/10)\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: Terry Howard (6/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: George Fields (6/10) — ERNEST\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: George Fields (6/10) — ERNEST"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up: Derek Decker (5/10) — Builder Connection\"",
+      "details": {
+        "text": "Follow-upFollow-up: Derek Decker (5/10) — Builder Connection"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptAppointment scheduled: Phone Call on Monday, April 13 at 10:00 AM with casey. Notes: Needed 2 weeks to clear path for walkthrough and also inform family members of a possible sale.\"",
+      "details": {
+        "text": "ApptAppointment scheduled: Phone Call on Monday, April 13 at 10:00 AM with casey. Notes: Needed 2 weeks to clear path for walkthrough and also inform family members of a possible sale."
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"TaskResearch Marcus Crawford property on 122nd — he wants a real number\"",
+      "details": {
+        "text": "TaskResearch Marcus Crawford property on 122nd — he wants a real number"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: Reba Paul (6/10)\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: Reba Paul (6/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow-up Call: Adell Hardiman Jr (4/10)\"",
+      "details": {
+        "text": "Follow-upFollow-up Call: Adell Hardiman Jr (4/10)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptAppointment scheduled: Phone Call on Friday, April 17 at 10:00 AM with casey. Notes: See how he's doing and how his processes of clearing a path for walkthrough and informing his family is going\"",
+      "details": {
+        "text": "ApptAppointment scheduled: Phone Call on Friday, April 17 at 10:00 AM with casey. Notes: See how he's doing and how his processes of clearing a path for walkthrough and informing his family is going"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptAppointment scheduled: Phone Call on Friday, April 17 at 10:00 AM with casey. Notes: See what she needs to happen for her to move forward\"",
+      "details": {
+        "text": "ApptAppointment scheduled: Phone Call on Friday, April 17 at 10:00 AM with casey. Notes: See what she needs to happen for her to move forward"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptAppointment scheduled: Phone Call on Friday, April 17 at 10:00 AM with casey. Notes: Reach out about other properties he's lookin to sell.\"",
+      "details": {
+        "text": "ApptAppointment scheduled: Phone Call on Friday, April 17 at 10:00 AM with casey. Notes: Reach out about other properties he's lookin to sell."
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackListen & callback: Voicemail from +19134813211 (17s)\"",
+      "details": {
+        "text": "callbackListen & callback: Voicemail from +19134813211 (17s)"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upCall\"",
+      "details": {
+        "text": "Follow-upCall"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upCall Edinson Perez\"",
+      "details": {
+        "text": "Follow-upCall Edinson Perez"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptAppointment scheduled: Phone Call on Wednesday, April 22 at 10:00 AM with casey. Notes: See how her process is going to resolve the taxes\"",
+      "details": {
+        "text": "ApptAppointment scheduled: Phone Call on Wednesday, April 22 at 10:00 AM with casey. Notes: See how her process is going to resolve the taxes"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upCall Edinson\"",
+      "details": {
+        "text": "Follow-upCall Edinson"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upCall Deborah\"",
+      "details": {
+        "text": "Follow-upCall Deborah"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upCall Zach\"",
+      "details": {
+        "text": "Follow-upCall Zach"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackCall Rafael\"",
+      "details": {
+        "text": "callbackCall Rafael"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackCall Zach\"",
+      "details": {
+        "text": "callbackCall Zach"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackCall Vera Byers\"",
+      "details": {
+        "text": "callbackCall Vera Byers"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackCall David Morrison\"",
+      "details": {
+        "text": "callbackCall David Morrison"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptMeet w/ JoJo\"",
+      "details": {
+        "text": "ApptMeet w/ JoJo"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upTest\"",
+      "details": {
+        "text": "Follow-upTest"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackTask\"",
+      "details": {
+        "text": "callbackTask"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackCall Meg\"",
+      "details": {
+        "text": "callbackCall Meg"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptAppointment scheduled: Phone Call on Thursday, April 30 at 10:00 AM with casey. Notes: See how her conversations went with decision maker\"",
+      "details": {
+        "text": "ApptAppointment scheduled: Phone Call on Thursday, April 30 at 10:00 AM with casey. Notes: See how her conversations went with decision maker"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackTask\"",
+      "details": {
+        "text": "callbackTask"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Follow-upFollow up with Michelle Said — she asked for a couple months\"",
+      "details": {
+        "text": "Follow-upFollow up with Michelle Said — she asked for a couple months"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackCall Barbara\"",
+      "details": {
+        "text": "callbackCall Barbara"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"callbackCall Vera\"",
+      "details": {
+        "text": "callbackCall Vera"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"ApptMeet with Jill\"",
+      "details": {
+        "text": "ApptMeet with Jill"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
       "message": "Button with no obvious handler: \"close\"",
       "details": {
         "text": "close"
@@ -794,9 +1334,18 @@
       "page": "/calendar",
       "type": "dead-link",
       "severity": "low",
-      "message": "Button with no obvious handler: \"callCall (Phone)\"",
+      "message": "Button with no obvious handler: \"Dial\"",
       "details": {
-        "text": "callCall (Phone)"
+        "text": "Dial"
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Recent\"",
+      "details": {
+        "text": "Recent"
       }
     },
     {
@@ -810,29 +1359,749 @@
     },
     {
       "page": "/pipeline",
-      "type": "network-failure",
+      "type": "404-link",
       "severity": "high",
-      "message": "Failed to load page: Error: page.waitForTimeout: Test timeout of 30000ms exceeded.",
+      "message": "Link to potentially unknown route: /ari",
       "details": {
-        "error": "Error: page.waitForTimeout: Test timeout of 30000ms exceeded."
+        "href": "/ari",
+        "text": ""
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": "assistantARI"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /dialer",
+      "details": {
+        "href": "/dialer",
+        "text": "phone_in_talkDialer"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Acquisitions\"",
+      "details": {
+        "text": "Acquisitions"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Dispositions\"",
+      "details": {
+        "text": "Dispositions"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"filter_listFilters\"",
+      "details": {
+        "text": "filter_listFilters"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"addNew Lead\"",
+      "details": {
+        "text": "addNew Lead"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"more_vert\"",
+      "details": {
+        "text": "more_vert"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"close\"",
+      "details": {
+        "text": "close"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Dial\"",
+      "details": {
+        "text": "Dial"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Recent\"",
+      "details": {
+        "text": "Recent"
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"refreshConnect Twilio\"",
+      "details": {
+        "text": "refreshConnect Twilio"
       }
     },
     {
       "page": "/settings",
-      "type": "network-failure",
+      "type": "404-link",
       "severity": "high",
-      "message": "Failed to load page: Error: page.goto: Target page, context or browser has been closed",
+      "message": "Link to potentially unknown route: /ari",
       "details": {
-        "error": "Error: page.goto: Target page, context or browser has been closed"
+        "href": "/ari",
+        "text": ""
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": "assistantARI"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /dialer",
+      "details": {
+        "href": "/dialer",
+        "text": "phone_in_talkDialer"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Acquisitions\"",
+      "details": {
+        "text": "Acquisitions"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Dispositions\"",
+      "details": {
+        "text": "Dispositions"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"add Connect Gmail\"",
+      "details": {
+        "text": "add Connect Gmail"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Sync now\"",
+      "details": {
+        "text": "Sync now"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Disconnect\"",
+      "details": {
+        "text": "Disconnect"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Remove\"",
+      "details": {
+        "text": "Remove"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Save Settings\"",
+      "details": {
+        "text": "Save Settings"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"close\"",
+      "details": {
+        "text": "close"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Dial\"",
+      "details": {
+        "text": "Dial"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Recent\"",
+      "details": {
+        "text": "Recent"
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"refreshConnect Twilio\"",
+      "details": {
+        "text": "refreshConnect Twilio"
+      }
+    },
+    {
+      "page": "login",
+      "type": "non-200-response",
+      "severity": "medium",
+      "message": "HTTP 400 response: https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+      "details": {
+        "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+        "status": 400,
+        "statusText": ""
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "non-200-response",
+      "severity": "medium",
+      "message": "HTTP 400 response: https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+      "details": {
+        "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+        "status": 400,
+        "statusText": ""
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "non-200-response",
+      "severity": "medium",
+      "message": "HTTP 400 response: https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+      "details": {
+        "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+        "status": 400,
+        "statusText": ""
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "non-200-response",
+      "severity": "medium",
+      "message": "HTTP 400 response: https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+      "details": {
+        "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+        "status": 400,
+        "statusText": ""
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "non-200-response",
+      "severity": "medium",
+      "message": "HTTP 400 response: https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+      "details": {
+        "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+        "status": 400,
+        "statusText": ""
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "non-200-response",
+      "severity": "medium",
+      "message": "HTTP 400 response: https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+      "details": {
+        "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+        "status": 400,
+        "statusText": ""
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "non-200-response",
+      "severity": "medium",
+      "message": "HTTP 400 response: https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+      "details": {
+        "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+        "status": 400,
+        "statusText": ""
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "non-200-response",
+      "severity": "medium",
+      "message": "HTTP 400 response: https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+      "details": {
+        "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+        "status": 400,
+        "statusText": ""
       }
     },
     {
       "page": "/checklist",
-      "type": "network-failure",
-      "severity": "high",
-      "message": "Failed to load page: Error: page.goto: Target page, context or browser has been closed",
+      "type": "non-200-response",
+      "severity": "medium",
+      "message": "HTTP 400 response: https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
       "details": {
-        "error": "Error: page.goto: Target page, context or browser has been closed"
+        "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+        "status": 400,
+        "statusText": ""
+      }
+    },
+    {
+      "page": "login",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Failed to load resource: the server responded with a status of 400 ()",
+      "details": {
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "location": {
+          "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Failed to load resource: the server responded with a status of 400 ()",
+      "details": {
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "location": {
+          "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Failed to load resource: the server responded with a status of 400 ()",
+      "details": {
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "location": {
+          "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Failed to load resource: the server responded with a status of 400 ()",
+      "details": {
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "location": {
+          "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Failed to load resource: the server responded with a status of 400 ()",
+      "details": {
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "location": {
+          "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Failed to load resource: the server responded with a status of 400 ()",
+      "details": {
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "location": {
+          "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Failed to load resource: the server responded with a status of 400 ()",
+      "details": {
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "location": {
+          "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Failed to load resource: the server responded with a status of 400 ()",
+      "details": {
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "location": {
+          "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Failed to load resource: the server responded with a status of 400 ()",
+      "details": {
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "location": {
+          "url": "https://fprrknfyzlthbxewnwmi.supabase.co/rest/v1/lead_activities?select=id%2Ctype%2Cdescription%2Cagent%2Cmetadata%2Ccreated_at&type=eq.eod_submission&order=created_at.desc&limit=20",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      }
+    },
+    {
+      "page": "login",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+      "details": {
+        "text": "Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/04.5ns4xlmft~.js",
+          "lineNumber": 0,
+          "columnNumber": 9241
+        }
+      }
+    },
+    {
+      "page": "/dashboard",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+      "details": {
+        "text": "Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/04.5ns4xlmft~.js",
+          "lineNumber": 0,
+          "columnNumber": 9241
+        }
+      }
+    },
+    {
+      "page": "/opportunities",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+      "details": {
+        "text": "Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/04.5ns4xlmft~.js",
+          "lineNumber": 0,
+          "columnNumber": 9241
+        }
+      }
+    },
+    {
+      "page": "/leads",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+      "details": {
+        "text": "Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/04.5ns4xlmft~.js",
+          "lineNumber": 0,
+          "columnNumber": 9241
+        }
+      }
+    },
+    {
+      "page": "/conversations",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+      "details": {
+        "text": "Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/04.5ns4xlmft~.js",
+          "lineNumber": 0,
+          "columnNumber": 9241
+        }
+      }
+    },
+    {
+      "page": "/calendar",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+      "details": {
+        "text": "Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/04.5ns4xlmft~.js",
+          "lineNumber": 0,
+          "columnNumber": 9241
+        }
+      }
+    },
+    {
+      "page": "/pipeline",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+      "details": {
+        "text": "Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/04.5ns4xlmft~.js",
+          "lineNumber": 0,
+          "columnNumber": 9241
+        }
+      }
+    },
+    {
+      "page": "/settings",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+      "details": {
+        "text": "Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/04.5ns4xlmft~.js",
+          "lineNumber": 0,
+          "columnNumber": 9241
+        }
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "console-error",
+      "severity": "medium",
+      "message": "Console error: Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+      "details": {
+        "text": "Error fetching EOD history: {code: 42703, details: null, hint: null, message: column lead_activities.type does not exist}",
+        "location": {
+          "url": "https://crm.savingkc.com/_next/static/chunks/04.5ns4xlmft~.js",
+          "lineNumber": 0,
+          "columnNumber": 9241
+        }
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": ""
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /ari",
+      "details": {
+        "href": "/ari",
+        "text": "assistantARI"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "404-link",
+      "severity": "high",
+      "message": "Link to potentially unknown route: /dialer",
+      "details": {
+        "href": "/dialer",
+        "text": "phone_in_talkDialer"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Acquisitions\"",
+      "details": {
+        "text": "Acquisitions"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Dispositions\"",
+      "details": {
+        "text": "Dispositions"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Submit SOD Protocolarrow_forward\"",
+      "details": {
+        "text": "Submit SOD Protocolarrow_forward"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Submit EOD Protocoldone_all\"",
+      "details": {
+        "text": "Submit EOD Protocoldone_all"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"close\"",
+      "details": {
+        "text": "close"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Dial\"",
+      "details": {
+        "text": "Dial"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"Recent\"",
+      "details": {
+        "text": "Recent"
+      }
+    },
+    {
+      "page": "/checklist",
+      "type": "dead-link",
+      "severity": "low",
+      "message": "Button with no obvious handler: \"refreshConnect Twilio\"",
+      "details": {
+        "text": "refreshConnect Twilio"
       }
     }
   ]

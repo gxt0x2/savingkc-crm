@@ -1,6 +1,7 @@
 'use client'
 
 import { Icon } from '@/components/ui/icon'
+import { taskChipStyle, taskTypeLabel } from '@/components/calendar/task-tone'
 import type { Task } from '@/types'
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -33,40 +34,6 @@ function getMonthGrid(year: number, month: number) {
 
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-
-// Task type → dark-theme chip treatment. Each tone uses a translucent tinted
-// background plus a solid left rail in the same hue so tasks remain scannable
-// against the dark grid. Colors pass the "no emoji, keep status signals"
-// rule — overdue red, appointment emerald, follow-up amber, etc.
-function taskChipStyle(task: Task) {
-  if (task.status === 'overdue') {
-    return 'bg-[#E32E2E]/20 border-l-2 border-[#E32E2E] text-[#FCA5A5]'
-  }
-  switch (task.type) {
-    case 'appointment':
-      return 'bg-emerald-500/20 border-l-2 border-emerald-400 text-emerald-300'
-    case 'follow_up':
-      return 'bg-yellow-400/20 border-l-2 border-yellow-400 text-yellow-300'
-    case 'send_offer':
-      return 'bg-violet-500/20 border-l-2 border-violet-400 text-violet-300'
-    case 'review':
-    case 'task':
-    default:
-      return 'bg-white/8 border-l-2 border-[var(--ck-border-strong)] text-[var(--ck-text)]'
-  }
-}
-
-function taskTypeLabel(task: Task) {
-  if (task.status === 'overdue') return 'Overdue'
-  switch (task.type) {
-    case 'follow_up': return 'Follow-up'
-    case 'appointment': return 'Appt'
-    case 'send_offer': return 'Offer'
-    case 'review': return 'Review'
-    case 'task': return 'Task'
-    default: return task.type
-  }
 }
 
 export function MonthView({
@@ -111,13 +78,13 @@ export function MonthView({
 
           return (
             <div
-              key={idx}
+              key={cell.date.toISOString()}
               className={[
                 'relative p-2 group transition-colors',
                 !isLastCol && 'border-r border-[var(--ck-border)]',
                 !isLastRow && 'border-b border-[var(--ck-border)]',
                 !cell.isCurrentMonth && 'opacity-40',
-                isToday ? 'bg-[#E32E2E]/5' : 'hover:bg-white/[0.03]',
+                isToday ? 'bg-[#E32E2E]/5' : 'hover:bg-[var(--ck-surface-elev)]',
               ].filter(Boolean).join(' ')}
             >
               {/* Day number */}
@@ -144,7 +111,8 @@ export function MonthView({
                   <button
                     key={task.id}
                     onClick={(e) => { e.stopPropagation(); onTaskClick?.(task) }}
-                    className={`w-full px-1.5 py-1 text-left text-[10px] font-semibold rounded-sm flex items-center gap-1 truncate hover:brightness-125 transition-all ${taskChipStyle(task)}`}
+                    className="w-full px-1.5 py-1 text-left text-[10px] font-semibold rounded-sm border-l-2 flex items-center gap-1 truncate hover:brightness-110 transition-all"
+                    style={taskChipStyle(task)}
                   >
                     {task.status === 'overdue' && (
                       <Icon name="priority_high" size="text-[10px]" className="flex-shrink-0" />

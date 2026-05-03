@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import type { AppMode } from '@/hooks/use-app-mode'
 
 interface Lead {
   id: string
@@ -15,6 +15,7 @@ interface NewTaskModalProps {
   leadId?: string
   leadName?: string
   showLeadSelector?: boolean
+  department?: AppMode
 }
 
 export function NewTaskModal({
@@ -22,7 +23,8 @@ export function NewTaskModal({
   onCreated,
   leadId: initialLeadId,
   leadName,
-  showLeadSelector = false
+  showLeadSelector = false,
+  department = 'acquisitions',
 }: NewTaskModalProps) {
   const [title, setTitle] = useState('')
   const [taskType, setTaskType] = useState('follow_up')
@@ -32,7 +34,9 @@ export function NewTaskModal({
     return d.toISOString().slice(0, 16)
   })
   const [assignedTo, setAssignedTo] = useState('Casey')
-  const [role, setRole] = useState<'setter' | 'closer' | 'admin'>('setter')
+  const [role, setRole] = useState<'setter' | 'closer' | 'admin'>(
+    department === 'tc' ? 'admin' : department === 'dispositions' ? 'closer' : 'setter'
+  )
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [leadId, setLeadId] = useState(initialLeadId || '')
@@ -50,21 +54,25 @@ export function NewTaskModal({
 
   async function loadLeads(search = '') {
     setLoadingLeads(true)
-    const supabase = createClient()
-
-    let query = supabase
-      .from('leads')
-      .select('id, full_name, property_address')
-      .order('created_at', { ascending: false })
-      .limit(50)
-
-    if (search) {
-      query = query.or(`full_name.ilike.%${search}%,property_address.ilike.%${search}%`)
+    try {
+      const query = search.trim()
+      const url = query.length >= 2
+        ? `/api/leads/search?q=${encodeURIComponent(query)}&limit=20`
+        : '/api/leads?limit=50'
+      const res = await fetch(url, { cache: 'no-store' })
+      const data = await res.json()
+      const rows = query.length >= 2 ? data.results : data.leads
+      setLeads((rows || []).map((row: Lead) => ({
+        id: row.id,
+        full_name: row.full_name,
+        property_address: row.property_address,
+      })))
+    } catch (err) {
+      console.error('Failed to load leads:', err)
+      setLeads([])
+    } finally {
+      setLoadingLeads(false)
     }
-
-    const { data } = await query
-    setLeads(data || [])
-    setLoadingLeads(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -72,26 +80,32 @@ export function NewTaskModal({
     if (!title.trim()) return
     setSaving(true)
 
-    const supabase = createClient()
-    const { error } = await supabase.from('lead_activities').insert({
-      lead_id: leadId || null,
-      activity_type: 'task',
-      description: title.trim(),
-      agent: assignedTo,
-      metadata: {
-        task_type: taskType,
-        due_date: new Date(dueDate).toISOString(),
-        assigned_to: assignedTo,
-        role,
-        priority: 'normal',
-        status: 'pending',
-        notes: notes.trim() || undefined,
-        source: leadId ? 'lead_detail_task' : 'calendar_new_task',
-      },
-    })
-
-    setSaving(false)
-    if (!error) onCreated()
+    try {
+      const res = await fetch('/api/calendar/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          taskType,
+          dueDate,
+          assignedTo,
+          role,
+          notes,
+          leadId,
+          department,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        console.error('Failed to create task:', data.error)
+        return
+      }
+      onCreated()
+    } catch (err) {
+      console.error('Failed to create task:', err)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
