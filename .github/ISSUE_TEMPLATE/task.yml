@@ -1,0 +1,27 @@
+name: Task
+description: Track cleanup, maintenance, or planned CRM work.
+title: "[Task]: "
+labels: ["task"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What outcome should this task produce?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included and what is intentionally out of scope?
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: What checks should pass before this is done?
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback
+      description: How can this task be reversed?
