@@ -56,6 +56,10 @@ Current containment:
 
 Current live deployment:
 
+- `dpl_46Y7STSCf6whBFz15iw81KwhARm1`
+
+Previous live checkpoint deployment:
+
 - `dpl_2dudnvs2ha8yfXndy5qdwk9NzwPV`
 
 Verified behavior:
@@ -73,6 +77,12 @@ Most recent successful gates:
 - `npm run gate:routes`
 - `npm run gate:twilio`
 - `npm run gate:edge`
+
+Post-deploy result:
+
+- Production deploy `dpl_46Y7STSCf6whBFz15iw81KwhARm1` was aliased to `https://crm.savingkc.com`.
+- `gate:twilio` passed against `https://crm.savingkc.com/api/twilio-token`.
+- `gate:edge` passed for `/dialer`, `/api/twilio-token`, and `/api/twiml-voice`.
 
 Known non-blocking baseline:
 
@@ -93,6 +103,7 @@ If production regresses:
 
 Known rollback references:
 
+- Current stabilization live deployment: `dpl_46Y7STSCf6whBFz15iw81KwhARm1`
 - Final dialer stabilization live deployment: `dpl_2dudnvs2ha8yfXndy5qdwk9NzwPV`
 - Previous pre-final-dialer deployment: `dpl_CASBxQbdknqfpM77EETxjUwBdKHk`
 - Map rollback deployment: `dpl_5hnq9Xy1viLoehP3M3w8giTBmCBk`
