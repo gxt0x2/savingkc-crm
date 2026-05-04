@@ -3,17 +3,12 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { syncUserGmail } from '@/lib/gmail-sync'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 // GET /api/cron/sync-gmail — runs sync for every user with tokens
 export async function GET(req: NextRequest) {
-  // Optional cron-job.org secret check
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret) {
-    const auth = req.headers.get('authorization')
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-    }
-  }
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
 
   const db = supabaseAdmin()
   const { data: tokens } = await db

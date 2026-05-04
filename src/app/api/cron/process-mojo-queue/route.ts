@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { processQueuedCall, type MojoCallRecord } from '@/app/api/mojo/sync/route'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 const BATCH_SIZE = 5
 const MAX_ATTEMPTS = 3
@@ -17,14 +18,8 @@ const STALE_PROCESSING_MINUTES = 5
  * 5. On failure: resets to "pending" or promotes to "dead_letter" after 3 attempts
  */
 export async function GET(req: NextRequest) {
-  // Optional: cron secret check
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret) {
-    const authHeader = req.headers.get('authorization')
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-  }
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
 
   const startedAt = Date.now()
 
