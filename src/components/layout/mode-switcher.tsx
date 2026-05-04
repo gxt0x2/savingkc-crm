@@ -10,87 +10,115 @@ interface ModeSwitcherProps {
   onChange: (mode: AppMode) => void
 }
 
-const portalOptions: Array<{
-  key: AppMode
+const PORTALS: Array<{
+  mode: AppMode
   label: string
+  shortLabel?: string
+  caption: string
+  description: string
   icon: string
-  helper: string
 }> = [
-  { key: 'acquisitions', label: 'Acquisitions', icon: 'person_search', helper: 'Lead intake and dialer' },
-  { key: 'dispositions', label: 'Dispositions', icon: 'real_estate_agent', helper: 'Pipeline, deal pages, offers' },
-  { key: 'tc', label: 'TC', icon: 'fact_check', helper: 'Closings, title, EMD' },
+  {
+    mode: 'acquisitions',
+    label: 'Acquisitions',
+    caption: 'Seller pipeline',
+    description: 'Leads, ARI, dialer, tasks, and KPIs.',
+    icon: 'home_work',
+  },
+  {
+    mode: 'dispositions',
+    label: 'Dispositions',
+    caption: 'Buyer pipeline',
+    description: 'Deal pages, buyers, broadcasts, offers, and contacts.',
+    icon: 'handshake',
+  },
+  {
+    mode: 'tc',
+    label: 'Transaction Coordination',
+    shortLabel: 'TC Portal',
+    caption: 'Reports to Dispositions',
+    description: 'Closing files, drafts, calls, exceptions, and title work.',
+    icon: 'assignment_turned_in',
+  },
 ]
 
 export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
   const [open, setOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const activeKey: AppMode = mode
-  const active = portalOptions.find((option) => option.key === activeKey) ?? portalOptions[0]
-  const isTcPortal = mode === 'tc'
+  const rootRef = useRef<HTMLDivElement>(null)
+  const active = PORTALS.find((portal) => portal.mode === mode) ?? PORTALS[0]
+  const activeLabel = active.shortLabel ?? active.label
 
   useEffect(() => {
     function onPointerDown(event: PointerEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) setOpen(false)
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
     }
-
-    if (open) document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [open])
-
-  function selectPortal(key: AppMode) {
-    setOpen(false)
-    onChange(key)
-  }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [])
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className={cn(
-          'flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--ck-text)] transition-colors',
-          isTcPortal ? 'border border-[var(--ck-border)] hover:bg-[#fff1f1]' : 'hover:bg-white/5'
-        )}
-        style={{ background: 'var(--ck-surface-elev)' }}
+        className="flex min-w-[190px] items-center justify-between gap-3 rounded-full border px-3 py-1.5 text-left transition-colors"
+        style={{
+          background: 'var(--ck-surface-elev)',
+          borderColor: 'var(--ck-border)',
+          color: 'var(--ck-text)',
+        }}
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <Icon name={active.icon} size="text-sm" className="text-[#E32E2E]" />
-        <span className="whitespace-nowrap">{active.label}</span>
-        <Icon name="expand_more" size="text-sm" className={cn('text-[var(--ck-text-muted)] transition-transform', open && 'rotate-180')} />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-black leading-none">{activeLabel}</span>
+          <span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">{active.caption}</span>
+        </span>
+        <Icon name={open ? 'expand_less' : 'expand_more'} size="text-lg" className="shrink-0 text-[var(--ck-text-muted)]" />
       </button>
-
       {open && (
         <div
+          className="absolute left-0 top-full z-50 mt-2 w-[340px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border py-1 shadow-2xl"
+          style={{
+            background: 'var(--ck-surface)',
+            borderColor: 'var(--ck-border)',
+          }}
           role="menu"
-          className="absolute left-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-1 shadow-2xl"
         >
-          {portalOptions.map((option) => {
-            const selected = option.key === activeKey
-            return (
-              <button
-                key={option.key}
-                type="button"
-                role="menuitem"
-                onClick={() => selectPortal(option.key)}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors',
-                  selected
-                    ? 'bg-[#E32E2E]/15 text-[var(--ck-text)]'
-                    : isTcPortal
-                      ? 'text-[var(--ck-text-muted)] hover:bg-[#fff7f7] hover:text-[var(--ck-text)]'
-                      : 'text-[var(--ck-text-muted)] hover:bg-white/5 hover:text-[var(--ck-text)]'
-                )}
-              >
-                <Icon name={option.icon} size="text-lg" className={selected ? 'text-[#E32E2E]' : 'text-[var(--ck-text-dim)]'} />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold">{option.label}</span>
-                  <span className="block truncate text-[10px] font-semibold text-[var(--ck-text-dim)]">{option.helper}</span>
-                </span>
-                {selected && <Icon name="check" size="text-base" className="text-[#E32E2E]" />}
-              </button>
-            )
-          })}
+          {PORTALS.map((portal) => (
+            <button
+              key={portal.mode}
+              type="button"
+              onClick={() => {
+                onChange(portal.mode)
+                setOpen(false)
+              }}
+              className={cn(
+                'flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-[#E32E2E]/10',
+                portal.mode === mode ? 'bg-[#E32E2E]/10' : ''
+              )}
+              role="menuitem"
+            >
+              <span className={cn(
+                'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
+                portal.mode === mode ? 'border-[#E32E2E]/30 bg-[#E32E2E]/15 text-[#E32E2E]' : 'border-[var(--ck-border)] text-[var(--ck-text-muted)]'
+              )}>
+                <Icon name={portal.icon} size="text-lg" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-black text-[var(--ck-text)]">{portal.label}</span>
+                <span className="mt-0.5 block text-xs leading-snug text-[var(--ck-text-muted)]">{portal.description}</span>
+              </span>
+              {portal.mode === mode && <Icon name="check" size="text-base" className="text-[#E32E2E]" />}
+            </button>
+          ))}
         </div>
       )}
     </div>

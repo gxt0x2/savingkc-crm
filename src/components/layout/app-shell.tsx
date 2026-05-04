@@ -83,6 +83,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     body.style.color = ''
   }, [useTcLightTheme])
 
+  function routeForMode(nextMode: typeof mode) {
+    if (nextMode === 'dispositions') return '/dispo/pipeline'
+    if (nextMode === 'tc') return '/dispo/tc'
+    return '/dashboard'
+  }
+
   // Global ⌘K / Ctrl+K to open command palette
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -243,7 +249,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 mode={mode}
                 onChange={(m) => {
                   setMode(m)
-                  router.push(m === 'tc' ? '/dispo/tc' : m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
+                  router.push(routeForMode(m))
                 }}
               />
             </div>
@@ -386,7 +392,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onChange={(m) => {
                 setMode(m)
                 setDrawerOpen(false)
-                router.push(m === 'tc' ? '/dispo/tc' : m === 'dispositions' ? '/dispo/pipeline' : '/dashboard')
+                router.push(routeForMode(m))
               }}
             />
           </div>

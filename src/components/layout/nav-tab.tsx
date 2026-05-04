@@ -16,18 +16,16 @@ const acquisitionTabs = [
 const dispoTabs = [
   { label: 'Pipeline', href: '/dispo/pipeline', icon: 'route' },
   { label: 'Deal Pages', href: '/dispo/deals', icon: 'description' },
-  { label: 'Offers', href: '/dispo/offers', icon: 'local_offer' },
-  { label: 'Broadcasts', href: '/dispo/broadcasts', icon: 'campaign' },
   { label: 'Contacts', href: '/dispo/contacts', icon: 'contacts' },
+  { label: 'Buyers', href: '/dispo/buyers', icon: 'group' },
+  { label: 'Broadcasts', href: '/dispo/broadcasts', icon: 'campaign' },
+  { label: 'Offers', href: '/dispo/offers', icon: 'local_offer' },
   { label: 'Calendar', href: '/calendar?department=dispositions', icon: 'calendar_today' },
 ]
 
 const tcTabs = [
-  { label: 'Files', href: '/dispo/tc', icon: 'fact_check' },
-  { label: 'Communications', href: '/dispo/tc?view=communications', icon: 'forum' },
-  { label: 'Doc Review', href: '/dispo/tc?view=docs', icon: 'preview' },
-  { label: 'Tasks', href: '/dispo/tc?view=tasks', icon: 'task_alt' },
-  { label: 'Contacts', href: '/dispo/contacts?portal=tc', icon: 'contacts' },
+  { label: 'Workspace', href: '/dispo/tc', icon: 'assignment_turned_in' },
+  { label: 'Reports to Dispositions', href: '/dispo/pipeline', icon: 'account_tree' },
   { label: 'Calendar', href: '/calendar?department=tc', icon: 'calendar_today' },
 ]
 
@@ -42,13 +40,15 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
   const { mode } = useAppMode()
   const tabs = mode === 'tc' ? tcTabs : mode === 'dispositions' ? dispoTabs : acquisitionTabs
   const isTcNav = mode === 'tc'
+  const activeText = isTcNav ? 'text-[var(--ck-text)]' : 'text-white'
+  const inactiveText = isTcNav
+    ? 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-[var(--ck-text)]'
+    : 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-white'
 
   function isActive(href: string): boolean {
     const baseHref = href.split('?')[0]
     if (baseHref === '/dispo/tc') {
-      const tabView = new URLSearchParams(href.split('?')[1] ?? '').get('view') ?? 'files'
-      const currentView = searchParams.get('view') ?? 'files'
-      return pathname?.startsWith('/dispo/tc') && currentView === tabView
+      return pathname?.startsWith('/dispo/tc') ?? false
     }
     if (!href.includes('?') && pathname === baseHref) return true
     if (href === '/ari' && pathname?.startsWith('/ari')) return true
@@ -71,6 +71,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
       pathname?.startsWith('/dispo/buyers') ||
       pathname?.startsWith('/dispo/vendors')
     )) return true
+    if (href === '/dispo/buyers' && (pathname?.startsWith('/dispo/buyers') || pathname?.startsWith('/dispo/vendors'))) return true
     return false
   }
 
@@ -87,18 +88,14 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
               onClick={onNavigate}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-colors ${
                 active
-                  ? isTcNav
-                    ? 'bg-[#fff1f1] text-[#b42318] border-l-2 border-[#E32E2E]'
-                    : 'bg-[#E32E2E]/15 text-white border-l-2 border-[#E32E2E]'
-                  : isTcNav
-                    ? 'text-[#4b5565] hover:bg-[#fff7f7] hover:text-[#111827]'
-                    : 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-white'
+                  ? `bg-[#E32E2E]/15 ${activeText} border-l-2 border-[#E32E2E]`
+                  : inactiveText
               }`}
             >
               <Icon
                 name={tab.icon}
                 size="text-xl"
-                className={active ? 'text-[#E32E2E]' : isTcNav ? 'text-[#7a8494]' : 'text-[var(--ck-text-muted)]'}
+                className={active ? 'text-[#E32E2E]' : 'text-[var(--ck-text-muted)]'}
               />
               {tab.label}
             </Link>
@@ -120,18 +117,14 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
             onClick={onNavigate}
             className={`relative flex items-center gap-2 px-3 py-2 text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${
               active
-                ? isTcNav
-                  ? 'bg-[#fff1f1] text-[#b42318]'
-                  : 'bg-[#E32E2E]/15 text-white'
-                : isTcNav
-                  ? 'text-[#4b5565] hover:bg-[#fff7f7] hover:text-[#111827]'
-                  : 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-white'
+                ? `bg-[#E32E2E]/15 ${activeText}`
+                : inactiveText
             }`}
           >
             <Icon
               name={tab.icon}
               size="text-base"
-              className={active ? 'text-[#E32E2E]' : isTcNav ? 'text-[#7a8494]' : 'text-[var(--ck-text-dim)]'}
+              className={active ? 'text-[#E32E2E]' : 'text-[var(--ck-text-dim)]'}
             />
             {tab.label}
           </Link>

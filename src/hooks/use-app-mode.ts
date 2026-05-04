@@ -28,7 +28,8 @@ function getRouteMode(pathname: string | null, department?: string | null, porta
     pathname?.startsWith('/leads') ||
     pathname?.startsWith('/dialer') ||
     pathname?.startsWith('/dashboard') ||
-    pathname?.startsWith('/pipeline')
+    pathname?.startsWith('/pipeline') ||
+    pathname?.startsWith('/checklist')
   ) {
     return 'acquisitions'
   }
