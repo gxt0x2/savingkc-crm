@@ -13,6 +13,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 interface ClosingRecord {
   date: string
@@ -55,6 +56,9 @@ interface ImportPayload {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireAdminOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const payload: ImportPayload = await request.json()
     const { data_type, source = 'manual_import', records } = payload
@@ -216,7 +220,10 @@ export async function POST(request: Request) {
 /**
  * GET - Returns import instructions and sample payload
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = await requireAdminOrSecret(request)
+  if (unauthorized) return unauthorized
+
   const instructions = {
     endpoint: '/api/admin/import-historical',
     method: 'POST',

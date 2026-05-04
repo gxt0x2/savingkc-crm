@@ -1,18 +1,13 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 
 
-
-const ADMIN_SECRET = process.env.CRON_SECRET || process.env.DEPLOY_SECRET
 
 export async function POST(req: Request) {
-  // Auth check
-  const { searchParams } = new URL(req.url)
-  const secret = searchParams.get('secret') || req.headers.get('x-admin-secret')
-  if (!ADMIN_SECRET || secret !== ADMIN_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
 
   const results: string[] = []
 

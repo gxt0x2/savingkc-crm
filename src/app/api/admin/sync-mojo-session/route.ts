@@ -5,6 +5,7 @@
  */
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 import { readFile } from 'fs/promises'
 import { homedir } from 'os'
@@ -17,7 +18,10 @@ const SESSION_FILE_PATHS = [
   '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json',
 ]
 
-export async function POST() {
+export async function POST(req: Request) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   const results: string[] = []
 
   // Try to read session from disk

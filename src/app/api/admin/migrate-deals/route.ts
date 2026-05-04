@@ -2,9 +2,13 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 // POST /api/deals/migrate — Add new deal_pages columns (idempotent)
-export async function POST() {
+export async function POST(req: Request) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   const db = supabaseAdmin()
 
   const migrations = [
