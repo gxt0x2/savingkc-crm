@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = await requireUserOrSecret(request)
+  if (unauthorized) return unauthorized
+
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
   const todayEnd = new Date()
@@ -76,6 +80,9 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const unauthorized = await requireUserOrSecret(req)
+  if (unauthorized) return unauthorized
+
   try {
     const { taskId, action } = await req.json()
 

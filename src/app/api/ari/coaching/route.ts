@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
 // In-memory cache (5 min TTL)
 let cache: { key: string; data: any; ts: number } | null = null
 const CACHE_TTL = 5 * 60 * 1000
 
 export async function GET(req: NextRequest) {
+  const unauthorized = await requireUserOrSecret(req)
+  if (unauthorized) return unauthorized
+
   const mode = req.nextUrl.searchParams.get('mode') || 'morning'
   const agent = req.nextUrl.searchParams.get('agent') || 'Rep'
 
