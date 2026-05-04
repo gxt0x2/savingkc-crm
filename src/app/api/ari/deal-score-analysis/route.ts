@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
 export async function POST(request: Request) {
+  const unauthorized = await requireUserOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const body = await request.json()
     const apiKey = process.env.OPENROUTER_API_KEY

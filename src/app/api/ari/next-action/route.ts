@@ -19,8 +19,12 @@
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
 export async function POST(request: Request) {
+  const unauthorized = await requireUserOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const { leadId } = (await request.json()) as { leadId?: string }
     if (!leadId) {

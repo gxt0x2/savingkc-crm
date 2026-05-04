@@ -13,8 +13,12 @@ import {
   markBriefingEventRead,
   dismissBriefingEvent,
 } from '@/lib/ari-briefing'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
 export async function GET(request: Request) {
+  const unauthorized = await requireUserOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit') || '10')
@@ -38,6 +42,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireUserOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const { action, eventId } = await request.json()
 

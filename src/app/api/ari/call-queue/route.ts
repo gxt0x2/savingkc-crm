@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = await requireUserOrSecret(request)
+  if (unauthorized) return unauthorized
+
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
   const now = new Date().toISOString()

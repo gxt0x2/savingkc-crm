@@ -69,9 +69,17 @@ export async function regenerateBriefing(
       || (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')
         ? `http://localhost:${port}`
         : process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${port}`)
+    const authSecret =
+      process.env.ADMIN_API_SECRET ||
+      process.env.CRON_SECRET ||
+      process.env.DEPLOY_SECRET ||
+      ''
 
     const res = await fetch(`${baseUrl}/api/ari/generate-briefing?manifestId=${manifestRow.id}`, {
-      headers: { 'x-regen-reason': reason },
+      headers: {
+        'x-regen-reason': reason,
+        ...(authSecret ? { authorization: `Bearer ${authSecret}` } : {}),
+      },
     })
 
     if (res.ok) {

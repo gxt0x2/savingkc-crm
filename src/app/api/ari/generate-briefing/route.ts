@@ -3,10 +3,14 @@ import type { ManifestV2 } from '@/lib/manifest-builder'
 import { buildManifestBriefingPrompt, type BriefingResult, type ActivityRow } from '@/lib/manifest-briefing'
 import { detectDeceasedSignals } from '@/lib/manifest-sync'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
 // GET /api/ari/generate-briefing?manifestId={id}
 // Returns cached briefing if available and not stale, otherwise generates fresh
 export async function GET(request: NextRequest) {
+  const unauthorized = await requireUserOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const searchParams = request.nextUrl.searchParams
     const manifestId = searchParams.get('manifestId')
@@ -85,6 +89,9 @@ export async function GET(request: NextRequest) {
 // POST /api/ari/generate-briefing
 // Accepts { manifestId } or legacy { notes, motivationScore, sellerSituation, callCount }
 export async function POST(request: Request) {
+  const unauthorized = await requireUserOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const body = await request.json()
 

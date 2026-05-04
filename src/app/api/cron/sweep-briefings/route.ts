@@ -13,6 +13,11 @@ import { requireAdminOrSecret } from '@/lib/api/admin-auth'
  * Rate-limited via BATCH_SIZE to keep Groq usage predictable.
  */
 const BATCH_SIZE = 10
+const ARI_SECRET =
+  process.env.ADMIN_API_SECRET ||
+  process.env.CRON_SECRET ||
+  process.env.DEPLOY_SECRET ||
+  ''
 
 export async function GET(req: NextRequest) {
   const unauthorized = await requireAdminOrSecret(req)
@@ -39,7 +44,10 @@ export async function GET(req: NextRequest) {
   for (const row of toProcess) {
     try {
       const res = await fetch(`${baseUrl}/api/ari/generate-briefing?manifestId=${row.id}`, {
-        headers: { 'x-regen-reason': 'cron_sweep' },
+        headers: {
+          'x-regen-reason': 'cron_sweep',
+          ...(ARI_SECRET ? { authorization: `Bearer ${ARI_SECRET}` } : {}),
+        },
       })
       if (res.ok) {
         results.push({ manifestId: row.id, leadId: row.lead_id, status: 'ok' })
