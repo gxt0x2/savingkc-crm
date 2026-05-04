@@ -959,13 +959,13 @@ export default function TransactionCoordinatorPage() {
   ]
 
   return (
-    <main className="min-h-screen bg-[#f6f7f9] text-[#111827]">
+    <main className="tc-portal min-h-screen bg-[#f6f7f9] text-[#111827]">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b border-[#d8dee9] pb-5">
           <div>
-            <p className="mb-1 text-xs font-black uppercase text-[#E32E2E]">Dispositions / TC</p>
-            <h1 className="text-2xl font-black tracking-tight text-[#111827]">Transaction Coordinator</h1>
-            <p suppressHydrationWarning className="mt-1 max-w-2xl text-sm text-[#4b5565]">Dedicated closing portal for accepted buyer offers, title work, EMD, and assignment fee recognition.</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E32E2E]">Reports to Dispositions</p>
+            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111827]">Transaction Coordination Portal</h1>
+            <p suppressHydrationWarning className="mt-1 max-w-2xl text-sm text-[#4b5565]">Closing files, approved communications, call agendas, exceptions, title work, EMD, and assignment fee recognition.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {TC_PAGE_TABS.map((tab) => {
