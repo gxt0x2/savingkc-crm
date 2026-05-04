@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export async function getCurrentUserEmail(): Promise<string | null> {
   try {
@@ -14,10 +13,15 @@ export async function getCurrentUserEmail(): Promise<string | null> {
 export async function isCurrentUserAdmin(): Promise<boolean> {
   const email = await getCurrentUserEmail()
   if (!email) return false
-  const { data } = await supabaseAdmin()
-    .from('agent_profiles')
-    .select('is_admin')
-    .eq('email', email)
-    .maybeSingle()
-  return Boolean(data?.is_admin)
+  try {
+    const { supabaseAdmin } = await import('@/lib/supabase/admin')
+    const { data } = await supabaseAdmin()
+      .from('agent_profiles')
+      .select('is_admin')
+      .eq('email', email)
+      .maybeSingle()
+    return Boolean(data?.is_admin)
+  } catch {
+    return false
+  }
 }

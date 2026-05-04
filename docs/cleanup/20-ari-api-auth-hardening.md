@@ -16,6 +16,7 @@ This phase protects the `/api/ari/*` route namespace at the route-handler level.
 - Preserved browser callers because same-origin CRM requests include the user's session cookies.
 - Updated cron briefing sweep calls to send the configured secret when regenerating ARI briefings.
 - Updated server-side eager briefing regeneration to send the configured secret.
+- Kept the ARI page stable when secured API calls return `401` by preserving safe empty defaults instead of trusting error response shapes.
 
 ## Why
 
@@ -39,6 +40,7 @@ Contained risk:
 - No ARI business logic changes.
 - No proxy rule removals.
 - One PR revert restores the old behavior.
+- The ARI page still renders during auth transitions or CI smoke tests where API calls are intentionally unauthorized.
 
 ## Rollback
 

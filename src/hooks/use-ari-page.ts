@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 // Types
 export interface CallQueueLead {
@@ -114,15 +114,20 @@ export interface AriPageData {
 function useFetch<T>(url: string, defaultVal: T, extract?: (data: any) => T) {
   const [data, setData] = useState<T>(defaultVal)
   const [loading, setLoading] = useState(true)
+  const defaultRef = useRef(defaultVal)
 
   const refresh = useCallback(() => {
     setLoading(true)
     fetch(url)
-      .then(r => r.json())
-      .then(d => setData(extract ? extract(d) : d))
+      .then(async (r) => {
+        if (!r.ok) return defaultRef.current
+        const body = await r.json().catch(() => defaultRef.current)
+        return extract ? extract(body) : body
+      })
+      .then((next) => setData(next ?? defaultRef.current))
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [url])
+  }, [url, extract])
 
   useEffect(() => { refresh() }, [refresh])
 
