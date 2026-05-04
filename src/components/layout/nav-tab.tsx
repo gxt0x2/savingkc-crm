@@ -25,9 +25,12 @@ const dispoTabs = [
 ]
 
 const tcTabs = [
-  { label: 'Workspace', href: '/dispo/tc', icon: 'assignment_turned_in' },
-  { label: 'Reports to Dispositions', href: '/dispo/pipeline', icon: 'account_tree' },
+  { label: 'Files', href: '/dispo/tc', icon: 'fact_check' },
+  { label: 'Communications', href: '/dispo/tc?view=communications', icon: 'forum' },
+  { label: 'Doc Review', href: '/dispo/tc?view=docs', icon: 'preview' },
+  { label: 'Tasks', href: '/dispo/tc?view=tasks', icon: 'task_alt' },
   { label: 'Calendar', href: '/calendar?department=tc', icon: 'calendar_today' },
+  { label: 'Dispo Reports', href: '/dispo/pipeline', icon: 'account_tree' },
 ]
 
 interface NavTabsProps {
@@ -49,7 +52,9 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
   function isActive(href: string): boolean {
     const baseHref = href.split('?')[0]
     if (baseHref === '/dispo/tc') {
-      return pathname?.startsWith('/dispo/tc') ?? false
+      const tabView = new URLSearchParams(href.split('?')[1] ?? '').get('view')
+      const currentView = searchParams.get('view')
+      return (pathname?.startsWith('/dispo/tc') ?? false) && (tabView ? currentView === tabView : !currentView)
     }
     if (!href.includes('?') && pathname === baseHref) return true
     if (href === '/ari' && pathname?.startsWith('/ari')) return true
