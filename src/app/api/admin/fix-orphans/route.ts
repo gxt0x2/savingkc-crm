@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 // Lazy-init: Preview builds on Vercel don't have Supabase env vars set,
 // so the module would throw at import time and fail the build. Defer the
@@ -17,7 +18,10 @@ const getSupabase = () => createClient(
  *
  * GET /api/admin/fix-orphans — run the fix
  */
-export async function GET() {
+export async function GET(req: Request) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   // 1. Check what values the constraint allows
   const supabase = getSupabase()
   const { data: constraintInfo } = await supabase.rpc('exec_sql', {

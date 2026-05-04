@@ -22,6 +22,7 @@ import path from 'path'
 const MOJO_BASE_URL = 'https://app71.mojosells.com'
 const CRM_API_URL = 'http://localhost:3002/api/mojo/sync'
 const CRM_CONFIG_URL = 'http://localhost:3002/api/admin/system-config'
+const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
 const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
 const STATE_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-sync-state.json'
 const LOG_DIR = '/Users/ernestdodson/.openclaw/workspace/memory/logs'
@@ -56,6 +57,12 @@ function logError(message, error) {
   fs.appendFileSync(LOG_FILE, logLine)
 }
 
+function adminHeaders(base = {}) {
+  return ADMIN_API_SECRET
+    ? { ...base, authorization: `Bearer ${ADMIN_API_SECRET}` }
+    : base
+}
+
 // --- State management ---
 
 function readState() {
@@ -76,6 +83,7 @@ function writeState(state) {
 async function readLastSyncTimestamp() {
   try {
     const res = await fetch(`${CRM_CONFIG_URL}?key=last_mojo_sync_timestamp`, {
+      headers: adminHeaders(),
       signal: AbortSignal.timeout(8000),
     })
     if (!res.ok) {
@@ -94,7 +102,7 @@ async function writeLastSyncTimestamp(timestamp) {
   try {
     const res = await fetch(CRM_CONFIG_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: adminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ key: 'last_mojo_sync_timestamp', value: timestamp }),
       signal: AbortSignal.timeout(8000),
     })
@@ -133,7 +141,7 @@ async function pushSessionToCRM(sessionId) {
   try {
     await fetch(CRM_API_URL.replace('/mojo/sync', '/admin/mojo-session'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: adminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ sessionId }),
       signal: AbortSignal.timeout(10000),
     })

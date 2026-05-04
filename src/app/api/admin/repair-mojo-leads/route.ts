@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 
 
@@ -10,6 +11,9 @@ import { supabase } from '@/lib/supabase-lazy'
  * GET /api/admin/repair-mojo-leads            (actually fix them)
  */
 export async function GET(req: Request) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   const url = new URL(req.url)
   const dryRun = url.searchParams.get('dry') === 'true'
 

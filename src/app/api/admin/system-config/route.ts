@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 export async function GET(req: NextRequest) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   const key = req.nextUrl.searchParams.get('key')
   if (!key) {
     return NextResponse.json({ error: 'key required' }, { status: 400 })
@@ -25,6 +29,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   const body = await req.json()
   const { key, value } = body
 

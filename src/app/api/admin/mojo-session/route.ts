@@ -8,13 +8,14 @@
  */
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
-
-
-const ADMIN_SECRET = process.env.CRON_SECRET || process.env.DEPLOY_SECRET
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 
 
 export async function GET(req: Request) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   try {
     // Try to read from system_config
     const { data, error } = await supabase
@@ -41,10 +42,8 @@ export async function POST(req: Request) {
     const body = await req.json()
     const { sessionId, secret } = body
 
-    // Basic auth check
-    if (ADMIN_SECRET && secret !== ADMIN_SECRET) {
-      return NextResponse.json({ error: 'Invalid secret' }, { status: 403 })
-    }
+    const unauthorized = await requireAdminOrSecret(req, [secret])
+    if (unauthorized) return unauthorized
 
     if (!sessionId) {
       return NextResponse.json({ error: 'sessionId required' }, { status: 400 })

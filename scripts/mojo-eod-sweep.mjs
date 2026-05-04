@@ -21,6 +21,7 @@ import path from 'path'
 const MOJO_BASE_URL = 'https://app71.mojosells.com'
 const CRM_API_URL = 'https://crm.savingkc.com/api/mojo/sync'
 const CRM_CONFIG_URL = 'https://crm.savingkc.com/api/admin/system-config'
+const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
 const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
 const LOG_DIR = '/Users/ernestdodson/.openclaw/workspace/memory/logs'
 const LOG_FILE = path.join(LOG_DIR, 'mojo-eod-sweep.log')
@@ -52,6 +53,12 @@ function logError(message, error) {
   fs.appendFileSync(LOG_FILE, logLine)
 }
 
+function adminHeaders(base = {}) {
+  return ADMIN_API_SECRET
+    ? { ...base, authorization: `Bearer ${ADMIN_API_SECRET}` }
+    : base
+}
+
 // --- Session ---
 
 function readSession() {
@@ -79,7 +86,7 @@ async function writeLastSyncTimestamp(timestamp) {
   try {
     const res = await fetch(CRM_CONFIG_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: adminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ key: 'last_mojo_sync_timestamp', value: timestamp }),
       signal: AbortSignal.timeout(8000),
     })
