@@ -514,9 +514,12 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     const number = dialNumber.trim()
     if (!number) return
 
-    // If no Twilio device, fallback to tel: link
-    if (!deviceRef.current || status === 'offline') {
-      window.open(`tel:${number}`, '_self')
+    if (!deviceRef.current || status !== 'ready') {
+      setError(status === 'offline'
+        ? 'Twilio is offline. Click Connect Twilio and wait for Ready before calling.'
+        : 'Twilio is still connecting. Try again when the dialer shows Ready.'
+      )
+      if (status === 'offline') initDevice()
       return
     }
 
@@ -1122,10 +1125,10 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                 <div />
                 <button
                   onClick={makeCall}
-                  disabled={!dialNumber.trim() || status === 'connecting'}
+                  disabled={!dialNumber.trim() || status !== 'ready'}
                   className="w-16 h-16 rounded-full bg-[var(--skc-brand)] hover:bg-[var(--skc-brand-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center justify-self-center"
-                  title={status === 'offline' ? 'Call (Phone)' : 'Call'}
-                  aria-label={status === 'offline' ? 'Call (Phone)' : 'Call'}
+                  title={status === 'ready' ? 'Call' : 'Waiting for Twilio'}
+                  aria-label={status === 'ready' ? 'Call' : 'Waiting for Twilio'}
                 >
                   <Icon name="call" size="text-[28px]" className="text-white" filled />
                 </button>
