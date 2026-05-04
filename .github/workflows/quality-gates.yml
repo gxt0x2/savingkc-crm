@@ -2,12 +2,10 @@ name: Quality Gates
 
 on:
   pull_request:
-    branches:
-      - main
-      - codex/dialer-v2-current-crm
   push:
     branches:
       - main
+      - codex/stabilization-checkpoint-20260503
       - codex/dialer-v2-current-crm
   workflow_dispatch:
 
@@ -97,10 +95,11 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Skip edge integrity when env vars are not configured
+      - name: Require edge integrity config
         if: env.EDGE_INTEGRITY_BASE_URL == ''
-        run: echo "EDGE_INTEGRITY_BASE_URL is not configured; passing check as no-op."
+        run: |
+          echo "EDGE_INTEGRITY_BASE_URL is not configured."
+          exit 1
 
       - name: Edge integrity gate
-        if: env.EDGE_INTEGRITY_BASE_URL != ''
         run: node scripts/ci/check-edge-integrity.mjs
