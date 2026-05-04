@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 /**
  * GET /api/cron/sweep-briefings
@@ -14,13 +15,8 @@ import { supabase } from '@/lib/supabase-lazy'
 const BATCH_SIZE = 10
 
 export async function GET(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret) {
-    const authHeader = req.headers.get('authorization')
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-  }
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
 
   const { data: rows, error } = await supabase
     .from('manifests')

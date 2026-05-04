@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { isCurrentUserAdmin } from '@/lib/auth/admin'
+import { getCurrentUserEmail, isCurrentUserAdmin } from '@/lib/auth/admin'
 
 const ADMIN_SECRET =
   process.env.ADMIN_API_SECRET ||
@@ -36,6 +36,21 @@ export async function requireAdminOrSecret(
   }
 
   if (await isCurrentUserAdmin()) {
+    return null
+  }
+
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+}
+
+export async function requireUserOrSecret(
+  req: Request,
+  extraSecrets: Array<string | null | undefined> = [],
+) {
+  if (isValidAdminSecret(requestSecret(req)) || extraSecrets.some(isValidAdminSecret)) {
+    return null
+  }
+
+  if (await getCurrentUserEmail()) {
     return null
   }
 
