@@ -1145,6 +1145,19 @@ export default function LeadDetailPage() {
   const formattedName = toProperCase(lead.full_name)
   const formattedPhone = formatPhone(lead.phone)
 
+  function openLeadDialer() {
+    const dialLead = lead
+    if (!dialLead?.phone) return
+    window.dispatchEvent(new CustomEvent('open-dialer', {
+      detail: {
+        phone: dialLead.phone,
+        name: formattedName,
+        leadId: dialLead.id,
+        callerId: callerIdForAssignedAgent(dialLead.assigned_agent),
+      },
+    }))
+  }
+
   const initials = (formattedName || 'N/A')
     .split(/\s+/)
     .slice(0, 2)
@@ -1522,13 +1535,15 @@ export default function LeadDetailPage() {
           {/* Action row: icon buttons + Create Contract CTA */}
           <div className="flex items-center gap-2">
           {lead.phone && (
-            <a
-              href={`tel:${lead.phone}`}
+            <button
+              type="button"
+              onClick={openLeadDialer}
               className="ck-icon-btn ck-icon-btn-primary"
-              title="Call"
+              title="Call with CRM dialer"
+              aria-label="Call with CRM dialer"
             >
               <Icon name="phone" size="text-base" />
-            </a>
+            </button>
           )}
           {lead.email && (
             <a
@@ -1715,18 +1730,7 @@ export default function LeadDetailPage() {
             onLogNote={() => setNotesModalOpen(true)}
             onAppointmentOutcome={() => setOutcomeModalOpen(true)}
             onContract={() => setContractModalOpen(true)}
-            onCall={() => {
-              if (lead.phone) {
-                window.dispatchEvent(new CustomEvent('open-dialer', {
-                  detail: {
-                    phone: lead.phone,
-                    name: formattedName,
-                    leadId: lead.id,
-                    callerId: callerIdForAssignedAgent(lead.assigned_agent),
-                  },
-                }))
-              }
-            }}
+            onCall={openLeadDialer}
           />
 
           <SortableColumn
@@ -1790,7 +1794,7 @@ export default function LeadDetailPage() {
                     leadId={id}
                     onCompose={(type) => {
                       if (type === 'call') {
-                        if (lead.phone) window.location.href = `tel:${lead.phone}`
+                        openLeadDialer()
                       } else if (type === 'sms') {
                         setComposeTab('sms')
                         setSmsModalOpen(true)
