@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 
+const EDITABLE_ACTIVITY_TYPES = ['note', 'task', 'appointment', 'follow_up', 'callback', 'send_offer']
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -22,7 +24,7 @@ export async function PATCH(
       description: description.trim()
     }
 
-    // For tasks, allow metadata updates
+    // For calendar-style tasks, allow metadata updates while preserving the row's existing activity_type.
     if (activity_type === 'task' && metadata) {
       updateData.metadata = metadata
     }
@@ -31,21 +33,21 @@ export async function PATCH(
       .from('lead_activities')
       .update(updateData)
       .eq('id', id)
-      .in('activity_type', ['note', 'task'])
+      .in('activity_type', EDITABLE_ACTIVITY_TYPES)
       .select('id, activity_type, description, agent, metadata, created_at')
       .single()
 
     if (error) {
-      console.error('Failed to update note:', error)
+      console.error('Failed to update activity:', error)
       return NextResponse.json(
-        { success: false, error: 'Failed to update note' },
+        { success: false, error: 'Failed to update activity' },
         { status: 500 }
       )
     }
 
     if (!data) {
       return NextResponse.json(
-        { success: false, error: 'Note not found' },
+        { success: false, error: 'Activity not found' },
         { status: 404 }
       )
     }
@@ -65,8 +67,8 @@ export async function PATCH(
         body: JSON.stringify({
           id: activityData.lead_id,
           activity: {
-            type: 'note',
-            disposition: 'note_updated',
+            type: data.activity_type,
+            disposition: 'activity_updated',
             notes: description.trim(),
           },
         }),
@@ -97,8 +99,8 @@ export async function DELETE(
       .eq('id', id)
       .single()
 
-    // Only allow deletion of notes and tasks
-    if (activityData && !['note', 'task'].includes(activityData.activity_type)) {
+    // Only allow deletion of notes and calendar-style tasks.
+    if (activityData && !EDITABLE_ACTIVITY_TYPES.includes(activityData.activity_type)) {
       return NextResponse.json(
         { success: false, error: 'Cannot delete this activity type' },
         { status: 403 }
@@ -109,7 +111,7 @@ export async function DELETE(
       .from('lead_activities')
       .delete()
       .eq('id', id)
-      .in('activity_type', ['note', 'task'])
+      .in('activity_type', EDITABLE_ACTIVITY_TYPES)
 
     if (error) {
       console.error('Failed to delete activity:', error)
