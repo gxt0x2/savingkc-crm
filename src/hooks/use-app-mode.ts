@@ -1,61 +1,80 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { usePathname } from 'next/navigation'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
 
-export type AppMode = 'acquisitions' | 'dispositions'
+export type AppMode = 'acquisitions' | 'dispositions' | 'tc'
 
 const STORAGE_KEY = 'savingkc-app-mode'
 
-let listeners: Array<(mode: AppMode) => void> = []
+let memoryMode: AppMode = 'acquisitions'
+let listeners: Array<() => void> = []
 
-function getStoredMode(): AppMode {
-  if (typeof window === 'undefined') return 'acquisitions'
-  return (localStorage.getItem(STORAGE_KEY) as AppMode) || 'acquisitions'
+function normalizeMode(value: string | null): AppMode | null {
+  return value === 'acquisitions' || value === 'dispositions' || value === 'tc' ? value : null
 }
 
-function getRouteMode(pathname: string | null): AppMode | null {
+function getRouteMode(pathname: string | null, department?: string | null, portal?: string | null): AppMode | null {
+  if (pathname?.startsWith('/dispo/tc')) return 'tc'
+  if (pathname?.startsWith('/dispo/contacts') && portal === 'tc') return 'tc'
   if (pathname?.startsWith('/dispo')) return 'dispositions'
+  if (pathname?.startsWith('/calendar')) {
+    const calendarMode = normalizeMode(department ?? null)
+    if (calendarMode) return calendarMode
+  }
   if (
     pathname?.startsWith('/ari') ||
     pathname?.startsWith('/opportunities') ||
     pathname?.startsWith('/leads') ||
     pathname?.startsWith('/dialer') ||
-    pathname?.startsWith('/pipeline')
+    pathname?.startsWith('/dashboard') ||
+    pathname?.startsWith('/pipeline') ||
+    pathname?.startsWith('/checklist')
   ) {
     return 'acquisitions'
   }
   return null
 }
 
+function getStoredMode(): AppMode {
+  if (typeof window === 'undefined') return memoryMode
+  return normalizeMode(localStorage.getItem(STORAGE_KEY)) ?? memoryMode
+}
+
+function subscribe(listener: () => void) {
+  listeners.push(listener)
+  return () => {
+    listeners = listeners.filter((l) => l !== listener)
+  }
+}
+
+function persistMode(newMode: AppMode) {
+  memoryMode = newMode
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(STORAGE_KEY, newMode)
+  }
+  listeners.forEach((listener) => listener())
+}
+
 export function useAppMode() {
   const pathname = usePathname()
-  const [mode, setModeState] = useState<AppMode>(getStoredMode)
-  const routeMode = getRouteMode(pathname)
-  const effectiveMode = routeMode ?? mode
+  const searchParams = useSearchParams()
+  const routeMode = getRouteMode(pathname, searchParams.get('department'), searchParams.get('portal'))
+  const storedMode = useSyncExternalStore(subscribe, getStoredMode, () => memoryMode)
+  const mode = routeMode ?? storedMode
 
   useEffect(() => {
-    if (routeMode) localStorage.setItem(STORAGE_KEY, routeMode)
+    if (routeMode && routeMode !== getStoredMode()) persistMode(routeMode)
   }, [routeMode])
 
-  useEffect(() => {
-    const handler = (m: AppMode) => setModeState(m)
-    listeners.push(handler)
-    return () => {
-      listeners = listeners.filter((l) => l !== handler)
-    }
-  }, [])
-
   const setMode = useCallback((newMode: AppMode) => {
-    localStorage.setItem(STORAGE_KEY, newMode)
-    setModeState(newMode)
-    listeners.forEach((l) => l(newMode))
+    persistMode(newMode)
   }, [])
 
   const toggle = useCallback(() => {
-    const next = effectiveMode === 'acquisitions' ? 'dispositions' : 'acquisitions'
+    const next = mode === 'acquisitions' ? 'dispositions' : 'acquisitions'
     setMode(next)
-  }, [effectiveMode, setMode])
+  }, [mode, setMode])
 
-  return { mode: effectiveMode, setMode, toggle }
+  return { mode, setMode, toggle }
 }

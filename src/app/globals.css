@@ -56,6 +56,41 @@ body {
   font-family: var(--font-sans);
 }
 
+/* SavingKC CRM — Apple-inspired dialer/disposition tokens */
+:root {
+  --skc-brand: #e11d2a;
+  --skc-brand-hover: #c8161f;
+  --skc-brand-soft: rgba(225, 29, 42, 0.12);
+  --skc-brand-soft-border: rgba(225, 29, 42, 0.3);
+
+  --skc-scrim: #000000;
+  --skc-surface-1: #1c1c1e;
+  --skc-surface-2: #2c2c2e;
+  --skc-surface-3: rgba(118, 118, 128, 0.24);
+  --skc-surface-soft: rgba(118, 118, 128, 0.16);
+
+  --skc-text-primary: #ffffff;
+  --skc-text-secondary: rgba(235, 235, 245, 0.85);
+  --skc-text-tertiary: rgba(235, 235, 245, 0.6);
+  --skc-text-quaternary: rgba(235, 235, 245, 0.3);
+
+  --skc-separator: rgba(84, 84, 88, 0.65);
+
+  --skc-success: #30d158;
+  --skc-warning: #ff9f0a;
+  --skc-info: #64d2ff;
+  --skc-danger: #ff453a;
+  --skc-purple: #bf5af2;
+
+  --skc-radius-modal: 22px;
+  --skc-radius-card: 14px;
+  --skc-radius-control: 10px;
+  --skc-radius-pill: 9px;
+  --skc-radius-tile: 7px;
+
+  --skc-font: -apple-system, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+}
+
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   display: inline-block;
@@ -375,4 +410,71 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .ck-attention { animation: none; }
+}
+
+/* ─── Transaction Coordination portal: light, brand-aligned workspace ─────── */
+.tc-portal {
+  --ck-bg: #f6f7f9;
+  --ck-surface: #ffffff;
+  --ck-surface-elev: #f9fafb;
+  --ck-surface-hi: #eef1f5;
+  --ck-border: #d8dee7;
+  --ck-border-strong: #b8c2d0;
+  --ck-text: #111827;
+  --ck-text-muted: #526173;
+  --ck-text-dim: #7a8798;
+  color-scheme: light;
+}
+
+.tc-portal .bg-\[\#141414\],
+.tc-portal .bg-\[\#0f0f0f\] {
+  background-color: #ffffff;
+}
+
+.tc-portal [class~="bg-white/[0.03]"],
+.tc-portal [class~="bg-white/[0.04]"] {
+  background-color: #f9fafb;
+}
+
+.tc-portal [class~="bg-white/5"],
+.tc-portal [class~="bg-black/20"] {
+  background-color: #eef1f5;
+}
+
+.tc-portal [class~="border-white/10"],
+.tc-portal [class~="border-white/20"] {
+  border-color: #d8dee7;
+}
+
+.tc-portal [class~="divide-white/10"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #d8dee7;
+}
+
+.tc-portal .text-white {
+  color: #111827;
+}
+
+.tc-portal .text-black {
+  color: #111827 !important;
+}
+
+.tc-portal .bg-\[\#E32E2E\],
+.tc-portal .bg-\[\#E32E2E\] .text-white,
+.tc-portal .bg-emerald-500,
+.tc-portal .bg-emerald-500 .text-black {
+  color: #ffffff !important;
+}
+
+.tc-portal input:not([type="checkbox"]):not([type="radio"]),
+.tc-portal textarea,
+.tc-portal select {
+  background-color: #ffffff !important;
+  border-color: #d8dee7 !important;
+  color: #111827 !important;
+  color-scheme: light;
+}
+
+.tc-portal input::placeholder,
+.tc-portal textarea::placeholder {
+  color: #7a8798 !important;
 }

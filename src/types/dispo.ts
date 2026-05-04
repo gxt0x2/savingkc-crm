@@ -238,11 +238,7 @@ export interface TcDraft {
   updated_at: string
   approved_at: string | null
   sent_at: string | null
-  delivery_started_at?: string | null
-  sent_by?: string | null
-  delivery_provider?: string | null
-  delivery_message_id?: string | null
-  delivery_error?: string | null
+  metadata: Record<string, unknown> | null
   template?: {
     id: string
     slug: string
@@ -296,8 +292,29 @@ export interface TcFile {
   updated_at: string
   tasks?: TcTask[]
   drafts?: TcDraft[]
+  events?: TcEvent[]
   title_company?: { id: string; name: string; office_phone?: string | null; office_email?: string | null } | null
   title_contact?: { id: string; name: string; role?: string | null; email?: string | null; phone?: string | null } | null
   lead?: { id: string; full_name: string | null; property_address: string | null; city: string | null; state: string | null; zip: string | null } | null
   offer?: BuyerOffer | null
+  dispo_deal?: { id: string; stage: DispoStage; assignment_fee: number | null; close_date: string | null; updated_at?: string | null } | null
+}
+
+export interface TcEvent {
+  id: string
+  tc_file_id: string
+  event_type: string
+  payload: Record<string, unknown> | null
+  actor: string | null
+  created_at: string
+}
+
+export interface TcCommunication {
+  id: string
+  activity_type: string
+  title: string
+  description: string | null
+  agent: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
 }

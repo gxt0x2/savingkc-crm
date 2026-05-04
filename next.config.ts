@@ -1,10 +1,14 @@
 import type { NextConfig } from "next";
+import path from "path";
 import packageJson from "./package.json";
 
 const gitSha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || "local";
 const buildTime = process.env.BUILD_TIME || new Date().toISOString();
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: path.resolve(__dirname),
+  },
   allowedDevOrigins: ['crm.savingkc.com'],
   env: {
     NEXT_PUBLIC_APP_VERSION: packageJson.version,

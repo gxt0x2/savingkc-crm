@@ -13,6 +13,8 @@ const views = [
 export type CalendarView = (typeof views)[number]['key']
 
 export function ViewToggle({
+  title = 'Schedule',
+  department = 'acquisitions',
   currentView,
   currentMonth,
   currentYear,
@@ -20,6 +22,8 @@ export function ViewToggle({
   onNextMonth,
   onNewTask,
 }: {
+  title?: string
+  department?: 'acquisitions' | 'dispositions' | 'tc'
   currentView: CalendarView
   currentMonth: string
   currentYear: number
@@ -30,12 +34,12 @@ export function ViewToggle({
   return (
     <section className="px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
-        <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">Schedule</h1>
+        <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">{title}</h1>
         <div className="flex items-center ck-card-elev rounded-lg p-1">
           {views.map((v) => (
             <Link
               key={v.key}
-              href={`/calendar?view=${v.key}`}
+              href={`/calendar?department=${department}&view=${v.key}`}
               className={`px-3 sm:px-4 py-1.5 text-xs font-bold rounded-md transition-colors ${
                 currentView === v.key
                   ? 'bg-[#E32E2E] text-white shadow-sm'

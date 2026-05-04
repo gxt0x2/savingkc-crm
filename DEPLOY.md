@@ -60,6 +60,22 @@ Click **Save**
 3. Wait 60 seconds
 4. Check your phone for SMS notification! 🎉
 
+## Step 7: Edge Integrity Check (Required)
+
+Run this after each production deploy:
+
+```bash
+EDGE_INTEGRITY_BASE_URL=https://crm.savingkc.com \
+EDGE_EXPECT_VERCEL=1 \
+EDGE_EXPECT_CLOUDFLARE=1 \
+npm run gate:edge
+```
+
+If this fails, do not continue outbound dialing until fixed.
+
+Reference hardening doc:
+- `docs/EDGE_INTEGRITY.md`
+
 ---
 
 ## That's It!

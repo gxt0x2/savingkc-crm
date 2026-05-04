@@ -3,8 +3,20 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import twilio from 'twilio'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const AccessToken = twilio.jwt.AccessToken
 const VoiceGrant = AccessToken.VoiceGrant
+
+const NO_STORE_HEADERS: HeadersInit = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+  'CDN-Cache-Control': 'no-store',
+  'Cloudflare-CDN-Cache-Control': 'no-store',
+  Pragma: 'no-cache',
+  Expires: '0',
+  Vary: 'Authorization, Cookie',
+}
 
 // Map email → outbound caller ID
 const AGENT_CALLER_IDS: Record<string, string> = {
@@ -87,6 +99,15 @@ async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
 
 export async function GET() {
   try {
+    const required = ['TWILIO_ACCOUNT_SID', 'TWILIO_API_KEY', 'TWILIO_API_SECRET'] as const
+    const missing = required.filter((k) => !twilioEnv(k))
+    if (missing.length > 0) {
+      return NextResponse.json(
+        { error: `Missing required env vars: ${missing.join(', ')}` },
+        { status: 500, headers: NO_STORE_HEADERS }
+      )
+    }
+
     // Get logged-in user
     const cookieStore = await cookies()
     const supabase = createServerClient(
@@ -106,14 +127,14 @@ export async function GET() {
     const identity = email.includes('casey') ? 'casey' : email.includes('ernest') ? 'ernest' : 'crm-user'
     const callerId = AGENT_CALLER_IDS[email] || DEFAULT_CALLER_ID
 
-    const accountSid = requireTwilioEnv('TWILIO_ACCOUNT_SID', 'AC')
-    const apiKey = requireTwilioEnv('TWILIO_API_KEY', 'SK')
-    const apiSecret = requireTwilioEnv('TWILIO_API_SECRET')
     const twimlAppSid = await getOrCreateTwimlAppSid()
     const voiceGrant = new VoiceGrant({
       outgoingApplicationSid: twimlAppSid,
       incomingAllow: true,
     })
+    const accountSid = requireTwilioEnv('TWILIO_ACCOUNT_SID', 'AC')
+    const apiKey = requireTwilioEnv('TWILIO_API_KEY', 'SK')
+    const apiSecret = requireTwilioEnv('TWILIO_API_SECRET')
     const token = new AccessToken(
       accountSid,
       apiKey,
@@ -121,9 +142,12 @@ export async function GET() {
       { identity, ttl: 3600 }
     )
     token.addGrant(voiceGrant)
-    return NextResponse.json({ token: token.toJwt(), identity, callerId, twimlAppSid })
+    return NextResponse.json(
+      { token: token.toJwt(), identity, callerId, twimlAppSid },
+      { headers: NO_STORE_HEADERS }
+    )
   } catch (err) {
     console.error('twilio-token error:', err)
-    return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to generate token' }, { status: 500, headers: NO_STORE_HEADERS })
   }
 }

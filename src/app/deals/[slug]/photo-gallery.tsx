@@ -1,8 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type SyntheticEvent } from 'react'
 import { trackEvent } from './track-events'
-import { MapPanel, StreetViewPanel } from '@/components/leads/google-map-panel'
 
 interface PhotoGalleryProps {
   photos: string[]
@@ -16,16 +15,40 @@ interface PhotoGalleryProps {
 }
 
 const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''
+const THUMB_STRIP_SIZE = 25
+const GRID_THUMB_WIDTH = 360
+const GRID_THUMB_QUALITY = 78
+const QUIET_PRELOAD_DELAY_MS = 1400
+const QUIET_PRELOAD_BATCH_SIZE = 8
+const QUIET_PRELOAD_BATCH_DELAY_MS = 250
+const warmedImageUrls = new Set<string>()
 
-// Supabase Image Render transform: /object/public/... → /render/image/public/...
-// Serves resized WebP with long cache headers instead of the original 700KB+
-// JPEGs with cache-control: no-cache. Massive perf win for grids + thumbnails.
-function img(url: string, width: number, quality = 72): string {
+function isDealAssetUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.hostname === 'fprrknfyzlthbxewnwmi.supabase.co' &&
+      parsed.pathname.startsWith('/storage/v1/object/public/deal-assets/')
+    )
+  } catch {
+    return false
+  }
+}
+
+// Local proxy because Supabase image transformations are not enabled on this
+// project. The proxy resizes/caches safely, and each <img> falls back to the
+// original URL if the proxy ever fails.
+function img(url: string, width: number, quality = 82): string {
   if (!url) return url
-  const rendered = url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')
-  if (rendered === url) return url // non-Supabase URL, leave alone
-  const sep = rendered.includes('?') ? '&' : '?'
-  return `${rendered}${sep}width=${width}&quality=${quality}&resize=contain`
+  if (!isDealAssetUrl(url)) return url
+  return `/api/deals/image?src=${encodeURIComponent(url)}&w=${width}&q=${quality}`
+}
+
+function fallbackToOriginal(e: SyntheticEvent<HTMLImageElement>, originalUrl: string) {
+  const image = e.currentTarget
+  if (image.dataset.fallbackOriginal === '1') return
+  image.dataset.fallbackOriginal = '1'
+  image.src = originalUrl
 }
 
 // Hint a resource to start downloading before the JS handler runs.
@@ -33,6 +56,39 @@ function preloadImage(url: string) {
   if (typeof window === 'undefined') return
   const i = new Image()
   i.src = url
+}
+
+function preloadImagesQuietly(urls: string[]) {
+  if (typeof window === 'undefined') return () => {}
+
+  let index = 0
+  let stopped = false
+  let timer: number | undefined
+
+  function warmNextBatch() {
+    if (stopped) return
+
+    let warmedThisBatch = 0
+    while (index < urls.length && warmedThisBatch < QUIET_PRELOAD_BATCH_SIZE) {
+      const url = urls[index]
+      index += 1
+      if (!url || warmedImageUrls.has(url)) continue
+      warmedImageUrls.add(url)
+      preloadImage(url)
+      warmedThisBatch += 1
+    }
+
+    if (index < urls.length) {
+      timer = window.setTimeout(warmNextBatch, QUIET_PRELOAD_BATCH_DELAY_MS)
+    }
+  }
+
+  timer = window.setTimeout(warmNextBatch, QUIET_PRELOAD_DELAY_MS)
+
+  return () => {
+    stopped = true
+    if (timer) window.clearTimeout(timer)
+  }
 }
 
 /* ── Google-style filled SVG icons ── */
@@ -83,28 +139,43 @@ export default function PhotoGallery({
   const [gridView, setGridView] = useState(false)
   const [streetViewOpen, setStreetViewOpen] = useState(false)
   const [mapViewOpen, setMapViewOpen] = useState(false)
+  const [streetViewEmbedUrl, setStreetViewEmbedUrl] = useState<string | null>(null)
+  const [streetViewError, setStreetViewError] = useState<string | null>(null)
   const [streetStaticBroken, setStreetStaticBroken] = useState(false)
   const [mapStaticBroken, setMapStaticBroken] = useState(false)
 
   const fullAddress = [propertyAddress, city, state, zip].filter(Boolean).join(', ')
   const encodedAddress = encodeURIComponent(fullAddress)
   const hasAddress = showAddress && fullAddress.length > 0
+  const hasGoogleMapsKey = GMAPS_KEY.trim().length > 0
 
   // Static map/streetview from Google. Sized 2x the rendered tile (~360px wide
   // displayed) for retina; scale=2 doubles density which is what makes them
   // visibly sharp without going full 800x400. Also preconnect at first render.
-  const streetViewStaticUrl = hasAddress
-    ? `https://maps.googleapis.com/maps/api/streetview?size=400x240&scale=2&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
+  const streetViewStaticUrl = hasAddress && hasGoogleMapsKey
+    ? `https://maps.googleapis.com/maps/api/streetview?size=640x360&scale=2&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
     : null
 
   const mapStaticUrl = hasAddress
-    ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodedAddress}&zoom=16&size=300x300&scale=2&maptype=roadmap&markers=color:red%7C${encodedAddress}&key=${GMAPS_KEY}`
+    ? `/api/maps/static?address=${encodedAddress}&z=19&w=640&h=640`
+    : null
+
+  const mapModalStaticUrl = hasAddress
+    ? `/api/maps/static?address=${encodedAddress}&z=19&w=640&h=500`
+    : null
+
+  const mapEmbedUrl = hasAddress && hasGoogleMapsKey
+    ? `https://www.google.com/maps/embed/v1/place?key=${GMAPS_KEY}&q=${encodedAddress}&zoom=18&maptype=roadmap`
+    : null
+
+  const publicGoogleMapUrl = hasAddress
+    ? `https://www.google.com/maps?q=${encodedAddress}&z=18&output=embed`
     : null
 
   useEffect(() => {
     if (!hasAddress || typeof document === 'undefined') return
     // preconnect so the TLS + DNS handshake is done before <img> requests fire
-    const hosts = ['https://maps.googleapis.com', 'https://maps.gstatic.com']
+    const hosts = ['https://maps.googleapis.com', 'https://maps.gstatic.com', 'https://www.google.com']
     const links: HTMLLinkElement[] = []
     hosts.forEach(href => {
       const l = document.createElement('link')
@@ -124,6 +195,12 @@ export default function PhotoGallery({
     setLightboxOpen(true)
     if (slug) trackEvent(slug, 'photo_open', { index })
   }, [slug])
+
+  const openPhotoGrid = useCallback(() => {
+    setGridView(true)
+    setLightboxOpen(true)
+    if (slug) trackEvent(slug, 'photo_open', { index: 0, view: 'grid', total: photos.length })
+  }, [photos.length, slug])
 
   const closeLightbox = useCallback(() => {
     setLightboxOpen(false)
@@ -146,6 +223,15 @@ export default function PhotoGallery({
     preloadImage(img(photos[next], 1800))
     preloadImage(img(photos[prev], 1800))
   }, [lightboxOpen, gridView, currentIndex, photos])
+
+  // Warm the whole thumbnail gallery after the page has settled. This mimics
+  // "quiet preload" behavior: the visible page wins first, then the likely next
+  // interaction is prepared in small background batches.
+  useEffect(() => {
+    if (typeof window === 'undefined' || photos.length <= 4) return
+    const urls = photos.map((url) => img(url, GRID_THUMB_WIDTH, GRID_THUMB_QUALITY))
+    return preloadImagesQuietly(urls)
+  }, [photos])
 
   // Keyboard navigation
   useEffect(() => {
@@ -175,15 +261,50 @@ export default function PhotoGallery({
     return () => { document.body.style.overflow = '' }
   }, [lightboxOpen, streetViewOpen, mapViewOpen])
 
-  function openStreetView() {
+  /* ── Street View modal opener (geocode → embed URL) ──
+     Needs Geocoding API + Maps Embed API enabled in Google Cloud
+     Console. If either is missing/blocked we fall back to a clean
+     "Open in Google Maps" link instead of dumping Google's raw
+     error JSON into an iframe. */
+  async function openStreetView() {
     setStreetViewOpen(true)
     if (slug) trackEvent(slug, 'street_view_open')
+    if (streetViewEmbedUrl || streetViewError) return
+    if (!hasGoogleMapsKey) {
+      setStreetViewError('Street View requires a Google Maps API key.')
+      return
+    }
+    try {
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GMAPS_KEY}`
+      )
+      const data = await res.json()
+      if (data.error_message || data.status === 'REQUEST_DENIED') {
+        setStreetViewError(data.error_message || 'Geocoding is not enabled on this Google Cloud project.')
+        return
+      }
+      const loc = data.results?.[0]?.geometry?.location
+      if (loc) {
+        setStreetViewEmbedUrl(
+          `https://www.google.com/maps/embed/v1/streetview?key=${GMAPS_KEY}&location=${loc.lat},${loc.lng}&fov=90&heading=0&pitch=0`
+        )
+      } else {
+        setStreetViewError('No street view available for this address.')
+      }
+    } catch (err) {
+      setStreetViewError(err instanceof Error ? err.message : 'Could not load street view.')
+    }
   }
 
   if (photos.length === 0) return null
 
   const showMapTiles = hasAddress && photos.length >= 4
   const remaining = photos.length - 4
+  const thumbStripStart = Math.max(
+    0,
+    Math.min(currentIndex - Math.floor(THUMB_STRIP_SIZE / 2), photos.length - THUMB_STRIP_SIZE)
+  )
+  const thumbStripPhotos = photos.slice(thumbStripStart, thumbStripStart + THUMB_STRIP_SIZE)
 
   return (
     <>
@@ -193,11 +314,12 @@ export default function PhotoGallery({
           /* Single photo */
           <div className="rounded-xl overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
             <img
-              src={img(photos[0], 1400)}
+              src={img(photos[0], 1600, 84)}
               alt="Property"
               className="w-full h-[400px] object-cover"
               decoding="async"
               fetchPriority="high"
+              onError={(e) => fallbackToOriginal(e, photos[0])}
             />
           </div>
         ) : photos.length === 2 ? (
@@ -212,6 +334,7 @@ export default function PhotoGallery({
                   decoding="async"
                   fetchPriority={i === 0 ? 'high' : 'auto'}
                   loading={i === 0 ? 'eager' : 'lazy'}
+                  onError={(e) => fallbackToOriginal(e, url)}
                 />
               </div>
             ))}
@@ -236,11 +359,12 @@ export default function PhotoGallery({
               onClick={() => openLightbox(0)}
             >
               <img
-                src={img(photos[0], 1200)}
+                src={img(photos[0], 1600, 84)}
                 alt="Property"
                 className="w-full h-full object-cover"
                 decoding="async"
                 fetchPriority="high"
+                onError={(e) => fallbackToOriginal(e, photos[0])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
@@ -251,11 +375,12 @@ export default function PhotoGallery({
               onClick={() => openLightbox(1)}
             >
               <img
-                src={img(photos[1], 600)}
+                src={img(photos[1], 900, 84)}
                 alt="Property 2"
                 className="w-full h-full object-cover"
                 decoding="async"
                 loading="lazy"
+                onError={(e) => fallbackToOriginal(e, photos[1])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
@@ -265,19 +390,19 @@ export default function PhotoGallery({
               className="col-span-2 cursor-pointer relative group overflow-hidden"
               onClick={openStreetView}
             >
-              {streetStaticBroken ? (
-                <div className="absolute inset-0 bg-gradient-to-br from-[#3a4a5a] via-[#2a3a4a] to-[#1a2a3a] flex items-center justify-center">
-                  <IconPegman className="w-12 h-12 text-white/40" />
-                </div>
-              ) : (
+              {streetViewStaticUrl && !streetStaticBroken ? (
                 <img
-                  src={streetViewStaticUrl!}
+                  src={streetViewStaticUrl}
                   alt="Street View"
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   decoding="async"
                   fetchPriority="high"
                   onError={() => setStreetStaticBroken(true)}
                 />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-[#3a4a5a] via-[#2a3a4a] to-[#1a2a3a] flex items-center justify-center">
+                  <IconPegman className="w-12 h-12 text-white/40" />
+                </div>
               )}
               <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60 group-hover:from-black/40 group-hover:via-black/15 group-hover:to-black/40 transition-all pointer-events-none" />
               {/* Top-right badge */}
@@ -309,10 +434,11 @@ export default function PhotoGallery({
                 </>
               ) : (
                 <>
-                  <div className="absolute inset-0 bg-gradient-to-br from-[#d4e8d0] via-[#e8e4de] to-[#d0dce8] group-hover:brightness-95 transition-all" />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-                    <IconGoogleMap className="w-12 h-12 drop-shadow-md" />
-                    <span className="text-[#333] font-bold text-[11px] tracking-wider mt-1">MAP VIEW</span>
+                  <div className="absolute inset-0 bg-[#ebe7df] group-hover:brightness-95 transition-all" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-3 text-center">
+                    <IconGoogleMap className="w-8 h-8 drop-shadow-md opacity-70" />
+                    <span className="text-[#4b5563] font-bold text-[10px] tracking-wider">MAP UNAVAILABLE</span>
+                    <span className="text-[#6b7280] text-[10px] leading-tight">Add Google Maps key</span>
                   </div>
                 </>
               )}
@@ -324,11 +450,12 @@ export default function PhotoGallery({
               onClick={() => openLightbox(2)}
             >
               <img
-                src={img(photos[2], 500)}
+                src={img(photos[2], 800, 84)}
                 alt="Property 3"
                 className="w-full h-full object-cover"
                 decoding="async"
                 loading="lazy"
+                onError={(e) => fallbackToOriginal(e, photos[2])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
@@ -336,14 +463,15 @@ export default function PhotoGallery({
             {/* Photo 4 + "X more" — col 4, row 2 */}
             <div
               className="cursor-pointer relative group"
-              onClick={() => { if (remaining > 0) { setGridView(true); setLightboxOpen(true) } else { openLightbox(3) } }}
+              onClick={() => { if (remaining > 0) openPhotoGrid(); else openLightbox(3) }}
             >
               <img
-                src={img(photos[3], 500)}
+                src={img(photos[3], 800, 84)}
                 alt="Property 4"
                 className="w-full h-full object-cover"
                 decoding="async"
                 loading="lazy"
+                onError={(e) => fallbackToOriginal(e, photos[3])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
               {remaining > 0 && (
@@ -364,11 +492,12 @@ export default function PhotoGallery({
               onClick={() => openLightbox(0)}
             >
               <img
-                src={img(photos[0], 1200)}
+                src={img(photos[0], 1600, 84)}
                 alt="Property"
                 className="w-full h-full object-cover"
                 decoding="async"
                 fetchPriority="high"
+                onError={(e) => fallbackToOriginal(e, photos[0])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
@@ -384,13 +513,14 @@ export default function PhotoGallery({
                   className="w-full h-full object-cover"
                   decoding="async"
                   loading="lazy"
+                  onError={(e) => fallbackToOriginal(e, url)}
                 />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
               </div>
             ))}
             {photos.length > 5 && (
               <button
-                onClick={() => { setGridView(true); setLightboxOpen(true) }}
+                onClick={openPhotoGrid}
                 className="absolute bottom-4 right-4 bg-white/95 backdrop-blur text-gray-900 text-sm font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-white transition-colors flex items-center gap-2"
               >
                 Show all {photos.length} photos
@@ -427,13 +557,45 @@ export default function PhotoGallery({
                 </svg>
               </button>
             </div>
-            <StreetViewPanel address={fullAddress} height={500} />
+            {streetViewEmbedUrl ? (
+              <iframe
+                src={streetViewEmbedUrl}
+                width="100%"
+                height="500"
+                style={{ border: 0, display: 'block' }}
+                allowFullScreen
+                loading="lazy"
+                title="Street View"
+              />
+            ) : streetViewError ? (
+              <div className="flex flex-col items-center justify-center gap-3 h-[500px] bg-gray-50 px-8 text-center">
+                <IconPegman className="w-10 h-10 text-gray-400" />
+                <p className="text-sm font-semibold text-gray-700 max-w-md">
+                  Inline Street View is not available right now.
+                </p>
+                <p className="text-xs text-gray-500 max-w-md">
+                  Enable <span className="font-mono">Geocoding API</span> and <span className="font-mono">Maps Embed API</span> in Google Cloud Console to render it inline. In the meantime, open the location in Google Maps.
+                </p>
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+                >
+                  Open in Google Maps
+                </a>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-[500px] text-sm text-gray-400 bg-gray-50">
+                Loading…
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ── Map View Modal ── */}
-      {mapViewOpen && hasAddress && (
+      {mapViewOpen && hasAddress && (mapModalStaticUrl || mapEmbedUrl || publicGoogleMapUrl) && (
         <div
           className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4"
           onClick={() => setMapViewOpen(false)}
@@ -459,7 +621,35 @@ export default function PhotoGallery({
                 </svg>
               </button>
             </div>
-            <MapPanel address={fullAddress} height={500} />
+            {mapEmbedUrl ? (
+              <iframe
+                src={mapEmbedUrl}
+                width="100%"
+                height="500"
+                style={{ border: 0, display: 'block' }}
+                allowFullScreen
+                loading="lazy"
+                title="Map View"
+              />
+            ) : mapModalStaticUrl ? (
+              <img
+                src={mapModalStaticUrl}
+                alt={`Map of ${fullAddress}`}
+                className="block h-[500px] w-full object-contain bg-gray-100"
+                decoding="async"
+              />
+            ) : publicGoogleMapUrl ? (
+              <iframe
+                src={publicGoogleMapUrl}
+                width="100%"
+                height="500"
+                style={{ border: 0, display: 'block' }}
+                allowFullScreen
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                title="Map View"
+              />
+            ) : null}
           </div>
         </div>
       )}
@@ -476,7 +666,9 @@ export default function PhotoGallery({
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setGridView(!gridView)}
+                onClick={() => {
+                  setGridView(!gridView)
+                }}
                 className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                 title={gridView ? 'Single view' : 'Grid view'}
               >
@@ -512,11 +704,13 @@ export default function PhotoGallery({
                     onClick={() => { setCurrentIndex(i); setGridView(false) }}
                   >
                     <img
-                      src={img(url, 500)}
+                      src={img(url, GRID_THUMB_WIDTH, GRID_THUMB_QUALITY)}
                       alt={`Photo ${i + 1}`}
                       className="w-full h-full object-cover hover:opacity-80 transition-opacity"
                       decoding="async"
-                      loading="lazy"
+                      fetchPriority={i < 8 ? 'high' : 'low'}
+                      loading={i < 8 ? 'eager' : 'lazy'}
+                      onError={(e) => fallbackToOriginal(e, url)}
                     />
                   </div>
                 ))}
@@ -535,11 +729,12 @@ export default function PhotoGallery({
               </button>
 
               <img
-                src={img(photos[currentIndex], 1800)}
+                src={img(photos[currentIndex], 2000, 86)}
                 alt={`Photo ${currentIndex + 1}`}
                 className="max-h-[80vh] max-w-full object-contain rounded-lg"
                 decoding="async"
                 fetchPriority="high"
+                onError={(e) => fallbackToOriginal(e, photos[currentIndex])}
               />
 
               <button
@@ -557,7 +752,9 @@ export default function PhotoGallery({
           {!gridView && photos.length > 1 && (
             <div className="px-4 py-3 overflow-x-auto">
               <div className="flex gap-2 justify-center">
-                {photos.map((url, i) => (
+                {thumbStripPhotos.map((url, offset) => {
+                  const i = thumbStripStart + offset
+                  return (
                   <button
                     key={i}
                     onClick={() => setCurrentIndex(i)}
@@ -571,9 +768,11 @@ export default function PhotoGallery({
                       className="w-full h-full object-cover"
                       decoding="async"
                       loading="lazy"
+                      onError={(e) => fallbackToOriginal(e, url)}
                     />
                   </button>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

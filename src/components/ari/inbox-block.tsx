@@ -68,7 +68,7 @@ export function InboxBlock({ items, count, loading, onRefresh }: InboxBlockProps
                   {item.type === 'sms' ? (
                     <Icon name="chat_bubble" className="text-blue-500 text-lg" />
                   ) : (
-                    <Icon name="phone_missed" className="text-red-500 text-lg" />
+                    <Icon name="missed_call_badge" className="text-lg" />
                   )}
                 </div>
 

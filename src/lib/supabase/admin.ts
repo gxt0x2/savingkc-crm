@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { getSupabaseAdminKey, getSupabaseUrl } from '@/lib/supabase/env'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _client: SupabaseClient<any, 'public', any> | null = null
@@ -7,8 +8,8 @@ let _client: SupabaseClient<any, 'public', any> | null = null
 export function supabaseAdmin() {
   if (!_client) {
     _client = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      getSupabaseUrl(),
+      getSupabaseAdminKey(),
     )
   }
   return _client

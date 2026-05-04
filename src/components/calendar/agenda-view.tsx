@@ -2,53 +2,11 @@
 
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
+import { taskAccentColor, taskDotStyle, taskTypeLabel } from '@/components/calendar/task-tone'
 import type { Task } from '@/types'
 
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-
-function statusDotColor(task: Task) {
-  if (task.status === 'overdue') return 'bg-error'
-  switch (task.type) {
-    case 'appointment':
-    case 'follow_up':
-      return 'bg-secondary'
-    case 'send_offer':
-      return 'bg-primary'
-    case 'review':
-    case 'task':
-      return 'bg-outline'
-    default:
-      return 'bg-outline'
-  }
-}
-
-function taskTypeLabel(task: Task) {
-  switch (task.type) {
-    case 'follow_up': return 'Follow-up Call'
-    case 'appointment': return 'Appointment'
-    case 'send_offer': return 'Send Offer'
-    case 'review': return 'Review Comps'
-    case 'task': return 'Task'
-    default: return task.type
-  }
-}
-
-function taskTypeColor(task: Task) {
-  if (task.status === 'overdue') return 'text-error'
-  switch (task.type) {
-    case 'appointment':
-    case 'follow_up':
-      return 'text-secondary'
-    case 'send_offer':
-      return 'text-primary'
-    case 'review':
-    case 'task':
-      return 'text-outline'
-    default:
-      return 'text-outline'
-  }
 }
 
 function formatDueDate(dateStr: string) {
@@ -122,30 +80,31 @@ function groupTasksIntoSections(tasks: Task[]): AgendaSection[] {
 function AgendaRow({ task, onTaskClick }: { task: Task; onTaskClick?: (task: Task) => void }) {
   const isOverdue = task.status === 'overdue'
   return (
-    <div
+    <button
+      type="button"
       onClick={() => onTaskClick?.(task)}
       className={cn(
-        'grid grid-cols-12 gap-4 px-6 py-4 items-center transition-colors group cursor-pointer',
-        isOverdue ? 'hover:bg-error-container/10' : 'hover:bg-surface-container-low/50'
+        'w-full grid grid-cols-12 gap-4 px-6 py-4 items-center text-left transition-colors group cursor-pointer',
+        isOverdue ? 'hover:bg-[#E32E2E]/5' : 'hover:bg-[var(--ck-surface-elev)]'
       )}
     >
       <div className="col-span-1">
-        <span className={cn('w-2 h-2 rounded-full inline-block', statusDotColor(task))} />
+        <span className="w-2 h-2 rounded-full inline-block" style={taskDotStyle(task)} />
       </div>
       <div className="col-span-2">
-        <span className={cn('text-xs font-bold', taskTypeColor(task))}>
+        <span className="text-xs font-bold" style={{ color: taskAccentColor(task) }}>
           {taskTypeLabel(task)}
         </span>
       </div>
       <div className="col-span-5">
-        <div className="text-sm font-semibold text-on-surface group-hover:underline cursor-pointer">
+        <div className="text-sm font-semibold text-[var(--ck-text)] group-hover:underline cursor-pointer">
           {task.property_address || task.title}
         </div>
         {task.description && (
-          <div className="text-[10px] text-on-surface-variant">{task.description}</div>
+          <div className="text-[10px] text-[var(--ck-text-muted)]">{task.description}</div>
         )}
         {task.contact && (
-          <div className="text-[10px] text-on-surface-variant">
+          <div className="text-[10px] text-[var(--ck-text-muted)]">
             Lead: {task.contact.first_name} {task.contact.last_name}
           </div>
         )}
@@ -153,21 +112,24 @@ function AgendaRow({ task, onTaskClick }: { task: Task; onTaskClick?: (task: Tas
       <div className="col-span-2">
         {task.due_date && (
           <>
-            <div className={cn('text-xs font-bold', isOverdue ? 'text-error' : '')}>
+            <div className="text-xs font-bold text-[var(--ck-text)]" style={isOverdue ? { color: taskAccentColor(task) } : undefined}>
               {isOverdue ? formatDueDate(task.due_date) : isSameDay(new Date(task.due_date), new Date()) ? 'Today' : formatDueDate(task.due_date)}
             </div>
-            <div className="text-[10px] text-on-surface-variant">{formatDueTime(task.due_date)}</div>
+            <div className="text-[10px] text-[var(--ck-text-muted)]">{formatDueTime(task.due_date)}</div>
           </>
         )}
       </div>
       <div className="col-span-2 flex justify-end">
         {task.assigned_to && (
-          <div className="w-6 h-6 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center text-[10px] font-bold">
+          <div
+            className="w-6 h-6 rounded-full text-white flex items-center justify-center text-[10px] font-bold"
+            style={{ backgroundColor: taskAccentColor(task) }}
+          >
             {task.assigned_to.slice(0, 2).toUpperCase()}
           </div>
         )}
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -175,9 +137,8 @@ export function AgendaView({ tasks, onTaskClick }: { tasks: Task[]; onTaskClick?
   const sections = groupTasksIntoSections(tasks)
 
   return (
-    <div className="bg-surface-container-lowest rounded-xl shadow-[0px_8px_24px_rgba(25,28,29,0.06)] border border-outline-variant/10 flex flex-col max-h-[calc(100vh-280px)]">
-      {/* Column header */}
-      <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-outline-variant/15 bg-surface-container-low/50 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+    <div className="ck-card flex flex-col max-h-[calc(100vh-280px)] shadow-[0px_8px_24px_rgba(25,28,29,0.06)]">
+      <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[10px] font-bold uppercase tracking-widest text-[var(--ck-text-muted)]">
         <div className="col-span-1">Status</div>
         <div className="col-span-2">Task Type</div>
         <div className="col-span-5">Associated Property / Lead</div>
@@ -185,15 +146,14 @@ export function AgendaView({ tasks, onTaskClick }: { tasks: Task[]; onTaskClick?
         <div className="col-span-2 text-right">Assigned</div>
       </div>
 
-      {/* Scrollable agenda body */}
-      <div className="overflow-y-auto flex-grow divide-y divide-outline-variant/5">
+      <div className="overflow-y-auto flex-grow divide-y divide-[var(--ck-border)]">
         {sections.map((section) => (
-          <div key={section.label} className={section.isOverdue ? 'bg-error-container/5' : ''}>
+          <div key={section.label} className={section.isOverdue ? 'bg-[#E32E2E]/5' : ''}>
             <div className={cn(
               'px-6 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2',
               section.isOverdue
-                ? 'bg-error/5 text-error'
-                : 'bg-surface-container-low text-on-surface-variant'
+                ? 'bg-[#E32E2E]/5 text-[#E32E2E]'
+                : 'bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
             )}>
               {section.isOverdue && <Icon name="warning" size="text-xs" />}
               {section.label}
@@ -205,7 +165,7 @@ export function AgendaView({ tasks, onTaskClick }: { tasks: Task[]; onTaskClick?
         ))}
 
         {sections.length === 0 && (
-          <div className="px-6 py-12 text-center text-on-surface-variant text-sm">
+          <div className="px-6 py-12 text-center text-[var(--ck-text-muted)] text-sm">
             No tasks scheduled.
           </div>
         )}
