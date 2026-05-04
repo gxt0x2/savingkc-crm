@@ -10,8 +10,10 @@ import { DayView } from '@/components/calendar/day-view'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { useCalendarTasks } from '@/hooks/use-calendar-tasks'
+import { useAppMode } from '@/hooks/use-app-mode'
 import { toProperCase } from '@/lib/format'
 import type { Task } from '@/types'
+import type { CalendarDepartment } from '@/hooks/use-calendar-tasks'
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -21,12 +23,22 @@ const MONTH_NAMES = [
 function CalendarContent() {
   const searchParams = useSearchParams()
   const viewParam = (searchParams.get('view') || 'month') as CalendarView
+  const { mode } = useAppMode()
+  const departmentParam = searchParams.get('department')
+  const department: CalendarDepartment = departmentParam === 'dispositions' || departmentParam === 'acquisitions' || departmentParam === 'tc'
+    ? departmentParam
+    : mode
+  const departmentLabel = department === 'tc'
+    ? 'Transaction Coordinator'
+    : department === 'dispositions'
+      ? 'Dispositions'
+      : 'Acquisitions'
 
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth())
 
-  const { data: tasks = [], isLoading } = useCalendarTasks()
+  const { data: tasks = [], isLoading } = useCalendarTasks(department)
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [showNewTask, setShowNewTask] = useState(false)
@@ -44,7 +56,7 @@ function CalendarContent() {
       }
       return prev - 1
     })
-  }, [])
+  }, [setYear])
 
   const handleNextMonth = useCallback(() => {
     setMonth((prev) => {
@@ -54,7 +66,7 @@ function CalendarContent() {
       }
       return prev + 1
     })
-  }, [])
+  }, [setYear])
 
   if (isLoading) {
     return (
@@ -67,6 +79,8 @@ function CalendarContent() {
   return (
     <>
       <ViewToggle
+        title={`${departmentLabel} Schedule`}
+        department={department}
         currentView={viewParam}
         currentMonth={MONTH_NAMES[month]}
         currentYear={year}
@@ -186,6 +200,7 @@ function CalendarContent() {
         <NewTaskModal
           onClose={() => setShowNewTask(false)}
           onCreated={() => { setShowNewTask(false); window.location.reload() }}
+          department={department}
           showLeadSelector={true}
         />
       )}

@@ -392,7 +392,7 @@ function MessageRow({ msg, now }: { msg: InboxItem; now: Date }) {
       <Link href={`/leads/${msg.lead_id}`} className="block px-4 py-3 hover:bg-white/5 transition-colors">
         <div className="flex items-start gap-3">
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isCall ? 'bg-[#E32E2E]/15 text-[#E32E2E]' : 'bg-emerald-500/15 text-emerald-400'}`}>
-            <Icon name={isCall ? 'phone_missed' : 'chat'} size="text-sm" />
+            <Icon name={isCall ? 'missed_call_badge' : 'chat'} size="text-sm" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline justify-between gap-2">

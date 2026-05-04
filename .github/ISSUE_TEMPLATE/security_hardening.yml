@@ -1,0 +1,35 @@
+name: Security hardening
+description: Track credential, CI, branch-protection, or access-control work.
+title: "[Security]: "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not paste secret values, token payloads, env dumps, or GitHub secret-scanning alert contents.
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk
+      description: What is the security risk?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Use non-secret references only.
+  - type: textarea
+    id: containment
+    attributes:
+      label: Containment plan
+      description: What should be changed first?
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: How do we know the hardening worked?
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback
+      description: How can this be safely reversed?

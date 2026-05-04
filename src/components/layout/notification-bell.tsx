@@ -40,23 +40,48 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
+  const inFlightRef = useRef(false)
+  const lastFetchedRef = useRef(0)
+  const POLL_MS = 30_000
+  const MIN_FETCH_GAP_MS = 10_000
+  const LAST_FETCH_KEY = 'ck_notifications_last_fetch_ms'
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = useCallback(async (force = false) => {
+    const now = Date.now()
+    const persistedLastFetch =
+      typeof window !== 'undefined'
+        ? Number(window.sessionStorage.getItem(LAST_FETCH_KEY) || 0)
+        : 0
+    const effectiveLastFetch = Math.max(lastFetchedRef.current, persistedLastFetch)
+    if (!force && now - effectiveLastFetch < MIN_FETCH_GAP_MS) return
+    if (inFlightRef.current) return
+    inFlightRef.current = true
     try {
-      const res = await fetch('/api/notifications?limit=15')
+      const res = await fetch('/api/notifications?limit=15', { cache: 'no-store' })
       if (!res.ok) return
       const data = await res.json()
       setNotifications(data.notifications || [])
       setUnreadCount(data.unread_count || 0)
+      lastFetchedRef.current = now
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(LAST_FETCH_KEY, String(now))
+      }
     } catch { /* ignore */ }
+    finally {
+      inFlightRef.current = false
+    }
   }, [])
 
   // Poll every 30 seconds
   useEffect(() => {
     fetchNotifications()
-    const interval = setInterval(fetchNotifications, 30_000)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifications()
+      }
+    }, POLL_MS)
     return () => clearInterval(interval)
-  }, [fetchNotifications])
+  }, [fetchNotifications, POLL_MS])
 
   // Close on click outside
   useEffect(() => {
@@ -92,7 +117,7 @@ export function NotificationBell() {
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => { setOpen(!open); if (!open) fetchNotifications() }}
+        onClick={() => { setOpen(!open); if (!open) fetchNotifications(true) }}
         className="relative w-10 h-10 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] flex items-center justify-center transition-colors"
         aria-label="Notifications"
         title="Notifications"

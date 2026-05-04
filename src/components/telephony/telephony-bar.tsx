@@ -1,15 +1,24 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { formatPhone, toProperCase } from '@/lib/format'
+import { formatPhone } from '@/lib/format'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { DispositionModal, DispositionType } from './disposition-modal'
+import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TwilioDevice = any
+type TwilioErrorLike = {
+  code?: number
+  message?: string
+  explanation?: string
+  name?: string
+  causes?: unknown[]
+  originalError?: unknown
+}
 
 interface SearchResult {
   id: string
@@ -26,15 +35,20 @@ interface RecentCall {
   id: string
   lead_id: string | null
   lead_name: string | null
-  agent: string | null
   phone: string | null
-  from: string | null
-  to: string | null
-  direction: string | null
-  outcome: string | null
-  duration: number | null
+  agent?: string | null
   created_at: string
-  metadata: { duration?: number; callStatus?: string; status?: string; outcome?: string; direction?: string } | null
+  metadata: {
+    duration?: number
+    direction?: string
+    disposition?: string
+    outcome?: string
+    status?: string
+    from?: string
+    to?: string
+    callStatus?: string
+    dialStatus?: string
+  } | null
 }
 
 // A single entry in the heir-dialer queue. The property stays pinned (leadId +
@@ -50,37 +64,35 @@ export interface HeirQueueItem {
   deceasedOwnerName: string
 }
 
-export interface DialerSettings {
-  callerId?: string | null
-  agent?: string | null
-  mode?: 'power' | 'predictive' | string | null
-  pacing?: number | null
-}
-
 interface DialerPanelProps {
   open: boolean
   onClose: () => void
   onStatusChange?: (status: CallStatus) => void
-  pendingDial?: { phone: string; name: string; leadId: string } | null
+  pendingDial?: { phone: string; name: string; leadId: string; callerId?: string | null } | null
   pendingQueue?: HeirQueueItem[] | null
-  pendingSettings?: DialerSettings | null
+  pendingQueueCallerId?: string | null
+  pendingQueueCallerPlan?: DialerCallerPlan | null
+}
+
+function resolveCallerIdForAttempt(
+  plan: DialerCallerPlan,
+  fallbackCallerId: string,
+  attemptsPlaced: number,
+): string {
+  if (plan.mode !== 'rotation' || plan.rotationCallerIds.length === 0) {
+    return plan.staticCallerId || fallbackCallerId
+  }
+  const safeEvery = Math.max(1, Math.floor(plan.rotateEveryCalls || 1))
+  const index = Math.floor(Math.max(0, attemptsPlaced) / safeEvery) % plan.rotationCallerIds.length
+  return plan.rotationCallerIds[index] || plan.staticCallerId || fallbackCallerId
 }
 
 function useCallTimer(active: boolean) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
-    if (!active) return
-    const resetId = requestAnimationFrame(() => setSeconds(0))
+    if (!active) { setSeconds(0); return }
     const id = setInterval(() => setSeconds((s) => s + 1), 1000)
-    return () => {
-      cancelAnimationFrame(resetId)
-      clearInterval(id)
-    }
-  }, [active])
-  useEffect(() => {
-    if (active) return
-    const id = requestAnimationFrame(() => setSeconds(0))
-    return () => cancelAnimationFrame(id)
+    return () => clearInterval(id)
   }, [active])
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
   const ss = String(seconds % 60).padStart(2, '0')
@@ -104,80 +116,59 @@ function formatDuration(secs: number) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function formatOutcome(value?: string | null) {
-  if (!value) return 'Unknown'
-  return value
-    .replace(/[_-]/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
+function extractTwilioErrorMessage(err: unknown): string {
+  if (!err) return 'Dialer failed to initialize. Please retry.'
+  if (err instanceof Error) return err.message || 'Dialer failed to initialize. Please retry.'
+  if (typeof err === 'string') return err
+  if (typeof err === 'object') {
+    const obj = err as TwilioErrorLike
+    if (typeof obj.explanation === 'string' && obj.explanation.trim()) return obj.explanation.trim()
+    if (typeof obj.message === 'string' && obj.message.trim()) return obj.message.trim()
+    if (typeof obj.name === 'string' && obj.name.trim()) return obj.name.trim()
+  }
+  return 'Dialer failed to initialize. Please retry.'
 }
 
-function callDirection(call: RecentCall) {
-  const direction = call.direction || call.metadata?.direction || ''
-  if (direction.includes('inbound')) {
-    return { label: 'Inbound', icon: 'call_received', className: 'text-sky-300 bg-sky-500/10' }
-  }
-  if (direction.includes('outbound')) {
-    return { label: 'Outbound', icon: 'call_made', className: 'text-emerald-300 bg-emerald-500/10' }
-  }
-  return { label: 'Call', icon: 'call', className: 'text-white/45 bg-white/5' }
+function isNonFatalAudioWarning(err: unknown): boolean {
+  const msg = extractTwilioErrorMessage(err).toLowerCase()
+  return (
+    msg.includes('audio output') ||
+    msg.includes('setsinkid') ||
+    msg.includes('audio device') ||
+    msg.includes('devices not found')
+  )
 }
 
-function callOutcome(call: RecentCall) {
-  const raw = (call.outcome || call.metadata?.outcome || call.metadata?.callStatus || call.metadata?.status || '').toLowerCase()
-  if (raw.includes('missed') || raw.includes('no-answer') || raw.includes('no answer')) {
-    return { label: formatOutcome(raw || 'missed'), icon: 'phone_missed', className: 'text-red-300 bg-red-500/10' }
-  }
-  if (raw.includes('busy')) {
-    return { label: 'Busy', icon: 'phone_disabled', className: 'text-amber-300 bg-amber-500/10' }
-  }
-  if (raw.includes('voicemail')) {
-    return { label: formatOutcome(raw), icon: 'voicemail', className: 'text-violet-300 bg-violet-500/10' }
-  }
-  if (raw.includes('non_seller') || raw.includes('non seller')) {
-    return { label: 'Non Seller', icon: 'support_agent', className: 'text-cyan-300 bg-cyan-500/10' }
-  }
-  if (raw.includes('received') || raw.includes('routed')) {
-    return { label: formatOutcome(raw), icon: 'radio_button_checked', className: 'text-sky-300 bg-sky-500/10' }
-  }
-  if (raw.includes('spam')) {
-    return { label: 'Spam', icon: 'block', className: 'text-red-300 bg-red-500/10' }
-  }
-  if (raw.includes('completed') || raw.includes('connected')) {
-    return { label: formatOutcome(raw), icon: 'check_circle', className: 'text-emerald-300 bg-emerald-500/10' }
-  }
-  if (raw.includes('initiated') || raw.includes('pending')) {
-    return { label: formatOutcome(raw), icon: 'pending', className: 'text-white/45 bg-white/5' }
-  }
-  return { label: formatOutcome(raw), icon: 'help', className: 'text-white/35 bg-white/5' }
+function normalizeDispositionLabel(disposition: string) {
+  return disposition.replace(/_/g, ' ')
 }
 
-function callerIdLabel(phone: string | null) {
-  if (!phone) return null
-  const known = TWILIO_NUMBERS.find((n) => n.value === phone)
-  if (!known) return formatPhone(phone)
-  return known.label.split('—')[0].trim()
+function classifyDirection(metadata: RecentCall['metadata']): 'inbound' | 'outbound' | 'unknown' {
+  if (metadata?.direction === 'inbound') return 'inbound'
+  if (metadata?.direction === 'outbound') return 'outbound'
+  return 'unknown'
 }
 
-function displayCallName(call: RecentCall) {
-  if (call.lead_name) return toProperCase(call.lead_name)
-  const phone = call.phone || call.from || call.to
-  return phone ? formatPhone(phone) : 'Unknown'
+function isNoAnswer(metadata: RecentCall['metadata']): boolean {
+  if (!metadata) return false
+  if (metadata.disposition === 'no_answer') return true
+  if (metadata.outcome === 'missed') return true
+  if (metadata.callStatus === 'no-answer' || metadata.callStatus === 'busy') return true
+  if (metadata.dialStatus === 'no-answer' || metadata.dialStatus === 'busy') return true
+  return false
 }
 
-function displayAgentName(agent: string | null) {
-  if (!agent || agent === 'System') return null
-  return toProperCase(agent)
-}
+function formatCallLeg(call: RecentCall): string {
+  const metadata = call.metadata
+  const direction = classifyDirection(metadata)
+  const from = metadata?.from || null
+  const to = metadata?.to || call.phone || null
 
-function agentNameForCallerId(phone: string | null) {
-  if (phone === '+18166088588') return 'Ernest'
-  if (phone === '+18167277667') return 'Casey'
-  return null
-}
-
-function callerIdDisplayLabel(phone: string | null) {
-  if (!phone) return 'Default'
-  return TWILIO_NUMBERS.find((n) => n.value === phone)?.label || formatPhone(phone)
+  if (direction === 'outbound' && to) return `To ${formatPhone(to)}`
+  if (direction === 'inbound' && from && to) return `From ${formatPhone(from)} → To ${formatPhone(to)}`
+  if (direction === 'inbound' && from) return `From ${formatPhone(from)}`
+  if (to) return formatPhone(to)
+  return 'Unknown number'
 }
 
 const stationColors: Record<string, string> = {
@@ -197,7 +188,39 @@ const priorityColors: Record<string, string> = {
   cold: 'bg-cyan-500/20 text-cyan-300',
 }
 
-export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendingQueue, pendingSettings }: DialerPanelProps) {
+const AGENT_NAME_BY_CALLER_ID: Record<string, string> = {
+  '+18166088588': 'Ernest',
+  '+18167277667': 'Casey',
+}
+
+const DIALER_KEYPAD: Array<{ value: string; letters?: string }> = [
+  { value: '1' },
+  { value: '2', letters: 'ABC' },
+  { value: '3', letters: 'DEF' },
+  { value: '4', letters: 'GHI' },
+  { value: '5', letters: 'JKL' },
+  { value: '6', letters: 'MNO' },
+  { value: '7', letters: 'PQRS' },
+  { value: '8', letters: 'TUV' },
+  { value: '9', letters: 'WXYZ' },
+  { value: '*' },
+  { value: '0', letters: '+' },
+  { value: '#' },
+]
+
+function stripDialFormatting(input: string): string {
+  return input.replace(/[()\s-]/g, '')
+}
+
+function formatDialDisplay(input: string): string {
+  const raw = stripDialFormatting(input).trim()
+  if (!raw) return '(816) 555-0000'
+  if (raw.includes('*') || raw.includes('#')) return raw
+  if (/^\+?\d+$/.test(raw)) return formatPhone(raw)
+  return raw
+}
+
+export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan }: DialerPanelProps) {
   const [status, setStatus] = useState<CallStatus>('offline')
   const [dialNumber, setDialNumber] = useState('')
   const [muted, setMuted] = useState(false)
@@ -216,21 +239,35 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
   // Recent calls
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
-  const [recentCallsError, setRecentCallsError] = useState<string | null>(null)
-  const [recentCallsLimit, setRecentCallsLimit] = useState(5)
-  const [recentCallsHasMore, setRecentCallsHasMore] = useState(false)
-  const [recentCallsLoading, setRecentCallsLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dial' | 'recent'>('dial')
+  const [viewTab, setViewTab] = useState<'dial' | 'recent'>('dial')
 
   // Caller ID display
   const [callerIdDisplay, setCallerIdDisplay] = useState<string>('')
-  const [sessionAgent, setSessionAgent] = useState<string | null>(null)
-  const [callMode, setCallMode] = useState<'power' | 'predictive'>('power')
-  const [callPacing, setCallPacing] = useState(18)
+  const [selectedCallerId, setSelectedCallerId] = useState<string>('')
+  const [callerIdLockedByUser, setCallerIdLockedByUser] = useState(false)
+  const [agentIdentity, setAgentIdentity] = useState<string>('crm-user')
+  const [callerPlan, setCallerPlan] = useState<DialerCallerPlan>(() => normalizeDialerCallerPlan(null, ''))
+  const [attemptsPlaced, setAttemptsPlaced] = useState(0)
 
   // Disposition
   const [showDisposition, setShowDisposition] = useState(false)
   const lastCallPhoneRef = useRef<string>('')
+  const activeCallerId = selectedCallerId || callerIdDisplay
+  const activeAgentName =
+    agentIdentity === 'ernest'
+      ? 'Ernest'
+      : agentIdentity === 'casey'
+      ? 'Casey'
+      : AGENT_NAME_BY_CALLER_ID[activeCallerId] || 'System'
+  const callerIdOptions = useMemo(() => {
+    const options: Array<{ label: string; value: string }> = TWILIO_NUMBERS.map((num) => ({ label: num.label, value: num.value }))
+    if (callerIdDisplay && !options.some((opt) => opt.value === callerIdDisplay)) {
+      options.unshift({ label: `${formatPhone(callerIdDisplay)} — Default`, value: callerIdDisplay })
+    }
+    return options
+  }, [callerIdDisplay])
+  const fallbackCallerId = selectedCallerId || callerIdDisplay || callerIdOptions[0]?.value || ''
+  const rotatedCallerId = resolveCallerIdForAttempt(callerPlan, fallbackCallerId, attemptsPlaced)
 
   // Heir queue mode — when active, the property stays pinned across calls and
   // each disposition advances to the next heir phone.
@@ -243,6 +280,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
     if (open && pendingDial?.phone) {
+      setViewTab('dial')
       setSelectedLead({
         id: pendingDial.leadId,
         full_name: pendingDial.name,
@@ -254,6 +292,17 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         updated_at: new Date().toISOString(),
       })
       setDialNumber(pendingDial.phone)
+      if (pendingDial.callerId) {
+        setSelectedCallerId(pendingDial.callerId)
+        setCallerIdLockedByUser(false)
+        setCallerPlan(normalizeDialerCallerPlan({
+          mode: 'static',
+          staticCallerId: pendingDial.callerId,
+          rotationCallerIds: [],
+          rotateEveryCalls: 1,
+          redialCallerId: null,
+        }, pendingDial.callerId))
+      }
       setSearchQuery('')
       setSearchResults([])
     }
@@ -275,8 +324,20 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   // Handle pendingQueue from HeirsSection — open heir-dialer queue mode.
   useEffect(() => {
     if (open && pendingQueue && pendingQueue.length > 0) {
+      setViewTab('dial')
       setQueue(pendingQueue)
       setQueueIndex(0)
+      const planFromEvent = normalizeDialerCallerPlan(
+        pendingQueueCallerPlan,
+        typeof pendingQueueCallerId === 'string' ? pendingQueueCallerId.trim() : '',
+      )
+      setCallerPlan(planFromEvent)
+      setAttemptsPlaced(0)
+      const initialCallerId = resolveCallerIdForAttempt(planFromEvent, planFromEvent.staticCallerId, 0)
+      if (initialCallerId) {
+        setSelectedCallerId(initialCallerId)
+        setCallerIdLockedByUser(false)
+      }
       const first = pendingQueue[0]
       setSelectedLead({
         id: first.leadId,
@@ -292,19 +353,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
       setSearchQuery('')
       setSearchResults([])
     }
-  }, [open, pendingQueue])
-
-  useEffect(() => {
-    if (!open || !pendingSettings) return
-    if (pendingSettings.callerId) setCallerIdDisplay(pendingSettings.callerId)
-    if (pendingSettings.agent) setSessionAgent(pendingSettings.agent)
-    if (pendingSettings.mode === 'power' || pendingSettings.mode === 'predictive') {
-      setCallMode(pendingSettings.mode)
-    }
-    if (typeof pendingSettings.pacing === 'number' && Number.isFinite(pendingSettings.pacing)) {
-      setCallPacing(pendingSettings.pacing)
-    }
-  }, [open, pendingSettings])
+  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
@@ -327,8 +376,15 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
       const res = await fetch('/api/twilio-token')
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      const { token, callerId: cid } = data
-      if (cid) setCallerIdDisplay((current) => current || cid)
+      const { token, callerId: cid, identity } = data
+      if (cid) {
+        setCallerIdDisplay(cid)
+        setSelectedCallerId((prev) => {
+          if (callerIdLockedByUser && prev) return prev
+          return prev || cid
+        })
+      }
+      if (identity) setAgentIdentity(identity)
       log('token received')
 
       const device = new Device(token, { logLevel: 1 })
@@ -343,16 +399,28 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
           const refreshData = await refreshRes.json()
           if (refreshData.token) {
             device.updateToken(refreshData.token)
-            if (refreshData.callerId) setCallerIdDisplay((current) => current || refreshData.callerId)
+            if (refreshData.callerId) {
+              setCallerIdDisplay(refreshData.callerId)
+              setSelectedCallerId((prev) => {
+                if (callerIdLockedByUser && prev) return prev
+                return prev || refreshData.callerId
+              })
+            }
+            if (refreshData.identity) setAgentIdentity(refreshData.identity)
             log('token refreshed')
           }
-        } catch {
+        } catch (e) {
           log('token refresh failed')
         }
       })
-      device.on('error', (err: Error) => {
-        log(`device error: ${err?.message}`)
-        setError(err?.message || 'Device error')
+      device.on('error', (err: TwilioErrorLike) => {
+        const msg = extractTwilioErrorMessage(err)
+        if (isNonFatalAudioWarning(err)) {
+          log(`non-fatal audio warning: ${msg}`)
+          return
+        }
+        log(`device error: ${msg}`)
+        setError(msg)
         setStatusLogged('offline')
       })
       device.on('incoming', (call: TwilioDevice) => {
@@ -367,12 +435,12 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
       await device.register()
       deviceInitialized.current = true
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = extractTwilioErrorMessage(err)
       log(`init error: ${msg}`)
       setError(msg)
       setStatusLogged('offline')
     }
-  }, [setStatusLogged])
+  }, [callerIdLockedByUser, setStatusLogged])
 
   // Init device on first open
   useEffect(() => {
@@ -429,24 +497,16 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   useEffect(() => {
     if (!open) return
     async function loadRecent() {
-      setRecentCallsError(null)
-      setRecentCallsLoading(true)
       try {
-        const res = await fetch(`/api/call-log?limit=${recentCallsLimit}`)
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data.error || 'Unable to load recent calls')
-        setRecentCalls(data.calls || [])
-        setRecentCallsHasMore(Boolean(data.hasMore))
-      } catch (err) {
-        setRecentCalls([])
-        setRecentCallsHasMore(false)
-        setRecentCallsError(err instanceof Error ? err.message : 'Unable to load recent calls')
-      } finally {
-        setRecentCallsLoading(false)
-      }
+        const res = await fetch('/api/call-log?limit=50')
+        if (res.ok) {
+          const data = await res.json()
+          setRecentCalls(data.calls || [])
+        }
+      } catch {}
     }
     loadRecent()
-  }, [open, recentCallsLimit])
+  }, [open])
 
   const callStartRef = useRef<number>(0)
 
@@ -466,17 +526,19 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     // Snapshot the queue item at call start so the disposition (which fires
     // after disconnect, possibly after advance) logs against the right heir.
     activeQueueItemRef.current = queueItem
-    const callAgent = sessionAgent || agentNameForCallerId(callerIdDisplay) || 'Ernest'
     log(`calling ${number}`)
     try {
+      const callerIdForThisCall = callerPlan.mode === 'rotation' && !callerIdLockedByUser
+        ? rotatedCallerId
+        : (effectiveCallerId || '')
+      const params: Record<string, string> = { To: number }
+      if (callerIdForThisCall) params.CallerId = callerIdForThisCall
       const call = await deviceRef.current.connect({
-        params: {
-          To: number,
-          ...(callerIdDisplay && { CallerId: callerIdDisplay }),
-          CallMode: callMode,
-          Pace: String(callPacing),
-        },
+        params,
       })
+      if (callerPlan.mode === 'rotation' && !callerIdLockedByUser) {
+        setAttemptsPlaced((current) => current + 1)
+      }
       callRef.current = call
       callStartRef.current = Date.now()
 
@@ -502,10 +564,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         body: JSON.stringify({
           phone: number,
           event: 'started',
-          agent: callAgent,
-          from: callerIdDisplay || null,
-          call_mode: callMode,
-          pace: callPacing,
+          agent: activeAgentName,
+          agent_identity: agentIdentity,
+          from_number: callerIdForThisCall || null,
           lead_id: selectedLead?.id || null,
           ...heirMeta,
         }),
@@ -520,10 +581,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             phone: number,
             event: 'ended',
             duration,
-            agent: callAgent,
-            from: callerIdDisplay || null,
-            call_mode: callMode,
-            pace: callPacing,
+            agent: activeAgentName,
+            agent_identity: agentIdentity,
+            from_number: callerIdForThisCall || null,
             lead_id: selectedLead?.id || null,
             ...heirMeta,
           }),
@@ -542,7 +602,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         setMuted(false)
       })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = extractTwilioErrorMessage(err)
       log(`makeCall error: ${msg}`)
       setError(msg)
       setStatusLogged('ready')
@@ -586,6 +646,18 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     setDialNumber('')
   }
 
+  function appendDialChar(char: string) {
+    setDialNumber((prev) => {
+      const base = stripDialFormatting(prev)
+      if (char === '+') return base.length === 0 ? '+' : base
+      return `${base}${char}`
+    })
+  }
+
+  function backspaceDial() {
+    setDialNumber((prev) => stripDialFormatting(prev).slice(0, -1))
+  }
+
   async function handleDisposition(disposition: DispositionType, notes?: string) {
     if (!selectedLead) return
     const activeItem = activeQueueItemRef.current
@@ -601,7 +673,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             disposition,
             notes,
             lead_id: activeItem.leadId,
-            agent: sessionAgent || agentNameForCallerId(callerIdDisplay) || 'Ernest',
+            agent: activeAgentName,
           }),
         })
         window.dispatchEvent(new CustomEvent('heir-attempt-logged', {
@@ -618,6 +690,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
               disposition,
               notes,
               phone: lastCallPhoneRef.current,
+              agent: activeAgentName,
             },
           }),
         })
@@ -694,26 +767,18 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
   function handleRedial(call: RecentCall) {
     if (call.phone) {
+      setViewTab('dial')
       setDialNumber(call.phone)
-      setActiveTab('dial')
     }
-  }
-
-  function appendDialDigit(value: string) {
-    setDialNumber((current) => `${current}${value}`)
-  }
-
-  function deleteDialDigit() {
-    setDialNumber((current) => current.slice(0, -1))
   }
 
   const statusDotColor: Record<CallStatus, string> = {
     offline: 'bg-slate-500',
-    connecting: 'bg-yellow-400',
-    ready: 'bg-emerald-400',
-    calling: 'bg-blue-400',
-    on_call: 'bg-emerald-400',
-    incoming: 'bg-orange-400',
+    connecting: 'bg-[var(--skc-warning)]',
+    ready: 'bg-[var(--skc-success)]',
+    calling: 'bg-[#E32E2E]',
+    on_call: 'bg-[#E32E2E]',
+    incoming: 'bg-[#E32E2E]',
   }
 
   const statusLabel: Record<CallStatus, string> = {
@@ -726,63 +791,57 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   }
 
   const isOnCall = status === 'on_call' || status === 'calling'
-  const displayDialNumber = dialNumber.trim() ? formatPhone(dialNumber) : '(816) 555-0000'
-  const dialpadKeys = [
-    { value: '1', letters: '' },
-    { value: '2', letters: 'A B C' },
-    { value: '3', letters: 'D E F' },
-    { value: '4', letters: 'G H I' },
-    { value: '5', letters: 'J K L' },
-    { value: '6', letters: 'M N O' },
-    { value: '7', letters: 'P Q R S' },
-    { value: '8', letters: 'T U V' },
-    { value: '9', letters: 'W X Y Z' },
-    { value: '*', letters: '' },
-    { value: '0', letters: '+' },
-    { value: '#', letters: '' },
-  ]
+  const effectiveCallerId = callerPlan.mode === 'rotation' && !callerIdLockedByUser
+    ? rotatedCallerId
+    : (activeCallerId || callerIdOptions[0]?.value || '')
 
   return (
     <>
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-md transition-opacity"
+          className="fixed inset-0 z-[60] bg-black/45 backdrop-blur-[6px] transition-opacity"
           onClick={onClose}
         />
       )}
 
       {/* Panel */}
       <div
-        className={`fixed left-1/2 top-1/2 z-[70] flex max-h-[calc(100vh-1rem)] w-[520px] max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-col overflow-hidden rounded-[28px] border border-white/15 bg-[#1b1b1e] shadow-[0_24px_70px_rgba(0,0,0,0.55)] transition-all duration-200 ease-out ${
-          open ? '-translate-y-1/2 scale-100 opacity-100' : '-translate-y-[46%] scale-95 opacity-0 pointer-events-none'
+        className={`fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5 transition-opacity duration-300 ${
+          open ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
+        <div
+          className={`w-[388px] max-w-[calc(100vw-1rem)] h-[min(92vh,860px)] bg-[var(--skc-surface-1)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-modal)] shadow-[0_24px_70px_rgba(0,0,0,0.62)] transform transition-all duration-300 ease-out flex flex-col ${
+            open ? 'scale-100 translate-y-0' : 'scale-95 translate-y-2'
+          } ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        >
         {/* Header */}
-        <div className="relative flex flex-col items-center gap-2 px-6 pb-4 pt-5">
-          <div className="flex flex-col items-center gap-2">
-            <h2 className="text-2xl font-black tracking-tight text-white">Dialer</h2>
+        <div className="grid grid-cols-[60px_1fr_60px] items-center px-4 pt-3.5 pb-2.5">
+          <div />
+          <div className="text-center">
+            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[var(--skc-text-primary)]">Dialer</h2>
             <button
               onClick={() => { deviceInitialized.current = false; initDevice() }}
-              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 py-1 transition-colors hover:bg-white/15"
+              className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] hover:bg-[var(--skc-surface-2)] transition-colors"
               title="Click to reconnect"
             >
-              <div className={`w-2 h-2 rounded-full ${statusDotColor[status]} ${status === 'connecting' ? 'animate-pulse' : ''}`} />
-              <span className="text-xs font-bold text-white/55">{statusLabel[status]}</span>
+              <div className={`w-1.5 h-1.5 rounded-full ${statusDotColor[status]} ${status === 'connecting' ? 'animate-pulse' : ''}`} />
+              <span className="text-[10px] font-medium text-[var(--skc-text-tertiary)] tracking-[-0.01em]">{statusLabel[status]}</span>
             </button>
           </div>
           <button
             onClick={onClose}
-            className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white/45 transition-colors hover:bg-white/15 hover:text-white"
+            className="justify-self-end w-[30px] h-[30px] rounded-full bg-[var(--skc-surface-3)] text-[var(--skc-text-tertiary)] hover:text-white hover:bg-[var(--skc-surface-2)] transition-colors flex items-center justify-center"
           >
-            <Icon name="close" size="text-3xl" />
+            <Icon name="close" size="text-[16px]" />
           </button>
         </div>
 
         {/* Pinned property header — visible across the whole queue */}
         {queueMode && queueItem && (
           <div
-            className="px-5 py-3 bg-[#1c1c1c] border-b-2 border-[#E32E2E]"
+            className="px-5 py-3 bg-[#17171D] border-b border-[#2B2B31]"
             style={{ borderLeft: '3px solid #E32E2E' }}
           >
             <div className="flex items-center justify-between gap-3">
@@ -799,7 +858,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
               </div>
               <button
                 onClick={endQueue}
-                className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-md px-2 py-1 transition-colors"
+                className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider text-white/50 hover:text-white border border-[#31313A] hover:border-white/40 rounded-[8px] px-2 py-1 transition-colors"
                 title="End heir queue — back to normal dialer"
               >
                 End
@@ -816,7 +875,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
               <button
                 onClick={prevQueueItem}
                 disabled={queueIndex === 0 || isOnCall}
-                className="flex-shrink-0 w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed text-white/70 flex items-center justify-center transition-colors"
+                className="flex-shrink-0 w-7 h-7 rounded-[8px] bg-[#1E1E25] hover:bg-[#26262F] border border-[#31313A] disabled:opacity-30 disabled:cursor-not-allowed text-white/70 flex items-center justify-center transition-colors"
                 title="Previous heir"
               >
                 <Icon name="skip_previous" size="text-sm" />
@@ -824,7 +883,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
               <button
                 onClick={skipQueueItem}
                 disabled={isOnCall}
-                className="flex-shrink-0 w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed text-white/70 flex items-center justify-center transition-colors"
+                className="flex-shrink-0 w-7 h-7 rounded-[8px] bg-[#1E1E25] hover:bg-[#26262F] border border-[#31313A] disabled:opacity-30 disabled:cursor-not-allowed text-white/70 flex items-center justify-center transition-colors"
                 title="Skip without logging"
               >
                 <Icon name="skip_next" size="text-sm" />
@@ -834,48 +893,48 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         )}
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-6 pb-5 pt-1 space-y-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {/* Error banner */}
           {error && (
-            <div className="flex items-center gap-3 rounded-xl border border-[#E32E2E]/70 bg-[#E32E2E]/15 px-4 py-3">
-              <Icon name="error" className="text-[#ff7777]" size="text-2xl" />
-              <span className="flex-1 text-sm text-[#ffb4b4]">{error}</span>
-              <button onClick={() => { setError(null); initDevice() }} className="text-sm font-black uppercase text-[#ffb4b4] hover:text-white">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">
+              <Icon name="error" className="text-red-400" size="text-sm" />
+              <span className="text-xs text-red-300 flex-1">{error}</span>
+              <button onClick={() => { setError(null); initDevice() }} className="text-[10px] font-bold text-red-300 hover:text-white uppercase">
                 Retry
               </button>
             </div>
           )}
 
           {!isOnCall && status !== 'incoming' && (
-            <div className="grid rounded-xl bg-[#303035] p-1">
-              <div className="grid grid-cols-2">
-                {(['dial', 'recent'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setActiveTab(tab)}
-                    className={`h-11 rounded-lg text-lg font-black transition-colors ${
-                      activeTab === tab
-                        ? 'bg-[#6d6d72] text-white shadow-sm'
-                        : 'text-white/45 hover:text-white/70'
-                    }`}
-                  >
-                    {tab === 'dial' ? 'Dial' : 'Recent'}
-                  </button>
-                ))}
-              </div>
+            <div className="grid grid-cols-2 rounded-[var(--skc-radius-pill)] bg-[var(--skc-surface-3)] p-0.5 gap-0.5 mx-4 mb-1">
+              <button
+                onClick={() => setViewTab('dial')}
+                className={`px-3 py-[7px] rounded-[var(--skc-radius-tile)] text-[13px] font-medium tracking-[-0.01em] transition-colors ${
+                  viewTab === 'dial' ? 'bg-[#636366] text-white font-semibold' : 'text-[var(--skc-text-tertiary)] hover:text-white'
+                }`}
+              >
+                Dial
+              </button>
+              <button
+                onClick={() => setViewTab('recent')}
+                className={`px-3 py-[7px] rounded-[var(--skc-radius-tile)] text-[13px] font-medium tracking-[-0.01em] transition-colors ${
+                  viewTab === 'recent' ? 'bg-[#636366] text-white font-semibold' : 'text-[var(--skc-text-tertiary)] hover:text-white'
+                }`}
+              >
+                Recent
+              </button>
             </div>
           )}
 
           {/* Search */}
-          {!isOnCall && status !== 'incoming' && activeTab === 'dial' && (
-            <div className="relative">
+          {!isOnCall && status !== 'incoming' && viewTab === 'dial' && (
+            <div className="relative mx-4">
               <div className="relative">
-                <span className="absolute inset-y-0 left-5 flex items-center pointer-events-none">
+                <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
                   {searching ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                    <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
                   ) : (
-                    <Icon name="search" className="text-white/40" size="text-2xl" />
+                    <Icon name="search" className="text-white/40" size="text-lg" />
                   )}
                 </span>
                 <input
@@ -883,13 +942,13 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search leads by name, phone, address..."
-                  className="h-12 w-full rounded-xl border border-white/10 bg-[#141416] pl-12 pr-4 text-base text-white placeholder:text-white/35 focus:border-[#E32E2E]/50 focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/20"
+                  className="w-full bg-[var(--skc-surface-3)] text-[var(--skc-text-primary)] placeholder-[var(--skc-text-tertiary)] rounded-[var(--skc-radius-control)] pl-10 pr-4 py-[9px] text-[15px] tracking-[-0.01em] border border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--skc-brand-soft-border)] focus:border-[var(--skc-brand-soft-border)] transition-all"
                 />
               </div>
 
               {/* Search results dropdown */}
               {searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-[#1E293B] border border-white/10 rounded-lg shadow-2xl overflow-hidden z-10 max-h-[320px] overflow-y-auto">
+                <div className="absolute top-full left-4 right-4 mt-1 bg-[var(--skc-surface-2)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-control)] shadow-2xl overflow-hidden z-10 max-h-[320px] overflow-y-auto">
                   {searchResults.map((lead) => (
                     <button
                       key={lead.id}
@@ -925,8 +984,8 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
           )}
 
           {/* Selected Lead Context Card */}
-          {selectedLead && !isOnCall && status !== 'incoming' && activeTab === 'dial' && (
-            <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+          {selectedLead && !isOnCall && status !== 'incoming' && viewTab === 'dial' && (
+            <div className="mx-4 bg-[var(--skc-surface-soft)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-card)] p-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
@@ -947,7 +1006,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                   )}
                   <a
                     href={`/leads/${selectedLead.id}`}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 hover:text-emerald-300 mt-1.5 transition-colors"
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-[#FF6D6D] hover:text-white mt-1.5 transition-colors"
                   >
                     View Lead <Icon name="arrow_forward" size="text-xs" />
                   </a>
@@ -964,10 +1023,10 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
           {/* Incoming Call UI */}
           {status === 'incoming' && (
-            <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-5 animate-pulse">
+            <div className="bg-[#1A1616] border border-[#7D2626] rounded-[6px] p-5 animate-pulse">
               <div className="text-center mb-4">
-                <div className="w-14 h-14 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Icon name="call" className="text-orange-400" size="text-2xl" />
+                <div className="w-14 h-14 bg-[#E32E2E]/20 rounded-[6px] flex items-center justify-center mx-auto mb-3">
+                  <Icon name="call" className="text-[#FF7A7A]" size="text-2xl" />
                 </div>
                 <p className="text-white font-bold text-lg">Incoming Call</p>
                 <p className="text-white/50 text-sm">Unknown Caller</p>
@@ -975,14 +1034,14 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
               <div className="flex gap-3">
                 <button
                   onClick={acceptIncoming}
-                  className="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 py-3 bg-white text-black font-bold rounded-[6px] hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
                 >
                   <Icon name="call" size="text-lg" />
                   Accept
                 </button>
                 <button
                   onClick={rejectIncoming}
-                  className="flex-1 py-3 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 py-3 bg-[#E32E2E] text-white font-bold rounded-[6px] hover:bg-[#C42626] transition-colors flex items-center justify-center gap-2"
                 >
                   <Icon name="call_end" size="text-lg" />
                   Reject
@@ -993,29 +1052,29 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
           {/* Active Call Card */}
           {isOnCall && (
-            <div className={`rounded-xl p-5 border-2 transition-all ${status === 'on_call' ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-blue-500/5 border-blue-500/30'}`}
+            <div className={`rounded-[6px] p-5 border transition-all ${status === 'on_call' ? 'bg-[#191417] border-[#7D2626]' : 'bg-[#18181E] border-[#2F2F38]'}`}
               style={status === 'on_call' ? { animation: 'pulse-border 2s ease-in-out infinite' } : undefined}
             >
               <div className="text-center mb-4">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2 ${status === 'on_call' ? 'bg-emerald-500/20' : 'bg-blue-500/20'}`}>
-                  <Icon name="call" className={status === 'on_call' ? 'text-emerald-400' : 'text-blue-400'} size="text-2xl" />
+                <div className={`w-12 h-12 rounded-[6px] flex items-center justify-center mx-auto mb-2 ${status === 'on_call' ? 'bg-[#E32E2E]/20' : 'bg-white/10'}`}>
+                  <Icon name="call" className={status === 'on_call' ? 'text-[#FF7A7A]' : 'text-white'} size="text-2xl" />
                 </div>
                 {selectedLead && (
                   <p className="text-white font-bold text-base">{selectedLead.full_name}</p>
                 )}
                 <p className="text-white/60 font-mono text-sm">{dialNumber}</p>
                 {status === 'on_call' && (
-                  <p className="text-emerald-400 font-mono text-xl font-bold mt-1">{callTimer}</p>
+                  <p className="text-[#FF7A7A] font-mono text-xl font-bold mt-1">{callTimer}</p>
                 )}
                 {status === 'calling' && (
-                  <p className="text-blue-400 text-sm mt-1 animate-pulse">Dialing...</p>
+                  <p className="text-white/80 text-sm mt-1 animate-pulse">Dialing...</p>
                 )}
               </div>
               <div className="flex gap-3">
                 <button
                   onClick={toggleMute}
-                  className={`flex-1 py-2.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
-                    muted ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-white/5 text-white/70 border border-white/10 hover:bg-white/10'
+                  className={`flex-1 py-2.5 rounded-[6px] font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
+                    muted ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-[#1E1E25] text-white/75 border border-[#31313A] hover:bg-[#272730]'
                   }`}
                 >
                   <Icon name={muted ? 'mic_off' : 'mic'} size="text-lg" />
@@ -1023,7 +1082,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
                 </button>
                 <button
                   onClick={hangup}
-                  className="flex-1 py-2.5 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 py-2.5 bg-[#E32E2E] text-white font-bold rounded-[6px] hover:bg-[#C42626] transition-colors flex items-center justify-center gap-2"
                 >
                   <Icon name="call_end" size="text-lg" />
                   Hang Up
@@ -1033,219 +1092,213 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
           )}
 
           {/* Dial Section (when not on call and not incoming) */}
-          {!isOnCall && status !== 'incoming' && activeTab === 'dial' && (
-            <div className="space-y-4">
-              <input
-                type="tel"
-                value={dialNumber}
-                onChange={(e) => setDialNumber(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && makeCall()}
-                placeholder="+1 (816) 555-0000"
-                className="sr-only"
-                aria-label="Phone number"
-              />
-              <div className="px-2 text-center">
-                <p className="font-mono text-[clamp(28px,8vw,36px)] font-light tracking-[0.04em] text-white">
-                  {displayDialNumber}
+          {!isOnCall && status !== 'incoming' && viewTab === 'dial' && (
+            <div className="pt-1">
+              <div className="px-4 pt-1 pb-2 text-center">
+                <p className="text-[34px] font-light tracking-[-0.02em] text-[var(--skc-text-primary)] [font-feature-settings:'tnum']">
+                  {formatDialDisplay(dialNumber)}
                 </p>
               </div>
-              <div className="mx-auto grid max-w-[336px] grid-cols-3 gap-x-4 gap-y-3 sm:gap-x-8">
-                {dialpadKeys.map((key) => (
+
+              <div className="px-8 pb-4 grid grid-cols-3 gap-x-5 gap-y-3 justify-items-center">
+                {DIALER_KEYPAD.map((key) => (
                   <button
                     key={key.value}
-                    type="button"
-                    onClick={() => appendDialDigit(key.value)}
-                    className="flex h-[clamp(64px,22vw,80px)] w-[clamp(64px,22vw,80px)] flex-col items-center justify-center rounded-full bg-[#323238] text-white transition-colors hover:bg-[#3d3d43] active:bg-[#4a4a50]"
+                    onClick={() => appendDialChar(key.value)}
+                    className="w-16 h-16 rounded-full bg-[var(--skc-surface-3)] hover:bg-[var(--skc-surface-2)] transition-colors flex flex-col items-center justify-center"
                     aria-label={`Dial ${key.value}`}
                   >
-                    <span className="text-4xl font-light leading-none">{key.value}</span>
-                    {key.letters && (
-                      <span className="mt-1 text-[11px] font-black tracking-[0.22em] text-white/55">{key.letters}</span>
-                    )}
+                    <span className="text-[28px] font-light leading-none tracking-[-0.02em] text-[var(--skc-text-primary)]">
+                      {key.value}
+                    </span>
+                    <span className="text-[9px] font-semibold tracking-[0.18em] text-[var(--skc-text-tertiary)] mt-0.5 min-h-[10px]">
+                      {key.letters || '\u00A0'}
+                    </span>
                   </button>
                 ))}
               </div>
-              <div className="grid gap-3 border-t border-white/15 pt-4 md:grid-cols-[minmax(0,1fr)_170px]">
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-white/55">Calling From</span>
-                  <select
-                    value={callerIdDisplay}
-                    onChange={(event) => setCallerIdDisplay(event.target.value)}
-                    disabled={isOnCall}
-                    className="h-11 w-full rounded-xl border border-white/10 bg-[#141416] px-3 py-2 text-sm font-bold text-white/80 outline-none transition-colors focus:border-[#E32E2E]/60 disabled:cursor-not-allowed disabled:opacity-60"
-                    aria-label="Calling from"
-                  >
-                    <option value="">Default caller ID</option>
-                    {callerIdDisplay && !TWILIO_NUMBERS.some((number) => number.value === callerIdDisplay) && (
-                      <option value={callerIdDisplay}>{callerIdDisplayLabel(callerIdDisplay)}</option>
-                    )}
-                    {TWILIO_NUMBERS.map((number) => (
-                      <option key={number.value} value={number.value}>{number.label}</option>
-                    ))}
-                  </select>
-                </label>
 
-                <div>
-                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-white/55">Call Hammer</span>
-                  <div className="grid grid-cols-2 rounded-xl border border-white/10 bg-[#141416] p-1">
-                    {(['power', 'predictive'] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => setCallMode(mode)}
-                        className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wider transition-colors ${
-                          callMode === mode ? 'bg-[#8B2228] text-white' : 'text-white/45 hover:text-white/75'
-                        }`}
-                      >
-                        {mode}
-                      </button>
-                    ))}
-                  </div>
-                  <label className="mt-3 block">
-                    <span className="mb-2 block text-[11px] font-black uppercase tracking-widest text-white/45">Pace: {callPacing}s</span>
-                    <input
-                      type="range"
-                      min={callMode === 'predictive' ? 6 : 12}
-                      max="90"
-                      value={callPacing}
-                      onChange={(event) => setCallPacing(Number(event.target.value))}
-                      className="w-full accent-[#E32E2E]"
-                      aria-label="Call pace"
-                    />
-                  </label>
-                </div>
-              </div>
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center pt-1">
-                <span />
+              <div className="px-4 pb-3 grid grid-cols-[64px_1fr_64px] items-center gap-3">
+                <div />
                 <button
                   onClick={makeCall}
                   disabled={!dialNumber.trim() || status === 'connecting'}
-                  className="flex h-[clamp(68px,22vw,80px)] w-[clamp(68px,22vw,80px)] items-center justify-center rounded-full bg-[#8B2228] text-white shadow-[0_14px_35px_rgba(139,34,40,0.3)] transition-colors hover:bg-[#A72A31] disabled:cursor-not-allowed disabled:opacity-35"
-                  aria-label={status === 'offline' ? 'Call using phone' : 'Call'}
+                  className="w-16 h-16 rounded-full bg-[var(--skc-brand)] hover:bg-[var(--skc-brand-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center justify-self-center"
+                  title={status === 'offline' ? 'Call (Phone)' : 'Call'}
+                  aria-label={status === 'offline' ? 'Call (Phone)' : 'Call'}
                 >
-                  <Icon name="call" size="text-3xl" />
+                  <Icon name="call" size="text-[28px]" className="text-white" filled />
                 </button>
                 <button
-                  type="button"
-                  onClick={deleteDialDigit}
+                  onClick={backspaceDial}
                   disabled={!dialNumber}
-                  className="ml-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/5 text-white/40 transition-colors hover:bg-white/10 hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-30"
-                  aria-label="Delete digit"
+                  className="w-11 h-11 rounded-full bg-[var(--skc-surface-3)] hover:bg-[var(--skc-surface-2)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center justify-self-center"
+                  aria-label="Backspace"
                 >
-                  <Icon name="backspace" size="text-2xl" />
+                  <Icon name="keyboard_backspace" size="text-[20px]" className="text-[var(--skc-text-secondary)]" />
                 </button>
+              </div>
+
+              <div className="border-t border-[var(--skc-separator)] px-4 py-3">
+                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-tertiary)] mb-1">
+                  Calling from
+                </div>
+                {callerIdOptions.length > 0 ? (
+                  <div className="relative">
+                    <select
+                      value={effectiveCallerId}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        setSelectedCallerId(value)
+                        setCallerIdLockedByUser(true)
+                        setCallerPlan((current) => normalizeDialerCallerPlan({
+                          ...current,
+                          mode: 'static',
+                          staticCallerId: value,
+                        }, value))
+                      }}
+                      className="w-full bg-[var(--skc-surface-3)] text-[var(--skc-text-primary)] rounded-[var(--skc-radius-control)] px-3 pr-8 py-2.5 text-[15px] font-medium tracking-[-0.01em] border border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--skc-brand-soft-border)] appearance-none"
+                    >
+                      {callerIdOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value} className="bg-[var(--skc-surface-2)]">
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--skc-text-quaternary)]">
+                      <Icon name="chevron_right" size="text-[15px]" />
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-primary)]">
+                    {effectiveCallerId ? formatPhone(effectiveCallerId) : 'No caller ID available'}
+                  </div>
+                )}
+                {callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1 && (
+                  <p className="mt-1.5 text-[10px] tracking-[-0.01em] text-[var(--skc-text-tertiary)]">
+                    Rotation active · every {callerPlan.rotateEveryCalls} calls · {callerPlan.rotationCallerIds.length} numbers
+                  </p>
+                )}
               </div>
             </div>
           )}
 
           {/* Recent Calls (when idle) */}
-          {!isOnCall && status !== 'incoming' && activeTab === 'recent' && recentCalls.length > 0 && (
-            <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          {!isOnCall && status !== 'incoming' && viewTab === 'recent' && recentCalls.length > 0 && (
+            <div>
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-[10px] font-black text-white/35 uppercase tracking-widest">Recent Calls</h3>
-                <span className="text-[10px] text-white/25">
-                  {recentCalls.length}{recentCallsHasMore ? '+' : ''}
-                </span>
+                <h3 className="text-[10px] font-black text-white/30 uppercase tracking-widest">Recent Calls</h3>
+                <span className="text-[10px] text-white/30 tabular-nums">{recentCalls.length}</span>
               </div>
-              <div className="space-y-1 max-h-[360px] overflow-y-auto pr-1">
+              <div className="space-y-1.5 max-h-[26rem] overflow-y-auto pr-1">
                 {recentCalls.map((call) => {
-                  const direction = callDirection(call)
-                  const outcome = callOutcome(call)
-                  const duration = call.duration || call.metadata?.duration || null
-                  const displayPhone = call.phone || call.to || call.from
-                  const displayName = displayCallName(call)
-                  const agentName = displayAgentName(call.agent)
-                  const fromLabel = call.from ? callerIdLabel(call.from) : null
+                  const direction = classifyDirection(call.metadata)
+                  const noAnswer = isNoAnswer(call.metadata)
+                  const missedCall = call.metadata?.outcome === 'missed' || call.metadata?.callStatus === 'no-answer' || call.metadata?.dialStatus === 'no-answer'
+                  const disposition = call.metadata?.disposition || null
+                  const status = call.metadata?.status || null
+                  const duration = typeof call.metadata?.duration === 'number' ? call.metadata.duration : 0
+                  const isCompleted = status === 'completed' || duration > 0 || disposition === 'answered' || call.metadata?.outcome === 'connected'
+                  const isPending = status === 'initiated' || status === 'ringing' || status === 'queued'
+                  const isVoicemail = disposition === 'voicemail_left' || disposition === 'left_voicemail'
+                  const leftIcon =
+                    direction === 'outbound'
+                      ? 'call_made'
+                      : direction === 'inbound'
+                      ? 'call_received'
+                      : 'call'
+                  const leftTone =
+                    direction === 'outbound'
+                      ? 'bg-[#30D15826] text-[#30D158]'
+                      : direction === 'inbound'
+                      ? 'bg-[#64D2FF26] text-[#64D2FF]'
+                      : 'bg-[#BF5AF226] text-[#BF5AF2]'
+                  const detailParts = [formatCallLeg(call)]
+                  if (call.agent) detailParts.push(call.agent)
+                  if (disposition) detailParts.push(normalizeDispositionLabel(disposition))
+                  const detailLine = detailParts.join(' · ')
+
                   return (
                     <button
                       key={call.id}
                       onClick={() => handleRedial(call)}
-                      className="w-full rounded-lg px-2.5 py-2 hover:bg-white/5 transition-colors text-left"
+                      className="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-[6px] border border-[#2F2F38] bg-[#17171D] hover:bg-[#1D1D25] transition-colors text-left"
                     >
-                      <div className="flex items-start gap-2.5">
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${direction.className}`}
-                          title={direction.label}
-                        >
-                          <Icon name={direction.icon} size="text-sm" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm text-white/85 font-semibold truncate">
-                              {displayName}
-                            </p>
-                            <span className="text-[10px] text-white/30 flex-shrink-0">{formatTimeAgo(call.created_at)}</span>
-                          </div>
-                          <div className="mt-1 flex items-center gap-1.5 min-w-0 text-[10px] text-white/35">
-                            {call.direction?.includes('outbound') && agentName && (
-                              <span className="truncate">{agentName}</span>
-                            )}
-                            {call.from && (
-                              <span className="truncate">From {fromLabel}</span>
-                            )}
-                            {call.from && call.to && <span className="text-white/15">→</span>}
-                            {call.to && (
-                              <span className="truncate">To {formatPhone(call.to)}</span>
-                            )}
-                            {!call.from && !call.to && displayPhone && (
-                              <span className="truncate">{formatPhone(displayPhone)}</span>
-                            )}
-                          </div>
-                        </div>
-                        <div
-                          className={`flex items-center gap-1 rounded-md px-1.5 py-1 flex-shrink-0 ${outcome.className}`}
-                          title={outcome.label}
-                        >
-                          <Icon name={outcome.icon} size="text-xs" />
-                          {duration !== null && (
-                            <span className="text-[10px] font-bold">{formatDuration(duration)}</span>
-                          )}
-                        </div>
+                      <div className={`w-10 h-10 rounded-[6px] flex items-center justify-center flex-shrink-0 ${leftTone}`}>
+                        <Icon name={leftIcon} size="text-xl" />
                       </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 min-w-0">
+                          <p className="text-sm text-white/90 font-semibold truncate">
+                            {call.lead_name || call.phone || 'Unknown'}
+                          </p>
+                          <span className="text-xs text-white/35 flex-shrink-0">{formatTimeAgo(call.created_at)}</span>
+                        </div>
+                        <p className="text-xs text-white/45 truncate">{detailLine}</p>
+                      </div>
+
+                      {noAnswer ? (
+                        <span
+                          className={`flex-shrink-0 w-11 h-11 rounded-[6px] flex items-center justify-center ${
+                            missedCall
+                              ? 'bg-[#FF453A1A] border border-[#FF453A66]'
+                              : 'bg-[#1F2026] border border-[#363842]'
+                          }`}
+                        >
+                          <Icon name={missedCall ? 'missed_call_badge' : 'no_answer_badge'} size="text-xl" />
+                        </span>
+                      ) : isVoicemail ? (
+                        <span className="flex-shrink-0 w-11 h-11 rounded-[6px] bg-[#BF5AF226] text-[#BF5AF2] border border-[#BF5AF259] flex items-center justify-center">
+                          <Icon name="support_agent" size="text-xl" />
+                        </span>
+                      ) : isCompleted ? (
+                        <span className="flex-shrink-0 rounded-[6px] bg-[#30D1581F] border border-[#30D15873] px-2 py-1.5 text-[#30D158] inline-flex items-center gap-1.5 min-w-[62px] justify-center">
+                          <Icon name="check_circle" size="text-base" />
+                          <span className="text-xs font-bold tabular-nums">{duration > 0 ? formatDuration(duration) : 'done'}</span>
+                        </span>
+                      ) : isPending ? (
+                        <span className="flex-shrink-0 w-11 h-11 rounded-[6px] bg-[#FF9F0A1F] text-[#FF9F0A] border border-[#FF9F0A59] flex items-center justify-center">
+                          <Icon name="more_horiz" size="text-xl" />
+                        </span>
+                      ) : (
+                        <span className="flex-shrink-0 w-11 h-11 rounded-[6px] bg-[#22222A] text-white/55 border border-[#31313A] flex items-center justify-center">
+                          <Icon name="help" size="text-xl" />
+                        </span>
+                      )}
                     </button>
                   )
                 })}
               </div>
-              {recentCallsHasMore && (
-                <button
-                  type="button"
-                  onClick={() => setRecentCallsLimit((limit) => Math.min(limit + 10, 100))}
-                  disabled={recentCallsLoading || recentCallsLimit >= 100}
-                  className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-white/55 hover:bg-white/10 hover:text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {recentCallsLoading ? 'Loading...' : 'Load More Calls'}
-                </button>
-              )}
-            </section>
+            </div>
           )}
 
-          {!isOnCall && status !== 'incoming' && activeTab === 'recent' && recentCalls.length === 0 && (
-            <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <h3 className="text-[10px] font-black text-white/35 uppercase tracking-widest mb-1">Recent Calls</h3>
-              <p className="text-xs text-white/45">
-                {recentCallsError || 'No recent call activity found.'}
-              </p>
-            </section>
+          {!isOnCall && status !== 'incoming' && viewTab === 'recent' && recentCalls.length === 0 && (
+            <div className="rounded-[6px] border border-[#2F2F38] bg-[#17171D] px-4 py-5 text-center">
+              <p className="text-sm font-semibold text-white/80">No recent calls yet</p>
+              <p className="text-xs text-white/40 mt-1">Calls will appear here after your first dial.</p>
+            </div>
           )}
 
           {/* Reconnect button when offline */}
-          {status === 'offline' && !error && (
+          {status === 'offline' && !error && viewTab === 'dial' && (
             <button
               onClick={initDevice}
-              className="w-full py-2.5 bg-white/5 text-white/50 font-bold rounded-lg hover:bg-white/10 transition-colors flex items-center justify-center gap-2 text-xs border border-white/10"
+              className="w-full py-2.5 bg-[#17171D] text-white/70 font-bold rounded-[6px] hover:bg-[#1E1E26] transition-colors flex items-center justify-center gap-2 text-xs border border-[#2F2F38]"
             >
               <Icon name="refresh" size="text-sm" />
               Connect Twilio
             </button>
           )}
         </div>
+        </div>
       </div>
 
       {/* Pulsing border animation */}
       <style jsx>{`
         @keyframes pulse-border {
-          0%, 100% { border-color: rgba(16, 185, 129, 0.3); }
-          50% { border-color: rgba(16, 185, 129, 0.6); }
+          0%, 100% { border-color: rgba(227, 46, 46, 0.35); }
+          50% { border-color: rgba(227, 46, 46, 0.7); }
         }
       `}</style>
 

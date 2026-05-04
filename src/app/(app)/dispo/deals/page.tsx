@@ -481,17 +481,31 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           fd.append('file', photo)
           fd.append('deal_page_id', deal.id)
           fd.append('type', 'photo')
-          await fetch('/api/deals/upload', { method: 'POST', body: fd })
+          const uploadRes = await fetch('/api/deals/upload', { method: 'POST', body: fd })
+          if (!uploadRes.ok) {
+            const uploadErr = await uploadRes.json().catch(() => ({}))
+            throw new Error(uploadErr.error || `Failed to upload ${photo.name}`)
+          }
         }
       }
 
       // Import URL-based photos (Google Photos links, etc.)
       if (deal?.id && pendingPhotoUrls.length > 0) {
-        await fetch('/api/deals/import-photos', {
+        const importRes = await fetch('/api/deals/import-photos', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ deal_page_id: deal.id, urls: pendingPhotoUrls }),
         })
+        const importData = await importRes.json().catch(() => ({}))
+        if (!importRes.ok) {
+          throw new Error(importData.error || 'Failed to import photo URLs')
+        }
+        if (!importData.imported) {
+          const details = Array.isArray(importData.errors) && importData.errors.length > 0
+            ? `: ${importData.errors.slice(0, 2).join('; ')}`
+            : ''
+          throw new Error(`No photos were imported${details}`)
+        }
       }
 
       onCreated()
@@ -1265,12 +1279,14 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
         return
       }
       const data = await res.json()
-      // Refresh photos from server
-      const dpRes = await fetch(`/api/deals/${deal.id}`)
-      if (dpRes.ok) {
-        const dp = await dpRes.json()
-        if (dp.photos) setPhotos(dp.photos)
+      if (!data.imported) {
+        const details = Array.isArray(data.errors) && data.errors.length > 0
+          ? `: ${data.errors.slice(0, 2).join('; ')}`
+          : ''
+        setPhotoImportStatus(`Error: no photos imported${details}`)
+        return
       }
+      if (Array.isArray(data.photos)) setPhotos(data.photos)
       setPhotoUrl('')
       setPhotoImportStatus(`Imported ${data.imported} photo${data.imported !== 1 ? 's' : ''}${data.failed ? `, ${data.failed} failed` : ''}`)
       setTimeout(() => setPhotoImportStatus(null), 4000)

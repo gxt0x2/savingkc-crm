@@ -119,6 +119,19 @@ function activityTypeToFeedType(type: string): 'sms' | 'call' | 'email' | 'statu
   return 'status_change'
 }
 
+const CALLER_ID_BY_AGENT: Record<string, string> = {
+  ernest: '+18166088588',
+  casey: '+18167277667',
+}
+
+function callerIdForAssignedAgent(assignedAgent: string | null | undefined): string | undefined {
+  const normalized = (assignedAgent || '').toLowerCase()
+  if (!normalized) return undefined
+  if (normalized.includes('casey')) return CALLER_ID_BY_AGENT.casey
+  if (normalized.includes('ernest')) return CALLER_ID_BY_AGENT.ernest
+  return undefined
+}
+
 // ─── Net Proceeds Calculator ─────────────────────────────────────────────────
 interface NetProceedsCalcProps {
   leadId: string
@@ -157,7 +170,6 @@ function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPric
   ]
 
   async function saveField(key: string, val: number) {
-    const supabase = createClient()
     // Direct DB columns
     const fieldMap: Record<string, string> = {
       arv: 'arv',
@@ -167,7 +179,11 @@ function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPric
     }
     const col = fieldMap[key]
     if (col) {
-      await supabase.from('leads').update({ [col]: val }).eq('id', leadId)
+      await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: leadId, [col]: val }),
+      })
       return
     }
     // For taxes/liens/mortgage — store in the notes as JSON supplement
@@ -619,12 +635,8 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
   async function handleCreateManifest() {
     setCreating(true)
     try {
-      const supabase = createClient()
-      const { data: leadData } = await supabase
-        .from('leads')
-        .select('full_name, phone, email, property_address, city, state, zip, station, priority, motivation_score, seller_situation, notes')
-        .eq('id', leadId)
-        .single()
+      const leadRes = await fetch(`/api/leads/${leadId}`, { cache: 'no-store' })
+      const leadData = leadRes.ok ? await leadRes.json() : null
 
       const nameParts = (leadData?.full_name || 'Unknown').split(' ')
       const res = await fetch('/api/manifests', {
@@ -932,15 +944,21 @@ export default function LeadDetailPage() {
 
   useEffect(() => {
     async function fetchLead() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('id', id)
-        .limit(1)
-        .single()
-      setLead(data as Lead)
-      setLoading(false)
+      try {
+        const res = await fetch(`/api/leads/${id}`, { cache: 'no-store' })
+        if (!res.ok) {
+          console.error('[lead-detail] Failed to fetch lead:', res.status)
+          setLead(null)
+          return
+        }
+        const data = await res.json()
+        setLead(data as Lead)
+      } catch (err) {
+        console.error('[lead-detail] Failed to fetch lead:', err)
+        setLead(null)
+      } finally {
+        setLoading(false)
+      }
     }
     if (id) fetchLead()
   }, [id, refreshTick])
@@ -1067,14 +1085,9 @@ export default function LeadDetailPage() {
 
   useEffect(() => {
     async function fetchActivities() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('lead_activities')
-        .select('id, activity_type, description, agent, metadata, created_at')
-        .eq('lead_id', id)
-        .order('created_at', { ascending: false })
-        .limit(50)
-      const rows = (data as ActivityRow[]) || []
+      const res = await fetch(`/api/leads/${id}/activities?limit=50`, { cache: 'no-store' })
+      const data = res.ok ? await res.json() : { activities: [] }
+      const rows = (data.activities as ActivityRow[]) || []
       setActivities(rows)
       const ghostRow = rows.find((r) => r.activity_type === 'ghost_protocol_enrollment')
       if (ghostRow?.metadata?.status === 'active') {
@@ -1094,15 +1107,9 @@ export default function LeadDetailPage() {
     let lastSeen = activities[0]?.created_at || ''
     const interval = setInterval(async () => {
       try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('lead_activities')
-          .select('created_at')
-          .eq('lead_id', id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        const latest = data?.created_at || ''
+        const res = await fetch(`/api/leads/${id}/activities?limit=1`, { cache: 'no-store' })
+        const data = res.ok ? await res.json() : { activities: [] }
+        const latest = data.activities?.[0]?.created_at || ''
         if (latest && latest !== lastSeen) {
           lastSeen = latest
           refreshAll()
@@ -1711,7 +1718,12 @@ export default function LeadDetailPage() {
             onCall={() => {
               if (lead.phone) {
                 window.dispatchEvent(new CustomEvent('open-dialer', {
-                  detail: { phone: lead.phone, name: formattedName, leadId: lead.id },
+                  detail: {
+                    phone: lead.phone,
+                    name: formattedName,
+                    leadId: lead.id,
+                    callerId: callerIdForAssignedAgent(lead.assigned_agent),
+                  },
                 }))
               }
             }}

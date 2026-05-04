@@ -2,12 +2,15 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ''
 
 /**
  * Convert a base64 URL-safe string to a Uint8Array for use with pushManager.subscribe()
  */
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  if (!base64String || typeof base64String !== 'string') {
+    throw new Error('Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY')
+  }
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
   const rawData = window.atob(base64)
@@ -23,6 +26,8 @@ export function usePushNotifications() {
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission>('default')
   const autoSubscribeAttempted = useRef(false)
+  const hasWarnedMissingKey = useRef(false)
+  const hasVapidKey = VAPID_PUBLIC_KEY.trim().length > 0
 
   // Check support and current state on mount
   useEffect(() => {
@@ -53,16 +58,27 @@ export function usePushNotifications() {
 
   // Auto-subscribe if permission is already granted
   useEffect(() => {
+    if (!hasVapidKey) {
+      if (!hasWarnedMissingKey.current) {
+        hasWarnedMissingKey.current = true
+        console.warn('[push] Auto-subscribe skipped: NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set')
+      }
+      return
+    }
+
     if (isSupported && permission === 'granted' && !isSubscribed && !autoSubscribeAttempted.current) {
       autoSubscribeAttempted.current = true
       subscribeImpl().catch((err) => {
         console.error('[push] Auto-subscribe failed:', err)
       })
     }
-  }, [isSupported, permission, isSubscribed])
+  }, [hasVapidKey, isSupported, permission, isSubscribed])
 
   const subscribeImpl = useCallback(async () => {
     if (!isSupported) return
+    if (!hasVapidKey) {
+      throw new Error('NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set')
+    }
 
     // Request permission if not already granted
     const perm = await Notification.requestPermission()
@@ -103,7 +119,7 @@ export function usePushNotifications() {
 
     setIsSubscribed(true)
     console.log('[push] Subscribed successfully')
-  }, [isSupported])
+  }, [hasVapidKey, isSupported])
 
   const subscribe = useCallback(async () => {
     await subscribeImpl()

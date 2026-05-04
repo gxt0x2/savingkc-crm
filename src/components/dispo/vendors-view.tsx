@@ -51,15 +51,15 @@ const CATEGORIES: { value: VendorCategory | 'all'; label: string; icon: string }
 ]
 
 const CATEGORY_COLORS: Record<VendorCategory, string> = {
-  contractor: 'bg-orange-500/20 text-orange-300',
-  escrow:     'bg-amber-500/20 text-amber-300',
-  title:      'bg-purple-500/20 text-purple-300',
-  cleanout:   'bg-teal-500/20 text-teal-300',
-  dumpster:   'bg-amber-500/20 text-amber-300',
-  inspector:  'bg-fuchsia-500/20 text-fuchsia-300',
-  appraiser:  'bg-yellow-500/20 text-yellow-300',
-  attorney:   'bg-rose-500/20 text-rose-300',
-  other:      'bg-slate-500/20 text-slate-300',
+  contractor: 'bg-[#fff0e5] text-[#9a3412]',
+  escrow:     'bg-[#fff8db] text-[#8a5a00]',
+  title:      'bg-[#f1edff] text-[#5b21b6]',
+  cleanout:   'bg-[#e6fffb] text-[#0f766e]',
+  dumpster:   'bg-[#fff8db] text-[#8a5a00]',
+  inspector:  'bg-[#fdf2f8] text-[#be185d]',
+  appraiser:  'bg-[#fef9c3] text-[#854d0e]',
+  attorney:   'bg-[#fff1f2] text-[#be123c]',
+  other:      'bg-[#eef2f7] text-[#4b5565]',
 }
 
 // ---------------------------------------------------------------------------
@@ -668,7 +668,7 @@ export function VendorsView() {
       </div>
 
       {/* Table */}
-      <div className="ck-card overflow-hidden">
+      <div className="overflow-hidden rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] shadow-sm">
         {isLoading ? (
           <div className="flex items-center justify-center py-20 text-[var(--ck-text-muted)]">
             <Icon name="progress_activity" size="text-2xl" className="animate-spin mr-2" />
@@ -699,14 +699,14 @@ export function VendorsView() {
                   <tr
                     key={v.id}
                     onClick={() => setSelected(v)}
-                    className="cursor-pointer hover:bg-white/5 transition-colors"
+                    className="cursor-pointer transition-colors hover:bg-[#fff7f7]"
                   >
                     {/* Name + preferred badge */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-[var(--ck-text)]">{v.name}</span>
                         {v.is_preferred && (
-                          <span className="inline-flex items-center gap-0.5 bg-amber-500/20 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-[#fff8db] px-1.5 py-0.5 text-[10px] font-bold text-[#8a5a00]">
                             <Icon name="star" size="text-[10px]" />
                             Preferred
                           </span>
@@ -766,7 +766,7 @@ export function VendorsView() {
                         )} />
                         <span className={cn(
                           'text-xs font-semibold capitalize',
-                          v.status === 'active' ? 'text-emerald-400' : 'text-slate-500'
+                          v.status === 'active' ? 'text-[#166534]' : 'text-slate-500'
                         )}>
                           {v.status}
                         </span>

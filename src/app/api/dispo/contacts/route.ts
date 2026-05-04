@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
         .limit(120),
       db
         .from('buyers')
-        .select('id, name, company, phone, email, status, updated_at, created_at')
+        .select('id, name, company, phone, email, updated_at, created_at')
         .order('updated_at', { ascending: false })
         .limit(120),
       db
@@ -53,8 +53,8 @@ export async function GET(req: NextRequest) {
       phone: cleanPhone(row.phone),
       email: row.email ?? null,
       context: row.company ?? 'Buyer',
-      status: row.status ?? 'active',
-      href: '/dispo/buyers',
+      status: 'active',
+      href: '/dispo/contacts?tab=buyers',
       updated_at: row.updated_at ?? row.created_at,
     }))
 
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
       email: row.email ?? null,
       context: row.category ?? 'Vendor',
       status: row.is_preferred ? 'preferred' : row.status ?? 'active',
-      href: '/dispo/vendors',
+      href: '/dispo/contacts?tab=vendors',
       updated_at: row.updated_at ?? row.created_at,
     }))
 

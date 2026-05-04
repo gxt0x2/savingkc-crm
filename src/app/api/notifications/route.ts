@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
   let query = db
     .from('notifications')
-    .select('*')
+    .select('id, type, title, body, url, is_read, created_at, metadata')
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -20,16 +20,19 @@ export async function GET(req: NextRequest) {
     query = query.eq('is_read', false)
   }
 
-  const { data, error } = await query
+  const [listResult, countResult] = await Promise.all([
+    query,
+    db
+      .from('notifications')
+      .select('id', { count: 'estimated', head: true })
+      .eq('is_read', false),
+  ])
+
+  const { data, error } = listResult
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-
-  // Also get unread count
-  const { count } = await db
-    .from('notifications')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_read', false)
+  const { count } = countResult
 
   return NextResponse.json({ notifications: data || [], unread_count: count || 0 })
 }

@@ -123,6 +123,11 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'id required' }, { status: 400, headers: corsHeaders })
     }
 
+    const activityAgent = typeof activity?.agent === 'string' && activity.agent.trim().length > 0
+      ? activity.agent.trim()
+      : 'Casey'
+    const activityAgentId = activityAgent.toLowerCase().includes('ernest') ? 'ernest' : 'casey'
+
     // CRITICAL: Handle appointment_set disposition → manifest write
     if (activity?.disposition === 'appointment_set') {
       const { updateManifestAndCascade, ensureManifestExists } = await import('@/lib/manifest-sync')
@@ -146,7 +151,7 @@ export async function PATCH(req: NextRequest) {
           ghostRiskScore: 0,
           ghostProtocolActive: false,
           automationLog: [],
-          assignedTo: 'casey', // Default assignee
+          assignedTo: activityAgentId,
           address: null,
           notes: activity.notes || null,
         }
@@ -180,7 +185,7 @@ export async function PATCH(req: NextRequest) {
         lead_id: id,
         activity_type: 'appointment',
         description: `Appointment scheduled during call${activity.notes ? ': ' + activity.notes : ''}`,
-        agent: 'Casey',
+        agent: activityAgent,
         metadata: {
           source: 'call_disposition',
           disposition: activity.disposition,
@@ -203,7 +208,7 @@ export async function PATCH(req: NextRequest) {
           lead_id: id,
           activity_type: 'call',
           description,
-          agent: 'Casey',
+          agent: activityAgent,
           metadata: {
             disposition: activity.disposition,
             phone: activity.phone,
@@ -246,7 +251,7 @@ export async function PATCH(req: NextRequest) {
               if (!manifest.agentNotes) manifest.agentNotes = []
               manifest.agentNotes.push({
                 timestamp: new Date().toISOString(),
-                author: 'casey',
+                author: activityAgentId,
                 source: 'disposition',
                 content: activity.notes,
                 callRecordId: activity.phone || undefined,

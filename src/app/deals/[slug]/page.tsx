@@ -344,7 +344,7 @@ export default async function DealPage({
           </div>
 
           {/* RIGHT SIDEBAR */}
-          <div className="space-y-5 sticky top-6">
+          <div className="space-y-5 lg:sticky lg:self-start" style={{ top: 'max(24px, calc(50vh - 220px))' }}>
             {/* Pricing Card */}
             <div className={`${card} p-6`}>
               {dealPage.show_asking_price !== false && askingPrice && (

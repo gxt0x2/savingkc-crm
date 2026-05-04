@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { taskChipStyle, taskTypeLabel } from '@/components/calendar/task-tone'
 import type { Task } from '@/types'
 
 const HOURS = [
@@ -10,32 +11,6 @@ const HOURS = [
 
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-
-function taskColorClasses(task: Task) {
-  if (task.status === 'overdue') {
-    return { bg: 'bg-error-container/40', border: 'border-error', text: 'text-on-error-container' }
-  }
-  switch (task.type) {
-    case 'appointment':
-    case 'follow_up':
-      return { bg: 'bg-secondary-container/30', border: 'border-secondary', text: 'text-on-secondary-container' }
-    case 'send_offer':
-      return { bg: 'bg-primary-fixed/40', border: 'border-primary', text: 'text-on-primary-fixed' }
-    default:
-      return { bg: 'bg-surface-container-highest', border: 'border-outline', text: 'text-on-surface-variant' }
-  }
-}
-
-function taskTypeLabel(task: Task) {
-  switch (task.type) {
-    case 'follow_up': return 'Follow-up'
-    case 'appointment': return 'Appointment'
-    case 'send_offer': return 'Send Offer'
-    case 'review': return 'Review'
-    case 'task': return 'Task'
-    default: return task.type
-  }
 }
 
 export function DayView({
@@ -69,18 +44,16 @@ export function DayView({
   const dayLabel = dayDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
   return (
-    <div className="bg-surface-container-lowest rounded-xl shadow-[0px_4px_16px_rgba(0,0,0,0.04)] border border-outline-variant/20 overflow-hidden">
-      {/* Day header */}
+    <div className="ck-card overflow-hidden shadow-[0px_4px_16px_rgba(0,0,0,0.04)]">
       <div className={cn(
-        'px-6 py-4 border-b border-outline-variant/20',
-        isToday ? 'bg-primary-fixed/20' : 'bg-surface-container-low/30'
+        'px-6 py-4 border-b border-[var(--ck-border)]',
+        isToday ? 'bg-[#E32E2E]/5' : 'bg-[var(--ck-surface-elev)]'
       )}>
-        <h2 className={cn('text-lg font-bold', isToday ? 'text-primary' : 'text-on-surface')}>
+        <h2 className={cn('text-lg font-bold', isToday ? 'text-[#E32E2E]' : 'text-[var(--ck-text)]')}>
           {dayLabel}
         </h2>
       </div>
 
-      {/* Time slots */}
       <div className="overflow-y-auto max-h-[calc(100vh-320px)]">
         {HOURS.map((hourLabel, hourIdx) => {
           const hour = hourIdx + 8
@@ -90,10 +63,10 @@ export function DayView({
           return (
             <div
               key={hourLabel}
-              className="flex border-b border-outline-variant/5 relative"
+              className="flex border-b border-[var(--ck-border)] relative"
               style={{ minHeight: '80px' }}
             >
-              <div className="w-20 shrink-0 text-[10px] font-medium text-outline pt-3 text-right pr-4">
+              <div className="w-20 shrink-0 text-[10px] font-medium text-[var(--ck-text-dim)] pt-3 text-right pr-4">
                 {hourLabel}
               </div>
               <div className="flex-1 p-2 relative">
@@ -104,25 +77,21 @@ export function DayView({
                   />
                 )}
                 {hourTasks.map((task) => {
-                  const colors = taskColorClasses(task)
                   return (
                     <div
                       key={task.id}
                       onClick={() => onTaskClick?.(task)}
-                      className={cn(
-                        'p-3 border-l-4 rounded-sm shadow-sm cursor-pointer hover:opacity-80 transition-opacity mb-2',
-                        colors.bg,
-                        colors.border
-                      )}
+                      className="p-3 border-l-4 rounded-sm shadow-sm cursor-pointer hover:brightness-110 transition-all mb-2"
+                      style={taskChipStyle(task)}
                     >
-                      <div className={cn('text-[9px] font-extrabold uppercase mb-1', colors.text)}>
+                      <div className="text-[9px] font-extrabold uppercase mb-1">
                         {taskTypeLabel(task)}
                       </div>
-                      <div className={cn('text-[12px] font-bold', colors.text)}>
+                      <div className="text-[12px] font-bold">
                         {task.title}
                       </div>
                       {task.description && (
-                        <div className="text-[10px] text-on-surface-variant mt-1">{task.description}</div>
+                        <div className="text-[10px] text-[var(--ck-text-muted)] mt-1">{task.description}</div>
                       )}
                     </div>
                   )

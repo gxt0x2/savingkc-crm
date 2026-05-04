@@ -32,9 +32,9 @@ function formatBuyBox(bb: BuyBox): string {
 
 function tierBadge(tier: string) {
   const map: Record<string, string> = {
-    VIP: 'bg-amber-500/20 text-amber-300',
-    Standard: 'bg-amber-500/20 text-amber-300',
-    New: 'bg-slate-500/20 text-slate-300',
+    VIP: 'bg-[#fff8db] text-[#8a5a00]',
+    Standard: 'bg-[#e8f4ff] text-[#075985]',
+    New: 'bg-[#eef2f7] text-[#4b5565]',
   }
   return map[tier] ?? 'bg-slate-100 text-slate-600'
 }
@@ -716,9 +716,6 @@ export function BuyersView() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // Clear selection when filters change
-  useEffect(() => { setSelectedIds(new Set()) }, [debouncedSearch, statusFilter, tierFilter, page])
-
   const allSelected = buyers.length > 0 && buyers.every(b => selectedIds.has(b.id))
   const someSelected = buyers.some(b => selectedIds.has(b.id))
 
@@ -732,7 +729,8 @@ export function BuyersView() {
   function toggleSelect(id: string) {
     setSelectedIds(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
@@ -812,7 +810,10 @@ export function BuyersView() {
         <input
           type="text"
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => {
+            setSearch(e.target.value)
+            setSelectedIds(new Set())
+          }}
           className="w-full border border-slate-200 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
           placeholder="Search buyers by name, company, phone..."
         />
@@ -825,7 +826,7 @@ export function BuyersView() {
           {(['', 'active', 'inactive', 'blacklisted'] as const).map(s => (
             <button
               key={s}
-              onClick={() => { setStatusFilter(s); setPage(1) }}
+              onClick={() => { setStatusFilter(s); setPage(1); setSelectedIds(new Set()) }}
               className={cn(
                 'px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
                 statusFilter === s
@@ -843,7 +844,7 @@ export function BuyersView() {
           {(['', 'VIP', 'Standard', 'New'] as const).map(t => (
             <button
               key={t}
-              onClick={() => { setTierFilter(t); setPage(1) }}
+              onClick={() => { setTierFilter(t); setPage(1); setSelectedIds(new Set()) }}
               className={cn(
                 'px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
                 tierFilter === t
@@ -953,7 +954,7 @@ export function BuyersView() {
           <div className="flex gap-1">
             <button
               disabled={page === 1}
-              onClick={() => setPage(p => p - 1)}
+              onClick={() => { setPage(p => p - 1); setSelectedIds(new Set()) }}
               className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
             >
               <Icon name="chevron_left" size="text-sm" />
@@ -963,7 +964,7 @@ export function BuyersView() {
               return (
                 <button
                   key={pg}
-                  onClick={() => setPage(pg)}
+                  onClick={() => { setPage(pg); setSelectedIds(new Set()) }}
                   className={cn(
                     'px-3 py-1.5 rounded-lg border text-sm font-medium',
                     page === pg
@@ -977,7 +978,7 @@ export function BuyersView() {
             })}
             <button
               disabled={page === totalPages}
-              onClick={() => setPage(p => p + 1)}
+              onClick={() => { setPage(p => p + 1); setSelectedIds(new Set()) }}
               className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
             >
               <Icon name="chevron_right" size="text-sm" />
