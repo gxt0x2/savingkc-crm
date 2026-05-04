@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { forceReenrichLead } from '@/lib/auto-enrich'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 const BATCH_SIZE = 3 // concurrent leads per batch (county scrapers are slow)
 /**
@@ -18,13 +19,8 @@ const BATCH_SIZE = 3 // concurrent leads per batch (county scrapers are slow)
  *   { "dry_run": true }        — just return count of leads that would be processed
  */
 export async function POST(req: NextRequest) {
-  // Auth check
-  const cronSecret = process.env.CRON_SECRET
-  const authHeader = req.headers.get('authorization')
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    console.error('[enrich/batch] Auth failed. Has secret:', !!cronSecret, 'Header prefix:', authHeader?.slice(0, 15))
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
 
   try {
     const body = await req.json()

@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { CountyEnrichmentService, EnrichmentInput } from '@/lib/county-enrichment'
 import type { ManifestV2 } from '@/lib/manifest-builder'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
 // POST /api/enrich — Enrich property from county assessor
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireUserOrSecret(req)
+  if (unauthorized) return unauthorized
+
   try {
     const body: EnrichmentInput = await req.json()
 
