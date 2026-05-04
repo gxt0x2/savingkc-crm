@@ -11,6 +11,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 /**
  * Check if current time is within office hours (8am-5pm Central Time)
@@ -156,6 +157,9 @@ async function syncMojoData(): Promise<{
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireAdminOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const { searchParams } = new URL(request.url)
     const force = searchParams.get('force') === 'true'
@@ -181,7 +185,10 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = await requireAdminOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!

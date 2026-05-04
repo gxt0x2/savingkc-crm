@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 
+const WORKER_SECRET =
+  process.env.ADMIN_API_SECRET ||
+  process.env.CRON_SECRET ||
+  process.env.DEPLOY_SECRET ||
+  ''
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -43,6 +49,7 @@ export async function POST(req: NextRequest) {
     try {
       await fetch(`${req.nextUrl.origin}/api/workers/mojo-sync?force=true`, {
         method: 'POST',
+        headers: WORKER_SECRET ? { authorization: `Bearer ${WORKER_SECRET}` } : undefined,
       })
       console.log('Mojo refresh triggered')
     } catch (mojoErr) {
