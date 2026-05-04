@@ -13,6 +13,7 @@ import { createClient } from '@supabase/supabase-js'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { getTemplate, resolveTemplate, incrementUsage } from '@/lib/sms-templates'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 const CRON_SECRET = process.env.CRON_SECRET
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
@@ -200,7 +201,10 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = await requireAdminOrSecret(request)
+  if (unauthorized) return unauthorized
+
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
