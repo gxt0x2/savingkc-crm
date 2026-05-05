@@ -243,9 +243,9 @@ test.describe('dialer dock presentation synthetic checks', () => {
     await expectDialerDocked(page)
   })
 
-  test('heir queue launch from the dialer session opens docked without a backdrop', async ({ page }) => {
+  test('heir queue launch calls every heir phone and opens docked without a backdrop', async ({ page }) => {
     await page.goto(
-      '/dialer?lead_ids=lead-1&queue_label=3%2B%20Year%20Deceased%20Tax&caller_id=%2B18166088588',
+      '/dialer?lead_ids=lead-1&queue_label=3%2B%20Year%20Deceased%20Tax&caller_id=%2B18166088588&call_hammer=0',
       { waitUntil: 'domcontentloaded' },
     )
 

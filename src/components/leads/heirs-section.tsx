@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone, toProperCase } from '@/lib/format'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
@@ -53,16 +53,25 @@ interface HeirsSectionProps {
   dialerCallerId?: string | null
   dialerCallerPlan?: Partial<DialerCallerPlan> | null
   callHammerEnabled?: boolean
+  autoStart?: boolean
+  onAutoStartHandled?: () => void
+  onAutoStartEmpty?: () => void
   /** When provided, a chat-bubble button appears next to each phone and calls this with (heirName, phone). */
   onSmsPhone?: (args: { heirName: string; relation: string; phone: string }) => void
 }
 
-function dispatchHeirQueue(queue: HeirDialerQueueItem[], callerId?: string | null, callerPlan?: Partial<DialerCallerPlan> | null) {
+function dispatchHeirQueue(
+  queue: HeirDialerQueueItem[],
+  callerId?: string | null,
+  callerPlan?: Partial<DialerCallerPlan> | null,
+  options?: { autoDial?: boolean },
+) {
   if (queue.length === 0) return
-  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan } = { queue }
+  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan; autoDial?: boolean } = { queue }
   if (typeof callerId === 'string' && callerId.trim()) detail.callerId = callerId.trim()
   const normalizedPlan = normalizeDialerCallerPlan(callerPlan, typeof callerId === 'string' ? callerId.trim() : '')
   detail.callerPlan = normalizedPlan
+  if (options?.autoDial) detail.autoDial = true
   window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail }))
 }
 
@@ -113,6 +122,9 @@ export function HeirsSection({
   dialerCallerId = null,
   dialerCallerPlan = null,
   callHammerEnabled = true,
+  autoStart = false,
+  onAutoStartHandled,
+  onAutoStartEmpty,
   onSmsPhone,
 }: HeirsSectionProps) {
   const [heirs, setHeirs] = useState<Heir[]>([])
@@ -121,6 +133,7 @@ export function HeirsSection({
   const [isSyncing, setIsSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const autoStartedLeadRef = useRef<string | null>(null)
 
   // Currently-dialing prospect_phone_id — populated from the telephony bar's
   // heir-queue-state event. The matching heir row auto-expands; the rest stay
@@ -196,7 +209,7 @@ export function HeirsSection({
     if (confirmedPhoneOf(heir)) return count
     const available = heir.phones.filter((phone) => !phone.attempted).length
     if (available === 0) return count
-    return count + (callHammerEnabled ? available : 1)
+    return count + available
   }, 0)
   const confirmedHeirs = heirs.filter((h) => confirmedPhoneOf(h)).length
 
@@ -219,12 +232,12 @@ export function HeirsSection({
   }
 
   function queueAll() {
-    const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
+    const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir, true))
     dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan)
   }
 
   function queueHeir(heir: Heir) {
-    dispatchHeirQueue(buildQueueForHeir(heir), dialerCallerId, dialerCallerPlan)
+    dispatchHeirQueue(buildQueueForHeir(heir, true), dialerCallerId, dialerCallerPlan)
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
@@ -242,6 +255,34 @@ export function HeirsSection({
       .filter((item) => item.prospect_phone_id !== phone.id)
     dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan)
   }
+
+  useEffect(() => {
+    if (!autoStart || loading) return
+    if (autoStartedLeadRef.current === leadId) return
+    autoStartedLeadRef.current = leadId
+
+    const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => {
+      if (confirmedPhoneOf(heir)) return []
+      return heir.phones
+        .filter((phone) => !phone.attempted)
+        .map((phone) => ({
+          prospect_phone_id: phone.id,
+          phone: phone.number,
+          heirName: toProperCase(heir.contact_name),
+          relation: heir.relationship,
+          leadId,
+          propertyAddress,
+          deceasedOwnerName,
+        }))
+    })
+
+    if (queue.length > 0) {
+      dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true })
+      onAutoStartHandled?.()
+      return
+    }
+    onAutoStartEmpty?.()
+  }, [autoStart, deceasedOwnerName, dialerCallerId, dialerCallerPlan, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, propertyAddress])
 
   return (
     <section className={`ck-card ${expanded ? 'p-6' : 'px-6 py-4'}`}>
@@ -271,7 +312,7 @@ export function HeirsSection({
             <button
               onClick={(e) => { e.stopPropagation(); queueAll() }}
               className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap"
-              title={callHammerEnabled ? 'Cycle through all unattempted heir phones' : 'Call first unattempted phone for each heir'}
+              title="Cycle through all unattempted heir phones on this lead"
             >
               <Icon name="call" size="text-sm" />
               Call heirs ({queuedPhones})

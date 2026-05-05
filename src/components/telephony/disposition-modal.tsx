@@ -51,7 +51,7 @@ interface DispositionModalProps {
   onDisposition: (
     disposition: DispositionType,
     notes?: string,
-    options?: { markAsLead?: boolean },
+    options?: { markAsLead?: boolean; autoDialNext?: boolean },
   ) => void | boolean | Promise<void | boolean>
   phoneNumber?: string
   leadName?: string
@@ -80,6 +80,8 @@ interface DispositionModalProps {
   onSaveAndNext?: () => void
   isSaving?: boolean
   contact?: ContactSummary
+  primaryActionLabel?: string
+  secondaryActionLabel?: string
 }
 
 const DEFAULT_DISPOSITIONS: DispositionOption[] = [
@@ -190,6 +192,8 @@ export function DispositionModal({
   onSaveAndNext,
   isSaving = false,
   contact,
+  primaryActionLabel = 'Save & Next Lead',
+  secondaryActionLabel = 'Save & Close',
 }: DispositionModalProps) {
   const [internalDisposition, setInternalDisposition] = useState<DispositionType | null>(null)
   const [internalNotes, setInternalNotes] = useState('')
@@ -250,6 +254,7 @@ export function DispositionModal({
     try {
       const result = await onDisposition(activeDisposition, activeNotes.trim() || undefined, {
         markAsLead: markAsLeadAvailable && markAsLead,
+        autoDialNext: advance,
       })
       if (result === false) {
         setSaveError('Disposition was not saved. Try again before moving on.')
@@ -482,14 +487,14 @@ export function DispositionModal({
               onClick={() => submit({ closeAfter: true, advance: true })}
               disabled={!canSave}
             >
-              {isSaving || localSaving ? 'Saving...' : 'Save & Next Lead'}
+              {isSaving || localSaving ? 'Saving...' : primaryActionLabel}
             </button>
             <button
               className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-surface-2)] border border-[#2F2F38] text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={() => submit({ closeAfter: true, advance: false })}
               disabled={!canSave}
             >
-              Save & Close
+              {secondaryActionLabel}
             </button>
           </div>
         </div>

@@ -292,7 +292,7 @@ function patchSavedListMeta(id: string, patch: SavedListLocalMeta) {
     redialCallerId: normalizedPlan.redialCallerId,
     startBehavior: patch.startBehavior ?? existing.startBehavior ?? 'resume',
     optionalFilters: normalizeOptionalFilters(patch.optionalFilters ?? existing.optionalFilters ?? DEFAULT_OPTIONAL_FILTERS),
-    useCallHammer: patch.useCallHammer ?? existing.useCallHammer ?? false,
+    useCallHammer: patch.useCallHammer ?? existing.useCallHammer ?? true,
     useVoicemailCallHammer: patch.useVoicemailCallHammer ?? existing.useVoicemailCallHammer ?? false,
     sessionLeadIds: patch.sessionLeadIds ? normalizeLocalLeadIds(patch.sessionLeadIds) : existing.sessionLeadIds,
     resumeIndex: patch.resumeIndex !== undefined
@@ -328,7 +328,7 @@ function mergeSavedQueueWithLocalMeta(queue: SavedDialerQueue): SavedDialerQueue
     redialCallerId: normalizedPlan.redialCallerId,
     startBehavior: local.startBehavior ?? queue.startBehavior ?? 'resume',
     optionalFilters: normalizeOptionalFilters(local.optionalFilters ?? queue.optionalFilters ?? DEFAULT_OPTIONAL_FILTERS),
-    useCallHammer: local.useCallHammer ?? queue.useCallHammer ?? false,
+    useCallHammer: local.useCallHammer ?? queue.useCallHammer ?? true,
     useVoicemailCallHammer: local.useVoicemailCallHammer ?? queue.useVoicemailCallHammer ?? false,
     sessionLeadIds: local.sessionLeadIds && local.sessionLeadIds.length > 0
       ? local.sessionLeadIds
@@ -483,6 +483,7 @@ function DialerPageInner() {
 
   // Live queue state from telephony-bar
   const [queueState, setQueueState] = useState<QueueState | null>(null)
+  const [autoQueueLeadId, setAutoQueueLeadId] = useState<string | null>(null)
 
   // SMS compose state
   const [smsTarget, setSmsTarget] = useState<{ heirName: string; relation: string; phone: string } | null>(null)
@@ -682,13 +683,27 @@ function DialerPageInner() {
     return () => window.removeEventListener('heir-queue-state', onState)
   }, [])
 
-  const advance = useCallback(() => {
-    setCurrentIndex((i) => Math.min(i + 1, leadIds.length - 1))
-  }, [leadIds.length])
+  const advance = useCallback((autoQueueNextLead = false) => {
+    setCurrentIndex((i) => {
+      const next = Math.min(i + 1, leadIds.length - 1)
+      if (autoQueueNextLead && next !== i) {
+        setAutoQueueLeadId(leadIds[next] || null)
+      }
+      return next
+    })
+  }, [leadIds])
 
   const back = useCallback(() => {
     setCurrentIndex((i) => Math.max(i - 1, 0))
   }, [])
+
+  const handleAutoStartEmpty = useCallback(() => {
+    if (currentIndex >= leadIds.length - 1) {
+      setAutoQueueLeadId(null)
+      return
+    }
+    window.setTimeout(() => advance(true), 200)
+  }, [advance, currentIndex, leadIds.length])
 
   const closeSession = useCallback(() => {
     if (sessionSavedListId && leadIds.length > 0) {
@@ -732,7 +747,7 @@ function DialerPageInner() {
     function onQueueComplete(e: Event) {
       const detail = (e as CustomEvent).detail
       if (detail?.leadId === currentLeadId) {
-        setTimeout(advance, 400)
+        setTimeout(() => advance(true), 400)
       }
     }
     window.addEventListener('heir-queue-complete', onQueueComplete)
@@ -876,7 +891,7 @@ function DialerPageInner() {
             <Icon name="chevron_left" size="text-sm" /> Prev
           </button>
           <button
-            onClick={advance}
+            onClick={() => advance()}
             disabled={currentIndex >= leadIds.length - 1}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] text-xs font-bold uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Next lead (→)"
@@ -1200,6 +1215,9 @@ function DialerPageInner() {
               dialerCallerId={sessionCallerId || null}
               dialerCallerPlan={sessionCallerPlan}
               callHammerEnabled={sessionUseCallHammer}
+              autoStart={autoQueueLeadId === currentLeadId}
+              onAutoStartHandled={() => setAutoQueueLeadId(null)}
+              onAutoStartEmpty={handleAutoStartEmpty}
               defaultExpanded
               collapsible={false}
               onSmsPhone={setSmsTarget}
