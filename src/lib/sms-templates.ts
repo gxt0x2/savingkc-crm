@@ -115,8 +115,8 @@ export const appointmentTemplates: AppointmentTemplate[] = [
     category: 'appointment',
     timing: 'booking',
     asks_for_reply: true,
-    merge_fields: ['firstName', 'date', 'time', 'agentName', 'twilioNumber'],
-    body: `Hey {firstName}! This is {agentName} with Saving KC Homebuyers. Just confirming our phone call for {date} at {time}.\n\nReply 1 to confirm.\n\nQuestions anytime: {twilioNumber}`,
+    merge_fields: ['firstName', 'date', 'time', 'agentName'],
+    body: `Hey {firstName}! This is {agentName} with Saving KC Homebuyers. Just confirming our phone call for {date} at {time}.\n\nReply 1 to confirm.`,
   },
   {
     name: 'appt_confirm_inperson',
