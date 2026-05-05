@@ -1,10 +1,16 @@
 const baseUrl = (process.env.TWILIO_HEALTH_BASE_URL || 'https://crm.savingkc.com').replace(/\/$/, '');
 const url = `${baseUrl}/api/twilio-token`;
 const twilioSidPattern = /^[A-Z]{2}[0-9a-fA-F]{32}$/;
+const healthBearer = process.env.TWILIO_HEALTH_BEARER;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
+
+assert(
+  Boolean(healthBearer),
+  'Twilio health failed: TWILIO_HEALTH_BEARER is required for protected CRM health checks.'
+);
 
 function decodeJwtPart(token, index, label) {
   const parts = token.split('.');
@@ -27,9 +33,7 @@ function assertSid(value, prefix, label) {
 const res = await fetch(url, {
   headers: {
     Accept: 'application/json',
-    ...(process.env.TWILIO_HEALTH_BEARER
-      ? { Authorization: `Bearer ${process.env.TWILIO_HEALTH_BEARER}` }
-      : {}),
+    Authorization: `Bearer ${healthBearer}`,
   },
 });
 
