@@ -62,7 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar)
-  const dialerPresentation = pathname?.startsWith('/dialer') ? 'dock' : 'modal'
+  const dialerPresentation = 'dock'
 
   useEffect(() => {
     const html = document.documentElement

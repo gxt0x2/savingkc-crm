@@ -233,7 +233,7 @@ export function DialerPanel({
   pendingQueue,
   pendingQueueCallerId,
   pendingQueueCallerPlan,
-  presentation = 'modal',
+  presentation = 'dock',
 }: DialerPanelProps) {
   const [status, setStatus] = useState<CallStatus>('offline')
   const [dialNumber, setDialNumber] = useState('')
