@@ -95,6 +95,7 @@ export async function GET(request: Request) {
   // Auth check: query param or Authorization header
   const { searchParams } = new URL(request.url)
   const secret = searchParams.get('secret')
+  const scopedLeadId = searchParams.get('leadId')?.trim() || null
   const authHeader = request.headers.get('authorization')
   const token = secret || authHeader?.replace('Bearer ', '')
 
@@ -109,11 +110,17 @@ export async function GET(request: Request) {
 
   try {
     // 1. Query manifests with upcoming appointments
-    const { data: rows, error: queryError } = await supabase
+    let query = supabase
       .from('manifests')
       .select('id, lead_id, manifest')
       .in('appointment_status', ['scheduled', 'confirmed', 'reconfirmed'])
       .gt('next_appointment_at', new Date().toISOString())
+
+    if (scopedLeadId) {
+      query = query.eq('lead_id', scopedLeadId)
+    }
+
+    const { data: rows, error: queryError } = await query
 
     if (queryError) {
       console.error('[appointment-reminder] Query error:', queryError)
@@ -121,7 +128,12 @@ export async function GET(request: Request) {
     }
 
     if (!rows || rows.length === 0) {
-      return NextResponse.json({ success: true, processed: 0, reminders_queued: 0 })
+      return NextResponse.json({
+        success: true,
+        processed: 0,
+        reminders_queued: 0,
+        scoped_to_lead: scopedLeadId,
+      })
     }
 
     let processed = 0
@@ -421,6 +433,7 @@ export async function GET(request: Request) {
       skipped,
       ghost_activated: ghostActivated,
       ghost_stepped: ghostStepped,
+      scoped_to_lead: scopedLeadId,
       errors: errors.length > 0 ? errors : undefined,
     })
   } catch (error: any) {
