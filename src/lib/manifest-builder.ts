@@ -182,6 +182,9 @@ export interface ManifestPipeline {
     lastSellerResponse: string | null  // ISO 8601 or null
     ghostRiskScore: number          // 0-100, default 0
     ghostProtocolActive: boolean    // default false
+    reminderAutomationEnabled?: boolean
+    reminderAutomationEnabledAt?: string
+    reminderAutomationSource?: string
     automationLog: Array<{
       timestamp: string
       action: string

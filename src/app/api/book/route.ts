@@ -220,6 +220,9 @@ export async function POST(req: NextRequest) {
             lastSellerResponse: null,
             ghostRiskScore: 0,
             ghostProtocolActive: false,
+            reminderAutomationEnabled: true,
+            reminderAutomationEnabledAt: new Date().toISOString(),
+            reminderAutomationSource: 'book_route',
             automationLog: [],
             assignedTo: 'casey', // Default for website bookings
             address: null, // Phone calls don't need address
