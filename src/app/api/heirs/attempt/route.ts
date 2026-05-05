@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase-lazy'
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { prospect_phone_id, disposition, notes, lead_id, agent, duration } = body
+    const { prospect_phone_id, disposition, notes, lead_id, agent, duration, mark_as_lead } = body
 
     if (!prospect_phone_id || !disposition) {
       return NextResponse.json(
@@ -76,8 +76,40 @@ export async function POST(req: Request) {
           prospect_phone_id: phoneRow.id,
           heir_name: phoneRow.contact_name,
           heir_relation: phoneRow.relationship,
+          mark_as_lead: Boolean(mark_as_lead),
         },
       })
+
+      if (mark_as_lead) {
+        const contactName = phoneRow.contact_name || phoneRow.prospects?.owner_1 || 'Unknown seller'
+        const { error: leadErr } = await supabase
+          .from('leads')
+          .update({
+            full_name: contactName,
+            phone: phoneRow.phone,
+            updated_at: now,
+          })
+          .eq('id', resolvedLeadId)
+
+        if (leadErr) {
+          return NextResponse.json({ error: leadErr.message }, { status: 500 })
+        }
+
+        await supabase.from('lead_activities').insert({
+          lead_id: resolvedLeadId,
+          activity_type: 'status_change',
+          description: `Marked ${contactName} (${phoneRow.relationship || 'relative'}) as primary lead contact`,
+          agent: agent ?? 'Ernest',
+          metadata: {
+            source: 'heir_dialer',
+            prospect_phone_id: phoneRow.id,
+            heir_name: phoneRow.contact_name,
+            heir_relation: phoneRow.relationship,
+            phone: phoneRow.phone,
+            action: 'mark_as_lead',
+          },
+        })
+      }
     }
 
     return NextResponse.json({ success: true })

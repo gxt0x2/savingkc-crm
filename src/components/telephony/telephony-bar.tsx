@@ -72,6 +72,7 @@ interface DialerPanelProps {
   pendingQueue?: HeirQueueItem[] | null
   pendingQueueCallerId?: string | null
   pendingQueueCallerPlan?: DialerCallerPlan | null
+  presentation?: 'modal' | 'dock'
 }
 
 function resolveCallerIdForAttempt(
@@ -90,9 +91,13 @@ function resolveCallerIdForAttempt(
 function useCallTimer(active: boolean) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
-    if (!active) { setSeconds(0); return }
-    const id = setInterval(() => setSeconds((s) => s + 1), 1000)
-    return () => clearInterval(id)
+    const reset = window.setTimeout(() => setSeconds(0), 0)
+    if (!active) return () => window.clearTimeout(reset)
+    const id = window.setInterval(() => setSeconds((s) => s + 1), 1000)
+    return () => {
+      window.clearTimeout(reset)
+      window.clearInterval(id)
+    }
   }, [active])
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
   const ss = String(seconds % 60).padStart(2, '0')
@@ -220,7 +225,16 @@ function formatDialDisplay(input: string): string {
   return raw
 }
 
-export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan }: DialerPanelProps) {
+export function DialerPanel({
+  open,
+  onClose,
+  onStatusChange,
+  pendingDial,
+  pendingQueue,
+  pendingQueueCallerId,
+  pendingQueueCallerPlan,
+  presentation = 'dock',
+}: DialerPanelProps) {
   const [status, setStatus] = useState<CallStatus>('offline')
   const [dialNumber, setDialNumber] = useState('')
   const [muted, setMuted] = useState(false)
@@ -252,6 +266,8 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   // Disposition
   const [showDisposition, setShowDisposition] = useState(false)
   const lastCallPhoneRef = useRef<string>('')
+  const [lastCallDuration, setLastCallDuration] = useState<string | null>(null)
+  const lastCallDurationSecondsRef = useRef(0)
   const activeCallerId = selectedCallerId || callerIdDisplay
   const activeAgentName =
     agentIdentity === 'ernest'
@@ -317,9 +333,10 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         queueIndex,
         queueLength: queue?.length ?? 0,
         status,
+        callDuration: status === 'on_call' ? callTimer : status === 'calling' ? '00:00' : null,
       },
     }))
-  }, [queueItem, queueIndex, queue, status])
+  }, [callTimer, queueItem, queueIndex, queue, status])
 
   // Handle pendingQueue from HeirsSection — open heir-dialer queue mode.
   useEffect(() => {
@@ -409,7 +426,7 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             if (refreshData.identity) setAgentIdentity(refreshData.identity)
             log('token refreshed')
           }
-        } catch (e) {
+        } catch {
           log('token refresh failed')
         }
       })
@@ -525,6 +542,8 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
     setStatusLogged('calling')
     setError(null)
+    setLastCallDuration(null)
+    lastCallDurationSecondsRef.current = 0
     lastCallPhoneRef.current = number
     // Snapshot the queue item at call start so the disposition (which fires
     // after disconnect, possibly after advance) logs against the right heir.
@@ -577,6 +596,8 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
       call.on('disconnect', () => {
         const duration = Math.round((Date.now() - callStartRef.current) / 1000)
+        lastCallDurationSecondsRef.current = duration
+        setLastCallDuration(formatDuration(duration))
         fetch('/api/call-log', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -661,14 +682,18 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
     setDialNumber((prev) => stripDialFormatting(prev).slice(0, -1))
   }
 
-  async function handleDisposition(disposition: DispositionType, notes?: string) {
-    if (!selectedLead) return
+  async function handleDisposition(
+    disposition: DispositionType,
+    notes?: string,
+    options?: { markAsLead?: boolean },
+  ) {
+    if (!selectedLead) return false
     const activeItem = activeQueueItemRef.current
     try {
       if (activeItem) {
         // Heir-dialer path: log to prospect_phones + activity feed via our own
         // endpoint (which handles both writes in one call).
-        await fetch('/api/heirs/attempt', {
+        const response = await fetch('/api/heirs/attempt', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -677,13 +702,19 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             notes,
             lead_id: activeItem.leadId,
             agent: activeAgentName,
+            duration: lastCallDurationSecondsRef.current || null,
+            mark_as_lead: Boolean(options?.markAsLead),
           }),
         })
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null)
+          throw new Error(payload?.error || 'Could not save heir disposition.')
+        }
         window.dispatchEvent(new CustomEvent('heir-attempt-logged', {
           detail: { leadId: activeItem.leadId, prospectPhoneId: activeItem.prospect_phone_id },
         }))
       } else {
-        await fetch('/api/leads', {
+        const response = await fetch('/api/leads', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -697,13 +728,21 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
             },
           }),
         })
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null)
+          throw new Error(payload?.error || 'Could not save call disposition.')
+        }
       }
       window.dispatchEvent(new CustomEvent('crm:disposition-logged', { detail: { leadId: selectedLead.id } }))
-    } catch {}
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save disposition.')
+      return false
+    }
 
     // Advance the heir queue after disposition is logged.
     if (queueMode) advanceQueue()
     activeQueueItemRef.current = null
+    return true
   }
 
   function advanceQueue() {
@@ -794,14 +833,16 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
   }
 
   const isOnCall = status === 'on_call' || status === 'calling'
+  const isDocked = presentation === 'dock'
   const effectiveCallerId = callerPlan.mode === 'rotation' && !callerIdLockedByUser
     ? rotatedCallerId
     : (activeCallerId || callerIdOptions[0]?.value || '')
+  const dispositionQueueItem = activeQueueItemRef.current
 
   return (
     <>
       {/* Backdrop */}
-      {open && (
+      {open && !isDocked && (
         <div
           className="fixed inset-0 z-[60] bg-black/45 backdrop-blur-[6px] transition-opacity"
           onClick={onClose}
@@ -810,12 +851,20 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
 
       {/* Panel */}
       <div
-        className={`fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5 transition-opacity duration-300 ${
-          open ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
+        className={
+          isDocked
+            ? `fixed right-3 bottom-3 sm:right-5 sm:bottom-5 z-[70] transition-opacity duration-300 ${
+                open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+              }`
+            : `fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5 transition-opacity duration-300 ${
+                open ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              }`
+        }
       >
         <div
-          className={`w-[388px] max-w-[calc(100vw-1rem)] h-[min(92vh,860px)] bg-[var(--skc-surface-1)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-modal)] shadow-[0_24px_70px_rgba(0,0,0,0.62)] transform transition-all duration-300 ease-out flex flex-col ${
+          className={`w-[388px] max-w-[calc(100vw-1rem)] ${
+            isDocked ? 'h-[min(82vh,760px)]' : 'h-[min(92vh,860px)]'
+          } bg-[var(--skc-surface-1)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-modal)] shadow-[0_24px_70px_rgba(0,0,0,0.62)] transform transition-all duration-300 ease-out flex flex-col ${
             open ? 'scale-100 translate-y-0' : 'scale-95 translate-y-2'
           } ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
         >
@@ -1312,6 +1361,9 @@ export function DialerPanel({ open, onClose, onStatusChange, pendingDial, pendin
         onDisposition={handleDisposition}
         phoneNumber={lastCallPhoneRef.current}
         leadName={selectedLead?.full_name}
+        callDuration={lastCallDuration || undefined}
+        markAsLeadAvailable={Boolean(dispositionQueueItem)}
+        markAsLeadLabel={dispositionQueueItem ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
       />
     </>
   )
