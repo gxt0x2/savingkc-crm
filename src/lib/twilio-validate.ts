@@ -6,6 +6,7 @@
 import twilio from 'twilio'
 
 const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN!
+const SKIP_SIGNATURE_VALIDATION = process.env.TWILIO_SKIP_SIGNATURE_VALIDATION === 'true'
 
 /**
  * Validate that a request came from Twilio using its signature
@@ -16,9 +17,13 @@ export function validateTwilioRequest(
   params: Record<string, string>,
   signature: string | null
 ): boolean {
+  if (SKIP_SIGNATURE_VALIDATION) {
+    console.warn('TWILIO_SKIP_SIGNATURE_VALIDATION is enabled - accepting Twilio webhook without signature validation')
+    return true
+  }
   if (!signature) return false
   if (!AUTH_TOKEN) {
-    console.warn('TWILIO_AUTH_TOKEN not set — skipping signature validation')
+    console.warn('TWILIO_AUTH_TOKEN not set - skipping signature validation')
     return true
   }
   return twilio.validateRequest(AUTH_TOKEN, signature, url, params)

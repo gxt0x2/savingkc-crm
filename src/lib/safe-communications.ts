@@ -11,15 +11,29 @@ import twilio from 'twilio'
 import { supabase } from '@/lib/supabase-lazy'
 
 const TEST_MODE = process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'development'
+const TWILIO_MESSAGING_SERVICE = cleanTwilioEnv('TWILIO_MESSAGING_SERVICE')
+
+function cleanTwilioEnv(name: string): string {
+  return process.env[name]
+    ?.replace(/\\[rnt]/g, '')
+    .replace(/\s+/g, '')
+    .trim() ?? ''
+}
 
 // Twilio client (only initialized if not in test mode)
 let twilioClient: ReturnType<typeof twilio> | null = null
 
 if (!TEST_MODE) {
-  twilioClient = twilio(
-    process.env.TWILIO_ACCOUNT_SID!,
-    process.env.TWILIO_AUTH_TOKEN!
-  )
+  const accountSid = cleanTwilioEnv('TWILIO_ACCOUNT_SID')
+  const apiKey = cleanTwilioEnv('TWILIO_API_KEY')
+  const apiSecret = cleanTwilioEnv('TWILIO_API_SECRET')
+  const authToken = cleanTwilioEnv('TWILIO_AUTH_TOKEN')
+
+  if (accountSid && apiKey && apiSecret) {
+    twilioClient = twilio(apiKey, apiSecret, { accountSid })
+  } else if (accountSid && authToken) {
+    twilioClient = twilio(accountSid, authToken)
+  }
 }
 
 // Supabase client for logging
@@ -83,7 +97,10 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
   }
 
   try {
-    const message = await twilioClient.messages.create(params)
+    const message = await twilioClient.messages.create({
+      ...params,
+      ...(TWILIO_MESSAGING_SERVICE ? { messagingServiceSid: TWILIO_MESSAGING_SERVICE } : {}),
+    })
     const duration = Date.now() - startTime
 
     console.log(`[SMS-SUCCESS] Sent to ${params.to} (SID: ${message.sid}, ${duration}ms)`)
