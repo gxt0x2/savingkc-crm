@@ -72,6 +72,7 @@ interface DialerPanelProps {
   pendingQueue?: HeirQueueItem[] | null
   pendingQueueCallerId?: string | null
   pendingQueueCallerPlan?: DialerCallerPlan | null
+  pendingQueueAutoDial?: boolean
   presentation?: 'modal' | 'dock'
 }
 
@@ -233,6 +234,7 @@ export function DialerPanel({
   pendingQueue,
   pendingQueueCallerId,
   pendingQueueCallerPlan,
+  pendingQueueAutoDial = false,
   presentation = 'dock',
 }: DialerPanelProps) {
   const [status, setStatus] = useState<CallStatus>('offline')
@@ -292,6 +294,8 @@ export function DialerPanel({
   const queueItem = queue && queue[queueIndex] ? queue[queueIndex] : null
   const queueMode = queue !== null && queue.length > 0
   const activeQueueItemRef = useRef<HeirQueueItem | null>(null)
+  const pendingAutoDialRef = useRef(false)
+  const makeCallRef = useRef<() => Promise<void> | void>(() => {})
 
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
@@ -367,10 +371,11 @@ export function DialerPanel({
         updated_at: new Date().toISOString(),
       })
       setDialNumber(first.phone)
+      if (pendingQueueAutoDial) pendingAutoDialRef.current = true
       setSearchQuery('')
       setSearchResults([])
     }
-  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan])
+  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
@@ -624,6 +629,9 @@ export function DialerPanel({
         callRef.current = null
         setStatusLogged('ready')
         setMuted(false)
+        if (selectedLead) {
+          setShowDisposition(true)
+        }
       })
     } catch (err) {
       const msg = extractTwilioErrorMessage(err)
@@ -632,6 +640,37 @@ export function DialerPanel({
       setStatusLogged('ready')
     }
   }
+
+  makeCallRef.current = makeCall
+
+  useEffect(() => {
+    if (
+      !pendingAutoDialRef.current ||
+      showDisposition ||
+      status !== 'ready' ||
+      !queueMode ||
+      !queueItem ||
+      !dialNumber.trim()
+    ) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      if (
+        !pendingAutoDialRef.current ||
+        showDisposition ||
+        status !== 'ready' ||
+        !queueItem ||
+        !dialNumber.trim()
+      ) {
+        return
+      }
+      pendingAutoDialRef.current = false
+      void makeCallRef.current()
+    }, 350)
+
+    return () => window.clearTimeout(timeout)
+  }, [dialNumber, queueItem, queueMode, showDisposition, status])
 
   function hangup() {
     callRef.current?.disconnect()
@@ -685,7 +724,7 @@ export function DialerPanel({
   async function handleDisposition(
     disposition: DispositionType,
     notes?: string,
-    options?: { markAsLead?: boolean },
+    options?: { markAsLead?: boolean; autoDialNext?: boolean },
   ) {
     if (!selectedLead) return false
     const activeItem = activeQueueItemRef.current
@@ -740,13 +779,16 @@ export function DialerPanel({
     }
 
     // Advance the heir queue after disposition is logged.
-    if (queueMode) advanceQueue()
+    const nextQueueItem = queueMode ? advanceQueue() : null
+    if (nextQueueItem && options?.autoDialNext) {
+      pendingAutoDialRef.current = true
+    }
     activeQueueItemRef.current = null
     return true
   }
 
-  function advanceQueue() {
-    if (!queue) return
+  function advanceQueue(): HeirQueueItem | null {
+    if (!queue) return null
     const next = queueIndex + 1
     if (next >= queue.length) {
       // Queue complete — let listeners (e.g. /dialer page) advance to the
@@ -761,7 +803,7 @@ export function DialerPanel({
       setQueueIndex(0)
       setSelectedLead(null)
       setDialNumber('')
-      return
+      return null
     }
     setQueueIndex(next)
     const item = queue[next]
@@ -776,6 +818,7 @@ export function DialerPanel({
       updated_at: new Date().toISOString(),
     })
     setDialNumber(item.phone)
+    return item
   }
 
   function skipQueueItem() {
@@ -1364,6 +1407,7 @@ export function DialerPanel({
         callDuration={lastCallDuration || undefined}
         markAsLeadAvailable={Boolean(dispositionQueueItem)}
         markAsLeadLabel={dispositionQueueItem ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
+        primaryActionLabel={queueMode ? 'Save & Next Number' : 'Save & Next Lead'}
       />
     </>
   )

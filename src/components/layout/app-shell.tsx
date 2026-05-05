@@ -107,6 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [pendingQueue, setPendingQueue] = useState<HeirQueueItem[] | null>(null)
   const [pendingQueueCallerId, setPendingQueueCallerId] = useState<string | null>(null)
   const [pendingQueueCallerPlan, setPendingQueueCallerPlan] = useState<DialerCallerPlan | null>(null)
+  const [pendingQueueAutoDial, setPendingQueueAutoDial] = useState(false)
 
   function handleDialerStatusChange(status: CallStatus) {
     setDialerStatus(status)
@@ -126,6 +127,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueue(null)
         setPendingQueueCallerId(null)
         setPendingQueueCallerPlan(null)
+        setPendingQueueAutoDial(false)
         setShowDialer(true)
       }
     }
@@ -136,6 +138,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         const callerId = typeof detail.callerId === 'string' ? detail.callerId : null
         setPendingQueueCallerId(callerId)
         setPendingQueueCallerPlan(normalizeDialerCallerPlan(detail.callerPlan, callerId || ''))
+        setPendingQueueAutoDial(Boolean(detail.autoDial))
         setPendingDialLead(null)
         setShowDialer(true)
       }
@@ -409,12 +412,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Dialer Panel — Twilio softphone */}
       <DialerPanel
         open={showDialer}
-        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null) }}
+        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null); setPendingQueueAutoDial(false) }}
         onStatusChange={handleDialerStatusChange}
         pendingDial={pendingDialLead}
         pendingQueue={pendingQueue}
         pendingQueueCallerId={pendingQueueCallerId}
         pendingQueueCallerPlan={pendingQueueCallerPlan}
+        pendingQueueAutoDial={pendingQueueAutoDial}
         presentation={dialerPresentation}
       />
 
