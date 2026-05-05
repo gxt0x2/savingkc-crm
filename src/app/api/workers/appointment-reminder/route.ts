@@ -78,6 +78,14 @@ function formatDateTime(dateStr: string): { date: string; time: string } {
   return { date, time }
 }
 
+function formatPhoneForSms(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+
+  if (local.length !== 10) return phone
+  return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`
+}
+
 function hasLogEntry(automationLog: any[], action: string): boolean {
   return (automationLog || []).some((e: any) => e.action === action)
 }
@@ -189,7 +197,7 @@ export async function GET(request: Request) {
           time: formattedTime,
           address,
           agentName: 'Casey',
-          twilioNumber: TWILIO_PHONE,
+          twilioNumber: formatPhoneForSms(TWILIO_PHONE),
         }
 
         processed++
