@@ -16,8 +16,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { updateManifestAndCascade } from './manifest-sync'
 import { renderTemplate } from './sms-templates'
+import { buildQueuedSmsMetadata } from './queued-sms'
 
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
+const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 
 const STEP_DELAY_MS = 2 * 60 * 60 * 1000 // 2 hours
 
@@ -112,17 +114,20 @@ export async function runGhostProtocolAppointment(leadId: string): Promise<void>
     // Create pending SMS in lead_activities
     await supabase.from('lead_activities').insert({
       lead_id: leadId,
-      type: 'sms',
+      activity_type: 'sms',
       description: `Ghost Protocol (Appt) Step 1 — Pattern Interrupt SMS`,
       agent: 'Ari',
-      metadata: {
-        direction: 'outbound',
+      metadata: buildQueuedSmsMetadata({
         to: ownerPhone,
         body: smsBody,
-        status: 'pending',
-        ghost_protocol: 'appointment',
-        ghost_step: 1,
-      },
+        from: TWILIO_PHONE,
+        source: 'ghost-protocol-appointment',
+        template: 'appt_ghost_pattern_interrupt',
+        extra: {
+          ghost_protocol: 'appointment',
+          ghost_step: 1,
+        },
+      }),
     })
 
     // Push step 1 to automationLog via manifest
@@ -183,18 +188,21 @@ export async function runGhostProtocolAppointment(leadId: string): Promise<void>
     // Send alert SMS to Casey with ghost context
     await supabase.from('lead_activities').insert({
       lead_id: leadId,
-      type: 'sms',
+      activity_type: 'sms',
       description: `Ghost Protocol alert SMS to Casey`,
       agent: 'Ari',
-      metadata: {
-        direction: 'outbound',
+      metadata: buildQueuedSmsMetadata({
         to: CASEY_PHONE,
+        from: TWILIO_PHONE,
         body: `GHOST ALERT: ${ownerFirstName} (${ownerPhone}) went cold before appointment. Pattern interrupt SMS sent 2hrs ago — no reply. Please call them directly.`,
-        status: 'pending',
-        internal_alert: true,
-        ghost_protocol: 'appointment',
-        ghost_step: 2,
-      },
+        source: 'ghost-protocol-appointment',
+        template: 'ghost_appt_casey_alert',
+        extra: {
+          internal_alert: true,
+          ghost_protocol: 'appointment',
+          ghost_step: 2,
+        },
+      }),
     })
 
     // Push step 2 to automationLog
@@ -238,22 +246,26 @@ export async function runGhostProtocolAppointment(leadId: string): Promise<void>
 
     const smsBody = renderTemplate('ghost_appt_door_open', {
       firstName: ownerFirstName,
+      agentName: 'Casey',
     })
 
     // Send door-open SMS
     await supabase.from('lead_activities').insert({
       lead_id: leadId,
-      type: 'sms',
+      activity_type: 'sms',
       description: `Ghost Protocol (Appt) Step 3 — Door-Open Final SMS`,
       agent: 'Ari',
-      metadata: {
-        direction: 'outbound',
+      metadata: buildQueuedSmsMetadata({
         to: ownerPhone,
         body: smsBody,
-        status: 'pending',
-        ghost_protocol: 'appointment',
-        ghost_step: 3,
-      },
+        from: TWILIO_PHONE,
+        source: 'ghost-protocol-appointment',
+        template: 'ghost_appt_door_open',
+        extra: {
+          ghost_protocol: 'appointment',
+          ghost_step: 3,
+        },
+      }),
     })
 
     // Push step 3 to automationLog
