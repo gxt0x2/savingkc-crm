@@ -159,6 +159,13 @@ export async function GET(request: Request) {
         const appointment = manifest?.pipeline?.appointment
         if (!appointment) continue
 
+        // Forward-only safety gate: pre-cutover appointments are dead to this
+        // worker unless a new creation path explicitly opted them in.
+        if (appointment.reminderAutomationEnabled !== true) {
+          skipped++
+          continue
+        }
+
         // If Ghost Protocol is active — run next step, skip normal reminders
         if (appointment.ghostProtocolActive === true) {
           try {
