@@ -196,6 +196,7 @@ export function DispositionModal({
   const [markAsLead, setMarkAsLead] = useState(false)
   const [localSaving, setLocalSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveNotice, setSaveNotice] = useState<string | null>(null)
 
   const isControlledDisposition = selectedDisposition !== undefined
   const isControlledNotes = notes !== undefined
@@ -208,6 +209,7 @@ export function DispositionModal({
     if (!isControlledNotes) setInternalNotes('')
     setMarkAsLead(false)
     setSaveError(null)
+    setSaveNotice(null)
   }, [open, isControlledDisposition, selectedDisposition, isControlledNotes, notes])
 
   const activeDisposition = isControlledDisposition ? (selectedDisposition ?? null) : internalDisposition
@@ -230,16 +232,20 @@ export function DispositionModal({
   function pickDisposition(id: DispositionType) {
     if (!isControlledDisposition) setInternalDisposition(id)
     onDispositionChange?.(id)
+    setSaveError(null)
+    setSaveNotice(null)
   }
 
   function changeNotes(value: string) {
     if (!isControlledNotes) setInternalNotes(value)
     onNotesChange?.(value)
+    setSaveNotice(null)
   }
 
   async function submit({ closeAfter, advance }: { closeAfter: boolean; advance: boolean }) {
-    if (!activeDisposition || isSaving) return
+    if (!activeDisposition || isSaving || localSaving) return
     setSaveError(null)
+    setSaveNotice(null)
     setLocalSaving(true)
     try {
       const result = await onDisposition(activeDisposition, activeNotes.trim() || undefined, {
@@ -253,6 +259,7 @@ export function DispositionModal({
       if (advance) onSaveAndNext?.()
       else onSave?.()
 
+      setSaveNotice('Saved')
       if (closeAfter) onClose()
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Disposition was not saved. Try again.')
@@ -262,9 +269,9 @@ export function DispositionModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/55 backdrop-blur-[6px] flex items-start justify-center p-4 sm:pt-8" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] bg-black/55 backdrop-blur-[6px] flex items-center justify-center p-3 sm:p-6" onClick={onClose}>
       <div
-        className="w-full max-w-[380px] bg-[var(--skc-surface-1)] rounded-[var(--skc-radius-modal)] overflow-hidden"
+        className="w-full max-w-[860px] max-h-[calc(100vh-1.5rem)] bg-[var(--skc-surface-1)] rounded-[var(--skc-radius-modal)] overflow-hidden flex flex-col shadow-[0_28px_90px_rgba(0,0,0,0.62)]"
         style={{ fontFamily: 'var(--skc-font)' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -287,14 +294,14 @@ export function DispositionModal({
           </div>
           <button
             className={`bg-transparent border-0 p-0 text-right text-[15px] font-semibold tracking-[-0.01em] ${canSave ? 'text-[var(--skc-brand)]' : 'text-[var(--skc-text-quaternary)] cursor-not-allowed'}`}
-            onClick={() => canSave && submit({ closeAfter: false, advance: false })}
+            onClick={() => canSave && submit({ closeAfter: true, advance: false })}
             disabled={!canSave}
           >
-            Save
+            {isSaving || localSaving ? 'Saving...' : 'Save'}
           </button>
         </div>
 
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 overflow-y-auto">
           <div className="bg-[var(--skc-surface-soft)] rounded-[var(--skc-radius-card)] p-3.5 flex items-center gap-3">
             {resolvedContact.avatarUrl ? (
               <img src={resolvedContact.avatarUrl} alt="contact" className="w-11 h-11 rounded-full object-cover" />
@@ -321,146 +328,170 @@ export function DispositionModal({
               )}
             </div>
           </div>
-        </div>
 
-        <div className="px-4 pb-2 flex items-center justify-between">
-          <span className="text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-tertiary)]">Outcome</span>
-          <span className="text-[12px] font-medium text-[#FF453A]">Required</span>
-        </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.75fr)] lg:items-start">
+            <section className="min-w-0">
+              <div className="pb-2 flex items-center justify-between">
+                <span className="text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-tertiary)]">Outcome</span>
+                <span className="text-[12px] font-medium text-[#FF453A]">Required</span>
+              </div>
 
-        <div className="px-4">
-          <div className="bg-[var(--skc-surface-2)] rounded-[var(--skc-radius-card)] overflow-hidden">
-            {dispositions.map((d, i) => {
-              const isLast = i === dispositions.length - 1
-              const isSelected = d.id === activeDisposition
-              return (
-                <button
-                  key={d.id}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
-                  style={{ borderBottom: isLast ? 'none' : '0.5px solid var(--skc-separator)' }}
-                  onClick={() => pickDisposition(d.id)}
-                >
-                  <span className={`w-7 h-7 rounded-[var(--skc-radius-tile)] flex items-center justify-center ${TONE_TILE_CLASS[d.tone]}`}>
-                    <Icon name={d.icon} size="text-[16px]" />
-                  </span>
-                  <span className="flex-1 text-white text-[16px] tracking-[-0.01em]">{d.label}</span>
-                  {isSelected ? <CheckActive /> : d.hasSubreason ? <Chevron /> : <span className="w-[14px]" />}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {markAsLeadAvailable && (
-          <div className="px-4 pt-4">
-            <button
-              type="button"
-              className={`w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-[var(--skc-radius-card)] border transition-colors ${
-                markAsLead
-                  ? 'bg-[#30D1581F] border-[#30D15873]'
-                  : 'bg-[var(--skc-surface-2)] border-transparent hover:bg-[var(--skc-surface-soft)]'
-              }`}
-              onClick={() => setMarkAsLead((value) => !value)}
-            >
-              <span className={`w-8 h-8 rounded-[var(--skc-radius-tile)] flex items-center justify-center ${
-                markAsLead ? 'bg-[#30D1582E] text-[#30D158]' : 'bg-[#98989E38] text-[var(--skc-text-secondary)]'
-              }`}>
-                <Icon name={markAsLead ? 'check_circle' : 'person_add'} size="text-[18px]" />
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-white text-[16px] tracking-[-0.01em]">
-                  {markAsLeadLabel || 'Mark as lead'}
-                </span>
-                <span className="block text-[12px] text-[var(--skc-text-tertiary)] mt-0.5">
-                  Make this person the primary seller contact for the property.
-                </span>
-              </span>
-              {markAsLead ? <CheckActive /> : <span className="w-[22px]" />}
-            </button>
-          </div>
-        )}
-
-        {nextActions.length > 0 && (
-          <>
-            <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-              <span className="text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-tertiary)]">Next Action</span>
-            </div>
-            <div className="px-4">
-              <div className="bg-[var(--skc-surface-2)] rounded-[var(--skc-radius-card)] overflow-hidden">
-                {nextActions.map((a, i) => {
-                  const isLast = i === nextActions.length - 1
+              <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
+                {dispositions.map((d) => {
+                  const isSelected = d.id === activeDisposition
                   return (
                     <button
-                      key={a.id}
-                      className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
-                      style={{ borderBottom: isLast ? 'none' : '0.5px solid var(--skc-separator)' }}
-                      onClick={() => onNextActionPick?.(a.id)}
+                      key={d.id}
+                      className={`min-h-[76px] rounded-[var(--skc-radius-card)] border px-3 py-3 text-left transition-colors ${
+                        isSelected
+                          ? 'border-[var(--skc-brand)] bg-[var(--skc-brand-soft)]'
+                          : 'border-[#2F2F38] bg-[var(--skc-surface-2)] hover:bg-[var(--skc-surface-soft)]'
+                      }`}
+                      onClick={() => pickDisposition(d.id)}
                     >
-                      <span className="w-[17px] h-[17px] inline-flex items-center justify-center">
-                        <Icon name={a.icon} size="text-[16px]" className="text-[var(--skc-text-secondary)]" />
+                      <span className="flex items-start gap-2.5">
+                        <span className={`mt-0.5 w-8 h-8 rounded-[var(--skc-radius-tile)] flex items-center justify-center ${TONE_TILE_CLASS[d.tone]}`}>
+                          <Icon name={d.icon} size="text-[17px]" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-white text-[14px] font-semibold leading-tight tracking-[-0.01em]">
+                            {d.label}
+                          </span>
+                          {d.hasSubreason && (
+                            <span className="mt-1 block text-[11px] text-[var(--skc-text-tertiary)]">
+                              voicemail logged
+                            </span>
+                          )}
+                        </span>
+                        {isSelected ? <CheckActive /> : <span className="w-[22px]" />}
                       </span>
-                      <span className="flex-1 text-white text-[16px] tracking-[-0.01em]">{a.label}</span>
-                      {a.currentValueLabel && (
-                        <span className="text-[15px] text-[var(--skc-text-tertiary)] tracking-[-0.01em]">{a.currentValueLabel}</span>
-                      )}
-                      <Chevron />
                     </button>
                   )
                 })}
               </div>
-            </div>
-          </>
-        )}
+            </section>
 
-        <div className="px-4 pt-4 pb-4">
-          <div className="px-1 pb-2 text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-tertiary)]">Notes</div>
-          <textarea
-            className="w-full bg-[var(--skc-surface-2)] rounded-[var(--skc-radius-card)] border-0 outline-none p-3.5 min-h-[78px] text-white text-[15px] tracking-[-0.01em] placeholder:text-[var(--skc-text-tertiary)]"
-            placeholder="Add notes from this call…"
-            value={activeNotes}
-            onChange={(e) => changeNotes(e.target.value)}
-            rows={3}
-          />
+            <aside className="min-w-0 space-y-4">
+              {markAsLeadAvailable && (
+                <button
+                  type="button"
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-[var(--skc-radius-card)] border transition-colors ${
+                    markAsLead
+                      ? 'bg-[#30D1581F] border-[#30D15873]'
+                      : 'bg-[var(--skc-surface-2)] border-[#2F2F38] hover:bg-[var(--skc-surface-soft)]'
+                  }`}
+                  onClick={() => {
+                    setMarkAsLead((value) => !value)
+                    setSaveNotice(null)
+                  }}
+                >
+                  <span className={`w-8 h-8 rounded-[var(--skc-radius-tile)] flex items-center justify-center ${
+                    markAsLead ? 'bg-[#30D1582E] text-[#30D158]' : 'bg-[#98989E38] text-[var(--skc-text-secondary)]'
+                  }`}>
+                    <Icon name={markAsLead ? 'check_circle' : 'person_add'} size="text-[18px]" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-white text-[14px] font-semibold tracking-[-0.01em]">
+                      {markAsLeadLabel || 'Mark as lead'}
+                    </span>
+                    <span className="block text-[11px] text-[var(--skc-text-tertiary)] mt-0.5">
+                      Make this person the primary seller contact.
+                    </span>
+                  </span>
+                  {markAsLead ? <CheckActive /> : <span className="w-[22px]" />}
+                </button>
+              )}
 
-          {aiSummary && (
-            <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[var(--skc-brand-soft)] border border-[var(--skc-brand-soft-border)]">
-              <Icon name="auto_awesome" size="text-[14px]" className="text-[#FF6B6B]" />
-              <span className="flex-1 text-[13px] tracking-[-0.01em] text-[var(--skc-text-secondary)]">
-                AI summary ready from transcript
-              </span>
-              <button
-                className="bg-transparent border-0 p-0 text-[13px] font-medium text-[#FF6B6B]"
-                onClick={() => onUseAiSummary?.(aiSummary)}
-              >
-                Use
-              </button>
-            </div>
-          )}
-          {saveError && (
-            <div className="mt-2.5 flex items-start gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[#FF453A1F] border border-[#FF453A66]">
-              <Icon name="error" size="text-[14px]" className="text-[#FF453A] mt-0.5" />
-              <span className="flex-1 text-[13px] tracking-[-0.01em] text-[#FFB4B4]">
-                {saveError}
-              </span>
-            </div>
-          )}
-        </div>
+              {nextActions.length > 0 && (
+                <div>
+                  <div className="pb-2 flex items-center justify-between">
+                    <span className="text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-tertiary)]">Next Action</span>
+                  </div>
+                  <div className="bg-[var(--skc-surface-2)] rounded-[var(--skc-radius-card)] overflow-hidden border border-[#2F2F38]">
+                    {nextActions.map((a, i) => {
+                      const isLast = i === nextActions.length - 1
+                      return (
+                        <button
+                          key={a.id}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                          style={{ borderBottom: isLast ? 'none' : '0.5px solid var(--skc-separator)' }}
+                          onClick={() => onNextActionPick?.(a.id)}
+                        >
+                          <span className="w-[17px] h-[17px] inline-flex items-center justify-center">
+                            <Icon name={a.icon} size="text-[16px]" className="text-[var(--skc-text-secondary)]" />
+                          </span>
+                          <span className="flex-1 text-white text-[14px] tracking-[-0.01em]">{a.label}</span>
+                          {a.currentValueLabel && (
+                            <span className="text-[13px] text-[var(--skc-text-tertiary)] tracking-[-0.01em]">{a.currentValueLabel}</span>
+                          )}
+                          <Chevron />
+                        </button>
+                      )}
+                    )}
+                  </div>
+                </div>
+              )}
 
-        <div className="px-4 pb-4">
-          <button
-            className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-brand)] text-white text-[16px] font-semibold tracking-[-0.01em] disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={() => submit({ closeAfter: true, advance: true })}
-            disabled={!canSave}
-          >
-            {isSaving || localSaving ? 'Saving…' : 'Save & Next Lead'}
-          </button>
-          <button
-            className="w-full py-3 mt-1.5 rounded-[var(--skc-radius-card)] bg-transparent text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={() => submit({ closeAfter: true, advance: false })}
-            disabled={!canSave}
-          >
-            Save & Close
-          </button>
+              <div>
+                <div className="px-1 pb-2 text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-tertiary)]">Notes</div>
+                <textarea
+                  className="w-full bg-[var(--skc-surface-2)] rounded-[var(--skc-radius-card)] border border-[#2F2F38] outline-none p-3.5 min-h-[136px] text-white text-[15px] tracking-[-0.01em] placeholder:text-[var(--skc-text-tertiary)]"
+                  placeholder="Add notes from this call..."
+                  value={activeNotes}
+                  onChange={(e) => changeNotes(e.target.value)}
+                  rows={5}
+                />
+
+                {aiSummary && (
+                  <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[var(--skc-brand-soft)] border border-[var(--skc-brand-soft-border)]">
+                    <Icon name="auto_awesome" size="text-[14px]" className="text-[#FF6B6B]" />
+                    <span className="flex-1 text-[13px] tracking-[-0.01em] text-[var(--skc-text-secondary)]">
+                      AI summary ready from transcript
+                    </span>
+                    <button
+                      className="bg-transparent border-0 p-0 text-[13px] font-medium text-[#FF6B6B]"
+                      onClick={() => onUseAiSummary?.(aiSummary)}
+                    >
+                      Use
+                    </button>
+                  </div>
+                )}
+                {saveNotice && (
+                  <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[#30D1581F] border border-[#30D15866]">
+                    <Icon name="check_circle" size="text-[14px]" className="text-[#30D158]" />
+                    <span className="flex-1 text-[13px] tracking-[-0.01em] text-[#B8F7C9]">
+                      {saveNotice}
+                    </span>
+                  </div>
+                )}
+                {saveError && (
+                  <div className="mt-2.5 flex items-start gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[#FF453A1F] border border-[#FF453A66]">
+                    <Icon name="error" size="text-[14px]" className="text-[#FF453A] mt-0.5" />
+                    <span className="flex-1 text-[13px] tracking-[-0.01em] text-[#FFB4B4]">
+                      {saveError}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </aside>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]">
+            <button
+              className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-brand)] text-white text-[16px] font-semibold tracking-[-0.01em] disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => submit({ closeAfter: true, advance: true })}
+              disabled={!canSave}
+            >
+              {isSaving || localSaving ? 'Saving...' : 'Save & Next Lead'}
+            </button>
+            <button
+              className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-surface-2)] border border-[#2F2F38] text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => submit({ closeAfter: true, advance: false })}
+              disabled={!canSave}
+            >
+              Save & Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
