@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { hasGoogleOAuthConfig } from '@/lib/gmail-sync'
 
 // GET /api/auth/google/status — list connected Google accounts
 export async function GET() {
@@ -14,5 +15,8 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ accounts: data || [] })
+  return NextResponse.json({
+    accounts: data || [],
+    oauthConfigured: hasGoogleOAuthConfig(),
+  })
 }

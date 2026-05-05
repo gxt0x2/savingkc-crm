@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
   if (!clientId || !clientSecret) {
-    return NextResponse.json({ error: 'OAuth not configured' }, { status: 500 })
+    return NextResponse.redirect(`${url.origin}/settings?oauth_error=google_oauth_not_configured`)
   }
 
   const redirectUri = `${url.origin}/api/auth/google/callback`

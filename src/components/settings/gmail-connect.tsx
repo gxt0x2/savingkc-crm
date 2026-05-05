@@ -14,6 +14,7 @@ interface ConnectedAccount {
 export function GmailConnect() {
   const searchParams = useSearchParams()
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([])
+  const [oauthConfigured, setOauthConfigured] = useState(true)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [syncResult, setSyncResult] = useState<string | null>(null)
@@ -25,6 +26,7 @@ export function GmailConnect() {
     const res = await fetch('/api/auth/google/status')
     const data = await res.json()
     setAccounts(data.accounts || [])
+    setOauthConfigured(data.oauthConfigured !== false)
     setLoading(false)
   }, [])
 
@@ -33,6 +35,10 @@ export function GmailConnect() {
   }, [load])
 
   async function handleConnect() {
+    if (!oauthConfigured) {
+      setSyncResult('Gmail OAuth is not configured in Vercel yet.')
+      return
+    }
     window.location.href = '/api/auth/google/authorize?return_to=/settings'
   }
 
@@ -58,7 +64,7 @@ export function GmailConnect() {
       const data = await res.json()
       setSyncResult(
         data.error
-          ? `Sync failed: ${data.error}`
+          ? `Sync failed: ${formatGmailSyncError(data.error)}`
           : `Scanned ${data.scanned} emails · matched ${data.matched} · inserted ${data.inserted}`
       )
       load()
@@ -80,6 +86,7 @@ export function GmailConnect() {
         </div>
         <button
           onClick={handleConnect}
+          disabled={!oauthConfigured}
           className="bg-[#E32E2E] hover:bg-[#c72626] text-white text-sm font-semibold px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
         >
           <Icon name="add" size="text-base" /> Connect Gmail
@@ -94,7 +101,12 @@ export function GmailConnect() {
       )}
       {oauthError && (
         <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-400 text-[13px] rounded-lg px-4 py-3">
-          Error: {oauthError.replace(/_/g, ' ')}
+          Error: {formatGmailSyncError(oauthError)}
+        </div>
+      )}
+      {!oauthConfigured && (
+        <div className="mb-4 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[13px] rounded-lg px-4 py-3">
+          Gmail OAuth is not configured in Vercel. Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, redeploy, then reconnect Gmail.
         </div>
       )}
       {syncResult && (
@@ -134,7 +146,7 @@ export function GmailConnect() {
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={() => handleSyncNow(a.user_email)}
-                  disabled={syncing === a.user_email}
+                  disabled={syncing === a.user_email || !oauthConfigured}
                   className="text-[12px] font-medium text-[var(--ck-accent)] hover:underline disabled:opacity-50"
                 >
                   {syncing === a.user_email ? 'Syncing…' : 'Sync now'}
@@ -152,4 +164,18 @@ export function GmailConnect() {
       )}
     </div>
   )
+}
+
+function formatGmailSyncError(error: string): string {
+  const labels: Record<string, string> = {
+    google_oauth_not_configured: 'Google OAuth is not configured in Vercel.',
+    token_refresh_failed: 'Google rejected the saved token. Reconnect Gmail.',
+    no_token: 'No Gmail token is connected for this account.',
+    no_refresh_token_revoke_and_retry: 'Google did not return a refresh token. Remove SavingKC CRM from your Google account permissions, then reconnect.',
+    token_exchange_failed: 'Google token exchange failed. Check the OAuth client and redirect URI.',
+    storage_failed: 'The Gmail token could not be saved.',
+    no_email: 'Google did not return an email address.',
+  }
+
+  return labels[error] || error.replace(/_/g, ' ')
 }

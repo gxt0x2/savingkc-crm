@@ -20,13 +20,23 @@ interface GmailMessage {
   snippet?: string
 }
 
+export function hasGoogleOAuthConfig(): boolean {
+  return Boolean(
+    process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() &&
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim()
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Refresh an access token if it's expired. Returns a valid access token.
 // ---------------------------------------------------------------------------
 export async function getValidAccessToken(token: StoredToken): Promise<string | null> {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
-  if (!clientId || !clientSecret) return null
+  if (!clientId || !clientSecret) {
+    console.error('[gmail-sync] Google OAuth env is not configured.')
+    return null
+  }
 
   const expiresAt = token.expires_at ? new Date(token.expires_at).getTime() : 0
   const buffer = 60_000 // 1 min
@@ -155,6 +165,10 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
 
   if (!tokenRow) {
     return { scanned: 0, matched: 0, inserted: 0, error: 'no_token' }
+  }
+
+  if (!hasGoogleOAuthConfig()) {
+    return { scanned: 0, matched: 0, inserted: 0, error: 'google_oauth_not_configured' }
   }
 
   const accessToken = await getValidAccessToken(tokenRow as StoredToken)
