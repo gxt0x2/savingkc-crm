@@ -48,9 +48,15 @@ interface ContactSummary {
 interface DispositionModalProps {
   open: boolean
   onClose: () => void
-  onDisposition: (disposition: DispositionType, notes?: string) => void
+  onDisposition: (
+    disposition: DispositionType,
+    notes?: string,
+    options?: { markAsLead?: boolean },
+  ) => void | boolean | Promise<void | boolean>
   phoneNumber?: string
   leadName?: string
+  markAsLeadAvailable?: boolean
+  markAsLeadLabel?: string
 
   onSkip?: () => void
   callDuration?: string
@@ -78,11 +84,19 @@ interface DispositionModalProps {
 
 const DEFAULT_DISPOSITIONS: DispositionOption[] = [
   { id: 'answered', label: 'Answered', tone: 'success', icon: 'check_circle' },
+  { id: 'spoke_with_owner', label: 'Spoke With Seller', tone: 'success', icon: 'record_voice_over' },
+  { id: 'callback_requested', label: 'Callback Requested', tone: 'success', icon: 'event_available' },
+  { id: 'deal_potential', label: 'Deal Potential', tone: 'warning', icon: 'local_fire_department' },
+  { id: 'appointment_set', label: 'Appointment Set', tone: 'success', icon: 'event' },
+  { id: 'not_interested', label: 'Not Interested', tone: 'neutral', icon: 'thumb_down' },
   { id: 'no_answer', label: 'No Answer', tone: 'neutral', icon: 'no_answer_badge' },
   { id: 'left_vm', label: 'Left Voicemail', tone: 'info', icon: 'voicemail', hasSubreason: true },
   { id: 'bad_number', label: 'Bad Number', tone: 'danger', icon: 'error' },
+  { id: 'wrong_number', label: 'Wrong Number', tone: 'danger', icon: 'phone_disabled' },
+  { id: 'disconnected', label: 'Disconnected', tone: 'danger', icon: 'signal_cellular_connected_no_internet_4_bar' },
   { id: 'busy', label: 'Busy', tone: 'warning', icon: 'phone_paused' },
   { id: 'dnc', label: 'Do Not Call', tone: 'critical', icon: 'block' },
+  { id: 'dead', label: 'Dead Lead', tone: 'critical', icon: 'delete' },
 ]
 
 const TONE_TILE_CLASS: Record<DispositionTone, string> = {
@@ -156,6 +170,8 @@ export function DispositionModal({
   onDisposition,
   phoneNumber,
   leadName,
+  markAsLeadAvailable = false,
+  markAsLeadLabel,
   onSkip,
   callDuration,
   callEndedAtLabel = 'Just ended',
@@ -177,6 +193,9 @@ export function DispositionModal({
 }: DispositionModalProps) {
   const [internalDisposition, setInternalDisposition] = useState<DispositionType | null>(null)
   const [internalNotes, setInternalNotes] = useState('')
+  const [markAsLead, setMarkAsLead] = useState(false)
+  const [localSaving, setLocalSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const isControlledDisposition = selectedDisposition !== undefined
   const isControlledNotes = notes !== undefined
@@ -187,13 +206,13 @@ export function DispositionModal({
     if (isControlledNotes) setInternalNotes(notes ?? '')
     if (!isControlledDisposition) setInternalDisposition(null)
     if (!isControlledNotes) setInternalNotes('')
+    setMarkAsLead(false)
+    setSaveError(null)
   }, [open, isControlledDisposition, selectedDisposition, isControlledNotes, notes])
-
-  if (!open) return null
 
   const activeDisposition = isControlledDisposition ? (selectedDisposition ?? null) : internalDisposition
   const activeNotes = isControlledNotes ? (notes ?? '') : internalNotes
-  const canSave = Boolean(activeDisposition) && !isSaving
+  const canSave = Boolean(activeDisposition) && !isSaving && !localSaving
 
   const resolvedContact = useMemo(() => {
     const name = contact?.name || leadName || 'Unknown'
@@ -206,6 +225,8 @@ export function DispositionModal({
     }
   }, [contact, leadName, phoneNumber])
 
+  if (!open) return null
+
   function pickDisposition(id: DispositionType) {
     if (!isControlledDisposition) setInternalDisposition(id)
     onDispositionChange?.(id)
@@ -216,14 +237,28 @@ export function DispositionModal({
     onNotesChange?.(value)
   }
 
-  function submit({ closeAfter, advance }: { closeAfter: boolean; advance: boolean }) {
+  async function submit({ closeAfter, advance }: { closeAfter: boolean; advance: boolean }) {
     if (!activeDisposition || isSaving) return
-    onDisposition(activeDisposition, activeNotes.trim() || undefined)
+    setSaveError(null)
+    setLocalSaving(true)
+    try {
+      const result = await onDisposition(activeDisposition, activeNotes.trim() || undefined, {
+        markAsLead: markAsLeadAvailable && markAsLead,
+      })
+      if (result === false) {
+        setSaveError('Disposition was not saved. Try again before moving on.')
+        return
+      }
 
-    if (advance) onSaveAndNext?.()
-    else onSave?.()
+      if (advance) onSaveAndNext?.()
+      else onSave?.()
 
-    if (closeAfter) onClose()
+      if (closeAfter) onClose()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Disposition was not saved. Try again.')
+    } finally {
+      setLocalSaving(false)
+    }
   }
 
   return (
@@ -316,6 +351,35 @@ export function DispositionModal({
           </div>
         </div>
 
+        {markAsLeadAvailable && (
+          <div className="px-4 pt-4">
+            <button
+              type="button"
+              className={`w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-[var(--skc-radius-card)] border transition-colors ${
+                markAsLead
+                  ? 'bg-[#30D1581F] border-[#30D15873]'
+                  : 'bg-[var(--skc-surface-2)] border-transparent hover:bg-[var(--skc-surface-soft)]'
+              }`}
+              onClick={() => setMarkAsLead((value) => !value)}
+            >
+              <span className={`w-8 h-8 rounded-[var(--skc-radius-tile)] flex items-center justify-center ${
+                markAsLead ? 'bg-[#30D1582E] text-[#30D158]' : 'bg-[#98989E38] text-[var(--skc-text-secondary)]'
+              }`}>
+                <Icon name={markAsLead ? 'check_circle' : 'person_add'} size="text-[18px]" />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-white text-[16px] tracking-[-0.01em]">
+                  {markAsLeadLabel || 'Mark as lead'}
+                </span>
+                <span className="block text-[12px] text-[var(--skc-text-tertiary)] mt-0.5">
+                  Make this person the primary seller contact for the property.
+                </span>
+              </span>
+              {markAsLead ? <CheckActive /> : <span className="w-[22px]" />}
+            </button>
+          </div>
+        )}
+
         {nextActions.length > 0 && (
           <>
             <div className="px-4 pt-4 pb-2 flex items-center justify-between">
@@ -372,6 +436,14 @@ export function DispositionModal({
               </button>
             </div>
           )}
+          {saveError && (
+            <div className="mt-2.5 flex items-start gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[#FF453A1F] border border-[#FF453A66]">
+              <Icon name="error" size="text-[14px]" className="text-[#FF453A] mt-0.5" />
+              <span className="flex-1 text-[13px] tracking-[-0.01em] text-[#FFB4B4]">
+                {saveError}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="px-4 pb-4">
@@ -380,7 +452,7 @@ export function DispositionModal({
             onClick={() => submit({ closeAfter: true, advance: true })}
             disabled={!canSave}
           >
-            {isSaving ? 'Saving…' : 'Save & Next Lead'}
+            {isSaving || localSaving ? 'Saving…' : 'Save & Next Lead'}
           </button>
           <button
             className="w-full py-3 mt-1.5 rounded-[var(--skc-radius-card)] bg-transparent text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed"

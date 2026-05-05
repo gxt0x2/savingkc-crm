@@ -200,12 +200,12 @@ export function HeirsSection({
   }, 0)
   const confirmedHeirs = heirs.filter((h) => confirmedPhoneOf(h)).length
 
-  function buildQueueForHeir(h: Heir): HeirDialerQueueItem[] {
+  function buildQueueForHeir(h: Heir, forceAllPhones = false): HeirDialerQueueItem[] {
     // Skip entirely if this heir is already confirmed — the remaining numbers
     // are not worth dialing, the right one is known.
     if (confirmedPhoneOf(h)) return []
     const unattemptedPhones = h.phones.filter((p) => !p.attempted)
-    const dialTargets = callHammerEnabled ? unattemptedPhones : unattemptedPhones.slice(0, 1)
+    const dialTargets = callHammerEnabled || forceAllPhones ? unattemptedPhones : unattemptedPhones.slice(0, 1)
     return dialTargets
       .map((p) => ({
         prospect_phone_id: p.id,
@@ -219,7 +219,7 @@ export function HeirsSection({
   }
 
   function queueAll() {
-    const queue: HeirDialerQueueItem[] = heirs.flatMap(buildQueueForHeir)
+    const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
     dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan)
   }
 
@@ -228,7 +228,7 @@ export function HeirsSection({
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
-    dispatchHeirQueue([{
+    const clicked: HeirDialerQueueItem = {
       prospect_phone_id: phone.id,
       phone: phone.number,
       heirName: toProperCase(heir.contact_name),
@@ -236,7 +236,11 @@ export function HeirsSection({
       leadId,
       propertyAddress,
       deceasedOwnerName,
-    }], dialerCallerId, dialerCallerPlan)
+    }
+    const remaining = heirs
+      .flatMap((h) => buildQueueForHeir(h, true))
+      .filter((item) => item.prospect_phone_id !== phone.id)
+    dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan)
   }
 
   return (

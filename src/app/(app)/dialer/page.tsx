@@ -82,6 +82,7 @@ interface QueueState {
   } | null
   queueIndex: number
   queueLength: number
+  callDuration?: string | null
   status: 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 }
 
@@ -496,6 +497,7 @@ function DialerPageInner() {
   const sessionRotateEveryParam = params.get('rotation_every')
   const sessionRotationNumbersParam = params.get('rotation_numbers')
   const sessionRedialCallerId = params.get('redial_caller_id')?.trim() || ''
+  const sessionQueueLabelParam = params.get('queue_label')?.trim() || ''
   const sessionCallHammerParam = params.get('call_hammer')
   const sessionUseCallHammer = sessionCallHammerParam === '1'
     ? true
@@ -552,7 +554,10 @@ function DialerPageInner() {
     if (leadIds.length === 0) return
     const requested = Number(startIndexParam ?? '0')
     const safeIndex = Number.isFinite(requested) ? Math.max(0, Math.floor(requested)) : 0
-    setCurrentIndex(Math.min(safeIndex, Math.max(leadIds.length - 1, 0)))
+    const timeout = window.setTimeout(() => {
+      setCurrentIndex(Math.min(safeIndex, Math.max(leadIds.length - 1, 0)))
+    }, 0)
+    return () => window.clearTimeout(timeout)
   }, [leadIds.length, startIndexParam])
 
   // Batch-load leads + prospects for the cohort
@@ -782,6 +787,20 @@ function DialerPageInner() {
     : null
 
   const isCallingNow = queueState?.queueItem && ['calling', 'on_call'].includes(queueState.status)
+  const inferredQueueLabel = sessionQueueLabelParam ||
+    (params.get('cohort') === 'deceased-2-3yr'
+      ? '3+ Year Deceased Tax'
+      : delinquentYears
+      ? `${delinquentYears} deceased tax list`
+      : 'Dialer queue')
+  const activeCallSubject = queueState?.queueItem
+    ? `${queueState.queueItem.heirName} · ${formatPhone(queueState.queueItem.phone)}`
+    : ownerName
+  const dialTimeLabel = queueState?.status === 'on_call'
+    ? queueState.callDuration || '00:00'
+    : queueState?.status === 'calling'
+    ? 'Dialing'
+    : 'Idle'
 
   if (!loading && leadIds.length === 0 && !resolveError) {
     return <DialerHome />
@@ -830,9 +849,15 @@ function DialerPageInner() {
             <p className="text-[10px] font-black uppercase tracking-widest text-[#E32E2E]">
               Dialing session
             </p>
-            <p className="text-sm font-bold text-[var(--ck-text)]">
-              Lead {currentIndex + 1} of {leadIds.length}
-            </p>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-[var(--ck-text)]">
+              <span>{currentIndex + 1} of {leadIds.length} leads</span>
+              <span className="hidden sm:inline text-[var(--ck-text-dim)]">·</span>
+              <span className="text-[#E32E2E]">{inferredQueueLabel}</span>
+              <span className="hidden sm:inline text-[var(--ck-text-dim)]">·</span>
+              <span className="max-w-[34rem] truncate">Calling: {activeCallSubject}</span>
+              <span className="hidden sm:inline text-[var(--ck-text-dim)]">·</span>
+              <span className="font-mono tabular-nums">{dialTimeLabel}</span>
+            </div>
             {sessionCallerId && (
               <p className="text-[11px] font-semibold text-[var(--ck-text-muted)]">
                 Calling from {formatPhone(sessionCallerId)}
@@ -1243,20 +1268,22 @@ function DialerHome() {
   const [voicemailDrop, setVoicemailDrop] = useState('none')
   const [callbackDrop, setCallbackDrop] = useState('none')
   const [ringCount, setRingCount] = useState(6)
-  const [useCallHammer, setUseCallHammer] = useState(false)
+  const [useCallHammer, setUseCallHammer] = useState(true)
   const [useVoicemailCallHammer, setUseVoicemailCallHammer] = useState(false)
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [pacing, setPacing] = useState(18)
 
   useEffect(() => {
     if (!callerId && DEFAULT_DIALER_CALLER_ID) {
-      setCallerId(DEFAULT_DIALER_CALLER_ID)
+      const timeout = window.setTimeout(() => setCallerId(DEFAULT_DIALER_CALLER_ID), 0)
+      return () => window.clearTimeout(timeout)
     }
   }, [callerId])
 
   useEffect(() => {
     if (rotationCallerIds.length === 0 && callerId) {
-      setRotationCallerIds([callerId])
+      const timeout = window.setTimeout(() => setRotationCallerIds([callerId]), 0)
+      return () => window.clearTimeout(timeout)
     }
   }, [rotationCallerIds.length, callerId])
 
@@ -1490,6 +1517,7 @@ function DialerHome() {
   const selectedSavedQueue: SavedDialerQueue | null = activeSavedQueueId
     ? savedQueues.find((item) => item.id === activeSavedQueueId) ?? null
     : null
+  const selectedPreset = QUEUE_PRESETS.find((item) => item.id === preset) ?? QUEUE_PRESETS[0]
   const callerPlan = useMemo(() => {
     return normalizeDialerCallerPlan({
       mode: callerMode,
@@ -1507,6 +1535,7 @@ function DialerHome() {
     callerIdValue?: string,
     callerPlanInput?: Partial<DialerCallerPlan> | null,
     callHammerSettings?: { useCallHammer?: boolean; useVoicemailCallHammer?: boolean } | null,
+    queueLabel?: string,
   ) => {
     const query = new URLSearchParams()
     query.set('lead_ids', ids.join(','))
@@ -1519,6 +1548,7 @@ function DialerHome() {
     query.set('rotation_every', String(callerPlan.rotateEveryCalls || DEFAULT_ROTATION_EVERY_CALLS))
     if (callerPlan.rotationCallerIds.length > 0) query.set('rotation_numbers', callerPlan.rotationCallerIds.join(','))
     if (callerPlan.redialCallerId) query.set('redial_caller_id', callerPlan.redialCallerId)
+    if (queueLabel) query.set('queue_label', queueLabel)
     query.set('call_hammer', callHammerSettings?.useCallHammer ? '1' : '0')
     query.set('voicemail_call_hammer', callHammerSettings?.useVoicemailCallHammer ? '1' : '0')
     return `/dialer?${query.toString()}`
@@ -1594,8 +1624,9 @@ function DialerHome() {
       callerPlan.staticCallerId,
       callerPlan,
       { useCallHammer, useVoicemailCallHammer },
+      selectedSavedQueue?.name || selectedPreset.label,
     ))
-  }, [activeSavedQueueId, buildSessionUrl, callerPlan, optionalFilters, queue, router, selectedQueue, selectedSavedQueue, startBehavior, useCallHammer, useVoicemailCallHammer])
+  }, [activeSavedQueueId, buildSessionUrl, callerPlan, optionalFilters, queue, router, selectedPreset.label, selectedQueue, selectedSavedQueue, startBehavior, useCallHammer, useVoicemailCallHammer])
 
   const resumeSavedQueue = useCallback(() => {
     if (!selectedSavedQueue) return
@@ -1631,11 +1662,11 @@ function DialerHome() {
         useCallHammer: selectedSavedQueue.useCallHammer ?? useCallHammer,
         useVoicemailCallHammer: selectedSavedQueue.useVoicemailCallHammer ?? useVoicemailCallHammer,
       },
+      selectedSavedQueue.name,
     ))
   }, [buildSessionUrl, callerId, callerMode, redialCallerId, rotateEveryCalls, rotationCallerIds, router, selectedSavedQueue, useCallHammer, useVoicemailCallHammer])
 
   const currentLead = selectedQueue[0] ?? queue[0] ?? null
-  const selectedPreset = QUEUE_PRESETS.find((item) => item.id === preset) ?? QUEUE_PRESETS[0]
   const previewLeads = queue.slice(0, visibleLimit)
   const selectedVisibleCount = previewLeads.filter((lead) => selectedLeadIds.has(lead.id)).length
   const selectedCount = selectedQueue.length
@@ -1704,7 +1735,7 @@ function DialerHome() {
     const savedOptionalFilters = normalizeOptionalFilters(savedQueue.optionalFilters || DEFAULT_OPTIONAL_FILTERS)
     setOptionalFilters(savedOptionalFilters)
     setOptionalFiltersDraft(savedOptionalFilters)
-    setUseCallHammer(savedQueue.useCallHammer ?? false)
+    setUseCallHammer(savedQueue.useCallHammer ?? true)
     setUseVoicemailCallHammer(savedQueue.useVoicemailCallHammer ?? false)
     setCampaign(savedQueue.campaign)
     setStatusFilter(savedQueue.statusFilter)

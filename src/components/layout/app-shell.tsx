@@ -62,6 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar)
+  const dialerPresentation = pathname?.startsWith('/dialer') ? 'dock' : 'modal'
 
   useEffect(() => {
     const html = document.documentElement
@@ -414,6 +415,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         pendingQueue={pendingQueue}
         pendingQueueCallerId={pendingQueueCallerId}
         pendingQueueCallerPlan={pendingQueueCallerPlan}
+        presentation={dialerPresentation}
       />
 
       {/* ⌘K Command Palette — global search */}
