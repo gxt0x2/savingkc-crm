@@ -14,10 +14,18 @@ import { isOptedOut } from '@/lib/sms-opt-out'
 import { getTemplate, resolveTemplate, incrementUsage } from '@/lib/sms-templates'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
+import { QUEUED_SMS_CONTRACT } from '@/lib/queued-sms'
 
 const CRON_SECRET = process.env.CRON_SECRET
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const MAX_PER_RUN = 50
+
+interface LeadSmsContext {
+  id: string
+  full_name?: string | null
+  phone?: string | null
+  property_address?: string | null
+}
 
 function isOfficeHours(): boolean {
   const now = new Date()
@@ -28,6 +36,10 @@ function isOfficeHours(): boolean {
   const dayOfWeek = centralTime.getDay()
   // Mon-Sat, 9am-7pm CT
   return dayOfWeek >= 1 && dayOfWeek <= 6 && hour >= 9 && hour < 19
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error'
 }
 
 export async function POST(request: Request) {
@@ -54,13 +66,14 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Query pending SMS tasks that are due
+    // Only process forward-compatible scheduled SMS rows. Legacy pending rows
+    // are intentionally ignored so old backlogs cannot wake up after fixes.
     const now = new Date().toISOString()
     const { data: tasks, error: queryError } = await supabase
       .from('lead_activities')
       .select('id, lead_id, description, metadata')
       .in('activity_type', ['sms'])
-      .contains('metadata', { status: 'pending' })
+      .contains('metadata', { status: 'pending', queue_contract: QUEUED_SMS_CONTRACT })
       .lte('metadata->>due_date', now)
       .limit(MAX_PER_RUN)
 
@@ -74,11 +87,11 @@ export async function POST(request: Request) {
     let failed = 0
 
     for (const task of tasks || []) {
-      const meta = task.metadata || {}
+      const meta = (task.metadata || {}) as Record<string, unknown>
 
-      // Get lead phone
-      let phone: string | null = null
-      let lead: any = null
+      // Load lead context for template fallback and phone fallback.
+      let phone: string | null = typeof meta.to === 'string' ? meta.to : null
+      let lead: LeadSmsContext | null = null
       if (task.lead_id) {
         const { data: leadData } = await supabase
           .from('leads')
@@ -86,16 +99,21 @@ export async function POST(request: Request) {
           .eq('id', task.lead_id)
           .single()
         lead = leadData
-        phone = leadData?.phone
+        phone = phone || leadData?.phone || null
       }
 
       if (!phone) {
+        await supabase
+          .from('lead_activities')
+          .update({ metadata: { ...meta, status: 'skipped', skip_reason: 'missing_phone' } })
+          .eq('id', task.id)
         skipped++
         continue
       }
 
       // Check opt-out
-      if (await isOptedOut(phone)) {
+      const isInternal = meta.is_internal === true || meta.internal_alert === true
+      if (!isInternal && (await isOptedOut(phone))) {
         // Mark as skipped
         await supabase
           .from('lead_activities')
@@ -105,10 +123,11 @@ export async function POST(request: Request) {
         continue
       }
 
-      // Resolve template if specified
-      let smsBody = task.description || ''
+      // Prefer the rendered body stored by v2 producers. Template fallback is
+      // only for explicit queued rows that did not persist a rendered message.
+      let smsBody = String(meta.message || meta.body || '')
       const templateName = meta.template_name as string | undefined
-      if (templateName) {
+      if (!smsBody && templateName) {
         const template = await getTemplate(templateName)
         if (template && lead) {
           smsBody = resolveTemplate(template.body, lead)
@@ -117,17 +136,39 @@ export async function POST(request: Request) {
       }
 
       if (!smsBody.trim()) {
+        await supabase
+          .from('lead_activities')
+          .update({ metadata: { ...meta, status: 'skipped', skip_reason: 'empty_body' } })
+          .eq('id', task.id)
         skipped++
         continue
       }
+
+      const sendFrom = typeof meta.from === 'string' ? meta.from : TWILIO_PHONE
 
       // Send SMS
       try {
         const msg = await safeSendSMS({
           body: smsBody,
-          from: TWILIO_PHONE,
+          from: sendFrom,
           to: phone,
         })
+
+        if (!msg.success) {
+          await supabase
+            .from('lead_activities')
+            .update({
+              metadata: {
+                ...meta,
+                status: 'failed',
+                failed_at: new Date().toISOString(),
+                error: msg.error || 'safeSendSMS returned success=false',
+              },
+            })
+            .eq('id', task.id)
+          failed++
+          continue
+        }
 
         // Mark task as completed
         await supabase
@@ -150,7 +191,7 @@ export async function POST(request: Request) {
           agent: 'System',
           metadata: {
             direction: 'outbound',
-            from: TWILIO_PHONE,
+            from: sendFrom,
             to: phone,
             message_sid: msg.sid,
             trigger: 'sms_sender_worker',
@@ -159,12 +200,13 @@ export async function POST(request: Request) {
         })
 
         sent++
-      } catch (err: any) {
-        console.error(`SMS send failed for ${phone}:`, err.message)
+      } catch (err: unknown) {
+        const errorMessage = getErrorMessage(err)
+        console.error(`SMS send failed for ${phone}:`, errorMessage)
         await supabase
           .from('lead_activities')
           .update({
-            metadata: { ...meta, status: 'failed', error: err.message },
+            metadata: { ...meta, status: 'failed', error: errorMessage },
           })
           .eq('id', task.id)
         failed++
@@ -192,10 +234,11 @@ export async function POST(request: Request) {
       skipped,
       failed,
     })
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const errorMessage = getErrorMessage(err)
     console.error('SMS sender worker error:', err)
     return NextResponse.json(
-      { success: false, error: err.message || 'Worker failed' },
+      { success: false, error: errorMessage || 'Worker failed' },
       { status: 500 }
     )
   }
@@ -222,18 +265,19 @@ export async function GET(request: Request) {
       .from('lead_activities')
       .select('id', { count: 'exact', head: true })
       .in('activity_type', ['sms'])
-      .contains('metadata', { status: 'pending' })
+      .contains('metadata', { status: 'pending', queue_contract: QUEUED_SMS_CONTRACT })
 
     return NextResponse.json({
       worker_status: worker?.status || 'unknown',
       last_run: worker?.last_run || null,
       last_success: worker?.last_success || null,
       pending_tasks: count || 0,
+      queue_contract: QUEUED_SMS_CONTRACT,
       office_hours: isOfficeHours(),
       office_hours_info: '9am-7pm CT, Monday-Saturday',
       max_per_run: MAX_PER_RUN,
     })
-  } catch (err: any) {
+  } catch {
     return NextResponse.json({ error: 'Status check failed' }, { status: 500 })
   }
 }

@@ -18,6 +18,7 @@ import { updateManifestAndCascade } from '@/lib/manifest-sync'
 import { calculateGhostRisk } from '@/lib/ghost-risk-calculator'
 import { shouldActivateGhostProtocol, runGhostProtocolAppointment } from '@/lib/ghost-protocol-appointment'
 import { renderTemplate } from '@/lib/sms-templates'
+import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
 
 const CRON_SECRET = process.env.CRON_SECRET
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
@@ -209,16 +210,13 @@ export async function GET(request: Request) {
               lead_id: row.lead_id,
               activity_type: 'sms',
               description: `Appointment reminder: ${threshold.templateName}`,
-              metadata: {
+              metadata: buildQueuedSmsMetadata({
                 to: ownerPhone,
                 from: TWILIO_PHONE,
-                message: smsBody,
-                status: 'pending',
-                due_date: new Date().toISOString(),
-                send_at: new Date().toISOString(),
-                template: threshold.templateName,
+                body: smsBody,
                 source: 'appointment-reminder-worker',
-              },
+                template: threshold.templateName,
+              }),
             })
 
           if (insertError) {
@@ -351,17 +349,14 @@ export async function GET(request: Request) {
               lead_id: row.lead_id,
               activity_type: 'sms',
               description: `Casey briefing for ${ownerName} appointment`,
-              metadata: {
+              metadata: buildQueuedSmsMetadata({
                 to: CASEY_PHONE,
                 from: TWILIO_PHONE,
-                message: briefingMessage,
-                status: 'pending',
-                due_date: new Date().toISOString(),
-                send_at: new Date().toISOString(),
-                template: 'casey_briefing',
+                body: briefingMessage,
                 source: 'appointment-reminder-worker',
-                is_internal: true,
-              },
+                template: 'casey_briefing',
+                extra: { is_internal: true },
+              }),
             })
 
           if (caseyError) {

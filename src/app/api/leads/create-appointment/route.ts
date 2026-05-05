@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { updateManifestAndCascade, ensureManifestExists } from '@/lib/manifest-sync'
 import { randomUUID } from 'crypto'
 import { supabase } from '@/lib/supabase-lazy'
+import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
 
 /**
  * POST /api/leads/create-appointment
@@ -83,17 +84,20 @@ export async function POST(req: NextRequest) {
 
     // 4. Create SMS reminder task if requested
     if (sendReminder && phone) {
+      const reminderBody = `Hi ${leadName || 'there'}, your appointment with Saving KC is confirmed for ${dateDisplay} at ${timeDisplay}. We look forward to speaking with you!`
+
       await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'sms',
         description: 'SMS appointment confirmation queued',
         agent: 'System',
-        metadata: {
+        metadata: buildQueuedSmsMetadata({
           to: phone,
-          message: `Hi ${leadName || 'there'}, your appointment with Saving KC is confirmed for ${dateDisplay} at ${timeDisplay}. We look forward to speaking with you!`,
-          status: 'pending',
-          send_at: new Date().toISOString(),
-        },
+          from: process.env.TWILIO_PHONE_NUMBER || '+18163077835',
+          body: reminderBody,
+          source: 'appointment_modal',
+          template: 'manual_appointment_confirmation',
+        }),
       })
     }
 
