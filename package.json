@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "test:acceptance": "tsx scripts/migration/99_acceptance.mts",
     "test:smoke:theme": "playwright test tests/smoke/theme-and-nav.spec.ts",
+    "gate:proxy": "node scripts/ci/check-proxy-registration.mjs",
     "gate:theme": "node scripts/ci/check-theme-guard.mjs",
     "gate:routes": "node scripts/ci/check-route-integrity.mjs",
     "gate:twilio": "node scripts/ci/check-twilio-token-health.mjs",

@@ -14,6 +14,11 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+assert(
+  Boolean(healthBearer),
+  'Edge integrity gate requires TWILIO_HEALTH_BEARER for protected CRM health checks.'
+)
+
 function header(headers, name) {
   return headers.get(name) || ''
 }
@@ -70,7 +75,17 @@ async function fetchChecked(url, init, label) {
 
 async function checkDialerPage() {
   const url = `${baseUrl}/dialer`
-  const res = await fetchChecked(url, { method: 'GET', redirect: 'follow' }, 'dialer page')
+  const res = await fetchChecked(
+    url,
+    {
+      method: 'GET',
+      redirect: 'follow',
+      headers: {
+        ...(healthBearer ? { Authorization: `Bearer ${healthBearer}` } : {}),
+      },
+    },
+    'dialer page'
+  )
   assertEdgeHeaders('dialer page', res.headers)
 
   const html = await res.text()

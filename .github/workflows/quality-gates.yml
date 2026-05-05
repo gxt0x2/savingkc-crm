@@ -31,6 +31,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Proxy registration gate
+        run: npm run gate:proxy
+
       - name: Route integrity gate
         run: npm run gate:routes
 
@@ -75,6 +78,12 @@ jobs:
           echo "TWILIO_HEALTH_BASE_URL is not configured."
           exit 1
 
+      - name: Require Twilio health bearer
+        if: env.TWILIO_HEALTH_BEARER == ''
+        run: |
+          echo "TWILIO_HEALTH_BEARER is not configured."
+          exit 1
+
       - name: Twilio token health gate
         run: node scripts/ci/check-twilio-token-health.mjs
 
@@ -99,6 +108,12 @@ jobs:
         if: env.EDGE_INTEGRITY_BASE_URL == ''
         run: |
           echo "EDGE_INTEGRITY_BASE_URL is not configured."
+          exit 1
+
+      - name: Require Twilio health bearer
+        if: env.TWILIO_HEALTH_BEARER == ''
+        run: |
+          echo "TWILIO_HEALTH_BEARER is not configured."
           exit 1
 
       - name: Edge integrity gate
