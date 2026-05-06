@@ -3,6 +3,24 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
+function returnToFromState(state: string | null) {
+  try {
+    if (state) {
+      const decoded = JSON.parse(Buffer.from(state, 'base64url').toString())
+      if (typeof decoded.return_to === 'string' && decoded.return_to.startsWith('/')) {
+        return decoded.return_to
+      }
+    }
+  } catch { /* ignore */ }
+  return '/settings'
+}
+
+function redirectWithStatus(origin: string, returnTo: string, key: string, value: string) {
+  const redirectUrl = new URL(returnTo, origin)
+  redirectUrl.searchParams.set(key, value)
+  return NextResponse.redirect(redirectUrl)
+}
+
 // GET /api/auth/google/callback?code=...&state=...
 // Exchanges the authorization code for tokens and stores them.
 export async function GET(req: NextRequest) {
@@ -10,9 +28,10 @@ export async function GET(req: NextRequest) {
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   const error = url.searchParams.get('error')
+  const returnTo = returnToFromState(state)
 
   if (error) {
-    return NextResponse.redirect(`${url.origin}/settings?oauth_error=${encodeURIComponent(error)}`)
+    return redirectWithStatus(url.origin, returnTo, 'oauth_error', error)
   }
 
   if (!code) {
@@ -22,7 +41,7 @@ export async function GET(req: NextRequest) {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(`${url.origin}/settings?oauth_error=google_oauth_not_configured`)
+    return redirectWithStatus(url.origin, returnTo, 'oauth_error', 'google_oauth_not_configured')
   }
 
   const redirectUri = `${url.origin}/api/auth/google/callback`
@@ -43,7 +62,7 @@ export async function GET(req: NextRequest) {
   if (!tokenRes.ok) {
     const errText = await tokenRes.text()
     console.error('[oauth/callback] Token exchange failed:', errText)
-    return NextResponse.redirect(`${url.origin}/settings?oauth_error=token_exchange_failed`)
+    return redirectWithStatus(url.origin, returnTo, 'oauth_error', 'token_exchange_failed')
   }
 
   const tokens = await tokenRes.json() as {
@@ -61,13 +80,13 @@ export async function GET(req: NextRequest) {
   const userInfo = await userRes.json() as { email: string }
 
   if (!userInfo.email) {
-    return NextResponse.redirect(`${url.origin}/settings?oauth_error=no_email`)
+    return redirectWithStatus(url.origin, returnTo, 'oauth_error', 'no_email')
   }
 
   if (!tokens.refresh_token) {
     // Google doesn't return refresh token if user already granted access
     // User should revoke access at https://myaccount.google.com/permissions and retry
-    return NextResponse.redirect(`${url.origin}/settings?oauth_error=no_refresh_token_revoke_and_retry`)
+    return redirectWithStatus(url.origin, returnTo, 'oauth_error', 'no_refresh_token_revoke_and_retry')
   }
 
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
@@ -88,16 +107,8 @@ export async function GET(req: NextRequest) {
 
   if (upsertError) {
     console.error('[oauth/callback] Token upsert failed:', upsertError)
-    return NextResponse.redirect(`${url.origin}/settings?oauth_error=storage_failed`)
+    return redirectWithStatus(url.origin, returnTo, 'oauth_error', 'storage_failed')
   }
 
-  let returnTo = '/settings'
-  try {
-    if (state) {
-      const decoded = JSON.parse(Buffer.from(state, 'base64url').toString())
-      if (decoded.return_to) returnTo = decoded.return_to
-    }
-  } catch { /* ignore */ }
-
-  return NextResponse.redirect(`${url.origin}${returnTo}?oauth_success=${encodeURIComponent(userInfo.email)}`)
+  return redirectWithStatus(url.origin, returnTo, 'oauth_success', userInfo.email)
 }

@@ -11,8 +11,13 @@ interface ConnectedAccount {
   scope: string
 }
 
-export function GmailConnect() {
+interface GmailConnectProps {
+  userEmail?: string | null
+}
+
+export function GmailConnect({ userEmail }: GmailConnectProps) {
   const searchParams = useSearchParams()
+  const normalizedUserEmail = userEmail?.trim().toLowerCase() || ''
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([])
   const [oauthConfigured, setOauthConfigured] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -23,12 +28,18 @@ export function GmailConnect() {
   const oauthError = searchParams.get('oauth_error')
 
   const load = useCallback(async () => {
-    const res = await fetch('/api/auth/google/status')
+    if (!normalizedUserEmail) {
+      setAccounts([])
+      setLoading(false)
+      return
+    }
+    const params = new URLSearchParams({ user_email: normalizedUserEmail })
+    const res = await fetch(`/api/auth/google/status?${params}`)
     const data = await res.json()
     setAccounts(data.accounts || [])
     setOauthConfigured(data.oauthConfigured !== false)
     setLoading(false)
-  }, [])
+  }, [normalizedUserEmail])
 
   useEffect(() => {
     load()
@@ -39,7 +50,9 @@ export function GmailConnect() {
       setSyncResult('Gmail OAuth is not configured in Vercel yet.')
       return
     }
-    window.location.href = '/api/auth/google/authorize?return_to=/settings'
+    const returnTo = `${window.location.pathname}${window.location.search}`
+    const params = new URLSearchParams({ return_to: returnTo })
+    window.location.href = `/api/auth/google/authorize?${params}`
   }
 
   async function handleDisconnect(email: string) {
@@ -121,7 +134,7 @@ export function GmailConnect() {
       ) : accounts.length === 0 ? (
         <div className="text-center py-8 text-sm text-[var(--ck-text-muted)]">
           <Icon name="mail" size="text-3xl" className="text-[var(--ck-text-dim)] mb-2 block mx-auto" />
-          No Gmail accounts connected yet
+          {normalizedUserEmail ? `No Gmail connected for ${normalizedUserEmail}` : 'No Gmail accounts connected yet'}
         </div>
       ) : (
         <div className="space-y-2">

@@ -30,7 +30,7 @@ const tcTabs = [
   { label: 'Doc Review', href: '/dispo/tc?view=docs', icon: 'preview' },
   { label: 'Tasks', href: '/dispo/tc?view=tasks', icon: 'task_alt' },
   { label: 'Calendar', href: '/calendar?department=tc', icon: 'calendar_today' },
-  { label: 'Dispo Reports', href: '/dispo/pipeline', icon: 'account_tree' },
+  { label: 'Dispo Reports', href: '/dispo/tc?view=reports', icon: 'account_tree' },
 ]
 
 interface NavTabsProps {

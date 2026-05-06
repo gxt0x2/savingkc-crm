@@ -61,7 +61,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams()
   const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
-  const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar)
+  const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
+  const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings)
   const dialerPresentation = 'dock'
 
   useEffect(() => {
@@ -339,7 +340,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <Icon name="checklist" size="text-lg" className="text-[var(--ck-text-muted)]" /> SOD / EOD
                     </Link>
                     <Link
-                      href="/settings"
+                      href={mode === 'tc' ? '/settings?portal=tc' : '/settings'}
                       onClick={() => setShowProfileMenu(false)}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[var(--ck-text)] hover:bg-[var(--ck-surface-hi)] transition-colors"
                     >

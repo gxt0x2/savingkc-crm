@@ -39,13 +39,14 @@ const DETAIL_TABS = [
 
 type DetailTab = (typeof DETAIL_TABS)[number]['key']
 
-type TcPageView = 'files' | 'communications' | 'docs' | 'tasks'
+type TcPageView = 'files' | 'communications' | 'docs' | 'tasks' | 'reports'
 
 const TC_PAGE_TABS: { key: TcPageView; label: string; href: string; icon: string }[] = [
   { key: 'files', label: 'Files', href: '/dispo/tc', icon: 'fact_check' },
   { key: 'communications', label: 'Communications', href: '/dispo/tc?view=communications', icon: 'forum' },
   { key: 'docs', label: 'Doc Review', href: '/dispo/tc?view=docs', icon: 'preview' },
   { key: 'tasks', label: 'Tasks', href: '/dispo/tc?view=tasks', icon: 'task_alt' },
+  { key: 'reports', label: 'Dispo Reports', href: '/dispo/tc?view=reports', icon: 'account_tree' },
 ]
 
 interface TcFileTimeline {
@@ -130,7 +131,7 @@ function communicationLabel(item: TcCommunication) {
 }
 
 function normalizePageView(value: string | null): TcPageView {
-  if (value === 'communications' || value === 'docs' || value === 'tasks') return value
+  if (value === 'communications' || value === 'docs' || value === 'tasks' || value === 'reports') return value
   return 'files'
 }
 
@@ -939,6 +940,51 @@ export default function TransactionCoordinatorPage() {
     files.filter((file) => file.buyer_offer_id || file.offer?.assignment_document_url)
   ), [files])
 
+  const reportRows = useMemo(() => {
+    const openTasks = pageTasks.filter(({ task }) => task.status === 'open' || task.status === 'blocked')
+    return [
+      {
+        label: 'Needs opening',
+        value: files.filter((file) => file.status === 'not_opened' || file.status === 'opening_package_needed').length,
+        detail: 'Files waiting on opening package work',
+        icon: 'outbox',
+        tone: 'bg-[#fff7d6] text-[#8a5a00]',
+      },
+      {
+        label: 'Title work',
+        value: files.filter((file) => file.status === 'title_work' || file.title_company_id).length,
+        detail: 'Files with title work active or assigned',
+        icon: 'policy',
+        tone: 'bg-[#f1edff] text-[#5b21b6]',
+      },
+      {
+        label: 'Docs ready',
+        value: pageDocs.length,
+        detail: 'Assignments or previews ready for review',
+        icon: 'description',
+        tone: 'bg-[#e8f4ff] text-[#075985]',
+      },
+      {
+        label: 'Open tasks',
+        value: openTasks.length,
+        detail: 'Open or blocked TC tasks across files',
+        icon: 'task_alt',
+        tone: 'bg-[#fff1f1] text-[#b42318]',
+      },
+    ]
+  }, [files, pageDocs.length, pageTasks])
+
+  const upcomingClosings = useMemo(() => (
+    files
+      .filter((file) => tcClosingDate(file))
+      .sort((a, b) => new Date(tcClosingDate(a)!).getTime() - new Date(tcClosingDate(b)!).getTime())
+      .slice(0, 8)
+  ), [files])
+
+  const blockedFiles = useMemo(() => (
+    files.filter((file) => file.risk_level === 'blocked').slice(0, 8)
+  ), [files])
+
   function startAssignmentPreview(file: TcFile) {
     if (!file.offer) return
     setAssignmentPreviewOffer({
@@ -1206,6 +1252,94 @@ export default function TransactionCoordinatorPage() {
                   </button>
                 ))
               )}
+            </div>
+          </section>
+        )}
+
+        {pageView === 'reports' && (
+          <section className="space-y-4">
+            <div className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
+              <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
+                <h2 className="text-sm font-black text-[#111827]">Dispo Reports</h2>
+                <p className="mt-1 text-xs font-semibold text-[#697386]">TC closing snapshot for Dispositions without leaving the TC portal.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                {reportRows.map((row) => (
+                  <div key={row.label} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-bold uppercase text-[#697386]">{row.label}</p>
+                        <p className="mt-1 text-2xl font-black text-[#111827]">{row.value}</p>
+                        <p className="mt-1 text-xs font-semibold text-[#697386]">{row.detail}</p>
+                      </div>
+                      <span className={cn('flex h-10 w-10 items-center justify-center rounded-lg', row.tone)}>
+                        <Icon name={row.icon} size="text-xl" />
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
+                <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
+                  <h3 className="text-sm font-black text-[#111827]">Upcoming Closings</h3>
+                </div>
+                <div className="divide-y divide-[#e1e6ee]">
+                  {loading ? (
+                    <div className="px-4 py-10 text-center text-sm font-semibold text-[#697386]">Loading closing report...</div>
+                  ) : upcomingClosings.length === 0 ? (
+                    <div className="px-4 py-10 text-center text-sm font-semibold text-[#697386]">No scheduled closings yet.</div>
+                  ) : (
+                    upcomingClosings.map((file) => (
+                      <button
+                        key={file.id}
+                        type="button"
+                        onClick={() => setSelected(file)}
+                        className="grid w-full grid-cols-[1.3fr_0.8fr_0.8fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-bold text-[#111827]">{file.lead?.property_address || 'No property'}</span>
+                          <span className="mt-0.5 block truncate text-xs font-semibold text-[#697386]">{file.offer?.buyer?.name || file.offer?.buyer?.company || 'No buyer'}</span>
+                        </span>
+                        <span className="font-semibold text-[#4b5565]">{formatDate(tcClosingDate(file))}</span>
+                        <span className={cn('justify-self-start rounded-full border px-2 py-1 text-[11px] font-black uppercase', STATUS_META[file.status].badge)}>
+                          {statusLabel(file.status)}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
+                <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
+                  <h3 className="text-sm font-black text-[#111827]">Blocked / Watch Items</h3>
+                </div>
+                <div className="divide-y divide-[#e1e6ee]">
+                  {loading ? (
+                    <div className="px-4 py-10 text-center text-sm font-semibold text-[#697386]">Loading risk report...</div>
+                  ) : blockedFiles.length === 0 ? (
+                    <div className="px-4 py-10 text-center text-sm font-semibold text-[#697386]">No blocked files right now.</div>
+                  ) : (
+                    blockedFiles.map((file) => (
+                      <button
+                        key={file.id}
+                        type="button"
+                        onClick={() => setSelected(file)}
+                        className="grid w-full grid-cols-[1fr_0.7fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-bold text-[#111827]">{file.lead?.property_address || 'No property'}</span>
+                          <span className="mt-0.5 block truncate text-xs font-semibold text-[#697386]">{file.risk_reason || file.next_action || 'Needs TC review'}</span>
+                        </span>
+                        <span className={cn('justify-self-start rounded-full border px-2 py-1 text-[11px] font-black uppercase', riskClass(file.risk_level))}>{file.risk_level}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </section>
         )}

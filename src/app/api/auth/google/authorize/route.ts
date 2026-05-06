@@ -17,11 +17,13 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const returnTo = url.searchParams.get('return_to') || '/settings'
   const origin = url.origin
+  const errorUrl = new URL(returnTo, origin)
 
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(`${origin}${returnTo}?oauth_error=google_oauth_not_configured`)
+    errorUrl.searchParams.set('oauth_error', 'google_oauth_not_configured')
+    return NextResponse.redirect(errorUrl)
   }
 
   const redirectUri = `${origin}/api/auth/google/callback`
