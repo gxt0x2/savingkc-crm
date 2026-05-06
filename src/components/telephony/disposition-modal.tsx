@@ -80,7 +80,7 @@ interface DispositionModalProps {
   onSaveAndNext?: () => void
   isSaving?: boolean
   contact?: ContactSummary
-  variant?: 'compact' | 'heirQueue'
+  variant?: 'standard' | 'heirQueue' | 'compact'
   primaryActionLabel?: string
   secondaryActionLabel?: string
 }
@@ -193,7 +193,7 @@ export function DispositionModal({
   onSaveAndNext,
   isSaving = false,
   contact,
-  variant = 'compact',
+  variant = 'standard',
   primaryActionLabel = 'Save & Next Lead',
   secondaryActionLabel = 'Save & Close',
 }: DispositionModalProps) {
