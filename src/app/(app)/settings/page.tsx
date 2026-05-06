@@ -237,7 +237,7 @@ export default function SettingsPage() {
 
       <div className="space-y-8">
         {/* Gmail Sync */}
-        <GmailConnect />
+        <GmailConnect userEmail={selectedEmail || user?.email || ''} />
 
         {/* Agent Switcher (Owner only) */}
         {isOwner && allProfiles.length > 1 && (

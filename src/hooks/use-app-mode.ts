@@ -17,6 +17,7 @@ function normalizeMode(value: string | null): AppMode | null {
 function getRouteMode(pathname: string | null, department?: string | null, portal?: string | null): AppMode | null {
   if (pathname?.startsWith('/dispo/tc')) return 'tc'
   if (pathname?.startsWith('/dispo/contacts') && portal === 'tc') return 'tc'
+  if (pathname?.startsWith('/settings') && portal === 'tc') return 'tc'
   if (pathname?.startsWith('/dispo')) return 'dispositions'
   if (pathname?.startsWith('/calendar')) {
     const calendarMode = normalizeMode(department ?? null)
