@@ -1407,7 +1407,7 @@ export function DialerPanel({
         callDuration={lastCallDuration || undefined}
         markAsLeadAvailable={Boolean(dispositionQueueItem)}
         markAsLeadLabel={dispositionQueueItem ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
-        variant={dispositionQueueItem ? 'heirQueue' : 'compact'}
+        variant={dispositionQueueItem ? 'heirQueue' : 'standard'}
         primaryActionLabel={dispositionQueueItem ? 'Save & Next Number' : 'Save & Next Lead'}
       />
     </>
