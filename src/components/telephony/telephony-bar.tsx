@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { usePathname } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
@@ -237,6 +238,7 @@ export function DialerPanel({
   pendingQueueAutoDial = false,
   presentation = 'dock',
 }: DialerPanelProps) {
+  const pathname = usePathname()
   const [status, setStatus] = useState<CallStatus>('offline')
   const [dialNumber, setDialNumber] = useState('')
   const [muted, setMuted] = useState(false)
@@ -251,6 +253,7 @@ export function DialerPanel({
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [selectedLead, setSelectedLead] = useState<SearchResult | null>(null)
+  const [pageLead, setPageLead] = useState<SearchResult | null>(null)
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null)
 
   // Recent calls
@@ -270,6 +273,7 @@ export function DialerPanel({
   const lastCallPhoneRef = useRef<string>('')
   const [lastCallDuration, setLastCallDuration] = useState<string | null>(null)
   const lastCallDurationSecondsRef = useRef(0)
+  const activeCallLeadRef = useRef<SearchResult | null>(null)
   const activeCallerId = selectedCallerId || callerIdDisplay
   const activeAgentName =
     agentIdentity === 'ernest'
@@ -296,6 +300,30 @@ export function DialerPanel({
   const activeQueueItemRef = useRef<HeirQueueItem | null>(null)
   const pendingAutoDialRef = useRef(false)
   const makeCallRef = useRef<() => Promise<void> | void>(() => {})
+
+  const pageLeadId = useMemo(() => {
+    const match = pathname?.match(/^\/leads\/([^/?#]+)/)
+    return match?.[1] || null
+  }, [pathname])
+
+  const currentPageLead = useMemo<SearchResult | null>(() => {
+    if (!pageLeadId) return null
+    if (pageLead?.id === pageLeadId) return pageLead
+    return {
+      id: pageLeadId,
+      full_name: 'Current lead',
+      phone: null,
+      property_address: null,
+      city: null,
+      station: null,
+      priority: null,
+      updated_at: new Date().toISOString(),
+    }
+  }, [pageLead, pageLeadId])
+
+  const selectedLeadContext = selectedLead?.id ? selectedLead : null
+  const activeLeadContext = selectedLeadContext || currentPageLead
+  const dispositionLead = activeCallLeadRef.current || activeLeadContext
 
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
@@ -327,6 +355,40 @@ export function DialerPanel({
       setSearchResults([])
     }
   }, [open, pendingDial])
+
+  useEffect(() => {
+    if (!pageLeadId) {
+      setPageLead(null)
+      return
+    }
+
+    let cancelled = false
+    fetch(`/api/leads/${encodeURIComponent(pageLeadId)}`, { cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Lead lookup failed')
+        return res.json()
+      })
+      .then((lead) => {
+        if (cancelled) return
+        setPageLead({
+          id: String(lead.id || pageLeadId),
+          full_name: String(lead.full_name || 'Current lead'),
+          phone: typeof lead.phone === 'string' ? lead.phone : null,
+          property_address: typeof lead.property_address === 'string' ? lead.property_address : null,
+          city: typeof lead.city === 'string' ? lead.city : null,
+          station: typeof lead.station === 'string' ? lead.station : null,
+          priority: typeof lead.priority === 'string' ? lead.priority : null,
+          updated_at: typeof lead.updated_at === 'string' ? lead.updated_at : new Date().toISOString(),
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setPageLead(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [pageLeadId])
 
   // Broadcast queue state so the /dialer page (or any other surface) can
   // render its own "Now calling" indicator without importing the bar.
@@ -535,6 +597,7 @@ export function DialerPanel({
   async function makeCall() {
     const number = dialNumber.trim()
     if (!number) return
+    const leadForThisCall = activeLeadContext
 
     if (!deviceRef.current || status !== 'ready') {
       setError(status === 'offline'
@@ -553,6 +616,7 @@ export function DialerPanel({
     // Snapshot the queue item at call start so the disposition (which fires
     // after disconnect, possibly after advance) logs against the right heir.
     activeQueueItemRef.current = queueItem
+    activeCallLeadRef.current = leadForThisCall
     log(`calling ${number}`)
     try {
       const callerIdForThisCall = callerPlan.mode === 'rotation' && !callerIdLockedByUser
@@ -594,7 +658,7 @@ export function DialerPanel({
           agent: activeAgentName,
           agent_identity: agentIdentity,
           from_number: callerIdForThisCall || null,
-          lead_id: selectedLead?.id || null,
+          lead_id: leadForThisCall?.id || null,
           ...heirMeta,
         }),
       }).catch(() => {})
@@ -613,15 +677,15 @@ export function DialerPanel({
             agent: activeAgentName,
             agent_identity: agentIdentity,
             from_number: callerIdForThisCall || null,
-            lead_id: selectedLead?.id || null,
+            lead_id: leadForThisCall?.id || null,
             ...heirMeta,
           }),
         }).catch(() => {})
         callRef.current = null
         setStatusLogged('ready')
         setMuted(false)
-        // Show disposition if a lead was selected
-        if (selectedLead) {
+        // Show disposition if this call is tied to a selected or current page lead.
+        if (leadForThisCall) {
           setShowDisposition(true)
         }
       })
@@ -629,7 +693,7 @@ export function DialerPanel({
         callRef.current = null
         setStatusLogged('ready')
         setMuted(false)
-        if (selectedLead) {
+        if (leadForThisCall) {
           setShowDisposition(true)
         }
       })
@@ -637,6 +701,7 @@ export function DialerPanel({
       const msg = extractTwilioErrorMessage(err)
       log(`makeCall error: ${msg}`)
       setError(msg)
+      activeCallLeadRef.current = null
       setStatusLogged('ready')
     }
   }
@@ -726,8 +791,10 @@ export function DialerPanel({
     notes?: string,
     options?: { markAsLead?: boolean; autoDialNext?: boolean },
   ) {
-    if (!selectedLead) return false
     const activeItem = activeQueueItemRef.current
+    const leadForDisposition = activeCallLeadRef.current || activeLeadContext
+    const leadIdForDisposition = activeItem?.leadId || leadForDisposition?.id
+    if (!leadIdForDisposition) return false
     try {
       if (activeItem) {
         // Heir-dialer path: log to prospect_phones + activity feed via our own
@@ -739,7 +806,7 @@ export function DialerPanel({
             prospect_phone_id: activeItem.prospect_phone_id,
             disposition,
             notes,
-            lead_id: activeItem.leadId,
+            lead_id: leadIdForDisposition,
             agent: activeAgentName,
             duration: lastCallDurationSecondsRef.current || null,
             mark_as_lead: Boolean(options?.markAsLead),
@@ -757,7 +824,7 @@ export function DialerPanel({
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            id: selectedLead.id,
+            id: leadIdForDisposition,
             activity: {
               type: 'call',
               disposition,
@@ -772,7 +839,7 @@ export function DialerPanel({
           throw new Error(payload?.error || 'Could not save call disposition.')
         }
       }
-      window.dispatchEvent(new CustomEvent('crm:disposition-logged', { detail: { leadId: selectedLead.id } }))
+      window.dispatchEvent(new CustomEvent('crm:disposition-logged', { detail: { leadId: leadIdForDisposition } }))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save disposition.')
       return false
@@ -784,6 +851,7 @@ export function DialerPanel({
       pendingAutoDialRef.current = true
     }
     activeQueueItemRef.current = null
+    activeCallLeadRef.current = null
     return true
   }
 
@@ -1078,40 +1146,42 @@ export function DialerPanel({
             </div>
           )}
 
-          {/* Selected Lead Context Card */}
-          {selectedLead && !isOnCall && status !== 'incoming' && viewTab === 'dial' && (
+          {/* Selected/current lead context card */}
+          {activeLeadContext && !isOnCall && status !== 'incoming' && viewTab === 'dial' && (
             <div className="mx-4 bg-[var(--skc-surface-soft)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-card)] p-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-bold text-white truncate">{selectedLead.full_name}</span>
-                    {selectedLead.priority && selectedLead.priority !== 'normal' && (
-                      <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${priorityColors[selectedLead.priority] || ''}`}>
-                        {selectedLead.priority}
+                    <span className="text-sm font-bold text-white truncate">{activeLeadContext.full_name}</span>
+                    {activeLeadContext.priority && activeLeadContext.priority !== 'normal' && (
+                      <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${priorityColors[activeLeadContext.priority] || ''}`}>
+                        {activeLeadContext.priority}
                       </span>
                     )}
-                    {selectedLead.station && (
-                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${stationColors[selectedLead.station] || ''}`}>
-                        {selectedLead.station.replace(/_/g, ' ')}
+                    {activeLeadContext.station && (
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${stationColors[activeLeadContext.station] || ''}`}>
+                        {activeLeadContext.station.replace(/_/g, ' ')}
                       </span>
                     )}
                   </div>
-                  {selectedLead.property_address && (
-                    <p className="text-xs text-white/50 truncate">{selectedLead.property_address}{selectedLead.city ? `, ${selectedLead.city}` : ''}</p>
+                  {activeLeadContext.property_address && (
+                    <p className="text-xs text-white/50 truncate">{activeLeadContext.property_address}{activeLeadContext.city ? `, ${activeLeadContext.city}` : ''}</p>
                   )}
                   <a
-                    href={`/leads/${selectedLead.id}`}
+                    href={`/leads/${activeLeadContext.id}`}
                     className="inline-flex items-center gap-1 text-[11px] font-bold text-[#FF6D6D] hover:text-white mt-1.5 transition-colors"
                   >
                     View Lead <Icon name="arrow_forward" size="text-xs" />
                   </a>
                 </div>
-                <button
-                  onClick={clearSelectedLead}
-                  className="p-1 text-white/30 hover:text-white/60 transition-colors flex-shrink-0"
-                >
-                  <Icon name="close" size="text-sm" />
-                </button>
+                {selectedLeadContext && (
+                  <button
+                    onClick={clearSelectedLead}
+                    className="p-1 text-white/30 hover:text-white/60 transition-colors flex-shrink-0"
+                  >
+                    <Icon name="close" size="text-sm" />
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1154,8 +1224,8 @@ export function DialerPanel({
                 <div className={`w-12 h-12 rounded-[6px] flex items-center justify-center mx-auto mb-2 ${status === 'on_call' ? 'bg-[#E32E2E]/20' : 'bg-white/10'}`}>
                   <Icon name="call" className={status === 'on_call' ? 'text-[#FF7A7A]' : 'text-white'} size="text-2xl" />
                 </div>
-                {selectedLead && (
-                  <p className="text-white font-bold text-base">{selectedLead.full_name}</p>
+                {activeLeadContext && (
+                  <p className="text-white font-bold text-base">{activeLeadContext.full_name}</p>
                 )}
                 <p className="text-white/60 font-mono text-sm">{dialNumber}</p>
                 {status === 'on_call' && (
@@ -1403,7 +1473,8 @@ export function DialerPanel({
         onClose={() => setShowDisposition(false)}
         onDisposition={handleDisposition}
         phoneNumber={lastCallPhoneRef.current}
-        leadName={selectedLead?.full_name}
+        leadName={dispositionLead?.full_name}
+        contact={dispositionLead || undefined}
         callDuration={lastCallDuration || undefined}
         markAsLeadAvailable={Boolean(dispositionQueueItem)}
         markAsLeadLabel={dispositionQueueItem ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
