@@ -81,7 +81,7 @@ export function GmailConnect() {
         <div>
           <h2 className="text-lg font-bold text-[var(--ck-text)] mb-1">Gmail Sync</h2>
           <p className="text-[13px] text-[var(--ck-text-muted)]">
-            Connect your Gmail to automatically sync email threads with leads. Sync runs every 5 minutes.
+            Connect your Gmail to automatically sync email threads with leads. Sync runs daily; use Sync now for immediate updates.
           </p>
         </div>
         <button

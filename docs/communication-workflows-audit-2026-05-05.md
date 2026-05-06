@@ -25,7 +25,7 @@ Update: queued SMS has been moved to a forward-only `scheduled_sms_v2` contract.
 | Twilio signature validation | Temporary bypass | `TWILIO_SKIP_SIGNATURE_VALIDATION=true` is enabled in production. Replace the bad/mismatched auth token and turn validation back on. |
 | Browser push | Env-gated | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` are not configured in production, so push attempts return 0 sent. |
 | Email sending | Env-gated | `RESEND_API_KEY` and `RESEND_FROM_EMAIL` are not configured in production. Email paths are disabled or fail depending on route. |
-| Worker cron coverage | Incomplete | `vercel.json` only schedules `/api/cron/sweep-briefings`. Several workers exist but are not scheduled there. |
+| Worker cron coverage | Incomplete | `vercel.json` schedules `/api/cron/sweep-briefings` and `/api/cron/sync-gmail`. Several workers exist but are not scheduled there. |
 | Supabase service key | Verify | Env audit had conflicting signals for `SUPABASE_SERVICE_ROLE_KEY`. Confirm in Vercel before relying on worker/admin flows. |
 
 ## Workflow Inventory
@@ -75,7 +75,8 @@ Update: queued SMS has been moved to a forward-only `scheduled_sms_v2` contract.
 | Mojo queue processor | `src/app/api/cron/process-mojo-queue/route.ts` | Needs scheduler verification | Processes Mojo queue work. | File comment says Vercel cron, but `vercel.json` does not schedule it. |
 | Mojo sync worker | `src/app/api/workers/mojo-sync/route.ts` | Needs scheduler verification | Runs Mojo sync work. | Not scheduled in `vercel.json`. |
 | Hot opportunities cron | `src/app/api/hot-opportunities/cron/route.ts` | Needs scheduler verification | Processes hot opportunity work. | Not scheduled in `vercel.json`. |
-| Sweep briefings | `src/app/api/cron/sweep-briefings/route.ts` | Scheduled | Only cron currently present in `vercel.json`, scheduled at `0 13 * * *`. | Confirm the time is still correct for operations. |
+| Sweep briefings | `src/app/api/cron/sweep-briefings/route.ts` | Scheduled | Scheduled in `vercel.json` at `0 13 * * *`. | Confirm the time is still correct for operations. |
+| Gmail sync | `src/app/api/cron/sync-gmail/route.ts` | Scheduled | Scheduled in `vercel.json` at `15 13 * * *` because the current Vercel Hobby plan limits cron frequency. | Upgrade to Vercel Pro or use an external scheduler if near-real-time sync is required. |
 
 ## Scheduler Audit
 
@@ -84,6 +85,7 @@ Update: queued SMS has been moved to a forward-only `scheduled_sms_v2` contract.
 | Endpoint | Schedule |
 | --- | --- |
 | `/api/cron/sweep-briefings` | `0 13 * * *` |
+| `/api/cron/sync-gmail` | `15 13 * * *` |
 
 Endpoints that exist but are not scheduled in `vercel.json`:
 
