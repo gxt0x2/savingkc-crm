@@ -13,8 +13,8 @@ const USER_DATA_DIR = '/Users/ernestdodson/.openclaw/workspace/.ari/mojo-bot/chr
 const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
 
-const EMAIL = 'savingkc@gmail.com'
-const PASSWORD = 'Onlykillerspickupthephoneandmakecalls'
+const EMAIL = process.env.MOJO_EMAIL || 'savingkc@gmail.com'
+const PASSWORD = process.env.MOJO_PASSWORD || ''
 
 async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -62,6 +62,10 @@ async function extractSession() {
     const isLoggedIn = !url.includes('/login') && !url.includes('/accounts/login')
 
     if (!isLoggedIn) {
+      if (!PASSWORD) {
+        throw new Error('MOJO_PASSWORD env var is required for fresh Mojo login')
+      }
+
       console.log('Not logged in, attempting login...')
       await page.goto(`${MOJO_BASE_URL}/login/`, {
         waitUntil: 'domcontentloaded',

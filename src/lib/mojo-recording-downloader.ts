@@ -5,7 +5,6 @@
  * Mojo recordings require a session cookie. Auth priority:
  * 1. MOJO_SESSION_ID env var
  * 2. Session file at MOJO_SESSION_FILE or default path
- * 3. Fresh login using MOJO_EMAIL + MOJO_PASSWORD env vars
  */
 import { writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
@@ -104,14 +103,7 @@ async function getMojoSessionId(): Promise<string | null> {
     }
   }
 
-  // 5. Hardcoded fallback (extracted 2026-04-01 via lb11 SPA login)
-  // TODO: Remove once Supabase session management is working
-  const FALLBACK_SESSION = 'q5yf48bvcz0vx32ismobwicfbx71033w'
-  console.log('Using hardcoded fallback Mojo session')
-  cachedSessionId = FALLBACK_SESSION
-  // Try to persist to Supabase so this fallback isn't needed next time
-  await saveSessionToSupabase(FALLBACK_SESSION)
-  return cachedSessionId
+  return null
 }
 
 /** Clear cached session (call on auth failure to force re-login) */
