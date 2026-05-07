@@ -73,6 +73,36 @@ interface DispositionMapping {
   isDead?: boolean
 }
 
+type LeadPriority = 'hot' | 'warm' | 'cold'
+type CrmAppointmentType = 'phone_call' | 'in_person' | 'google_meet'
+
+const PRIORITY_RANK: Record<LeadPriority, number> = {
+  cold: 0,
+  warm: 1,
+  hot: 2,
+}
+
+function priorityFromScore(score: number): LeadPriority {
+  if (score >= 75) return 'hot'
+  if (score >= 40) return 'warm'
+  return 'cold'
+}
+
+function strongerPriority(a: LeadPriority, b: LeadPriority): LeadPriority {
+  return PRIORITY_RANK[a] >= PRIORITY_RANK[b] ? a : b
+}
+
+function normalizeAppointmentType(value: unknown): CrmAppointmentType {
+  const type = String(value || '').toLowerCase()
+  if (type === 'phone_call' || type === 'in_person' || type === 'google_meet') {
+    return type
+  }
+  if (type === 'walkthrough' || type === 'onsite' || type === 'discovery') {
+    return 'in_person'
+  }
+  return 'phone_call'
+}
+
 // Map Mojo dispositions to manifest fields
 function mapDisposition(disposition: string): DispositionMapping {
   const d = disposition.toLowerCase()
@@ -298,6 +328,45 @@ async function processPhase2Intelligence(
           reason: 'agent_scheduled',
         })
         console.log(`[mojo/sync] Follow-up set for ${call.contact_name}: ${followUpTime}`)
+      }
+
+      if (call.follow_up_date && call.disposition.toLowerCase().includes('appointment')) {
+        const mojoAppointmentDate = new Date(call.follow_up_date)
+        if (!Number.isNaN(mojoAppointmentDate.getTime())) {
+          const { randomUUID } = await import('crypto')
+          const scheduledAt = mojoAppointmentDate.toISOString()
+          const existing = manifest.pipeline.appointment
+
+          manifest.pipeline.appointment = {
+            appointmentId: existing?.appointmentId || randomUUID(),
+            type: normalizeAppointmentType(existing?.type),
+            scheduledAt,
+            createdAt: existing?.createdAt || now,
+            status: existing?.status || 'scheduled',
+            confirmationCount: existing?.confirmationCount ?? 0,
+            lastSellerResponse: existing?.lastSellerResponse ?? null,
+            ghostRiskScore: existing?.ghostRiskScore ?? 0,
+            ghostProtocolActive: existing?.ghostProtocolActive ?? false,
+            reminderAutomationEnabled: existing?.reminderAutomationEnabled ?? true,
+            reminderAutomationEnabledAt: existing?.reminderAutomationEnabledAt || now,
+            reminderAutomationSource: existing?.reminderAutomationSource || 'mojo_sync',
+            automationLog: existing?.automationLog || [],
+            assignedTo: existing?.assignedTo || 'casey',
+            address: existing?.address ?? null,
+            notes: existing?.notes || 'Scheduled from Mojo appointment event',
+            calendarEventId: existing?.calendarEventId,
+          }
+
+          manifest.auditTrail.push({
+            timestamp: now,
+            agent: 'system:mojo-sync',
+            action: existing ? 'appointment_updated_from_mojo' : 'appointment_created_from_mojo',
+            details: {
+              mojoRecordId: call.record_id,
+              scheduledAt,
+            },
+          })
+        }
       }
 
       // === Extract structured seller intel from Casey's notes ===
@@ -555,7 +624,7 @@ async function processPhase2Intelligence(
         const { randomUUID } = await import('crypto')
         manifest.pipeline.appointment = {
           appointmentId: randomUUID(),
-          type: (analysisResult.appointmentType as 'phone_call' | 'in_person' | 'google_meet') || 'phone_call',
+          type: normalizeAppointmentType(analysisResult.appointmentType),
           scheduledAt: analysisResult.appointmentDateTime,
           createdAt: now,
           status: 'scheduled',
@@ -976,7 +1045,8 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
     const opportunityScore = manifest.scoring.opportunity_score
     const shouldEnrich = manifest.scoring.worth_enriching
     const shouldAlert = opportunityScore >= 75
-    manifest.priority = opportunityScore >= 75 ? 'hot' : opportunityScore >= 40 ? 'warm' : 'cold'
+    const scorePriority = priorityFromScore(opportunityScore)
+    manifest.priority = scorePriority
 
     // Auto-enrich dispositions (override worth_enriching flag)
     const AUTO_ENRICH_DISPOSITIONS = [
@@ -1005,8 +1075,8 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
           manifest.qualificationScore = qualScore
           manifest.tier = tier as ManifestV2['tier']
 
-          // Recalculate priority based on post-enrichment score
-          manifest.priority = qualScore >= 75 ? 'hot' : qualScore >= 40 ? 'warm' : 'cold'
+          // Do not let sparse property data downgrade a strong call signal.
+          manifest.priority = strongerPriority(scorePriority, priorityFromScore(qualScore))
 
           if (leadId) {
             const prop = manifest.property || {}
@@ -1126,9 +1196,17 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       // truth. Manifest stays authoritative for richer fields (status,
       // ghost protocol, automation log).
       const appt = manifest.pipeline?.appointment
-      if (appt?.scheduledAt) {
-        leadBackfill.appointment_date = appt.scheduledAt
-        if (appt.notes) {
+      const mojoAppointmentDate = dispositionMap.outcome === 'appointment_set' && call.follow_up_date
+        ? new Date(call.follow_up_date)
+        : null
+      const scheduledAt = appt?.scheduledAt
+        || (mojoAppointmentDate && !Number.isNaN(mojoAppointmentDate.getTime())
+          ? mojoAppointmentDate.toISOString()
+          : null)
+
+      if (scheduledAt) {
+        leadBackfill.appointment_date = scheduledAt
+        if (appt?.notes) {
           leadBackfill.appointment_notes = String(appt.notes).slice(0, 2000)
         }
         // Mirror to the appointments table so /appointments queries and the
@@ -1137,13 +1215,13 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
           const { upsertAppointmentFromCall } = await import('@/lib/appointments')
           await upsertAppointmentFromCall({
             leadId,
-            scheduledAt: appt.scheduledAt,
-            type: (appt.type as 'phone_call' | 'in_person' | 'google_meet') || 'phone_call',
-            address: appt.address ?? null,
-            notes: typeof appt.notes === 'string' ? appt.notes : null,
+            scheduledAt,
+            type: normalizeAppointmentType(appt?.type),
+            address: appt?.address ?? null,
+            notes: typeof appt?.notes === 'string' ? appt.notes : null,
             source: 'mojo_sync',
             sourceCallId: call.record_id ? String(call.record_id) : null,
-            assignedTo: appt.assignedTo ?? null,
+            assignedTo: appt?.assignedTo ?? null,
           })
         } catch (e) {
           console.error('[mojo sync] appointment upsert failed:', e)

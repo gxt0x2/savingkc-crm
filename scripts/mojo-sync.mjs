@@ -20,8 +20,10 @@ import fs from 'fs'
 import path from 'path'
 
 const MOJO_BASE_URL = 'https://app71.mojosells.com'
-const CRM_API_URL = 'http://localhost:3002/api/mojo/sync'
-const CRM_CONFIG_URL = 'http://localhost:3002/api/admin/system-config'
+const CRM_BASE_URL = (process.env.CRM_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com').replace(/\/$/, '')
+const CRM_API_URL = process.env.CRM_API_URL || `${CRM_BASE_URL}/api/mojo/sync`
+const CRM_CONFIG_URL = process.env.CRM_CONFIG_URL || `${CRM_BASE_URL}/api/admin/system-config`
+const CRM_QUEUE_URL = process.env.CRM_QUEUE_URL || `${CRM_BASE_URL}/api/cron/process-mojo-queue`
 const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
 const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
 const STATE_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-sync-state.json'
@@ -30,6 +32,7 @@ const LOG_FILE = path.join(LOG_DIR, 'mojo-sync.log')
 
 // Mojo activity type codes
 const ACTIVITY_NOTE = 3
+const ACTIVITY_APPOINTMENT = 5
 const ACTIVITY_FOLLOWUP = 6
 const ACTIVITY_GROUP = 11
 const ACTIVITY_LEAD = 30
@@ -113,6 +116,25 @@ async function writeLastSyncTimestamp(timestamp) {
     }
   } catch (err) {
     logError('Failed to write last_mojo_sync_timestamp to CRM', err)
+  }
+}
+
+async function processMojoQueue(reason = 'scheduled_sync') {
+  try {
+    const res = await fetch(CRM_QUEUE_URL, {
+      headers: adminHeaders({ accept: 'application/json' }),
+      signal: AbortSignal.timeout(120000),
+    })
+    if (!res.ok) {
+      log(`Queue processor failed (${res.status}) during ${reason}`)
+      return
+    }
+    const result = await res.json().catch(() => null)
+    if (result) {
+      log(`Queue processor: processed=${result.processed ?? 0}, failed=${result.failed ?? 0}, pending batch=${result.total_claimed ?? 0}`)
+    }
+  } catch (err) {
+    logError(`Queue processor failed during ${reason}`, err)
   }
 }
 
@@ -403,6 +425,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
         notes: '',
         groupName: '',
         isQualifiedLead: false,
+        hasAppointment: false,
         followUpDate: '',
       })
     }
@@ -416,6 +439,12 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
         const content = details.contents || ''
         if (!entry.phone) entry.phone = extractPhone(content)
         if (content.length > entry.notes.length) entry.notes = content
+        break
+      }
+      case ACTIVITY_APPOINTMENT: {
+        entry.hasAppointment = true
+        entry.followUpDate = details.datetime || entry.followUpDate || ''
+        log(`  Appointment set for ${entry.contactName}: ${entry.followUpDate || 'time missing'}`)
         break
       }
       case ACTIVITY_FOLLOWUP: {
@@ -446,7 +475,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     // === MEANINGFUL CHECK ===
     const isMeaningfulGroup = MEANINGFUL_GROUPS.has(groupLower)
     const isMeaningfulNotes = hasSellerIntel(entry.notes)
-    const isMeaningful = entry.isQualifiedLead || isMeaningfulGroup || isMeaningfulNotes
+    const isMeaningful = entry.isQualifiedLead || entry.hasAppointment || isMeaningfulGroup || isMeaningfulNotes
 
     if (!isMeaningful) {
       skippedCount++
@@ -455,7 +484,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
 
     // Map disposition
     let disposition = 'Interested'
-    if (groupLower.includes('appointment')) disposition = 'Appointment Set'
+    if (entry.hasAppointment || groupLower.includes('appointment')) disposition = 'Appointment Set'
     else if (groupLower.includes('follow up')) disposition = 'Callback Requested'
 
     // Clean notes — strip phone from first line
@@ -476,9 +505,10 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
 
     // Use follow-up date from activity stream or contact details
     const followUpDate = entry.followUpDate || contactDetails.followUpDate || ''
+    const canonicalActivityId = Math.max(...entry.activityIds)
 
     const call = {
-      record_id: `mojo-activity-${contactId}-${entry.activityIds[0]}`,
+      record_id: `mojo-activity-${contactId}-${canonicalActivityId}`,
       contact_name: entry.contactName,
       phone_number: entry.phone || contactDetails.phone,
       property_address: contactDetails.address,
@@ -571,6 +601,7 @@ async function sync() {
         writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })
         log(`Updated state: lastActivityId=${maxId}`)
       }
+      await processMojoQueue('no_new_calls')
       log(`No new calls since ${lastSyncTimestamp}`)
       return { ok: true, processed: 0 }
     }
@@ -600,6 +631,7 @@ async function sync() {
 
     const crmResult = await crmResponse.json()
     log(`CRM sync: queued=${crmResult.queued}, skipped=${crmResult.skipped}, total=${crmResult.total}`)
+    await processMojoQueue('post_sync')
 
     // Update local state
     writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })

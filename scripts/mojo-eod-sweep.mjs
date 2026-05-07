@@ -1,26 +1,29 @@
 #!/usr/bin/env node
 /**
  * Mojo EOD Sweep
- * Pulls ALL of Casey's calls for the current calendar day from the activity
+ * Pulls ALL of Casey's calls for a target calendar day from the activity
  * stream and posts them to /api/mojo/sync. Runs at 5:30pm M-F via cron.
  *
  * Unlike the delta sync (mojo-sync.mjs), this ignores the last_mojo_sync_timestamp
  * and fetches everything since midnight today. Dedup is handled by the queue
  * table's unique constraint on record_id.
  *
- * After a successful POST, updates last_mojo_sync_timestamp to now so the
- * next delta sync run starts clean.
+ * After a successful same-day POST, updates last_mojo_sync_timestamp to now so
+ * the next delta sync run starts clean. Historical --date backfills do not move
+ * the live sync pointer.
  *
  * Crontab entry (Ernest adds manually):
- *   30 17 * * 1-5 cd /Users/ernestdodson/savingkc-crm && /usr/local/bin/node scripts/mojo-eod-sweep.mjs >> /tmp/mojo-eod-sweep.log 2>&1
+ *   30 17 * * 1-5 cd "$CRM_REPO" && set -a && . ./.env.live && set +a && /usr/local/bin/node scripts/mojo-eod-sweep.mjs >> /tmp/mojo-eod-sweep.log 2>&1
  */
 
 import fs from 'fs'
 import path from 'path'
 
 const MOJO_BASE_URL = 'https://app71.mojosells.com'
-const CRM_API_URL = 'https://crm.savingkc.com/api/mojo/sync'
-const CRM_CONFIG_URL = 'https://crm.savingkc.com/api/admin/system-config'
+const CRM_BASE_URL = (process.env.CRM_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com').replace(/\/$/, '')
+const CRM_API_URL = process.env.CRM_API_URL || `${CRM_BASE_URL}/api/mojo/sync`
+const CRM_CONFIG_URL = process.env.CRM_CONFIG_URL || `${CRM_BASE_URL}/api/admin/system-config`
+const CRM_QUEUE_URL = process.env.CRM_QUEUE_URL || `${CRM_BASE_URL}/api/cron/process-mojo-queue`
 const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
 const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
 const LOG_DIR = '/Users/ernestdodson/.openclaw/workspace/memory/logs'
@@ -28,11 +31,42 @@ const LOG_FILE = path.join(LOG_DIR, 'mojo-eod-sweep.log')
 
 // Mojo activity type codes
 const ACTIVITY_NOTE = 3
+const ACTIVITY_APPOINTMENT = 5
 const ACTIVITY_FOLLOWUP = 6
 const ACTIVITY_GROUP = 11
 const ACTIVITY_LEAD = 30
 
 const MEANINGFUL_GROUPS = new Set(['follow up', 'appointment set'])
+
+function getCliArg(flag, defaultValue = '') {
+  const idx = process.argv.indexOf(flag)
+  return idx !== -1 && process.argv[idx + 1] ? process.argv[idx + 1] : defaultValue
+}
+
+function centralDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function addDays(dateStr, days) {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day + days, 12, 0, 0))
+  return date.toISOString().slice(0, 10)
+}
+
+const REQUESTED_DATE = getCliArg('--date', process.env.MOJO_SWEEP_DATE || '')
+if (REQUESTED_DATE && !/^\d{4}-\d{2}-\d{2}$/.test(REQUESTED_DATE)) {
+  throw new Error('--date must be in YYYY-MM-DD format')
+}
+const TARGET_DATE = REQUESTED_DATE || centralDateString()
+const IS_HISTORICAL_SWEEP = Boolean(REQUESTED_DATE)
+const DRY_RUN = process.argv.includes('--dry-run')
 
 if (!fs.existsSync(LOG_DIR)) {
   fs.mkdirSync(LOG_DIR, { recursive: true })
@@ -97,6 +131,25 @@ async function writeLastSyncTimestamp(timestamp) {
     }
   } catch (err) {
     logError('Failed to write last_mojo_sync_timestamp to CRM', err)
+  }
+}
+
+async function processMojoQueue(reason = 'eod_sweep') {
+  try {
+    const res = await fetch(CRM_QUEUE_URL, {
+      headers: adminHeaders({ accept: 'application/json' }),
+      signal: AbortSignal.timeout(120000),
+    })
+    if (!res.ok) {
+      log(`Queue processor failed (${res.status}) during ${reason}`)
+      return
+    }
+    const result = await res.json().catch(() => null)
+    if (result) {
+      log(`Queue processor: processed=${result.processed ?? 0}, failed=${result.failed ?? 0}, pending batch=${result.total_claimed ?? 0}`)
+    }
+  } catch (err) {
+    logError(`Queue processor failed during ${reason}`, err)
   }
 }
 
@@ -181,11 +234,10 @@ async function fetchContactDetails(sessionId, contactId) {
   return result
 }
 
-async function fetchTodayRecordings(sessionId) {
+async function fetchRecordingsForDate(sessionId, targetDate) {
   const recordingMap = new Map()
   try {
-    const today = new Date().toISOString().split('T')[0]
-    const url = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=%5B-1%5D&date_range=custom&from=${today}&to=${today}`
+    const url = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=%5B-1%5D&date_range=custom&from=${targetDate}&to=${targetDate}`
     const response = await fetch(url, {
       headers: mojoHeaders(sessionId),
       signal: AbortSignal.timeout(20000),
@@ -193,7 +245,7 @@ async function fetchTodayRecordings(sessionId) {
     if (!response.ok) return recordingMap
     const data = await response.json()
     const recordings = data.recordings || []
-    log(`Fetched ${recordings.length} recordings for ${today}`)
+    log(`Fetched ${recordings.length} recordings for ${targetDate}`)
 
     for (const rec of recordings) {
       const contactId = rec.contact?.id
@@ -257,39 +309,34 @@ function parseMojoTimestamp(ts) {
 }
 
 /**
- * Get midnight (start) of today in local time (America/Chicago, UTC-5/6).
- * Returns an ISO string representing today 00:00:00 CT.
+ * Get midnight (start) of a date in Central Time.
  */
-function getTodayMidnightISO() {
-  const now = new Date()
-  // Use CT offset (-5 standard / -6 daylight) — approximate as -5 for simplicity
-  const ctOffset = 5 * 60 * 60 * 1000
-  const ctNow = new Date(now.getTime() - ctOffset)
-  const dateStr = ctNow.toISOString().split('T')[0]
+function getDateMidnightISO(dateStr) {
   return new Date(`${dateStr}T00:00:00-05:00`).toISOString()
 }
 
-// --- Build call records for today (no activityId or timestamp delta filter) ---
+// --- Build call records for one day (no activityId or timestamp delta filter) ---
 
-async function buildTodayCallRecords(activities, sessionId, recordingMap) {
-  const todayMidnightMs = new Date(getTodayMidnightISO()).getTime()
+async function buildCallRecordsForDate(activities, sessionId, recordingMap, targetDate) {
+  const startMs = new Date(getDateMidnightISO(targetDate)).getTime()
+  const endMs = new Date(getDateMidnightISO(addDays(targetDate, 1))).getTime()
 
   // Filter to activities from today only
-  const todayActivities = activities.filter(a => {
+  const targetActivities = activities.filter(a => {
     const [, , , timestamp] = a
     if (!timestamp) return false
     const activityMs = new Date(parseMojoTimestamp(timestamp)).getTime()
-    return activityMs >= todayMidnightMs
+    return activityMs >= startMs && activityMs < endMs
   })
 
-  log(`Total activities: ${activities.length}, today's activities: ${todayActivities.length}`)
+  log(`Total activities: ${activities.length}, ${targetDate} activities: ${targetActivities.length}`)
 
-  if (todayActivities.length === 0) return { calls: [], skippedCount: 0 }
+  if (targetActivities.length === 0) return { calls: [], skippedCount: 0 }
 
   // Group by contact_id
   const contactMap = new Map()
 
-  for (const activity of todayActivities) {
+  for (const activity of targetActivities) {
     const [activityId, type, agentName, timestamp, details] = activity
     const contactId = details?.contact_id
     if (!contactId) continue
@@ -305,6 +352,7 @@ async function buildTodayCallRecords(activities, sessionId, recordingMap) {
         notes: '',
         groupName: '',
         isQualifiedLead: false,
+        hasAppointment: false,
         followUpDate: '',
       })
     }
@@ -318,6 +366,11 @@ async function buildTodayCallRecords(activities, sessionId, recordingMap) {
         const content = details.contents || ''
         if (!entry.phone) entry.phone = extractPhone(content)
         if (content.length > entry.notes.length) entry.notes = content
+        break
+      }
+      case ACTIVITY_APPOINTMENT: {
+        entry.hasAppointment = true
+        entry.followUpDate = details.datetime || entry.followUpDate || ''
         break
       }
       case ACTIVITY_FOLLOWUP: {
@@ -343,7 +396,7 @@ async function buildTodayCallRecords(activities, sessionId, recordingMap) {
     const groupLower = entry.groupName.toLowerCase()
     const isMeaningfulGroup = MEANINGFUL_GROUPS.has(groupLower)
     const isMeaningfulNotes = hasSellerIntel(entry.notes)
-    const isMeaningful = entry.isQualifiedLead || isMeaningfulGroup || isMeaningfulNotes
+    const isMeaningful = entry.isQualifiedLead || entry.hasAppointment || isMeaningfulGroup || isMeaningfulNotes
 
     if (!isMeaningful) {
       skippedCount++
@@ -351,7 +404,7 @@ async function buildTodayCallRecords(activities, sessionId, recordingMap) {
     }
 
     let disposition = 'Interested'
-    if (groupLower.includes('appointment')) disposition = 'Appointment Set'
+    if (entry.hasAppointment || groupLower.includes('appointment')) disposition = 'Appointment Set'
     else if (groupLower.includes('follow up')) disposition = 'Callback Requested'
 
     let cleanNotes = entry.notes
@@ -364,9 +417,10 @@ async function buildTodayCallRecords(activities, sessionId, recordingMap) {
 
     const recording = recordingMap?.get(Number(contactId))
     const followUpDate = entry.followUpDate || contactDetails.followUpDate || ''
+    const canonicalActivityId = Math.max(...entry.activityIds)
 
     const call = {
-      record_id: `mojo-activity-${contactId}-${entry.activityIds[0]}`,
+      record_id: `mojo-activity-${contactId}-${canonicalActivityId}`,
       contact_name: entry.contactName,
       phone_number: entry.phone || contactDetails.phone,
       property_address: contactDetails.address,
@@ -394,7 +448,7 @@ async function buildTodayCallRecords(activities, sessionId, recordingMap) {
 // --- Main EOD sweep ---
 
 async function eodSweep() {
-  log('Starting Mojo EOD sweep (full day pull)...')
+  log(`Starting Mojo EOD sweep for ${TARGET_DATE}${DRY_RUN ? ' (dry run)' : ''}...`)
 
   try {
     const session = readSession()
@@ -405,23 +459,23 @@ async function eodSweep() {
 
     log(`Using session: ${session.sessionId.substring(0, 20)}...`)
 
-    // Fetch activity stream — pull up to 3 pages to ensure full day coverage
-    log('Fetching activity stream (up to 3 pages)...')
+    // Fetch activity stream — pull up to 5 pages to ensure full day coverage
+    log('Fetching activity stream (up to 5 pages)...')
     let activities = []
-    for (let page = 1; page <= 3; page++) {
+    const targetMidnightMs = new Date(getDateMidnightISO(TARGET_DATE)).getTime()
+    for (let page = 1; page <= 5; page++) {
       try {
         const pageActivities = await fetchActivityStream(session.sessionId, page)
         log(`Page ${page}: ${pageActivities.length} activities`)
         if (pageActivities.length === 0) break
         activities = [...activities, ...pageActivities]
 
-        // Stop if we've gone past today's activities
-        const todayMidnightMs = new Date(getTodayMidnightISO()).getTime()
+        // Stop if we've gone past the target date.
         const oldestOnPage = pageActivities
           .map(a => new Date(parseMojoTimestamp(a[3])).getTime())
           .filter(t => !isNaN(t))
-        if (oldestOnPage.length > 0 && Math.min(...oldestOnPage) < todayMidnightMs) {
-          log(`Page ${page} contains activities from before today — stopping pagination`)
+        if (oldestOnPage.length > 0 && Math.min(...oldestOnPage) < targetMidnightMs) {
+          log(`Page ${page} contains activities from before ${TARGET_DATE} — stopping pagination`)
           break
         }
       } catch (err) {
@@ -431,23 +485,33 @@ async function eodSweep() {
     }
     log(`Total activities fetched: ${activities.length}`)
 
-    // Fetch today's recordings
-    log("Fetching today's call recordings...")
-    const recordingMap = await fetchTodayRecordings(session.sessionId)
+    // Fetch target date recordings
+    log(`Fetching ${TARGET_DATE} call recordings...`)
+    const recordingMap = await fetchRecordingsForDate(session.sessionId, TARGET_DATE)
 
-    // Build call records for today (no delta filter)
-    const { calls, skippedCount } = await buildTodayCallRecords(activities, session.sessionId, recordingMap)
-    log(`Built ${calls.length} meaningful calls for today, skipped ${skippedCount} non-meaningful`)
+    // Build call records for the target date (no delta filter)
+    const { calls, skippedCount } = await buildCallRecordsForDate(activities, session.sessionId, recordingMap, TARGET_DATE)
+    log(`Built ${calls.length} meaningful calls for ${TARGET_DATE}, skipped ${skippedCount} non-meaningful`)
 
     if (calls.length === 0) {
-      log('No meaningful calls found for today')
-      // Still update the timestamp so next delta sync starts from now
-      await writeLastSyncTimestamp(new Date().toISOString())
+      log(`No meaningful calls found for ${TARGET_DATE}`)
+      if (!IS_HISTORICAL_SWEEP && !DRY_RUN) {
+        // Still update the timestamp so next delta sync starts from now.
+        await writeLastSyncTimestamp(new Date().toISOString())
+        await processMojoQueue('no_eod_calls')
+      } else {
+        log('Skipped last_mojo_sync_timestamp update for historical/dry run sweep')
+      }
       return { ok: true, processed: 0 }
     }
 
     for (const c of calls) {
       log(`  -> ${c.contact_name} (${c.phone_number || 'no phone'}) -- ${c.disposition}`)
+    }
+
+    if (DRY_RUN) {
+      log(`Dry run complete — would post ${calls.length} calls to CRM`)
+      return { ok: true, dryRun: true, processed: calls.length }
     }
 
     // POST to CRM — queue dedup handles any already-processed records
@@ -466,9 +530,14 @@ async function eodSweep() {
 
     const crmResult = await crmResponse.json()
     log(`CRM sync: queued=${crmResult.queued}, skipped=${crmResult.skipped}, total=${crmResult.total}`)
+    await processMojoQueue('post_eod_sweep')
 
-    // Update delta timestamp to now so next delta sync starts fresh
-    await writeLastSyncTimestamp(new Date().toISOString())
+    if (!IS_HISTORICAL_SWEEP) {
+      // Update delta timestamp to now so next delta sync starts fresh.
+      await writeLastSyncTimestamp(new Date().toISOString())
+    } else {
+      log('Skipped last_mojo_sync_timestamp update for historical sweep')
+    }
 
     return { ok: true, ...crmResult }
   } catch (err) {

@@ -21,7 +21,6 @@ import path from 'path'
 const MOJO_BASE_URL = 'https://app71.mojosells.com'
 const CRM_API_URL = 'https://crm.savingkc.com/api/mojo/sync'
 const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
-const HARDCODED_SESSION_ID = 'q5yf48bvcz0vx32ismobwicfbx71033w'
 const BATCH_SIZE = 10
 const CRM_TIMEOUT = 180000   // 3 min — CRM does enrichment + transcription per call
 const DELAY_BETWEEN_BATCHES_MS = 5000  // 5s between batches
@@ -72,8 +71,7 @@ function getSessionId() {
     }
   } catch {}
 
-  log('Using hardcoded session ID')
-  return HARDCODED_SESSION_ID
+  throw new Error(`Mojo session not found. Run scripts/mojo-extract-session.mjs or pass --session.`)
 }
 
 // ── CLI arg parsing ─────────────────────────────────────────────────

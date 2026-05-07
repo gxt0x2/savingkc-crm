@@ -10,7 +10,7 @@ const STALE_PROCESSING_MINUTES = 5
 /**
  * GET /api/cron/process-mojo-queue
  *
- * Called every minute by Vercel cron (vercel.json).
+ * Called by the local Mojo cron runner after sync/backfill jobs.
  * 1. Resets stale "processing" items older than 5 minutes back to "pending"
  * 2. Claims up to 5 pending items atomically
  * 3. Processes each via processQueuedCall()
