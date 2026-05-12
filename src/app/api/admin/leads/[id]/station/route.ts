@@ -1,0 +1,81 @@
+export const dynamic = 'force-dynamic'
+
+import { NextRequest, NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
+import { updateManifestAndCascade } from '@/lib/manifest-sync'
+
+const ALLOWED_STATIONS = new Set([
+  'intake', 'not_contacted', 'new',
+  'attempting_contact', 'contacted',
+  'qualifying', 'qualified', 'discovery',
+  'appointment', 'appt_set', 'appointment_set',
+  'offer', 'offer_prep', 'offer_made', 'offer_presented', 'negotiating', 'negotiations',
+  'contract', 'contract_signed', 'under_contract',
+  'inspection', 'closing_prep', 'closing',
+  'closed', 'closed_won', 'closed_lost',
+  'nurture', 'disposition', 'dead',
+])
+
+/**
+ * POST /api/admin/leads/[id]/station
+ * Body: { station: string, reason?: string }
+ * Auth: Bearer ADMIN_API_SECRET / CRON_SECRET (or signed-in admin)
+ *
+ * Under /api/admin/ so middleware lets bearer auth through. Cascades through
+ * updateManifestAndCascade so scoring + briefings stay coherent.
+ */
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
+  const { id } = await params
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  const body = (await req.json().catch(() => ({}))) as { station?: string; reason?: string }
+  if (!body.station) return NextResponse.json({ error: 'body.station required' }, { status: 400 })
+  if (!ALLOWED_STATIONS.has(body.station)) {
+    return NextResponse.json(
+      { error: `invalid station "${body.station}"`, allowed: [...ALLOWED_STATIONS] },
+      { status: 400 },
+    )
+  }
+
+  const db = supabaseAdmin()
+  const { data: lead } = await db
+    .from('leads')
+    .select('id, station, full_name')
+    .eq('id', id)
+    .single()
+  if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
+  const prevStation = lead.station
+
+  const { error: updErr } = await db
+    .from('leads')
+    .update({ station: body.station, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+
+  const cascadeOk = await updateManifestAndCascade(id, (manifest) => {
+    manifest.currentStation = body.station as string
+    manifest.auditTrail.push({
+      timestamp: new Date().toISOString(),
+      agent: 'system:admin_set_station',
+      action: 'station_changed_admin',
+      details: { from: prevStation, to: body.station, reason: body.reason ?? null },
+    })
+  }, 'admin_set_station').catch(() => false)
+
+  return NextResponse.json({
+    ok: true,
+    leadId: id,
+    fullName: lead.full_name,
+    from: prevStation,
+    to: body.station,
+    cascaded: cascadeOk,
+  })
+}
