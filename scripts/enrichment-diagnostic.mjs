@@ -40,14 +40,17 @@ function loadEnv(envPath) {
 
 const envCandidates = [
   process.env.TRIAGE_ENV_FILE,
-  path.join(process.env.HOME ?? '', 'savingkc-crm', '.env.live'),
   path.join(process.env.HOME ?? '', 'savingkc-crm', '.env.production.live'),
+  path.join(process.env.HOME ?? '', 'savingkc-crm', '.env.live'),
   path.join(process.env.HOME ?? '', 'savingkc-crm', '.env.local'),
 ].filter(Boolean)
 
 let envUsed = null
 for (const candidate of envCandidates) {
-  if (loadEnv(candidate)) { envUsed = candidate; break }
+  if (loadEnv(candidate)) {
+    envUsed = (envUsed ? envUsed + '+' : '') + candidate
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) break
+  }
 }
 
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {

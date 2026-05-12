@@ -47,11 +47,13 @@ function loadEnv(envPath) {
 }
 for (const c of [
   process.env.TRIAGE_ENV_FILE,
-  path.join(process.env.HOME ?? '', 'savingkc-crm', '.env.live'),
   path.join(process.env.HOME ?? '', 'savingkc-crm', '.env.production.live'),
+  path.join(process.env.HOME ?? '', 'savingkc-crm', '.env.live'),
   path.join(process.env.HOME ?? '', 'savingkc-crm', '.env.local'),
 ].filter(Boolean)) {
-  if (loadEnv(c)) break
+  if (loadEnv(c)) {
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) break
+  }
 }
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
   console.error('❌ Missing Supabase env')
