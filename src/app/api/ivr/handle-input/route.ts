@@ -69,7 +69,7 @@ export async function POST(req: Request) {
             full_name: isColdCall ? `Cold Callback (${formatPhone(from)})` : 'Inbound Seller',
             phone: from,
             source,
-            station: 'intake',
+            station: 'new',
             priority: 'hot',
           }).select('id').single()
           leadId = newLead?.id || ''

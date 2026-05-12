@@ -103,12 +103,15 @@ export function useDealsByStage() {
         qualifying: [],
         qualified: [],
         appt_set: [],
+        appointment_set: [],
         negotiations: [],
         contract_signed: [],
         offer_made: [],
         under_contract: [],
         disposition: [],
         closed: [],
+        closed_won: [],
+        closed_lost: [],
         dead: [],
       }
 

@@ -121,9 +121,9 @@ async function findLeadsPastStageSLA(): Promise<AuditFinding[]> {
   const timeouts: Record<string, number> = {
     new: 3,
     contacted: 7,
-    qualifying: 14,
-    appt_set: 3,
-    negotiations: 14,
+    qualified: 14,
+    appointment_set: 3,
+    offer_made: 14,
   }
 
   for (const [stage, days] of Object.entries(timeouts)) {
@@ -188,11 +188,11 @@ async function findOverdueTasks(): Promise<AuditFinding[]> {
 async function findRequirementViolations(): Promise<AuditFinding[]> {
   const findings: AuditFinding[] = []
 
-  // Leads in "qualifying" (Stage 3) must have all 4 pillars
+  // Leads in "qualified" must have all 4 pillars
   const { data: qualifiedLeads, error } = await supabase
     .from('leads')
     .select('id, full_name, four_pillars')
-    .eq('station', 'qualifying')
+    .eq('station', 'qualified')
 
   if (error || !qualifiedLeads) return findings
 
@@ -216,11 +216,11 @@ async function findRequirementViolations(): Promise<AuditFinding[]> {
     }
   }
 
-  // Leads in "appt_set" (Stage 4: Offer Made) must have deal math
+  // Leads in "appointment_set" must have deal math
   const { data: offerLeads } = await supabase
     .from('leads')
     .select('id, full_name, deal_math')
-    .eq('station', 'appt_set')
+    .eq('station', 'appointment_set')
 
   if (offerLeads) {
     for (const lead of offerLeads) {

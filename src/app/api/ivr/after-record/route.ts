@@ -58,7 +58,7 @@ export async function POST(req: Request) {
         full_name: 'Inbound Seller',
         phone: from,
         source: 'inbound_ivr',
-        station: 'intake',
+        station: 'new',
         priority: 'hot',
         notes: `Inbound IVR voicemail. Recording: ${recordingUrl}. CallSid: ${callSid}`
       }).select('id').single()

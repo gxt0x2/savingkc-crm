@@ -64,7 +64,7 @@ export async function createEnrichedLeadFromProspect(
     zip: zip || null,
     county: match.county || null,
     source,
-    station: 'intake',
+    station: 'new',
     priority,
     notes: noteLines.join('\n'),
   }).select('id').single()
@@ -89,7 +89,7 @@ export async function createEnrichedLeadFromProspect(
     propertyAddress: match.situs_street || match.situs_address || undefined,
     source,
     leadId,
-    station: 'intake',
+    station: 'new',
     priority,
   })
 
@@ -172,7 +172,7 @@ export async function createEnrichedLeadFromProspect(
     lead_id: leadId,
     version: 2,
     manifest,
-    current_station: 'intake',
+    current_station: 'new',
     priority,
     tier: match.delinquent_years_category === '3yr_plus' && match.is_deceased ? 'S' :
           match.delinquent_years_category === '3yr_plus' ? 'A' : 'B',

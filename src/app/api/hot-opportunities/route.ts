@@ -1,14 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getHotList, fullRerank, surgicalRescore } from '@/lib/hot-engine'
+import {
+  fullRerank,
+  getHotList,
+  getInClosingList,
+  getParkedList,
+  parkLead,
+  revivePastDueParkedLeads,
+  surgicalRescore,
+  unparkLead,
+} from '@/lib/hot-engine'
 import { autoEnrichLead } from '@/lib/auto-enrich'
 
 /**
  * GET  — Returns hot list (from cache). If first load of day or cache >2hrs old
  *        during business hours, triggers full re-rank first.
+ *        ?surface=in_closing — Returns under-contract closing list.
+ *        ?surface=parked — Returns parked review list.
  *        ?audit=<leadId> — Returns audit trail for a specific lead.
  * POST { leadId } — Surgical rescore for one lead
  * POST { full: true } — Full re-rank
+ * POST { park: { leadId, reason, reviveAt? } } — Park a lead.
+ * POST { unpark: { leadId } } — Unpark a lead.
+ * POST { revivePastDueParked: true } — Auto-revive parked leads past parked_until.
  */
 
 function getSupabase() {
@@ -37,6 +51,16 @@ export async function GET(request: NextRequest) {
         .order('created_at', { ascending: false })
         .limit(20)
       return NextResponse.json({ history: data || [] })
+    }
+
+    const surface = request.nextUrl.searchParams.get('surface')
+    if (surface === 'in_closing') {
+      const items = await getInClosingList()
+      return NextResponse.json({ items, surface })
+    }
+    if (surface === 'parked') {
+      const items = await getParkedList()
+      return NextResponse.json({ items, surface })
     }
 
     let { items, lastRankedAt } = await getHotList()
@@ -101,13 +125,30 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     if (body.full) {
+      const revival = await revivePastDueParkedLeads()
       const result = await fullRerank()
-      return NextResponse.json({ ok: true, ...result })
+      return NextResponse.json({ ok: true, revivedParked: revival.revived, ...result })
     }
 
     if (body.leadId) {
       await surgicalRescore(body.leadId, 'manual_rescore')
       return NextResponse.json({ ok: true })
+    }
+
+    if (body.park?.leadId) {
+      const reviveAt = body.park.reviveAt ? new Date(body.park.reviveAt) : undefined
+      await parkLead(body.park.leadId, body.park.reason || 'manual', reviveAt)
+      return NextResponse.json({ ok: true })
+    }
+
+    if (body.unpark?.leadId) {
+      await unparkLead(body.unpark.leadId)
+      return NextResponse.json({ ok: true })
+    }
+
+    if (body.revivePastDueParked) {
+      const result = await revivePastDueParkedLeads()
+      return NextResponse.json({ ok: true, ...result })
     }
 
     // Backfill enrichment for all hot list leads

@@ -8,11 +8,16 @@ export interface TemperatureInput {
 
 const STATION_SCORES: Record<string, number> = {
   contract_signed: 100,
+  under_contract: 100,
   negotiations: 85,
+  offer_made: 85,
   qualifying: 72,
+  qualified: 72,
   appt_set: 65,
+  appointment_set: 65,
   contacted: 50,
   not_contacted: 30,
+  new: 30,
   intake: 20,
   dead: 0,
 }

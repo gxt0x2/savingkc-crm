@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const { data: leads } = await supabase
       .from('leads')
       .select('id, full_name, phone, property_address, city, station, priority, motivation_score, offer_amount, updated_at, arv, repair_estimate')
-      .in('station', ['qualifying', 'appt_set', 'negotiations'])
+      .in('station', ['qualified', 'appointment_set', 'offer_made'])
       .not('phone', 'is', null)
       .order('updated_at', { ascending: true })
       .limit(100)
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
       let action_label = ''
       let action_detail = ''
 
-      if (lead.station === 'qualifying') {
+      if (lead.station === 'qualified') {
         // Check what info is missing
         const missing: string[] = []
         if (!lead.motivation_score) missing.push('MOTIVATION')
@@ -82,7 +82,7 @@ export async function GET(request: Request) {
         } else {
           continue // Nothing actionable
         }
-      } else if (lead.station === 'appt_set') {
+      } else if (lead.station === 'appointment_set') {
         if (daysSinceActivity > 3) {
           action_type = 'confirm_appt'
           action_label = 'CONFIRM APPT'
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
         } else {
           continue
         }
-      } else if (lead.station === 'negotiations') {
+      } else if (lead.station === 'offer_made') {
         if (!lead.offer_amount) {
           action_type = 'send_offer'
           action_label = 'SEND OFFER'

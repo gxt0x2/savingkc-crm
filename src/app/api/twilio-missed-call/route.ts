@@ -223,7 +223,7 @@ export async function POST(req: Request) {
             full_name: `Missed Call (${formatPhone(from)})`,
             phone: from,
             source: 'inbound_call',
-            station: 'intake',
+            station: 'new',
             priority: 'hot',
           }).select('id').single()
           newLeadId = newLead?.id || null

@@ -48,9 +48,15 @@ export function stageLabel(stage: string): string {
     not_contacted: 'Not Contacted',
     contacted: 'Contacted',
     qualifying: 'Qualifying',
+    qualified: 'Qualified',
     appt_set: 'Appt Set',
+    appointment_set: 'Appointment Set',
     negotiations: 'Negotiations',
+    offer_made: 'Offer Made',
     contract_signed: 'Contract Signed',
+    under_contract: 'Under Contract',
+    closed_won: 'Closed Won',
+    closed_lost: 'Closed Lost',
   }
   return labels[stage] || stage
 }

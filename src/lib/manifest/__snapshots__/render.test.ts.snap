@@ -4,7 +4,7 @@ exports[`renderPreCallBriefing — snapshots > full.json renders deterministic M
 "# Pre-Call Briefing — Jane Seller
 
 **Property:** 123 Main St, Kansas City, MO (Jackson County)
-**Station:** qualifying — Day 8
+**Station:** qualified — Day 8
 **Priority:** warm | **Motivation:** 7/10
 
 ---
@@ -92,7 +92,7 @@ exports[`renderPreCallBriefing — snapshots > hot.json renders deterministic Ma
 "# Pre-Call Briefing — Hot Lead Smith
 
 **Property:** 789 Urgent Way, Kansas City, MO (Jackson County)
-**Station:** offer_prep — Day 1
+**Station:** offer_made — Day 1
 **Priority:** hot | **Motivation:** 9/10
 
 ---
@@ -192,7 +192,7 @@ exports[`renderPreCallBriefing — snapshots > pending.json renders deterministi
 "# Pre-Call Briefing — Pat Pendinghof
 
 **Property:** 555 Pending Ave, Independence, MO (Jackson County)
-**Station:** attempting_contact — Day 1
+**Station:** contacted — Day 1
 **Priority:** warm
 
 ---
@@ -229,7 +229,7 @@ exports[`renderPreCallBriefing — snapshots > stale.json renders deterministic 
 "# Pre-Call Briefing — Stale Fixture
 
 **Property:** 42 Outdated Ln, Blue Springs, MO (Jackson County)
-**Station:** qualifying — Day 29
+**Station:** qualified — Day 29
 **Priority:** warm | **Motivation:** 5/10
 
 ---

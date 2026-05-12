@@ -31,7 +31,7 @@ export interface KanbanCardData {
   ghostProtocolActive?: boolean
 }
 
-const showFeeStages: DealStage[] = ['qualifying', 'appt_set', 'negotiations', 'contract_signed']
+const showFeeStages: DealStage[] = ['qualified', 'appointment_set', 'offer_made', 'under_contract']
 
 export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: (id: string) => void }) {
   const showFee = showFeeStages.includes(card.stage) && card.estFee != null
@@ -49,7 +49,7 @@ export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: 
       className={cn(
         'group bg-surface-container-lowest p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-shadow cursor-pointer border border-transparent hover:border-outline-variant/20',
         isContacted && 'border-l-4 border-l-secondary',
-        card.stage === 'qualifying' && 'border-l-4 border-l-primary',
+        card.stage === 'qualified' && 'border-l-4 border-l-primary',
         card.stage === 'contract_signed' && 'border border-secondary/20'
       )}
     >
@@ -106,7 +106,7 @@ export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: 
       )}
 
       {/* Appointment block */}
-      {card.stage === 'appt_set' && card.nextStep && (
+      {card.stage === 'appointment_set' && card.nextStep && (
         <div className="bg-surface-container-low p-2 rounded mb-3 border-l-2 border-primary">
           <p className="text-[10px] text-on-surface-variant font-bold uppercase">
             {card.nextStep.split(' - ')[0] || 'Upcoming'}
@@ -125,7 +125,7 @@ export function KanbanCard({ card, onClick }: { card: KanbanCardData; onClick?: 
       )}
 
       {/* Next step / last activity (non-appt stages) */}
-      {card.stage !== 'appt_set' && card.stage !== 'contract_signed' && (card.nextStep || card.lastActivity) && (
+      {card.stage !== 'appointment_set' && card.stage !== 'contract_signed' && (card.nextStep || card.lastActivity) && (
         <div className="flex flex-col gap-1 mb-3 text-[12px]">
           {card.nextStep && (
             <div className="flex items-center gap-2">

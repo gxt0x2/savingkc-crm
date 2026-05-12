@@ -43,7 +43,7 @@
     "spread_meets_25k_floor": null
   },
   "pipeline": {
-    "current_station": "attempting_contact",
+    "current_station": "contacted",
     "priority": "warm",
     "entered_current_station_at": "2026-04-17T10:00:00.000Z",
     "days_in_current_station": 1,

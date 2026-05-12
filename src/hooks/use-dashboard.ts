@@ -17,9 +17,9 @@ export function usePipelineStats() {
 
       const stats: PipelineStats = {
         leads: data.length,
-        opportunities: data.filter(d => ['qualifying', 'appt_set', 'negotiations'].includes(d.stage)).length,
-        offersMade: data.filter(d => d.stage === 'negotiations').length,
-        dealsClosed: data.filter(d => d.stage === 'contract_signed').length,
+        opportunities: data.filter(d => ['qualified', 'appointment_set', 'offer_made'].includes(d.stage)).length,
+        offersMade: data.filter(d => d.stage === 'offer_made').length,
+        dealsClosed: data.filter(d => d.stage === 'under_contract').length,
       }
       return stats
     },
@@ -37,7 +37,7 @@ export function useDealAggregates() {
         .select('est_assignment, stage')
       if (error) throw error
 
-      const closed = data.filter(d => d.stage === 'contract_signed')
+      const closed = data.filter(d => d.stage === 'under_contract')
       const revenue = closed.reduce((sum, d) => sum + (d.est_assignment || 0), 0)
       const avgAssignment = closed.length > 0 ? revenue / closed.length : 0
 

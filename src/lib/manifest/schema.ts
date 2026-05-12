@@ -36,18 +36,22 @@ const nonEmptyArray = <T extends z.ZodTypeAny>(schema: T) =>
 // ─── Enums ─────────────────────────────────────────────────────────────
 export const PipelineStationSchema = z.enum([
   'new',
-  'attempting_contact',
-  'qualifying',
-  'offer_prep',
-  'offer_presented',
-  'negotiating',
+  'contacted',
+  'qualified',
+  'appointment_set',
+  'offer_made',
   'under_contract',
-  'closing',
   'closed_won',
   'closed_lost',
   'dead',
-  'nurture',
 ])
+
+export const ParkingSchema = z.object({
+  is_parked: z.boolean().default(false),
+  parked_at: z.string().datetime().nullable().optional(),
+  parked_until: z.string().datetime().nullable().optional(),
+  parked_reason: z.string().nullable().optional(),
+}).optional()
 
 export const PrioritySchema = z.enum(['hot', 'warm', 'cold', 'dead'])
 
@@ -384,6 +388,7 @@ export const manifestV2_1Schema = z
     personality: PersonalitySchema.optional(),
 
     pipeline: PipelineSchema,
+    parking: ParkingSchema,
     hot_eligibility: HotEligibilitySchema.optional(),
     completeness: CompletenessSchema,
     next_action: pendingOr(NextActionSchema),

@@ -3,7 +3,7 @@
  * Called from webhooks and API routes after logging activities.
  *
  * Trigger map:
- *   intake → contacted:       first outbound SMS or call to the lead
+ *   new → contacted:          first outbound SMS or call to the lead
  *   contacted → qualified:    all 4 pillars captured (TIMELINE, CONDITION, MOTIVATION, PRICE)
  *   qualified → offer_made:   contract_sent activity logged
  *   offer_made → under_contract: signed contract recorded
@@ -12,7 +12,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 
-const STAGE_ORDER = ['intake', 'new', 'contacted', 'qualified', 'offer_made', 'under_contract', 'disposition', 'closed'] as const
+const STAGE_ORDER = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'closed_lost', 'dead'] as const
 
 type AutoTrigger = 'outbound_contact' | 'appointment_set' | 'appointment_completed' | 'contract_sent' | 'contract_signed'
 
@@ -33,39 +33,37 @@ export async function checkAutoAdvance(
 
   if (!lead) return { advanced: false }
 
-  const current = lead.station || 'intake'
+  const current = lead.station || 'new'
   let newStation: string | null = null
 
   switch (trigger) {
     case 'outbound_contact':
-      // intake/new → contacted
-      if (current === 'intake' || current === 'new') {
+      // new → contacted
+      if (current === 'new') {
         newStation = 'contacted'
       }
       break
 
     case 'appointment_set':
-      // contacted/qualified → appt_set (if using that station)
-      if (['intake', 'new', 'contacted'].includes(current)) {
-        newStation = 'qualified'
+      if (['new', 'contacted', 'qualified'].includes(current)) {
+        newStation = 'appointment_set'
       }
       break
 
     case 'appointment_completed':
-      // Move to qualifying if not already past it
-      if (['intake', 'new', 'contacted', 'qualified'].includes(current)) {
+      if (['new', 'contacted'].includes(current)) {
         newStation = 'qualified'
       }
       break
 
     case 'contract_sent':
-      if (['intake', 'new', 'contacted', 'qualified'].includes(current)) {
+      if (['new', 'contacted', 'qualified', 'appointment_set'].includes(current)) {
         newStation = 'offer_made'
       }
       break
 
     case 'contract_signed':
-      if (['offer_made', 'qualified', 'contacted'].includes(current)) {
+      if (['offer_made', 'appointment_set', 'qualified', 'contacted'].includes(current)) {
         newStation = 'under_contract'
       }
       break
@@ -88,7 +86,7 @@ export async function checkAutoAdvance(
 
     const stageMap: Record<string, string> = {
       contacted: 'qualifying', qualified: 'discovery',
-      offer_made: 'offer', under_contract: 'contract', closed: 'closed',
+      appointment_set: 'discovery', offer_made: 'offer', under_contract: 'contract', closed_won: 'closed',
     }
     const manifestStage = stageMap[newStation]
     if (manifestStage && manifest.pipeline?.[manifestStage]) {

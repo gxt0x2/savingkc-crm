@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
             phone: normalizedPhone,
             ...(property_address?.trim() ? { property_address: property_address.trim() } : {}),
             source: 'website_form',
-            station: 'intake',
+            station: 'new',
             priority: 'hot',
           })
           .select('id')

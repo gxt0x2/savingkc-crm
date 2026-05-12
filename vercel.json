@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/sync-gmail",
       "schedule": "15 13 * * *"
+    },
+    {
+      "path": "/api/hot-opportunities/cron",
+      "schedule": "0 14 * * *"
     }
   ],
   "rewrites": [

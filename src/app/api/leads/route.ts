@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
           phone: normalizedPhone ? `+1${normalizedPhone}` : null,
           email,
           source: source || 'website_form',
-          station: 'intake',
+          station: 'new',
           priority: 'normal',
           ...(city ? { city } : {}),
           ...(state ? { state } : {}),
@@ -277,7 +277,7 @@ export async function PATCH(req: NextRequest) {
                 reason: 'seller_requested',
               })
             } else if (dispo === 'deal_potential' || dispo === 'offer_made') {
-              manifest.currentStation = dispo === 'offer_made' ? 'negotiating' : 'qualifying'
+              manifest.currentStation = dispo === 'offer_made' ? 'offer_made' : 'qualified'
               manifest.priority = 'hot'
             } else if (dispo === 'not_interested' || dispo === 'dead') {
               manifest.priority = 'cold'
