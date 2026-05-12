@@ -14,6 +14,7 @@ import { scoreOpportunity } from './scoring'
 import { generateHotSignal, isSignalStale } from './ari-signal'
 import type { ManifestV2 } from '../manifest-builder'
 import type { HotOpportunityData } from '@/types/hot-opportunity'
+import { ACQUISITION_STAGES } from '@/types/pipeline'
 
 function getSupabase() {
   return createClient(
@@ -22,7 +23,6 @@ function getSupabase() {
   )
 }
 
-const DEAD_STATIONS = ['dead', 'closed', 'disposition']
 const HOT_LIST_SIZE = 20
 
 interface CacheRow {
@@ -44,6 +44,21 @@ interface CacheRow {
   cooldown_until: string | null
   last_scored_at: string
   last_trigger_event: string | null
+}
+
+function mirrorParkingState(manifest: ManifestV2, leadRow: any): void {
+  const parking = {
+    is_parked: !!leadRow.is_parked,
+    parked_at: leadRow.parked_at ?? null,
+    parked_until: leadRow.parked_until ?? null,
+    parked_reason: leadRow.parked_reason ?? null,
+  }
+
+  ;(manifest as any).is_parked = parking.is_parked
+  ;(manifest as any).parked_at = parking.parked_at
+  ;(manifest as any).parked_until = parking.parked_until
+  ;(manifest as any).parked_reason = parking.parked_reason
+  ;(manifest as any).parking = parking
 }
 
 // ─── Surgical Rescore ────────────────────────────────────────────────────────
@@ -70,7 +85,7 @@ export async function surgicalRescore(
   // Also fetch leads table data to hydrate empty manifest fields
   const { data: leadRow } = await supabase
     .from('leads')
-    .select('arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at, is_favorite, updated_at')
+    .select('arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at, is_favorite, is_parked, parked_at, parked_until, parked_reason, updated_at')
     .eq('id', leadId)
     .single()
 
@@ -92,6 +107,7 @@ export async function surgicalRescore(
     // Carry priority + favorite onto manifest for scoring bonus
     if (leadRow.priority) (manifest as any).priority = leadRow.priority
     if (leadRow.is_favorite) (manifest as any).is_favorite = true
+    mirrorParkingState(manifest, leadRow)
   }
 
   // Hydrate engagement from lead_activities if manifest has no contact data
@@ -116,9 +132,6 @@ export async function surgicalRescore(
       }
     }
   }
-
-  // Skip dead/closed leads
-  if (DEAD_STATIONS.includes(manifest.currentStation)) return
 
   // Score
   const result = scoreOpportunity(manifest)
@@ -189,7 +202,6 @@ export async function fullRerank(): Promise<{ scored: number; hotList: number }>
   const { data: rows } = await supabase
     .from('manifests')
     .select('lead_id, manifest')
-    .not('current_station', 'in', `(${DEAD_STATIONS.join(',')})`)
 
   if (!rows || rows.length === 0) return { scored: 0, hotList: 0 }
 
@@ -200,7 +212,7 @@ export async function fullRerank(): Promise<{ scored: number; hotList: number }>
   const allLeadIds = rows.map(r => r.lead_id).filter(Boolean) as string[]
   const { data: allLeadRows } = await supabase
     .from('leads')
-    .select('id, arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at, is_favorite, updated_at')
+    .select('id, arv, offer_amount, repair_estimate, motivation_score, priority, station, source, phone, created_at, is_favorite, is_parked, parked_at, parked_until, parked_reason, updated_at')
     .in('id', allLeadIds)
 
   const leadRowMap = new Map<string, any>()
@@ -248,6 +260,7 @@ export async function fullRerank(): Promise<{ scored: number; hotList: number }>
       // Carry priority + favorite onto manifest for scoring bonus
       if (leadRow.priority) (manifest as any).priority = leadRow.priority
       if (leadRow.is_favorite) (manifest as any).is_favorite = true
+      mirrorParkingState(manifest, leadRow)
     }
 
     // Hydrate engagement from lead_activities if manifest has no contact data
@@ -340,42 +353,15 @@ async function rerankTopN(overrideCooldown?: boolean): Promise<number> {
     .update({ rank: null, on_hot_list: false })
     .eq('on_hot_list', true)
 
-  // Apply cooldown and quality gates
+  // Apply cooldown and acquisition-bucket gates. The scorer owns quality:
+  // archived and parked leads naturally score 0 and are excluded here.
   const eligible = allCache.filter((row: CacheRow) => {
     const ri = row.raw_inputs || {}
-    // Strong user signal = they explicitly marked this lead as important
-    const hasStrongUserSignal = ri.isFavorite || ri.priorityHot
-    const hasAnyUserSignal = hasStrongUserSignal || ri.priorityWarm
+    if (ri.bucket !== 'acquisition') return false
+    if (ri.parked) return false
+    if (row.composite_score <= 0) return false
 
-    // Opportunity-score override: if the AI transcript analysis scored this
-    // lead as an opportunity (>= 75), treat it as a strong signal — same
-    // weight as a user favorite. This prevents high-opportunity leads from
-    // being filtered out by tier_label/engagement/cooldown/composite gates
-    // that are tuned for the Hot Engine's own composite scoring.
-    const opportunityScore = ri.opportunityScore || 0
-    const isAiOpportunity = opportunityScore >= 75
-
-    // Must have score >= 33 (meaningful data threshold) — OR AI-opportunity / favorite override
-    if (row.composite_score < 33 && !isAiOpportunity && !hasStrongUserSignal) return false
-
-    // Long-shot and not-scored leads don't belong on the hot list
-    // Only favorite/hot/AI-opportunity override — warm alone isn't enough
-    if (['long_shot', 'not_scored'].includes(row.tier_label) && !hasStrongUserSignal && !isAiOpportunity) return false
-
-    // Quality gate: intake leads need SOME signal of value to be on hot list
-    const station = ri.velocity?.currentStation || ''
-    const hasFinancials = ri.dealQuality?.arv || ri.dealQuality?.spread
-    if (['intake', 'new'].includes(station) && !hasFinancials && !hasAnyUserSignal && !isAiOpportunity) return false
-
-    // Require at least SOME real engagement or strong user signal — don't fill slots with bare leads
-    const hasEngagement = row.engagement_score > 5
-    const hasTimePressure = row.time_pressure_score > 5
-    const hasDealQuality = row.deal_quality_score > 8
-    const hasRealSignal = hasEngagement || hasTimePressure || hasDealQuality || hasStrongUserSignal || isAiOpportunity
-    if (!hasRealSignal) return false
-
-    // Check cooldown (favorites + AI-opportunity override cooldown — user starred or AI flagged means we want to see it)
-    if (!overrideCooldown && !ri.isFavorite && !isAiOpportunity && row.cooldown_until) {
+    if (!overrideCooldown && !ri.isFavorite && row.cooldown_until) {
       const cooldownEnd = new Date(row.cooldown_until)
       if (cooldownEnd > now) return false
     }
@@ -457,7 +443,7 @@ async function refreshAriSignalsForHotList(): Promise<void> {
 
   const { data: leadRows } = await supabase
     .from('leads')
-    .select('id, priority, is_favorite, motivation_score, station, arv, offer_amount, repair_estimate, phone, source, created_at')
+    .select('id, priority, is_favorite, is_parked, parked_at, parked_until, parked_reason, motivation_score, station, arv, offer_amount, repair_estimate, phone, source, created_at')
     .in('id', leadIds)
 
   const leadMap = new Map<string, any>()
@@ -485,6 +471,7 @@ async function refreshAriSignalsForHotList(): Promise<void> {
       if (!manifest.situation!.motivation) manifest.situation!.motivation = {} as any
       if (!manifest.situation!.motivation!.score && leadRow.motivation_score) manifest.situation!.motivation!.score = leadRow.motivation_score
       if (leadRow.station && leadRow.station !== manifest.currentStation) manifest.currentStation = leadRow.station
+      mirrorParkingState(manifest, leadRow)
     }
 
     // Score for context (with hydrated data)
@@ -553,6 +540,7 @@ export async function getHotList(): Promise<{
     .from('hot_opportunities_cache')
     .select('*')
     .eq('on_hot_list', true)
+    .gt('composite_score', 0)
     .order('rank', { ascending: true })
 
   if (!cacheRows || cacheRows.length === 0) {
@@ -574,7 +562,7 @@ export async function getHotList(): Promise<{
   // Also fetch lead data from leads table (including financials for hydration)
   const { data: leadRows } = await supabase
     .from('leads')
-    .select('id, source, county, city, created_at, phone, email, arv, offer_amount, repair_estimate, motivation_score, priority, station, full_name, property_address')
+    .select('id, source, county, city, created_at, phone, email, arv, offer_amount, repair_estimate, motivation_score, priority, station, full_name, property_address, is_parked, parked_at, parked_until, parked_reason')
     .in('id', leadIds)
 
   const leadMap = new Map<string, any>()
@@ -582,8 +570,13 @@ export async function getHotList(): Promise<{
     leadMap.set(row.id, row)
   }
 
+  const acquisitionRows = cacheRows.filter((cache: any) => {
+    const lead = leadMap.get(cache.lead_id)
+    return cache.raw_inputs?.bucket === 'acquisition' && !lead?.is_parked
+  })
+
   // Build card data
-  const items: HotOpportunityData[] = cacheRows.map((cache: any) => {
+  const items: HotOpportunityData[] = acquisitionRows.map((cache: any) => {
     const m = manifestMap.get(cache.lead_id)
     const lead = leadMap.get(cache.lead_id)
 
@@ -601,6 +594,7 @@ export async function getHotList(): Promise<{
         m.property.address = lead.property_address
       }
       if (lead.station && !m.currentStation) m.currentStation = lead.station
+      mirrorParkingState(m, lead)
     }
 
     const timeline = m?.situation?.timeline
@@ -710,7 +704,123 @@ export async function getHotList(): Promise<{
     } satisfies HotOpportunityData
   })
 
-  const lastRankedAt = cacheRows[0]?.last_scored_at || null
+  const lastRankedAt = acquisitionRows[0]?.last_scored_at || null
 
   return { items, lastRankedAt }
+}
+
+// ─── Canonical Surfaces ─────────────────────────────────────────────────────
+
+export async function getAcquisitionQueue(limit = HOT_LIST_SIZE) {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from('hot_opportunities_cache')
+    .select(`
+      composite_score,
+      lead_id,
+      raw_inputs,
+      last_scored_at,
+      leads!inner(
+        id, full_name, phone, station, priority, is_favorite,
+        is_parked, property_address, city
+      )
+    `)
+    .in('leads.station', [...ACQUISITION_STAGES])
+    .eq('leads.is_parked', false)
+    .gt('composite_score', 0)
+    .order('composite_score', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data
+}
+
+export async function getInClosingList(limit = 50) {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from('hot_opportunities_cache')
+    .select(`
+      composite_score,
+      lead_id,
+      raw_inputs,
+      last_scored_at,
+      leads!inner(id, full_name, phone, station, property_address, city)
+    `)
+    .eq('leads.station', 'under_contract')
+    .order('composite_score', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data
+}
+
+export async function getParkedList(limit = 100) {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from('leads')
+    .select(`
+      id, full_name, phone, station, priority,
+      is_parked, parked_at, parked_until, parked_reason,
+      property_address, city
+    `)
+    .eq('is_parked', true)
+    .order('parked_until', { ascending: true, nullsFirst: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data
+}
+
+export async function parkLead(
+  leadId: string,
+  reason: string,
+  reviveAt?: Date,
+) {
+  const supabase = getSupabase()
+  const { error } = await supabase
+    .from('leads')
+    .update({
+      is_parked: true,
+      parked_at: new Date().toISOString(),
+      parked_until: reviveAt?.toISOString() ?? null,
+      parked_reason: reason,
+    })
+    .eq('id', leadId)
+
+  if (error) throw error
+  await surgicalRescore(leadId, 'parked')
+}
+
+export async function unparkLead(leadId: string) {
+  const supabase = getSupabase()
+  const { error } = await supabase
+    .from('leads')
+    .update({
+      is_parked: false,
+      parked_at: null,
+      parked_until: null,
+      parked_reason: null,
+    })
+    .eq('id', leadId)
+
+  if (error) throw error
+  await surgicalRescore(leadId, 'unparked')
+}
+
+export async function revivePastDueParkedLeads(): Promise<{ revived: number }> {
+  const supabase = getSupabase()
+  const { data: due, error } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('is_parked', true)
+    .lte('parked_until', new Date().toISOString())
+
+  if (error) throw error
+  if (!due || due.length === 0) return { revived: 0 }
+
+  for (const row of due) {
+    await unparkLead(row.id)
+  }
+
+  return { revived: due.length }
 }

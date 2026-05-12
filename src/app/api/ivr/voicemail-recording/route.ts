@@ -50,7 +50,7 @@ export async function POST(req: Request) {
         full_name: `Voicemail Caller (${formatPhone(from)})`,
         phone: from,
         source: 'inbound_voicemail',
-        station: 'intake',
+        station: 'new',
         priority: 'hot',
       }).select('id').single()
       resolvedLeadId = newLead?.id || ''

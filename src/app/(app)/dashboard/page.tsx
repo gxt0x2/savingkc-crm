@@ -120,9 +120,9 @@ export default function KpiPage() {
   const { data: financials } = useFinancials()
 
   const total = leadCounts?.total || 0
-  const qualified = (leadCounts?.byStation?.qualifying ?? 0) + (leadCounts?.byStation?.qualified ?? 0) + (leadCounts?.byStation?.appt_set ?? 0) + (leadCounts?.byStation?.negotiations ?? 0) + (leadCounts?.byStation?.offer_made ?? 0) + (leadCounts?.byStation?.contract_signed ?? 0)
-  const offered = (leadCounts?.byStation?.offer_made ?? 0) + (leadCounts?.byStation?.contract_signed ?? 0) + (leadCounts?.byStation?.negotiations ?? 0)
-  const closed = leadCounts?.byStation?.contract_signed ?? 0
+  const qualified = (leadCounts?.byStation?.qualified ?? 0) + (leadCounts?.byStation?.appointment_set ?? 0) + (leadCounts?.byStation?.offer_made ?? 0) + (leadCounts?.byStation?.under_contract ?? 0)
+  const offered = (leadCounts?.byStation?.offer_made ?? 0) + (leadCounts?.byStation?.under_contract ?? 0)
+  const closed = leadCounts?.byStation?.under_contract ?? 0
   const qRate = total > 0 ? Math.round((qualified / total) * 100) : 0
   const oRate = qualified > 0 ? Math.round((offered / qualified) * 100) : 0
   const cRate = offered > 0 ? Math.round((closed / offered) * 100) : 0

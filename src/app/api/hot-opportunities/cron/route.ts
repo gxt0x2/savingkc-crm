@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { fullRerank } from '@/lib/hot-engine'
+import { fullRerank, revivePastDueParkedLeads } from '@/lib/hot-engine'
 import { createClient } from '@supabase/supabase-js'
 
 /**
@@ -21,6 +21,10 @@ export async function GET() {
   }
 
   try {
+    // Revive past-due parked leads before the score pass so they can re-enter
+    // Casey's queue at their retained acquisition stage.
+    const revived = await revivePastDueParkedLeads()
+
     // Full re-rank
     const result = await fullRerank()
 
@@ -41,6 +45,7 @@ export async function GET() {
       ok: true,
       scored: result.scored,
       hotList: result.hotList,
+      revivedParked: revived.revived,
       auditCleaned: count || 0,
       timestamp: new Date().toISOString(),
     })

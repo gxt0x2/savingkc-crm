@@ -12,6 +12,7 @@ export type DealStage =
   | 'contacted'
   | 'qualifying'
   | 'appt_set'
+  | 'appointment_set'
   | 'negotiations'
   | 'contract_signed'
   | 'qualified'
@@ -19,6 +20,8 @@ export type DealStage =
   | 'under_contract'
   | 'disposition'
   | 'closed'
+  | 'closed_won'
+  | 'closed_lost'
   | 'dead'
 
 export type ChecklistProtocol = 'sod' | 'eod'

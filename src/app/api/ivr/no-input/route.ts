@@ -65,7 +65,7 @@ export async function POST(req: Request) {
         full_name: `Caller (${formatPhone(from)})`,
         phone: from,
         source: 'inbound_ivr_no_input',
-        station: 'intake',
+        station: 'new',
         priority: 'normal',
       }).select('id').single()
       noInputLeadId = newLead?.id || null

@@ -29,7 +29,7 @@ interface Lead {
 type SortKey = 'full_name' | 'phone' | 'property_address' | 'source' | 'station' | 'priority' | 'created_at' | 'updated_at' | 'temperature'
 type SortDir = 'asc' | 'desc'
 
-const STATION_OPTIONS = ['new', 'contacted', 'qualified', 'offer_made', 'under_contract', 'disposition', 'closed', 'dead'] as const
+const STATION_OPTIONS = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'closed_lost', 'dead'] as const
 const PRIORITY_OPTIONS = ['hot', 'high', 'normal'] as const
 
 export default function LeadsPage() {

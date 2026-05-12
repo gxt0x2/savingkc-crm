@@ -46,17 +46,17 @@ interface LeadActivity {
  * Identifies leads that qualify for Ghost Protocol enrollment
  *
  * Criteria:
- * - Lead is in Stage 2+ (contacted, qualifying, appt_set, negotiations)
+ * - Lead is in Stage 2+ (contacted, qualified, appointment_set, offer_made)
  * - Had at least 1 successful conversation (type='call' with successful outcome or type='sms' with response)
  * - Has had 2+ contact attempts with no response in last 7+ days
  */
 export async function detectGhostProtocolCandidates(): Promise<string[]> {
   try {
-    // Get leads in Stage 2+ (excluding new, dead, contract_signed)
+    // Get leads in Stage 2+ (excluding new, dead, under_contract)
     const { data: leads, error: leadsError } = await supabase
       .from('leads')
       .select('id, station, created_at, full_name, phone, property_address')
-      .in('station', ['contacted', 'qualifying', 'appt_set', 'negotiations'])
+      .in('station', ['contacted', 'qualified', 'appointment_set', 'offer_made'])
 
     if (leadsError) {
       console.error('Error fetching leads for ghost detection:', leadsError)

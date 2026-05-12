@@ -891,13 +891,13 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       propertyState: call.state,
       propertyZip: call.zip,
       source: 'mojo_call',
-      station: call.property_address ? 'qualifying' : 'intake',
+      station: call.property_address ? 'qualified' : 'new',
       priority: dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm'),
     }
 
     manifest = buildManifest(manifestInput)
     manifest.property.address = call.property_address
-    manifest.currentStation = call.property_address ? 'qualifying' : 'intake'
+    manifest.currentStation = call.property_address ? 'qualified' : 'new'
     manifest.priority = dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm')
 
     const contact: ManifestContact = {
@@ -950,7 +950,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
           state: call.state,
           zip: call.zip,
           source: 'mojo_call',
-          station: call.property_address ? 'qualifying' : 'intake',
+          station: call.property_address ? 'qualified' : 'new',
           priority: 'normal',
           appointment_date: call.follow_up_date || null,
         })

@@ -66,7 +66,7 @@ const validFinancials = {
 }
 
 const validPipeline = {
-  current_station: 'qualifying',
+  current_station: 'qualified',
   priority: 'warm',
   entered_current_station_at: '2026-04-10T14:00:00.000Z',
   days_in_current_station: 8,

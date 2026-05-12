@@ -77,7 +77,7 @@
     "trust_level": "high"
   },
   "pipeline": {
-    "current_station": "offer_prep",
+    "current_station": "offer_made",
     "priority": "hot",
     "entered_current_station_at": "2026-04-17T00:00:00.000Z",
     "days_in_current_station": 1,

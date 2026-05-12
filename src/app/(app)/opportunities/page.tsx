@@ -94,7 +94,7 @@ export default function OpportunitiesPage() {
         case 'hot':
           return opp.score.composite >= 75
         case 'appts':
-          return opp.flags.hasDeadline || opp.currentStation === 'appt_set'
+          return opp.flags.hasDeadline || opp.currentStation === 'appointment_set'
         case 'missing-data':
           return opp.missingFields.length > 0
         default:

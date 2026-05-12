@@ -15,12 +15,15 @@ const badgeStyles: Record<DealStage, BadgeStyle> = {
   qualifying: { bg: 'bg-secondary', text: 'text-white' },
   qualified: { bg: 'bg-secondary', text: 'text-white' },
   appt_set: { bg: 'bg-outline-variant', text: 'text-on-surface-variant' },
+  appointment_set: { bg: 'bg-outline-variant', text: 'text-on-surface-variant' },
   negotiations: { bg: 'bg-tertiary-container', text: 'text-on-tertiary-container' },
   contract_signed: { bg: 'bg-secondary', text: 'text-white' },
   offer_made: { bg: 'bg-tertiary-container', text: 'text-on-tertiary-container' },
   under_contract: { bg: 'bg-secondary', text: 'text-white' },
   disposition: { bg: 'bg-tertiary-fixed', text: 'text-on-tertiary-fixed' },
   closed: { bg: 'bg-secondary-fixed', text: 'text-on-secondary-fixed' },
+  closed_won: { bg: 'bg-secondary-fixed', text: 'text-on-secondary-fixed' },
+  closed_lost: { bg: 'bg-surface-variant', text: 'text-on-surface-variant' },
   dead: { bg: 'bg-surface-variant', text: 'text-on-surface-variant' },
 }
 

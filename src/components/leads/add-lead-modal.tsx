@@ -73,7 +73,7 @@ export function AddLeadModal({ onClose, onSuccess }: AddLeadModalProps) {
         county: form.county || null,
         source: form.source,
         notes: form.notes || null,
-        station: 'intake',
+        station: 'new',
         priority: 'normal',
       }).select().single()
 

@@ -249,7 +249,7 @@ export async function POST(req: Request) {
             full_name: 'Inbound Seller (YES reply)',
             phone: from,
             source: 'sms_yes_reply',
-            station: 'intake',
+            station: 'new',
             priority: 'hot',
           }).select('id').single()
           yesLeadId = newLead?.id
@@ -593,7 +593,7 @@ export async function POST(req: Request) {
           full_name: `SMS Lead (${formatPhone(from)})`,
           phone: from,
           source: 'inbound_sms',
-          station: 'intake',
+          station: 'new',
           priority: 'warm',
         }).select('id').single()
         newLeadId = newLead?.id || null

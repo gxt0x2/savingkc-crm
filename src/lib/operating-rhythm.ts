@@ -442,7 +442,7 @@ export async function getWeeklyReview(
   const { data: activeDeals } = await supabase
     .from('leads')
     .select('metadata')
-    .in('station', ['offer_made', 'under_contract', 'disposition'])
+    .in('station', ['offer_made', 'under_contract'])
 
   const totalMAO =
     activeDeals?.reduce((sum: number, deal: any) => {

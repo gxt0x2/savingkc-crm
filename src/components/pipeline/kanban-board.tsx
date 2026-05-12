@@ -7,42 +7,20 @@ import { toProperCase } from '@/lib/format'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import type { KanbanCardData } from './kanban-card'
 import type { DealStage } from '@/types'
+import { ACQUISITION_STAGES, STAGE_LABELS, normalizeDealStage } from '@/types/pipeline'
 
-const columns: { title: string; stage: DealStage; number: number }[] = [
-  { title: 'New', stage: 'new', number: 1 },
-  { title: 'Contacted', stage: 'contacted', number: 2 },
-  { title: 'Qualified', stage: 'qualified', number: 3 },
-  { title: 'Offer Made', stage: 'offer_made', number: 4 },
-  { title: 'Under Contract', stage: 'under_contract', number: 5 },
-  { title: 'Disposition', stage: 'disposition', number: 6 },
-  { title: 'Closed', stage: 'closed', number: 7 },
-]
+const columns: { title: string; stage: DealStage; number: number }[] =
+  ACQUISITION_STAGES.map((stage, index) => ({
+    title: STAGE_LABELS[stage],
+    stage,
+    number: index + 1,
+  }))
 
 function stationToStage(station: string | null): DealStage | null {
-  // Direct mapping - station is now the canonical stage ID
-  const validStages: DealStage[] = [
-    'new',
-    'contacted',
-    'qualified',
-    'offer_made',
-    'under_contract',
-    'disposition',
-    'closed',
-  ]
-
-  // Legacy mapping for backward compatibility
-  const legacyMap: Record<string, DealStage> = {
-    intake: 'new',
-    not_contacted: 'new',
-    qualifying: 'qualified',
-    appt_set: 'qualified',
-    negotiations: 'offer_made',
-    contract_signed: 'under_contract',
-  }
-
-  if (!station) return null
-  if (validStages.includes(station as DealStage)) return station as DealStage
-  return legacyMap[station] ?? null
+  const normalized = normalizeDealStage(station)
+  if (!normalized) return null
+  if (!(ACQUISITION_STAGES as readonly string[]).includes(normalized)) return null
+  return normalized as DealStage
 }
 
 function getInitials(name: string | null): string {
@@ -75,6 +53,7 @@ interface Lead {
   city: string | null
   station: string | null
   priority: string | null
+  is_parked: boolean | null
   created_at: string
 }
 
@@ -109,8 +88,9 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
     const [leadsRes, manifestsRes] = await Promise.all([
       supabase
         .from('leads')
-        .select('id, full_name, phone, email, property_address, city, station, priority, created_at')
-        .not('station', 'eq', 'dead')
+        .select('id, full_name, phone, email, property_address, city, station, priority, is_parked, created_at')
+        .in('station', [...ACQUISITION_STAGES])
+        .eq('is_parked', false)
         .order('created_at', { ascending: false })
         .limit(500),
       supabase
@@ -147,12 +127,15 @@ export function KanbanBoard({ onNewLead, showFilters, filterPriority }: {
     qualifying: [],
     qualified: [],
     appt_set: [],
+    appointment_set: [],
     negotiations: [],
     contract_signed: [],
     offer_made: [],
     under_contract: [],
     disposition: [],
     closed: [],
+    closed_won: [],
+    closed_lost: [],
     dead: [],
   }
 

@@ -101,7 +101,7 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: lead.id,
-          station: 'negotiations',
+          station: 'offer_made',
           offer_amount: form.purchasePrice,
         }),
       })

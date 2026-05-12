@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     const { data: noOfferLeads } = await supabase
       .from('leads')
       .select('id')
-      .eq('station', 'qualifying')
+      .eq('station', 'qualified')
       .is('offer_amount', null)
       .not('motivation_score', 'is', null)
 

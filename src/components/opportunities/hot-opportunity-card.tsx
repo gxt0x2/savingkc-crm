@@ -14,12 +14,13 @@ function stageLabel(station: string): string {
   const labels: Record<string, string> = {
     intake: 'Intake', new: 'New', contacted: 'Contacted',
     qualifying: 'Qualifying', qualified: 'Qualified',
-    appt_set: 'Appt Set', discovery: 'Discovery',
+    appt_set: 'Appt Set', appointment_set: 'Appointment Set', discovery: 'Discovery',
     research: 'Research', valuation: 'Valuation',
     offer: 'Offer', offer_made: 'Offer Made',
     negotiations: 'Negotiations', contract: 'Contract',
     under_contract: 'Under Contract', inspection: 'Inspection',
     closing_prep: 'Closing Prep', closing: 'Closing',
+    closed_won: 'Closed Won', closed_lost: 'Closed Lost',
   }
   return labels[station] || station
 }
