@@ -95,7 +95,7 @@ export async function POST(req: Request) {
 
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${callerId}" timeout="15" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial callerId="${callerId}" timeout="15" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number>${sanitizedTo}</Number>
   </Dial>
 </Response>`
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
       const agentPhone = DIRECT_RING_NUMBERS[to]
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct" method="POST" timeout="15" callerId="${to}" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct" method="POST" timeout="15" callerId="${to}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number url="${BASE_URL}/api/ivr/whisper?type=direct&amp;from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}">${agentPhone}</Number>
   </Dial>
 </Response>`

@@ -93,7 +93,7 @@ export async function POST(req: Request) {
     // Sim-ring both agents — first to answer gets connected
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=seller" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=seller" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number url="${BASE_URL}/api/ivr/whisper?type=seller&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}">${routing.primary.phone}</Number>
     <Number url="${BASE_URL}/api/ivr/whisper?type=seller&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}">${routing.secondary.phone}</Number>
   </Dial>
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
 
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=non_seller" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=non_seller" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number url="${BASE_URL}/api/ivr/whisper?type=non_seller&amp;from=${encodeURIComponent(from)}">${routing.primary.phone}</Number>
     <Number url="${BASE_URL}/api/ivr/whisper?type=non_seller&amp;from=${encodeURIComponent(from)}">${routing.secondary.phone}</Number>
   </Dial>
