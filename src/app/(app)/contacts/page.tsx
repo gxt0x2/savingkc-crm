@@ -29,15 +29,16 @@ interface ContactsResponse {
   items: ContactRow[]
 }
 
-type TabKey = 'all' | 'hot' | 'new' | 'contacted' | 'qualified' | 'appointment_set' | 'offer_made'
+type TabKey = 'all' | 'hot' | 'new' | 'contacted' | 'qualified' | 'appointment_set' | 'offer_made' | 'in_closing'
 
 const TABS: { key: TabKey; label: string; station?: DealStage; minScore?: number }[] = [
   { key: 'hot', label: 'Hot', minScore: 75 },
+  { key: 'new', label: 'New', station: 'new' },
+  { key: 'contacted', label: 'Contacted', station: 'contacted' },
+  { key: 'qualified', label: 'Qualified', station: 'qualified' },
   { key: 'appointment_set', label: 'Appointment Set', station: 'appointment_set' },
   { key: 'offer_made', label: 'Offer Made', station: 'offer_made' },
-  { key: 'qualified', label: 'Qualified', station: 'qualified' },
-  { key: 'contacted', label: 'Contacted', station: 'contacted' },
-  { key: 'new', label: 'New', station: 'new' },
+  { key: 'in_closing', label: 'In Closing', station: 'under_contract' },
   { key: 'all', label: 'All' },
 ]
 
@@ -118,26 +119,33 @@ export default function ContactsPage() {
 
   const items = useMemo(() => data?.items ?? [], [data])
 
+  // under_contract leads are exclusive to the In Closing tab. Every other
+  // list (including All and Hot) excludes them so a closing deal can't
+  // double-appear in the active acquisition queue.
+  const acquisitionOnly = useMemo(() => items.filter((i) => i.station !== 'under_contract'), [items])
+
   const counts = useMemo<Record<TabKey, number>>(() => {
     return {
-      all: items.length,
-      hot: items.filter((i) => i.score >= 75).length,
-      new: items.filter((i) => i.station === 'new').length,
-      contacted: items.filter((i) => i.station === 'contacted').length,
-      qualified: items.filter((i) => i.station === 'qualified').length,
-      appointment_set: items.filter((i) => i.station === 'appointment_set').length,
-      offer_made: items.filter((i) => i.station === 'offer_made').length,
+      all: acquisitionOnly.length,
+      hot: acquisitionOnly.filter((i) => i.score >= 75).length,
+      new: acquisitionOnly.filter((i) => i.station === 'new').length,
+      contacted: acquisitionOnly.filter((i) => i.station === 'contacted').length,
+      qualified: acquisitionOnly.filter((i) => i.station === 'qualified').length,
+      appointment_set: acquisitionOnly.filter((i) => i.station === 'appointment_set').length,
+      offer_made: acquisitionOnly.filter((i) => i.station === 'offer_made').length,
+      in_closing: items.filter((i) => i.station === 'under_contract').length,
     }
-  }, [items])
+  }, [items, acquisitionOnly])
 
   const visible = useMemo(() => {
     const tab = TABS.find((t) => t.key === activeTab)
-    if (!tab) return items
-    let filtered = items
+    if (!tab) return acquisitionOnly
+    const pool = activeTab === 'in_closing' ? items : acquisitionOnly
+    let filtered = pool
     if (tab.station) filtered = filtered.filter((i) => i.station === tab.station)
     if (tab.minScore !== undefined) filtered = filtered.filter((i) => i.score >= tab.minScore!)
     return [...filtered].sort((a, b) => b.score - a.score)
-  }, [items, activeTab])
+  }, [items, acquisitionOnly, activeTab])
 
   return (
     <div className="min-h-screen bg-[var(--ck-bg)] text-[var(--ck-text)]">
