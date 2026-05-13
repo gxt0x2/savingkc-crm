@@ -74,7 +74,7 @@ export function AriChat({ leadId, leadName, attention }: AriChatProps) {
     >
       <div className="flex items-center gap-2 mb-3">
         <Icon name="smart_toy" className="!text-base !text-[color:var(--ck-accent)]" />
-        <h2 className="ck-microlabel !text-[11px] !text-white">Ask Ari</h2>
+        <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Ask Ari</h2>
         {messages.length > 0 && (
           <button
             onClick={() => { setMessages([]); setExpanded(false) }}

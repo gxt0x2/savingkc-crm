@@ -68,7 +68,7 @@ export function CollapsibleCard({
           {icon && (
             <Icon name={icon} className="!text-sm !text-[color:var(--ck-accent)]" />
           )}
-          <span className="ck-microlabel !text-[11px] !text-white">{title}</span>
+          <span className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">{title}</span>
         </div>
         <div className="flex items-center gap-2">
           {action}

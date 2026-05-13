@@ -301,7 +301,7 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
       >
         <div className="flex items-center gap-2">
           <Icon name="warning" className="!text-base !text-[color:var(--ck-warn)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-white">Pain Points</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Pain Points</h2>
         </div>
         <Icon
           name={open ? 'expand_less' : 'expand_more'}

@@ -457,7 +457,7 @@ export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offer
         className="w-full flex items-center gap-2 mb-4"
       >
         <Icon name="psychology" className="!text-base !text-[color:var(--ck-accent)]" />
-        <h2 className="ck-microlabel !text-[11px] !text-white">Favorite or Fool?</h2>
+        <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Favorite or Fool?</h2>
         {(() => {
           const lastSeen = formatLastSeen(activities)
           return lastSeen ? (

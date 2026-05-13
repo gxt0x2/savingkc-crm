@@ -1,10 +1,30 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
 
 function read(relPath) {
   return readFileSync(path.join(root, relPath), 'utf8');
+}
+
+function filesUnder(relPath) {
+  const base = path.join(root, relPath);
+  const out = [];
+
+  function walk(dir) {
+    for (const entry of readdirSync(dir)) {
+      const abs = path.join(dir, entry);
+      const stat = statSync(abs);
+      if (stat.isDirectory()) {
+        walk(abs);
+      } else if (/\.(tsx|ts|css)$/.test(entry)) {
+        out.push(path.relative(root, abs));
+      }
+    }
+  }
+
+  walk(base);
+  return out;
 }
 
 function assert(condition, message) {
@@ -48,4 +68,21 @@ assert(
   'Theme guard failed: global dark overrides for neutral surfaces are missing.'
 );
 
-console.log('Theme guard passed: shared shell and tokens are dark-mode safe.');
+assert(
+  globals.includes('.theme-light .lead-cockpit') && globals.includes('--ck-text: #111827'),
+  'Theme guard failed: cockpit light theme text tokens are missing.'
+);
+
+for (const relPath of [
+  'src/app/(app)/leads/[id]/page.tsx',
+  'src/components/ui/collapsible-card.tsx',
+  ...filesUnder('src/components/leads'),
+]) {
+  const source = read(relPath);
+  assert(
+    !/ck-microlabel[^'"`]*text-white/.test(source),
+    `Theme guard failed: ${relPath} forces white cockpit microlabel text instead of --ck-text.`
+  );
+}
+
+console.log('Theme guard passed: shared shell and cockpit theme tokens are safe.');

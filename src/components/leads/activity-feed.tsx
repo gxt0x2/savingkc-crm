@@ -263,7 +263,7 @@ export function ActivityFeed({ activities, onCompose, onEditNote, onEditTask }: 
         onClick={toggleOpen}
         className="w-full flex justify-between items-center mb-4"
       >
-        <h2 className="ck-microlabel !text-[11px] !text-white">Communications</h2>
+        <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Communications</h2>
         <div className="flex items-center gap-2">
           <span className="text-xs" style={{ color: 'var(--ck-text-muted)' }}>
             {activities.length} events

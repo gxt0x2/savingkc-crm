@@ -95,7 +95,7 @@ export function PropertyDetailsCard({ details, onEdit }: PropertyDetailsCardProp
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <Icon name="home_work" className="!text-base !text-[color:var(--ck-accent)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-white">Property Details</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Property Details</h2>
           <span
             className="px-2 py-0.5 rounded-full text-[10px] font-bold"
             style={{
@@ -110,7 +110,7 @@ export function PropertyDetailsCard({ details, onEdit }: PropertyDetailsCardProp
         {onEdit && (
           <button
             onClick={onEdit}
-            className="text-[color:var(--ck-text-dim)] hover:text-white transition-colors"
+            className="text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text)] transition-colors"
             title="Edit property details"
           >
             <Icon name="edit" size="text-sm" />

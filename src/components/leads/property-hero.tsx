@@ -98,7 +98,7 @@ export function PropertyHero({
             <Icon name="360" className="!text-base !text-[color:var(--ck-accent)]" />
             <div className="min-w-0">
               <p className="ck-microlabel !text-[10px]">Street View</p>
-              <p className="text-sm font-bold text-white truncate">
+              <p className="text-sm font-bold text-[color:var(--ck-text)] truncate">
                 {fullAddress || property.address}
               </p>
             </div>
@@ -161,7 +161,7 @@ export function PropertyHero({
         <div className="px-5 pt-4 pb-5 flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <p className="ck-microlabel mb-1.5">Primary Asset</p>
-            <p className="text-xl sm:text-2xl font-black text-white leading-tight tracking-tight break-words">
+            <p className="text-xl sm:text-2xl font-black text-[color:var(--ck-text)] leading-tight tracking-tight break-words">
               {property.address}
             </p>
             <p className="text-xs text-[color:var(--ck-text-muted)] mt-1">
@@ -174,12 +174,12 @@ export function PropertyHero({
               className="mt-3 inline-flex items-center gap-3 flex-wrap text-xs text-[color:var(--ck-text-muted)] cursor-pointer select-none px-1.5 -mx-1.5 py-1 rounded hover:bg-white/5 transition-colors"
             >
               <span className="font-semibold">
-                <span className="text-white">{property.beds || '—'}</span>B /{' '}
-                <span className="text-white">{property.baths || '—'}</span>B
+                <span className="text-[color:var(--ck-text)]">{property.beds || '—'}</span>B /{' '}
+                <span className="text-[color:var(--ck-text)]">{property.baths || '—'}</span>B
               </span>
               <span className="text-[color:var(--ck-text-dim)]">·</span>
               <span className="font-semibold">
-                <span className="text-white">
+                <span className="text-[color:var(--ck-text)]">
                   {property.sqft ? property.sqft.toLocaleString() : '—'}
                 </span>{' '}
                 SF
@@ -188,7 +188,7 @@ export function PropertyHero({
                 <>
                   <span className="text-[color:var(--ck-text-dim)]">·</span>
                   <span className="font-semibold">
-                    Built <span className="text-white">{property.yearBuilt}</span>
+                    Built <span className="text-[color:var(--ck-text)]">{property.yearBuilt}</span>
                   </span>
                 </>
               ) : null}

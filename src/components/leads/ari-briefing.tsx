@@ -212,7 +212,7 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
       >
         <div className="flex items-center gap-2">
           <Icon name="auto_awesome" className="!text-base !text-[color:var(--ck-accent)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-white">Ari Briefing</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Ari Briefing</h2>
         </div>
         <div className="flex items-center gap-2">
           {(() => {
@@ -230,7 +230,7 @@ export function AriBriefing({ leadId, manifestId, notes, sellerSituation, motiva
             onClick={(e) => { e.stopPropagation(); buildBriefing() }}
             disabled={loading}
             title="Regenerate briefing"
-            className="p-1 rounded bg-white/5 hover:bg-white/10 text-white/40 hover:text-amber-400 transition-all disabled:opacity-30"
+            className="p-1 rounded bg-white/5 hover:bg-white/10 text-[color:var(--ck-text-dim)] hover:text-amber-400 transition-all disabled:opacity-30"
           >
             <Icon name="refresh" className={`!text-xs ${loading ? 'animate-spin' : ''}`} />
           </button>
