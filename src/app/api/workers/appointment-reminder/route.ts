@@ -86,6 +86,21 @@ function formatPhoneForSms(phone: string): string {
   return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`
 }
 
+function getOwnerPhone(owner: unknown): string | null {
+  const ownerRecord = owner && typeof owner === 'object'
+    ? owner as { phone?: unknown; phones?: unknown }
+    : {}
+  const primaryPhone = typeof ownerRecord.phone === 'string' ? ownerRecord.phone.trim() : ''
+  if (primaryPhone) return primaryPhone
+
+  const phones = Array.isArray(ownerRecord.phones) ? ownerRecord.phones : []
+  const firstPhone = phones.find((phone: unknown) => (
+    typeof phone === 'string' && phone.trim()
+  ))
+
+  return typeof firstPhone === 'string' ? firstPhone.trim() : null
+}
+
 function hasLogEntry(automationLog: any[], action: string): boolean {
   return (automationLog || []).some((e: any) => e.action === action)
 }
@@ -188,8 +203,9 @@ export async function GET(request: Request) {
 
         const apptType = getApptType(appointment)
         const automationLog: any[] = appointment.automationLog || []
-        const ownerName = manifest?.owner?.firstName || 'there'
-        const ownerPhone = manifest?.owner?.phone
+        const owner = manifest?.owner || {}
+        const ownerName = owner.firstName || 'there'
+        const ownerPhone = getOwnerPhone(owner)
         const address = appointment.address || manifest?.property?.address || ''
         const { date: formattedDate, time: formattedTime } = formatDateTime(apptDateStr)
 
