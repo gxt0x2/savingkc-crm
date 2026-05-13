@@ -8,7 +8,6 @@ import { useAppMode } from '@/hooks/use-app-mode'
 const acquisitionTabs = [
   { label: 'ARI', href: '/ari', icon: 'assistant' },
   { label: 'Contacts', href: '/contacts', icon: 'contacts' },
-  { label: 'In Closing', href: '/in-closing', icon: 'gavel' },
   { label: 'Calendar', href: '/calendar?department=acquisitions', icon: 'calendar_today' },
   { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },
   { label: 'KPIs', href: '/dashboard', icon: 'insights' },
@@ -59,8 +58,12 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
     }
     if (!href.includes('?') && pathname === baseHref) return true
     if (href === '/ari' && pathname?.startsWith('/ari')) return true
-    if (href === '/contacts' && (pathname?.startsWith('/contacts') || pathname?.startsWith('/opportunities') || pathname?.startsWith('/leads'))) return true
-    if (href === '/in-closing' && pathname?.startsWith('/in-closing')) return true
+    if (href === '/contacts' && (
+      pathname?.startsWith('/contacts') ||
+      pathname?.startsWith('/opportunities') ||
+      pathname?.startsWith('/in-closing') ||
+      pathname?.startsWith('/leads')
+    )) return true
     if (href === '/dialer' && pathname?.startsWith('/dialer')) return true
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
     if (href === '/calendar?view=agenda') return pathname?.startsWith('/calendar') && searchParams.get('view') === 'agenda'
