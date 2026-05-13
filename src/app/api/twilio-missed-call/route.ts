@@ -30,6 +30,11 @@ const TEAM_NUMBERS = new Set([
   '+18162262552', // Ernest personal
 ])
 
+const DIRECT_RING_NUMBERS = new Set([
+  '+18167277667', // Casey company
+  '+18166088588', // Ernest company
+])
+
 /**
  * StatusCallback handler — fires for ALL call status events
  * Logs every inbound call to the CRM, handles missed call flow
@@ -55,7 +60,6 @@ export async function POST(req: Request) {
     const callStatus = body.get('CallStatus') as string
     const callSid = body.get('CallSid') as string
     const duration = body.get('CallDuration') as string || '0'
-    const direction = body.get('Direction') as string || 'inbound'
 
     if (!fromRaw) {
       return new NextResponse('OK', { status: 200 })
@@ -66,6 +70,14 @@ export async function POST(req: Request) {
 
     // Skip all lead/auto-text flows for internal team numbers
     if (TEAM_NUMBERS.has(from)) {
+      return new NextResponse('OK', { status: 200 })
+    }
+
+    // Direct company-line calls are logged from the <Dial> action callback,
+    // where Twilio gives us the agent leg result. The parent call often ends as
+    // "completed" even when the agent leg was no-answer because the caller
+    // reached voicemail, so logging it here would misstate the outcome.
+    if (to && DIRECT_RING_NUMBERS.has(to)) {
       return new NextResponse('OK', { status: 200 })
     }
 
@@ -109,8 +121,9 @@ export async function POST(req: Request) {
       })
 
       // Sync to manifest (stale briefing + motivation signal)
-      const eventType = (callStatus === 'no-answer' || callStatus === 'busy') ? 'missed_call' : 'inbound_call'
-      onCommunicationEvent(leadId, { type: eventType as any }).catch(err => console.error('[MANIFEST] Failed:', err))
+      const eventType: 'missed_call' | 'inbound_call' =
+        (callStatus === 'no-answer' || callStatus === 'busy') ? 'missed_call' : 'inbound_call'
+      onCommunicationEvent(leadId, { type: eventType }).catch(err => console.error('[MANIFEST] Failed:', err))
     }
 
     // Missed call specific handling (no-answer or busy)
@@ -244,9 +257,7 @@ export async function POST(req: Request) {
 
         // Get intelligent auto-text for unknown caller
         const { getMissedCallResponse } = await import('@/lib/missed-call-messaging')
-        const { getAgentRouting } = await import('@/lib/agent-routing')
 
-        const routing = getAgentRouting(to || TWILIO_PHONE)
         const response = await getMissedCallResponse({
           leadId: newLeadId,
           leadName: null,
