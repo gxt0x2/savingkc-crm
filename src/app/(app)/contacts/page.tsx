@@ -32,14 +32,39 @@ interface ContactsResponse {
 type TabKey = 'all' | 'hot' | 'new' | 'contacted' | 'qualified' | 'appointment_set' | 'offer_made'
 
 const TABS: { key: TabKey; label: string; station?: DealStage; minScore?: number }[] = [
-  { key: 'all', label: 'All' },
   { key: 'hot', label: 'Hot', minScore: 75 },
-  { key: 'new', label: 'New', station: 'new' },
-  { key: 'contacted', label: 'Contacted', station: 'contacted' },
-  { key: 'qualified', label: 'Qualified', station: 'qualified' },
   { key: 'appointment_set', label: 'Appointment Set', station: 'appointment_set' },
   { key: 'offer_made', label: 'Offer Made', station: 'offer_made' },
+  { key: 'qualified', label: 'Qualified', station: 'qualified' },
+  { key: 'contacted', label: 'Contacted', station: 'contacted' },
+  { key: 'new', label: 'New', station: 'new' },
+  { key: 'all', label: 'All' },
 ]
+
+const STATION_COLORS: Record<DealStage, string> = {
+  under_contract: '#E32E2E',
+  offer_made: '#E32E2E',
+  appointment_set: '#f59e0b',
+  qualified: '#10b981',
+  contacted: '#a3a3a3',
+  new: '#6b7280',
+  closed_won: '#10b981',
+  closed_lost: '#6b7280',
+  dead: '#6b7280',
+}
+
+// Tag color categories. No blue/cyan/indigo per design system.
+const TAG_URGENT = /^(foreclosure|tax[_-]delinquent|3yr[_-]tax[_-]delinquent|lien|deadline|contract|under[_-]contract|contingency|urgent|hot[_-]lead)$/i
+const TAG_LIFE = /^(probate|divorce|inherited|inheritance|deceased|relocation|health|financial[_-]distress|downsizing|estate)$/i
+const TAG_OPPORTUNITY = /^(motivated|ready[_-]to[_-]sell|vacant|distressed|fixer|tired[_-]landlord|high[_-]motivation|opportunity|warm[_-]lead)$/i
+
+function tagClasses(tag: string): string {
+  const t = tag.replace(/\s+/g, '_')
+  if (TAG_URGENT.test(t)) return 'bg-[#E32E2E]/15 text-[#E32E2E] border border-[#E32E2E]/30'
+  if (TAG_LIFE.test(t)) return 'bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/30'
+  if (TAG_OPPORTUNITY.test(t)) return 'bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30'
+  return 'bg-[var(--ck-bg)] text-[var(--ck-text-muted)] border border-[var(--ck-border)]'
+}
 
 function useContacts() {
   return useQuery<ContactsResponse>({
@@ -79,14 +104,22 @@ function formatPhone(phone: string | null): string {
   return phone
 }
 
+function initials(name: string | null): string {
+  if (!name) return '?'
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase()
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase()
+}
+
 export default function ContactsPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('all')
+  const [activeTab, setActiveTab] = useState<TabKey>('hot')
   const { data, isLoading, error } = useContacts()
 
   const items = useMemo(() => data?.items ?? [], [data])
 
   const counts = useMemo<Record<TabKey, number>>(() => {
-    const c: Record<TabKey, number> = {
+    return {
       all: items.length,
       hot: items.filter((i) => i.score >= 75).length,
       new: items.filter((i) => i.station === 'new').length,
@@ -95,7 +128,6 @@ export default function ContactsPage() {
       appointment_set: items.filter((i) => i.station === 'appointment_set').length,
       offer_made: items.filter((i) => i.station === 'offer_made').length,
     }
-    return c
   }, [items])
 
   const visible = useMemo(() => {
@@ -115,7 +147,7 @@ export default function ContactsPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Contacts</h1>
             <p className="text-sm text-[var(--ck-text-muted)]">
-              Active acquisition pipeline — sorted by composite score.
+              Active acquisition pipeline, sorted by composite score.
             </p>
           </div>
         </header>
@@ -167,32 +199,59 @@ export default function ContactsPage() {
             <table className="w-full text-sm">
               <thead className="bg-[var(--ck-surface-elev)] text-left text-xs uppercase tracking-wider text-[var(--ck-text-muted)]">
                 <tr>
-                  <th className="px-3 py-2 font-semibold">Name</th>
-                  <th className="px-3 py-2 font-semibold">Address</th>
-                  <th className="px-3 py-2 font-semibold">Phone</th>
-                  <th className="px-3 py-2 font-semibold">Next Activity</th>
-                  <th className="px-3 py-2 font-semibold">Tags</th>
-                  <th className="px-3 py-2 font-semibold text-right">Score</th>
+                  <th className="px-4 py-2.5 font-semibold w-[26%]">Name</th>
+                  <th className="px-4 py-2.5 font-semibold w-[22%]">Address</th>
+                  <th className="px-4 py-2.5 font-semibold w-[12%]">Phone</th>
+                  <th className="px-4 py-2.5 font-semibold w-[20%]">Next Activity</th>
+                  <th className="px-4 py-2.5 font-semibold w-[16%]">Tags</th>
+                  <th className="px-4 py-2.5 font-semibold w-[4%] text-right">Score</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--ck-border)] bg-[var(--ck-surface)]">
-                {visible.map((row) => {
+              <tbody>
+                {visible.map((row, idx) => {
                   const address = [row.address, row.city].filter(Boolean).join(', ')
+                  const stripe = idx % 2 === 0 ? 'bg-[var(--ck-surface)]' : 'bg-[var(--ck-surface-elev)]'
+                  const stationColor = STATION_COLORS[row.station] ?? STATION_COLORS.new
                   return (
-                    <tr key={row.id} className="hover:bg-[#E32E2E]/5 transition-colors">
-                      <td className="px-3 py-2.5 align-top">
-                        <Link
-                          href={`/leads/${row.id}`}
-                          className="font-semibold text-[var(--ck-text)] hover:text-[#E32E2E]"
-                        >
-                          {toProperCase(row.fullName || 'Unnamed')}
-                        </Link>
-                        <div className="text-xs text-[var(--ck-text-dim)] capitalize">{row.station.replace(/_/g, ' ')}</div>
+                    <tr
+                      key={row.id}
+                      className={`${stripe} border-t border-[var(--ck-border)] hover:bg-[#E32E2E]/5 transition-colors`}
+                    >
+                      <td className="px-4 py-3 align-middle">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                            style={{ backgroundColor: stationColor }}
+                          >
+                            {initials(row.fullName)}
+                          </div>
+                          <div className="min-w-0">
+                            <Link
+                              href={`/leads/${row.id}`}
+                              className="block truncate font-semibold text-[var(--ck-text)] hover:text-[#E32E2E]"
+                            >
+                              {toProperCase(row.fullName || 'Unnamed')}
+                            </Link>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span
+                                className="inline-block h-1.5 w-1.5 rounded-full"
+                                style={{ backgroundColor: stationColor }}
+                              />
+                              <span className="text-xs text-[var(--ck-text-dim)] capitalize">
+                                {row.station.replace(/_/g, ' ')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-3 py-2.5 align-top text-[var(--ck-text-muted)]">{address || '--'}</td>
-                      <td className="px-3 py-2.5 align-top text-[var(--ck-text-muted)] whitespace-nowrap">{formatPhone(row.phone)}</td>
-                      <td className="px-3 py-2.5 align-top text-[var(--ck-text-muted)]">{formatNextActivity(row.nextActivity)}</td>
-                      <td className="px-3 py-2.5 align-top">
+                      <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)] truncate">{address || '--'}</td>
+                      <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)] whitespace-nowrap font-mono text-xs">
+                        {formatPhone(row.phone)}
+                      </td>
+                      <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)]">
+                        {formatNextActivity(row.nextActivity)}
+                      </td>
+                      <td className="px-4 py-3 align-middle">
                         {row.tags.length === 0 ? (
                           <span className="text-[var(--ck-text-dim)]">--</span>
                         ) : (
@@ -200,22 +259,22 @@ export default function ContactsPage() {
                             {row.tags.map((tag) => (
                               <span
                                 key={tag}
-                                className="rounded bg-[var(--ck-bg)] px-1.5 py-0.5 text-xs text-[var(--ck-text-muted)] border border-[var(--ck-border)]"
+                                className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${tagClasses(tag)}`}
                               >
-                                {tag}
+                                {tag.replace(/_/g, ' ')}
                               </span>
                             ))}
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 align-top text-right">
+                      <td className="px-4 py-3 align-middle text-right">
                         <span
-                          className={`inline-block rounded px-2 py-0.5 text-xs font-bold ${
+                          className={`inline-block rounded px-2 py-1 text-xs font-bold ${
                             row.score >= 75
                               ? 'bg-[#E32E2E] text-white'
                               : row.score >= 40
                               ? 'bg-[#E32E2E]/20 text-[#E32E2E]'
-                              : 'bg-[var(--ck-bg)] text-[var(--ck-text-muted)]'
+                              : 'bg-[var(--ck-bg)] text-[var(--ck-text-muted)] border border-[var(--ck-border)]'
                           }`}
                         >
                           {row.score}
