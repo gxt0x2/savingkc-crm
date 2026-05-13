@@ -1,0 +1,234 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
+import { Icon } from '@/components/ui/icon'
+import { toProperCase } from '@/lib/format'
+import type { DealStage } from '@/types/pipeline'
+
+interface ContactRow {
+  id: string
+  fullName: string | null
+  phone: string | null
+  address: string | null
+  city: string | null
+  station: DealStage
+  score: number
+  nextActivity: {
+    when: string | null
+    label: string
+    kind: 'appointment' | 'recommended' | null
+  } | null
+  tags: string[]
+  lastContactAt: string | null
+  updatedAt: string | null
+}
+
+interface ContactsResponse {
+  items: ContactRow[]
+}
+
+type TabKey = 'all' | 'hot' | 'new' | 'contacted' | 'qualified' | 'appointment_set' | 'offer_made'
+
+const TABS: { key: TabKey; label: string; station?: DealStage; minScore?: number }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'hot', label: 'Hot', minScore: 75 },
+  { key: 'new', label: 'New', station: 'new' },
+  { key: 'contacted', label: 'Contacted', station: 'contacted' },
+  { key: 'qualified', label: 'Qualified', station: 'qualified' },
+  { key: 'appointment_set', label: 'Appointment Set', station: 'appointment_set' },
+  { key: 'offer_made', label: 'Offer Made', station: 'offer_made' },
+]
+
+function useContacts() {
+  return useQuery<ContactsResponse>({
+    queryKey: ['contacts'],
+    queryFn: async () => {
+      const res = await fetch('/api/contacts')
+      if (!res.ok) throw new Error('Failed to fetch contacts')
+      return res.json()
+    },
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: true,
+  })
+}
+
+function formatNextActivity(activity: ContactRow['nextActivity']): string {
+  if (!activity) return '--'
+  if (activity.when) {
+    const d = new Date(activity.when)
+    if (!isNaN(d.getTime())) {
+      const now = Date.now()
+      const diffMs = d.getTime() - now
+      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+      const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+      const rel = diffDays === 0 ? 'today' : diffDays === 1 ? 'tomorrow' : diffDays > 0 ? `in ${diffDays}d` : `${-diffDays}d ago`
+      return `${activity.label} · ${dateStr} ${timeStr} (${rel})`
+    }
+  }
+  return activity.label
+}
+
+function formatPhone(phone: string | null): string {
+  if (!phone) return '--'
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  if (digits.length === 11 && digits.startsWith('1')) return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`
+  return phone
+}
+
+export default function ContactsPage() {
+  const [activeTab, setActiveTab] = useState<TabKey>('all')
+  const { data, isLoading, error } = useContacts()
+
+  const items = useMemo(() => data?.items ?? [], [data])
+
+  const counts = useMemo<Record<TabKey, number>>(() => {
+    const c: Record<TabKey, number> = {
+      all: items.length,
+      hot: items.filter((i) => i.score >= 75).length,
+      new: items.filter((i) => i.station === 'new').length,
+      contacted: items.filter((i) => i.station === 'contacted').length,
+      qualified: items.filter((i) => i.station === 'qualified').length,
+      appointment_set: items.filter((i) => i.station === 'appointment_set').length,
+      offer_made: items.filter((i) => i.station === 'offer_made').length,
+    }
+    return c
+  }, [items])
+
+  const visible = useMemo(() => {
+    const tab = TABS.find((t) => t.key === activeTab)
+    if (!tab) return items
+    let filtered = items
+    if (tab.station) filtered = filtered.filter((i) => i.station === tab.station)
+    if (tab.minScore !== undefined) filtered = filtered.filter((i) => i.score >= tab.minScore!)
+    return [...filtered].sort((a, b) => b.score - a.score)
+  }, [items, activeTab])
+
+  return (
+    <div className="min-h-screen bg-[var(--ck-bg)] text-[var(--ck-text)]">
+      <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
+        <header className="mb-4 flex items-center gap-3">
+          <Icon name="contacts" size="text-3xl" className="text-[#E32E2E]" />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Contacts</h1>
+            <p className="text-sm text-[var(--ck-text-muted)]">
+              Active acquisition pipeline — sorted by composite score.
+            </p>
+          </div>
+        </header>
+
+        <div className="mb-4 flex flex-wrap gap-1 border-b border-[var(--ck-border)]">
+          {TABS.map((tab) => {
+            const active = activeTab === tab.key
+            const count = counts[tab.key]
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                  active
+                    ? 'border-[#E32E2E] text-[var(--ck-text)]'
+                    : 'border-transparent text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+                }`}
+              >
+                {tab.label}
+                <span className={`ml-1.5 text-xs ${active ? 'text-[#E32E2E]' : 'text-[var(--ck-text-dim)]'}`}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {isLoading && (
+          <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-8 text-center text-sm text-[var(--ck-text-muted)]">
+            Loading contacts...
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-lg border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-4 text-sm text-[#E32E2E]">
+            Failed to load: {error instanceof Error ? error.message : 'unknown error'}
+          </div>
+        )}
+
+        {!isLoading && !error && visible.length === 0 && (
+          <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-8 text-center">
+            <Icon name="inbox" size="text-4xl" className="text-[var(--ck-text-dim)]" />
+            <p className="mt-3 text-sm text-[var(--ck-text-muted)]">No contacts in this tab.</p>
+          </div>
+        )}
+
+        {visible.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-[var(--ck-border)]">
+            <table className="w-full text-sm">
+              <thead className="bg-[var(--ck-surface-elev)] text-left text-xs uppercase tracking-wider text-[var(--ck-text-muted)]">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Name</th>
+                  <th className="px-3 py-2 font-semibold">Address</th>
+                  <th className="px-3 py-2 font-semibold">Phone</th>
+                  <th className="px-3 py-2 font-semibold">Next Activity</th>
+                  <th className="px-3 py-2 font-semibold">Tags</th>
+                  <th className="px-3 py-2 font-semibold text-right">Score</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--ck-border)] bg-[var(--ck-surface)]">
+                {visible.map((row) => {
+                  const address = [row.address, row.city].filter(Boolean).join(', ')
+                  return (
+                    <tr key={row.id} className="hover:bg-[#E32E2E]/5 transition-colors">
+                      <td className="px-3 py-2.5 align-top">
+                        <Link
+                          href={`/leads/${row.id}`}
+                          className="font-semibold text-[var(--ck-text)] hover:text-[#E32E2E]"
+                        >
+                          {toProperCase(row.fullName || 'Unnamed')}
+                        </Link>
+                        <div className="text-xs text-[var(--ck-text-dim)] capitalize">{row.station.replace(/_/g, ' ')}</div>
+                      </td>
+                      <td className="px-3 py-2.5 align-top text-[var(--ck-text-muted)]">{address || '--'}</td>
+                      <td className="px-3 py-2.5 align-top text-[var(--ck-text-muted)] whitespace-nowrap">{formatPhone(row.phone)}</td>
+                      <td className="px-3 py-2.5 align-top text-[var(--ck-text-muted)]">{formatNextActivity(row.nextActivity)}</td>
+                      <td className="px-3 py-2.5 align-top">
+                        {row.tags.length === 0 ? (
+                          <span className="text-[var(--ck-text-dim)]">--</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {row.tags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="rounded bg-[var(--ck-bg)] px-1.5 py-0.5 text-xs text-[var(--ck-text-muted)] border border-[var(--ck-border)]"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 align-top text-right">
+                        <span
+                          className={`inline-block rounded px-2 py-0.5 text-xs font-bold ${
+                            row.score >= 75
+                              ? 'bg-[#E32E2E] text-white'
+                              : row.score >= 40
+                              ? 'bg-[#E32E2E]/20 text-[#E32E2E]'
+                              : 'bg-[var(--ck-bg)] text-[var(--ck-text-muted)]'
+                          }`}
+                        >
+                          {row.score}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
