@@ -8,6 +8,7 @@ import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { ensureManifestExists } from '@/lib/manifest-sync'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { formatPhone } from '@/lib/format'
+import type { ManifestV2 } from '@/lib/manifest-builder'
 
 
 
@@ -32,6 +33,22 @@ export async function POST(req: Request) {
     const recordingUrl = body.get('RecordingUrl') as string
     const recordingSid = body.get('RecordingSid') as string
     const recordingDuration = body.get('RecordingDuration') as string
+
+  if (recordingSid) {
+    const { data: existingVoicemail } = await supabase
+      .from('lead_activities')
+      .select('id')
+      .eq('activity_type', 'voicemail')
+      .eq('metadata->>recordingSid', recordingSid)
+      .limit(1)
+      .maybeSingle()
+
+    if (existingVoicemail?.id) {
+      return new NextResponse('<Response><Say voice="Polly.Matthew">Thank you. Goodbye.</Say><Hangup /></Response>', {
+        headers: { 'Content-Type': 'text/xml' }
+      })
+    }
+  }
 
   // If no leadId, find or create lead by phone number (dedup)
   if (!resolvedLeadId && from) {
@@ -169,7 +186,7 @@ async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, 
   const analysis = await analyzeCallTranscript(transcript)
 
   // Update lead with extracted fields
-  const leadUpdates: Record<string, any> = {}
+  const leadUpdates: Record<string, unknown> = {}
   if (analysis.motivationScore) leadUpdates.motivation_score = analysis.motivationScore
   if (analysis.urgency) leadUpdates.urgency = analysis.urgency
   if (analysis.conditionOverall) leadUpdates.property_condition = analysis.conditionOverall
@@ -198,7 +215,8 @@ async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, 
   if (manifest?.id) {
     try {
       const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-      await updateManifestAndCascade(leadId, (manifest: any) => {
+      const motivationScore = typeof analysis?.motivation_score === 'number' ? analysis.motivation_score : undefined
+      await updateManifestAndCascade(leadId, (manifest: ManifestV2) => {
         if (!manifest.communications) manifest.communications = { transcripts: [] }
         manifest.communications.transcripts.push({
           id: `call-${Date.now()}`,
@@ -209,7 +227,7 @@ async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, 
           fullTranscript: transcript,
           aiSummary: analysis?.summary || analysis?.aiSummary || null,
           extractedData: analysis ? {
-            motivationScore: analysis.motivation_score,
+            ...(motivationScore != null ? { motivationScore } : {}),
             sentiment: analysis.sentiment,
           } : null,
         })
