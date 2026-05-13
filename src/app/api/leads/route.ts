@@ -10,6 +10,33 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
+const LEAD_TRIAGE = {
+  opportunity: {
+    label: 'Real Opportunity',
+    station: 'qualified',
+    priority: 'hot',
+    score: 85,
+  },
+  lead: {
+    label: 'Lead',
+    station: 'contacted',
+    priority: 'warm',
+    score: 55,
+  },
+  dead: {
+    label: 'Dead',
+    station: 'dead',
+    priority: 'cold',
+    score: 0,
+  },
+} as const
+
+type LeadTriageClassification = keyof typeof LEAD_TRIAGE
+
+function isLeadTriageClassification(value: unknown): value is LeadTriageClassification {
+  return typeof value === 'string' && value in LEAD_TRIAGE
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders })
 }
@@ -127,6 +154,33 @@ export async function PATCH(req: NextRequest) {
       ? activity.agent.trim()
       : 'Casey'
     const activityAgentId = activityAgent.toLowerCase().includes('ernest') ? 'ernest' : 'casey'
+    const requestedClassification = fields.classification
+    const triageClassification = requestedClassification === null || requestedClassification === undefined
+      ? null
+      : isLeadTriageClassification(requestedClassification)
+        ? requestedClassification
+        : undefined
+
+    if (triageClassification === undefined) {
+      return NextResponse.json({ success: false, error: 'Invalid lead classification' }, { status: 400, headers: corsHeaders })
+    }
+
+    const previousTriageLead = triageClassification
+      ? await supabase
+        .from('leads')
+        .select('classification, station, priority')
+        .eq('id', id)
+        .maybeSingle()
+      : null
+
+    if (triageClassification) {
+      const triage = LEAD_TRIAGE[triageClassification]
+      fields.station ??= triage.station
+      fields.priority ??= triage.priority
+      fields.opportunity_score = typeof fields.opportunity_score === 'number'
+        ? fields.opportunity_score
+        : triage.score
+    }
 
     // CRITICAL: Handle appointment_set disposition → manifest write
     if (activity?.disposition === 'appointment_set') {
@@ -280,9 +334,24 @@ export async function PATCH(req: NextRequest) {
               manifest.currentStation = dispo === 'offer_made' ? 'offer_made' : 'qualified'
               manifest.priority = 'hot'
             } else if (dispo === 'not_interested' || dispo === 'dead') {
+              const triage = LEAD_TRIAGE.dead
               manifest.priority = 'cold'
-              if (!manifest.scoring) manifest.scoring = {} as any
-              manifest.scoring!.classification = 'dead'
+              if (!manifest.scoring) {
+                manifest.scoring = {
+                  opportunity_score: triage.score,
+                  classification: 'dead',
+                  reasoning: `Call disposition marked this lead ${triage.label}.`,
+                  worth_enriching: false,
+                  scored_at: new Date().toISOString(),
+                  scored_by: 'disposition',
+                }
+              } else {
+                manifest.scoring.classification = 'dead'
+                manifest.scoring.opportunity_score = triage.score
+                manifest.scoring.worth_enriching = false
+                manifest.scoring.scored_at = new Date().toISOString()
+                manifest.scoring.scored_by = 'disposition'
+              }
             } else if (dispo === 'dnc') {
               if (!manifest.flags) manifest.flags = {}
               if (!manifest.flags.redFlags) manifest.flags.redFlags = []
@@ -334,9 +403,9 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Manifest-owned fields must cascade through manifest → leads
-    const MANIFEST_OWNED = ['station', 'priority', 'motivation_score'] as const
-    const manifestFields: Record<string, any> = {}
-    const directFields: Record<string, any> = {}
+    const MANIFEST_OWNED = ['station', 'priority', 'motivation_score', 'classification', 'opportunity_score'] as const
+    const manifestFields: Record<string, unknown> = {}
+    const directFields: Record<string, unknown> = {}
 
     for (const [key, val] of Object.entries(fields)) {
       if ((MANIFEST_OWNED as readonly string[]).includes(key)) {
@@ -350,11 +419,38 @@ export async function PATCH(req: NextRequest) {
     if (Object.keys(manifestFields).length > 0) {
       const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
       const cascaded = await updateManifestAndCascade(id, (manifest) => {
-        if (manifestFields.station) manifest.currentStation = manifestFields.station
-        if (manifestFields.priority) manifest.priority = manifestFields.priority
-        if (manifestFields.motivation_score) {
+        if (typeof manifestFields.station === 'string') manifest.currentStation = manifestFields.station
+        if (typeof manifestFields.priority === 'string') manifest.priority = manifestFields.priority as 'hot' | 'warm' | 'cold'
+        if (typeof manifestFields.motivation_score === 'number') {
           if (!manifest.situation.motivation) manifest.situation.motivation = {}
           manifest.situation.motivation.score = manifestFields.motivation_score
+        }
+        if (isLeadTriageClassification(manifestFields.classification)) {
+          const triage = LEAD_TRIAGE[manifestFields.classification]
+          if (!manifest.scoring) {
+            manifest.scoring = {
+              opportunity_score: triage.score,
+              classification: manifestFields.classification,
+              reasoning: `Manual lead triage set to ${triage.label}.`,
+              worth_enriching: manifestFields.classification !== 'dead',
+              scored_at: new Date().toISOString(),
+              scored_by: 'notes',
+            }
+          } else {
+            manifest.scoring.classification = manifestFields.classification
+            manifest.scoring.opportunity_score = typeof manifestFields.opportunity_score === 'number'
+              ? manifestFields.opportunity_score
+              : manifest.scoring.opportunity_score ?? triage.score
+            manifest.scoring.reasoning = `Manual lead triage set to ${triage.label}.`
+            manifest.scoring.worth_enriching = manifestFields.classification !== 'dead'
+            manifest.scoring.scored_at = new Date().toISOString()
+            manifest.scoring.scored_by = 'notes'
+          }
+          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+          manifest.ariIntelligence.briefingStale = true
+        } else if (typeof manifestFields.opportunity_score === 'number' && manifest.scoring) {
+          manifest.scoring.opportunity_score = manifestFields.opportunity_score
+          manifest.scoring.scored_at = new Date().toISOString()
         }
       }, 'api:leads_patch')
 
@@ -386,6 +482,29 @@ export async function PATCH(req: NextRequest) {
 
     if (fetchError) {
       return NextResponse.json({ success: false, error: fetchError.message }, { status: 500, headers: corsHeaders })
+    }
+
+    const previousTriageData = previousTriageLead?.data ?? null
+    if (triageClassification && previousTriageData?.classification !== triageClassification) {
+      const triage = LEAD_TRIAGE[triageClassification]
+      const { error: triageActivityError } = await supabase.from('lead_activities').insert({
+        lead_id: id,
+        activity_type: 'status_change',
+        description: `Manual triage: ${triage.label}`,
+        agent: activityAgent,
+        metadata: {
+          source: 'lead_detail_triage',
+          old_classification: previousTriageData?.classification ?? null,
+          new_classification: triageClassification,
+          old_station: previousTriageData?.station ?? null,
+          new_station: data.station ?? fields.station ?? null,
+          old_priority: previousTriageData?.priority ?? null,
+          new_priority: data.priority ?? fields.priority ?? null,
+        },
+      })
+      if (triageActivityError) {
+        console.error('[leads PATCH] Failed to insert triage activity:', triageActivityError.message)
+      }
     }
 
     return NextResponse.json({ success: true, lead: data }, { headers: corsHeaders })

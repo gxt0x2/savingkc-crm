@@ -33,6 +33,8 @@ import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 
+type LeadTriageValue = 'opportunity' | 'lead' | 'dead'
+
 interface Lead {
   id: string
   full_name: string | null
@@ -76,6 +78,8 @@ interface Lead {
   assignment_fee: number | null
   motivation_score: number | null
   seller_situation: string | null
+  classification: LeadTriageValue | null
+  opportunity_score: number | null
 }
 
 interface ActivityRow {
@@ -130,6 +134,150 @@ function callerIdForAssignedAgent(assignedAgent: string | null | undefined): str
   if (normalized.includes('casey')) return CALLER_ID_BY_AGENT.casey
   if (normalized.includes('ernest')) return CALLER_ID_BY_AGENT.ernest
   return undefined
+}
+
+const LEAD_TRIAGE_OPTIONS: Array<{
+  value: LeadTriageValue
+  label: string
+  icon: string
+  station: string
+  priority: string
+  score: number
+  color: string
+  bg: string
+}> = [
+  {
+    value: 'opportunity',
+    label: 'Real Opportunity',
+    icon: 'verified',
+    station: 'qualified',
+    priority: 'hot',
+    score: 85,
+    color: 'var(--ck-success)',
+    bg: 'rgba(16,185,129,0.14)',
+  },
+  {
+    value: 'lead',
+    label: 'Lead',
+    icon: 'person',
+    station: 'contacted',
+    priority: 'warm',
+    score: 55,
+    color: 'var(--ck-warn)',
+    bg: 'rgba(245,158,11,0.14)',
+  },
+  {
+    value: 'dead',
+    label: 'Dead',
+    icon: 'cancel',
+    station: 'dead',
+    priority: 'cold',
+    score: 0,
+    color: 'var(--ck-accent-bright)',
+    bg: 'rgba(239,68,68,0.14)',
+  },
+]
+
+function LeadTriageStrip({
+  lead,
+  onChanged,
+}: {
+  lead: Lead
+  onChanged: (lead: Lead) => void
+}) {
+  const [saving, setSaving] = useState<LeadTriageValue | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const current = lead.classification
+
+  async function selectTriage(option: (typeof LEAD_TRIAGE_OPTIONS)[number]) {
+    if (saving) return
+    setSaving(option.value)
+    setError(null)
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: lead.id,
+          classification: option.value,
+          station: option.station,
+          priority: option.priority,
+          opportunity_score: option.score,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Unable to save triage')
+      }
+      onChanged((data.lead || {
+        ...lead,
+        classification: option.value,
+        station: option.station,
+        priority: option.priority,
+        opportunity_score: option.score,
+      }) as Lead)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save triage')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  return (
+    <section
+      className="mb-4 rounded-xl border px-3 py-3 sm:px-4"
+      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-2">
+          <Icon name="fact_check" className="!text-base !text-[color:var(--ck-accent)]" />
+          <span className="ck-microlabel !text-[11px] !text-white">Triage</span>
+          <span
+            className="rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider"
+            style={{
+              borderColor: 'var(--ck-border-strong)',
+              background: 'var(--ck-surface-elev)',
+              color: 'var(--ck-text-muted)',
+            }}
+          >
+            {current ? LEAD_TRIAGE_OPTIONS.find((option) => option.value === current)?.label : 'Untriaged'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 lg:min-w-[520px]">
+          {LEAD_TRIAGE_OPTIONS.map((option) => {
+            const active = current === option.value
+            const isSaving = saving === option.value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => selectTriage(option)}
+                disabled={!!saving}
+                className="h-10 min-w-0 rounded-lg border px-2 text-xs font-black uppercase tracking-wider transition-all disabled:cursor-wait disabled:opacity-70 sm:text-[13px]"
+                style={{
+                  background: active ? option.bg : 'var(--ck-surface-elev)',
+                  borderColor: active ? option.color : 'var(--ck-border)',
+                  color: active ? option.color : 'var(--ck-text)',
+                }}
+                title={`Mark as ${option.label}`}
+              >
+                <span className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+                  <Icon name={isSaving ? 'progress_activity' : option.icon} className="!text-[15px]" />
+                  <span className="truncate">{option.label}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      {error && (
+        <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ck-accent-bright)' }}>
+          {error}
+        </p>
+      )}
+    </section>
+  )
 }
 
 // ─── Net Proceeds Calculator ─────────────────────────────────────────────────
@@ -1476,6 +1624,14 @@ export default function LeadDetailPage() {
 
   return (
     <div className="lead-cockpit max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-20">
+      <LeadTriageStrip
+        lead={lead}
+        onChanged={(updated) => {
+          setLead(updated)
+          refreshAll()
+        }}
+      />
+
       {/* ── Cockpit Header ───────────────────────────────────────────────── */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0 flex-1">
