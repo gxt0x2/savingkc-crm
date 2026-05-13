@@ -5,9 +5,14 @@
  * and costs the most if she does not.
  *
  * Formula:
- *   composite = stage_value * urgency * deal_size
+ *   composite = stage_value * urgency
  *
  * Parked leads always score 0. Parking is a state, not a stage.
+ *
+ * Note: the deal_size multiplier was removed because our ARV / repair /
+ * offer numbers are not yet captured reliably enough to score on. Spread
+ * is still computed and returned for display, but it does not affect the
+ * composite.
  */
 
 import type { ManifestV2 } from '../manifest-builder'
@@ -146,20 +151,19 @@ function urgencyMultiplier(manifest: ManifestV2, station: DealStage): { value: n
   return { value: 1.0, reason: 'baseline' }
 }
 
+// Spread is computed for display only — it never moves the composite while
+// ARV / repair / offer capture is unreliable. value=1.0 keeps the legacy
+// shape so cache rows + UI cards stay readable.
 function dealSizeMultiplier(manifest: ManifestV2): { value: number; reason: string; spread: number | null } {
   const financials = manifest.financials
-  if (!financials) return { value: 0.8, reason: 'no_financials', spread: null }
+  if (!financials) return { value: 1.0, reason: 'display_only', spread: null }
 
   const repair = financials.repair_estimate || 0
   const spread = financials.arv && financials.offer_amount
     ? financials.arv - financials.offer_amount - repair
-    : financials.spread
+    : financials.spread ?? null
 
-  if (spread === null || spread === undefined) return { value: 0.8, reason: 'no_spread', spread: null }
-  if (spread >= 60000) return { value: 1.5, reason: 'spread_60k_plus', spread }
-  if (spread >= 30000) return { value: 1.2, reason: 'spread_30k_60k', spread }
-  if (spread >= 25000) return { value: 1.0, reason: 'spread_25k_30k', spread }
-  return { value: 0.7, reason: 'below_floor', spread }
+  return { value: 1.0, reason: 'display_only', spread }
 }
 
 function isCurrentlyParked(manifest: ManifestV2): boolean {
