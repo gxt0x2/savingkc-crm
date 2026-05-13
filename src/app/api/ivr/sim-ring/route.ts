@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   // Simultaneous ring both agents — first to answer gets connected
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=${encodeURIComponent(type)}" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=${encodeURIComponent(type)}" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number url="${BASE_URL}/api/ivr/whisper?type=${encodeURIComponent(type)}&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}">${routing.primary.phone}</Number>
     <Number url="${BASE_URL}/api/ivr/whisper?type=${encodeURIComponent(type)}&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}">${routing.secondary.phone}</Number>
   </Dial>
