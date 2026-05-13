@@ -10,6 +10,7 @@ import { DialerPanel, CallStatus, HeirQueueItem } from '@/components/telephony/t
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import { useAppMode } from '@/hooks/use-app-mode'
+import { useThemePreference } from '@/hooks/use-theme-preference'
 import { NotificationBell } from './notification-bell'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 
@@ -63,6 +64,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
   const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings)
+  const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
+  const useUserLightTheme = hydrated && !useTcLightTheme && userTheme === 'light'
   const dialerPresentation = 'dock'
 
   useEffect(() => {
@@ -70,7 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const body = document.body
 
     if (useTcLightTheme) {
-      html.classList.remove('dark')
+      html.classList.remove('dark', 'theme-light')
       body.classList.remove('ck-dark', 'bg-background', 'text-on-surface')
       html.style.colorScheme = 'light'
       body.style.background = '#f6f7f9'
@@ -78,12 +81,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return
     }
 
+    if (useUserLightTheme) {
+      html.classList.remove('dark')
+      html.classList.add('theme-light')
+      body.classList.remove('ck-dark', 'bg-background', 'text-on-surface')
+      html.style.colorScheme = 'light'
+      body.style.background = '#ffffff'
+      body.style.color = '#111827'
+      return
+    }
+
     html.classList.add('dark')
+    html.classList.remove('theme-light')
     body.classList.add('ck-dark', 'bg-background', 'text-on-surface')
     html.style.colorScheme = 'dark'
     body.style.background = ''
     body.style.color = ''
-  }, [useTcLightTheme])
+  }, [useTcLightTheme, useUserLightTheme])
 
   function routeForMode(nextMode: typeof mode) {
     if (nextMode === 'dispositions') return '/dispo/pipeline'
@@ -302,6 +316,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   'bg-transparent ring-0'
                 }`} />
               </button>
+              {!useTcLightTheme && (
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="w-10 h-10 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] flex items-center justify-center transition-colors"
+                  aria-label={userTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                  title={userTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                >
+                  <Icon
+                    name={userTheme === 'dark' ? 'light_mode' : 'dark_mode'}
+                    size="text-lg"
+                    className="text-[var(--ck-text)]"
+                  />
+                </button>
+              )}
               <NotificationBell />
               <div className="relative" ref={profileMenuRef}>
                 {profilePhotoUrl ? (
