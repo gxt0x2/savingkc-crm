@@ -150,14 +150,22 @@ function classifyStuck(lead: LeadRow, manifest: any): StuckFinding | null {
     }
   }
 
-  // ── Rule 3: active appointment → appointment_set ───────────────────────
+  // ── Rule 3: active appointment with real future date → appointment_set ──
+  // Important: the manifest builder sometimes hallucinates an appointment
+  // status of "scheduled" with prose like "Not specified" in scheduledAt.
+  // Only promote when scheduledAt parses as an ISO datetime and is in the
+  // near future (or within the last 24h, since the call might have just
+  // ended).
   const appt = manifest.pipeline?.appointment
   if (appt && typeof appt === 'object') {
     const status = String(appt.status ?? '').toLowerCase()
     const activeStatuses = new Set(['scheduled', 'confirmed', 'reconfirmed'])
     if (activeStatuses.has(status)) {
-      const scheduledAt = appt.scheduledAt ? new Date(appt.scheduledAt) : null
-      const isUpcoming = !scheduledAt || isNaN(scheduledAt.getTime()) || scheduledAt.getTime() > Date.now() - 24 * 60 * 60 * 1000
+      const rawScheduledAt = appt.scheduledAt
+      const isIsoLike = typeof rawScheduledAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawScheduledAt)
+      const scheduledAt = isIsoLike ? new Date(rawScheduledAt) : null
+      const parsed = scheduledAt && !isNaN(scheduledAt.getTime()) ? scheduledAt : null
+      const isUpcoming = parsed !== null && parsed.getTime() > Date.now() - 24 * 60 * 60 * 1000
 
       if (isUpcoming && currentRank < STAGE_RANK.appointment_set) {
         return {
@@ -168,7 +176,7 @@ function classifyStuck(lead: LeadRow, manifest: any): StuckFinding | null {
           severity: 'high',
           reasons: [
             `pipeline.appointment.status=${status}`,
-            appt.scheduledAt ? `scheduledAt=${appt.scheduledAt}` : 'scheduledAt=null',
+            `scheduledAt=${rawScheduledAt}`,
           ],
         }
       }
