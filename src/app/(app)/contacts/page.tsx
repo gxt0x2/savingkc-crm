@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
@@ -30,6 +30,8 @@ interface ContactsResponse {
 }
 
 type TabKey = 'all' | 'hot' | 'new' | 'contacted' | 'qualified' | 'appointment_set' | 'offer_made' | 'in_closing'
+
+const LEAD_GROUP_SESSION_KEY = 'savingkc:lead-group:v1'
 
 const TABS: { key: TabKey; label: string; station?: DealStage; minScore?: number }[] = [
   { key: 'hot', label: 'Hot', minScore: 75 },
@@ -147,6 +149,32 @@ export default function ContactsPage() {
     return [...filtered].sort((a, b) => b.score - a.score)
   }, [items, acquisitionOnly, activeTab])
 
+  const saveLeadGroup = useCallback(() => {
+    if (typeof window === 'undefined') return
+    if (visible.length === 0) {
+      window.sessionStorage.removeItem(LEAD_GROUP_SESSION_KEY)
+      return
+    }
+
+    const activeTabMeta = TABS.find((tab) => tab.key === activeTab)
+    window.sessionStorage.setItem(LEAD_GROUP_SESSION_KEY, JSON.stringify({
+      source: 'contacts',
+      returnPath: '/contacts',
+      label: activeTabMeta?.label || 'Contacts',
+      savedAt: new Date().toISOString(),
+      ids: visible.map((row) => row.id),
+      items: visible.map((row) => ({
+        id: row.id,
+        name: row.fullName,
+        address: [row.address, row.city].filter(Boolean).join(', ') || row.address,
+      })),
+    }))
+  }, [activeTab, visible])
+
+  useEffect(() => {
+    saveLeadGroup()
+  }, [saveLeadGroup])
+
   return (
     <div className="min-h-screen bg-[var(--ck-bg)] text-[var(--ck-text)]">
       <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
@@ -236,6 +264,7 @@ export default function ContactsPage() {
                           <div className="min-w-0">
                             <Link
                               href={`/leads/${row.id}`}
+                              onClick={saveLeadGroup}
                               className="block truncate font-semibold text-[var(--ck-text)] hover:text-[#E32E2E]"
                             >
                               {toProperCase(row.fullName || 'Unnamed')}

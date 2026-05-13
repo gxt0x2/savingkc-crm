@@ -95,6 +95,8 @@ interface ActivityRow {
 
 interface LeadGroupContext {
   source?: string
+  returnPath?: string
+  label?: string
   savedAt?: string
   ids: string[]
   items?: Array<{
@@ -1076,64 +1078,40 @@ export default function LeadDetailPage() {
 
   useEffect(() => {
     if (!id || typeof window === 'undefined') return
-    let cancelled = false
 
-    async function loadLeadGroup() {
-      try {
-        const raw = window.sessionStorage.getItem(LEAD_GROUP_SESSION_KEY)
-        if (raw) {
-          const parsed = JSON.parse(raw) as Partial<LeadGroupContext>
-          const ids = Array.isArray(parsed.ids)
-            ? parsed.ids.filter((leadId): leadId is string => typeof leadId === 'string')
-            : []
-          if (ids.includes(id)) {
-            if (!cancelled) {
-              setLeadGroup({
-                source: parsed.source,
-                savedAt: parsed.savedAt,
-                ids,
-                items: Array.isArray(parsed.items) ? parsed.items : undefined,
-              })
-            }
-            return
-          }
-        }
-      } catch {
-        // Fall through to the default recent-leads group.
+    try {
+      const raw = window.sessionStorage.getItem(LEAD_GROUP_SESSION_KEY)
+      if (!raw) {
+        setLeadGroup(null)
+        return
       }
 
-      try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('leads')
-          .select('id, full_name, property_address')
-          .order('updated_at', { ascending: false })
-          .limit(500)
-        const rows = (data ?? []) as Array<{ id: string; full_name: string | null; property_address: string | null }>
-        const ids = rows.map((row) => row.id)
-        if (!ids.includes(id)) {
-          if (!cancelled) setLeadGroup(null)
-          return
-        }
-        if (!cancelled) {
-          setLeadGroup({
-            source: 'recent_leads',
-            savedAt: new Date().toISOString(),
-            ids,
-            items: rows.map((row) => ({
-              id: row.id,
-              name: row.full_name,
-              address: row.property_address,
-            })),
-          })
-        }
-      } catch {
-        if (!cancelled) setLeadGroup(null)
+      const parsed = JSON.parse(raw) as Partial<LeadGroupContext>
+      if (parsed.source === 'recent_leads') {
+        window.sessionStorage.removeItem(LEAD_GROUP_SESSION_KEY)
+        setLeadGroup(null)
+        return
       }
+
+      const ids = Array.isArray(parsed.ids)
+        ? parsed.ids.filter((leadId): leadId is string => typeof leadId === 'string')
+        : []
+      if (!ids.includes(id)) {
+        setLeadGroup(null)
+        return
+      }
+
+      setLeadGroup({
+        source: parsed.source,
+        returnPath: parsed.returnPath,
+        label: parsed.label,
+        savedAt: parsed.savedAt,
+        ids,
+        items: Array.isArray(parsed.items) ? parsed.items : undefined,
+      })
+    } catch {
+      setLeadGroup(null)
     }
-
-    loadLeadGroup()
-    return () => { cancelled = true }
   }, [id])
 
   // ── Auto-show appointment outcome modal when appointment time has passed ──
@@ -1391,8 +1369,11 @@ export default function LeadDetailPage() {
   const nextLeadId = leadGroup && leadGroupIndex >= 0 && leadGroupIndex < leadGroup.ids.length - 1
     ? leadGroup.ids[leadGroupIndex + 1]
     : null
+  const groupReturnPath = leadGroup?.returnPath || (leadGroup?.source === 'contacts' ? '/contacts' : '/leads')
+  const groupReturnTitle = groupReturnPath === '/contacts' ? 'Back to contacts' : 'Back to leads list'
+  const groupLabel = leadGroup?.label || (leadGroup?.source === 'contacts' ? 'Contacts' : 'Lead group')
   const groupPositionLabel = leadGroup && leadGroupIndex >= 0
-    ? `${leadGroupIndex + 1} of ${leadGroup.ids.length}`
+    ? `${groupLabel} ${leadGroupIndex + 1} of ${leadGroup.ids.length}`
     : null
 
   function groupLeadName(leadId: string | null) {
@@ -1737,17 +1718,17 @@ export default function LeadDetailPage() {
           <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              onClick={() => previousLeadId ? goToLead(previousLeadId) : router.push('/leads')}
+              onClick={() => previousLeadId ? goToLead(previousLeadId) : router.push(groupReturnPath)}
               className="ck-icon-btn !w-9 !h-9 disabled:cursor-not-allowed disabled:opacity-35"
-              title={previousLeadId ? `Previous lead${groupLeadName(previousLeadId) ? ': ' + groupLeadName(previousLeadId) : ''}` : 'Back to leads'}
+              title={previousLeadId ? `Previous lead${groupLeadName(previousLeadId) ? ': ' + groupLeadName(previousLeadId) : ''}` : groupReturnTitle}
               disabled={Boolean(leadGroup) && !previousLeadId}
             >
               <Icon name="arrow_back" size="text-base" />
             </button>
             <Link
-              href="/leads"
+              href={groupReturnPath}
               className="ck-icon-btn !w-9 !h-9"
-              title="Back to leads list"
+              title={groupReturnTitle}
             >
               <Icon name="format_list_bulleted" size="text-base" />
             </Link>
@@ -1804,7 +1785,7 @@ export default function LeadDetailPage() {
             )}
             {groupPositionLabel && (
               <p className="mt-1 text-xs font-bold uppercase tracking-wider text-[color:var(--ck-text-dim)]">
-                Lead group {groupPositionLabel}
+                {groupPositionLabel}
               </p>
             )}
           </div>
