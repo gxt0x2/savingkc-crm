@@ -146,6 +146,21 @@ body {
   --ck-info: #3b82f6;
 }
 
+/* Light-theme overrides — opt-in via `.theme-light` class on <html> (set by
+   AppShell when user preference is 'light'). Portaled .ck-dark modals stay
+   dark by design, but the cockpit page surface flips to light. */
+.theme-light .lead-cockpit {
+  --ck-bg: #ffffff;
+  --ck-surface: #f8f9fa;
+  --ck-surface-elev: #f3f4f5;
+  --ck-surface-hi: #e7e8e9;
+  --ck-border: #e5e7eb;
+  --ck-border-strong: #d1d5db;
+  --ck-text: #111827;
+  --ck-text-muted: #4b5563;
+  --ck-text-dim: #9ca3af;
+}
+
 /* Layout side-effects: apply only to the page root, NOT to portaled modals */
 .lead-cockpit {
   background-color: var(--ck-bg);
