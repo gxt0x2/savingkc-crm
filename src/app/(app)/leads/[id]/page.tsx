@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { AriBriefing } from '@/components/leads/ari-briefing'
@@ -34,6 +34,8 @@ import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 
 type LeadTriageValue = 'opportunity' | 'lead' | 'dead'
+
+const LEAD_GROUP_SESSION_KEY = 'savingkc:lead-group:v1'
 
 interface Lead {
   id: string
@@ -89,6 +91,17 @@ interface ActivityRow {
   agent: string | null
   metadata: Record<string, unknown> | null
   created_at: string
+}
+
+interface LeadGroupContext {
+  source?: string
+  savedAt?: string
+  ids: string[]
+  items?: Array<{
+    id: string
+    name?: string | null
+    address?: string | null
+  }>
 }
 
 function formatActivityTimestamp(ts: string): string {
@@ -1022,9 +1035,12 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const router = useRouter()
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
+  const loadedLeadIdRef = useRef<string | null>(null)
   const [activities, setActivities] = useState<ActivityRow[]>([])
+  const [leadGroup, setLeadGroup] = useState<LeadGroupContext | null>(null)
   const [manifestRowId, setManifestRowId] = useState<string | null>(null)
   const [manifestFinancials, setManifestFinancials] = useState<Record<string, number | null>>({ back_taxes: null, liens_amount: null, mortgage_balance: null })
   const [manifestProperty, setManifestProperty] = useState<Record<string, any> | null>(null)
@@ -1057,6 +1073,68 @@ export default function LeadDetailPage() {
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
+
+  useEffect(() => {
+    if (!id || typeof window === 'undefined') return
+    let cancelled = false
+
+    async function loadLeadGroup() {
+      try {
+        const raw = window.sessionStorage.getItem(LEAD_GROUP_SESSION_KEY)
+        if (raw) {
+          const parsed = JSON.parse(raw) as Partial<LeadGroupContext>
+          const ids = Array.isArray(parsed.ids)
+            ? parsed.ids.filter((leadId): leadId is string => typeof leadId === 'string')
+            : []
+          if (ids.includes(id)) {
+            if (!cancelled) {
+              setLeadGroup({
+                source: parsed.source,
+                savedAt: parsed.savedAt,
+                ids,
+                items: Array.isArray(parsed.items) ? parsed.items : undefined,
+              })
+            }
+            return
+          }
+        }
+      } catch {
+        // Fall through to the default recent-leads group.
+      }
+
+      try {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('leads')
+          .select('id, full_name, property_address')
+          .order('updated_at', { ascending: false })
+          .limit(500)
+        const rows = (data ?? []) as Array<{ id: string; full_name: string | null; property_address: string | null }>
+        const ids = rows.map((row) => row.id)
+        if (!ids.includes(id)) {
+          if (!cancelled) setLeadGroup(null)
+          return
+        }
+        if (!cancelled) {
+          setLeadGroup({
+            source: 'recent_leads',
+            savedAt: new Date().toISOString(),
+            ids,
+            items: rows.map((row) => ({
+              id: row.id,
+              name: row.full_name,
+              address: row.property_address,
+            })),
+          })
+        }
+      } catch {
+        if (!cancelled) setLeadGroup(null)
+      }
+    }
+
+    loadLeadGroup()
+    return () => { cancelled = true }
+  }, [id])
 
   // ── Auto-show appointment outcome modal when appointment time has passed ──
   useEffect(() => {
@@ -1092,6 +1170,7 @@ export default function LeadDetailPage() {
 
   useEffect(() => {
     async function fetchLead() {
+      if (loadedLeadIdRef.current !== id) setLoading(true)
       try {
         const res = await fetch(`/api/leads/${id}`, { cache: 'no-store' })
         if (!res.ok) {
@@ -1101,6 +1180,7 @@ export default function LeadDetailPage() {
         }
         const data = await res.json()
         setLead(data as Lead)
+        loadedLeadIdRef.current = id
       } catch (err) {
         console.error('[lead-detail] Failed to fetch lead:', err)
         setLead(null)
@@ -1304,6 +1384,25 @@ export default function LeadDetailPage() {
         callerId: callerIdForAssignedAgent(dialLead.assigned_agent),
       },
     }))
+  }
+
+  const leadGroupIndex = leadGroup?.ids.indexOf(id) ?? -1
+  const previousLeadId = leadGroup && leadGroupIndex > 0 ? leadGroup.ids[leadGroupIndex - 1] : null
+  const nextLeadId = leadGroup && leadGroupIndex >= 0 && leadGroupIndex < leadGroup.ids.length - 1
+    ? leadGroup.ids[leadGroupIndex + 1]
+    : null
+  const groupPositionLabel = leadGroup && leadGroupIndex >= 0
+    ? `${leadGroupIndex + 1} of ${leadGroup.ids.length}`
+    : null
+
+  function groupLeadName(leadId: string | null) {
+    if (!leadId) return null
+    return leadGroup?.items?.find((item) => item.id === leadId)?.name || null
+  }
+
+  function goToLead(leadId: string | null) {
+    if (!leadId) return
+    router.push(`/leads/${leadId}`)
   }
 
   const initials = (formattedName || 'N/A')
@@ -1635,13 +1734,33 @@ export default function LeadDetailPage() {
       {/* ── Cockpit Header ───────────────────────────────────────────────── */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0 flex-1">
-          <Link
-            href="/leads"
-            className="ck-icon-btn shrink-0 !w-9 !h-9"
-            title="Back to leads"
-          >
-            <Icon name="arrow_back" size="text-base" />
-          </Link>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => previousLeadId ? goToLead(previousLeadId) : router.push('/leads')}
+              className="ck-icon-btn !w-9 !h-9 disabled:cursor-not-allowed disabled:opacity-35"
+              title={previousLeadId ? `Previous lead${groupLeadName(previousLeadId) ? ': ' + groupLeadName(previousLeadId) : ''}` : 'Back to leads'}
+              disabled={Boolean(leadGroup) && !previousLeadId}
+            >
+              <Icon name="arrow_back" size="text-base" />
+            </button>
+            <Link
+              href="/leads"
+              className="ck-icon-btn !w-9 !h-9"
+              title="Back to leads list"
+            >
+              <Icon name="format_list_bulleted" size="text-base" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => goToLead(nextLeadId)}
+              className="ck-icon-btn !w-9 !h-9 disabled:cursor-not-allowed disabled:opacity-35"
+              title={nextLeadId ? `Next lead${groupLeadName(nextLeadId) ? ': ' + groupLeadName(nextLeadId) : ''}` : 'No next lead in group'}
+              disabled={!nextLeadId}
+            >
+              <Icon name="arrow_forward" size="text-base" />
+            </button>
+          </div>
           {/* Avatar */}
           <div className="relative shrink-0">
             <div
@@ -1681,6 +1800,11 @@ export default function LeadDetailPage() {
             {addressLine && (
               <p className="mt-1.5 text-base sm:text-lg font-semibold text-white break-words text-left">
                 {addressLine}
+              </p>
+            )}
+            {groupPositionLabel && (
+              <p className="mt-1 text-xs font-bold uppercase tracking-wider text-[color:var(--ck-text-dim)]">
+                Lead group {groupPositionLabel}
               </p>
             )}
           </div>

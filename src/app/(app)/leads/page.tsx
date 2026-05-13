@@ -29,6 +29,7 @@ interface Lead {
 type SortKey = 'full_name' | 'phone' | 'property_address' | 'source' | 'station' | 'priority' | 'created_at' | 'updated_at' | 'temperature'
 type SortDir = 'asc' | 'desc'
 
+const LEAD_GROUP_SESSION_KEY = 'savingkc:lead-group:v1'
 const STATION_OPTIONS = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'closed_lost', 'dead'] as const
 const PRIORITY_OPTIONS = ['hot', 'high', 'normal'] as const
 
@@ -183,6 +184,24 @@ export default function LeadsPage() {
 
     return result
   }, [leads, search, sortKey, sortDir, filterStage, filterTemp, filterSource, deceasedLeadIds])
+
+  useEffect(() => {
+    if (loading || processed.length === 0 || typeof window === 'undefined') return
+    try {
+      window.sessionStorage.setItem(LEAD_GROUP_SESSION_KEY, JSON.stringify({
+        source: 'leads',
+        savedAt: new Date().toISOString(),
+        ids: processed.map((lead) => lead.id),
+        items: processed.map((lead) => ({
+          id: lead.id,
+          name: lead.full_name,
+          address: lead.property_address,
+        })),
+      }))
+    } catch {
+      // Session storage is best-effort; lead detail still works without it.
+    }
+  }, [loading, processed])
 
   // Bulk selection helpers
   const pageIds = processed.map(l => l.id)
@@ -348,6 +367,24 @@ export default function LeadsPage() {
     e.stopPropagation()
     if (!email) return
     window.location.href = `mailto:${email}`
+  }
+
+  function openLeadFromGroup(leadId: string) {
+    try {
+      window.sessionStorage.setItem(LEAD_GROUP_SESSION_KEY, JSON.stringify({
+        source: 'leads',
+        savedAt: new Date().toISOString(),
+        ids: processed.map((lead) => lead.id),
+        items: processed.map((lead) => ({
+          id: lead.id,
+          name: lead.full_name,
+          address: lead.property_address,
+        })),
+      }))
+    } catch {
+      // Ignore storage failures and keep normal navigation.
+    }
+    router.push(`/leads/${leadId}`)
   }
 
   const AVATAR_COLORS = [
@@ -644,7 +681,7 @@ export default function LeadsPage() {
                   <tr
                     key={lead.id}
                     className={`border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer ${selectedIds.has(lead.id) ? 'bg-primary/5' : ''}`}
-                    onClick={() => router.push(`/leads/${lead.id}`)}
+                    onClick={() => openLeadFromGroup(lead.id)}
                   >
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <input
