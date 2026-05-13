@@ -15,18 +15,50 @@ const NO_STORE_HEADERS: HeadersInit = {
   Expires: '0',
 }
 
+type CallActivityRow = {
+  id: string
+  lead_id: string | null
+  description: string | null
+  agent: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
 
 // Log outbound calls from the telephony bar
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { phone, event, duration, agent, lead_id, heir_name, heir_relation, prospect_phone_id, agent_identity, from_number } = body
+    const {
+      phone,
+      event,
+      duration,
+      agent,
+      lead_id,
+      heir_name,
+      heir_relation,
+      prospect_phone_id,
+      agent_identity,
+      from_number,
+      status,
+      outcome,
+      disposition,
+      call_status,
+      dial_status,
+    } = body
 
     if (!phone) {
       return NextResponse.json({ error: 'phone required' }, { status: 400, headers: NO_STORE_HEADERS })
     }
 
     const cleanPhone = phone.replace(/[^\d+]/g, '')
+    const finalDuration = Math.max(0, Math.round(readNumber(duration) ?? 0))
+    const finalStatus = normalizeOutboundFinalStatus(
+      readString(status) || readString(call_status) || readString(dial_status),
+      readString(outcome),
+      readString(disposition)
+    )
+    const finalOutcome = normalizeOutboundOutcome(finalStatus, readString(outcome))
+    const finalDisposition = normalizeOutboundDisposition(finalStatus, readString(disposition))
 
     // Prefer an explicit lead_id from the caller (set by the dialer for queue
     // mode so heir calls are attributed to the property lead, not the heir).
@@ -71,16 +103,18 @@ export async function POST(req: Request) {
         lead_id: leadId,
         activity_type: 'call',
         description: isHeirCall
-          ? `Outbound call to ${heirLabel} — ${duration || 0}s`
-          : `Outbound call to ${leadName} — ${duration || 0}s`,
+          ? `Outbound call to ${heirLabel} — ${outboundResultLabel(finalStatus, finalDuration)}`
+          : `Outbound call to ${leadName} — ${outboundResultLabel(finalStatus, finalDuration)}`,
         agent: agent || 'System',
         metadata: {
           direction: 'outbound',
           to: cleanPhone,
           from: from_number || null,
           agent_identity: agent_identity || null,
-          status: 'completed',
-          duration: duration || 0,
+          status: finalStatus,
+          outcome: finalOutcome,
+          disposition: finalDisposition,
+          duration: finalDuration,
           source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
           ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id }),
         }
@@ -96,7 +130,9 @@ export async function POST(req: Request) {
     // On call end: refresh denormalized last-call snapshot on the lead row
     if (leadId && event === 'ended') {
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
-      if (typeof duration === 'number' && duration > 0) patch.call_duration_seconds = duration
+      if (isConnectedOutbound(finalStatus, finalOutcome, finalDisposition) && finalDuration > 0) {
+        patch.call_duration_seconds = finalDuration
+      }
       await supabase.from('leads').update(patch).eq('id', leadId).then(({ error }) => {
         if (error) console.error('[call-log] lead snapshot update failed:', error.message)
       })
@@ -127,7 +163,7 @@ export async function GET(req: Request) {
     const leadIds = Array.from(
       new Set(
         (data || [])
-          .map((row: any) => (typeof row.lead_id === 'string' ? row.lead_id : null))
+          .map((row: CallActivityRow) => (typeof row.lead_id === 'string' ? row.lead_id : null))
           .filter((id: string | null): id is string => Boolean(id))
       )
     )
@@ -146,7 +182,7 @@ export async function GET(req: Request) {
     }
 
     const calls = (data || [])
-      .map((row: any) => {
+      .map((row: CallActivityRow) => {
         const raw = (row.metadata && typeof row.metadata === 'object')
           ? (row.metadata as Record<string, unknown>)
           : {}
@@ -203,6 +239,56 @@ function readNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null
   }
   return null
+}
+
+function normalizeOutboundFinalStatus(
+  status: string | null,
+  outcome: string | null,
+  disposition: string | null
+): string {
+  const normalizedStatus = status?.trim().toLowerCase().replace(/_/g, '-')
+  if (normalizedStatus) {
+    if (normalizedStatus === 'answered' || normalizedStatus === 'connected') return 'completed'
+    if (normalizedStatus === 'missed') return 'no-answer'
+    return normalizedStatus
+  }
+
+  const normalizedOutcome = outcome?.trim().toLowerCase().replace(/_/g, '-')
+  if (normalizedOutcome === 'missed') return 'no-answer'
+  if (normalizedOutcome === 'connected') return 'completed'
+
+  const normalizedDisposition = disposition?.trim().toLowerCase().replace(/_/g, '-')
+  if (normalizedDisposition === 'no-answer' || normalizedDisposition === 'busy') return normalizedDisposition
+  if (normalizedDisposition === 'answered') return 'completed'
+
+  return 'completed'
+}
+
+function normalizeOutboundOutcome(status: string, outcome: string | null): string {
+  const normalizedOutcome = outcome?.trim().toLowerCase().replace(/_/g, '-')
+  if (normalizedOutcome) return normalizedOutcome
+  return status === 'completed' ? 'connected' : 'missed'
+}
+
+function normalizeOutboundDisposition(status: string, disposition: string | null): string {
+  const normalizedDisposition = disposition?.trim().toLowerCase().replace(/-/g, '_')
+  if (normalizedDisposition) return normalizedDisposition
+  if (status === 'completed') return 'answered'
+  if (status === 'busy') return 'busy'
+  return 'no_answer'
+}
+
+function isConnectedOutbound(status: string, outcome: string, disposition: string): boolean {
+  return status === 'completed' || outcome === 'connected' || disposition === 'answered'
+}
+
+function outboundResultLabel(status: string, duration: number): string {
+  if (status === 'completed') return `${duration}s`
+  if (status === 'busy') return 'busy'
+  if (status === 'failed') return 'failed'
+  if (status === 'canceled' || status === 'cancelled') return 'canceled'
+  if (status === 'no-answer') return 'no answer'
+  return status || `${duration}s`
 }
 
 function parsePhone(text: string): string | null {

@@ -568,12 +568,14 @@ export function DialerPanel({
       }
       callRef.current = call
       callStartRef.current = Date.now()
+      let callWasAccepted = false
 
       call.on('ringing', () => {
         log('ringing...')
         setStatusLogged('calling')
       })
       call.on('accept', () => {
+        callWasAccepted = true
         log('call accepted')
         setStatusLogged('on_call')
       })
@@ -601,6 +603,9 @@ export function DialerPanel({
 
       call.on('disconnect', () => {
         const duration = Math.round((Date.now() - callStartRef.current) / 1000)
+        const finalStatus = callWasAccepted ? 'completed' : 'no-answer'
+        const finalOutcome = callWasAccepted ? 'connected' : 'missed'
+        const finalDisposition = callWasAccepted ? 'answered' : 'no_answer'
         lastCallDurationSecondsRef.current = duration
         setLastCallDuration(formatDuration(duration))
         fetch('/api/call-log', {
@@ -610,6 +615,9 @@ export function DialerPanel({
             phone: number,
             event: 'ended',
             duration,
+            status: finalStatus,
+            outcome: finalOutcome,
+            disposition: finalDisposition,
             agent: activeAgentName,
             agent_identity: agentIdentity,
             from_number: callerIdForThisCall || null,
