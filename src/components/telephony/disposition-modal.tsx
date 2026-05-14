@@ -10,6 +10,8 @@ export type DispositionType =
   | 'bad_number'
   | 'busy'
   | 'dnc'
+  | 'dnc_contact'
+  | 'dnc_number'
   | 'spoke_with_owner'
   | 'callback_requested'
   | 'not_interested'
@@ -86,20 +88,12 @@ interface DispositionModalProps {
 }
 
 const DEFAULT_DISPOSITIONS: DispositionOption[] = [
-  { id: 'answered', label: 'Answered', tone: 'success', icon: 'check_circle' },
-  { id: 'spoke_with_owner', label: 'Spoke With Seller', tone: 'success', icon: 'record_voice_over' },
-  { id: 'callback_requested', label: 'Callback Requested', tone: 'success', icon: 'event_available' },
-  { id: 'deal_potential', label: 'Deal Potential', tone: 'warning', icon: 'local_fire_department' },
-  { id: 'appointment_set', label: 'Appointment Set', tone: 'success', icon: 'event' },
-  { id: 'not_interested', label: 'Not Interested', tone: 'neutral', icon: 'thumb_down' },
-  { id: 'no_answer', label: 'No Answer', tone: 'neutral', icon: 'no_answer_badge' },
-  { id: 'left_vm', label: 'Left Voicemail', tone: 'info', icon: 'voicemail', hasSubreason: true },
+  { id: 'answered', label: 'Contact', tone: 'success', icon: 'check_circle' },
+  { id: 'no_answer', label: 'Not Contacted', tone: 'neutral', icon: 'no_answer_badge' },
   { id: 'bad_number', label: 'Bad Number', tone: 'danger', icon: 'error' },
-  { id: 'wrong_number', label: 'Wrong Number', tone: 'danger', icon: 'phone_disabled' },
-  { id: 'disconnected', label: 'Disconnected', tone: 'danger', icon: 'signal_cellular_connected_no_internet_4_bar' },
-  { id: 'busy', label: 'Busy', tone: 'warning', icon: 'phone_paused' },
-  { id: 'dnc', label: 'Do Not Call', tone: 'critical', icon: 'block' },
-  { id: 'dead', label: 'Dead Lead', tone: 'critical', icon: 'delete' },
+  { id: 'left_vm', label: 'Left Voicemail', tone: 'info', icon: 'voicemail' },
+  { id: 'dnc_contact', label: 'DNC Contact', tone: 'critical', icon: 'person_remove' },
+  { id: 'dnc_number', label: 'DNC Number', tone: 'critical', icon: 'block' },
 ]
 
 const TONE_TILE_CLASS: Record<DispositionTone, string> = {
