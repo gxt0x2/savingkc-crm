@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { DispositionModal, DispositionType } from './disposition-modal'
+import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
@@ -267,6 +268,7 @@ export function DialerPanel({
 
   // Disposition
   const [showDisposition, setShowDisposition] = useState(false)
+  const [showNewTaskFor, setShowNewTaskFor] = useState<SearchResult | null>(null)
   const lastCallPhoneRef = useRef<string>('')
   const [lastCallDuration, setLastCallDuration] = useState<string | null>(null)
   const lastCallDurationSecondsRef = useRef(0)
@@ -1417,7 +1419,30 @@ export function DialerPanel({
         markAsLeadLabel={dispositionQueueItem ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
         variant={dispositionQueueItem ? 'heirQueue' : 'standard'}
         primaryActionLabel={dispositionQueueItem ? 'Save & Next Number' : 'Save & Next Lead'}
+        nextActions={selectedLead ? [
+          { id: 'set_next_activity', label: 'Set Next Activity', icon: 'event_note' },
+        ] : []}
+        onNextActionPick={(actionId) => {
+          if (actionId === 'set_next_activity') {
+            setShowNewTaskFor(selectedLead || null)
+          }
+        }}
       />
+
+      {/* New Task modal — triggered by Set Next Activity from disposition */}
+      {showNewTaskFor && (
+        <NewTaskModal
+          leadId={showNewTaskFor.id}
+          leadName={showNewTaskFor.full_name || undefined}
+          onClose={() => setShowNewTaskFor(null)}
+          onCreated={() => {
+            setShowNewTaskFor(null)
+            window.dispatchEvent(new CustomEvent('crm:task-created', {
+              detail: { leadId: showNewTaskFor.id },
+            }))
+          }}
+        />
+      )}
     </>
   )
 }

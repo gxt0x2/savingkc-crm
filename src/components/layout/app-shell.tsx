@@ -67,7 +67,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
   const useUserLightTheme = hydrated && !useTcLightTheme && userTheme === 'light'
   const useLightLogo = useTcLightTheme || useUserLightTheme
-  const dialerPresentation = 'dock'
+  // Dialer renders as a centered modal with a blurred backdrop. Previously
+  // docked to the bottom-right corner; users wanted it centered like a
+  // proper modal so the call sits front-and-center.
+  const dialerPresentation = 'modal'
 
   useEffect(() => {
     const html = document.documentElement
