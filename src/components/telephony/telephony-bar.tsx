@@ -630,18 +630,15 @@ export function DialerPanel({
         callRef.current = null
         setStatusLogged('ready')
         setMuted(false)
-        // Show disposition if a lead was selected
-        if (selectedLead) {
-          setShowDisposition(true)
-        }
+        // Always prompt for disposition after a call ends — the modal
+        // handles the no-lead case (manual dial) gracefully.
+        setShowDisposition(true)
       })
       call.on('cancel', () => {
         callRef.current = null
         setStatusLogged('ready')
         setMuted(false)
-        if (selectedLead) {
-          setShowDisposition(true)
-        }
+        setShowDisposition(true)
       })
     } catch (err) {
       const msg = extractTwilioErrorMessage(err)
@@ -736,7 +733,25 @@ export function DialerPanel({
     notes?: string,
     options?: { markAsLead?: boolean; autoDialNext?: boolean },
   ) {
-    if (!selectedLead) return false
+    if (!selectedLead) {
+      // Manual dial without a lead — log to call_log so the disposition is
+      // not lost. The handler returns true so the modal closes cleanly.
+      await fetch('/api/call-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'completed',
+          outcome: disposition,
+          disposition,
+          to_number: lastCallPhoneRef.current,
+          from_number: activeCallerId || null,
+          agent: activeAgentName,
+          duration_seconds: lastCallDurationSecondsRef.current || null,
+          notes: notes || null,
+        }),
+      }).catch(() => {})
+      return true
+    }
     const activeItem = activeQueueItemRef.current
     try {
       if (activeItem) {
@@ -999,8 +1014,10 @@ export function DialerPanel({
           </div>
         )}
 
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        {/* Scrollable body — min-h-0 is required so flex-1 actually shrinks
+            below content size and the panel respects max-h cap. Without it
+            the body forces the panel past the viewport. */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
           {/* Error banner */}
           {error && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">
