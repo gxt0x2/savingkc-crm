@@ -1686,6 +1686,7 @@ export default function LeadDetailPage() {
     { label: 'Motivation', done: hasMotivation, icon: 'psychology', hint: 'Why selling, urgency, pain points' },
     { label: 'Price', done: hasPrice, icon: 'payments', hint: 'Asking, floor, back taxes, mortgage' },
   ]
+  const showLeadTriage = (lead.station || '').toLowerCase() === 'new'
 
   // Build Zillow and county links
   const zillowUrl = addressLine
@@ -1705,13 +1706,15 @@ export default function LeadDetailPage() {
 
   return (
     <div className="lead-cockpit max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-20">
-      <LeadTriageStrip
-        lead={lead}
-        onChanged={(updated) => {
-          setLead(updated)
-          refreshAll()
-        }}
-      />
+      {showLeadTriage && (
+        <LeadTriageStrip
+          lead={lead}
+          onChanged={(updated) => {
+            setLead(updated)
+            refreshAll()
+          }}
+        />
+      )}
 
       {/* ── Cockpit Header ───────────────────────────────────────────────── */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
