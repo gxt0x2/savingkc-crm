@@ -66,6 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings)
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
   const useUserLightTheme = hydrated && !useTcLightTheme && userTheme === 'light'
+  const useLightLogo = useTcLightTheme || useUserLightTheme
   const dialerPresentation = 'dock'
 
   useEffect(() => {
@@ -254,11 +255,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </svg>
             <Link href="/ari" className="flex items-center flex-shrink-0" aria-label="Saving KC Homebuyers">
               <img
-                src="/logo.png"
+                src={useLightLogo ? 'https://savingkc.com/logo.png' : '/logo.png'}
                 alt="Saving KC Homebuyers"
                 className="h-10 w-auto"
                 suppressHydrationWarning
-                style={useTcLightTheme ? undefined : { filter: 'url(#logo-dark-theme)' }}
+                style={useLightLogo ? undefined : { filter: 'url(#logo-dark-theme)' }}
               />
             </Link>
 
