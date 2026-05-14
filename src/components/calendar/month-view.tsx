@@ -114,16 +114,19 @@ export function MonthView({
                   <button
                     key={task.id}
                     onClick={(e) => { e.stopPropagation(); onTaskClick?.(task) }}
-                    className="w-full px-1.5 py-1 text-left text-[10px] font-semibold rounded-sm border-l-2 flex items-center gap-1 truncate hover:brightness-110 transition-all"
+                    className="w-full pl-2 pr-1.5 py-1 text-left text-[10px] font-semibold rounded-sm border-l-[3px] border-[var(--ck-border)] bg-[var(--ck-surface)] flex items-center gap-1.5 truncate hover:bg-[var(--ck-surface-hi)] transition-all"
                     style={taskChipStyle(task)}
                   >
                     {task.status === 'overdue' && (
                       <Icon name="priority_high" size="text-[10px]" className="flex-shrink-0" />
                     )}
-                    <span className="uppercase tracking-wider text-[8px] font-black opacity-70 flex-shrink-0">
+                    <span
+                      className="uppercase tracking-wider text-[8px] font-black flex-shrink-0"
+                      style={{ color: 'var(--task-tone-label, currentColor)' }}
+                    >
                       {taskTypeLabel(task)}
                     </span>
-                    <span className="truncate">{task.title}</span>
+                    <span className="truncate text-[var(--ck-text)]">{task.title}</span>
                   </button>
                 ))}
                 {cellTasks.length > 3 && (
