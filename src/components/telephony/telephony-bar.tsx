@@ -563,8 +563,18 @@ export function DialerPanel({
         : (effectiveCallerId || '')
       const params: Record<string, string> = { To: number }
       if (callerIdForThisCall) params.CallerId = callerIdForThisCall
+      // enableRingingState: true is required by the Twilio Voice SDK so the
+      // parent (browser) call emits a 'ringing' event and plays the network
+      // ringback tone while the destination phone rings. Without it the
+      // call transitions pending → connecting → open with no audible
+      // feedback. This surfaced after PR #131 added answerOnBridge="true"
+      // to the outbound TwiML — answerOnBridge holds the parent in
+      // "ringing" until the destination answers, and the SDK has to be
+      // told to honor that.
       const call = await deviceRef.current.connect({
         params,
+        rtcConstraints: { audio: true },
+        enableRingingState: true,
       })
       if (callerPlan.mode === 'rotation' && !callerIdLockedByUser) {
         setAttemptsPlaced((current) => current + 1)
