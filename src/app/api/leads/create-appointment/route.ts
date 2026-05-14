@@ -3,6 +3,12 @@ import { updateManifestAndCascade, ensureManifestExists } from '@/lib/manifest-s
 import { randomUUID } from 'crypto'
 import { supabase } from '@/lib/supabase-lazy'
 import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
+import { normalizeDealStage } from '@/types/pipeline'
+
+// Stations that should auto-advance to appointment_set when an appointment
+// is scheduled. We never demote a more-advanced station (offer_made,
+// under_contract) and never resurrect a terminal one (dead, closed_*).
+const ADVANCE_FROM_STATIONS = new Set(['new', 'contacted', 'qualified'])
 
 /**
  * POST /api/leads/create-appointment
@@ -54,6 +60,32 @@ export async function POST(req: NextRequest) {
         details: { type, scheduledAt, assignedTo, notes },
       })
     }, 'appointment_modal')
+
+    // 2b. Auto-advance station to appointment_set when applicable. Without
+    // this, leads stay at new/contacted/qualified after booking and miss the
+    // appointment_set stage value in scoring.
+    const { data: leadRow } = await supabase
+      .from('leads')
+      .select('station')
+      .eq('id', leadId)
+      .single()
+    const currentStage = normalizeDealStage(leadRow?.station)
+    if (currentStage && ADVANCE_FROM_STATIONS.has(currentStage)) {
+      await supabase
+        .from('leads')
+        .update({ station: 'appointment_set', updated_at: new Date().toISOString() })
+        .eq('id', leadId)
+      await updateManifestAndCascade(leadId, (manifest) => {
+        manifest.currentStation = 'appointment_set'
+        manifest.auditTrail = manifest.auditTrail ?? []
+        manifest.auditTrail.push({
+          timestamp: new Date().toISOString(),
+          agent: 'appointment_modal',
+          action: 'station_auto_advanced',
+          details: { from: leadRow?.station, to: 'appointment_set', trigger: 'appointment_created' },
+        })
+      }, 'appointment_modal:auto_advance').catch(() => false)
+    }
 
     // 3. Log to lead_activities for calendar/timeline display
     const typeLabels: Record<string, string> = {

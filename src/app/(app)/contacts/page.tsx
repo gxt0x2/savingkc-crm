@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
 import { toProperCase } from '@/lib/format'
+import { FavoriteToggle } from '@/components/leads/favorite-toggle'
 import type { DealStage } from '@/types/pipeline'
 
 interface ContactRow {
@@ -15,6 +16,7 @@ interface ContactRow {
   city: string | null
   station: DealStage
   score: number
+  isFavorite: boolean
   nextActivity: {
     when: string | null
     label: string
@@ -24,6 +26,16 @@ interface ContactRow {
   lastContactAt: string | null
   updatedAt: string | null
 }
+
+const STAGE_OPTIONS: { value: DealStage; label: string }[] = [
+  { value: 'new', label: 'New' },
+  { value: 'contacted', label: 'Contacted' },
+  { value: 'qualified', label: 'Qualified' },
+  { value: 'appointment_set', label: 'Appointment Set' },
+  { value: 'offer_made', label: 'Offer Made' },
+  { value: 'under_contract', label: 'In Closing' },
+  { value: 'dead', label: 'Dead' },
+]
 
 interface ContactsResponse {
   items: ContactRow[]
@@ -118,18 +130,46 @@ function initials(name: string | null): string {
 export default function ContactsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('hot')
   const { data, isLoading, error } = useContacts()
+  const queryClient = useQueryClient()
+  const [pendingStationFor, setPendingStationFor] = useState<string | null>(null)
 
   const items = useMemo(() => data?.items ?? [], [data])
+
+  const handleStationChange = useCallback(async (leadId: string, station: DealStage) => {
+    setPendingStationFor(leadId)
+    try {
+      const res = await fetch(`/api/admin/leads/${leadId}/station`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ station, reason: 'manual change from contacts page' }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      await queryClient.invalidateQueries({ queryKey: ['contacts'] })
+    } catch (err) {
+      console.error('Failed to update station:', err)
+      alert(`Failed to update stage: ${err instanceof Error ? err.message : 'unknown error'}`)
+    } finally {
+      setPendingStationFor(null)
+    }
+  }, [queryClient])
 
   // under_contract leads are exclusive to the In Closing tab. Every other
   // list (including All and Hot) excludes them so a closing deal can't
   // double-appear in the active acquisition queue.
   const acquisitionOnly = useMemo(() => items.filter((i) => i.station !== 'under_contract'), [items])
 
+  // Hot = composite score ≥ 75 OR manually starred (is_favorite).
+  // The star on the lead page is the canonical manual-hot signal.
+  const isHot = useCallback((row: ContactRow) => row.score >= 75 || row.isFavorite, [])
+
   const counts = useMemo<Record<TabKey, number>>(() => {
     return {
       all: acquisitionOnly.length,
-      hot: acquisitionOnly.filter((i) => i.score >= 75).length,
+      hot: acquisitionOnly.filter(isHot).length,
       new: acquisitionOnly.filter((i) => i.station === 'new').length,
       contacted: acquisitionOnly.filter((i) => i.station === 'contacted').length,
       qualified: acquisitionOnly.filter((i) => i.station === 'qualified').length,
@@ -137,7 +177,7 @@ export default function ContactsPage() {
       offer_made: acquisitionOnly.filter((i) => i.station === 'offer_made').length,
       in_closing: items.filter((i) => i.station === 'under_contract').length,
     }
-  }, [items, acquisitionOnly])
+  }, [items, acquisitionOnly, isHot])
 
   const visible = useMemo(() => {
     const tab = TABS.find((t) => t.key === activeTab)
@@ -145,9 +185,9 @@ export default function ContactsPage() {
     const pool = activeTab === 'in_closing' ? items : acquisitionOnly
     let filtered = pool
     if (tab.station) filtered = filtered.filter((i) => i.station === tab.station)
-    if (tab.minScore !== undefined) filtered = filtered.filter((i) => i.score >= tab.minScore!)
+    if (activeTab === 'hot') filtered = filtered.filter(isHot)
     return [...filtered].sort((a, b) => b.score - a.score)
-  }, [items, acquisitionOnly, activeTab])
+  }, [items, acquisitionOnly, activeTab, isHot])
 
   const saveLeadGroup = useCallback(() => {
     if (typeof window === 'undefined') return
@@ -235,11 +275,13 @@ export default function ContactsPage() {
             <table className="w-full text-sm">
               <thead className="bg-[var(--ck-surface-elev)] text-left text-xs uppercase tracking-wider text-[var(--ck-text-muted)]">
                 <tr>
-                  <th className="px-4 py-2.5 font-semibold w-[26%]">Name</th>
-                  <th className="px-4 py-2.5 font-semibold w-[22%]">Address</th>
-                  <th className="px-4 py-2.5 font-semibold w-[12%]">Phone</th>
-                  <th className="px-4 py-2.5 font-semibold w-[20%]">Next Activity</th>
-                  <th className="px-4 py-2.5 font-semibold w-[16%]">Tags</th>
+                  <th className="px-3 py-2.5 font-semibold w-[3%]"></th>
+                  <th className="px-4 py-2.5 font-semibold w-[22%]">Name</th>
+                  <th className="px-4 py-2.5 font-semibold w-[12%]">Stage</th>
+                  <th className="px-4 py-2.5 font-semibold w-[18%]">Address</th>
+                  <th className="px-4 py-2.5 font-semibold w-[11%]">Phone</th>
+                  <th className="px-4 py-2.5 font-semibold w-[16%]">Next Activity</th>
+                  <th className="px-4 py-2.5 font-semibold w-[14%]">Tags</th>
                   <th className="px-4 py-2.5 font-semibold w-[4%] text-right">Score</th>
                 </tr>
               </thead>
@@ -248,11 +290,15 @@ export default function ContactsPage() {
                   const address = [row.address, row.city].filter(Boolean).join(', ')
                   const stripe = idx % 2 === 0 ? 'bg-[var(--ck-surface)]' : 'bg-[var(--ck-surface-elev)]'
                   const stationColor = STATION_COLORS[row.station] ?? STATION_COLORS.new
+                  const isPendingStation = pendingStationFor === row.id
                   return (
                     <tr
                       key={row.id}
                       className={`${stripe} border-t border-[var(--ck-border)] hover:bg-[#E32E2E]/5 transition-colors`}
                     >
+                      <td className="px-3 py-3 align-middle">
+                        <FavoriteToggle leadId={row.id} isFavorite={row.isFavorite} size="md" />
+                      </td>
                       <td className="px-4 py-3 align-middle">
                         <div className="flex items-center gap-3">
                           <div
@@ -269,17 +315,22 @@ export default function ContactsPage() {
                             >
                               {toProperCase(row.fullName || 'Unnamed')}
                             </Link>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span
-                                className="inline-block h-1.5 w-1.5 rounded-full"
-                                style={{ backgroundColor: stationColor }}
-                              />
-                              <span className="text-xs text-[var(--ck-text-dim)] capitalize">
-                                {row.station.replace(/_/g, ' ')}
-                              </span>
-                            </div>
                           </div>
                         </div>
+                      </td>
+                      <td className="px-4 py-3 align-middle">
+                        <select
+                          value={row.station}
+                          onChange={(e) => handleStationChange(row.id, e.target.value as DealStage)}
+                          disabled={isPendingStation}
+                          className="bg-[var(--ck-bg)] border border-[var(--ck-border)] hover:border-[#E32E2E]/40 text-[var(--ck-text)] text-xs rounded px-2 py-1 cursor-pointer focus:outline-none focus:border-[#E32E2E] disabled:opacity-50"
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label="Change stage"
+                        >
+                          {STAGE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)] truncate">{address || '--'}</td>
                       <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)] whitespace-nowrap font-mono text-xs">
@@ -307,7 +358,7 @@ export default function ContactsPage() {
                       <td className="px-4 py-3 align-middle text-right">
                         <span
                           className={`inline-block rounded px-2 py-1 text-xs font-bold ${
-                            row.score >= 75
+                            isHot(row)
                               ? 'bg-[#E32E2E] text-white'
                               : row.score >= 40
                               ? 'bg-[#E32E2E]/20 text-[#E32E2E]'
