@@ -144,6 +144,7 @@ body {
   --ck-warn: #f59e0b;
   --ck-success: #10b981;
   --ck-info: #3b82f6;
+  --ck-chip-alpha: 14%;
 }
 
 /* Light-theme overrides — opt-in via `.theme-light` class on <html> (set by
@@ -174,6 +175,7 @@ body {
   --ck-warn: #d97706;
   --ck-success: #059669;
   --ck-info: #7c3aed;
+  --ck-chip-alpha: 28%;
 }
 
 /* Hover patterns like `hover:bg-white/5` were written for the dark cockpit
