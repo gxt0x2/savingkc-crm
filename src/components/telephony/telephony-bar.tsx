@@ -916,7 +916,9 @@ export function DialerPanel({
       >
         <div
           className={`w-[388px] max-w-[calc(100vw-1rem)] ${
-            isDocked ? 'h-[min(82vh,760px)]' : 'h-[min(92vh,860px)]'
+            isDocked
+              ? 'h-[min(82vh,760px)]'
+              : 'max-h-[calc(100dvh-2rem)] h-auto'
           } bg-[var(--skc-surface-1)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-modal)] shadow-[0_24px_70px_rgba(0,0,0,0.62)] transform transition-all duration-300 ease-out flex flex-col ${
             open ? 'scale-100 translate-y-0' : 'scale-95 translate-y-2'
           } ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
@@ -1295,7 +1297,7 @@ export function DialerPanel({
                 <h3 className="text-[10px] font-black text-white/30 uppercase tracking-widest">Recent Calls</h3>
                 <span className="text-[10px] text-white/30 tabular-nums">{recentCalls.length}</span>
               </div>
-              <div className="space-y-1.5 max-h-[26rem] overflow-y-auto pr-1">
+              <div className="space-y-1.5 max-h-[min(26rem,50vh)] overflow-y-auto pr-1">
                 {recentCalls.map((call) => {
                   const direction = classifyDirection(call.metadata)
                   const noAnswer = isNoAnswer(call.metadata)
