@@ -83,8 +83,8 @@ export function MonthView({
                 'relative p-2 group transition-colors',
                 !isLastCol && 'border-r border-[var(--ck-border)]',
                 !isLastRow && 'border-b border-[var(--ck-border)]',
-                !cell.isCurrentMonth && 'opacity-40',
-                isToday ? 'bg-[#E32E2E]/5' : 'hover:bg-[var(--ck-surface-elev)]',
+                !cell.isCurrentMonth && 'opacity-60',
+                isToday ? 'bg-[#E32E2E]/10' : 'hover:bg-[var(--ck-surface-elev)]',
               ].filter(Boolean).join(' ')}
             >
               {/* Day number */}
