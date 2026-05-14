@@ -976,9 +976,21 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         ...(existing.manifest.auditTrail || []),
         ...(manifest.auditTrail || []).filter((e: any) => e.action !== 'manifest_created'),
       ]
+      // Never let the merge demote pipeline state. The new mojo manifest
+      // always seeds currentStation to 'new' or 'qualified' (line ~894);
+      // without this guard, every Mojo sync drags Hugo and others back
+      // down from appointment_set / offer_made.
+      const STAGE_ORDER = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'closed_lost', 'dead'] as const
+      const existingStation: string | undefined = existing.manifest?.currentStation
+      const newStation: string | undefined = manifest.currentStation
+      const existingIdx = STAGE_ORDER.indexOf(existingStation as typeof STAGE_ORDER[number])
+      const newIdx = STAGE_ORDER.indexOf(newStation as typeof STAGE_ORDER[number])
+      if (existingStation && existingIdx > newIdx) {
+        merged.currentStation = existingStation
+      }
       await supabase
         .from('manifests')
-        .update({ manifest: merged, current_station: manifest.currentStation, priority: manifest.priority })
+        .update({ manifest: merged, current_station: merged.currentStation, priority: manifest.priority })
         .eq('id', existing.id)
       manifestId = existing.id
       manifest = merged
