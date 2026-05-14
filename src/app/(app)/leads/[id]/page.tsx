@@ -1228,8 +1228,16 @@ export default function LeadDetailPage() {
             ? fin.redfin_estimate
             : null
           setRedfinEstimate(redfin)
-          // Store appointment data for outcome modal
-          setManifestAppointment(data.manifest.manifest?.pipeline?.appointment || null)
+          // Store appointment data for outcome modal. The manifest builder
+          // sometimes hallucinates an appointment object with prose like
+          // "Not mentioned" / "Not specified" / "none" in scheduledAt; treat
+          // those as no appointment so downstream date formatters don't crash.
+          const rawAppt = data.manifest.manifest?.pipeline?.appointment
+          const isoLike = typeof rawAppt?.scheduledAt === 'string'
+            && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawAppt.scheduledAt)
+          const parsedAt = isoLike ? new Date(rawAppt.scheduledAt as string) : null
+          const validAppt = rawAppt && parsedAt && !isNaN(parsedAt.getTime()) ? rawAppt : null
+          setManifestAppointment(validAppt)
           // Qualification score for header chip
           const qs = data.manifest.manifest?.qualificationScore
           setManifestScore(typeof qs === 'number' ? qs : null)
