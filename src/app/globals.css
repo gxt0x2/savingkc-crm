@@ -145,6 +145,8 @@ body {
   --ck-success: #10b981;
   --ck-info: #3b82f6;
   --ck-chip-alpha: 14%;
+  --ck-chip-mix-base: transparent;
+  /* --ck-chip-text unset → chip color defaults to the per-task accent */
 }
 
 /* Light-theme overrides — opt-in via `.theme-light` class on <html> (set by
@@ -175,7 +177,12 @@ body {
   --ck-warn: #d97706;
   --ck-success: #059669;
   --ck-info: #7c3aed;
-  --ck-chip-alpha: 28%;
+  /* Chips become opaque pastels (mix with white) at higher saturation so
+     they read against white surfaces. Text overrides to slate-900 for
+     legible labels regardless of the accent. */
+  --ck-chip-alpha: 22%;
+  --ck-chip-mix-base: #ffffff;
+  --ck-chip-text: #0f172a;
 }
 
 /* Hover patterns like `hover:bg-white/5` were written for the dark cockpit

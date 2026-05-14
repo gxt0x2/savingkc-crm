@@ -83,8 +83,11 @@ export function MonthView({
                 'relative p-2 group transition-colors',
                 !isLastCol && 'border-r border-[var(--ck-border)]',
                 !isLastRow && 'border-b border-[var(--ck-border)]',
-                !cell.isCurrentMonth && 'opacity-60',
-                isToday ? 'bg-[#E32E2E]/10' : 'hover:bg-[var(--ck-surface-elev)]',
+                isToday
+                  ? 'bg-[#E32E2E]/12 ring-1 ring-inset ring-[#E32E2E]/30'
+                  : cell.isCurrentMonth
+                    ? 'hover:bg-[var(--ck-surface-elev)]'
+                    : 'bg-[var(--ck-surface-elev)]',
               ].filter(Boolean).join(' ')}
             >
               {/* Day number */}
@@ -94,7 +97,7 @@ export function MonthView({
                     {cell.day}
                   </span>
                 ) : (
-                  <span className={`text-[11px] font-bold tabular-nums ${cell.isCurrentMonth ? 'text-[var(--ck-text)]' : 'text-[var(--ck-text-dim)]'}`}>
+                  <span className={`text-[11px] font-bold tabular-nums ${cell.isCurrentMonth ? 'text-[var(--ck-text)]' : 'text-[var(--ck-text-muted)]'}`}>
                     {cell.day}
                   </span>
                 )}
