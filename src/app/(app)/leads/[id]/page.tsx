@@ -13,6 +13,7 @@ import { DocumentManager } from '@/components/documents/document-manager'
 import { PropertyDetailsCard } from '@/components/leads/property-details-card'
 import { TemperatureBadge } from '@/components/leads/temperature-badge'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
+import { StageSelector } from '@/components/leads/stage-selector'
 import { AddNote } from '@/components/leads/add-note'
 import { EditNoteModal } from '@/components/leads/edit-note-modal'
 import { ContractModal } from '@/components/leads/contract-modal'
@@ -1775,6 +1776,14 @@ export default function LeadDetailPage() {
                   setLead((prev) =>
                     prev ? { ...prev, is_favorite: val, priority: val ? 'hot' : prev.priority } : prev
                   )
+                }
+              />
+              <StageSelector
+                leadId={lead.id}
+                station={lead.station}
+                size="sm"
+                onChange={(next) =>
+                  setLead((prev) => prev ? { ...prev, station: next } : prev)
                 }
               />
             </div>
