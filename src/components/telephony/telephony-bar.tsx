@@ -221,7 +221,7 @@ function stripDialFormatting(input: string): string {
 
 function formatDialDisplay(input: string): string {
   const raw = stripDialFormatting(input).trim()
-  if (!raw) return '(816) 555-0000'
+  if (!raw) return ''
   if (raw.includes('*') || raw.includes('#')) return raw
   if (/^\+?\d+$/.test(raw)) return formatPhone(raw)
   return raw
