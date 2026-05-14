@@ -14,7 +14,9 @@ function taskToneToken(task: Task) {
     case 'review':
     case 'task':
     default:
-      return '--ck-text-muted'
+      // Callbacks / generic tasks: use the accent so chips read on light
+      // surfaces. --ck-text-muted is slate-gray and disappears at any alpha.
+      return '--ck-accent'
   }
 }
 
@@ -25,13 +27,15 @@ export function taskAccentColor(task: Task) {
 export function taskChipStyle(task: Task): CSSProperties {
   const color = taskAccentColor(task)
 
-  // Chip bg alpha is theme-aware via --ck-chip-alpha (14% dark, 28% light).
-  // Without this the chip is a faint haze on white surfaces.
+  // Theme-aware via CSS vars set in globals.css:
+  //   --ck-chip-alpha     bg saturation (14% dark / 38% light)
+  //   --ck-chip-mix-base  bg mix target (transparent dark / white light → opaque pastel)
+  //   --ck-chip-text      chip text override (accent color dark / slate-900 light)
   return {
-    backgroundColor: `color-mix(in srgb, ${color} var(--ck-chip-alpha, 14%), transparent)`,
+    backgroundColor: `color-mix(in srgb, ${color} var(--ck-chip-alpha, 14%), var(--ck-chip-mix-base, transparent))`,
     borderLeftColor: color,
-    color,
-  }
+    color: `var(--ck-chip-text, ${color})`,
+  } as CSSProperties
 }
 
 export function taskDotStyle(task: Task): CSSProperties {
