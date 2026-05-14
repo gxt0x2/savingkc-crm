@@ -290,7 +290,7 @@ export function SellerGoals(props: SellerGoalsProps) {
       >
         <div className="flex items-center gap-2">
           <Icon name="flag" className="!text-base !text-[color:var(--ck-accent)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-white">Core Goals</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Core Goals</h2>
           <span
             className="w-1.5 h-1.5 rounded-full"
             style={{ background: 'var(--ck-success)', boxShadow: '0 0 6px rgba(16,185,129,0.6)' }}

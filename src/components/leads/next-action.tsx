@@ -236,7 +236,7 @@ export function NextAction(props: NextActionProps) {
       >
         <div className="flex items-center gap-2">
           <Icon name="navigation" className="!text-base !text-[color:var(--ck-accent)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-white">Next Action</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Next Action</h2>
         </div>
         <div className="flex items-center gap-2">
           <span

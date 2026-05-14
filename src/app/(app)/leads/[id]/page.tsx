@@ -246,7 +246,7 @@ function LeadTriageStrip({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-2">
           <Icon name="fact_check" className="!text-base !text-[color:var(--ck-accent)]" />
-          <span className="ck-microlabel !text-[11px] !text-white">Triage</span>
+          <span className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Triage</span>
           <span
             className="rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider"
             style={{
@@ -394,7 +394,7 @@ function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPric
     >
       <div className="flex items-center gap-2 mb-5">
         <Icon name="calculate" className="!text-base !text-[color:var(--ck-accent)]" />
-        <h2 className="ck-microlabel !text-[11px] !text-white">Net Proceeds</h2>
+        <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Net Proceeds</h2>
       </div>
 
       <div className="space-y-2.5">
@@ -412,7 +412,7 @@ function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPric
                   if (e.key === 'Enter') commitEdit(key)
                   if (e.key === 'Escape') setEditingField(null)
                 }}
-                className="w-28 text-right text-sm font-bold text-white rounded px-2 py-0.5 focus:outline-none focus:ring-1"
+                className="w-28 text-right text-sm font-bold text-[color:var(--ck-text)] rounded px-2 py-0.5 focus:outline-none focus:ring-1"
                 style={{
                   background: 'var(--ck-surface-elev)',
                   border: '1px solid var(--ck-border)',
@@ -420,7 +420,7 @@ function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPric
               />
             ) : (
               <span
-                className="text-sm font-bold text-white cursor-pointer hover:opacity-70 transition-opacity px-1"
+                className="text-sm font-bold text-[color:var(--ck-text)] cursor-pointer hover:opacity-70 transition-opacity px-1"
                 onDoubleClick={() => editable && startEdit(key, value)}
                 title={editable ? 'Double-click to edit' : ''}
               >
@@ -460,7 +460,7 @@ function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPric
           <p className="ck-microlabel mb-1" style={{ color: 'var(--ck-accent)' }}>
             Estimated Assignment
           </p>
-          <p className="text-3xl font-black text-white leading-none tracking-tight">
+          <p className="text-3xl font-black text-[color:var(--ck-text)] leading-none tracking-tight">
             ${estimatedAssignment.toLocaleString()}
           </p>
         </div>
@@ -847,7 +847,7 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
       <section className="rounded-2xl p-4 border" style={cardStyle}>
         <div className="flex items-center gap-2 mb-3">
           <Icon name="description" className="!text-sm !text-[color:var(--ck-accent)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-white">Manifest</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Manifest</h2>
         </div>
         <button
           onClick={handleCreateManifest}
@@ -893,7 +893,7 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
       >
         <div className="flex items-center gap-2">
           <Icon name="description" className="!text-sm !text-[color:var(--ck-accent)]" />
-          <span className="ck-microlabel !text-[11px] !text-white">Manifest</span>
+          <span className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Manifest</span>
           {m.version ? (
             <span className="text-[10px] font-bold" style={{ color: 'var(--ck-text-dim)' }}>v{m.version}</span>
           ) : null}
@@ -1757,12 +1757,12 @@ export default function LeadDetailPage() {
           {/* Name + meta */}
           <div className="min-w-0 flex-1 text-left">
             <div className="flex items-center justify-start gap-2 flex-wrap">
-              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight truncate">
+              <h1 className="text-2xl sm:text-3xl font-black text-[color:var(--ck-text)] tracking-tight truncate">
                 {formattedName || 'Unknown'}
               </h1>
               <button
                 onClick={() => setEditPanelOpen(true)}
-                className="p-1 rounded text-[color:var(--ck-text-dim)] hover:text-white hover:bg-[color:var(--ck-surface-elev)] transition-colors"
+                className="p-1 rounded text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text)] hover:bg-[color:var(--ck-surface-elev)] transition-colors"
                 title="Edit lead"
               >
                 <Icon name="edit" size="text-sm" />
@@ -1779,7 +1779,7 @@ export default function LeadDetailPage() {
               />
             </div>
             {addressLine && (
-              <p className="mt-1.5 text-base sm:text-lg font-semibold text-white break-words text-left">
+              <p className="mt-1.5 text-base sm:text-lg font-semibold text-[color:var(--ck-text)] break-words text-left">
                 {addressLine}
               </p>
             )}
@@ -1828,7 +1828,7 @@ export default function LeadDetailPage() {
 
           <button
             onClick={() => setNotesModalOpen(true)}
-            className="h-10 px-3 sm:px-4 rounded-[10px] border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] hover:bg-[color:var(--ck-surface-hi)] text-sm font-bold text-white transition-all flex items-center gap-1.5"
+            className="h-10 px-3 sm:px-4 rounded-[10px] border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] hover:bg-[color:var(--ck-surface-hi)] text-sm font-bold text-[color:var(--ck-text)] transition-all flex items-center gap-1.5"
             title="Add note"
           >
             <Icon name="edit_note" size="text-sm" />
@@ -1836,7 +1836,7 @@ export default function LeadDetailPage() {
           </button>
           <button
             onClick={() => setShowNewTask(true)}
-            className="h-10 px-3 sm:px-4 rounded-[10px] border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] hover:bg-[color:var(--ck-surface-hi)] text-sm font-bold text-white transition-all flex items-center gap-1.5"
+            className="h-10 px-3 sm:px-4 rounded-[10px] border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] hover:bg-[color:var(--ck-surface-hi)] text-sm font-bold text-[color:var(--ck-text)] transition-all flex items-center gap-1.5"
           >
             <Icon name="add_task" size="text-sm" />
             <span className="hidden sm:inline">New Task</span>

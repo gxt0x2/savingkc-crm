@@ -25,7 +25,7 @@ export function MissingInfoCard({ items }: { items: ChecklistItem[] }) {
       >
         <div className="flex items-center gap-2">
           <Icon name="checklist" className="!text-base !text-[color:var(--ck-accent)]" />
-          <h3 className="ck-microlabel !text-[11px] !text-white">Missing Information</h3>
+          <h3 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Missing Information</h3>
           {missing.length > 0 && (
             <span
               className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"

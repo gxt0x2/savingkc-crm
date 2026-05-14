@@ -116,7 +116,7 @@ export function MailTracker({ leadId, leadName, onLogged }: MailTrackerProps) {
             name="local_post_office"
             className="!text-base !text-[color:var(--ck-accent)]"
           />
-          <h2 className="ck-microlabel !text-[11px] !text-white">Mail Tracker</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Mail Tracker</h2>
           {pieces.length > 0 && (
             <span
               className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"

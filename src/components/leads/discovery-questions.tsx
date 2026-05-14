@@ -291,7 +291,7 @@ export function DiscoveryQuestions(props: DiscoveryQuestionsProps) {
       >
         <div className="flex items-center gap-2">
           <Icon name="quiz" className="!text-base !text-[color:var(--ck-accent)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-white">Questions That Still Matter</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Questions That Still Matter</h2>
         </div>
         <div className="flex items-center gap-2">
           {asked.size > 0 && (
