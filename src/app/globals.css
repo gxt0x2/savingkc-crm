@@ -163,26 +163,27 @@ body {
      WCAG AA on white. Info uses violet (no blue per design system).
 */
 .theme-light .lead-cockpit {
-  --ck-bg: #f5f7fa;
+  /* Bold / business — Linear / GitHub vibe. Crisp neutrals, hard borders,
+     accent color reserved for signal moments only. No pastel fills. */
+  --ck-bg: #f1f3f5;
   --ck-surface: #ffffff;
-  --ck-surface-elev: #fafbfc;
-  --ck-surface-hi: #eef2f7;
-  --ck-border: #d8dee9;
-  --ck-border-strong: #b4becc;
-  --ck-text: #0f172a;
-  --ck-text-muted: #475569;
-  --ck-text-dim: #94a3b8;
-  --ck-accent: #E32E2E;
-  --ck-accent-bright: #C42626;
-  --ck-warn: #d97706;
-  --ck-success: #059669;
-  --ck-info: #7c3aed;
-  /* Chips become opaque pastels (mix with white) at higher saturation so
-     they read against white surfaces. Text overrides to slate-900 for
-     legible labels regardless of the accent. */
-  --ck-chip-alpha: 22%;
+  --ck-surface-elev: #f7f8fa;
+  --ck-surface-hi: #e6e9ed;
+  --ck-border: #cdd3da;
+  --ck-border-strong: #98a1ad;
+  --ck-text: #0b1220;
+  --ck-text-muted: #424a55;
+  --ck-text-dim: #8590a0;
+  --ck-accent: #C42626;
+  --ck-accent-bright: #E32E2E;
+  --ck-warn: #b45309;
+  --ck-success: #047857;
+  --ck-info: #5b21b6;
+  /* Chips: solid white bg, no tint. The colored left bar carries the
+     signal, text is slate-900. No pastel fills. */
+  --ck-chip-alpha: 0%;
   --ck-chip-mix-base: #ffffff;
-  --ck-chip-text: #0f172a;
+  --ck-chip-text: #0b1220;
 }
 
 /* Hover patterns like `hover:bg-white/5` were written for the dark cockpit

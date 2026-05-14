@@ -28,13 +28,17 @@ export function taskChipStyle(task: Task): CSSProperties {
   const color = taskAccentColor(task)
 
   // Theme-aware via CSS vars set in globals.css:
-  //   --ck-chip-alpha     bg saturation (14% dark / 38% light)
-  //   --ck-chip-mix-base  bg mix target (transparent dark / white light → opaque pastel)
-  //   --ck-chip-text      chip text override (accent color dark / slate-900 light)
+  //   --ck-chip-alpha     bg saturation (14% dark / 0% light)
+  //   --ck-chip-mix-base  bg mix target (transparent dark / white light)
+  //   --ck-chip-text      chip text override (accent dark / slate-900 light)
+  // Per-chip accent is also exposed as --task-tone-label so the small
+  // type label can render in the accent color while the chip body stays
+  // neutral in light mode.
   return {
     backgroundColor: `color-mix(in srgb, ${color} var(--ck-chip-alpha, 14%), var(--ck-chip-mix-base, transparent))`,
     borderLeftColor: color,
     color: `var(--ck-chip-text, ${color})`,
+    ['--task-tone-label' as string]: color,
   } as CSSProperties
 }
 
