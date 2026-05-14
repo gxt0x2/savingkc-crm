@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
 import { toProperCase } from '@/lib/format'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
+import { StageSelector } from '@/components/leads/stage-selector'
 import type { DealStage } from '@/types/pipeline'
 
 interface ContactRow {
@@ -26,16 +27,6 @@ interface ContactRow {
   lastContactAt: string | null
   updatedAt: string | null
 }
-
-const STAGE_OPTIONS: { value: DealStage; label: string }[] = [
-  { value: 'new', label: 'New' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'qualified', label: 'Qualified' },
-  { value: 'appointment_set', label: 'Appointment Set' },
-  { value: 'offer_made', label: 'Offer Made' },
-  { value: 'under_contract', label: 'In Closing' },
-  { value: 'dead', label: 'Dead' },
-]
 
 interface ContactsResponse {
   items: ContactRow[]
@@ -131,30 +122,11 @@ export default function ContactsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('hot')
   const { data, isLoading, error } = useContacts()
   const queryClient = useQueryClient()
-  const [pendingStationFor, setPendingStationFor] = useState<string | null>(null)
 
   const items = useMemo(() => data?.items ?? [], [data])
 
-  const handleStationChange = useCallback(async (leadId: string, station: DealStage) => {
-    setPendingStationFor(leadId)
-    try {
-      const res = await fetch(`/api/admin/leads/${leadId}/station`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ station, reason: 'manual change from contacts page' }),
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || `HTTP ${res.status}`)
-      }
-      await queryClient.invalidateQueries({ queryKey: ['contacts'] })
-    } catch (err) {
-      console.error('Failed to update station:', err)
-      alert(`Failed to update stage: ${err instanceof Error ? err.message : 'unknown error'}`)
-    } finally {
-      setPendingStationFor(null)
-    }
+  const refreshContacts = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['contacts'] })
   }, [queryClient])
 
   // under_contract leads are exclusive to the In Closing tab. Every other
@@ -290,7 +262,6 @@ export default function ContactsPage() {
                   const address = [row.address, row.city].filter(Boolean).join(', ')
                   const stripe = idx % 2 === 0 ? 'bg-[var(--ck-surface)]' : 'bg-[var(--ck-surface-elev)]'
                   const stationColor = STATION_COLORS[row.station] ?? STATION_COLORS.new
-                  const isPendingStation = pendingStationFor === row.id
                   return (
                     <tr
                       key={row.id}
@@ -319,18 +290,12 @@ export default function ContactsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 align-middle">
-                        <select
-                          value={row.station}
-                          onChange={(e) => handleStationChange(row.id, e.target.value as DealStage)}
-                          disabled={isPendingStation}
-                          className="bg-[var(--ck-bg)] border border-[var(--ck-border)] hover:border-[#E32E2E]/40 text-[var(--ck-text)] text-xs rounded px-2 py-1 cursor-pointer focus:outline-none focus:border-[#E32E2E] disabled:opacity-50"
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label="Change stage"
-                        >
-                          {STAGE_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
+                        <StageSelector
+                          leadId={row.id}
+                          station={row.station}
+                          size="sm"
+                          onChange={refreshContacts}
+                        />
                       </td>
                       <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)] truncate">{address || '--'}</td>
                       <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)] whitespace-nowrap font-mono text-xs">
