@@ -25,8 +25,10 @@ export function taskAccentColor(task: Task) {
 export function taskChipStyle(task: Task): CSSProperties {
   const color = taskAccentColor(task)
 
+  // Chip bg alpha is theme-aware via --ck-chip-alpha (14% dark, 28% light).
+  // Without this the chip is a faint haze on white surfaces.
   return {
-    backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
+    backgroundColor: `color-mix(in srgb, ${color} var(--ck-chip-alpha, 14%), transparent)`,
     borderLeftColor: color,
     color,
   }
