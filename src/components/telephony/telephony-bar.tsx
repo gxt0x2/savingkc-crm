@@ -253,6 +253,7 @@ export function DialerPanel({
   const [searching, setSearching] = useState(false)
   const [selectedLead, setSelectedLead] = useState<SearchResult | null>(null)
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null)
+  const dialInputRef = useRef<HTMLInputElement>(null)
 
   // Recent calls
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
@@ -678,6 +679,20 @@ export function DialerPanel({
 
     return () => window.clearTimeout(timeout)
   }, [dialNumber, queueItem, queueMode, showDisposition, status])
+
+  // Auto-focus the dial input when the dialer opens (idle / dial tab only),
+  // so the user can immediately type a number on their keyboard without
+  // clicking into the field. Skipped while on a call or in the recent tab.
+  useEffect(() => {
+    if (!open) return
+    const isOnCallNow = status === 'on_call' || status === 'calling'
+    if (isOnCallNow || status === 'incoming') return
+    if (viewTab !== 'dial') return
+    const id = window.setTimeout(() => {
+      dialInputRef.current?.focus()
+    }, 200)
+    return () => window.clearTimeout(id)
+  }, [open, status, viewTab])
 
   function hangup() {
     callRef.current?.disconnect()
@@ -1220,6 +1235,7 @@ export function DialerPanel({
             <div>
               <div className="px-4 pb-2 text-center">
                 <input
+                  ref={dialInputRef}
                   type="tel"
                   inputMode="tel"
                   value={formatDialDisplay(dialNumber)}
@@ -1230,9 +1246,9 @@ export function DialerPanel({
                       makeCall()
                     }
                   }}
-                  placeholder="Enter number"
+                  placeholder=""
                   aria-label="Phone number"
-                  className="w-full bg-transparent border-0 text-center text-[28px] font-light tracking-[-0.02em] text-[var(--skc-text-primary)] [font-feature-settings:'tnum'] focus:outline-none placeholder:text-[var(--skc-text-tertiary)]"
+                  className="w-full bg-transparent border-0 text-center text-[28px] font-light tracking-[-0.02em] text-[var(--skc-text-primary)] [font-feature-settings:'tnum'] focus:outline-none"
                 />
               </div>
 
