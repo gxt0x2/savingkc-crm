@@ -24,6 +24,7 @@ export interface ContactRow {
   city: string | null
   station: DealStage
   score: number
+  isFavorite: boolean
   nextActivity: {
     when: string | null
     label: string
@@ -95,7 +96,7 @@ export async function GET() {
 
   const { data: leads, error: leadsErr } = await db
     .from('leads')
-    .select('id, full_name, phone, station, property_address, city, updated_at, is_parked')
+    .select('id, full_name, phone, station, property_address, city, updated_at, is_parked, is_favorite')
     .eq('is_parked', false)
     .order('updated_at', { ascending: false })
 
@@ -146,6 +147,7 @@ export async function GET() {
       city: lead.city,
       station,
       score: scoreByLead.get(lead.id) ?? 0,
+      isFavorite: Boolean((lead as { is_favorite?: boolean | null }).is_favorite),
       nextActivity: pickNextActivity(manifest),
       tags: pickTags(manifest),
       lastContactAt,
