@@ -151,10 +151,14 @@ export async function GET(req: Request) {
     const limitParam = Number(searchParams.get('limit') || '10')
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 10
 
+    // Every outbound call writes TWO rows: status=initiated on start +
+    // status=completed on end. Recent Calls is a UI surface — show one row
+    // per call. Exclude the initiated row; it stays in the DB for audit.
     const { data, error } = await supabase
       .from('lead_activities')
       .select('id, lead_id, description, agent, metadata, created_at')
       .eq('activity_type', 'call')
+      .neq('metadata->>status', 'initiated')
       .order('created_at', { ascending: false })
       .limit(limit * 3)
 
