@@ -1217,54 +1217,66 @@ export function DialerPanel({
 
           {/* Dial Section (when not on call and not incoming) */}
           {!isOnCall && status !== 'incoming' && viewTab === 'dial' && (
-            <div className="pt-1">
-              <div className="px-4 pt-1 pb-2 text-center">
-                <p className="text-[34px] font-light tracking-[-0.02em] text-[var(--skc-text-primary)] [font-feature-settings:'tnum']">
-                  {formatDialDisplay(dialNumber)}
-                </p>
+            <div>
+              <div className="px-4 pb-2 text-center">
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={formatDialDisplay(dialNumber)}
+                  onChange={(e) => setDialNumber(stripDialFormatting(e.target.value))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && dialNumber.trim() && status === 'ready') {
+                      e.preventDefault()
+                      makeCall()
+                    }
+                  }}
+                  placeholder="Enter number"
+                  aria-label="Phone number"
+                  className="w-full bg-transparent border-0 text-center text-[28px] font-light tracking-[-0.02em] text-[var(--skc-text-primary)] [font-feature-settings:'tnum'] focus:outline-none placeholder:text-[var(--skc-text-tertiary)]"
+                />
               </div>
 
-              <div className="px-8 pb-4 grid grid-cols-3 gap-x-5 gap-y-3 justify-items-center">
+              <div className="px-8 pb-3 grid grid-cols-3 gap-x-4 gap-y-2 justify-items-center">
                 {DIALER_KEYPAD.map((key) => (
                   <button
                     key={key.value}
                     onClick={() => appendDialChar(key.value)}
-                    className="w-16 h-16 rounded-full bg-[var(--skc-surface-3)] hover:bg-[var(--skc-surface-2)] transition-colors flex flex-col items-center justify-center"
+                    className="w-14 h-14 rounded-full bg-[var(--skc-surface-3)] hover:bg-[var(--skc-surface-2)] transition-colors flex flex-col items-center justify-center"
                     aria-label={`Dial ${key.value}`}
                   >
-                    <span className="text-[28px] font-light leading-none tracking-[-0.02em] text-[var(--skc-text-primary)]">
+                    <span className="text-[24px] font-light leading-none tracking-[-0.02em] text-[var(--skc-text-primary)]">
                       {key.value}
                     </span>
-                    <span className="text-[9px] font-semibold tracking-[0.18em] text-[var(--skc-text-tertiary)] mt-0.5 min-h-[10px]">
+                    <span className="text-[8px] font-semibold tracking-[0.18em] text-[var(--skc-text-tertiary)] mt-0.5 min-h-[10px]">
                       {key.letters || '\u00A0'}
                     </span>
                   </button>
                 ))}
               </div>
 
-              <div className="px-4 pb-3 grid grid-cols-[64px_1fr_64px] items-center gap-3">
+              <div className="px-4 pb-2 grid grid-cols-[56px_1fr_56px] items-center gap-3">
                 <div />
                 <button
                   onClick={makeCall}
                   disabled={!dialNumber.trim() || status !== 'ready'}
-                  className="w-16 h-16 rounded-full bg-[var(--skc-brand)] hover:bg-[var(--skc-brand-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center justify-self-center"
+                  className="w-14 h-14 rounded-full bg-[#30D158] hover:bg-[#28B14B] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center justify-self-center shadow-lg shadow-[#30D158]/30"
                   title={status === 'ready' ? 'Call' : 'Waiting for Twilio'}
                   aria-label={status === 'ready' ? 'Call' : 'Waiting for Twilio'}
                 >
-                  <Icon name="call" size="text-[28px]" className="text-white" filled />
+                  <Icon name="call" size="text-[24px]" className="text-white" filled />
                 </button>
                 <button
                   onClick={backspaceDial}
                   disabled={!dialNumber}
-                  className="w-11 h-11 rounded-full bg-[var(--skc-surface-3)] hover:bg-[var(--skc-surface-2)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center justify-self-center"
+                  className="w-10 h-10 rounded-full bg-[var(--skc-surface-3)] hover:bg-[var(--skc-surface-2)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center justify-self-center"
                   aria-label="Backspace"
                 >
-                  <Icon name="keyboard_backspace" size="text-[20px]" className="text-[var(--skc-text-secondary)]" />
+                  <Icon name="keyboard_backspace" size="text-[18px]" className="text-[var(--skc-text-secondary)]" />
                 </button>
               </div>
 
-              <div className="border-t border-[var(--skc-separator)] px-4 py-3">
-                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-tertiary)] mb-1">
+              <div className="border-t border-[var(--skc-separator)] px-4 py-2">
+                <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-tertiary)] mb-0.5">
                   Calling from
                 </div>
                 {callerIdOptions.length > 0 ? (
@@ -1281,7 +1293,7 @@ export function DialerPanel({
                           staticCallerId: value,
                         }, value))
                       }}
-                      className="w-full bg-[var(--skc-surface-3)] text-[var(--skc-text-primary)] rounded-[var(--skc-radius-control)] px-3 pr-8 py-2.5 text-[15px] font-medium tracking-[-0.01em] border border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--skc-brand-soft-border)] appearance-none"
+                      className="w-full bg-[var(--skc-surface-3)] text-[var(--skc-text-primary)] rounded-[var(--skc-radius-control)] px-3 pr-8 py-1.5 text-[14px] font-medium tracking-[-0.01em] border border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--skc-brand-soft-border)] appearance-none"
                     >
                       {callerIdOptions.map((opt) => (
                         <option key={opt.value} value={opt.value} className="bg-[var(--skc-surface-2)]">
