@@ -871,10 +871,18 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
   if (m.tier) signals.push({ label: 'Tier', value: String(m.tier), tone: 'muted' })
   if (m.qualificationScore != null) signals.push({ label: 'Score', value: String(m.qualificationScore), tone: 'muted' })
 
-  const flagRed: string[] = m.flags?.redFlags || []
-  const flagOpp: string[] = m.flags?.opportunityFlags || []
-  const situationTypes: string[] = m.situation?.type || []
-  const motivationSignals: string[] = m.situation?.motivation?.signals || []
+  // Defensive: AI-built manifests sometimes return scalars where the type
+  // expects arrays. asArray() normalises so .join / .slice / .map don't
+  // crash the page render.
+  const asArray = (v: unknown): string[] => {
+    if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string')
+    if (typeof v === 'string' && v.trim()) return [v]
+    return []
+  }
+  const flagRed: string[] = asArray(m.flags?.redFlags)
+  const flagOpp: string[] = asArray(m.flags?.opportunityFlags)
+  const situationTypes: string[] = asArray(m.situation?.type)
+  const motivationSignals: string[] = asArray(m.situation?.motivation?.signals)
   const taxOwed = m.property?.taxCollector?.totalOwed ?? m.property?.taxCollector?.delinquentAmount
   const vacant = m.property?.vacant
   const deceased = m.owner?.deceased
@@ -937,8 +945,8 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
             <div>
               <p className="ck-microlabel mb-0.5">Owner</p>
               <p className="font-semibold">{m.owner.fullName}</p>
-              {m.owner.coOwners?.length > 0 && (
-                <p className="text-[10px]" style={{ color: 'var(--ck-text-muted)' }}>+ {m.owner.coOwners.join(', ')}</p>
+              {asArray(m.owner.coOwners).length > 0 && (
+                <p className="text-[10px]" style={{ color: 'var(--ck-text-muted)' }}>+ {asArray(m.owner.coOwners).join(', ')}</p>
               )}
             </div>
           )}
