@@ -148,17 +148,97 @@ body {
 
 /* Light-theme overrides — opt-in via `.theme-light` class on <html> (set by
    AppShell when user preference is 'light'). Portaled .ck-dark modals stay
-   dark by design, but the cockpit page surface flips to light. */
+   dark by design, but the cockpit page surface flips to light.
+
+   Palette principles (deliberate, not just "white bg"):
+   - bg is a soft slate-tinted off-white so white cards visually pop
+   - surface is pure white for content cards (Contacts table, lead detail)
+   - surface-elev is barely-tinted (table headers, secondary panels)
+   - surface-hi is a real hover/selected gray — required for visible hovers
+   - borders use slate-300/400 so card edges read clearly
+   - accent/warn/success/info shift toward 600-700 shades so they meet
+     WCAG AA on white. Info uses violet (no blue per design system).
+*/
 .theme-light .lead-cockpit {
-  --ck-bg: #ffffff;
-  --ck-surface: #f8f9fa;
-  --ck-surface-elev: #f3f4f5;
-  --ck-surface-hi: #e7e8e9;
-  --ck-border: #e5e7eb;
-  --ck-border-strong: #d1d5db;
-  --ck-text: #111827;
-  --ck-text-muted: #4b5563;
-  --ck-text-dim: #9ca3af;
+  --ck-bg: #f5f7fa;
+  --ck-surface: #ffffff;
+  --ck-surface-elev: #fafbfc;
+  --ck-surface-hi: #eef2f7;
+  --ck-border: #d8dee9;
+  --ck-border-strong: #b4becc;
+  --ck-text: #0f172a;
+  --ck-text-muted: #475569;
+  --ck-text-dim: #94a3b8;
+  --ck-accent: #E32E2E;
+  --ck-accent-bright: #C42626;
+  --ck-warn: #d97706;
+  --ck-success: #059669;
+  --ck-info: #7c3aed;
+}
+
+/* Hover patterns like `hover:bg-white/5` were written for the dark cockpit
+   and are invisible on a light surface. Map them to a soft black tint in
+   light mode so the interaction stays legible without a per-component
+   rewrite. */
+.theme-light .lead-cockpit [class*="hover:bg-white"]:hover {
+  background-color: rgba(15, 23, 42, 0.06);
+}
+.theme-light .lead-cockpit [class*="bg-white/"]:not(:hover):not([class*="hover:bg-white"]) {
+  background-color: rgba(15, 23, 42, 0.04);
+}
+
+/* Pastel text colors (yellow-300, emerald-300, amber-300, etc.) read on
+   dark surfaces but wash out on white. Map them to AA-contrast 700-shade
+   equivalents in light mode without touching the components themselves.
+   Important: this only fires inside .lead-cockpit, so portaled .ck-dark
+   modals keep their original pastels. */
+.theme-light .lead-cockpit .text-yellow-200,
+.theme-light .lead-cockpit .text-yellow-300,
+.theme-light .lead-cockpit .text-yellow-400,
+.theme-light .lead-cockpit .text-amber-200,
+.theme-light .lead-cockpit .text-amber-300,
+.theme-light .lead-cockpit .text-amber-400 {
+  color: #b45309 !important; /* amber-700 */
+}
+.theme-light .lead-cockpit .text-emerald-200,
+.theme-light .lead-cockpit .text-emerald-300,
+.theme-light .lead-cockpit .text-emerald-400,
+.theme-light .lead-cockpit .text-green-200,
+.theme-light .lead-cockpit .text-green-300,
+.theme-light .lead-cockpit .text-green-400 {
+  color: #047857 !important; /* emerald-700 */
+}
+.theme-light .lead-cockpit .text-rose-200,
+.theme-light .lead-cockpit .text-rose-300,
+.theme-light .lead-cockpit .text-rose-400,
+.theme-light .lead-cockpit .text-red-200,
+.theme-light .lead-cockpit .text-red-300,
+.theme-light .lead-cockpit .text-red-400,
+.theme-light .lead-cockpit .text-\[\#FCA5A5\] {
+  color: #c42626 !important; /* brand red, dimmed */
+}
+.theme-light .lead-cockpit .text-blue-200,
+.theme-light .lead-cockpit .text-blue-300,
+.theme-light .lead-cockpit .text-blue-400,
+.theme-light .lead-cockpit .text-sky-200,
+.theme-light .lead-cockpit .text-sky-300,
+.theme-light .lead-cockpit .text-sky-400 {
+  color: #6d28d9 !important; /* violet-700 — no blue per design system */
+}
+
+/* Translucent yellow/amber/emerald/blue chip backgrounds are washed-out
+   pastels on white. Bump up the alpha so the chip reads. */
+.theme-light .lead-cockpit [class*="bg-yellow-"][class*="/15"],
+.theme-light .lead-cockpit [class*="bg-amber-"][class*="/15"],
+.theme-light .lead-cockpit [class*="bg-yellow-"][class*="/20"],
+.theme-light .lead-cockpit [class*="bg-amber-"][class*="/20"] {
+  background-color: rgba(180, 83, 9, 0.12) !important;
+}
+.theme-light .lead-cockpit [class*="bg-emerald-"][class*="/15"],
+.theme-light .lead-cockpit [class*="bg-green-"][class*="/15"],
+.theme-light .lead-cockpit [class*="bg-emerald-"][class*="/20"],
+.theme-light .lead-cockpit [class*="bg-green-"][class*="/20"] {
+  background-color: rgba(4, 120, 87, 0.12) !important;
 }
 
 /* Layout side-effects: apply only to the page root, NOT to portaled modals */

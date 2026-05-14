@@ -87,8 +87,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       html.classList.add('theme-light')
       body.classList.remove('ck-dark', 'bg-background', 'text-on-surface')
       html.style.colorScheme = 'light'
-      body.style.background = '#ffffff'
-      body.style.color = '#111827'
+      body.style.background = '#f5f7fa'
+      body.style.color = '#0f172a'
       return
     }
 
