@@ -93,10 +93,11 @@ export async function POST(req: Request) {
         ? requestedCallerId
         : fallbackCallerId
 
+      const statusCallback = `${BASE_URL}/api/twilio-call-status?identity=${encodeURIComponent(identity)}`
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial callerId="${callerId}" timeout="15" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
-    <Number>${sanitizedTo}</Number>
+    <Number statusCallback="${statusCallback}" statusCallbackEvent="initiated ringing answered completed" statusCallbackMethod="POST">${sanitizedTo}</Number>
   </Dial>
 </Response>`
       return xmlResponse(twiml)
