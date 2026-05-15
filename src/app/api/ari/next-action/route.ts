@@ -32,7 +32,15 @@ export async function POST(request: Request) {
     }
 
     const nowIso = new Date().toISOString()
-    const [{ data: lead }, { data: manifestRow }, { data: activities }, { data: nextAppt }] = await Promise.all([
+    const horizonIso = new Date(Date.now() + 14 * 86_400_000).toISOString()
+    const [
+      { data: lead },
+      { data: manifestRow },
+      { data: activities },
+      { data: nextAppt },
+      { data: agentTasks },
+      { data: agentAppointments },
+    ] = await Promise.all([
       supabase.from('leads').select('*').eq('id', leadId).maybeSingle(),
       supabase.from('manifests').select('manifest').eq('lead_id', leadId).limit(1).maybeSingle(),
       supabase
@@ -50,6 +58,23 @@ export async function POST(request: Request) {
         .order('scheduled_at', { ascending: true })
         .limit(1)
         .maybeSingle(),
+      // Casey's already-scheduled tasks across all leads in the next 14 days.
+      // Feeds calendar-aware follow-up time selection.
+      supabase
+        .from('lead_activities')
+        .select('id, lead_id, description, metadata, agent')
+        .eq('activity_type', 'task')
+        .gte('metadata->>due_date', nowIso)
+        .lte('metadata->>due_date', horizonIso)
+        .limit(200),
+      supabase
+        .from('appointments')
+        .select('id, lead_id, scheduled_at, type, status, address')
+        .in('status', ['scheduled', 'confirmed', 'rescheduled'])
+        .gte('scheduled_at', nowIso)
+        .lte('scheduled_at', horizonIso)
+        .order('scheduled_at', { ascending: true })
+        .limit(100),
     ])
 
     if (!lead) {
@@ -75,6 +100,7 @@ export async function POST(request: Request) {
         ? { scheduledAt: lead.appointment_date, type: 'phone_call', address: null, notes: lead.appointment_notes ?? null }
         : null
     const context = buildContext(lead, manifest, activities ?? [], canonicalAppointment)
+    const calendarContext = buildCalendarContext(agentTasks ?? [], agentAppointments ?? [])
 
     const groqKey = process.env.GROQ_API_KEY
     if (!groqKey) {
@@ -92,9 +118,31 @@ task, every note, every email — then write a rich, specific next-action brief 
 
 TODAY: ${todayReadable} (${todayISO}). In the detail passage, format every calendar date as
 "Wed April 30th" — short weekday + full month + day with ordinal suffix. The dateTime field
-MUST still be strict ISO 8601 with timezone. If the source data has a vague date like
-"end of the month" or "around the 28th", resolve it to a concrete day using today as the
-anchor. Never leave vague dates in the passage.
+MUST still be strict ISO 8601 with timezone (use -05:00 Central). If the source data has a
+vague date like "end of the month" or "around the 28th", resolve it to a concrete day using
+today as the anchor. Never leave vague dates in the passage.
+
+# FOLLOW-UP SCHEDULING (READ CAREFULLY — applies when you propose a callback time)
+The dateTime field is REQUIRED. Never return null. Every suggestion gets a concrete
+date and time so the agent can act on it without thinking.
+
+Default follow-up window: 12:30 PM to 3:00 PM Central. Pick a time inside this window UNLESS:
+  • The seller explicitly named a different time on the call ("call me at 9am Tuesday")
+  • The seller is only available outside this window (early-bird, swing-shift, etc.)
+In those exceptions, honor what the seller said.
+
+Default follow-up day: the next business day (skip Saturday + Sunday) UNLESS:
+  • The seller named a specific day → use that
+  • A task or commitment in the context names a day → use that
+  • The conversation implies urgency ("get back to me this afternoon") → respect it
+
+Calendar-conflict avoidance: Casey's existing scheduled work is listed below in
+"AGENT CALENDAR". Do NOT propose a dateTime that lands inside the same 30-minute slot as
+any existing entry there. If your first-choice slot conflicts, shift by 30 minutes within
+the 12:30-3:00 window. If the whole window is full that day, move to the next business day.
+
+AGENT CALENDAR (next 14 days, all leads):
+${calendarContext || '(no scheduled tasks or appointments)'}
 
 Treat this like a briefing memo, not a chat message. The agent is about to pick up the phone; your
 job is to tell them exactly what the seller said, when they agreed to reconnect, and what to prep
@@ -307,11 +355,17 @@ ${context}`
       titleRaw = fallback(lead, manifest, activities ?? []).title
     }
 
+    // Force a concrete dateTime. If the LLM left it null, fill with the next
+    // business-day default inside the 12:30–3:00 PM Central window, avoiding
+    // calendar conflicts. The user's rule: every suggestion has a time.
+    const llmDateTime = typeof parsed.dateTime === 'string' && parsed.dateTime ? parsed.dateTime : null
+    const finalDateTime = llmDateTime || pickDefaultFollowupSlot(agentTasks ?? [], agentAppointments ?? [])
+
     const result = {
       type: 'suggestion' as const,
       title: titleRaw,
       detail: stripFullName(String(parsed.detail || '').trim()),
-      dateTime: typeof parsed.dateTime === 'string' ? parsed.dateTime : null,
+      dateTime: finalDateTime,
       dateOnly: Boolean(parsed.dateOnly),
       priority:
         parsed.priority === 'critical' || parsed.priority === 'high' || parsed.priority === 'nominal'
@@ -562,6 +616,12 @@ function buildContext(lead: any, manifest: any, activities: any[], canonicalAppo
             parts.push(`  "${truncate(String(q), 240)}"`)
           }
         }
+        // Include the FULL transcript text so the LLM can ground in actual words,
+        // not just the AI-extracted summary. Cheap context for llama-3.3-70b
+        // and the difference between vague and specific suggestions.
+        if (t.fullTranscript) {
+          parts.push(`Full transcript:\n${truncate(String(t.fullTranscript), 3500)}`)
+        }
       }
     }
   }
@@ -636,6 +696,92 @@ function buildContext(lead: any, manifest: any, activities: any[], canonicalAppo
 
   parts.push(`\n## NOW: ${new Date().toISOString()} (local: ${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })})`)
   return parts.join('\n')
+}
+
+// ─── Default follow-up slot (12:30–3pm Central, next business day) ────────
+// Used when the LLM leaves dateTime null. Tries the 12:30, 1:00, 1:30, 2:00,
+// 2:30, 3:00 Central slots in order on the next business day; if all conflict
+// with existing scheduled work, advances to the next business day and retries.
+function pickDefaultFollowupSlot(tasks: TaskRow[], appointments: AppointmentRow[]): string {
+  const busy = new Set<number>()
+  const half = 30 * 60_000
+  for (const t of tasks) {
+    const m = (t.metadata || {}) as Record<string, unknown>
+    const status = typeof m.status === 'string' ? m.status : 'pending'
+    if (status === 'completed' || status === 'done' || status === 'dismissed') continue
+    const due = typeof m.due_date === 'string' ? m.due_date : null
+    if (!due) continue
+    const ts = new Date(due).getTime()
+    if (Number.isFinite(ts)) busy.add(Math.floor(ts / half))
+  }
+  for (const a of appointments) {
+    const ts = new Date(a.scheduled_at).getTime()
+    if (Number.isFinite(ts)) busy.add(Math.floor(ts / half))
+  }
+  const SLOT_MINUTES = [12 * 60 + 30, 13 * 60, 13 * 60 + 30, 14 * 60, 14 * 60 + 30, 15 * 60]
+  const isWeekend = (d: Date) => d.getDay() === 0 || d.getDay() === 6
+  const day = new Date()
+  day.setHours(0, 0, 0, 0)
+  day.setDate(day.getDate() + 1) // start with tomorrow
+  for (let i = 0; i < 14; i++) {
+    if (!isWeekend(day)) {
+      for (const mins of SLOT_MINUTES) {
+        // Construct slot in America/Chicago by offsetting from UTC. We want a
+        // wall-clock time of HH:MM Central. Build as local browser time on the
+        // server (UTC) and accept the small server-side timezone caveat — the
+        // ISO string is what the LLM examples emit too.
+        const slot = new Date(day)
+        slot.setHours(Math.floor(mins / 60), mins % 60, 0, 0)
+        if (!busy.has(Math.floor(slot.getTime() / half))) {
+          return slot.toISOString()
+        }
+      }
+    }
+    day.setDate(day.getDate() + 1)
+  }
+  // Out of slots in two weeks? Just return tomorrow 1pm.
+  const fallback = new Date()
+  fallback.setDate(fallback.getDate() + 1)
+  fallback.setHours(13, 0, 0, 0)
+  return fallback.toISOString()
+}
+
+// ─── Calendar context (Casey's busy slots for the next 14 days) ────────────
+// Plain text block the LLM can scan to avoid double-booking when proposing a
+// follow-up time. Each line: "Wed May 20 1:30pm — task: Call Helen back".
+type TaskRow = { id: string; lead_id: string | null; description: string | null; metadata: Record<string, unknown> | null; agent: string | null }
+type AppointmentRow = { id: string; lead_id: string | null; scheduled_at: string; type: string | null; status: string; address: string | null }
+
+function buildCalendarContext(tasks: TaskRow[], appointments: AppointmentRow[]): string {
+  type Slot = { ts: number; iso: string; label: string }
+  const slots: Slot[] = []
+  for (const t of tasks) {
+    const m = (t.metadata || {}) as Record<string, unknown>
+    const status = typeof m.status === 'string' ? m.status : 'pending'
+    if (status === 'completed' || status === 'done' || status === 'dismissed') continue
+    const due = typeof m.due_date === 'string' ? m.due_date : null
+    if (!due) continue
+    const d = new Date(due)
+    if (isNaN(d.getTime())) continue
+    const title = (typeof m.title === 'string' && m.title) || t.description || 'Task'
+    slots.push({ ts: d.getTime(), iso: d.toISOString(), label: `task: ${title}` })
+  }
+  for (const a of appointments) {
+    const d = new Date(a.scheduled_at)
+    if (isNaN(d.getTime())) continue
+    slots.push({ ts: d.getTime(), iso: d.toISOString(), label: `appt: ${a.type || 'meeting'}${a.address ? ` @ ${a.address}` : ''}` })
+  }
+  slots.sort((a, b) => a.ts - b.ts)
+  if (!slots.length) return ''
+  return slots
+    .slice(0, 40)
+    .map((s) => {
+      const d = new Date(s.ts)
+      const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Chicago' })
+      const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Chicago' }).toLowerCase().replace(/\s/g, '')
+      return `  • ${day} ${time} — ${s.label}`
+    })
+    .join('\n')
 }
 
 // ─── Deterministic fallback when LLM isn't available ────────────────────────

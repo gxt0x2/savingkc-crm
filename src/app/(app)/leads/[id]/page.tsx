@@ -1534,25 +1534,39 @@ export default function LeadDetailPage() {
   // Manifest transcripts hold recording URLs for calls (the call activity row
   // itself doesn't get the URL written back). Build a timestamp-indexed lookup
   // so we can backfill recordingUrl on each call row without a DB change.
-  const transcriptLookup: { ts: number; url: string }[] = manifestTranscripts
-    .map((t) => ({
-      ts: new Date(t.date).getTime(),
-      url: toPlayableRecordingUrl(t.recordingUrl) || '',
-    }))
+  const transcriptLookup: { ts: number; url: string; sid: string | null }[] = manifestTranscripts
+    .map((t) => {
+      const url = toPlayableRecordingUrl((t as { recordingUrl?: string }).recordingUrl) || ''
+      const sidMatch = url.match(/\/api\/recordings\/(RE[A-Za-z0-9]+)/)
+      return {
+        ts: new Date(t.date).getTime(),
+        url,
+        sid: sidMatch?.[1] || null,
+      }
+    })
     .filter((t) => t.url && Number.isFinite(t.ts))
 
-  const findTranscriptUrl = (activityTs: string): string | undefined => {
+  const findTranscriptUrl = (activityTs: string, callSid: string | null | undefined, recordingSid: string | null | undefined): string | undefined => {
+    // Strongest signal: matching recordingSid (recorded on the activity row).
+    if (recordingSid) {
+      const direct = transcriptLookup.find((tr) => tr.sid === recordingSid)
+      if (direct) return direct.url
+    }
     const t = new Date(activityTs).getTime()
     if (!Number.isFinite(t)) return undefined
-    // Match within ±10 minutes (call activity is logged seconds after start,
-    // transcript is written minutes later when Twilio finishes recording).
+    // Widened to ±30 min. Twilio sometimes takes 5-15 min to finish a long
+    // recording, and the call activity row's created_at is the start, not
+    // the end. The earlier ±10 min window missed those.
     let best: { dt: number; url: string } | null = null
     for (const tr of transcriptLookup) {
       const dt = Math.abs(tr.ts - t)
-      if (dt > 10 * 60_000) continue
+      if (dt > 30 * 60_000) continue
       if (!best || dt < best.dt) best = { dt, url: tr.url }
     }
-    return best?.url
+    if (best) return best.url
+    // Fallback: callSid match if either side recorded it
+    if (callSid && transcriptLookup.length === 1) return transcriptLookup[0].url
+    return undefined
   }
 
   // Build feed activities - include notes, appointments, call recordings
@@ -1573,10 +1587,13 @@ export default function LeadDetailPage() {
       }
 
       // Check for recording URL in call/voicemail activities.
-      // Order: metadata.recordingUrl on the row → manifest transcript match by timestamp.
+      // Order: metadata.recordingUrl on the row → manifest transcript match
+      // by recordingSid → by timestamp ±30 min → callSid fallback.
       if ((a.activity_type === 'call' || a.activity_type === 'voicemail') && a.metadata) {
         const fromMeta = (a.metadata.recordingUrl || a.metadata.recording_url || a.metadata.RecordingUrl) as string | undefined
-        recordingUrl = toPlayableRecordingUrl(fromMeta) || findTranscriptUrl(a.created_at)
+        const callSid = (a.metadata.callSid || a.metadata.CallSid) as string | undefined
+        const recordingSid = (a.metadata.recordingSid || a.metadata.RecordingSid) as string | undefined
+        recordingUrl = toPlayableRecordingUrl(fromMeta) || findTranscriptUrl(a.created_at, callSid, recordingSid)
       }
 
       const typeMap: Record<string, string> = {
