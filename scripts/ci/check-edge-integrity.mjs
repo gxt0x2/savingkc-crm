@@ -158,7 +158,8 @@ async function checkTwimlVoice() {
 
   const twiml = await res.text()
   assert(/<Dial\b/i.test(twiml), 'twiml-voice endpoint: missing <Dial> in TwiML response')
-  assert(/<Number>\+18162262552<\/Number>/i.test(twiml), 'twiml-voice endpoint: destination number mismatch')
+  // Allow optional attributes on <Number> (we add statusCallback for outbound).
+  assert(/<Number\b[^>]*>\+18162262552<\/Number>/i.test(twiml), 'twiml-voice endpoint: destination number mismatch')
 
   return {
     status: res.status,
