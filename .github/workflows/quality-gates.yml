@@ -40,6 +40,9 @@ jobs:
       - name: Theme guard gate
         run: npm run gate:theme
 
+      - name: Dialer ringback gate
+        run: node scripts/ci/check-dialer-ringback.mjs
+
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 

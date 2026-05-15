@@ -16,7 +16,8 @@
     "gate:theme": "node scripts/ci/check-theme-guard.mjs",
     "gate:routes": "node scripts/ci/check-route-integrity.mjs",
     "gate:twilio": "node scripts/ci/check-twilio-token-health.mjs",
-    "gate:edge": "node scripts/ci/check-edge-integrity.mjs"
+    "gate:edge": "node scripts/ci/check-edge-integrity.mjs",
+    "gate:dialer": "node scripts/ci/check-dialer-ringback.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
