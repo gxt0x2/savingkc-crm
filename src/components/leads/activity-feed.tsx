@@ -103,7 +103,7 @@ function CallRecordingPlayer({ url }: { url: string }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
-  const [progress, setProgress] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -183,14 +183,22 @@ function CallRecordingPlayer({ url }: { url: string }) {
         preload="metadata"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); setProgress(0) }}
+        onEnded={() => { setPlaying(false); setCurrentTime(0) }}
         onTimeUpdate={() => {
           const a = audioRef.current
-          if (a) setProgress(a.duration ? a.currentTime / a.duration : 0)
+          if (!a) return
+          setCurrentTime(a.currentTime)
+          if (Number.isFinite(a.duration) && a.duration > 0 && Math.abs(a.duration - duration) > 0.5) {
+            setDuration(a.duration)
+          }
         }}
         onLoadedMetadata={() => {
           const a = audioRef.current
-          if (a) setDuration(a.duration)
+          if (a && Number.isFinite(a.duration) && a.duration > 0) setDuration(a.duration)
+        }}
+        onDurationChange={() => {
+          const a = audioRef.current
+          if (a && Number.isFinite(a.duration) && a.duration > 0) setDuration(a.duration)
         }}
       />
       <button
@@ -212,7 +220,7 @@ function CallRecordingPlayer({ url }: { url: string }) {
           style={{ background: 'var(--ck-border)' }}
           onClick={(e) => {
             const a = audioRef.current
-            if (!a) return
+            if (!a || !Number.isFinite(a.duration) || a.duration <= 0) return
             const rect = e.currentTarget.getBoundingClientRect()
             const pct = (e.clientX - rect.left) / rect.width
             a.currentTime = pct * a.duration
@@ -220,15 +228,18 @@ function CallRecordingPlayer({ url }: { url: string }) {
         >
           <div
             className="h-full rounded-full transition-all"
-            style={{ width: `${progress * 100}%`, background: '#E32E2E' }}
+            style={{
+              width: duration > 0 ? `${Math.min(100, (currentTime / duration) * 100)}%` : '0%',
+              background: '#E32E2E',
+            }}
           />
         </div>
         <div
           className="flex justify-between text-[11px] mt-1 tabular-nums"
           style={{ color: 'var(--ck-text-muted)' }}
         >
-          <span>{fmt(progress * duration)}</span>
-          <span>{fmt(duration)}</span>
+          <span>{fmt(currentTime)}</span>
+          <span>{duration > 0 ? fmt(duration) : '—:—'}</span>
         </div>
       </div>
       <button

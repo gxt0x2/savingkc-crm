@@ -32,7 +32,15 @@ export async function POST(request: Request) {
     }
 
     const nowIso = new Date().toISOString()
-    const [{ data: lead }, { data: manifestRow }, { data: activities }, { data: nextAppt }] = await Promise.all([
+    const horizonIso = new Date(Date.now() + 14 * 86_400_000).toISOString()
+    const [
+      { data: lead },
+      { data: manifestRow },
+      { data: activities },
+      { data: nextAppt },
+      { data: agentTasks },
+      { data: agentAppointments },
+    ] = await Promise.all([
       supabase.from('leads').select('*').eq('id', leadId).maybeSingle(),
       supabase.from('manifests').select('manifest').eq('lead_id', leadId).limit(1).maybeSingle(),
       supabase
@@ -50,6 +58,23 @@ export async function POST(request: Request) {
         .order('scheduled_at', { ascending: true })
         .limit(1)
         .maybeSingle(),
+      // Casey's already-scheduled tasks across all leads in the next 14 days.
+      // Feeds calendar-aware follow-up time selection.
+      supabase
+        .from('lead_activities')
+        .select('id, lead_id, description, metadata, agent')
+        .eq('activity_type', 'task')
+        .gte('metadata->>due_date', nowIso)
+        .lte('metadata->>due_date', horizonIso)
+        .limit(200),
+      supabase
+        .from('appointments')
+        .select('id, lead_id, scheduled_at, type, status, address')
+        .in('status', ['scheduled', 'confirmed', 'rescheduled'])
+        .gte('scheduled_at', nowIso)
+        .lte('scheduled_at', horizonIso)
+        .order('scheduled_at', { ascending: true })
+        .limit(100),
     ])
 
     if (!lead) {
@@ -75,6 +100,7 @@ export async function POST(request: Request) {
         ? { scheduledAt: lead.appointment_date, type: 'phone_call', address: null, notes: lead.appointment_notes ?? null }
         : null
     const context = buildContext(lead, manifest, activities ?? [], canonicalAppointment)
+    const calendarContext = buildCalendarContext(agentTasks ?? [], agentAppointments ?? [])
 
     const groqKey = process.env.GROQ_API_KEY
     if (!groqKey) {
@@ -92,9 +118,28 @@ task, every note, every email — then write a rich, specific next-action brief 
 
 TODAY: ${todayReadable} (${todayISO}). In the detail passage, format every calendar date as
 "Wed April 30th" — short weekday + full month + day with ordinal suffix. The dateTime field
-MUST still be strict ISO 8601 with timezone. If the source data has a vague date like
-"end of the month" or "around the 28th", resolve it to a concrete day using today as the
-anchor. Never leave vague dates in the passage.
+MUST still be strict ISO 8601 with timezone (use -05:00 Central). If the source data has a
+vague date like "end of the month" or "around the 28th", resolve it to a concrete day using
+today as the anchor. Never leave vague dates in the passage.
+
+# FOLLOW-UP SCHEDULING (READ CAREFULLY — applies when you propose a callback time)
+Default follow-up window: 12:30 PM to 3:00 PM Central. Pick a time inside this window UNLESS:
+  • The seller explicitly named a different time on the call ("call me at 9am Tuesday")
+  • The seller is only available outside this window (early-bird, swing-shift, etc.)
+In those exceptions, honor what the seller said.
+
+Default follow-up day: the next business day (skip Saturday + Sunday) UNLESS:
+  • The seller named a specific day → use that
+  • A task or commitment in the context names a day → use that
+  • The conversation implies urgency ("get back to me this afternoon") → respect it
+
+Calendar-conflict avoidance: Casey's existing scheduled work is listed below in
+"AGENT CALENDAR". Do NOT propose a dateTime that lands inside the same 30-minute slot as
+any existing entry there. If your first-choice slot conflicts, shift by 30 minutes within
+the 12:30-3:00 window. If the whole window is full that day, move to the next business day.
+
+AGENT CALENDAR (next 14 days, all leads):
+${calendarContext || '(no scheduled tasks or appointments)'}
 
 Treat this like a briefing memo, not a chat message. The agent is about to pick up the phone; your
 job is to tell them exactly what the seller said, when they agreed to reconnect, and what to prep
@@ -636,6 +681,44 @@ function buildContext(lead: any, manifest: any, activities: any[], canonicalAppo
 
   parts.push(`\n## NOW: ${new Date().toISOString()} (local: ${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })})`)
   return parts.join('\n')
+}
+
+// ─── Calendar context (Casey's busy slots for the next 14 days) ────────────
+// Plain text block the LLM can scan to avoid double-booking when proposing a
+// follow-up time. Each line: "Wed May 20 1:30pm — task: Call Helen back".
+type TaskRow = { id: string; lead_id: string | null; description: string | null; metadata: Record<string, unknown> | null; agent: string | null }
+type AppointmentRow = { id: string; lead_id: string | null; scheduled_at: string; type: string | null; status: string; address: string | null }
+
+function buildCalendarContext(tasks: TaskRow[], appointments: AppointmentRow[]): string {
+  type Slot = { ts: number; iso: string; label: string }
+  const slots: Slot[] = []
+  for (const t of tasks) {
+    const m = (t.metadata || {}) as Record<string, unknown>
+    const status = typeof m.status === 'string' ? m.status : 'pending'
+    if (status === 'completed' || status === 'done' || status === 'dismissed') continue
+    const due = typeof m.due_date === 'string' ? m.due_date : null
+    if (!due) continue
+    const d = new Date(due)
+    if (isNaN(d.getTime())) continue
+    const title = (typeof m.title === 'string' && m.title) || t.description || 'Task'
+    slots.push({ ts: d.getTime(), iso: d.toISOString(), label: `task: ${title}` })
+  }
+  for (const a of appointments) {
+    const d = new Date(a.scheduled_at)
+    if (isNaN(d.getTime())) continue
+    slots.push({ ts: d.getTime(), iso: d.toISOString(), label: `appt: ${a.type || 'meeting'}${a.address ? ` @ ${a.address}` : ''}` })
+  }
+  slots.sort((a, b) => a.ts - b.ts)
+  if (!slots.length) return ''
+  return slots
+    .slice(0, 40)
+    .map((s) => {
+      const d = new Date(s.ts)
+      const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Chicago' })
+      const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Chicago' }).toLowerCase().replace(/\s/g, '')
+      return `  • ${day} ${time} — ${s.label}`
+    })
+    .join('\n')
 }
 
 // ─── Deterministic fallback when LLM isn't available ────────────────────────

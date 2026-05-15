@@ -287,9 +287,12 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
     textareaRef.current?.focus()
   }
 
-  // ── Keyboard: Enter to send, Shift+Enter for newline ──
+  // ── Keyboard: Enter inserts a newline (default textarea behavior).
+  // Only the Send button submits — agents sometimes paste multi-line messages
+  // and accidental Enter-sends caused them to fire half-typed texts.
+  // Cmd/Ctrl+Enter still sends for power users.
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       handleSend()
     }
