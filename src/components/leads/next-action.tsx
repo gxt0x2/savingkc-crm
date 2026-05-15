@@ -1,6 +1,13 @@
-// Next Action — calls /api/ari/next-action for a LLM-synthesized, grounded
-// next-step recommendation (pulls from manifest + calendar tasks + transcripts +
-// notes + emails). Falls back to local rule-based analysis if the endpoint fails.
+// Next Action — task-first, suggestion-fallback (Option C).
+//
+// Resolution:
+//   1. /api/ari/next-action returns either:
+//        {type:'task', taskId, ...action fields, userEdited?}
+//        {type:'suggestion', ...action fields}
+//   2. Task mode: render the task with Edit / Complete / (CTA). The user is
+//      in control; no LLM call ever overrides it.
+//   3. Suggestion mode: render the AI suggestion with Accept / Edit & Schedule
+//      / Refresh buttons. Until the agent accepts, nothing is persisted.
 
 'use client'
 
@@ -10,7 +17,9 @@ import { useCardCollapse } from '@/hooks/use-card-collapse'
 
 type Priority = 'critical' | 'high' | 'nominal'
 
-interface SynthesizedAction {
+type SynthesizedAction = {
+  type: 'task' | 'suggestion'
+  taskId?: string
   title: string
   detail: string
   dateTime: string | null
@@ -19,6 +28,7 @@ interface SynthesizedAction {
   cta: string
   source: string
   prep_actions?: string[]
+  userEdited?: boolean
 }
 
 interface NextActionProps {
@@ -49,7 +59,9 @@ const TONE: Record<Priority, { color: string; bg: string; label: string }> = {
   nominal:  { color: 'var(--ck-text-muted)',    bg: 'var(--ck-surface-elev)', label: 'Nominal' },
 }
 
-// ─── Date parsing that survives midnight-UTC serialization ──────────────────
+const CTA_OPTIONS = ['Start Call', 'Send SMS', 'Send Email', 'Log Outcome', 'Log Note', 'Open Task']
+
+// ─── Date helpers ──────────────────────────────────────────────────────────
 function parseSmart(iso: string): { date: Date; dateOnly: boolean } {
   if (!iso) return { date: new Date(NaN), dateOnly: false }
   const plain = /^\d{4}-\d{2}-\d{2}$/
@@ -67,7 +79,6 @@ function ordinalSuffix(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
-// Passage format Ernest wants: "Wed April 30th" — short weekday, full month, day+ordinal
 function formatPassageDate(d: Date): string {
   const weekday = d.toLocaleDateString('en-US', { weekday: 'short' })
   const month = d.toLocaleDateString('en-US', { month: 'long' })
@@ -100,47 +111,251 @@ function formatTimeLabel(iso: string | null, dateOnlyHint?: boolean): string | n
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
-// ─── Minimal local fallback (used only if API fails) ───────────────────────
-function localFallback(props: NextActionProps): SynthesizedAction {
-  const name = props.leadName || 'this lead'
-  const now = Date.now()
-  const tasks = (props.activities || [])
-    .filter((a) => a.activity_type === 'task')
-    .map((a) => ({ ...a, md: (a.metadata || {}) as any }))
-    .filter((a) => a.md.due_date && a.md.status !== 'completed' && a.md.status !== 'done')
-    .sort((a, b) => new Date(a.md.due_date).getTime() - new Date(b.md.due_date).getTime())
-  const t = tasks[0]
-  if (t) {
-    return {
-      title: `${t.description || 'Task'} — ${name}`,
-      detail: t.md.notes ? String(t.md.notes).slice(0, 200) : 'Scheduled task.',
-      dateTime: t.md.due_date,
-      dateOnly: false,
-      priority: new Date(t.md.due_date).getTime() < now ? 'critical' : 'high',
-      cta: 'Open Task',
-      source: `Task due ${new Date(t.md.due_date).toLocaleDateString()}`,
-    }
-  }
-  return {
-    title: `Stand by on ${name}`,
-    detail: 'No pending tasks or appointments on record.',
-    dateTime: null,
-    priority: 'nominal',
-    cta: 'Log Note',
-    source: 'No signals on record',
-  }
+function isoToLocalInputs(iso: string | null): { date: string; time: string } {
+  if (!iso) return { date: '', time: '' }
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return { date: '', time: '' }
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${mi}` }
 }
 
+function localInputsToIso(date: string, time: string): string | null {
+  if (!date) return null
+  const t = time && /^\d{2}:\d{2}$/.test(time) ? time : '09:00'
+  const d = new Date(`${date}T${t}:00`)
+  if (isNaN(d.getTime())) return null
+  return d.toISOString()
+}
+
+// ─── Edit modal ────────────────────────────────────────────────────────────
+function EditModal({
+  open,
+  initial,
+  onCancel,
+  onSave,
+}: {
+  open: boolean
+  initial: SynthesizedAction | null
+  onCancel: () => void
+  onSave: (next: { title: string; notes: string; dateIso: string | null; priority: Priority; cta: string }) => Promise<void>
+}) {
+  const [title, setTitle] = useState('')
+  const [notes, setNotes] = useState('')
+  const [date, setDate] = useState('')
+  const [time, setTime] = useState('')
+  const [priority, setPriority] = useState<Priority>('high')
+  const [cta, setCta] = useState('Start Call')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open || !initial) return
+    setTitle(initial.title || '')
+    setNotes(initial.detail || '')
+    const { date: d, time: t } = isoToLocalInputs(initial.dateTime)
+    setDate(d)
+    setTime(t)
+    setPriority(initial.priority || 'high')
+    setCta(initial.cta || 'Start Call')
+    setSaving(false)
+  }, [open, initial])
+
+  if (!open) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center px-4"
+      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl p-5 shadow-2xl"
+        style={{ background: 'var(--ck-surface)', border: '1px solid var(--ck-border)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[17px] font-bold tracking-tight" style={{ color: 'var(--ck-text)' }}>
+            Edit Next Action
+          </h3>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+            style={{ background: 'var(--ck-surface-elev)', color: 'var(--ck-text-muted)' }}
+            aria-label="Close"
+          >
+            <Icon name="close" size="text-base" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--ck-text-muted)' }}>
+              Title
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Call Helen for follow-up on title issues"
+              className="w-full mt-1 rounded-xl px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-[#E32E2E]/40"
+              style={{
+                background: 'var(--ck-surface-elev)',
+                color: 'var(--ck-text)',
+                border: '1px solid var(--ck-border)',
+              }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--ck-text-muted)' }}>
+                Date
+              </label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full mt-1 rounded-xl px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-[#E32E2E]/40"
+                style={{
+                  background: 'var(--ck-surface-elev)',
+                  color: 'var(--ck-text)',
+                  border: '1px solid var(--ck-border)',
+                }}
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--ck-text-muted)' }}>
+                Time
+              </label>
+              <input
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="w-full mt-1 rounded-xl px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-[#E32E2E]/40"
+                style={{
+                  background: 'var(--ck-surface-elev)',
+                  color: 'var(--ck-text)',
+                  border: '1px solid var(--ck-border)',
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--ck-text-muted)' }}>
+                Priority
+              </label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as Priority)}
+                className="w-full mt-1 rounded-xl px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-[#E32E2E]/40"
+                style={{
+                  background: 'var(--ck-surface-elev)',
+                  color: 'var(--ck-text)',
+                  border: '1px solid var(--ck-border)',
+                }}
+              >
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="nominal">Nominal</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--ck-text-muted)' }}>
+                Action
+              </label>
+              <select
+                value={cta}
+                onChange={(e) => setCta(e.target.value)}
+                className="w-full mt-1 rounded-xl px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-[#E32E2E]/40"
+                style={{
+                  background: 'var(--ck-surface-elev)',
+                  color: 'var(--ck-text)',
+                  border: '1px solid var(--ck-border)',
+                }}
+              >
+                {CTA_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--ck-text-muted)' }}>
+              Notes
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="What did the seller say? What did the agent commit to?"
+              className="w-full mt-1 rounded-xl px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-[#E32E2E]/40 resize-none"
+              style={{
+                background: 'var(--ck-surface-elev)',
+                color: 'var(--ck-text)',
+                border: '1px solid var(--ck-border)',
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 rounded-xl text-[13px] font-semibold transition-colors"
+            style={{
+              background: 'var(--ck-surface-elev)',
+              color: 'var(--ck-text)',
+              border: '1px solid var(--ck-border)',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={saving || !title.trim()}
+            onClick={async () => {
+              if (!title.trim()) return
+              setSaving(true)
+              const dateIso = localInputsToIso(date, time)
+              try {
+                await onSave({ title: title.trim(), notes: notes.trim(), dateIso, priority, cta })
+              } finally {
+                setSaving(false)
+              }
+            }}
+            className="px-4 py-2 rounded-xl text-[13px] font-bold text-white transition-opacity disabled:opacity-50"
+            style={{
+              background: '#E32E2E',
+              boxShadow: '0 4px 12px rgba(227,46,46,0.3)',
+            }}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main ──────────────────────────────────────────────────────────────────
 export function NextAction(props: NextActionProps) {
   const { leadId } = props
   const [open, toggleOpen] = useCardCollapse('next-action', true)
-  const [expanded, setExpanded] = useState(false) // compact by default; double-click to expand
+  const [expanded, setExpanded] = useState(false)
   const [action, setAction] = useState<SynthesizedAction | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
   const lastFetchKey = useRef<string>('')
 
-  // Key changes whenever the data we want synthesized-from changes.
   const fetchKey = useMemo(() => {
     const count = props.activities?.length ?? 0
     const latestId = props.activities?.[0]?.id ?? ''
@@ -154,60 +369,47 @@ export function NextAction(props: NextActionProps) {
     return () => window.removeEventListener('crm:lead-refresh', bump)
   }, [])
 
-  useEffect(() => {
-    if (!leadId) return
-    // Refetch on every crm:lead-refresh by invalidating the cached key
-    if (refreshTick > 0) lastFetchKey.current = ''
-    if (lastFetchKey.current === fetchKey) return
-    lastFetchKey.current = fetchKey
-    let cancelled = false
-    async function run() {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await fetch('/api/ari/next-action', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ leadId }),
-        })
-        if (!res.ok) throw new Error(`status ${res.status}`)
-        const data = (await res.json()) as SynthesizedAction & { error?: string }
-        if (cancelled) return
-        if (data?.error || !data?.title) {
-          setAction(localFallback(props))
-        } else {
-          setAction(data)
-        }
-      } catch (e: any) {
-        if (cancelled) return
-        setError(e?.message || 'synthesize failed')
-        setAction(localFallback(props))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    run()
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchKey, leadId, refreshTick])
-
-  async function handleRefresh() {
-    lastFetchKey.current = '' // force
-    // Bump the key via a state toggle? Simpler: just call directly.
+  async function fetchAction(force = false): Promise<SynthesizedAction | null> {
     setLoading(true)
+    setError(null)
     try {
       const res = await fetch('/api/ari/next-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadId }),
+        cache: force ? 'no-store' : 'default',
       })
-      const data = (await res.json()) as SynthesizedAction
-      if (data?.title) setAction(data)
-    } catch { /* keep existing */ }
-    setLoading(false)
+      if (!res.ok) throw new Error(`status ${res.status}`)
+      const data = (await res.json()) as SynthesizedAction & { error?: string }
+      if (data?.error || !data?.title) {
+        setAction(null)
+        return null
+      }
+      setAction(data)
+      return data
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'failed'
+      setError(msg)
+      return null
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Map the CTA string from the endpoint to an onClick handler.
+  useEffect(() => {
+    if (!leadId) return
+    if (refreshTick > 0) lastFetchKey.current = ''
+    if (lastFetchKey.current === fetchKey) return
+    lastFetchKey.current = fetchKey
+    let cancelled = false
+    ;(async () => {
+      const result = await fetchAction()
+      if (cancelled && result) return
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchKey, leadId, refreshTick])
+
   const ctaHandler = useMemo(() => {
     if (!action) return undefined
     const c = action.cta.toLowerCase()
@@ -220,9 +422,85 @@ export function NextAction(props: NextActionProps) {
     return props.onNewTask
   }, [action, props])
 
+  async function acceptSuggestion() {
+    if (!action || action.type !== 'suggestion') return
+    try {
+      const res = await fetch('/api/calendar/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          title: action.title,
+          dueDate: action.dateTime,
+          taskType: 'follow_up',
+          assignedTo: 'Casey',
+          notes: action.detail,
+        }),
+      })
+      if (!res.ok) throw new Error(`accept failed: ${res.status}`)
+      window.dispatchEvent(new Event('crm:lead-refresh'))
+      await fetchAction(true)
+    } catch (e) {
+      console.error('[NextAction] accept failed', e)
+    }
+  }
+
+  async function saveTaskEdit(next: { title: string; notes: string; dateIso: string | null; priority: Priority; cta: string }) {
+    if (!action) return
+    if (action.type === 'task' && action.taskId) {
+      const res = await fetch(`/api/leads/tasks/${action.taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: next.title,
+          notes: next.notes,
+          dueDate: next.dateIso,
+          priority: next.priority === 'critical' ? 'critical' : next.priority === 'nominal' ? 'normal' : 'high',
+          cta: next.cta,
+        }),
+      })
+      if (!res.ok) throw new Error(`task PATCH failed: ${res.status}`)
+    } else {
+      const res = await fetch('/api/calendar/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          title: next.title,
+          dueDate: next.dateIso,
+          taskType: 'follow_up',
+          assignedTo: 'Casey',
+          notes: next.notes,
+        }),
+      })
+      if (!res.ok) throw new Error(`task create failed: ${res.status}`)
+    }
+    setEditOpen(false)
+    window.dispatchEvent(new Event('crm:lead-refresh'))
+    await fetchAction(true)
+  }
+
+  async function completeTask() {
+    if (!action || action.type !== 'task' || !action.taskId) return
+    try {
+      const res = await fetch(`/api/leads/tasks/${action.taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' }),
+      })
+      if (!res.ok) throw new Error(`complete failed: ${res.status}`)
+      window.dispatchEvent(new Event('crm:lead-refresh'))
+      await fetchAction(true)
+    } catch (e) {
+      console.error('[NextAction] complete failed', e)
+    }
+  }
+
   const dateLabel = action ? formatDateLabel(action.dateTime) : null
   const timeLabel = action ? formatTimeLabel(action.dateTime, action.dateOnly) : null
   const tone = action ? TONE[action.priority] : TONE.nominal
+  const isTask = action?.type === 'task'
+  const isSuggestion = action?.type === 'suggestion'
 
   return (
     <section
@@ -237,17 +515,48 @@ export function NextAction(props: NextActionProps) {
         <div className="flex items-center gap-2">
           <Icon name="navigation" className="!text-base !text-[color:var(--ck-accent)]" />
           <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Next Action</h2>
+          {isSuggestion && (
+            <span
+              className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+              style={{ background: 'rgba(175,82,222,0.14)', color: '#AF52DE' }}
+              title="AI suggestion. Accept to make it your committed action."
+            >
+              Ari Suggestion
+            </span>
+          )}
+          {isTask && action?.userEdited && (
+            <span
+              className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+              style={{ background: 'var(--ck-surface-elev)', color: 'var(--ck-text-muted)' }}
+              title="You edited this task."
+            >
+              Edited
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <span
-            role="button"
-            title="Re-analyze"
-            onClick={(e) => { e.stopPropagation(); handleRefresh() }}
-            className="p-1 rounded hover:bg-white/5"
-            style={{ color: 'var(--ck-text-dim)' }}
-          >
-            <Icon name="refresh" className={`!text-sm ${loading ? 'animate-spin' : ''}`} />
-          </span>
+        <div className="flex items-center gap-1">
+          {isTask && (
+            <span
+              role="button"
+              title="Edit task"
+              onClick={(e) => { e.stopPropagation(); setEditOpen(true) }}
+              className="p-1 rounded hover:bg-white/5"
+              style={{ color: 'var(--ck-text-dim)' }}
+            >
+              <Icon name="edit" className="!text-sm" />
+            </span>
+          )}
+          {isSuggestion && (
+            <span
+              role="button"
+              title="Re-analyze (Ari only — does not change a saved task)"
+              onClick={(e) => { e.stopPropagation(); fetchAction(true) }}
+              className="p-1 rounded hover:bg-white/5"
+              style={{ color: 'var(--ck-text-dim)' }}
+            >
+              <Icon name="refresh" className={`!text-sm ${loading ? 'animate-spin' : ''}`} />
+            </span>
+          )}
           <Icon
             name={open ? 'expand_less' : 'expand_more'}
             className="!text-base !text-[color:var(--ck-text-muted)]"
@@ -255,7 +564,6 @@ export function NextAction(props: NextActionProps) {
         </div>
       </button>
 
-      {/* Date/time pill — pinned directly under the Next Action header */}
       {open && action && (dateLabel || timeLabel) && (
         <div
           className="inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 mb-3 border"
@@ -265,10 +573,7 @@ export function NextAction(props: NextActionProps) {
           }}
         >
           {dateLabel && (
-            <span
-              className="inline-flex items-center gap-1.5 font-black"
-              style={{ color: 'var(--ck-accent-bright)' }}
-            >
+            <span className="inline-flex items-center gap-1.5 font-black" style={{ color: 'var(--ck-accent-bright)' }}>
               <Icon name="event" className="!text-base" />
               <span className="text-base tracking-tight">{dateLabel}</span>
             </span>
@@ -276,10 +581,7 @@ export function NextAction(props: NextActionProps) {
           {timeLabel && (
             <>
               <span style={{ color: 'rgba(239,68,68,0.4)' }}>·</span>
-              <span
-                className="inline-flex items-center gap-1 font-bold"
-                style={{ color: 'var(--ck-accent-bright)' }}
-              >
+              <span className="inline-flex items-center gap-1 font-bold" style={{ color: 'var(--ck-accent-bright)' }}>
                 <Icon name="schedule" className="!text-sm" />
                 <span className="text-sm">{timeLabel}</span>
               </span>
@@ -363,20 +665,70 @@ export function NextAction(props: NextActionProps) {
               </div>
             )}
 
-            <div className="flex items-center justify-between gap-2 mt-2">
-              {ctaHandler ? (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); ctaHandler() }}
-                  className="h-9 px-3 rounded-lg text-xs font-bold text-white inline-flex items-center gap-1.5 transition-opacity hover:opacity-90"
-                  style={{
-                    background: 'var(--ck-accent)',
-                    boxShadow: '0 4px 12px rgba(239,68,68,0.22)',
-                  }}
-                >
-                  {action.cta}
-                </button>
-              ) : <span />}
+            <div className="flex items-center justify-between gap-2 mt-3 flex-wrap">
+              {isTask && (
+                <div className="flex items-center gap-2">
+                  {ctaHandler && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); ctaHandler() }}
+                      className="h-9 px-3 rounded-lg text-xs font-bold text-white inline-flex items-center gap-1.5 transition-opacity hover:opacity-90"
+                      style={{
+                        background: 'var(--ck-accent)',
+                        boxShadow: '0 4px 12px rgba(239,68,68,0.22)',
+                      }}
+                    >
+                      {action.cta}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); completeTask() }}
+                    className="h-9 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+                    style={{
+                      background: 'var(--ck-surface-elev)',
+                      color: 'var(--ck-text)',
+                      border: '1px solid var(--ck-border)',
+                    }}
+                    title="Mark this task done"
+                  >
+                    <Icon name="check" className="!text-sm" />
+                    Done
+                  </button>
+                </div>
+              )}
+
+              {isSuggestion && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); acceptSuggestion() }}
+                    className="h-9 px-3 rounded-lg text-xs font-bold text-white inline-flex items-center gap-1.5 transition-opacity hover:opacity-90"
+                    style={{
+                      background: 'var(--ck-accent)',
+                      boxShadow: '0 4px 12px rgba(239,68,68,0.22)',
+                    }}
+                    title="Save Ari's suggestion as your committed task"
+                  >
+                    <Icon name="check" className="!text-sm" filled />
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setEditOpen(true) }}
+                    className="h-9 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+                    style={{
+                      background: 'var(--ck-surface-elev)',
+                      color: 'var(--ck-text)',
+                      border: '1px solid var(--ck-border)',
+                    }}
+                    title="Adjust details before saving as a task"
+                  >
+                    <Icon name="edit" className="!text-sm" />
+                    Edit & Schedule
+                  </button>
+                </div>
+              )}
 
               <button
                 type="button"
@@ -390,12 +742,19 @@ export function NextAction(props: NextActionProps) {
 
             {error && expanded && (
               <p className="text-[9px] mt-2" style={{ color: 'var(--ck-text-dim)' }}>
-                Using local fallback ({error})
+                Fetch error: {error}
               </p>
             )}
           </div>
         )
       )}
+
+      <EditModal
+        open={editOpen}
+        initial={action}
+        onCancel={() => setEditOpen(false)}
+        onSave={saveTaskEdit}
+      />
     </section>
   )
 }
