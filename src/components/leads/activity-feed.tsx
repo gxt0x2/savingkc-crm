@@ -90,9 +90,9 @@ function relTime(ts: string): string {
     }
     const diffDays = Math.floor(diffHr / 24)
     if (diffDays < 7) {
-      return `${date.toLocaleDateString('en-US', { weekday: 'short' })}, ${clock}`
+      return `${date.toLocaleDateString('en-US', { weekday: 'short' })} ${clock}`
     }
-    return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${clock}`
+    return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${clock}`
   } catch {
     return ''
   }
