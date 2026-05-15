@@ -1,20 +1,20 @@
 /**
- * Ari Next Action — synthesizes the single concrete next step for a lead.
+ * Ari Next Action — single concrete next step for a lead.
  *
- * POST /api/ari/next-action
- * Body: { leadId }
- * Returns: {
- *   title: "Call Jackie back about her final decision",
- *   detail: "She said she needed the weekend to talk to her brother",
- *   dateTime: "2026-04-30T11:00:00-05:00",  // or null
- *   dateOnly: false,
- *   priority: "critical" | "high" | "nominal",
- *   cta: "Start Call",
- *   source: "From call on Apr 15 + task scheduled Apr 17"
- * }
+ * Two response shapes:
+ *   {type: 'task',       taskId, title, detail, dateTime, priority, cta, source, prep_actions}
+ *   {type: 'suggestion', title, detail, dateTime, priority, cta, source, prep_actions}
  *
- * Grounded in: manifest.ariIntelligence.recommendedActions, pending tasks,
- * recent call transcripts (summary + verbatim quotes), notes, appointment.
+ * Resolution order (Option C — suggest, require confirmation):
+ *   1. If at least one OPEN task exists for this lead, return the highest-
+ *      priority + earliest-due one as type='task'. The user is in control;
+ *      no LLM is called.
+ *   2. If no open task exists, call the LLM to synthesize a suggestion. The
+ *      suggestion is NEVER auto-saved — the UI shows Accept / Edit & Schedule
+ *      buttons and the agent decides.
+ *
+ * Tasks live in lead_activities with activity_type='task' and metadata.status
+ * in {'pending', null} = open, 'completed'|'dismissed' = closed.
  */
 
 import { NextResponse } from 'next/server'
@@ -54,6 +54,15 @@ export async function POST(request: Request) {
 
     if (!lead) {
       return NextResponse.json({ error: 'lead not found' }, { status: 404 })
+    }
+
+    // ── Task-first: if there's an open task, surface it as the next action ──
+    // The user is in control. We only fall through to the LLM when there is
+    // no pending work, so refreshing the page can never silently override
+    // what the agent already committed to.
+    const openTask = pickOpenTask(activities ?? [])
+    if (openTask) {
+      return NextResponse.json(taskToResponse(openTask, lead.full_name))
     }
 
     const manifest = manifestRow?.manifest
@@ -299,6 +308,7 @@ ${context}`
     }
 
     const result = {
+      type: 'suggestion' as const,
       title: titleRaw,
       detail: stripFullName(String(parsed.detail || '').trim()),
       dateTime: typeof parsed.dateTime === 'string' ? parsed.dateTime : null,
@@ -636,6 +646,7 @@ function fallback(lead: any, manifest: any, activities: any[]): any {
   const appt = manifest?.pipeline?.appointment
   if (appt?.scheduledAt && new Date(appt.scheduledAt).getTime() < Date.now()) {
     return {
+      type: 'suggestion' as const,
       title: `Log ${name}'s appointment outcome`,
       detail: 'Capture what happened on the walkthrough.',
       dateTime: appt.scheduledAt,
@@ -652,6 +663,7 @@ function fallback(lead: any, manifest: any, activities: any[]): any {
     .sort((a: any, b: any) => new Date(a.metadata.due_date).getTime() - new Date(b.metadata.due_date).getTime())[0]
   if (nextTask) {
     return {
+      type: 'suggestion' as const,
       title: `${nextTask.description || 'Task'} — ${name}`,
       detail: nextTask.metadata?.notes ? String(nextTask.metadata.notes).slice(0, 200) : 'Scheduled task.',
       dateTime: nextTask.metadata.due_date,
@@ -663,6 +675,7 @@ function fallback(lead: any, manifest: any, activities: any[]): any {
   }
 
   return {
+    type: 'suggestion' as const,
     title: `Stand by on ${name}`,
     detail: 'No pending tasks, appointments, or commitments.',
     dateTime: null,
@@ -670,6 +683,67 @@ function fallback(lead: any, manifest: any, activities: any[]): any {
     priority: 'nominal',
     cta: 'Log Note',
     source: 'No signals on record',
+  }
+}
+
+// ─── Task-first helpers ────────────────────────────────────────────────────
+type ActivityRow = {
+  id: string
+  activity_type: string
+  description: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+  agent: string | null
+}
+
+function pickOpenTask(activities: ActivityRow[]) {
+  const PRIORITY_RANK: Record<string, number> = { critical: 0, high: 1, normal: 2, nominal: 3, low: 4 }
+  const open = activities.filter((a) => {
+    if (a.activity_type !== 'task') return false
+    const m = (a.metadata || {}) as Record<string, unknown>
+    const status = typeof m.status === 'string' ? m.status : 'pending'
+    return status !== 'completed' && status !== 'done' && status !== 'dismissed'
+  })
+  if (!open.length) return null
+  return open.sort((a, b) => {
+    const am = (a.metadata || {}) as Record<string, unknown>
+    const bm = (b.metadata || {}) as Record<string, unknown>
+    const ap = PRIORITY_RANK[(am.priority as string) || 'normal'] ?? 2
+    const bp = PRIORITY_RANK[(bm.priority as string) || 'normal'] ?? 2
+    if (ap !== bp) return ap - bp
+    const ad = typeof am.due_date === 'string' ? new Date(am.due_date).getTime() : Number.MAX_SAFE_INTEGER
+    const bd = typeof bm.due_date === 'string' ? new Date(bm.due_date).getTime() : Number.MAX_SAFE_INTEGER
+    return ad - bd
+  })[0]
+}
+
+function taskToResponse(task: ActivityRow, leadName: string | null) {
+  const m = (task.metadata || {}) as Record<string, unknown>
+  const title = (typeof m.title === 'string' && m.title.trim()) || task.description || 'Untitled task'
+  const detail = typeof m.notes === 'string' ? m.notes : ''
+  const dueRaw = typeof m.due_date === 'string' ? m.due_date : null
+  const priorityRaw = typeof m.priority === 'string' ? m.priority : 'high'
+  const priority: 'critical' | 'high' | 'nominal' =
+    priorityRaw === 'critical' ? 'critical'
+    : priorityRaw === 'nominal' || priorityRaw === 'low' ? 'nominal'
+    : 'high'
+  const cta = typeof m.cta === 'string' && m.cta.trim() ? m.cta : 'Open Task'
+  const userEdited = m.userEdited === true
+  const sourceLabel = userEdited
+    ? `User-edited task · ${leadName || ''}`.trim()
+    : `Task on file · created ${new Date(task.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+  return {
+    type: 'task' as const,
+    taskId: task.id,
+    title: title.trim(),
+    detail: detail.trim(),
+    dateTime: dueRaw,
+    dateOnly: false,
+    priority,
+    cta,
+    prep_actions: Array.isArray(m.prep_actions) ? (m.prep_actions as unknown[]).map(String) : [],
+    source: sourceLabel,
+    userEdited,
   }
 }
 
