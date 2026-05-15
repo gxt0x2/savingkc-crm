@@ -1072,6 +1072,7 @@ export default function LeadDetailPage() {
   const [outcomeModalDismissed, setOutcomeModalDismissed] = useState(false)
   const [manifestAppointment, setManifestAppointment] = useState<any>(null)
   const [manifestScore, setManifestScore] = useState<number | null>(null)
+  const [manifestTranscripts, setManifestTranscripts] = useState<Array<{ date: string; recordingUrl?: string }>>([])
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [notesModalOpen, setNotesModalOpen] = useState(false)
   const [smsModalOpen, setSmsModalOpen] = useState(false)
@@ -1249,6 +1250,9 @@ export default function LeadDetailPage() {
           // Qualification score for header chip
           const qs = data.manifest.manifest?.qualificationScore
           setManifestScore(typeof qs === 'number' ? qs : null)
+          // Call transcripts (used to surface recording URLs in the activity feed)
+          const trs = data.manifest.manifest?.communications?.transcripts
+          setManifestTranscripts(Array.isArray(trs) ? trs : [])
         }
       } catch { /* silent */ }
     }
@@ -1518,6 +1522,39 @@ export default function LeadDetailPage() {
       })
   })()
 
+  // Normalize a raw recording URL into a playable in-app URL.
+  // Twilio recordings need basic auth so we route them through our /api/recordings/[sid] proxy.
+  const toPlayableRecordingUrl = (raw: string | undefined): string | undefined => {
+    if (!raw) return undefined
+    const twilioMatch = raw.match(/\/Recordings\/(RE[A-Za-z0-9]+)(?:\.[a-z0-9]+)?(?:$|\?)/)
+    if (twilioMatch) return `/api/recordings/${twilioMatch[1]}`
+    return raw
+  }
+
+  // Manifest transcripts hold recording URLs for calls (the call activity row
+  // itself doesn't get the URL written back). Build a timestamp-indexed lookup
+  // so we can backfill recordingUrl on each call row without a DB change.
+  const transcriptLookup: { ts: number; url: string }[] = manifestTranscripts
+    .map((t) => ({
+      ts: new Date(t.date).getTime(),
+      url: toPlayableRecordingUrl(t.recordingUrl) || '',
+    }))
+    .filter((t) => t.url && Number.isFinite(t.ts))
+
+  const findTranscriptUrl = (activityTs: string): string | undefined => {
+    const t = new Date(activityTs).getTime()
+    if (!Number.isFinite(t)) return undefined
+    // Match within ±10 minutes (call activity is logged seconds after start,
+    // transcript is written minutes later when Twilio finishes recording).
+    let best: { dt: number; url: string } | null = null
+    for (const tr of transcriptLookup) {
+      const dt = Math.abs(tr.ts - t)
+      if (dt > 10 * 60_000) continue
+      if (!best || dt < best.dt) best = { dt, url: tr.url }
+    }
+    return best?.url
+  }
+
   // Build feed activities - include notes, appointments, call recordings
   const feedActivities = mergedActivities
     .slice(0, 30)
@@ -1535,9 +1572,11 @@ export default function LeadDetailPage() {
         }
       }
 
-      // Check for recording URL in call/voicemail activities
+      // Check for recording URL in call/voicemail activities.
+      // Order: metadata.recordingUrl on the row → manifest transcript match by timestamp.
       if ((a.activity_type === 'call' || a.activity_type === 'voicemail') && a.metadata) {
-        recordingUrl = (a.metadata.recordingUrl || a.metadata.recording_url || a.metadata.RecordingUrl) as string | undefined
+        const fromMeta = (a.metadata.recordingUrl || a.metadata.recording_url || a.metadata.RecordingUrl) as string | undefined
+        recordingUrl = toPlayableRecordingUrl(fromMeta) || findTranscriptUrl(a.created_at)
       }
 
       const typeMap: Record<string, string> = {
@@ -1680,6 +1719,7 @@ export default function LeadDetailPage() {
         statusBadge,
         dispositionLabel,
         dispositionTone,
+        direction: (direction === 'inbound' ? 'inbound' : direction === 'outbound' ? 'outbound' : undefined) as 'inbound' | 'outbound' | undefined,
         link,
         linkLabel,
         recordingUrl,
