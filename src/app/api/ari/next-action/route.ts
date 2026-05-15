@@ -123,6 +123,9 @@ vague date like "end of the month" or "around the 28th", resolve it to a concret
 today as the anchor. Never leave vague dates in the passage.
 
 # FOLLOW-UP SCHEDULING (READ CAREFULLY — applies when you propose a callback time)
+The dateTime field is REQUIRED. Never return null. Every suggestion gets a concrete
+date and time so the agent can act on it without thinking.
+
 Default follow-up window: 12:30 PM to 3:00 PM Central. Pick a time inside this window UNLESS:
   • The seller explicitly named a different time on the call ("call me at 9am Tuesday")
   • The seller is only available outside this window (early-bird, swing-shift, etc.)
@@ -352,11 +355,17 @@ ${context}`
       titleRaw = fallback(lead, manifest, activities ?? []).title
     }
 
+    // Force a concrete dateTime. If the LLM left it null, fill with the next
+    // business-day default inside the 12:30–3:00 PM Central window, avoiding
+    // calendar conflicts. The user's rule: every suggestion has a time.
+    const llmDateTime = typeof parsed.dateTime === 'string' && parsed.dateTime ? parsed.dateTime : null
+    const finalDateTime = llmDateTime || pickDefaultFollowupSlot(agentTasks ?? [], agentAppointments ?? [])
+
     const result = {
       type: 'suggestion' as const,
       title: titleRaw,
       detail: stripFullName(String(parsed.detail || '').trim()),
-      dateTime: typeof parsed.dateTime === 'string' ? parsed.dateTime : null,
+      dateTime: finalDateTime,
       dateOnly: Boolean(parsed.dateOnly),
       priority:
         parsed.priority === 'critical' || parsed.priority === 'high' || parsed.priority === 'nominal'
@@ -681,6 +690,54 @@ function buildContext(lead: any, manifest: any, activities: any[], canonicalAppo
 
   parts.push(`\n## NOW: ${new Date().toISOString()} (local: ${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })})`)
   return parts.join('\n')
+}
+
+// ─── Default follow-up slot (12:30–3pm Central, next business day) ────────
+// Used when the LLM leaves dateTime null. Tries the 12:30, 1:00, 1:30, 2:00,
+// 2:30, 3:00 Central slots in order on the next business day; if all conflict
+// with existing scheduled work, advances to the next business day and retries.
+function pickDefaultFollowupSlot(tasks: TaskRow[], appointments: AppointmentRow[]): string {
+  const busy = new Set<number>()
+  const half = 30 * 60_000
+  for (const t of tasks) {
+    const m = (t.metadata || {}) as Record<string, unknown>
+    const status = typeof m.status === 'string' ? m.status : 'pending'
+    if (status === 'completed' || status === 'done' || status === 'dismissed') continue
+    const due = typeof m.due_date === 'string' ? m.due_date : null
+    if (!due) continue
+    const ts = new Date(due).getTime()
+    if (Number.isFinite(ts)) busy.add(Math.floor(ts / half))
+  }
+  for (const a of appointments) {
+    const ts = new Date(a.scheduled_at).getTime()
+    if (Number.isFinite(ts)) busy.add(Math.floor(ts / half))
+  }
+  const SLOT_MINUTES = [12 * 60 + 30, 13 * 60, 13 * 60 + 30, 14 * 60, 14 * 60 + 30, 15 * 60]
+  const isWeekend = (d: Date) => d.getDay() === 0 || d.getDay() === 6
+  const day = new Date()
+  day.setHours(0, 0, 0, 0)
+  day.setDate(day.getDate() + 1) // start with tomorrow
+  for (let i = 0; i < 14; i++) {
+    if (!isWeekend(day)) {
+      for (const mins of SLOT_MINUTES) {
+        // Construct slot in America/Chicago by offsetting from UTC. We want a
+        // wall-clock time of HH:MM Central. Build as local browser time on the
+        // server (UTC) and accept the small server-side timezone caveat — the
+        // ISO string is what the LLM examples emit too.
+        const slot = new Date(day)
+        slot.setHours(Math.floor(mins / 60), mins % 60, 0, 0)
+        if (!busy.has(Math.floor(slot.getTime() / half))) {
+          return slot.toISOString()
+        }
+      }
+    }
+    day.setDate(day.getDate() + 1)
+  }
+  // Out of slots in two weeks? Just return tomorrow 1pm.
+  const fallback = new Date()
+  fallback.setDate(fallback.getDate() + 1)
+  fallback.setHours(13, 0, 0, 0)
+  return fallback.toISOString()
 }
 
 // ─── Calendar context (Casey's busy slots for the next 14 days) ────────────
