@@ -76,19 +76,23 @@ function relTime(ts: string): string {
     const diffMin = Math.floor(diffMs / 60000)
     if (diffMin < 1) return 'Now'
     if (diffMin < 60) return `${diffMin}m ago`
+
+    // Once past 1 hour, always show the time of day next to the date marker.
+    let h = date.getHours()
+    const m = String(date.getMinutes()).padStart(2, '0')
+    const ampm = h >= 12 ? 'pm' : 'am'
+    h = h % 12 || 12
+    const clock = `${h}:${m}${ampm}`
+
     const diffHr = Math.floor(diffMin / 60)
     if (diffHr < 24 && date.getDate() === new Date().getDate()) {
-      let h = date.getHours()
-      const m = String(date.getMinutes()).padStart(2, '0')
-      const ampm = h >= 12 ? 'pm' : 'am'
-      h = h % 12 || 12
-      return `${h}:${m}${ampm}`
+      return clock
     }
     const diffDays = Math.floor(diffHr / 24)
     if (diffDays < 7) {
-      return date.toLocaleDateString('en-US', { weekday: 'short' })
+      return `${date.toLocaleDateString('en-US', { weekday: 'short' })}, ${clock}`
     }
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${clock}`
   } catch {
     return ''
   }
