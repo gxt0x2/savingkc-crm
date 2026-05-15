@@ -29,10 +29,23 @@ interface ActivityFeedProps {
   leadPhone?: string
   leadEmail?: string
   leadId?: string
+  /** When true, renders without the collapsible header (prominent placement). */
+  prominent?: boolean
   onCompose?: (type: 'call' | 'sms' | 'email') => void
   onEditNote?: (noteId: string, currentContent: string) => void
   onEditTask?: (taskId: string, currentTitle: string, metadata: Record<string, unknown>) => void
 }
+
+type ActivityFilter = 'all' | 'call' | 'sms' | 'email' | 'mail' | 'note'
+
+const FILTERS: { key: ActivityFilter; label: string; matches: (raw: string) => boolean }[] = [
+  { key: 'all',   label: 'All',    matches: () => true },
+  { key: 'call',  label: 'Calls',  matches: (r) => r === 'call' },
+  { key: 'sms',   label: 'Texts',  matches: (r) => r === 'sms' },
+  { key: 'email', label: 'Emails', matches: (r) => r === 'email' },
+  { key: 'mail',  label: 'Mail',   matches: (r) => r === 'letter_tracking' },
+  { key: 'note',  label: 'Notes',  matches: (r) => r === 'note' },
+]
 
 // ─── Recording Player (with signed URL fetching) ───────────────────────────
 function CallRecordingPlayer({ url }: { url: string }) {
@@ -147,7 +160,7 @@ function CallRecordingPlayer({ url }: { url: string }) {
 
 // ─── Icon config per type ───────────────────────────────────────────────────
 const typeConfig: Record<string, { icon: string; dotColor: string; label: string }> = {
-  sms:           { icon: 'sms',         dotColor: 'bg-blue-500',    label: 'SMS' },
+  sms:           { icon: 'sms',         dotColor: 'bg-emerald-500', label: 'SMS' },
   call:          { icon: 'call',        dotColor: 'bg-green-500',   label: 'Call' },
   email:         { icon: 'email',       dotColor: 'bg-purple-500',  label: 'Email' },
   status_change: { icon: 'sync_alt',    dotColor: 'bg-slate-500',   label: 'Status' },
@@ -242,54 +255,134 @@ function CommsBar({ onAction }: { onAction: (type: 'call' | 'sms' | 'email') => 
   )
 }
 
+// ─── Apple-style Segmented Filter ──────────────────────────────────────────
+function SegmentedFilter({
+  active,
+  counts,
+  onChange,
+}: {
+  active: ActivityFilter
+  counts: Record<ActivityFilter, number>
+  onChange: (key: ActivityFilter) => void
+}) {
+  return (
+    <div
+      className="flex items-center gap-1 p-1 rounded-full overflow-x-auto scrollbar-hide mb-4"
+      style={{ background: 'var(--ck-surface-elev)', border: '1px solid var(--ck-border)' }}
+    >
+      {FILTERS.map((f) => {
+        const selected = active === f.key
+        return (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => onChange(f.key)}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-semibold transition-all ${
+              selected ? 'shadow-sm' : ''
+            }`}
+            style={{
+              background: selected ? 'var(--ck-surface)' : 'transparent',
+              color: selected ? 'var(--ck-text)' : 'var(--ck-text-muted)',
+            }}
+          >
+            <span>{f.label}</span>
+            <span
+              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none"
+              style={{
+                background: selected ? 'var(--ck-surface-hi)' : 'transparent',
+                color: selected ? 'var(--ck-text-muted)' : 'var(--ck-text-dim)',
+              }}
+            >
+              {counts[f.key]}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Main Feed ──────────────────────────────────────────────────────────────
-export function ActivityFeed({ activities, onCompose, onEditNote, onEditTask }: ActivityFeedProps) {
+export function ActivityFeed({ activities, prominent = false, onCompose, onEditNote, onEditTask }: ActivityFeedProps) {
   const [hoveredNote, setHoveredNote] = useState<string | null>(null)
   const [hoveredTask, setHoveredTask] = useState<string | null>(null)
-  const [open, toggleOpen] = useCardCollapse('activity-feed', false)
+  const [open, toggleOpen] = useCardCollapse('activity-feed', prominent)
+  const [filter, setFilter] = useState<ActivityFilter>('all')
 
   const handleAction = (type: 'call' | 'sms' | 'email') => {
     onCompose?.(type)
   }
 
+  const counts: Record<ActivityFilter, number> = {
+    all:   activities.length,
+    call:  activities.filter((a) => (a.rawType || a.type) === 'call').length,
+    sms:   activities.filter((a) => (a.rawType || a.type) === 'sms').length,
+    email: activities.filter((a) => (a.rawType || a.type) === 'email').length,
+    mail:  activities.filter((a) => (a.rawType || a.type) === 'letter_tracking').length,
+    note:  activities.filter((a) => (a.rawType || a.type) === 'note').length,
+  }
+  const activeFilter = FILTERS.find((f) => f.key === filter) ?? FILTERS[0]
+  const filtered = activities.filter((a) => activeFilter.matches(a.rawType || a.type))
+  const visible = prominent || open
+
   return (
     <section
       className="rounded-2xl p-5 border"
-      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+      style={{
+        background: 'var(--ck-surface)',
+        borderColor: 'var(--ck-border)',
+        boxShadow: prominent ? '0 1px 2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.04)' : undefined,
+      }}
     >
       {/* Header */}
-      <button
-        type="button"
-        onClick={toggleOpen}
-        className="w-full flex justify-between items-center mb-4"
-      >
-        <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Communications</h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: 'var(--ck-text-muted)' }}>
-            {activities.length} events
+      {prominent ? (
+        <div className="w-full flex justify-between items-center mb-4">
+          <h2 className="text-[17px] font-bold tracking-tight" style={{ color: 'var(--ck-text)' }}>
+            Activity
+          </h2>
+          <span className="text-[12px] font-medium" style={{ color: 'var(--ck-text-muted)' }}>
+            {activities.length} {activities.length === 1 ? 'event' : 'events'}
           </span>
-          <Icon
-            name={open ? 'expand_less' : 'expand_more'}
-            className="!text-base !text-[color:var(--ck-text-muted)]"
-          />
         </div>
-      </button>
+      ) : (
+        <button
+          type="button"
+          onClick={toggleOpen}
+          className="w-full flex justify-between items-center mb-4"
+        >
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Activity</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-xs" style={{ color: 'var(--ck-text-muted)' }}>
+              {activities.length} events
+            </span>
+            <Icon
+              name={open ? 'expand_less' : 'expand_more'}
+              className="!text-base !text-[color:var(--ck-text-muted)]"
+            />
+          </div>
+        </button>
+      )}
 
-      {!open ? null : (
+      {!visible ? null : (
       <>
       {/* Quick action bar */}
       <CommsBar onAction={handleAction} />
 
+      {/* Segmented filter */}
+      <SegmentedFilter active={filter} counts={counts} onChange={setFilter} />
+
       {/* Timeline */}
-      {activities.length === 0 ? (
-        <p className="text-sm text-on-surface-variant italic text-center py-6">No activity recorded yet</p>
+      {filtered.length === 0 ? (
+        <p className="text-sm text-center py-8" style={{ color: 'var(--ck-text-muted)' }}>
+          {filter === 'all' ? 'No activity recorded yet' : `No ${activeFilter.label.toLowerCase()} yet`}
+        </p>
       ) : (
         <div className="relative">
           {/* Vertical line */}
           <div className="absolute left-[11px] top-2 bottom-2 w-px bg-outline-variant/20" />
 
           <div className="space-y-4">
-            {activities.map((activity, i) => {
+            {filtered.map((activity) => {
               const cfg = typeConfig[activity.rawType || activity.type] || typeConfig.status_change
               const isMilestone = MILESTONES.has(activity.rawType || activity.type)
 
@@ -377,7 +470,7 @@ export function ActivityFeed({ activities, onCompose, onEditNote, onEditTask }: 
                         )}
                       </div>
                       {activity.content && (
-                        <p className={`text-xs mt-0.5 ${activity.type === 'sms' ? 'text-blue-600 italic font-medium' : 'text-on-surface-variant'}`}>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--ck-text-muted)' }}>
                           {activity.content}
                         </p>
                       )}
