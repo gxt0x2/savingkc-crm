@@ -1996,10 +1996,32 @@ export default function LeadDetailPage() {
             onOpenDetails={() => setDetailsExpanded(true)}
           />
 
-          <AriChat
-            leadId={lead.id}
-            leadName={lead.full_name}
-            attention
+          <ActivityFeed
+            activities={feedActivities}
+            leadPhone={lead.phone ?? undefined}
+            leadEmail={lead.email ?? undefined}
+            leadId={id}
+            prominent
+            onCompose={(type) => {
+              if (type === 'call') {
+                openLeadDialer()
+              } else if (type === 'sms') {
+                setComposeTab('sms')
+                setSmsModalOpen(true)
+              } else if (type === 'email') {
+                setComposeTab('email')
+                setSmsModalOpen(true)
+              }
+            }}
+            onEditNote={(noteId, currentContent) => {
+              setEditNoteId(noteId)
+              setEditNoteContent(currentContent)
+            }}
+            onEditTask={(taskId, currentTitle, metadata) => {
+              setEditTaskId(taskId)
+              setEditTaskTitle(currentTitle)
+              setEditTaskMetadata(metadata)
+            }}
           />
         </div>
 
@@ -2074,33 +2096,11 @@ export default function LeadDetailPage() {
                 ),
               },
               {
-                id: 'activity-feed',
+                id: 'ari-chat',
                 node: (
-                  <ActivityFeed
-                    activities={feedActivities}
-                    leadPhone={lead.phone ?? undefined}
-                    leadEmail={lead.email ?? undefined}
-                    leadId={id}
-                    onCompose={(type) => {
-                      if (type === 'call') {
-                        openLeadDialer()
-                      } else if (type === 'sms') {
-                        setComposeTab('sms')
-                        setSmsModalOpen(true)
-                      } else if (type === 'email') {
-                        setComposeTab('email')
-                        setSmsModalOpen(true)
-                      }
-                    }}
-                    onEditNote={(noteId, currentContent) => {
-                      setEditNoteId(noteId)
-                      setEditNoteContent(currentContent)
-                    }}
-                    onEditTask={(taskId, currentTitle, metadata) => {
-                      setEditTaskId(taskId)
-                      setEditTaskTitle(currentTitle)
-                      setEditTaskMetadata(metadata)
-                    }}
+                  <AriChat
+                    leadId={lead.id}
+                    leadName={lead.full_name}
                   />
                 ),
               },
