@@ -229,7 +229,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="sticky top-0 w-full z-40 border-b shadow-sm"
         style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
       >
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+        <div className="max-w-[1440px] mx-auto px-3 sm:px-4 lg:px-6 h-16 flex items-center justify-between gap-3 overflow-hidden">
           {/* LEFT: hamburger + logo */}
           <div className="flex items-center gap-3 flex-shrink-0">
             {/* Hamburger — mobile only */}
@@ -279,7 +279,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* CENTER: nav tabs (desktop only) */}
-          <div className="hidden md:flex flex-1 justify-center">
+          <div className="hidden md:flex flex-1 justify-center min-w-0 overflow-hidden">
             <NavTabs onNavigate={() => {}} />
           </div>
 
@@ -288,14 +288,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
-              className="hidden sm:flex items-center gap-2 rounded-full pl-3 pr-2 py-1.5 text-sm w-48 md:w-64 transition-colors text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]"
+              className="hidden sm:flex items-center gap-2 rounded-full pl-3 pr-2 py-1.5 text-sm w-36 lg:w-48 xl:w-56 flex-shrink-0 transition-colors text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]"
               style={{ background: 'var(--ck-surface-elev)' }}
               aria-label="Open search"
             >
               <Icon name="search" size="text-lg" className="text-[var(--ck-text-dim)]" />
               <span className="flex-1 text-left">Search leads…</span>
               <kbd
-                className="hidden md:inline-block text-[10px] font-bold rounded px-1.5 py-0.5"
+                className="hidden xl:inline-block text-[10px] font-bold rounded px-1.5 py-0.5"
                 style={{
                   color: 'var(--ck-text-dim)',
                   background: 'var(--ck-surface)',

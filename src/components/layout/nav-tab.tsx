@@ -117,7 +117,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
   }
 
   return (
-    <nav className="flex items-center gap-1 h-16">
+    <nav className="flex items-center gap-0.5 h-16 overflow-x-auto scrollbar-hide max-w-full">
       {tabs.map((tab) => {
         const active = isActive(tab.href)
         return (
@@ -126,7 +126,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
             href={tab.href}
             prefetch={false}
             onClick={onNavigate}
-            className={`relative flex items-center gap-2 px-3 py-2 text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${
+            className={`relative flex items-center gap-1.5 px-2.5 py-2 text-sm font-bold rounded-lg transition-colors whitespace-nowrap flex-shrink-0 ${
               active
                 ? `bg-[#E32E2E]/15 ${activeText}`
                 : inactiveText
