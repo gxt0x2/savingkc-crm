@@ -616,6 +616,12 @@ function buildContext(lead: any, manifest: any, activities: any[], canonicalAppo
             parts.push(`  "${truncate(String(q), 240)}"`)
           }
         }
+        // Include the FULL transcript text so the LLM can ground in actual words,
+        // not just the AI-extracted summary. Cheap context for llama-3.3-70b
+        // and the difference between vague and specific suggestions.
+        if (t.fullTranscript) {
+          parts.push(`Full transcript:\n${truncate(String(t.fullTranscript), 3500)}`)
+        }
       }
     }
   }
