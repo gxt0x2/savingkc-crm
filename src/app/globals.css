@@ -234,6 +234,27 @@ body {
   color: #ffffff !important;
 }
 
+/* Hardcoded near-black surface hex codes used across dispo pages
+   (bg-[#141414], bg-[#1E1E25], bg-[#111827], etc). Map them all to
+   the light surface token so table panels, modals, and side drawers
+   adopt the light theme without a per-component rewrite. */
+.theme-light .lead-cockpit .bg-\[\#141414\],
+.theme-light .lead-cockpit .bg-\[\#17171D\],
+.theme-light .lead-cockpit .bg-\[\#18181E\],
+.theme-light .lead-cockpit .bg-\[\#191417\],
+.theme-light .lead-cockpit .bg-\[\#1A1616\],
+.theme-light .lead-cockpit .bg-\[\#1B2A4A\],
+.theme-light .lead-cockpit .bg-\[\#1D1D25\],
+.theme-light .lead-cockpit .bg-\[\#1E1E25\],
+.theme-light .lead-cockpit .bg-\[\#1E1E26\],
+.theme-light .lead-cockpit .bg-\[\#1F2026\],
+.theme-light .lead-cockpit .bg-\[\#22222A\],
+.theme-light .lead-cockpit .bg-\[\#26262F\],
+.theme-light .lead-cockpit .bg-\[\#272730\],
+.theme-light .lead-cockpit .bg-\[\#111827\] {
+  background-color: var(--ck-surface) !important;
+}
+
 /* Pastel text colors (yellow-300, emerald-300, amber-300, etc.) read on
    dark surfaces but wash out on white. Map them to AA-contrast 700-shade
    equivalents in light mode without touching the components themselves.
