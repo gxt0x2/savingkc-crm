@@ -229,7 +229,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="sticky top-0 w-full z-40 border-b shadow-sm"
         style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
       >
-        <div className="max-w-[1440px] mx-auto px-3 sm:px-4 lg:px-6 h-16 flex items-center justify-between gap-3 overflow-hidden">
+        <div className="max-w-[1440px] mx-auto px-3 sm:px-4 lg:px-6 h-16 flex items-center justify-between gap-3">
           {/* LEFT: hamburger + logo */}
           <div className="flex items-center gap-3 flex-shrink-0">
             {/* Hamburger — mobile only */}
