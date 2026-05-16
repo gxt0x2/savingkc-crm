@@ -205,6 +205,35 @@ body {
   background-color: rgba(15, 23, 42, 0.04);
 }
 
+/* Solid text-white / border-white / hover:text-white on dispo pages renders
+   literally white-on-white in light mode. Map to theme tokens so headings,
+   cards, and table cells become readable without per-component rewrites. */
+.theme-light .lead-cockpit .text-white {
+  color: var(--ck-text);
+}
+.theme-light .lead-cockpit .hover\:text-white:hover {
+  color: var(--ck-text);
+}
+.theme-light .lead-cockpit .placeholder\:text-white\/40::placeholder,
+.theme-light .lead-cockpit .placeholder\:text-white\/50::placeholder,
+.theme-light .lead-cockpit [class*="placeholder:text-white"]::placeholder {
+  color: var(--ck-text-dim);
+}
+.theme-light .lead-cockpit [class*="border-white/"] {
+  border-color: var(--ck-border);
+}
+.theme-light .lead-cockpit [class*="ring-white/"] {
+  --tw-ring-color: var(--ck-border);
+}
+/* Buttons/links with `bg-[#E32E2E] text-white` should KEEP white text since
+   the red background still meets contrast. Re-assert that case so we don't
+   wash out the brand CTAs. */
+.theme-light .lead-cockpit [class*="bg-[#E32E2E]"].text-white,
+.theme-light .lead-cockpit [class*="bg-[#C42626]"].text-white,
+.theme-light .lead-cockpit [class*="bg-red-"].text-white {
+  color: #ffffff !important;
+}
+
 /* Pastel text colors (yellow-300, emerald-300, amber-300, etc.) read on
    dark surfaces but wash out on white. Map them to AA-contrast 700-shade
    equivalents in light mode without touching the components themselves.
