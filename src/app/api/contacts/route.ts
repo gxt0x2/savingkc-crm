@@ -3,14 +3,14 @@ export const maxDuration = 60
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { normalizeDealStage, type DealStage } from '@/types/pipeline'
+import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
  * GET /api/contacts
  *
- * Returns one row per active acquisition lead with the fields the Contacts
+ * Returns one row per active lead with the fields the Contacts
  * smart list needs: name, address, phone, next activity, tags, station,
- * composite score. Single endpoint — the page filters by station tab on
+ * composite score. Parked and archived leads are excluded here. Single endpoint — the page filters by station tab on
  * the client.
  *
  * Auth: session (the page is auth-gated).
@@ -61,6 +61,13 @@ interface ManifestPayload {
   }
 }
 
+const ACTIVE_CONTACT_STAGES = new Set<DealStage>([...ACQUISITION_STAGES, 'under_contract'])
+
+function getActiveContactStation(station: string | null | undefined): DealStage | null {
+  const normalized = normalizeDealStage(station) ?? 'new'
+  return ACTIVE_CONTACT_STAGES.has(normalized) ? normalized : null
+}
+
 function pickNextActivity(m: ManifestPayload): ContactRow['nextActivity'] {
   const appt = m.pipeline?.appointment
   if (appt && appt.status && ['scheduled', 'confirmed', 'reconfirmed'].includes(appt.status.toLowerCase())) {
@@ -102,9 +109,13 @@ export async function GET() {
 
   if (leadsErr) return NextResponse.json({ error: leadsErr.message }, { status: 500 })
   const rows = leads ?? []
-  if (rows.length === 0) return NextResponse.json({ items: [] })
+  const activeRows = rows
+    .map((lead) => ({ lead, station: getActiveContactStation(lead.station) }))
+    .filter((row): row is { lead: typeof rows[number]; station: DealStage } => row.station !== null)
 
-  const leadIds = rows.map((l) => l.id)
+  if (activeRows.length === 0) return NextResponse.json({ items: [] })
+
+  const leadIds = activeRows.map(({ lead }) => lead.id)
 
   const [{ data: manifests }, { data: scores }] = await Promise.all([
     db
@@ -131,8 +142,7 @@ export async function GET() {
   }
 
   const items: ContactRow[] = []
-  for (const lead of rows) {
-    const station = normalizeDealStage(lead.station) ?? 'new'
+  for (const { lead, station } of activeRows) {
     const manifest = latestManifest.get(lead.id) ?? {}
     const lastContactAt =
       manifest.communications?.lastSellerContactDate ??

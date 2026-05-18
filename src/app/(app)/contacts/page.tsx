@@ -39,8 +39,8 @@ const LEAD_GROUP_SESSION_KEY = 'savingkc:lead-group:v1'
 const TABS: { key: TabKey; label: string; station?: DealStage; minScore?: number }[] = [
   { key: 'hot', label: 'Hot', minScore: 75 },
   { key: 'new', label: 'New', station: 'new' },
-  { key: 'contacted', label: 'Contacted', station: 'contacted' },
-  { key: 'qualified', label: 'Qualified', station: 'qualified' },
+  { key: 'contacted', label: 'Leads', station: 'contacted' },
+  { key: 'qualified', label: 'Opportunities', station: 'qualified' },
   { key: 'appointment_set', label: 'Appointment Set', station: 'appointment_set' },
   { key: 'offer_made', label: 'Offer Made', station: 'offer_made' },
   { key: 'in_closing', label: 'In Closing', station: 'under_contract' },
@@ -129,9 +129,9 @@ export default function ContactsPage() {
     queryClient.invalidateQueries({ queryKey: ['contacts'] })
   }, [queryClient])
 
-  // under_contract leads are exclusive to the In Closing tab. Every other
-  // list (including All and Hot) excludes them so a closing deal can't
-  // double-appear in the active acquisition queue.
+  // The API returns the active lead set: non-parked and not archived/dead.
+  // Working-queue tabs keep under_contract exclusive to In Closing, while All
+  // shows the total active lead count and list.
   const acquisitionOnly = useMemo(() => items.filter((i) => i.station !== 'under_contract'), [items])
 
   // Hot = composite score ≥ 75 OR manually starred (is_favorite).
@@ -140,7 +140,7 @@ export default function ContactsPage() {
 
   const counts = useMemo<Record<TabKey, number>>(() => {
     return {
-      all: acquisitionOnly.length,
+      all: items.length,
       hot: acquisitionOnly.filter(isHot).length,
       new: acquisitionOnly.filter((i) => i.station === 'new').length,
       contacted: acquisitionOnly.filter((i) => i.station === 'contacted').length,
@@ -153,8 +153,8 @@ export default function ContactsPage() {
 
   const visible = useMemo(() => {
     const tab = TABS.find((t) => t.key === activeTab)
-    if (!tab) return acquisitionOnly
-    const pool = activeTab === 'in_closing' ? items : acquisitionOnly
+    if (!tab) return items
+    const pool = activeTab === 'all' || activeTab === 'in_closing' ? items : acquisitionOnly
     let filtered = pool
     if (tab.station) filtered = filtered.filter((i) => i.station === tab.station)
     if (activeTab === 'hot') filtered = filtered.filter(isHot)

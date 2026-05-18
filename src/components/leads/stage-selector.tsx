@@ -5,8 +5,8 @@ import type { DealStage } from '@/types/pipeline'
 
 const STAGE_OPTIONS: { value: DealStage; label: string }[] = [
   { value: 'new', label: 'New' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'qualified', label: 'Qualified' },
+  { value: 'contacted', label: 'Leads' },
+  { value: 'qualified', label: 'Opportunities' },
   { value: 'appointment_set', label: 'Appointment Set' },
   { value: 'offer_made', label: 'Offer Made' },
   { value: 'under_contract', label: 'In Closing' },

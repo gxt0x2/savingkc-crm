@@ -46,9 +46,9 @@ export function stageLabel(stage: string): string {
   const labels: Record<string, string> = {
     new: 'New',
     not_contacted: 'Not Contacted',
-    contacted: 'Contacted',
+    contacted: 'Leads',
     qualifying: 'Qualifying',
-    qualified: 'Qualified',
+    qualified: 'Opportunities',
     appt_set: 'Appt Set',
     appointment_set: 'Appointment Set',
     negotiations: 'Negotiations',
