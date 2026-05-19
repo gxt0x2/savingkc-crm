@@ -169,8 +169,8 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
       <div className="topbar">
         <div className="container topbar-inner">
           <div className="logo">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/skc-logo.svg" alt="Saving KC Homebuyers" className="topbar-logo" />
+            <div className="logo-mark">SK</div>
+            <span>Saving KC Homebuyers</span>
           </div>
           <nav className="nav-links" aria-label="primary">
             <a href="#how" onClick={scrollToId('how')}>How it works</a>

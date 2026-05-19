@@ -54,7 +54,6 @@
 .skc-sell .topbar-trust { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
 .skc-sell .topbar-trust strong { color: var(--text); font-weight: 600; }
 .skc-sell .topbar-phone { font-weight: 700; font-size: 15px; color: var(--brand); text-decoration: none; display: flex; align-items: center; gap: 6px; }
-.skc-sell .topbar-logo { height: 38px; width: auto; display: block; }
 .skc-sell .nav-links { display: flex; align-items: center; gap: 22px; }
 .skc-sell .nav-links a {
   color: var(--text); font-weight: 600; font-size: 14px; text-decoration: none;
