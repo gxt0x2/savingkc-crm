@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 68" width="280" height="68">
+
+  <!-- SAVING -->
+  <text x="4" y="42" font-family="'Arial Black', Arial, sans-serif" font-weight="900" font-size="34" fill="#CC0000" letter-spacing="2">SAVING</text>
+
+  <!-- House icon — sits right of SAVING -->
+  <!-- Roof -->
+  <polyline points="155,40 180,10 205,40" fill="none" stroke="#CC0000" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Body -->
+  <rect x="160" y="40" width="40" height="22" fill="none" stroke="#CC0000" stroke-width="2.5"/>
+  <!-- Window on gable -->
+  <rect x="173" y="16" width="9" height="9" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+  <line x1="177.5" y1="16" x2="177.5" y2="25" stroke="#CC0000" stroke-width="1.5"/>
+  <line x1="173" y1="20.5" x2="182" y2="20.5" stroke="#CC0000" stroke-width="1.5"/>
+
+  <!-- KC inside house -->
+  <text x="163" y="58" font-family="'Arial Black', Arial, sans-serif" font-weight="900" font-size="17" fill="#CC0000" letter-spacing="1">KC</text>
+
+  <!-- HOMEBUYERS below SAVING -->
+  <text x="4" y="60" font-family="Arial, sans-serif" font-weight="700" font-size="11" fill="#111" letter-spacing="4">HOMEBUYERS</text>
+
+  <!-- Swoosh -->
+  <path d="M4,64 Q140,74 276,64" fill="none" stroke="#CC0000" stroke-width="1.5" stroke-linecap="round"/>
+
+</svg>

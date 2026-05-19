@@ -160,26 +160,57 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
   const scrollToQuiz = () => document.getElementById('quiz')?.scrollIntoView({ behavior: 'smooth' })
   const scrollToId = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault()
+    setMobileMenuOpen(false)
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   return (
     <div className="skc-sell">
       {/* ============ TOP BAR ============ */}
       <div className="topbar">
         <div className="container topbar-inner">
-          <div className="logo">
-            <div className="logo-mark">SK</div>
-            <span>Saving KC Homebuyers</span>
-          </div>
+          <a href="#quiz" className="logo" onClick={scrollToId('quiz')}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/skc-logo.svg" alt="Saving KC Homebuyers" className="topbar-logo" />
+          </a>
           <nav className="nav-links" aria-label="primary">
             <a href="#how" onClick={scrollToId('how')}>How it works</a>
-            <a href="#about" onClick={scrollToId('about')}>About</a>
+            <a href="#about" onClick={scrollToId('about')}>About us</a>
             <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
             <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
           </nav>
           <div className="topbar-right">
+            <div className="topbar-trust">
+              <span className="stars">★★★★★</span>
+              <span><strong>100+</strong> KC homeowners helped</span>
+            </div>
             <a href={`tel:${phoneTel}`} className="topbar-phone">
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
+              {phoneDisplay}
+            </a>
+            <button
+              type="button"
+              className="nav-toggle"
+              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileMenuOpen}
+              onClick={() => setMobileMenuOpen((v) => !v)}
+            >
+              <span className="material-symbols-outlined" aria-hidden>{mobileMenuOpen ? 'close' : 'menu'}</span>
+            </button>
+          </div>
+        </div>
+        <div className={`mobile-menu ${mobileMenuOpen ? 'open' : ''}`}>
+          <div className="mobile-menu-inner">
+            <a href="#how" onClick={scrollToId('how')}>How it works</a>
+            <a href="#about" onClick={scrollToId('about')}>About us</a>
+            <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
+            <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
+            <div className="mobile-trust">
+              <span className="stars">★★★★★</span>
+              <span><strong>100+</strong> KC homeowners helped</span>
+            </div>
+            <a href={`tel:${phoneTel}`} className="mobile-phone">
               <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
               {phoneDisplay}
             </a>
@@ -233,18 +264,26 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
             </div>
 
             <div className="tool-card">
+              <span className="tool-eyebrow">
+                <span className="material-symbols-outlined" aria-hidden>bolt</span>
+                Start here
+              </span>
               <h2>Get Your Cash Offer in 1 hour.</h2>
               <p className="tool-sub">
                 Get a cash-offer range based on your property location, condition, and timeline in less than 1 hour.
               </p>
 
               <div className="step-indicator">
-                <div className={`step-dot ${step === 1 ? 'active' : step > 1 ? 'done' : ''}`}></div>
-                <div className={`step-dot ${step === 2 ? 'active' : step > 2 ? 'done' : ''}`}></div>
-                <div className={`step-dot ${step === 3 ? 'active' : ''}`}></div>
+                <span className="step-pill" aria-label={`Step ${step} of 3`}>
+                  <span className="step-num-circle">{step}</span>
+                  <span className="step-num-text">Step {step} of 3</span>
+                </span>
+                <span className="step-track">
+                  <span className="step-track-fill" style={{ width: `${(step / 3) * 100}%` }} />
+                </span>
               </div>
               <div className="step-label">
-                Step {step} of 3 · {step === 3 ? '15 seconds to finish' : step === 2 ? '20 seconds' : '30 seconds'}
+                {step === 3 ? '15 seconds to finish' : step === 2 ? '20 seconds' : '30 seconds'}
               </div>
 
               {submitted ? (
@@ -494,12 +533,12 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                 Property problems compound. Taxes accrue interest. Vacant houses get vandalized. Estates rack up legal costs. Tenants disappear with the security deposit. The number you get six months from now will be smaller than the number you can get this week. Let&apos;s see yours.
               </p>
               <div className="mid-cta-actions">
-                <a href="#quiz" className="btn-page-cta" onClick={(e) => { e.preventDefault(); scrollToQuiz() }}>
+                <a href="#quiz" className="btn-secondary" onClick={(e) => { e.preventDefault(); scrollToQuiz() }}>
                   See My Number
                   <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                 </a>
                 <a href={`tel:${phoneTel}`} className="btn-secondary">
-                  <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
+                  <span className="material-symbols-outlined" aria-hidden>call</span>
                   Call {phoneDisplay}
                 </a>
               </div>
@@ -625,7 +664,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
             </p>
             <a
               href="#quiz"
-              className="btn-page-cta lg"
+              className="btn-secondary lg"
               onClick={(e) => {
                 e.preventDefault()
                 scrollToQuiz()
