@@ -60,6 +60,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
   const [error, setError] = useState<string | null>(null)
   const [quizStartedFired, setQuizStartedFired] = useState(false)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     captureAttribution()
@@ -163,7 +164,6 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
     setMobileMenuOpen(false)
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   return (
     <div className="skc-sell">
@@ -172,7 +172,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
         <div className="container topbar-inner">
           <a href="#quiz" className="logo" onClick={scrollToId('quiz')}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/skc-logo.svg" alt="Saving KC Homebuyers" className="topbar-logo" />
+            <img src="/skc-logo.png" alt="Saving KC Homebuyers" className="topbar-logo" width={489} height={141} />
           </a>
           <nav className="nav-links" aria-label="primary">
             <a href="#how" onClick={scrollToId('how')}>How it works</a>
@@ -297,7 +297,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                   <p style={{ color: 'var(--text-muted)', fontSize: 15, marginBottom: 20 }}>
                     We&apos;ll text and email your cash-offer range within the hour. Lock in a quick call now and we&apos;ll walk you through it.
                   </p>
-                  <button className="btn-continue" onClick={openCalcom}>
+                  <button type="button" className="btn-continue" onClick={openCalcom}>
                     Book a 15-min Call
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
@@ -321,7 +321,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                     </div>
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
-                  <button className="btn-continue" onClick={() => advance(2)}>
+                  <button type="button" className="btn-continue" onClick={() => advance(2)}>
                     Continue
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
@@ -364,7 +364,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                     </select>
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
-                  <button className="btn-continue" onClick={() => advance(3)}>
+                  <button type="button" className="btn-continue" onClick={() => advance(3)}>
                     See My Offer Range
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
@@ -440,7 +440,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                     />
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
-                  <button className="btn-continue" onClick={submit} disabled={submitting}>
+                  <button type="button" className="btn-continue" onClick={submit} disabled={submitting}>
                     {submitting ? 'Sending…' : 'Get My Custom Offer'}
                     {!submitting && (
                       <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>

@@ -11,6 +11,7 @@ const PUBLIC_API_EXACT = new Set([
   '/api/buyers/intake',
   '/api/leads/ppc',
   '/api/leads/ppc/book',
+  '/api/sell-edits',
   '/api/deals/image',
   '/api/deploy',
   '/api/docuseal/webhook',

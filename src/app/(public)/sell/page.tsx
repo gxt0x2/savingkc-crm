@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './sell.css'
 import { SellLanding } from './SellLanding'
 import { GoogleAdsTag } from './GoogleAdsTag'
+import { EditOverlay } from './EditOverlay'
 
 const PPC_PHONE_DISPLAY = process.env.NEXT_PUBLIC_PPC_PHONE ?? '(816) 608-8808'
 const PPC_PHONE_TEL = (process.env.NEXT_PUBLIC_PPC_PHONE_TEL ?? '+18166088808').replace(/[^+\d]/g, '')
@@ -22,6 +23,7 @@ export default function SellPage() {
     <>
       <GoogleAdsTag />
       <SellLanding phoneDisplay={PPC_PHONE_DISPLAY} phoneTel={PPC_PHONE_TEL} />
+      <EditOverlay />
     </>
   )
 }
