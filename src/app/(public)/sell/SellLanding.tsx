@@ -4,29 +4,52 @@ import { useCallback, useEffect, useState } from 'react'
 import { captureAttribution, getAttribution } from '@/lib/ppc/attribution'
 import { fireConversion } from '@/lib/ppc/conversions'
 
-type Situation = 'tax-delinquent' | 'inherited' | 'tired-landlord' | 'other'
+type Situation =
+  | 'tax-delinquent'
+  | 'inherited'
+  | 'tired-landlord'
+  | 'condition'
+  | 'life-event'
+  | 'land'
+
 type Timeline = 'asap' | '60-days' | 'flexible' | 'exploring'
 type Condition = 'good' | 'needs-work' | 'major-repair' | 'vacant'
 
 interface QuizState {
-  address: string
   situation: Situation | ''
   timeline: Timeline | ''
   condition: Condition | ''
+  address: string
   name: string
   phone: string
   email: string
 }
 
 const EMPTY_STATE: QuizState = {
-  address: '',
   situation: '',
   timeline: '',
   condition: '',
+  address: '',
   name: '',
   phone: '',
   email: '',
 }
+
+const SITUATION_TILES: { value: Situation; icon: string; label: string }[] = [
+  { value: 'tax-delinquent', icon: 'gavel', label: 'Behind on taxes' },
+  { value: 'inherited', icon: 'family_history', label: 'Inherited it' },
+  { value: 'tired-landlord', icon: 'person_off', label: 'Tired landlord' },
+  { value: 'condition', icon: 'construction', label: 'Needs repairs' },
+  { value: 'life-event', icon: 'schedule_send', label: 'Life event' },
+  { value: 'land', icon: 'landscape', label: 'Land or lot' },
+]
+
+const TIMELINE_TILES: { value: Timeline; label: string }[] = [
+  { value: 'asap', label: 'ASAP (under 30 days)' },
+  { value: '60-days', label: '30–60 days' },
+  { value: 'flexible', label: 'Flexible' },
+  { value: 'exploring', label: 'Just exploring' },
+]
 
 export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; phoneTel: string }) {
   const [step, setStep] = useState<1 | 2 | 3>(1)
@@ -42,65 +65,55 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
     captureAttribution()
   }, [])
 
-  const postPartial = useCallback(
-    async (currentStep: 1 | 2 | 3, partial: Partial<QuizState>) => {
-      try {
-        const attribution = getAttribution()
-        await fetch('/api/leads/ppc', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            step: currentStep,
-            ...partial,
-            attribution,
-          }),
-        })
-      } catch {
-        // partial saves are best-effort; never block the user
-      }
-    },
-    [],
-  )
+  const postPartial = useCallback(async (currentStep: 1 | 2 | 3, partial: Partial<QuizState>) => {
+    try {
+      const attribution = getAttribution()
+      await fetch('/api/leads/ppc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: currentStep,
+          ...partial,
+          attribution,
+        }),
+      })
+    } catch {
+      // best-effort
+    }
+  }, [])
 
   const advance = (toStep: 1 | 2 | 3) => {
     setError(null)
-
     if (toStep === 2) {
-      if (!state.address.trim() || !state.situation) {
-        setError('Please enter your address and pick a situation.')
+      if (!state.situation) {
+        setError('Pick a situation to continue.')
         return
       }
       if (!quizStartedFired) {
         fireConversion('lead_quiz_started')
         setQuizStartedFired(true)
       }
-      postPartial(1, {
-        address: state.address,
-        situation: state.situation,
-      })
+      postPartial(1, { situation: state.situation })
     }
-
     if (toStep === 3) {
       if (!state.timeline || !state.condition) {
-        setError('Please answer both questions to continue.')
+        setError('Answer both questions to continue.')
         return
       }
       fireConversion('lead_quiz_qualified')
       postPartial(2, {
-        address: state.address,
         situation: state.situation,
         timeline: state.timeline,
         condition: state.condition,
       })
     }
-
     setStep(toStep)
   }
 
   const submit = async () => {
     setError(null)
-    if (!state.name.trim() || !state.phone.trim() || !state.email.trim()) {
-      setError('We need all three to send you a custom offer.')
+    if (!state.address.trim() || !state.name.trim() || !state.phone.trim() || !state.email.trim()) {
+      setError('We need all four to send you a custom offer.')
       return
     }
     setSubmitting(true)
@@ -124,9 +137,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
         }),
       })
       const json = await r.json()
-      if (!r.ok || !json?.ok) {
-        throw new Error(json?.error ?? 'Submit failed')
-      }
+      if (!r.ok || !json?.ok) throw new Error(json?.error ?? 'Submit failed')
       fireConversion('lead_submitted')
       setManifestId(json.manifestId ?? null)
       setSubmitted(true)
@@ -138,8 +149,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
   }
 
   const openCalcom = () => {
-    const link =
-      process.env.NEXT_PUBLIC_CALCOM_PPC_LINK ?? 'https://cal.com/savingkc/sell-consult'
+    const link = process.env.NEXT_PUBLIC_CALCOM_PPC_LINK ?? 'https://cal.com/savingkc/sell-consult'
     const url = manifestId ? `${link}?metadata[manifestId]=${manifestId}` : link
     window.open(url, '_blank', 'noopener,noreferrer')
   }
@@ -147,24 +157,31 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
   const select = <K extends keyof QuizState>(key: K, value: QuizState[K]) =>
     setState((s) => ({ ...s, [key]: value }))
 
+  const scrollToQuiz = () => document.getElementById('quiz')?.scrollIntoView({ behavior: 'smooth' })
+  const scrollToId = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault()
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   return (
     <div className="skc-sell">
       {/* ============ TOP BAR ============ */}
       <div className="topbar">
         <div className="container topbar-inner">
           <div className="logo">
-            <div className="logo-mark">SK</div>
-            <span>Saving KC Homebuyers</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/skc-logo.svg" alt="Saving KC Homebuyers" className="topbar-logo" />
           </div>
+          <nav className="nav-links" aria-label="primary">
+            <a href="#how" onClick={scrollToId('how')}>How it works</a>
+            <a href="#about" onClick={scrollToId('about')}>About</a>
+            <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
+            <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
+          </nav>
           <div className="topbar-right">
-            <div className="topbar-trust">
-              <span className="stars">★★★★★</span>
-              <span>
-                <strong>100+</strong> KC homeowners helped
-              </span>
-            </div>
             <a href={`tel:${phoneTel}`} className="topbar-phone">
-              📞 {phoneDisplay}
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
+              {phoneDisplay}
             </a>
           </div>
         </div>
@@ -178,31 +195,28 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
               <div className="hero-eyebrow">
                 <span className="dot"></span> Kansas City • MO + KS
               </div>
-              <h1>
-                Sell the house. Skip the stress.{' '}
-                <span className="accent">Walk away with cash in 14 days.</span>
-              </h1>
+              <h1>Sell My House In Kansas City Today.</h1>
               <p className="sub">
-                Whatever made this house too much to handle — back taxes, probate, a divorce, a tenant nightmare, repairs you can&apos;t face — we&apos;ve seen it, we&apos;ve closed it, and we won&apos;t make you feel bad about it. One conversation, one fair offer, and you&apos;re free.
+                Back taxes. A house you didn&apos;t ask for. A tenant you can&apos;t get out. Repairs you stopped counting. Whatever it is, you don&apos;t have to fix it, clean it, or explain it. Tell us the address. We bring a fair cash number in an hour. You pick the day it closes.
               </p>
 
               <ul className="hero-bullets">
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Keep your money.</strong> Zero fees, zero commissions, zero cleanup. The number we say is the check you get.
+                    <strong>You pay $0.</strong> No fees, no commissions, no repairs, and no cleanup. The number we say is the check you get.
                   </span>
                 </li>
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Keep your dignity.</strong> Probate, liens, back taxes, hoarder mess — handled quietly at closing. No judgment.
+                    <strong>Keep your privacy.</strong> Handle things quietly at closing. Probate, liens, back taxes, hoarder mess. No neighbors. No judgment.
                   </span>
                 </li>
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Keep your timeline.</strong> Close in 14 days if you need out fast, or take 60. You set the pace.
+                    <strong>Pick your payday.</strong> Close in 14 days if you need out fast, or take 60. You set the pace.
                   </span>
                 </li>
               </ul>
@@ -219,10 +233,9 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
             </div>
 
             <div className="tool-card">
-              <div className="tool-badge">🎯 Free Tool · No phone required</div>
-              <h2>What&apos;s your property actually worth?</h2>
+              <h2>Get Your Cash Offer in 1 hour.</h2>
               <p className="tool-sub">
-                Get an instant estimated cash-offer range based on your address and situation. No obligation, no calls until you ask.
+                Get a cash-offer range based on your property location, condition, and timeline in less than 1 hour.
               </p>
 
               <div className="step-indicator">
@@ -236,56 +249,48 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
 
               {submitted ? (
                 <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
-                  <h3 style={{ fontSize: 20, marginBottom: 8 }}>You&apos;re in.</h3>
+                  <div style={{ fontSize: 48, marginBottom: 12, color: 'var(--green)' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 56, fontVariationSettings: "'FILL' 1" }} aria-hidden>
+                      check_circle
+                    </span>
+                  </div>
+                  <h3 style={{ fontSize: 22, marginBottom: 8 }}>You&apos;re in.</h3>
                   <p style={{ color: 'var(--text-muted)', fontSize: 15, marginBottom: 20 }}>
-                    We&apos;ll text and email your custom offer within 24 hours. Want to lock in a call now?
+                    We&apos;ll text and email your cash-offer range within the hour. Lock in a quick call now and we&apos;ll walk you through it.
                   </p>
-                  <button className="btn-primary lg" onClick={openCalcom}>
-                    Book a 15-min Call →
+                  <button className="btn-continue" onClick={openCalcom}>
+                    Book a 15-min Call
+                    <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                 </div>
               ) : step === 1 ? (
                 <div style={{ marginTop: 18 }}>
-                  <div className="form-field">
-                    <label htmlFor="address">Property address</label>
-                    <input
-                      id="address"
-                      type="text"
-                      placeholder="123 Main St, Kansas City, MO"
-                      autoComplete="street-address"
-                      value={state.address}
-                      onChange={(e) => select('address', e.target.value)}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label>What&apos;s the situation?</label>
-                    <div className="radio-group">
-                      {(
-                        [
-                          ['tax-delinquent', '🏛️ Behind on taxes'],
-                          ['inherited', '🏠 Inherited it'],
-                          ['tired-landlord', '😮‍💨 Tired landlord'],
-                          ['other', '❓ Something else'],
-                        ] as [Situation, string][]
-                      ).map(([val, label]) => (
+                  <div className="form-field form-field-prominent">
+                    <span className="field-label">What&apos;s your situation?</span>
+                    <div className="radio-group three-col">
+                      {SITUATION_TILES.map(({ value, icon, label }) => (
                         <button
-                          key={val}
+                          key={value}
                           type="button"
-                          className={`radio-tile ${state.situation === val ? 'selected' : ''}`}
-                          onClick={() => select('situation', val)}
+                          className={`radio-tile ${state.situation === value ? 'selected' : ''}`}
+                          onClick={() => select('situation', value)}
                         >
+                          <span className="material-symbols-outlined" aria-hidden>{icon}</span>
                           {label}
                         </button>
                       ))}
                     </div>
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
-                  <button className="btn-primary lg" onClick={() => advance(2)}>
-                    Continue →
+                  <button className="btn-continue" onClick={() => advance(2)}>
+                    Continue
+                    <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                   <p className="form-footer">
-                    <span className="lock">🔒</span> Your info stays private. No spam, ever.
+                    <span className="lock">
+                      <span className="material-symbols-outlined" style={{ fontSize: 14, verticalAlign: 'middle', marginRight: 3 }} aria-hidden>lock</span>
+                    </span>
+                    Your info stays private. No spam, ever.
                   </p>
                 </div>
               ) : step === 2 ? (
@@ -293,19 +298,12 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                   <div className="form-field">
                     <label>How soon do you need to sell?</label>
                     <div className="radio-group">
-                      {(
-                        [
-                          ['asap', '⚡ ASAP (under 30 days)'],
-                          ['60-days', '📅 30–60 days'],
-                          ['flexible', '🕰️ Flexible'],
-                          ['exploring', '👀 Just exploring'],
-                        ] as [Timeline, string][]
-                      ).map(([val, label]) => (
+                      {TIMELINE_TILES.map(({ value, label }) => (
                         <button
-                          key={val}
+                          key={value}
                           type="button"
-                          className={`radio-tile ${state.timeline === val ? 'selected' : ''}`}
-                          onClick={() => select('timeline', val)}
+                          className={`radio-tile ${state.timeline === value ? 'selected' : ''}`}
+                          onClick={() => select('timeline', value)}
                         >
                           {label}
                         </button>
@@ -327,8 +325,9 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                     </select>
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
-                  <button className="btn-primary lg" onClick={() => advance(3)}>
-                    See My Offer Range →
+                  <button className="btn-continue" onClick={() => advance(3)}>
+                    See My Offer Range
+                    <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                 </div>
               ) : (
@@ -340,14 +339,33 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                       padding: 14,
                       borderRadius: 10,
                       marginBottom: 18,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
                     }}
                   >
-                    <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600, marginBottom: 4 }}>
-                      ✓ Estimated cash-offer range ready
+                    <span className="material-symbols-outlined" style={{ color: 'var(--green)', fontSize: 22, fontVariationSettings: "'FILL' 1" }} aria-hidden>
+                      check_circle
+                    </span>
+                    <div>
+                      <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>
+                        Cash-offer range ready
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        Enter your address + contact info to see it and lock in a 1-hour custom offer.
+                      </div>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      Enter your contact info to see the range and lock in a 24-hour custom offer.
-                    </div>
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="address">Property address</label>
+                    <input
+                      id="address"
+                      type="text"
+                      placeholder="123 Main St, Kansas City, MO"
+                      autoComplete="street-address"
+                      value={state.address}
+                      onChange={(e) => select('address', e.target.value)}
+                    />
                   </div>
                   <div className="form-field">
                     <label htmlFor="name">Your name</label>
@@ -361,7 +379,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                     />
                   </div>
                   <div className="form-field">
-                    <label htmlFor="phone">Phone (for the custom offer)</label>
+                    <label htmlFor="phone">Phone</label>
                     <input
                       id="phone"
                       type="tel"
@@ -383,11 +401,15 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                     />
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
-                  <button className="btn-primary lg" onClick={submit} disabled={submitting}>
-                    {submitting ? 'Sending…' : 'Get My Custom Offer →'}
+                  <button className="btn-continue" onClick={submit} disabled={submitting}>
+                    {submitting ? 'Sending…' : 'Get My Custom Offer'}
+                    {!submitting && (
+                      <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+                    )}
                   </button>
                   <p className="form-footer">
-                    <span className="lock">🔒</span> Inbound-only · We never sell your info · A2P 10DLC compliant
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, verticalAlign: 'middle', marginRight: 3 }} aria-hidden>lock</span>
+                    Inbound-only · We never sell your info · A2P 10DLC compliant
                   </p>
                 </div>
               )}
@@ -397,7 +419,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
       </section>
 
       {/* ============ HOW IT WORKS ============ */}
-      <section className="block">
+      <section className="block" id="how">
         <div className="container">
           <div className="section-eyebrow">How it works</div>
           <h2 className="section-title">Out from under it in 3 steps.</h2>
@@ -407,7 +429,9 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
 
           <div className="steps-grid">
             <div className="step">
-              <div className="step-icon">📍</div>
+              <div className="step-icon">
+                <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>location_on</span>
+              </div>
               <div className="step-num">Step 1 · 30 sec</div>
               <h3>Tell us about the property</h3>
               <p>
@@ -415,15 +439,19 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
               </p>
             </div>
             <div className="step">
-              <div className="step-icon">📞</div>
-              <div className="step-num">Step 2 · 24 hours</div>
+              <div className="step-icon">
+                <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>call</span>
+              </div>
+              <div className="step-num">Step 2 · 1 hour</div>
               <h3>We build a structured offer</h3>
               <p>
                 We pull title, check the back-tax balance, and structure an offer that <em>actually accounts for your situation</em> — probate, liens, code violations, all of it.
               </p>
             </div>
             <div className="step">
-              <div className="step-icon">🔑</div>
+              <div className="step-icon">
+                <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>key</span>
+              </div>
               <div className="step-num">Step 3 · 7–30 days</div>
               <h3>You pick the closing date</h3>
               <p>
@@ -435,7 +463,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
       </section>
 
       {/* ============ SITUATIONS ============ */}
-      <section className="block">
+      <section className="block" id="about">
         <div className="container">
           <div className="section-eyebrow">Who we help</div>
           <h2 className="section-title">If life put you here, we can help.</h2>
@@ -444,54 +472,12 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
           </p>
 
           <div className="situations-grid">
-            <a href="#quiz" className="sit-card">
-              <div className="sit-icon">🏛️</div>
-              <h3>Back taxes piling up</h3>
-              <p>
-                Stop the auction clock and walk away with the equity you&apos;d otherwise lose at the courthouse steps. We pay the county directly.
-              </p>
-              <span className="sit-link">Protect what you&apos;ve built</span>
-            </a>
-            <a href="#quiz" className="sit-card">
-              <div className="sit-icon">⚱️</div>
-              <h3>Inherited more than you bargained for</h3>
-              <p>
-                Turn a house full of memories and obligations into one clean check your family can split. We work alongside probate — you don&apos;t have to wait for it.
-              </p>
-              <span className="sit-link">Honor the past, move forward</span>
-            </a>
-            <a href="#quiz" className="sit-card">
-              <div className="sit-icon">😮‍💨</div>
-              <h3>Done being everybody&apos;s landlord</h3>
-              <p>
-                Hand us the keys, the tenant, and the headache. We close with renters in place — no evictions, no awkward conversations, no 60-day notices.
-              </p>
-              <span className="sit-link">Get your weekends back</span>
-            </a>
-            <a href="#quiz" className="sit-card">
-              <div className="sit-icon">🛠️</div>
-              <h3>A house you can&apos;t afford to fix</h3>
-              <p>
-                Fire damage, foundation cracks, code violations, a kitchen frozen in 1978 — none of it scares us, and none of it lowers our offer the way a retail buyer would.
-              </p>
-              <span className="sit-link">Sell it exactly as it sits</span>
-            </a>
-            <a href="#quiz" className="sit-card">
-              <div className="sit-icon">⚖️</div>
-              <h3>Foreclosure, divorce, or a fast move</h3>
-              <p>
-                When life forces a fast decision, we move at your speed and protect your privacy. 14-day closings with title partners who already know our paperwork.
-              </p>
-              <span className="sit-link">Close on your timeline</span>
-            </a>
-            <a href="#quiz" className="sit-card">
-              <div className="sit-icon">🌾</div>
-              <h3>Land or lots draining your wallet</h3>
-              <p>
-                Vacant lots, ag parcels, that infill piece your uncle left you — if it&apos;s costing you taxes every year and earning you nothing, we&apos;ll take it off your books.
-              </p>
-              <span className="sit-link">Stop paying for nothing</span>
-            </a>
+            <SitCard icon="gavel" title="Back taxes piling up" body="Stop the auction clock and walk away with the equity you’d otherwise lose at the courthouse steps. We pay the county directly." cta="Protect what you’ve built" />
+            <SitCard icon="family_history" title="Inherited more than you bargained for" body="Turn a house full of memories and obligations into one clean check your family can split. We work alongside probate — you don’t have to wait for it." cta="Honor the past, move forward" />
+            <SitCard icon="person_off" title="Done being everybody’s landlord" body="Hand us the keys, the tenant, and the headache. We close with renters in place — no evictions, no awkward conversations, no 60-day notices." cta="Get your weekends back" />
+            <SitCard icon="construction" title="A house you can’t afford to fix" body="Fire damage, foundation cracks, code violations, a kitchen frozen in 1978 — none of it scares us, and none of it lowers our offer the way a retail buyer would." cta="Sell it exactly as it sits" />
+            <SitCard icon="schedule_send" title="Foreclosure, divorce, or a fast move" body="When life forces a fast decision, we move at your speed and protect your privacy. 14-day closings with title partners who already know our paperwork." cta="Close on your timeline" />
+            <SitCard icon="landscape" title="Land or lots draining your wallet" body="Vacant lots, ag parcels, that infill piece your uncle left you — if it’s costing you taxes every year and earning you nothing, we’ll take it off your books." cta="Stop paying for nothing" />
           </div>
         </div>
       </section>
@@ -508,11 +494,13 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                 Property problems compound. Taxes accrue interest. Vacant houses get vandalized. Estates rack up legal costs. Tenants disappear with the security deposit. The number you get six months from now will be smaller than the number you can get this week. Let&apos;s see yours.
               </p>
               <div className="mid-cta-actions">
-                <a href="#quiz" className="btn-primary" style={{ width: 'auto', padding: '15px 28px' }}>
-                  See My Number →
+                <a href="#quiz" className="btn-page-cta" onClick={(e) => { e.preventDefault(); scrollToQuiz() }}>
+                  See My Number
+                  <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                 </a>
                 <a href={`tel:${phoneTel}`} className="btn-secondary">
-                  📞 Call {phoneDisplay}
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
+                  Call {phoneDisplay}
                 </a>
               </div>
             </div>
@@ -522,7 +510,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                 <div className="label">Average cash in homeowners&apos; pockets at closing</div>
               </div>
               <div className="stat-box">
-                <div className="num">14 days</div>
+                <div className="num">18 days</div>
                 <div className="label">Fastest close when you need out now</div>
               </div>
             </div>
@@ -561,7 +549,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
       </section>
 
       {/* ============ TESTIMONIALS ============ */}
-      <section className="block">
+      <section className="block" id="reviews">
         <div className="container">
           <div className="section-eyebrow">What KC homeowners say</div>
           <h2 className="section-title">100+ neighbors. Real stories.</h2>
@@ -599,7 +587,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
       </section>
 
       {/* ============ FAQ ============ */}
-      <section className="block">
+      <section className="block" id="faq">
         <div className="container">
           <div className="section-eyebrow">Common questions</div>
           <h2 className="section-title">Questions worth asking.</h2>
@@ -637,13 +625,14 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
             </p>
             <a
               href="#quiz"
-              className="btn-primary lg"
+              className="btn-page-cta lg"
               onClick={(e) => {
                 e.preventDefault()
-                document.getElementById('quiz')?.scrollIntoView({ behavior: 'smooth' })
+                scrollToQuiz()
               }}
             >
-              Get My Free Offer Estimate →
+              Get My Free Offer Estimate
+              <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
             </a>
             <div className="micro">
               Or call us directly at{' '}
@@ -669,6 +658,19 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
         </div>
       </footer>
     </div>
+  )
+}
+
+function SitCard({ icon, title, body, cta }: { icon: string; title: string; body: string; cta: string }) {
+  return (
+    <a href="#quiz" className="sit-card">
+      <div className="sit-icon">
+        <span className="material-symbols-outlined" style={{ fontSize: 22 }} aria-hidden>{icon}</span>
+      </div>
+      <h3>{title}</h3>
+      <p>{body}</p>
+      <span className="sit-link">{cta}</span>
+    </a>
   )
 }
 
@@ -721,7 +723,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'How fast can you close?',
-    a: "Fastest we've done is 14 days from offer to close on a pre-DLT property. Typical is 21–30 days, but we'll close on your timeline — including if you need 60–90 days to find your next place.",
+    a: "Fastest we've done is 18 days from offer to close on a pre-DLT property. Typical is 21–30 days, but we'll close on your timeline — including if you need 60–90 days to find your next place.",
   },
   {
     q: 'Why should I trust Saving KC over the other "cash for houses" guys?',

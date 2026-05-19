@@ -5,7 +5,14 @@ import { supabase } from '@/lib/supabase-lazy'
 
 export const runtime = 'nodejs'
 
-const SituationSchema = z.enum(['tax-delinquent', 'inherited', 'tired-landlord', 'other'])
+const SituationSchema = z.enum([
+  'tax-delinquent',
+  'inherited',
+  'tired-landlord',
+  'condition',
+  'life-event',
+  'land',
+])
 const TimelineSchema = z.enum(['asap', '60-days', 'flexible', 'exploring'])
 const ConditionSchema = z.enum(['good', 'needs-work', 'major-repair', 'vacant'])
 
@@ -42,7 +49,9 @@ const SITUATION_TO_TAG: Record<z.infer<typeof SituationSchema>, string> = {
   'tax-delinquent': 'tax_delinquent',
   inherited: 'inherited',
   'tired-landlord': 'tired_landlord',
-  other: 'ppc_other',
+  condition: 'distressed_condition',
+  'life-event': 'life_event',
+  land: 'land_or_lot',
 }
 
 const TIMELINE_TO_URGENCY: Record<z.infer<typeof TimelineSchema>, 'critical' | 'high' | 'medium' | 'low'> = {
