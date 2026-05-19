@@ -1,0 +1,248 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
+import { supabase } from '@/lib/supabase-lazy'
+
+export const runtime = 'nodejs'
+
+const SituationSchema = z.enum(['tax-delinquent', 'inherited', 'tired-landlord', 'other'])
+const TimelineSchema = z.enum(['asap', '60-days', 'flexible', 'exploring'])
+const ConditionSchema = z.enum(['good', 'needs-work', 'major-repair', 'vacant'])
+
+const AttributionSchema = z
+  .object({
+    utm_source: z.string().max(120).optional(),
+    utm_medium: z.string().max(120).optional(),
+    utm_campaign: z.string().max(180).optional(),
+    utm_term: z.string().max(180).optional(),
+    utm_content: z.string().max(180).optional(),
+    gclid: z.string().max(180).optional(),
+    referrer: z.string().max(500).optional(),
+    landingUrl: z.string().max(500).optional(),
+  })
+  .optional()
+
+const BodySchema = z.object({
+  step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  address: z.string().min(3).max(200).optional(),
+  situation: SituationSchema.optional(),
+  timeline: TimelineSchema.optional(),
+  condition: ConditionSchema.optional(),
+  contact: z
+    .object({
+      name: z.string().min(1).max(120),
+      phone: z.string().min(10).max(20),
+      email: z.string().email().max(200),
+    })
+    .optional(),
+  attribution: AttributionSchema,
+})
+
+const SITUATION_TO_TAG: Record<z.infer<typeof SituationSchema>, string> = {
+  'tax-delinquent': 'tax_delinquent',
+  inherited: 'inherited',
+  'tired-landlord': 'tired_landlord',
+  other: 'ppc_other',
+}
+
+const TIMELINE_TO_URGENCY: Record<z.infer<typeof TimelineSchema>, 'critical' | 'high' | 'medium' | 'low'> = {
+  asap: 'critical',
+  '60-days': 'high',
+  flexible: 'medium',
+  exploring: 'low',
+}
+
+const CONDITION_TO_OVERALL: Record<z.infer<typeof ConditionSchema>, 'good' | 'fair' | 'poor' | 'uninhabitable'> = {
+  good: 'good',
+  'needs-work': 'fair',
+  'major-repair': 'poor',
+  vacant: 'poor',
+}
+
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return `+${digits}`
+}
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders })
+}
+
+export async function POST(req: NextRequest) {
+  let parsed: z.infer<typeof BodySchema>
+  try {
+    parsed = BodySchema.parse(await req.json())
+  } catch (err) {
+    const message = err instanceof z.ZodError ? err.issues[0]?.message ?? 'Invalid request' : 'Invalid request'
+    return NextResponse.json({ ok: false, error: message }, { status: 400, headers: corsHeaders })
+  }
+
+  // Steps 1 and 2 are progress signals — conversions fire client-side, no
+  // server-side write yet. We could persist partial state to a separate
+  // ppc_partial_leads table in the future for re-engagement campaigns.
+  if (parsed.step < 3 || !parsed.contact) {
+    return NextResponse.json({ ok: true, deferred: true }, { headers: corsHeaders })
+  }
+
+  const { contact, address, situation, timeline, condition, attribution } = parsed
+  const fullName = contact.name.trim()
+  const phoneE164 = normalizePhone(contact.phone)
+  const email = contact.email.trim().toLowerCase()
+
+  try {
+    // Dedupe by phone -> email -> address (in that order)
+    let leadId: string | null = null
+
+    const { data: byPhone } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('phone', phoneE164)
+      .limit(1)
+      .maybeSingle()
+    if (byPhone?.id) leadId = byPhone.id
+
+    if (!leadId && email) {
+      const { data: byEmail } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('email', email)
+        .limit(1)
+        .maybeSingle()
+      if (byEmail?.id) leadId = byEmail.id
+    }
+
+    if (!leadId && address) {
+      const { data: byAddress } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('property_address', address)
+        .limit(1)
+        .maybeSingle()
+      if (byAddress?.id) leadId = byAddress.id
+    }
+
+    let cityState: { city?: string; state?: string; zip?: string; county?: string } = {}
+    if (address) {
+      try {
+        const { parseAddressForCounty } = await import('@/lib/county-enrichment')
+        const parsed = parseAddressForCounty(address)
+        if (parsed) cityState = parsed
+      } catch {
+        // county enrichment is best-effort
+      }
+    }
+
+    if (!leadId) {
+      const { data: inserted, error } = await supabase
+        .from('leads')
+        .insert({
+          full_name: fullName,
+          property_address: address ?? null,
+          phone: phoneE164,
+          email,
+          source: 'ppc-landing',
+          station: 'new',
+          priority: timeline === 'asap' ? 'high' : 'normal',
+          ...(cityState.city ? { city: cityState.city } : {}),
+          ...(cityState.state ? { state: cityState.state } : {}),
+          ...(cityState.zip ? { zip: cityState.zip } : {}),
+          ...(cityState.county ? { county: cityState.county } : {}),
+        })
+        .select('id')
+        .single()
+      if (error || !inserted?.id) {
+        console.error('[ppc/lead] insert failed', error)
+        return NextResponse.json(
+          { ok: false, error: 'Could not save your information. Please call us.' },
+          { status: 500, headers: corsHeaders },
+        )
+      }
+      leadId = inserted.id
+    } else {
+      // Upgrade the existing lead with the PPC source + any missing fields
+      await supabase
+        .from('leads')
+        .update({
+          source: 'ppc-landing',
+          full_name: fullName,
+          phone: phoneE164,
+          email,
+          ...(address ? { property_address: address } : {}),
+          ...(cityState.city ? { city: cityState.city } : {}),
+          ...(cityState.state ? { state: cityState.state } : {}),
+          ...(cityState.zip ? { zip: cityState.zip } : {}),
+          ...(cityState.county ? { county: cityState.county } : {}),
+        })
+        .eq('id', leadId)
+    }
+
+    const resolvedLeadId: string = leadId as string
+    const manifestId = await ensureManifestExists(resolvedLeadId)
+    if (!manifestId) {
+      console.error('[ppc/lead] manifest bootstrap failed for lead', resolvedLeadId)
+      return NextResponse.json(
+        { ok: false, error: 'Manifest unavailable' },
+        { status: 500, headers: corsHeaders },
+      )
+    }
+
+    await updateManifestAndCascade(
+      resolvedLeadId,
+      (m) => {
+        m.source = 'ppc-landing'
+        m.leadSource = 'ppc-landing'
+        if (situation) {
+          const tag = SITUATION_TO_TAG[situation]
+          if (!m.situation.type) m.situation.type = []
+          if (!m.situation.type.includes(tag)) m.situation.type.push(tag)
+        }
+        if (timeline) {
+          m.situation.timeline = {
+            ...(m.situation.timeline ?? {}),
+            urgency: TIMELINE_TO_URGENCY[timeline],
+            flexibility: timeline === 'flexible' || timeline === 'exploring' ? 'flexible' : 'somewhat_flexible',
+          }
+        }
+        if (condition) {
+          m.property.condition = {
+            ...(m.property.condition ?? {}),
+            overall: CONDITION_TO_OVERALL[condition],
+          }
+        }
+        if (address && !m.property.address) m.property.address = address
+        if (!m.owner.phones?.includes(phoneE164)) {
+          m.owner.phones = [phoneE164, ...(m.owner.phones ?? [])]
+        }
+        if (!m.owner.emails?.includes(email)) {
+          m.owner.emails = [email, ...(m.owner.emails ?? [])]
+        }
+        m.owner.fullName = fullName
+        m.acquisition = {
+          source: 'ppc-landing',
+          channel: 'google-ads',
+          attribution: {
+            ...(attribution ?? {}),
+            capturedAt: new Date().toISOString(),
+          },
+        }
+      },
+      'ppc-landing',
+    )
+
+    return NextResponse.json({ ok: true, manifestId, leadId: resolvedLeadId }, { headers: corsHeaders })
+  } catch (err) {
+    console.error('[ppc/lead] unexpected error', err)
+    return NextResponse.json(
+      { ok: false, error: 'Internal error' },
+      { status: 500, headers: corsHeaders },
+    )
+  }
+}
