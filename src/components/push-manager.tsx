@@ -1,19 +1,27 @@
 'use client'
 
 import { useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import { usePushNotifications } from '@/hooks/use-push-notifications'
 
+// Public marketing routes that should never trigger the push permission
+// prompt — these are for unauthenticated visitors (Google Ads landers,
+// legal pages, etc.). /sell is a cold-prospect lander; asking to "Show
+// notifications" tanks the trust signal.
+const PUBLIC_ROUTE_PREFIXES = ['/sell', '/login', '/privacy', '/terms']
+
 export function PushManager() {
+  const pathname = usePathname()
+  const isPublicRoute = !!pathname && PUBLIC_ROUTE_PREFIXES.some((p) => pathname.startsWith(p))
   const { isSupported, isSubscribed, subscribe, permission } = usePushNotifications()
 
   useEffect(() => {
-    // Auto-prompt for push on first visit if not yet decided
+    if (isPublicRoute) return
     if (isSupported && !isSubscribed && permission === 'default') {
-      // Small delay so the page loads first
       const timer = setTimeout(() => subscribe(), 3000)
       return () => clearTimeout(timer)
     }
-  }, [isSupported, isSubscribed, permission, subscribe])
+  }, [isPublicRoute, isSupported, isSubscribed, permission, subscribe])
 
-  return null // No UI — just registers in background
+  return null
 }

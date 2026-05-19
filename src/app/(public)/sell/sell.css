@@ -102,7 +102,7 @@
 .skc-sell .mobile-menu .mobile-trust .stars { color: var(--amber); letter-spacing: 2px; }
 
 /* ============ HERO ============ */
-.skc-sell .hero { padding: 56px 0 72px; position: relative; overflow: hidden; isolation: isolate; }
+.skc-sell .hero { padding: 32px 0 56px; position: relative; overflow: hidden; isolation: isolate; }
 .skc-sell .hero::before {
   content: ""; position: absolute; inset: 0;
   background-image: url('/kc-skyline.jpg');
@@ -129,6 +129,8 @@
 }
 .skc-sell .hero > .container { position: relative; z-index: 1; }
 .skc-sell .hero-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: start; }
+.skc-sell .hero-form { order: 0; }
+.skc-sell .hero-copy { order: 0; }
 
 .skc-sell .hero-eyebrow {
   display: inline-flex; align-items: center; gap: 8px;
@@ -230,20 +232,28 @@
 .skc-sell .form-field-prominent .field-label {
   font-size: 17px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 10px;
 }
+/* High-contrast inputs — explicitly override the CRM's dark-theme cascade
+   so older eyes can read the placeholders and entered text. */
 .skc-sell .form-field input,
 .skc-sell .form-field select {
-  width: 100%; padding: 12px 14px; font-size: 15px;
-  background: var(--bg-subtle); border: 1px solid var(--border);
-  color: var(--text); border-radius: 8px;
+  width: 100%; padding: 14px 14px; font-size: 16px;
+  background: #ffffff !important; color: #0a0a0b !important;
+  border: 1.5px solid #c8c8d0 !important;
+  border-radius: 10px;
   font-family: inherit;
-  transition: border-color 0.15s, background 0.15s;
+  -webkit-text-fill-color: #0a0a0b;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .skc-sell .form-field input:focus,
 .skc-sell .form-field select:focus {
-  outline: none; border-color: var(--brand); background: var(--bg);
-  box-shadow: 0 0 0 3px rgba(218, 37, 36, 0.12);
+  outline: none; border-color: var(--brand) !important; background: #ffffff !important;
+  box-shadow: 0 0 0 3px rgba(218, 37, 36, 0.15);
 }
-.skc-sell .form-field input::placeholder { color: var(--text-dim); }
+.skc-sell .form-field input::placeholder { color: #6b6b76 !important; opacity: 1; }
+.skc-sell .form-field input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 100px #ffffff inset !important;
+  -webkit-text-fill-color: #0a0a0b !important;
+}
 
 .skc-sell .radio-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .skc-sell .radio-group.three-col { grid-template-columns: 1fr 1fr 1fr; }
@@ -516,8 +526,12 @@
 
 /* ============ RESPONSIVE ============ */
 @media (max-width: 980px) {
-  .skc-sell .hero { padding: 40px 0 56px; }
-  .skc-sell .hero-grid { grid-template-columns: 1fr; gap: 36px; }
+  .skc-sell .hero { padding: 20px 0 40px; }
+  .skc-sell .hero-grid { grid-template-columns: 1fr; gap: 32px; }
+  /* Form first on mobile so the START HERE pill is the first thing seen
+     above the fold, then the hero copy is below for the curious. */
+  .skc-sell .hero-form { order: -1; }
+  .skc-sell .hero-copy { order: 1; }
   .skc-sell .hero h1 { font-size: 38px; }
   .skc-sell .steps-grid { grid-template-columns: 1fr; gap: 16px; }
   .skc-sell .steps-grid::before { display: none; }

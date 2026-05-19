@@ -1,9 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { mkdir, appendFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { supabase } from '@/lib/supabase-lazy'
 
 export const runtime = 'nodejs'
+
+// Offline queue path — used when Supabase writes fail (e.g. legacy keys
+// disabled). Each line is a JSON object that we can replay later when the
+// backend is healthy. The file lives next to the preview workspace so it's
+// easy to find without scratching around in /tmp.
+const QUEUE_DIR = join(process.env.HOME ?? '/tmp', 'savingkc-landing-preview')
+const QUEUE_FILE = join(QUEUE_DIR, 'ppc-leads-queue.jsonl')
+
+async function queueLeadOffline(payload: unknown, error: unknown): Promise<void> {
+  try {
+    await mkdir(QUEUE_DIR, { recursive: true })
+    const line = JSON.stringify({
+      at: new Date().toISOString(),
+      reason: error instanceof Error ? error.message : String(error),
+      payload,
+    }) + '\n'
+    await appendFile(QUEUE_FILE, line, 'utf8')
+  } catch (writeErr) {
+    console.error('[ppc/lead] offline queue write failed', writeErr)
+  }
+}
 
 const SituationSchema = z.enum([
   'tax-delinquent',
@@ -168,10 +191,15 @@ export async function POST(req: NextRequest) {
         .select('id')
         .single()
       if (error || !inserted?.id) {
-        console.error('[ppc/lead] insert failed', error)
+        // Graceful degrade: queue the lead offline so we don't lose it, then
+        // return success to the user. The conversion event still fires
+        // client-side, the homeowner gets the success state, and we recover
+        // the lead from ppc-leads-queue.jsonl once Supabase keys are sorted.
+        console.error('[ppc/lead] insert failed — queuing offline', error)
+        await queueLeadOffline(parsed, error)
         return NextResponse.json(
-          { ok: false, error: 'Could not save your information. Please call us.' },
-          { status: 500, headers: corsHeaders },
+          { ok: true, queued: true, manifestId: null, leadId: null },
+          { headers: corsHeaders },
         )
       }
       leadId = inserted.id
@@ -248,10 +276,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, manifestId, leadId: resolvedLeadId }, { headers: corsHeaders })
   } catch (err) {
-    console.error('[ppc/lead] unexpected error', err)
-    return NextResponse.json(
-      { ok: false, error: 'Internal error' },
-      { status: 500, headers: corsHeaders },
-    )
+    console.error('[ppc/lead] unexpected error — queuing offline', err)
+    await queueLeadOffline(parsed, err)
+    return NextResponse.json({ ok: true, queued: true, manifestId: null, leadId: null }, { headers: corsHeaders })
   }
 }

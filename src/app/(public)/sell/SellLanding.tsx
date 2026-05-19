@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { captureAttribution, getAttribution } from '@/lib/ppc/attribution'
 import { fireConversion } from '@/lib/ppc/conversions'
+import { AddressAutocomplete } from './AddressAutocomplete'
 
 type Situation =
   | 'tax-delinquent'
@@ -49,6 +50,13 @@ const TIMELINE_TILES: { value: Timeline; label: string }[] = [
   { value: '60-days', label: '30–60 days' },
   { value: 'flexible', label: 'Flexible' },
   { value: 'exploring', label: 'Just exploring' },
+]
+
+const CONDITION_TILES: { value: Condition; icon: string; label: string }[] = [
+  { value: 'good', icon: 'verified', label: 'Move-in ready' },
+  { value: 'needs-work', icon: 'handyman', label: 'Needs work' },
+  { value: 'major-repair', icon: 'construction', label: 'Major repairs' },
+  { value: 'vacant', icon: 'door_front', label: 'Vacant' },
 ]
 
 export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; phoneTel: string }) {
@@ -222,7 +230,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
       <section className="hero" id="quiz">
         <div className="container">
           <div className="hero-grid">
-            <div>
+            <div className="hero-copy">
               <div className="hero-eyebrow">
                 <span className="dot"></span> Kansas City • MO + KS
               </div>
@@ -263,6 +271,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
               </div>
             </div>
 
+            <div className="hero-form">
             <div className="tool-card">
               <span className="tool-eyebrow">
                 <span className="material-symbols-outlined" aria-hidden>bolt</span>
@@ -350,18 +359,20 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                     </div>
                   </div>
                   <div className="form-field">
-                    <label htmlFor="condition">Condition of the property</label>
-                    <select
-                      id="condition"
-                      value={state.condition}
-                      onChange={(e) => select('condition', e.target.value as Condition)}
-                    >
-                      <option value="">Choose one…</option>
-                      <option value="good">Move-in ready / good shape</option>
-                      <option value="needs-work">Needs cosmetic work</option>
-                      <option value="major-repair">Major repairs / structural issues</option>
-                      <option value="vacant">Vacant / boarded up</option>
-                    </select>
+                    <label>Condition of the property</label>
+                    <div className="radio-group">
+                      {CONDITION_TILES.map(({ value, icon, label }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`radio-tile ${state.condition === value ? 'selected' : ''}`}
+                          onClick={() => select('condition', value)}
+                        >
+                          <span className="material-symbols-outlined" aria-hidden>{icon}</span>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
                   <button type="button" className="btn-continue" onClick={() => advance(3)}>
@@ -397,13 +408,11 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                   </div>
                   <div className="form-field">
                     <label htmlFor="address">Property address</label>
-                    <input
+                    <AddressAutocomplete
                       id="address"
-                      type="text"
-                      placeholder="123 Main St, Kansas City, MO"
-                      autoComplete="street-address"
+                      placeholder="Start typing your address…"
                       value={state.address}
-                      onChange={(e) => select('address', e.target.value)}
+                      onChange={(v) => select('address', v)}
                     />
                   </div>
                   <div className="form-field">
@@ -452,6 +461,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                   </p>
                 </div>
               )}
+            </div>
             </div>
           </div>
         </div>
