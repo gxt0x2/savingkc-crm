@@ -49,3 +49,4 @@ query-sharion.js
 # Local reprocess progress log (regenerated per run)
 scripts/.reprocess-progress.jsonl
 supabase/.temp/
+.env*.local
