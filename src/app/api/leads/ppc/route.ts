@@ -237,7 +237,7 @@ export async function POST(req: NextRequest) {
           email,
           source: 'ppc-landing',
           station: 'new',
-          priority: timeline === 'asap' ? 'high' : 'normal',
+          priority: timeline === 'asap' ? 'hot' : 'normal',
           ...(cityState.city ? { city: cityState.city } : {}),
           ...(cityState.state ? { state: cityState.state } : {}),
           ...(cityState.zip ? { zip: cityState.zip } : {}),
