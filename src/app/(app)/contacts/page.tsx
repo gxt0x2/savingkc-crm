@@ -171,10 +171,7 @@ export default function ContactsPage() {
     if (activeTab === 'hot') filtered = filtered.filter(isHot)
     if (activeTab === 'new') {
       return [...filtered].sort((a, b) => {
-        if (Boolean(a.firstOutboundAt) !== Boolean(b.firstOutboundAt)) {
-          return a.firstOutboundAt ? 1 : -1
-        }
-        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
       })
     }
     return [...filtered].sort((a, b) => b.score - a.score)
