@@ -71,10 +71,19 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [navJumpVisible, setNavJumpVisible] = useState(false)
   const toolCardRef = useRef<HTMLDivElement | null>(null)
+  const stage3AutosavedKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     captureAttribution()
-  }, [])
+    window.dataLayer = window.dataLayer || []
+    window.dataLayer.push({
+      event: 'skc_phone_number_selected',
+      traffic_source: 'google_ads',
+      ppc_phone_display: phoneDisplay,
+      ppc_phone_tel: phoneTel,
+      landing_page: window.location.href,
+    })
+  }, [phoneDisplay, phoneTel])
 
   useEffect(() => {
     const el = toolCardRef.current
@@ -106,6 +115,66 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
       // best-effort
     }
   }, [])
+
+  useEffect(() => {
+    if (submitted || step !== 3) return
+
+    const address = state.address.trim()
+    const name = state.name.trim()
+    const phone = state.phone.trim()
+    const email = state.email.trim().toLowerCase()
+    const phoneDigits = phone.replace(/\D/g, '')
+
+    if (!address || !name || phoneDigits.length < 10 || !email.includes('@')) return
+
+    const autosaveKey = [address, name, phoneDigits, email].join('|')
+    if (stage3AutosavedKeyRef.current === autosaveKey) return
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const attribution = getAttribution()
+        const r = await fetch('/api/leads/ppc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            intent: 'autosave',
+            step: 3,
+            address,
+            situation: state.situation,
+            timeline: state.timeline,
+            condition: state.condition,
+            contact: { name, phone, email },
+            attribution,
+          }),
+        })
+        const json = await r.json().catch(() => null)
+        if (r.ok && json?.ok) {
+          stage3AutosavedKeyRef.current = autosaveKey
+          if (json.manifestId) setManifestId(json.manifestId)
+          window.dataLayer = window.dataLayer || []
+          window.dataLayer.push({
+            event: 'lead_stage3_completed',
+            traffic_source: 'google_ads',
+            form_status: 'stage_3_complete_no_submit',
+          })
+        }
+      } catch {
+        // best-effort only; final submit still owns the real conversion.
+      }
+    }, 1200)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    state.address,
+    state.condition,
+    state.email,
+    state.name,
+    state.phone,
+    state.situation,
+    state.timeline,
+    step,
+    submitted,
+  ])
 
   const advance = (toStep: 1 | 2 | 3) => {
     setError(null)
@@ -149,6 +218,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           step: 3,
+          intent: 'submit',
           address: state.address,
           situation: state.situation,
           timeline: state.timeline,
@@ -188,6 +258,15 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
     setMobileMenuOpen(false)
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
+  const trackPhoneClick = () => {
+    window.dataLayer = window.dataLayer || []
+    window.dataLayer.push({
+      event: 'phone_click',
+      traffic_source: 'google_ads',
+      phone_number: phoneTel,
+      phone_display: phoneDisplay,
+    })
+  }
 
   return (
     <div className="skc-sell">
@@ -209,7 +288,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
               <span className="stars">★★★★★</span>
               <span><strong>100+</strong> KC homeowners helped</span>
             </div>
-            <a href={`tel:${phoneTel}`} className="topbar-phone">
+            <a href={`tel:${phoneTel}`} className="topbar-phone" onClick={trackPhoneClick}>
               <span className="material-symbols-outlined" aria-hidden>call</span>
               {phoneDisplay}
             </a>
@@ -244,7 +323,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
               <span className="stars">★★★★★</span>
               <span><strong>100+</strong> KC homeowners helped</span>
             </div>
-            <a href={`tel:${phoneTel}`} className="mobile-phone">
+            <a href={`tel:${phoneTel}`} className="mobile-phone" onClick={trackPhoneClick}>
               <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
               {phoneDisplay}
             </a>
@@ -571,7 +650,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                   See My Number
                   <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                 </a>
-                <a href={`tel:${phoneTel}`} className="btn-secondary">
+                <a href={`tel:${phoneTel}`} className="btn-secondary" onClick={trackPhoneClick}>
                   <span className="material-symbols-outlined" aria-hidden>call</span>
                   Call {phoneDisplay}
                 </a>
@@ -709,7 +788,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
             </a>
             <div className="micro">
               Or call us directly at{' '}
-              <a href={`tel:${phoneTel}`} style={{ color: 'var(--text)' }}>
+              <a href={`tel:${phoneTel}`} style={{ color: 'var(--text)' }} onClick={trackPhoneClick}>
                 {phoneDisplay}
               </a>{' '}
               · Mon–Sat, 8am–8pm CT
@@ -726,7 +805,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
           <div className="footer-links">
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
-            <a href={`tel:${phoneTel}`}>Contact</a>
+            <a href={`tel:${phoneTel}`} onClick={trackPhoneClick}>Contact</a>
           </div>
         </div>
       </footer>

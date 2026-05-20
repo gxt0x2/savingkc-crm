@@ -13,6 +13,11 @@ export interface AttributionPayload {
   utm_term?: string
   utm_content?: string
   gclid?: string
+  gbraid?: string
+  wbraid?: string
+  gad_source?: string
+  gad_campaignid?: string
+  gad_adgroupid?: string
   referrer?: string
   landingUrl: string
 }
@@ -26,6 +31,11 @@ const UTM_KEYS = [
   'utm_term',
   'utm_content',
   'gclid',
+  'gbraid',
+  'wbraid',
+  'gad_source',
+  'gad_campaignid',
+  'gad_adgroupid',
 ] as const
 
 export function captureAttribution(): AttributionPayload | null {

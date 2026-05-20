@@ -1,7 +1,13 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import {
+  getCallQualityMilestones,
+  isPpcTrackingNumber,
+  parseCallDurationSeconds,
+  PPC_TRACKING_PHONE_DIGITS,
+} from '@/lib/call-quality-events'
 
 /**
  * Twilio status callback receiver for browser-initiated outbound calls.
@@ -14,6 +20,76 @@ import { createClient } from '@supabase/supabase-js'
  * No auth — Twilio webhooks are signed but Vercel terminates TLS and we
  * trust the URL path. (Same posture as the existing /api/twilio-recording-callback.)
  */
+
+type OutboundCallQualityInput = {
+  supabase: SupabaseClient
+  leadId: string | null
+  callSid: string
+  parentCallSid: string
+  from: string
+  to: string
+  duration: number
+  identity: string
+}
+
+async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput): Promise<void> {
+  const milestones = getCallQualityMilestones(input.duration)
+  if (!milestones.length) return
+
+  const dedupeKey = input.callSid || input.parentCallSid
+  const isPpcCall = isPpcTrackingNumber(input.from)
+
+  for (const milestone of milestones) {
+    try {
+      if (dedupeKey) {
+        const { data: existing } = await input.supabase
+          .from('lead_activities')
+          .select('id')
+          .eq('metadata->>source', 'call_quality_milestone')
+          .eq('metadata->>event', milestone.event)
+          .eq('metadata->>dedupeKey', dedupeKey)
+          .limit(1)
+
+        if (existing && existing.length > 0) continue
+      }
+
+      const { error } = await input.supabase.from('lead_activities').insert({
+        lead_id: input.leadId,
+        activity_type: 'status_change',
+        description: `Call quality milestone: ${milestone.label}`,
+        agent: input.identity || 'System',
+        metadata: {
+          source: 'call_quality_milestone',
+          event: milestone.event,
+          event_type: 'call_quality',
+          optimization_role: 'secondary',
+          conversion_value: milestone.conversionValue,
+          currency: 'USD',
+          threshold_seconds: milestone.seconds,
+          duration: input.duration,
+          outcome: 'connected',
+          direction: 'outbound',
+          from: input.from,
+          to: input.to,
+          callSid: input.callSid,
+          parentCallSid: input.parentCallSid,
+          dedupeKey,
+          identity: input.identity,
+          ...(isPpcCall && {
+            traffic_source: 'google_ads',
+            campaign: 'Search 2026',
+            tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          }),
+        },
+      })
+
+      if (error) console.error('[twilio-call-status] Call quality milestone insert failed:', error)
+    } catch (error) {
+      console.error('[twilio-call-status] Call quality milestone logging failed:', error)
+    }
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.formData()
@@ -24,7 +100,7 @@ export async function POST(req: Request) {
     const errorMessage = (body.get('ErrorMessage') as string) || null
     const from = (body.get('From') as string) || ''
     const to = (body.get('To') as string) || ''
-    const duration = Number(body.get('CallDuration')) || 0
+    const duration = parseCallDurationSeconds(body.get('CallDuration')) || 0
     const url = new URL(req.url)
     const identity = url.searchParams.get('identity') || ''
 
@@ -69,6 +145,19 @@ export async function POST(req: Request) {
         identity,
       },
     })
+
+    if (callStatus === 'completed' && duration > 0) {
+      await logOutboundCallQualityMilestones({
+        supabase,
+        leadId,
+        callSid,
+        parentCallSid,
+        from,
+        to,
+        duration,
+        identity,
+      })
+    }
 
     return NextResponse.json({ ok: true, callStatus, errorCode })
   } catch (err) {

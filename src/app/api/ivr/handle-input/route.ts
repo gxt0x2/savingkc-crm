@@ -66,7 +66,7 @@ export async function POST(req: Request) {
         // If no prospect match, create bare lead
         if (!leadId) {
           const { data: newLead } = await supabase.from('leads').insert({
-            full_name: isColdCall ? `Cold Callback (${formatPhone(from)})` : 'Inbound Seller',
+            full_name: isColdCall ? `Cold Callback ${formatPhone(from) || from}` : 'Inbound Seller',
             phone: from,
             source,
             station: 'new',

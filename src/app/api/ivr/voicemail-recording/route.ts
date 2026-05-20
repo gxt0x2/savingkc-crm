@@ -64,7 +64,7 @@ export async function POST(req: Request) {
       resolvedLeadId = existingLead.id
     } else {
       const { data: newLead } = await supabase.from('leads').insert({
-        full_name: `Voicemail Caller (${formatPhone(from)})`,
+        full_name: `Voicemail Caller ${formatPhone(from) || from}`,
         phone: from,
         source: 'inbound_voicemail',
         station: 'new',

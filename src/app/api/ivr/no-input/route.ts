@@ -3,6 +3,8 @@ import { getAgentRouting } from '@/lib/agent-routing'
 import { ensureManifestExists } from '@/lib/manifest-sync'
 import { formatPhone } from '@/lib/format'
 import { supabase } from '@/lib/supabase-lazy'
+import { lookupProspectByPhone } from '@/lib/prospect-lookup'
+import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
@@ -61,8 +63,20 @@ export async function POST(req: Request) {
     if (existingLead?.id) {
       noInputLeadId = existingLead.id
     } else {
+      const prospectMatches = await lookupProspectByPhone(from)
+      if (prospectMatches.length > 0) {
+        noInputLeadId = await createEnrichedLeadFromProspect(
+          prospectMatches[0],
+          from,
+          'inbound_ivr',
+          'hot',
+        )
+      }
+    }
+
+    if (!noInputLeadId) {
       const { data: newLead } = await supabase.from('leads').insert({
-        full_name: `Caller (${formatPhone(from)})`,
+        full_name: `Caller ${formatPhone(from) || from}`,
         phone: from,
         source: 'inbound_ivr_no_input',
         station: 'new',

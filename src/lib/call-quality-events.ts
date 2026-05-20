@@ -1,0 +1,61 @@
+export type CallQualityEventName =
+  | 'call_connected_60s'
+  | 'call_connected_2m'
+  | 'call_connected_5m'
+
+export type CallQualityMilestone = {
+  event: CallQualityEventName
+  seconds: number
+  label: string
+  conversionValue: number
+}
+
+export const PPC_TRACKING_PHONE_DIGITS = '8166088808'
+
+export const CALL_QUALITY_MILESTONES: CallQualityMilestone[] = [
+  {
+    event: 'call_connected_60s',
+    seconds: 60,
+    label: 'Connected call 60+ seconds',
+    conversionValue: 10,
+  },
+  {
+    event: 'call_connected_2m',
+    seconds: 120,
+    label: 'Connected call 2+ minutes',
+    conversionValue: 25,
+  },
+  {
+    event: 'call_connected_5m',
+    seconds: 300,
+    label: 'Connected call 5+ minutes',
+    conversionValue: 75,
+  },
+]
+
+export function parseCallDurationSeconds(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.max(0, Math.round(value)) : null
+  }
+
+  if (typeof value !== 'string' || !value.trim()) return null
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : null
+}
+
+export function isPpcTrackingNumber(raw: string): boolean {
+  const digits = raw.replace(/\D/g, '')
+  return digits === PPC_TRACKING_PHONE_DIGITS || digits === `1${PPC_TRACKING_PHONE_DIGITS}`
+}
+
+export function getCallQualityMilestones(durationSeconds: number | null | undefined): CallQualityMilestone[] {
+  if (durationSeconds == null || !Number.isFinite(durationSeconds)) return []
+  const seconds = Math.max(0, Math.round(durationSeconds))
+  return CALL_QUALITY_MILESTONES.filter((milestone) => seconds >= milestone.seconds)
+}
+
+export function getHighestCallQualityMilestone(durationSeconds: number | null | undefined): CallQualityMilestone | null {
+  const milestones = getCallQualityMilestones(durationSeconds)
+  return milestones[milestones.length - 1] || null
+}
