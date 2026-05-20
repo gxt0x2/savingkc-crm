@@ -58,22 +58,30 @@ export function AddressAutocomplete({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [attached, setAttached] = useState(false)
 
-  const handleFocus = () => {
-    if (attached) return
+  // Load + attach Places on mount instead of on focus. The field is only
+  // mounted when the user reaches step 3, so this is already late enough
+  // to keep off LCP. Loading at focus left a typing-gap where the script
+  // wasn't ready yet and users got no suggestions.
+  useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GMAPS_KEY
-    if (!apiKey || !inputRef.current) return
+    if (!apiKey) {
+      // eslint-disable-next-line no-console
+      console.warn('[AddressAutocomplete] NEXT_PUBLIC_GMAPS_KEY missing — autocomplete disabled')
+      return
+    }
+    let cancelled = false
     loadGoogleMaps(apiKey)
       .then(() => {
+        if (cancelled || attached || !inputRef.current) return
         const w = window as WindowWithPlaces
-        if (!inputRef.current || !w.google?.maps?.places) return
+        if (!w.google?.maps?.places) {
+          // eslint-disable-next-line no-console
+          console.warn('[AddressAutocomplete] places library missing on window.google.maps')
+          return
+        }
         const autocomplete = new w.google.maps.places.Autocomplete(inputRef.current, {
           // KC metro: bias to a box around Jackson/Clay/Platte/Wyandotte/Johnson
-          bounds: {
-            north: 39.55,
-            south: 38.7,
-            east: -94.0,
-            west: -95.05,
-          },
+          bounds: { north: 39.55, south: 38.7, east: -94.0, west: -95.05 },
           componentRestrictions: { country: 'us' },
           fields: ['formatted_address', 'address_components'],
           types: ['address'],
@@ -84,17 +92,19 @@ export function AddressAutocomplete({
         })
         setAttached(true)
       })
-      .catch(() => {
-        // silently fall back to plain input
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('[AddressAutocomplete] script load failed', err)
       })
-  }
-
-  useEffect(() => {
-    // Prevent the browser from autofilling the field with a credit-card
-    // street-address contact while Places is mounted — Chrome will sometimes
-    // overlay both. Setting autocomplete on the input is enough for most
-    // browsers; Places gets attached on focus.
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const handleFocus = () => {
+    // No-op — kept so the input's existing onFocus contract doesn't break.
+  }
 
   return (
     <input

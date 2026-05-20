@@ -70,6 +70,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [navJumpVisible, setNavJumpVisible] = useState(false)
+  const [bookingOpen, setBookingOpen] = useState(false)
   const toolCardRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -173,14 +174,45 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
     }
   }
 
-  const openCalcom = () => {
-    const link = process.env.NEXT_PUBLIC_CALCOM_PPC_LINK ?? 'https://cal.com/savingkc/sell-consult'
-    const url = manifestId ? `${link}?metadata[manifestId]=${manifestId}` : link
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
+  const openBooking = () => setBookingOpen(true)
+  const closeBooking = () => setBookingOpen(false)
+
+  // Pass identifiers as query params so the booking page can stamp them
+  // onto the appointment record if it wants to.
+  const bookingUrl = (() => {
+    const base = process.env.NEXT_PUBLIC_BOOKING_URL ?? 'https://savingkc.com/call/'
+    const params = new URLSearchParams({ source: 'ppc-landing' })
+    if (manifestId) params.set('manifestId', manifestId)
+    return `${base}?${params.toString()}`
+  })()
+
+  useEffect(() => {
+    if (!bookingOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeBooking() }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [bookingOpen])
 
   const select = <K extends keyof QuizState>(key: K, value: QuizState[K]) =>
     setState((s) => ({ ...s, [key]: value }))
+
+  // Live phone formatter: (XXX) XXX-XXXX as the user types.
+  // Keeps only the first 10 digits, drops a leading "1" country code,
+  // and progressively builds the formatted string.
+  const formatPhoneInput = (raw: string): string => {
+    let digits = raw.replace(/\D/g, '')
+    if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1)
+    digits = digits.slice(0, 10)
+    if (digits.length === 0) return ''
+    if (digits.length < 4) return `(${digits}`
+    if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  }
 
   const scrollToQuiz = () => document.getElementById('quiz')?.scrollIntoView({ behavior: 'smooth' })
   const scrollToId = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -330,9 +362,9 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                   </div>
                   <h3 style={{ fontSize: 22, marginBottom: 8 }}>You&apos;re in.</h3>
                   <p style={{ color: 'var(--text-muted)', fontSize: 15, marginBottom: 20 }}>
-                    We&apos;ll text and email your cash-offer range within the hour. Lock in a quick call now and we&apos;ll walk you through it.
+                    Our team will contact you shortly about your cash-offer in the hour or lock in a quick call now and we&apos;ll walk you through it.
                   </p>
-                  <button type="button" className="btn-continue" onClick={openCalcom}>
+                  <button type="button" className="btn-continue" onClick={openBooking}>
                     Book a 15-min Call
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
@@ -432,7 +464,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                     <label htmlFor="address">Property address</label>
                     <AddressAutocomplete
                       id="address"
-                      placeholder="Start typing your address…"
+                      placeholder="1234 Walnut St, Kansas City, MO 64108"
                       value={state.address}
                       onChange={(v) => select('address', v)}
                     />
@@ -454,10 +486,11 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                       <input
                         id="phone"
                         type="tel"
+                        inputMode="numeric"
                         placeholder="(555) 123-4567"
                         autoComplete="tel"
                         value={state.phone}
-                        onChange={(e) => select('phone', e.target.value)}
+                        onChange={(e) => select('phone', formatPhoneInput(e.target.value))}
                       />
                     </div>
                   </div>
@@ -730,6 +763,34 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
           </div>
         </div>
       </footer>
+
+      {bookingOpen && (
+        <div
+          className="call-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Book a 15-minute call"
+          onClick={(e) => { if (e.target === e.currentTarget) closeBooking() }}
+        >
+          <div className="call-modal-card">
+            <button
+              type="button"
+              className="call-modal-close"
+              aria-label="Close booking"
+              onClick={closeBooking}
+            >
+              <span className="material-symbols-outlined" aria-hidden>close</span>
+            </button>
+            <iframe
+              className="call-modal-iframe"
+              src={bookingUrl}
+              title="Book a 15-minute call with Saving KC"
+              loading="eager"
+              referrerPolicy="origin"
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
