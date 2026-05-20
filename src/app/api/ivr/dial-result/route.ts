@@ -6,6 +6,15 @@ import { phoneRateLimit } from '@/middleware/rate-limit'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 import { formatPhone } from '@/lib/format'
+import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
+import { lookupProspectByPhone } from '@/lib/prospect-lookup'
+import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
+import {
+  getCallQualityMilestones,
+  isPpcTrackingNumber,
+  parseCallDurationSeconds,
+  PPC_TRACKING_PHONE_DIGITS,
+} from '@/lib/call-quality-events'
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
@@ -28,6 +37,30 @@ function phoneLookupVariants(raw: string): string[] {
   }
   if (raw.trim()) variants.add(raw.trim())
   return Array.from(variants)
+}
+
+function callerPhoneLabel(raw: string): string {
+  return formatPhone(raw) || raw
+}
+
+async function resolveProspectLeadContext(phone: string): Promise<{ id: string | null; name: string | null }> {
+  for (const variant of phoneLookupVariants(phone)) {
+    const matches = await lookupProspectByPhone(variant)
+    const linked = matches.find((match) => match.lead_id)
+    if (!linked?.lead_id) continue
+
+    const { data } = await supabase
+      .from('leads')
+      .select('id, full_name')
+      .eq('id', linked.lead_id)
+      .limit(1)
+      .maybeSingle()
+
+    if (data?.id) return { id: data.id, name: data.full_name || null }
+    return { id: linked.lead_id, name: linked.owner_1 || null }
+  }
+
+  return { id: null, name: null }
 }
 
 async function resolveLeadContext(explicitLeadId: string, phone: string): Promise<{ id: string | null; name: string | null }> {
@@ -53,7 +86,171 @@ async function resolveLeadContext(explicitLeadId: string, phone: string): Promis
     if (data?.id) return { id: data.id, name: data.full_name || null }
   }
 
-  return { id: null, name: null }
+  return resolveProspectLeadContext(phone)
+}
+
+function canCreateLeadFromCallerPhone(raw: string): boolean {
+  const normalized = raw.trim().toLowerCase()
+  return Boolean(normalized && !normalized.includes('anonymous') && !normalized.includes('blocked'))
+}
+
+async function bootstrapPpcCallManifest(leadId: string, from: string): Promise<void> {
+  try {
+    const manifestId = await ensureManifestExists(leadId)
+    if (!manifestId) return
+
+    await updateManifestAndCascade(
+      leadId,
+      (manifest) => {
+        manifest.source = 'ppc-landing'
+        manifest.leadSource = 'ppc-landing'
+        manifest.priority = 'hot'
+        if (!manifest.owner.phones?.includes(from)) {
+          manifest.owner.phones = [from, ...(manifest.owner.phones ?? [])]
+        }
+        if (!manifest.owner.fullName) {
+          manifest.owner.fullName = `Google Ads Caller ${callerPhoneLabel(from)}`
+        }
+        manifest.acquisition = {
+          source: 'ppc-landing',
+          channel: 'google-ads',
+          attribution: {
+            utm_source: 'google',
+            utm_medium: 'cpc',
+            utm_campaign: 'Search 2026',
+            capturedAt: new Date().toISOString(),
+          },
+        }
+      },
+      'ppc-call',
+    )
+  } catch (error) {
+    console.error('[DIAL-RESULT] PPC call manifest bootstrap failed:', error)
+  }
+}
+
+async function createPpcCallLead(from: string): Promise<string | null> {
+  if (!canCreateLeadFromCallerPhone(from)) return null
+
+  try {
+    for (const variant of phoneLookupVariants(from)) {
+      const prospectMatches = await lookupProspectByPhone(variant)
+      if (prospectMatches.length > 0) {
+        const prospectLeadId = await createEnrichedLeadFromProspect(prospectMatches[0], from, 'inbound_call', 'hot')
+        if (prospectLeadId) {
+          await supabase
+            .from('leads')
+            .update({ source: 'ppc-landing', priority: 'hot' })
+            .eq('id', prospectLeadId)
+          bootstrapPpcCallManifest(prospectLeadId, from).catch((error) => {
+            console.error('[DIAL-RESULT] PPC prospect manifest bootstrap failed:', error)
+          })
+          return prospectLeadId
+        }
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('leads')
+      .insert({
+        full_name: `Google Ads Caller ${callerPhoneLabel(from)}`,
+        phone: from,
+        source: 'ppc-landing',
+        station: 'new',
+        priority: 'hot',
+      })
+      .select('id')
+      .single()
+
+    if (error || !data?.id) {
+      console.error('[DIAL-RESULT] PPC call lead insert failed:', error)
+      return null
+    }
+
+    bootstrapPpcCallManifest(data.id, from).catch((error) => {
+      console.error('[DIAL-RESULT] PPC call manifest bootstrap failed:', error)
+    })
+
+    return data.id
+  } catch (error) {
+    console.error('[DIAL-RESULT] PPC call lead creation failed:', error)
+    return null
+  }
+}
+
+type InboundCallQualityInput = {
+  leadId: string | null
+  from: string
+  calledNumber: string
+  parentCallSid: string
+  dialStatus: string
+  dialCallSid: string
+  dialCallDuration: number | null
+  type: string
+  isDirect: boolean
+  agentName: string
+}
+
+async function logInboundCallQualityMilestones(input: InboundCallQualityInput): Promise<void> {
+  const milestones = getCallQualityMilestones(input.dialCallDuration)
+  if (!milestones.length) return
+
+  const dedupeKey = input.dialCallSid || input.parentCallSid
+  const isPpcCall = isPpcTrackingNumber(input.calledNumber)
+
+  for (const milestone of milestones) {
+    try {
+      if (dedupeKey) {
+        const { data: existing } = await supabase
+          .from('lead_activities')
+          .select('id')
+          .eq('metadata->>source', 'call_quality_milestone')
+          .eq('metadata->>event', milestone.event)
+          .eq('metadata->>dedupeKey', dedupeKey)
+          .limit(1)
+
+        if (existing && existing.length > 0) continue
+      }
+
+      const { error } = await supabase.from('lead_activities').insert({
+        lead_id: input.leadId,
+        activity_type: 'status_change',
+        description: `Call quality milestone: ${milestone.label}`,
+        agent: 'System',
+        metadata: {
+          source: 'call_quality_milestone',
+          event: milestone.event,
+          event_type: 'call_quality',
+          optimization_role: 'secondary',
+          conversion_value: milestone.conversionValue,
+          currency: 'USD',
+          threshold_seconds: milestone.seconds,
+          duration: input.dialCallDuration,
+          outcome: 'connected',
+          direction: 'inbound',
+          from: input.from,
+          to: input.calledNumber,
+          calledNumber: input.calledNumber,
+          callSid: input.parentCallSid,
+          dialStatus: input.dialStatus,
+          dialCallSid: input.dialCallSid,
+          dedupeKey,
+          type: input.type,
+          isDirect: input.isDirect,
+          agentName: input.agentName,
+          ...(isPpcCall && {
+            traffic_source: 'google_ads',
+            campaign: 'Search 2026',
+            tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          }),
+        },
+      })
+
+      if (error) console.error('[DIAL-RESULT] Call quality milestone insert failed:', error)
+    } catch (error) {
+      console.error('[DIAL-RESULT] Call quality milestone logging failed:', error)
+    }
+  }
 }
 
 export async function POST(req: Request) {
@@ -69,19 +266,27 @@ export async function POST(req: Request) {
     const dialStatus = body.get('DialCallStatus') as string
     const dialCallSid = body.get('DialCallSid') as string
     const dialCallDurationRaw = body.get('DialCallDuration') as string
-    const dialCallDuration = Number.isFinite(Number(dialCallDurationRaw)) ? Math.max(0, Number(dialCallDurationRaw)) : null
+    const dialCallDuration = parseCallDurationSeconds(dialCallDurationRaw)
 
     console.log(`[DIAL-RESULT] type=${type} dialStatus=${dialStatus} from=${from} calledNumber=${calledNumber}`)
 
     const routing = getAgentRouting(calledNumber)
     const isDirect = type === 'direct'
     const lead = await resolveLeadContext(leadId, from)
-    const resolvedLeadId = lead.id
-    const callerLabel = lead.name || formatPhone(from) || from
+    const isPpcCall = isPpcTrackingNumber(calledNumber)
+    let resolvedLeadId = lead.id
+    let callerLabel = lead.name || callerPhoneLabel(from)
+
+    if (!resolvedLeadId && isPpcCall) {
+      resolvedLeadId = await createPpcCallLead(from)
+      callerLabel = resolvedLeadId ? `Google Ads Caller ${callerPhoneLabel(from)}` : callerLabel
+    }
+
+    const shouldTrackConnectedCall = Boolean(resolvedLeadId || isDirect || isPpcCall)
 
   if (dialStatus === 'completed') {
     // Agent answered — log it, no auto-text needed
-    if (resolvedLeadId || isDirect) {
+    if (shouldTrackConnectedCall) {
       await supabase.from('lead_activities').insert({
         lead_id: resolvedLeadId,
         activity_type: 'call',
@@ -89,7 +294,35 @@ export async function POST(req: Request) {
           ? `Direct inbound call from ${callerLabel} connected live with ${routing.primary.name}${dialCallDuration != null ? ` — ${dialCallDuration}s` : ''}`
           : `Inbound ${type === 'seller' ? 'seller' : 'caller'} connected live with agent`,
         agent: 'System',
-        metadata: { outcome: 'connected', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type }
+        metadata: {
+          outcome: 'connected',
+          direction: 'inbound',
+          from,
+          calledNumber,
+          callSid: parentCallSid,
+          dialStatus,
+          dialCallSid,
+          dialCallDuration,
+          type,
+          ...(isPpcCall && {
+            traffic_source: 'google_ads',
+            campaign: 'Search 2026',
+            tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          }),
+        }
+      })
+
+      await logInboundCallQualityMilestones({
+        leadId: resolvedLeadId,
+        from,
+        calledNumber,
+        parentCallSid,
+        dialStatus,
+        dialCallSid,
+        dialCallDuration,
+        type,
+        isDirect,
+        agentName: routing.primary.name,
       })
 
       // Mark pending callback tasks done for known leads.

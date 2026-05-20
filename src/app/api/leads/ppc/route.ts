@@ -47,12 +47,18 @@ const AttributionSchema = z
     utm_term: z.string().max(180).optional(),
     utm_content: z.string().max(180).optional(),
     gclid: z.string().max(180).optional(),
+    gbraid: z.string().max(180).optional(),
+    wbraid: z.string().max(180).optional(),
+    gad_source: z.string().max(120).optional(),
+    gad_campaignid: z.string().max(180).optional(),
+    gad_adgroupid: z.string().max(180).optional(),
     referrer: z.string().max(500).optional(),
     landingUrl: z.string().max(500).optional(),
   })
   .optional()
 
 const BodySchema = z.object({
+  intent: z.enum(['autosave', 'submit']).optional(),
   step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   address: z.string().min(3).max(200).optional(),
   situation: SituationSchema.optional(),
@@ -98,6 +104,54 @@ function normalizePhone(phone: string): string {
   return `+${digits}`
 }
 
+type PpcFormActivityInput = {
+  leadId: string
+  source: 'ppc_form_autosave' | 'ppc_form_submit'
+  description: string
+  formStatus: 'stage_3_complete_no_submit' | 'submitted'
+  step: number
+  address?: string
+  attribution: z.infer<typeof AttributionSchema>
+}
+
+async function upsertPpcFormActivity(input: PpcFormActivityInput): Promise<void> {
+  const metadata = {
+    source: input.source,
+    form_status: input.formStatus,
+    form_submitted: input.formStatus === 'submitted',
+    step: input.step,
+    address: input.address ?? null,
+    attribution: input.attribution ?? {},
+  }
+
+  const { data: existing } = await supabase
+    .from('lead_activities')
+    .select('id')
+    .eq('lead_id', input.leadId)
+    .eq('metadata->>source', input.source)
+    .limit(1)
+    .maybeSingle()
+
+  if (existing?.id) {
+    await supabase
+      .from('lead_activities')
+      .update({
+        description: input.description,
+        metadata,
+      })
+      .eq('id', existing.id)
+    return
+  }
+
+  await supabase.from('lead_activities').insert({
+    lead_id: input.leadId,
+    activity_type: 'status_change',
+    description: input.description,
+    agent: 'System',
+    metadata,
+  })
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -117,9 +171,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: message }, { status: 400, headers: corsHeaders })
   }
 
-  // Steps 1 and 2 are progress signals — conversions fire client-side, no
-  // server-side write yet. We could persist partial state to a separate
-  // ppc_partial_leads table in the future for re-engagement campaigns.
+  const intent = parsed.intent ?? 'submit'
+
+  // Steps 1 and 2 are progress signals only. Stage 3 can autosave once all
+  // required contact fields are present, but it is not counted as submitted.
   if (parsed.step < 3 || !parsed.contact) {
     return NextResponse.json({ ok: true, deferred: true }, { headers: corsHeaders })
   }
@@ -273,6 +328,36 @@ export async function POST(req: NextRequest) {
       },
       'ppc-landing',
     )
+
+    if (intent === 'autosave') {
+      await upsertPpcFormActivity({
+        leadId: resolvedLeadId,
+        source: 'ppc_form_autosave',
+        description: 'PPC form reached step 3 with all required fields filled; submit was not pressed yet.',
+        formStatus: 'stage_3_complete_no_submit',
+        step: 3,
+        address,
+        attribution,
+      })
+
+      return NextResponse.json({
+        ok: true,
+        autosaved: true,
+        formStatus: 'stage_3_complete_no_submit',
+        manifestId,
+        leadId: resolvedLeadId,
+      }, { headers: corsHeaders })
+    }
+
+    await upsertPpcFormActivity({
+      leadId: resolvedLeadId,
+      source: 'ppc_form_submit',
+      description: 'PPC form submitted.',
+      formStatus: 'submitted',
+      step: 3,
+      address,
+      attribution,
+    })
 
     return NextResponse.json({ ok: true, manifestId, leadId: resolvedLeadId }, { headers: corsHeaders })
   } catch (err) {

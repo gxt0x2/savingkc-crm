@@ -590,7 +590,7 @@ export async function POST(req: Request) {
       } else {
         // Generic unknown SMS — create basic lead
         const { data: newLead } = await supabase.from('leads').insert({
-          full_name: `SMS Lead (${formatPhone(from)})`,
+          full_name: `SMS Lead ${formatPhone(from) || from}`,
           phone: from,
           source: 'inbound_sms',
           station: 'new',

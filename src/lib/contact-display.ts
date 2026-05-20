@@ -1,4 +1,4 @@
-import { formatPhone, toProperCase } from '@/lib/format'
+import { formatPhone, normalizePhoneDisplayText, toProperCase } from '@/lib/format'
 
 export type ContactDirection = 'inbound' | 'outbound' | 'unknown'
 export type ContactOutcome = 'answered' | 'missed' | 'attempted' | 'sent' | 'received' | 'unknown'
@@ -52,7 +52,7 @@ export function getDisplayLeadName(name: string | null | undefined, phone: strin
   if (shouldUsePhoneAsName(name)) {
     return formatPhone(phone) || 'Unknown'
   }
-  return toProperCase(name)
+  return normalizePhoneDisplayText(toProperCase(name))
 }
 
 export function isGoogleAdsSource(source: string | null | undefined): boolean {

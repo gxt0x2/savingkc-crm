@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import './sell.css'
 import { SellLanding } from './SellLanding'
-import { GoogleAdsTag } from './GoogleAdsTag'
+import { GoogleTagManager } from './GoogleTagManager'
 import { EditOverlay } from './EditOverlay'
 
 const PPC_PHONE_DISPLAY = process.env.NEXT_PUBLIC_PPC_PHONE ?? '(816) 608-8808'
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 export default function SellPage() {
   return (
     <>
-      <GoogleAdsTag />
+      <GoogleTagManager />
       <SellLanding phoneDisplay={PPC_PHONE_DISPLAY} phoneTel={PPC_PHONE_TEL} />
       <EditOverlay />
     </>

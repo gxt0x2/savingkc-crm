@@ -23,6 +23,34 @@ interface PlacesAutocomplete {
 type WindowWithPlaces = Window & {
   google?: { maps?: { places?: { Autocomplete: new (input: HTMLInputElement, opts?: Record<string, unknown>) => PlacesAutocomplete } } }
   __skcMapsLoading?: Promise<void>
+  __skcMapsKey?: Promise<string>
+}
+
+function getBuildTimeMapsKey(): string {
+  return (
+    process.env.NEXT_PUBLIC_GMAPS_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+    ''
+  ).trim()
+}
+
+function getMapsKey(): Promise<string> {
+  if (typeof window === 'undefined') return Promise.reject(new Error('ssr'))
+  const buildTimeKey = getBuildTimeMapsKey()
+  if (buildTimeKey) return Promise.resolve(buildTimeKey)
+
+  const w = window as WindowWithPlaces
+  if (w.__skcMapsKey) return w.__skcMapsKey
+  w.__skcMapsKey = fetch('/api/google-maps-key', { cache: 'force-cache' })
+    .then((res) => {
+      if (!res.ok) throw new Error('maps-key-unavailable')
+      return res.json() as Promise<{ key?: string }>
+    })
+    .then((data) => {
+      if (!data.key) throw new Error('maps-key-missing')
+      return data.key
+    })
+  return w.__skcMapsKey
 }
 
 function loadGoogleMaps(apiKey: string): Promise<void> {
@@ -60,9 +88,9 @@ export function AddressAutocomplete({
 
   const handleFocus = () => {
     if (attached) return
-    const apiKey = process.env.NEXT_PUBLIC_GMAPS_KEY
-    if (!apiKey || !inputRef.current) return
-    loadGoogleMaps(apiKey)
+    if (!inputRef.current) return
+    getMapsKey()
+      .then((apiKey) => loadGoogleMaps(apiKey))
       .then(() => {
         const w = window as WindowWithPlaces
         if (!inputRef.current || !w.google?.maps?.places) return
@@ -76,6 +104,7 @@ export function AddressAutocomplete({
           },
           componentRestrictions: { country: 'us' },
           fields: ['formatted_address', 'address_components'],
+          strictBounds: false,
           types: ['address'],
         } as unknown as Record<string, unknown>)
         autocomplete.addListener('place_changed', () => {

@@ -19,6 +19,10 @@ describe('contact-display', () => {
     expect(getAvatarLabel('Caller 4', '+18165551212', 'inbound_call')).toBe('12')
   })
 
+  it('collapses double parentheses around formatted phone numbers', () => {
+    expect(getDisplayLeadName('Google Ads Caller ((816) 555-1212)', '+18165551212')).toBe('Google Ads Caller (816) 555-1212')
+  })
+
   it('detects missed inbound calls and outbound attempts', () => {
     const missed = {
       activity_type: 'call',
