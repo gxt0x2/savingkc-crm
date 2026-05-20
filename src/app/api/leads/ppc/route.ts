@@ -84,6 +84,13 @@ const TIMELINE_TO_URGENCY: Record<z.infer<typeof TimelineSchema>, 'critical' | '
   exploring: 'low',
 }
 
+const TIMELINE_TO_PRIORITY: Record<z.infer<typeof TimelineSchema>, 'hot' | 'warm'> = {
+  asap: 'hot',
+  '60-days': 'warm',
+  flexible: 'warm',
+  exploring: 'warm',
+}
+
 const CONDITION_TO_OVERALL: Record<z.infer<typeof ConditionSchema>, 'good' | 'fair' | 'poor' | 'uninhabitable'> = {
   good: 'good',
   'needs-work': 'fair',
@@ -128,6 +135,7 @@ export async function POST(req: NextRequest) {
   const fullName = contact.name.trim()
   const phoneE164 = normalizePhone(contact.phone)
   const email = contact.email.trim().toLowerCase()
+  const ppcPriority = timeline ? TIMELINE_TO_PRIORITY[timeline] : 'warm'
 
   try {
     // Dedupe by phone -> email -> address (in that order)
@@ -182,7 +190,7 @@ export async function POST(req: NextRequest) {
           email,
           source: 'ppc-landing',
           station: 'new',
-          priority: timeline === 'asap' ? 'high' : 'normal',
+          priority: ppcPriority,
           ...(cityState.city ? { city: cityState.city } : {}),
           ...(cityState.state ? { state: cityState.state } : {}),
           ...(cityState.zip ? { zip: cityState.zip } : {}),
@@ -191,15 +199,13 @@ export async function POST(req: NextRequest) {
         .select('id')
         .single()
       if (error || !inserted?.id) {
-        // Graceful degrade: queue the lead offline so we don't lose it, then
-        // return success to the user. The conversion event still fires
-        // client-side, the homeowner gets the success state, and we recover
-        // the lead from ppc-leads-queue.jsonl once Supabase keys are sorted.
+        // Keep a local emergency record for debugging/replay, but do not
+        // report success. Paid conversions must represent durable CRM writes.
         console.error('[ppc/lead] insert failed — queuing offline', error)
         await queueLeadOffline(parsed, error)
         return NextResponse.json(
-          { ok: true, queued: true, manifestId: null, leadId: null },
-          { headers: corsHeaders },
+          { ok: false, queued: true, error: 'Lead could not be saved. Please call us so we do not miss you.' },
+          { status: 503, headers: corsHeaders },
         )
       }
       leadId = inserted.id
@@ -236,6 +242,7 @@ export async function POST(req: NextRequest) {
       (m) => {
         m.source = 'ppc-landing'
         m.leadSource = 'ppc-landing'
+        m.priority = ppcPriority
         if (situation) {
           const tag = SITUATION_TO_TAG[situation]
           if (!m.situation.type) m.situation.type = []
@@ -278,6 +285,9 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('[ppc/lead] unexpected error — queuing offline', err)
     await queueLeadOffline(parsed, err)
-    return NextResponse.json({ ok: true, queued: true, manifestId: null, leadId: null }, { headers: corsHeaders })
+    return NextResponse.json(
+      { ok: false, queued: true, error: 'Lead could not be saved. Please call us so we do not miss you.' },
+      { status: 500, headers: corsHeaders },
+    )
   }
 }

@@ -164,6 +164,9 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
       })
       const json = await r.json()
       if (!r.ok || !json?.ok) throw new Error(json?.error ?? 'Submit failed')
+      if (!json?.leadId || !json?.manifestId) {
+        throw new Error('Lead could not be saved. Please call us so we do not miss you.')
+      }
       fireConversion('lead_submitted')
       setManifestId(json.manifestId ?? null)
       setSubmitted(true)
