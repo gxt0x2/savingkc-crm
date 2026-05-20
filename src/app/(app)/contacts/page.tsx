@@ -316,6 +316,7 @@ export default function ContactsPage() {
                     : row.station === 'new'
                       ? 'Running'
                       : 'No outbound yet'
+                  const timerNeedsAttention = row.station === 'new' && !row.firstOutboundAt
                   return (
                     <tr
                       key={row.id}
@@ -382,11 +383,18 @@ export default function ContactsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 align-middle">
-                        <div className="leading-5">
-                          <div className={`font-semibold ${row.firstOutboundAt ? 'text-[var(--ck-text-muted)]' : 'text-[#E32E2E]'}`}>
+                        <div
+                          className={`inline-flex min-w-[118px] flex-col items-center justify-center rounded-full border px-3 py-1.5 text-center shadow-sm ${
+                            timerNeedsAttention
+                              ? 'animate-pulse border-[#E32E2E]/50 bg-[#E32E2E]/15 text-[#E32E2E] shadow-[#E32E2E]/10'
+                              : 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
+                          }`}
+                          title={timerNeedsAttention ? 'Needs first outbound attempt' : 'First outbound attempt completed'}
+                        >
+                          <div className="text-sm font-black leading-none">
                             {timerLabel}
                           </div>
-                          <div className="text-[11px] text-[var(--ck-text-dim)]">
+                          <div className={`mt-1 text-[10px] font-bold uppercase tracking-wide ${timerNeedsAttention ? 'text-[#E32E2E]' : 'text-[var(--ck-text-dim)]'}`}>
                             {timerState}
                           </div>
                         </div>
