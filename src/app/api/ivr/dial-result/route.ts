@@ -9,6 +9,7 @@ import { formatPhone } from '@/lib/format'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
+import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import {
   getCallQualityMilestones,
   isPpcTrackingNumber,
@@ -212,41 +213,68 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
         if (existing && existing.length > 0) continue
       }
 
-      const { error } = await supabase.from('lead_activities').insert({
-        lead_id: input.leadId,
-        activity_type: 'status_change',
-        description: `Call quality milestone: ${milestone.label}`,
-        agent: 'System',
-        metadata: {
-          source: 'call_quality_milestone',
-          event: milestone.event,
-          event_type: 'call_quality',
-          optimization_role: 'secondary',
-          conversion_value: milestone.conversionValue,
-          currency: 'USD',
-          threshold_seconds: milestone.seconds,
-          duration: input.dialCallDuration,
-          outcome: 'connected',
-          direction: 'inbound',
-          from: input.from,
-          to: input.calledNumber,
-          calledNumber: input.calledNumber,
-          callSid: input.parentCallSid,
-          dialStatus: input.dialStatus,
-          dialCallSid: input.dialCallSid,
-          dedupeKey,
-          type: input.type,
-          isDirect: input.isDirect,
-          agentName: input.agentName,
-          ...(isPpcCall && {
-            traffic_source: 'google_ads',
-            campaign: 'Search 2026',
-            tracking_number: PPC_TRACKING_PHONE_DIGITS,
-          }),
-        },
-      })
+      const metadata = {
+        source: 'call_quality_milestone',
+        event: milestone.event,
+        event_type: 'call_quality',
+        optimization_role: 'secondary',
+        conversion_value: milestone.conversionValue,
+        currency: 'USD',
+        threshold_seconds: milestone.seconds,
+        duration: input.dialCallDuration,
+        outcome: 'connected',
+        direction: 'inbound',
+        from: input.from,
+        to: input.calledNumber,
+        calledNumber: input.calledNumber,
+        callSid: input.parentCallSid,
+        dialStatus: input.dialStatus,
+        dialCallSid: input.dialCallSid,
+        dedupeKey,
+        type: input.type,
+        isDirect: input.isDirect,
+        agentName: input.agentName,
+        ...(isPpcCall && {
+          traffic_source: 'google_ads',
+          campaign: 'Search 2026',
+          tracking_number: PPC_TRACKING_PHONE_DIGITS,
+        }),
+      }
 
-      if (error) console.error('[DIAL-RESULT] Call quality milestone insert failed:', error)
+      const { data: activity, error } = await supabase
+        .from('lead_activities')
+        .insert({
+          lead_id: input.leadId,
+          activity_type: 'status_change',
+          description: `Call quality milestone: ${milestone.label}`,
+          agent: 'System',
+          metadata,
+        })
+        .select('id')
+        .single()
+
+      if (error) {
+        console.error('[DIAL-RESULT] Call quality milestone insert failed:', error)
+        continue
+      }
+
+      if (isPpcCall) {
+        await enqueuePpcConversion({
+          eventName: milestone.event,
+          eventCategory: 'call',
+          leadId: input.leadId,
+          activityId: activity?.id ?? null,
+          dedupeKey: `call:${dedupeKey || `${input.from}:${input.calledNumber}`}:${milestone.event}`,
+          optimizationRole: 'secondary',
+          conversionValue: milestone.conversionValue,
+          attribution: {
+            utm_source: 'google',
+            utm_medium: 'cpc',
+            utm_campaign: 'Search 2026',
+          },
+          payload: metadata,
+        })
+      }
     } catch (error) {
       console.error('[DIAL-RESULT] Call quality milestone logging failed:', error)
     }
