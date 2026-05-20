@@ -232,24 +232,39 @@
 .skc-sell .form-field-prominent .field-label {
   font-size: 17px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 10px;
 }
-/* High-contrast inputs — explicitly override the CRM's dark-theme cascade
-   so older eyes can read the placeholders and entered text. */
-.skc-sell .form-field input,
-.skc-sell .form-field select {
+/* Light color-scheme on the LP wrapper undoes the browser-level dark
+   form-control rendering inherited from the CRM's <html class="dark"> /
+   <body class="ck-dark"> chain. */
+.skc-sell { color-scheme: light; }
+
+/* High-contrast inputs — matched specificity to beat the CRM's
+   `.ck-dark input:not([type="checkbox"]):not([type="radio"])` rule.
+   Same number of selectors so source order wins (our rule is loaded
+   after globals.css). */
+.skc-sell .form-field input:not([type="checkbox"]):not([type="radio"]),
+.skc-sell .form-field select,
+.skc-sell .form-field textarea {
   width: 100%; padding: 14px 14px; font-size: 16px;
-  background: #ffffff !important; color: #0a0a0b !important;
+  background-color: #ffffff !important; color: #0a0a0b !important;
   border: 1.5px solid #c8c8d0 !important;
   border-radius: 10px;
   font-family: inherit;
-  -webkit-text-fill-color: #0a0a0b;
+  -webkit-text-fill-color: #0a0a0b !important;
+  color-scheme: light !important;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.skc-sell .form-field input:focus,
-.skc-sell .form-field select:focus {
-  outline: none; border-color: var(--brand) !important; background: #ffffff !important;
+.skc-sell .form-field input:not([type="checkbox"]):not([type="radio"]):focus,
+.skc-sell .form-field select:focus,
+.skc-sell .form-field textarea:focus {
+  outline: none; border-color: var(--brand) !important; background-color: #ffffff !important;
   box-shadow: 0 0 0 3px rgba(218, 37, 36, 0.15);
 }
-.skc-sell .form-field input::placeholder { color: #6b6b76 !important; opacity: 1; }
+.skc-sell .form-field input::placeholder,
+.skc-sell .form-field textarea::placeholder {
+  color: #6b6b76 !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: #6b6b76 !important;
+}
 .skc-sell .form-field input:-webkit-autofill {
   -webkit-box-shadow: 0 0 0 100px #ffffff inset !important;
   -webkit-text-fill-color: #0a0a0b !important;
