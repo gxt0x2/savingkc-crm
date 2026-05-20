@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { captureAttribution, getAttribution } from '@/lib/ppc/attribution'
 import { fireConversion } from '@/lib/ppc/conversions'
 import { AddressAutocomplete } from './AddressAutocomplete'
@@ -11,7 +11,7 @@ type Situation =
   | 'tired-landlord'
   | 'condition'
   | 'life-event'
-  | 'land'
+  | 'other'
 
 type Timeline = 'asap' | '60-days' | 'flexible' | 'exploring'
 type Condition = 'good' | 'needs-work' | 'major-repair' | 'vacant'
@@ -42,7 +42,7 @@ const SITUATION_TILES: { value: Situation; icon: string; label: string }[] = [
   { value: 'tired-landlord', icon: 'person_off', label: 'Tired landlord' },
   { value: 'condition', icon: 'construction', label: 'Needs repairs' },
   { value: 'life-event', icon: 'schedule_send', label: 'Life event' },
-  { value: 'land', icon: 'landscape', label: 'Land or lot' },
+  { value: 'other', icon: 'more_horiz', label: 'Other' },
 ]
 
 const TIMELINE_TILES: { value: Timeline; label: string }[] = [
@@ -69,9 +69,25 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
   const [quizStartedFired, setQuizStartedFired] = useState(false)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [navJumpVisible, setNavJumpVisible] = useState(false)
+  const toolCardRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     captureAttribution()
+  }, [])
+
+  useEffect(() => {
+    const el = toolCardRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        // Show the nav CTA only when the form is scrolled out of view
+        setNavJumpVisible(!entry.isIntersecting)
+      },
+      { threshold: 0.05, rootMargin: '-80px 0px 0px 0px' },
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
   }, [])
 
   const postPartial = useCallback(async (currentStep: 1 | 2 | 3, partial: Partial<QuizState>) => {
@@ -189,6 +205,16 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
             <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
           </nav>
           <div className="topbar-right">
+            <a
+              href="#quiz"
+              className={`nav-jump ${navJumpVisible ? 'visible' : ''}`}
+              aria-hidden={!navJumpVisible}
+              tabIndex={navJumpVisible ? 0 : -1}
+              onClick={scrollToId('quiz')}
+            >
+              Get My Offer
+              <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+            </a>
             <div className="topbar-trust">
               <span className="stars">★★★★★</span>
               <span><strong>100+</strong> KC homeowners helped</span>
@@ -272,7 +298,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
             </div>
 
             <div className="hero-form">
-            <div className="tool-card">
+            <div className="tool-card" ref={toolCardRef}>
               <span className="tool-eyebrow">
                 <span className="material-symbols-outlined" aria-hidden>bolt</span>
                 Start here

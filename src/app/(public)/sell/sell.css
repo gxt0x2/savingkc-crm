@@ -64,6 +64,23 @@
 }
 .skc-sell .nav-links a:hover { color: var(--brand); }
 
+/* Sticky nav CTA — only visible when the form is scrolled out of view.
+   Same green as the form's Continue button so users immediately know
+   what it does. */
+.skc-sell .nav-jump {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--green); color: white !important;
+  padding: 9px 16px; border-radius: 999px;
+  font-weight: 800; font-size: 14px; letter-spacing: -0.01em;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(31, 160, 90, 0.35);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s;
+  opacity: 0; transform: translateY(-4px); pointer-events: none;
+}
+.skc-sell .nav-jump.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.skc-sell .nav-jump:hover { background: #178a4d; }
+.skc-sell .nav-jump .material-symbols-outlined { font-size: 18px; }
+
 /* Mobile menu — collapses nav + trust badge + phone behind a hamburger
    without dropping any of them. */
 .skc-sell .nav-toggle {
@@ -278,20 +295,21 @@
   -webkit-text-fill-color: #0a0a0b !important;
 }
 
-.skc-sell .radio-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.skc-sell .radio-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .skc-sell .radio-group.three-col { grid-template-columns: 1fr 1fr 1fr; }
 .skc-sell .radio-tile {
-  padding: 14px 12px; border: 1px solid var(--border);
-  border-radius: 10px; cursor: pointer; font-size: 13px;
+  padding: 10px 10px; border: 1px solid var(--border);
+  border-radius: 9px; cursor: pointer; font-size: 12.5px;
   color: var(--text-muted); text-align: center;
   background: var(--bg-subtle);
   transition: all 0.15s;
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
   font-family: inherit; font-weight: 500;
   appearance: none; outline: none;
+  line-height: 1.25;
 }
 .skc-sell .radio-tile .material-symbols-outlined {
-  font-size: 22px; color: var(--brand);
+  font-size: 20px; color: var(--brand);
   font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
 }
 .skc-sell .radio-tile:hover { border-color: var(--text-dim); color: var(--text); background: var(--bg); }
@@ -301,20 +319,21 @@
 }
 .skc-sell .radio-tile input { display: none; }
 
-/* Continue button — the form's primary action gets its own treatment so it
-   reads as THE thing to click. Pulse draws the eye without being noisy. */
+/* Continue button — the form's primary action. Green so it stands apart
+   from every other (charcoal) button on the page. Pulse draws the eye
+   without being noisy. */
 .skc-sell .btn-continue {
-  width: 100%; padding: 17px 24px;
-  background: var(--brand); color: white;
+  width: 100%; padding: 16px 24px;
+  background: var(--green); color: white;
   font-weight: 800; font-size: 17px; letter-spacing: -0.015em;
   border: none; border-radius: 12px;
   cursor: pointer; font-family: inherit;
   display: flex; align-items: center; justify-content: center; gap: 10px;
-  box-shadow: 0 8px 22px rgba(218, 37, 36, 0.35);
+  box-shadow: 0 8px 22px rgba(31, 160, 90, 0.35);
   transition: background 0.15s, transform 0.05s, box-shadow 0.2s;
   animation: skc-pulse 2.4s ease-in-out infinite;
 }
-.skc-sell .btn-continue:hover { background: var(--brand-hover); box-shadow: 0 10px 28px rgba(218, 37, 36, 0.45); }
+.skc-sell .btn-continue:hover { background: #178a4d; box-shadow: 0 10px 28px rgba(31, 160, 90, 0.45); }
 .skc-sell .btn-continue:active { transform: scale(0.99); }
 .skc-sell .btn-continue[disabled] { opacity: 0.7; cursor: not-allowed; animation: none; }
 .skc-sell .btn-continue .material-symbols-outlined { font-size: 22px; font-variation-settings: 'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 24; }
@@ -347,8 +366,8 @@
 }
 
 @keyframes skc-pulse {
-  0%, 100% { box-shadow: 0 8px 22px rgba(218, 37, 36, 0.35); }
-  50% { box-shadow: 0 8px 22px rgba(218, 37, 36, 0.6), 0 0 0 6px rgba(218, 37, 36, 0.08); }
+  0%, 100% { box-shadow: 0 8px 22px rgba(31, 160, 90, 0.35); }
+  50% { box-shadow: 0 8px 22px rgba(31, 160, 90, 0.55), 0 0 0 6px rgba(31, 160, 90, 0.10); }
 }
 @media (prefers-reduced-motion: reduce) {
   .skc-sell .btn-continue { animation: none; }
@@ -576,16 +595,20 @@
 @media (max-width: 600px) {
   .skc-sell .situations-grid { grid-template-columns: 1fr; }
   .skc-sell .county-grid { grid-template-columns: 1fr; }
-  /* Keep tiles in a tight 2-col grid on phones — single column is too tall
-     and pushes the Continue button below the fold on iPhone SE class. */
-  .skc-sell .radio-group { grid-template-columns: 1fr 1fr; }
+  .skc-sell .radio-group { grid-template-columns: 1fr 1fr; gap: 6px; }
   .skc-sell .radio-group.three-col { grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
-  .skc-sell .radio-tile { padding: 10px 8px; font-size: 12px; gap: 4px; }
-  .skc-sell .radio-tile .material-symbols-outlined { font-size: 18px; }
-  .skc-sell .tool-card { padding: 18px; }
-  .skc-sell .tool-card h2 { font-size: 22px; }
-  .skc-sell .tool-card .tool-sub { font-size: 13px; margin-bottom: 12px; }
+  .skc-sell .radio-tile { padding: 8px 6px; font-size: 11.5px; gap: 3px; }
+  .skc-sell .radio-tile .material-symbols-outlined { font-size: 17px; }
+  .skc-sell .tool-card { padding: 16px; }
+  .skc-sell .tool-card h2 { font-size: 21px; }
+  .skc-sell .tool-card .tool-sub { font-size: 12.5px; margin-bottom: 10px; line-height: 1.4; }
+  .skc-sell .form-field { margin-bottom: 8px; }
+  .skc-sell .form-field label { font-size: 12.5px; margin-bottom: 3px; }
+  .skc-sell .form-field-prominent { margin-bottom: 8px; }
   .skc-sell .form-field-prominent > label,
-  .skc-sell .form-field-prominent .field-label { font-size: 14px; margin-bottom: 6px; }
+  .skc-sell .form-field-prominent .field-label { font-size: 13.5px; margin-bottom: 5px; }
+  .skc-sell .btn-continue { padding: 13px 18px; font-size: 15.5px; }
   .skc-sell .footer-inner { flex-direction: column; text-align: center; }
+  /* Nav jump CTA shrinks on phones so it fits next to the hamburger */
+  .skc-sell .nav-jump { padding: 7px 12px; font-size: 12.5px; }
 }

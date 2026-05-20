@@ -34,7 +34,7 @@ const SituationSchema = z.enum([
   'tired-landlord',
   'condition',
   'life-event',
-  'land',
+  'other',
 ])
 const TimelineSchema = z.enum(['asap', '60-days', 'flexible', 'exploring'])
 const ConditionSchema = z.enum(['good', 'needs-work', 'major-repair', 'vacant'])
@@ -74,7 +74,7 @@ const SITUATION_TO_TAG: Record<z.infer<typeof SituationSchema>, string> = {
   'tired-landlord': 'tired_landlord',
   condition: 'distressed_condition',
   'life-event': 'life_event',
-  land: 'land_or_lot',
+  other: 'ppc_other',
 }
 
 const TIMELINE_TO_URGENCY: Record<z.infer<typeof TimelineSchema>, 'critical' | 'high' | 'medium' | 'low'> = {
