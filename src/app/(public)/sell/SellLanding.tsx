@@ -210,19 +210,19 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
               <span><strong>100+</strong> KC homeowners helped</span>
             </div>
             <a href={`tel:${phoneTel}`} className="topbar-phone">
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
+              <span className="material-symbols-outlined" aria-hidden>call</span>
               {phoneDisplay}
             </a>
-            <a
-              href="#quiz"
-              className={`nav-jump ${navJumpVisible ? 'visible' : ''}`}
-              aria-hidden={!navJumpVisible}
-              tabIndex={navJumpVisible ? 0 : -1}
-              onClick={scrollToId('quiz')}
-            >
-              Get My Offer
-              <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
-            </a>
+            {navJumpVisible && (
+              <a
+                href="#quiz"
+                className="nav-jump visible"
+                onClick={scrollToId('quiz')}
+              >
+                Get My Offer
+                <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+              </a>
+            )}
             <button
               type="button"
               className="nav-toggle"
