@@ -8,6 +8,7 @@ import { useAppMode } from '@/hooks/use-app-mode'
 const acquisitionTabs = [
   { label: 'ARI', href: '/ari', icon: 'assistant' },
   { label: 'Contacts', href: '/contacts', icon: 'contacts' },
+  { label: 'Journeys', href: '/journeys', icon: 'account_tree' },
   { label: 'Calendar', href: '/calendar?department=acquisitions', icon: 'calendar_today' },
   { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },
   { label: 'KPIs', href: '/dashboard', icon: 'insights' },
@@ -64,6 +65,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
       pathname?.startsWith('/in-closing') ||
       pathname?.startsWith('/leads')
     )) return true
+    if (href === '/journeys' && pathname?.startsWith('/journeys')) return true
     if (href === '/dialer' && pathname?.startsWith('/dialer')) return true
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
     if (href === '/calendar?view=agenda') return pathname?.startsWith('/calendar') && searchParams.get('view') === 'agenda'
