@@ -225,8 +225,15 @@
 }
 .skc-sell .step-label { font-size: 12px; color: var(--text-dim); font-weight: 500; margin-bottom: 10px; }
 
-.skc-sell .form-field { margin-bottom: 14px; }
-.skc-sell .form-field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+.skc-sell .form-field { margin-bottom: 10px; }
+.skc-sell .form-field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+/* Two-column row for compact step-3 layout (name + phone side by side).
+   Stays 2-col even on small phones so the form fits above the fold. */
+.skc-sell .form-row-2 {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin-bottom: 10px;
+}
+.skc-sell .form-row-2 .form-field { margin-bottom: 0; }
 .skc-sell .form-field-prominent { margin-bottom: 12px; }
 .skc-sell .form-field-prominent > label,
 .skc-sell .form-field-prominent .field-label {
@@ -245,7 +252,7 @@
 .skc-sell .form-field input:not([type="checkbox"]):not([type="radio"]),
 .skc-sell .form-field select,
 .skc-sell .form-field textarea {
-  width: 100%; padding: 14px 14px; font-size: 16px;
+  width: 100%; padding: 11px 13px; font-size: 15px;
   background-color: #ffffff !important; color: #0a0a0b !important;
   border: 1.5px solid #c8c8d0 !important;
   border-radius: 10px;

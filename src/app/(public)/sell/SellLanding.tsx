@@ -381,30 +381,26 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                   </button>
                 </div>
               ) : (
-                <div style={{ marginTop: 18 }}>
+                <div style={{ marginTop: 10 }}>
                   <div
                     style={{
                       background: 'rgba(31,193,107,0.08)',
                       border: '1px solid rgba(31,193,107,0.3)',
-                      padding: 14,
-                      borderRadius: 10,
-                      marginBottom: 18,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      marginBottom: 12,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 10,
+                      gap: 8,
+                      fontSize: 13,
+                      color: 'var(--green)',
+                      fontWeight: 600,
                     }}
                   >
-                    <span className="material-symbols-outlined" style={{ color: 'var(--green)', fontSize: 22, fontVariationSettings: "'FILL' 1" }} aria-hidden>
+                    <span className="material-symbols-outlined" style={{ color: 'var(--green)', fontSize: 18, fontVariationSettings: "'FILL' 1" }} aria-hidden>
                       check_circle
                     </span>
-                    <div>
-                      <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>
-                        Cash-offer range ready
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        Enter your address + contact info to see it and lock in a 1-hour custom offer.
-                      </div>
-                    </div>
+                    Cash-offer range ready — finish below to see it.
                   </div>
                   <div className="form-field">
                     <label htmlFor="address">Property address</label>
@@ -415,27 +411,29 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                       onChange={(v) => select('address', v)}
                     />
                   </div>
-                  <div className="form-field">
-                    <label htmlFor="name">Your name</label>
-                    <input
-                      id="name"
-                      type="text"
-                      placeholder="First and last name"
-                      autoComplete="name"
-                      value={state.name}
-                      onChange={(e) => select('name', e.target.value)}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label htmlFor="phone">Phone</label>
-                    <input
-                      id="phone"
-                      type="tel"
-                      placeholder="(555) 123-4567"
-                      autoComplete="tel"
-                      value={state.phone}
-                      onChange={(e) => select('phone', e.target.value)}
-                    />
+                  <div className="form-row-2">
+                    <div className="form-field">
+                      <label htmlFor="name">Your name</label>
+                      <input
+                        id="name"
+                        type="text"
+                        placeholder="First and last name"
+                        autoComplete="name"
+                        value={state.name}
+                        onChange={(e) => select('name', e.target.value)}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label htmlFor="phone">Phone</label>
+                      <input
+                        id="phone"
+                        type="tel"
+                        placeholder="(555) 123-4567"
+                        autoComplete="tel"
+                        value={state.phone}
+                        onChange={(e) => select('phone', e.target.value)}
+                      />
+                    </div>
                   </div>
                   <div className="form-field">
                     <label htmlFor="email">Email</label>
