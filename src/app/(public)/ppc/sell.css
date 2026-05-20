@@ -1,0 +1,637 @@
+/* Scoped to .skc-sell — light-themed LP that overrides the CRM dark base */
+
+.skc-sell {
+  --bg: #ffffff;
+  --bg-elevated: #fafafa;
+  --bg-card: #ffffff;
+  --bg-subtle: #f5f5f7;
+  --border: #e5e5ea;
+  --border-strong: #d1d1d6;
+  --text: #0a0a0b;
+  --text-muted: #5a5a64;
+  --text-dim: #8a8a94;
+  --brand: #da2524;
+  --brand-hover: #b81e1d;
+  --amber: #f5a524;
+  --green: #1fa05a;
+  --orange: #f97316;
+  --orange-hover: #ea580c;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow: 0 1px 2px rgba(10, 10, 11, 0.04), 0 8px 24px rgba(10, 10, 11, 0.06);
+  --shadow-lg: 0 4px 12px rgba(10, 10, 11, 0.06), 0 20px 40px rgba(10, 10, 11, 0.08);
+
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'ss01', 'cv11';
+}
+
+.skc-sell * { box-sizing: border-box; }
+.skc-sell html { scroll-behavior: smooth; }
+
+.skc-sell .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+/* ============ TOP BAR ============ */
+.skc-sell .topbar {
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.skc-sell .topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 32px; }
+.skc-sell .logo { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.skc-sell .topbar-logo { height: 36px; width: auto; display: block; }
+.skc-sell .topbar-right { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
+.skc-sell .topbar-trust {
+  font-size: 13px; color: var(--text-muted);
+  display: flex; align-items: center; gap: 8px;
+  white-space: nowrap;
+}
+.skc-sell .topbar-trust strong { color: var(--text); font-weight: 700; }
+
+/* Phone treatment — elevated to match the rest of the design system.
+   Subtle red-tinted pill with a filled call icon, hover deepens the
+   tint. Reads as a tactile button rather than naked link text. */
+.skc-sell .topbar-phone {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-weight: 700; font-size: 14px; color: var(--brand);
+  text-decoration: none;
+  padding: 8px 14px;
+  background: rgba(218, 37, 36, 0.07);
+  border: 1px solid rgba(218, 37, 36, 0.20);
+  border-radius: 999px;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.skc-sell .topbar-phone:hover {
+  background: rgba(218, 37, 36, 0.13);
+  border-color: rgba(218, 37, 36, 0.32);
+}
+.skc-sell .topbar-phone .material-symbols-outlined {
+  font-size: 16px;
+  font-variation-settings: 'FILL' 1, 'wght' 600;
+}
+.skc-sell .nav-links {
+  display: flex; align-items: center; gap: 26px;
+  flex: 1; justify-content: flex-start; margin-left: 24px;
+}
+.skc-sell .nav-links a {
+  color: var(--text); font-weight: 600; font-size: 14px; text-decoration: none;
+  letter-spacing: -0.01em;
+  transition: color 0.15s;
+}
+.skc-sell .nav-links a:hover { color: var(--brand); }
+
+/* Sticky nav CTA — only visible when the form is scrolled out of view.
+   Same orange as the form's Continue button so users immediately know
+   what it does. */
+.skc-sell .nav-jump {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--orange); color: white !important;
+  padding: 9px 16px; border-radius: 999px;
+  font-weight: 800; font-size: 14px; letter-spacing: -0.01em;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(249, 115, 22, 0.35);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s;
+  opacity: 0; transform: translateY(-4px); pointer-events: none;
+}
+.skc-sell .nav-jump.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.skc-sell .nav-jump:hover { background: var(--orange-hover); }
+.skc-sell .nav-jump .material-symbols-outlined { font-size: 18px; }
+
+/* Mobile menu — collapses nav + trust badge + phone behind a hamburger
+   without dropping any of them. */
+.skc-sell .nav-toggle {
+  display: none;
+  appearance: none; background: transparent; border: none;
+  width: 40px; height: 40px; border-radius: 8px; cursor: pointer;
+  align-items: center; justify-content: center;
+  color: var(--text);
+}
+.skc-sell .nav-toggle:hover { background: var(--bg-subtle); }
+.skc-sell .nav-toggle .material-symbols-outlined { font-size: 26px; }
+.skc-sell .mobile-menu {
+  display: none;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0 16px;
+}
+.skc-sell .mobile-menu.open { display: block; }
+.skc-sell .mobile-menu .mobile-menu-inner {
+  max-width: 1200px; margin: 0 auto; padding: 0 24px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.skc-sell .mobile-menu a, .skc-sell .mobile-menu .mobile-trust {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 4px; border-radius: 8px;
+  color: var(--text); font-weight: 600; font-size: 15px;
+  text-decoration: none;
+}
+.skc-sell .mobile-menu a:hover { background: var(--bg-subtle); }
+.skc-sell .mobile-menu .mobile-phone { color: var(--brand); border-top: 1px solid var(--border); padding-top: 14px; margin-top: 6px; }
+.skc-sell .mobile-menu .mobile-trust {
+  color: var(--text-muted); font-weight: 500; font-size: 13px;
+  border-top: 1px solid var(--border); margin-top: 6px; padding-top: 14px;
+}
+.skc-sell .mobile-menu .mobile-trust strong { color: var(--text); font-weight: 600; }
+.skc-sell .mobile-menu .mobile-trust .stars { color: var(--amber); letter-spacing: 2px; }
+
+/* ============ HERO ============ */
+.skc-sell .hero { padding: 32px 0 56px; position: relative; overflow: hidden; isolation: isolate; }
+.skc-sell .hero::before {
+  content: ""; position: absolute; inset: 0;
+  background-image: url('/kc-skyline.jpg');
+  background-size: cover; background-position: center 35%; background-repeat: no-repeat;
+  filter: saturate(1.12) contrast(1.08);
+  z-index: -2;
+}
+.skc-sell .hero::after {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 900px 500px at 15% 20%, rgba(218, 37, 36, 0.08), transparent 60%),
+    linear-gradient(90deg,
+      rgba(255, 255, 255, 0.90) 0%,
+      rgba(255, 255, 255, 0.80) 35%,
+      rgba(255, 255, 255, 0.50) 60%,
+      rgba(255, 255, 255, 0.25) 80%,
+      rgba(255, 255, 255, 0.20) 100%),
+    linear-gradient(180deg,
+      transparent 0%,
+      transparent 55%,
+      rgba(255, 255, 255, 0.85) 92%,
+      #ffffff 100%);
+  z-index: -1;
+}
+.skc-sell .hero > .container { position: relative; z-index: 1; }
+.skc-sell .hero-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: start; }
+.skc-sell .hero-form { order: 0; }
+.skc-sell .hero-copy { order: 0; }
+
+.skc-sell .hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 999px;
+  background: rgba(218, 37, 36, 0.12); border: 1px solid rgba(218, 37, 36, 0.3);
+  color: var(--brand); font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 20px;
+}
+.skc-sell .hero-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 4px rgba(218, 37, 36, 0.2); }
+
+.skc-sell .hero h1 { font-size: 52px; line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; margin-bottom: 20px; }
+.skc-sell .hero h1 .accent { color: var(--brand); }
+.skc-sell .hero .sub { font-size: 19px; color: var(--text-muted); line-height: 1.55; margin-bottom: 28px; max-width: 540px; }
+
+.skc-sell .hero-bullets { list-style: none; display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; padding: 0; }
+.skc-sell .hero-bullets li { display: flex; align-items: flex-start; gap: 12px; font-size: 15px; color: var(--text); }
+.skc-sell .hero-bullets .check {
+  flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(31, 160, 90, 0.12); color: var(--green);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800;
+  margin-top: 1px;
+}
+.skc-sell .hero-bullets strong { color: var(--text); font-weight: 600; }
+
+.skc-sell .hero-trust-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.skc-sell .stars { color: var(--amber); font-size: 16px; letter-spacing: 2px; }
+.skc-sell .trust-text { font-size: 13px; color: var(--text-muted); }
+.skc-sell .trust-text strong { color: var(--text); }
+
+/* ============ TOOL CARD ============ */
+.skc-sell .tool-card {
+  background: var(--bg-card); border: 2px solid rgba(218, 37, 36, 0.35);
+  border-radius: var(--radius-lg); padding: 24px;
+  box-shadow: 0 10px 25px rgba(218, 37, 36, 0.10), 0 30px 60px rgba(10, 10, 11, 0.10);
+  position: relative;
+}
+.skc-sell .tool-card::before {
+  content: ""; position: absolute; inset: -2px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(218, 37, 36, 0.22), transparent 60%);
+  z-index: -1; opacity: 1;
+}
+.skc-sell .tool-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(245, 165, 36, 0.12); color: var(--amber);
+  padding: 4px 10px; border-radius: 6px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 14px;
+}
+.skc-sell .tool-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--orange); color: white;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase;
+  padding: 5px 12px; border-radius: 999px;
+  margin-bottom: 10px;
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+}
+.skc-sell .tool-eyebrow .material-symbols-outlined {
+  font-size: 14px; font-variation-settings: 'FILL' 1, 'wght' 800;
+}
+.skc-sell .tool-card h2 { font-size: 26px; line-height: 1.12; margin-bottom: 8px; letter-spacing: -0.025em; font-weight: 800; }
+.skc-sell .tool-card .tool-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.45; }
+
+.skc-sell .step-indicator {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+}
+.skc-sell .step-pill {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--orange); color: white;
+  padding: 6px 14px 6px 6px; border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(249, 115, 22, 0.28);
+}
+.skc-sell .step-pill .step-num-circle {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(255,255,255,0.2); color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 14px;
+}
+.skc-sell .step-pill .step-num-text { font-weight: 700; font-size: 13px; letter-spacing: 0.02em; }
+.skc-sell .step-track {
+  flex: 1; height: 6px; border-radius: 999px;
+  background: var(--border); overflow: hidden;
+  position: relative;
+}
+.skc-sell .step-track-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: linear-gradient(90deg, var(--orange) 0%, #f5a524 100%);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.skc-sell .step-label { font-size: 12px; color: var(--text-dim); font-weight: 500; margin-bottom: 10px; }
+
+.skc-sell .form-field { margin-bottom: 10px; }
+.skc-sell .form-field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+/* Two-column row for compact step-3 layout (name + phone side by side).
+   Stays 2-col even on small phones so the form fits above the fold. */
+.skc-sell .form-row-2 {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin-bottom: 10px;
+}
+.skc-sell .form-row-2 .form-field { margin-bottom: 0; }
+.skc-sell .form-field-prominent { margin-bottom: 12px; }
+.skc-sell .form-field-prominent > label,
+.skc-sell .form-field-prominent .field-label {
+  display: block;
+  font-size: 16px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 8px;
+}
+/* Light color-scheme on the LP wrapper undoes the browser-level dark
+   form-control rendering inherited from the CRM's <html class="dark"> /
+   <body class="ck-dark"> chain. */
+.skc-sell { color-scheme: light; }
+
+/* High-contrast inputs — matched specificity to beat the CRM's
+   `.ck-dark input:not([type="checkbox"]):not([type="radio"])` rule.
+   Same number of selectors so source order wins (our rule is loaded
+   after globals.css). */
+.skc-sell .form-field input:not([type="checkbox"]):not([type="radio"]),
+.skc-sell .form-field select,
+.skc-sell .form-field textarea {
+  width: 100%; padding: 11px 13px; font-size: 15px;
+  background-color: #ffffff !important; color: #0a0a0b !important;
+  border: 1.5px solid #c8c8d0 !important;
+  border-radius: 10px;
+  font-family: inherit;
+  -webkit-text-fill-color: #0a0a0b !important;
+  color-scheme: light !important;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.skc-sell .form-field input:not([type="checkbox"]):not([type="radio"]):focus,
+.skc-sell .form-field select:focus,
+.skc-sell .form-field textarea:focus {
+  outline: none; border-color: var(--brand) !important; background-color: #ffffff !important;
+  box-shadow: 0 0 0 3px rgba(218, 37, 36, 0.15);
+}
+.skc-sell .form-field input::placeholder,
+.skc-sell .form-field textarea::placeholder {
+  color: #6b6b76 !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: #6b6b76 !important;
+}
+.skc-sell .form-field input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 100px #ffffff inset !important;
+  -webkit-text-fill-color: #0a0a0b !important;
+}
+
+.skc-sell .radio-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.skc-sell .radio-group.three-col { grid-template-columns: 1fr 1fr 1fr; }
+.skc-sell .radio-tile {
+  padding: 14px 12px; border: 1px solid var(--border);
+  border-radius: 10px; cursor: pointer; font-size: 13px;
+  color: var(--text-muted); text-align: center;
+  background: var(--bg-subtle);
+  transition: all 0.15s;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  font-family: inherit; font-weight: 500;
+  appearance: none; outline: none;
+  line-height: 1.3;
+}
+.skc-sell .radio-tile .material-symbols-outlined {
+  font-size: 22px; color: var(--brand);
+  font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+}
+.skc-sell .radio-tile:hover { border-color: var(--text-dim); color: var(--text); background: var(--bg); }
+.skc-sell .radio-tile.selected { border-color: var(--brand); background: rgba(218, 37, 36, 0.08); color: var(--text); }
+.skc-sell .radio-tile.selected .material-symbols-outlined {
+  font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 24;
+}
+.skc-sell .radio-tile input { display: none; }
+
+/* Continue button — brand red. The form action. Orange is reserved
+   for accent pills (Start Here, step indicator, nav-jump). */
+.skc-sell .btn-continue {
+  width: 100%; padding: 16px 24px;
+  background: var(--brand); color: white;
+  font-weight: 800; font-size: 17px; letter-spacing: -0.015em;
+  border: none; border-radius: 12px;
+  cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  box-shadow: 0 8px 22px rgba(218, 37, 36, 0.35);
+  transition: background 0.15s, transform 0.05s, box-shadow 0.2s;
+  animation: skc-pulse 2.4s ease-in-out infinite;
+}
+.skc-sell .btn-continue:hover { background: var(--brand-hover); box-shadow: 0 10px 28px rgba(218, 37, 36, 0.45); }
+.skc-sell .btn-continue:active { transform: scale(0.99); }
+.skc-sell .btn-continue[disabled] { opacity: 0.7; cursor: not-allowed; animation: none; }
+.skc-sell .btn-continue .material-symbols-outlined { font-size: 22px; font-variation-settings: 'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 24; }
+
+/* The ONLY non-Continue button style on the page. Filled charcoal so it
+   reads as "secondary action" against the red Continue button. On dark
+   surfaces (mid-cta) it picks up a white border so it stays visible. */
+.skc-sell .btn-secondary {
+  padding: 15px 26px; background: #0f0f12; color: #fff;
+  font-weight: 700; font-size: 15px; letter-spacing: -0.01em;
+  border: 1px solid #0f0f12; border-radius: 10px; cursor: pointer;
+  font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.skc-sell .btn-secondary:hover { background: #1f1f24; border-color: #1f1f24; }
+.skc-sell .btn-secondary.lg { padding: 17px 32px; font-size: 16px; }
+.skc-sell .btn-secondary .material-symbols-outlined { font-size: 18px; }
+
+/* On the dark mid-CTA surface, button is the same charcoal fill but gets a
+   white-line border so it stays visible against the near-black background. */
+.skc-sell .mid-cta .btn-secondary {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.25);
+}
+.skc-sell .mid-cta .btn-secondary:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.4);
+}
+
+@keyframes skc-pulse {
+  0%, 100% { box-shadow: 0 8px 22px rgba(218, 37, 36, 0.35); }
+  50% { box-shadow: 0 8px 22px rgba(218, 37, 36, 0.55), 0 0 0 6px rgba(218, 37, 36, 0.10); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skc-sell .btn-continue { animation: none; }
+}
+
+.skc-sell .form-footer { margin-top: 14px; font-size: 12px; color: var(--text-dim); text-align: center; }
+.skc-sell .form-footer .lock { display: inline-block; margin-right: 4px; }
+
+/* ============ SECTION SHARED ============ */
+.skc-sell section.block { padding: 80px 0; border-top: 1px solid var(--border); }
+.skc-sell .section-eyebrow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--brand); margin-bottom: 12px; text-align: center; }
+.skc-sell .section-title { font-size: 38px; line-height: 1.1; letter-spacing: -0.02em; font-weight: 800; text-align: center; margin-bottom: 16px; }
+.skc-sell .section-sub { font-size: 17px; color: var(--text-muted); text-align: center; max-width: 640px; margin: 0 auto 48px; line-height: 1.55; }
+
+/* ============ TRANSFORMATION (3 STEPS) ============ */
+.skc-sell .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; position: relative; }
+.skc-sell .steps-grid::before {
+  content: ""; position: absolute; top: 36px; left: 16.66%; right: 16.66%;
+  height: 2px; background: linear-gradient(90deg, var(--border), var(--brand), var(--border));
+  z-index: 0;
+}
+.skc-sell .step {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px;
+  text-align: center; position: relative; z-index: 1;
+}
+.skc-sell .step-icon {
+  width: 72px; height: 72px; border-radius: 16px;
+  background: linear-gradient(135deg, rgba(218, 37, 36, 0.15), rgba(245, 165, 36, 0.1));
+  border: 1px solid rgba(218, 37, 36, 0.25);
+  margin: 0 auto 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px;
+}
+.skc-sell .step-num { font-size: 12px; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+.skc-sell .step h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; letter-spacing: -0.01em; }
+.skc-sell .step p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+
+/* ============ SITUATIONS ============ */
+.skc-sell .situations-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.skc-sell .sit-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px;
+  transition: border-color 0.15s, transform 0.15s;
+  cursor: pointer; text-decoration: none; color: inherit;
+  display: block;
+}
+.skc-sell .sit-card:hover { border-color: var(--brand); transform: translateY(-2px); }
+.skc-sell .sit-icon {
+  width: 48px; height: 48px; border-radius: 10px;
+  background: rgba(218, 37, 36, 0.1); color: var(--brand);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; margin-bottom: 16px;
+}
+.skc-sell .sit-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.01em; }
+.skc-sell .sit-card p { font-size: 14px; color: var(--text-muted); line-height: 1.55; margin-bottom: 14px; }
+.skc-sell .sit-link { font-size: 13px; font-weight: 600; color: var(--brand); }
+.skc-sell .sit-link::after { content: " →"; }
+
+/* ============ MID CTA ============ */
+.skc-sell .mid-cta {
+  background: linear-gradient(135deg, #1a1a1f 0%, #0a0a0b 100%);
+  border: 1px solid #1a1a1f;
+  border-radius: 18px;
+  padding: 48px;
+  display: grid; grid-template-columns: 1.4fr 1fr; gap: 40px; align-items: center;
+  position: relative; overflow: hidden;
+  color: #f5f5f7;
+  box-shadow: var(--shadow-lg);
+}
+.skc-sell .mid-cta::before {
+  content: ""; position: absolute; top: -50%; right: -10%; width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(218, 37, 36, 0.25), transparent 60%);
+  z-index: 0;
+}
+.skc-sell .mid-cta-content { position: relative; z-index: 1; }
+.skc-sell .mid-cta h2 { font-size: 32px; line-height: 1.15; letter-spacing: -0.02em; font-weight: 800; margin-bottom: 14px; color: #ffffff; }
+.skc-sell .mid-cta h2 .accent { color: var(--brand); }
+.skc-sell .mid-cta p { font-size: 16px; color: #b8b8c0; margin-bottom: 24px; line-height: 1.55; }
+.skc-sell .mid-cta-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.skc-sell .btn-secondary {
+  padding: 14px 22px; background: transparent; color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: 10px;
+  font-weight: 600; font-size: 14px; cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.skc-sell .btn-secondary:hover { border-color: var(--text-muted); }
+.skc-sell .mid-cta .btn-secondary { color: #ffffff; border-color: rgba(255, 255, 255, 0.2); }
+.skc-sell .mid-cta .btn-secondary:hover { border-color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.05); }
+.skc-sell .mid-cta-stat { position: relative; z-index: 1; }
+.skc-sell .stat-box {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(10, 10, 11, 0.04);
+}
+.skc-sell .mid-cta .stat-box {
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: none; backdrop-filter: blur(8px);
+}
+.skc-sell .mid-cta .stat-box .label { color: #b8b8c0; }
+.skc-sell .stat-box .num { font-size: 36px; font-weight: 800; color: var(--brand); letter-spacing: -0.02em; line-height: 1; }
+.skc-sell .stat-box .label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+/* ============ COUNTY GRID ============ */
+.skc-sell .county-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.skc-sell .county-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
+  display: flex; align-items: center; gap: 16px;
+}
+.skc-sell .county-flag {
+  width: 44px; height: 44px; border-radius: 8px;
+  background: rgba(218, 37, 36, 0.1); color: var(--brand);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 15px; flex-shrink: 0;
+}
+.skc-sell .county-card h4 { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+.skc-sell .county-card .state { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ============ SOCIAL PROOF ============ */
+.skc-sell .testimonials { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+.skc-sell .testimonial {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px;
+}
+.skc-sell .testimonial .stars { margin-bottom: 12px; }
+.skc-sell .testimonial-quote { font-size: 16px; color: var(--text); line-height: 1.6; margin-bottom: 20px; }
+.skc-sell .testimonial-author { display: flex; align-items: center; gap: 12px; }
+.skc-sell .author-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand), #c2323a);
+  color: white; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px;
+}
+.skc-sell .author-name { font-size: 14px; font-weight: 600; }
+.skc-sell .author-meta { font-size: 12px; color: var(--text-dim); }
+
+/* ============ FAQ ============ */
+.skc-sell .faq-list { max-width: 800px; margin: 0 auto; }
+.skc-sell .faq-item {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-card); margin-bottom: 12px;
+  overflow: hidden;
+}
+.skc-sell .faq-q {
+  width: 100%; padding: 18px 22px; background: none; border: none;
+  color: var(--text); font-size: 16px; font-weight: 600;
+  text-align: left; cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  font-family: inherit;
+}
+.skc-sell .faq-q .plus {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(218, 37, 36, 0.1); color: var(--brand);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; flex-shrink: 0; font-size: 16px;
+  transition: transform 0.2s;
+}
+.skc-sell .faq-item.open .plus { transform: rotate(45deg); }
+.skc-sell .faq-a {
+  max-height: 0; overflow: hidden; transition: max-height 0.25s ease-out;
+  padding: 0 22px;
+}
+.skc-sell .faq-item.open .faq-a {
+  max-height: 600px;
+  padding: 0 22px 20px;
+}
+.skc-sell .faq-a p { font-size: 15px; color: var(--text-muted); line-height: 1.65; }
+
+/* ============ FINAL CTA ============ */
+.skc-sell .final-cta {
+  background: linear-gradient(135deg, rgba(218, 37, 36, 0.12), rgba(245, 165, 36, 0.04));
+  border: 1px solid rgba(218, 37, 36, 0.25);
+  border-radius: 20px;
+  padding: 56px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.skc-sell .final-cta h2 { font-size: 42px; line-height: 1.1; letter-spacing: -0.03em; font-weight: 800; margin-bottom: 16px; }
+.skc-sell .final-cta h2 .accent { color: var(--brand); }
+.skc-sell .final-cta p { font-size: 18px; color: var(--text-muted); margin: 0 auto 32px; max-width: 600px; }
+.skc-sell .final-cta .btn-secondary { display: inline-flex; width: auto; padding: 17px 36px; font-size: 17px; }
+.skc-sell .final-cta .micro { font-size: 13px; color: var(--text-dim); margin-top: 16px; }
+
+/* ============ FOOTER ============ */
+.skc-sell .site-footer {
+  border-top: 1px solid var(--border);
+  padding: 40px 0 32px; margin-top: 60px;
+  color: var(--text-dim); font-size: 13px;
+}
+.skc-sell .footer-inner { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; }
+.skc-sell .footer-links { display: flex; gap: 20px; }
+.skc-sell .footer-links a { color: var(--text-muted); text-decoration: none; }
+.skc-sell .footer-links a:hover { color: var(--text); }
+
+/* ============ RESPONSIVE ============ */
+@media (max-width: 980px) {
+  .skc-sell .hero { padding: 20px 0 40px; }
+  .skc-sell .hero-grid { grid-template-columns: 1fr; gap: 32px; }
+  /* Form first on mobile so the START HERE pill is the first thing seen
+     above the fold, then the hero copy is below for the curious. */
+  .skc-sell .hero-form { order: -1; }
+  .skc-sell .hero-copy { order: 1; }
+  .skc-sell .hero h1 { font-size: 38px; }
+  .skc-sell .steps-grid { grid-template-columns: 1fr; gap: 16px; }
+  .skc-sell .steps-grid::before { display: none; }
+  .skc-sell .situations-grid { grid-template-columns: 1fr 1fr; }
+  .skc-sell .mid-cta { grid-template-columns: 1fr; padding: 36px; }
+  .skc-sell .mid-cta h2 { font-size: 26px; }
+  .skc-sell .county-grid { grid-template-columns: 1fr 1fr; }
+  .skc-sell .testimonials { grid-template-columns: 1fr; }
+  .skc-sell .final-cta { padding: 40px 24px; }
+  .skc-sell .final-cta h2 { font-size: 30px; }
+  .skc-sell .section-title { font-size: 28px; }
+  .skc-sell section.block { padding: 56px 0; }
+  .skc-sell .topbar-trust { display: none; }
+  .skc-sell .nav-links { display: none; }
+  .skc-sell .nav-toggle { display: inline-flex; }
+  .skc-sell .topbar-right .topbar-phone { display: none; }
+  .skc-sell .hero::before { background-image: url('/kc-skyline-mobile.jpg'); }
+}
+@media (max-width: 600px) {
+  .skc-sell .situations-grid { grid-template-columns: 1fr; }
+  .skc-sell .county-grid { grid-template-columns: 1fr; }
+  .skc-sell .radio-group { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .skc-sell .radio-group.three-col { grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .skc-sell .radio-tile { padding: 8px 6px; font-size: 11.5px; gap: 3px; }
+  .skc-sell .radio-tile .material-symbols-outlined { font-size: 17px; }
+  .skc-sell .tool-card { padding: 16px; }
+  .skc-sell .tool-card h2 { font-size: 21px; }
+  .skc-sell .tool-card .tool-sub { font-size: 12.5px; margin-bottom: 10px; line-height: 1.4; }
+  .skc-sell .form-field { margin-bottom: 8px; }
+  .skc-sell .form-field label { font-size: 12.5px; margin-bottom: 3px; }
+  .skc-sell .form-field-prominent { margin-bottom: 8px; }
+  .skc-sell .form-field-prominent > label,
+  .skc-sell .form-field-prominent .field-label { font-size: 13.5px; margin-bottom: 5px; }
+  .skc-sell .btn-continue { padding: 13px 18px; font-size: 15.5px; }
+  .skc-sell .footer-inner { flex-direction: column; text-align: center; }
+  /* Nav jump CTA shrinks on phones so it fits next to the hamburger */
+  .skc-sell .nav-jump { padding: 7px 12px; font-size: 12.5px; }
+}

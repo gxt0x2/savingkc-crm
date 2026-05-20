@@ -382,6 +382,24 @@ export interface ManifestV2 {
   dispositionTier?: number
   scoring?: ManifestScoring
   closing?: ManifestClosing
+  acquisition?: ManifestAcquisition
+}
+
+export interface ManifestAcquisition {
+  source?: string
+  channel?: string
+  subChannel?: string
+  attribution?: {
+    utm_source?: string
+    utm_medium?: string
+    utm_campaign?: string
+    utm_term?: string
+    utm_content?: string
+    gclid?: string
+    referrer?: string
+    landingUrl?: string
+    capturedAt?: string
+  }
 }
 
 export interface BuildManifestInput {
