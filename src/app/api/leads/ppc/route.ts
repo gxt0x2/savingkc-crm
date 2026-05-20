@@ -104,6 +104,31 @@ function normalizePhone(phone: string): string {
   return `+${digits}`
 }
 
+async function findExistingPpcLeadId({
+  phone,
+  email,
+  address,
+}: {
+  phone: string
+  email: string
+  address?: string
+}): Promise<string | null> {
+  if (!address) return null
+
+  const { data } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('source', 'ppc-landing')
+    .eq('phone', phone)
+    .eq('email', email)
+    .eq('property_address', address)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  return data?.id ?? null
+}
+
 type PpcFormActivityInput = {
   leadId: string
   source: 'ppc_form_autosave' | 'ppc_form_submit'
@@ -246,6 +271,16 @@ export async function POST(req: NextRequest) {
         .select('id')
         .single()
       if (error || !inserted?.id) {
+        if (error?.code === '23505') {
+          leadId = await findExistingPpcLeadId({ phone: phoneE164, email, address })
+        }
+      }
+
+      if (!leadId && inserted?.id) {
+        leadId = inserted.id
+      }
+
+      if (!leadId) {
         // Graceful degrade: queue the lead offline so we don't lose it, then
         // return success to the user. The conversion event still fires
         // client-side, the homeowner gets the success state, and we recover
@@ -257,7 +292,6 @@ export async function POST(req: NextRequest) {
           { headers: corsHeaders },
         )
       }
-      leadId = inserted.id
     } else {
       // Upgrade the existing lead with the PPC source + any missing fields
       await supabase
