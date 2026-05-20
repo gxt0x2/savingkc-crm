@@ -431,7 +431,7 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                     <input
                       id="phone"
                       type="tel"
-                      placeholder={phoneDisplay}
+                      placeholder="(555) 123-4567"
                       autoComplete="tel"
                       value={state.phone}
                       onChange={(e) => select('phone', e.target.value)}

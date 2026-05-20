@@ -165,7 +165,7 @@
 /* ============ TOOL CARD ============ */
 .skc-sell .tool-card {
   background: var(--bg-card); border: 2px solid rgba(218, 37, 36, 0.35);
-  border-radius: var(--radius-lg); padding: 32px;
+  border-radius: var(--radius-lg); padding: 24px;
   box-shadow: 0 10px 25px rgba(218, 37, 36, 0.10), 0 30px 60px rgba(10, 10, 11, 0.10);
   position: relative;
 }
@@ -187,17 +187,17 @@
   background: var(--brand); color: white;
   font-size: 11px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase;
   padding: 5px 12px; border-radius: 999px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   box-shadow: 0 4px 12px rgba(218, 37, 36, 0.3);
 }
 .skc-sell .tool-eyebrow .material-symbols-outlined {
   font-size: 14px; font-variation-settings: 'FILL' 1, 'wght' 800;
 }
-.skc-sell .tool-card h2 { font-size: 30px; line-height: 1.12; margin-bottom: 10px; letter-spacing: -0.028em; font-weight: 800; }
-.skc-sell .tool-card .tool-sub { font-size: 15px; color: var(--text-muted); margin-bottom: 22px; line-height: 1.5; }
+.skc-sell .tool-card h2 { font-size: 26px; line-height: 1.12; margin-bottom: 8px; letter-spacing: -0.025em; font-weight: 800; }
+.skc-sell .tool-card .tool-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.45; }
 
 .skc-sell .step-indicator {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
 }
 .skc-sell .step-pill {
   display: flex; align-items: center; gap: 8px;
@@ -223,14 +223,15 @@
   border-radius: 999px;
   transition: width 0.3s ease;
 }
-.skc-sell .step-label { font-size: 12px; color: var(--text-dim); font-weight: 500; margin-bottom: 14px; }
+.skc-sell .step-label { font-size: 12px; color: var(--text-dim); font-weight: 500; margin-bottom: 10px; }
 
 .skc-sell .form-field { margin-bottom: 14px; }
 .skc-sell .form-field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
-.skc-sell .form-field-prominent { margin-bottom: 18px; }
+.skc-sell .form-field-prominent { margin-bottom: 12px; }
 .skc-sell .form-field-prominent > label,
 .skc-sell .form-field-prominent .field-label {
-  font-size: 17px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 10px;
+  display: block;
+  font-size: 16px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 8px;
 }
 /* Light color-scheme on the LP wrapper undoes the browser-level dark
    form-control rendering inherited from the CRM's <html class="dark"> /
@@ -568,6 +569,16 @@
 @media (max-width: 600px) {
   .skc-sell .situations-grid { grid-template-columns: 1fr; }
   .skc-sell .county-grid { grid-template-columns: 1fr; }
-  .skc-sell .radio-group { grid-template-columns: 1fr; }
+  /* Keep tiles in a tight 2-col grid on phones — single column is too tall
+     and pushes the Continue button below the fold on iPhone SE class. */
+  .skc-sell .radio-group { grid-template-columns: 1fr 1fr; }
+  .skc-sell .radio-group.three-col { grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .skc-sell .radio-tile { padding: 10px 8px; font-size: 12px; gap: 4px; }
+  .skc-sell .radio-tile .material-symbols-outlined { font-size: 18px; }
+  .skc-sell .tool-card { padding: 18px; }
+  .skc-sell .tool-card h2 { font-size: 22px; }
+  .skc-sell .tool-card .tool-sub { font-size: 13px; margin-bottom: 12px; }
+  .skc-sell .form-field-prominent > label,
+  .skc-sell .form-field-prominent .field-label { font-size: 14px; margin-bottom: 6px; }
   .skc-sell .footer-inner { flex-direction: column; text-align: center; }
 }
