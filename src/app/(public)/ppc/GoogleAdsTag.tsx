@@ -7,11 +7,12 @@ import Script from 'next/script'
  */
 export function GoogleAdsTag() {
   const id = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID
+  const tagOrigin = process.env.NEXT_PUBLIC_GOOGLE_TAG_ORIGIN ?? 'https://gtm.savingkc.com'
   if (!id) return null
   return (
     <>
       <Script
-        src={`https://www.googletagmanager.com/gtag/js?id=${id}`}
+        src={`${tagOrigin}/gtag/js?id=${id}`}
         strategy="afterInteractive"
       />
       <Script id="gads-bootstrap" strategy="afterInteractive">

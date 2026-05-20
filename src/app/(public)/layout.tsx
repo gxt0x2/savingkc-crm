@@ -8,6 +8,7 @@
 import Script from 'next/script'
 
 const GTM_ID = process.env.NEXT_PUBLIC_GTM_ID ?? 'GTM-MM68JH2'
+const GTM_ORIGIN = process.env.NEXT_PUBLIC_GTM_ORIGIN ?? 'https://gtm.savingkc.com'
 
 export default function PublicLayout({
   children,
@@ -23,14 +24,14 @@ export default function PublicLayout({
           (function(w,d,s,l,i){
             var f=d.getElementsByTagName(s)[0], j=d.createElement(s), dl=l!='dataLayer'?'&l='+l:'';
             j.async=true;
-            j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
+            j.src='${GTM_ORIGIN}/gtm.js?id='+i+dl;
             f.parentNode.insertBefore(j,f);
           })(window,document,'script','dataLayer','${GTM_ID}');
         `}
       </Script>
       <noscript>
         <iframe
-          src={`https://www.googletagmanager.com/ns.html?id=${GTM_ID}`}
+          src={`${GTM_ORIGIN}/ns.html?id=${GTM_ID}`}
           height="0"
           width="0"
           style={{ display: 'none', visibility: 'hidden' }}
