@@ -8,6 +8,7 @@ import {
   parseCallDurationSeconds,
   PPC_TRACKING_PHONE_DIGITS,
 } from '@/lib/call-quality-events'
+import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 
 /**
  * Twilio status callback receiver for browser-initiated outbound calls.
@@ -53,37 +54,67 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
         if (existing && existing.length > 0) continue
       }
 
-      const { error } = await input.supabase.from('lead_activities').insert({
-        lead_id: input.leadId,
-        activity_type: 'status_change',
-        description: `Call quality milestone: ${milestone.label}`,
-        agent: input.identity || 'System',
-        metadata: {
-          source: 'call_quality_milestone',
-          event: milestone.event,
-          event_type: 'call_quality',
-          optimization_role: 'secondary',
-          conversion_value: milestone.conversionValue,
-          currency: 'USD',
-          threshold_seconds: milestone.seconds,
-          duration: input.duration,
-          outcome: 'connected',
-          direction: 'outbound',
-          from: input.from,
-          to: input.to,
-          callSid: input.callSid,
-          parentCallSid: input.parentCallSid,
-          dedupeKey,
-          identity: input.identity,
-          ...(isPpcCall && {
-            traffic_source: 'google_ads',
-            campaign: 'Search 2026',
-            tracking_number: PPC_TRACKING_PHONE_DIGITS,
-          }),
-        },
-      })
+      const metadata = {
+        source: 'call_quality_milestone',
+        event: milestone.event,
+        event_type: 'call_quality',
+        optimization_role: 'secondary',
+        conversion_value: milestone.conversionValue,
+        currency: 'USD',
+        threshold_seconds: milestone.seconds,
+        duration: input.duration,
+        outcome: 'connected',
+        direction: 'outbound',
+        from: input.from,
+        to: input.to,
+        callSid: input.callSid,
+        parentCallSid: input.parentCallSid,
+        dedupeKey,
+        identity: input.identity,
+        ...(isPpcCall && {
+          traffic_source: 'google_ads',
+          campaign: 'Search 2026',
+          tracking_number: PPC_TRACKING_PHONE_DIGITS,
+        }),
+      }
 
-      if (error) console.error('[twilio-call-status] Call quality milestone insert failed:', error)
+      const { data: activity, error } = await input.supabase
+        .from('lead_activities')
+        .insert({
+          lead_id: input.leadId,
+          activity_type: 'status_change',
+          description: `Call quality milestone: ${milestone.label}`,
+          agent: input.identity || 'System',
+          metadata,
+        })
+        .select('id')
+        .single()
+
+      if (error) {
+        console.error('[twilio-call-status] Call quality milestone insert failed:', error)
+        continue
+      }
+
+      if (isPpcCall) {
+        await enqueuePpcConversion(
+          {
+            eventName: milestone.event,
+            eventCategory: 'call',
+            leadId: input.leadId,
+            activityId: activity?.id ?? null,
+            dedupeKey: `call:${dedupeKey || `${input.from}:${input.to}`}:${milestone.event}`,
+            optimizationRole: 'secondary',
+            conversionValue: milestone.conversionValue,
+            attribution: {
+              utm_source: 'google',
+              utm_medium: 'cpc',
+              utm_campaign: 'Search 2026',
+            },
+            payload: metadata,
+          },
+          input.supabase,
+        )
+      }
     } catch (error) {
       console.error('[twilio-call-status] Call quality milestone logging failed:', error)
     }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { updateManifestAndCascade } from '@/lib/manifest-sync'
+import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { supabase } from '@/lib/supabase-lazy'
 
 export const runtime = 'nodejs'
@@ -10,18 +11,9 @@ export const runtime = 'nodejs'
  *
  * Two responsibilities:
  *   1. Stamp the manifest with appointment details and advance the station.
- *   2. Fire the `appointment_booked` Google Ads conversion *server-side* using
- *      the stored `gclid`. Server-side is mandatory for the high-value event;
- *      client-side firing would drop offline-conversion attribution.
- *
- * The Google Ads Offline Conversions API requires:
- *   - GOOGLE_ADS_CUSTOMER_ID            (no dashes, no AW- prefix)
- *   - GOOGLE_ADS_CONVERSION_ACTION_ID   (numeric ID of the appointment_booked action)
- *   - GOOGLE_ADS_DEVELOPER_TOKEN
- *   - GOOGLE_ADS_OAUTH_REFRESH_TOKEN    (or service account)
- *
- * Until those are provisioned, the conversion fire is logged and queued for
- * retry. The manifest write happens regardless so the rest of the CRM works.
+ *   2. Queue the `appointment_booked` Google Ads conversion server-side using
+ *      the stored attribution. Server-side is mandatory for the high-value
+ *      event; client-side firing would drop offline-conversion attribution.
  */
 
 const BodySchema = z.object({
@@ -68,7 +60,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'No manifest or lead identifier' }, { status: 400 })
   }
 
-  let gclid: string | undefined
+  let attribution: Record<string, unknown> = {}
   try {
     await updateManifestAndCascade(
       leadId,
@@ -80,7 +72,10 @@ export async function POST(req: NextRequest) {
           scheduledDate: parsed.scheduledAt?.slice(0, 10),
           scheduledTime: parsed.scheduledTime ?? parsed.scheduledAt?.slice(11, 16),
         }
-        gclid = m.acquisition?.attribution?.gclid
+        const manifestAttribution = m.acquisition?.attribution
+        if (manifestAttribution && typeof manifestAttribution === 'object' && !Array.isArray(manifestAttribution)) {
+          attribution = manifestAttribution as Record<string, unknown>
+        }
       },
       'ppc-landing-book',
     )
@@ -89,34 +84,45 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Cascade failed' }, { status: 500 })
   }
 
-  // Fire the server-side Google Ads conversion. This is intentionally a stub
-  // until the Google Ads OAuth credentials are provisioned — we log so the
-  // operator can see what would have fired.
-  await fireServerSideAppointmentConversion({ leadId, manifestId: manifestId ?? null, gclid })
+  await queueAppointmentBookedConversion({
+    leadId,
+    manifestId: manifestId ?? null,
+    bookingId: parsed.bookingId,
+    scheduledAt: parsed.scheduledAt,
+    scheduledTime: parsed.scheduledTime,
+    attendeeEmail: parsed.attendeeEmail,
+    attendeePhone: parsed.attendeePhone,
+    attribution,
+  })
 
   return NextResponse.json({ ok: true, leadId, manifestId: manifestId ?? null })
 }
 
-async function fireServerSideAppointmentConversion(params: {
+async function queueAppointmentBookedConversion(params: {
   leadId: string
   manifestId: string | null
-  gclid: string | undefined
+  bookingId?: string
+  scheduledAt?: string
+  scheduledTime?: string
+  attendeeEmail?: string
+  attendeePhone?: string
+  attribution: Record<string, unknown>
 }): Promise<void> {
-  const customerId = process.env.GOOGLE_ADS_CUSTOMER_ID
-  const actionId = process.env.GOOGLE_ADS_CONVERSION_ACTION_ID
-  if (!customerId || !actionId || !params.gclid) {
-    console.log('[ppc/book] appointment_booked conversion deferred (missing config or gclid)', params)
-    return
-  }
-
-  // TODO: replace with real Google Ads Offline Conversions API call.
-  // For now we log the payload that would be sent so it's easy to verify the
-  // wiring once credentials land.
-  console.log('[ppc/book] would fire appointment_booked', {
-    customerId,
-    actionId,
-    gclid: params.gclid,
+  await enqueuePpcConversion({
+    eventName: 'appointment_booked',
+    eventCategory: 'appointment',
+    leadId: params.leadId,
+    manifestId: params.manifestId,
+    dedupeKey: `lead:${params.leadId}:appointment_booked:${params.bookingId ?? params.manifestId ?? 'unknown'}`,
+    optimizationRole: 'primary',
     conversionValue: 100,
-    currencyCode: 'USD',
+    attribution: params.attribution,
+    payload: {
+      booking_id: params.bookingId ?? null,
+      scheduled_at: params.scheduledAt ?? null,
+      scheduled_time: params.scheduledTime ?? null,
+      attendee_email: params.attendeeEmail ?? null,
+      attendee_phone: params.attendeePhone ?? null,
+    },
   })
 }

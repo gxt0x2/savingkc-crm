@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { mkdir, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
+import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { supabase } from '@/lib/supabase-lazy'
 
 export const runtime = 'nodejs'
@@ -139,7 +140,7 @@ type PpcFormActivityInput = {
   attribution: z.infer<typeof AttributionSchema>
 }
 
-async function upsertPpcFormActivity(input: PpcFormActivityInput): Promise<void> {
+async function upsertPpcFormActivity(input: PpcFormActivityInput): Promise<string | null> {
   const metadata = {
     source: input.source,
     form_status: input.formStatus,
@@ -158,23 +159,34 @@ async function upsertPpcFormActivity(input: PpcFormActivityInput): Promise<void>
     .maybeSingle()
 
   if (existing?.id) {
-    await supabase
+    const { data: updated, error } = await supabase
       .from('lead_activities')
       .update({
         description: input.description,
         metadata,
       })
       .eq('id', existing.id)
-    return
+      .select('id')
+      .maybeSingle()
+
+    if (error) console.error('[ppc/lead] activity update failed', error)
+    return updated?.id ?? existing.id
   }
 
-  await supabase.from('lead_activities').insert({
-    lead_id: input.leadId,
-    activity_type: 'status_change',
-    description: input.description,
-    agent: 'System',
-    metadata,
-  })
+  const { data, error } = await supabase
+    .from('lead_activities')
+    .insert({
+      lead_id: input.leadId,
+      activity_type: 'status_change',
+      description: input.description,
+      agent: 'System',
+      metadata,
+    })
+    .select('id')
+    .single()
+
+  if (error) console.error('[ppc/lead] activity insert failed', error)
+  return data?.id ?? null
 }
 
 const corsHeaders = {
@@ -364,7 +376,7 @@ export async function POST(req: NextRequest) {
     )
 
     if (intent === 'autosave') {
-      await upsertPpcFormActivity({
+      const activityId = await upsertPpcFormActivity({
         leadId: resolvedLeadId,
         source: 'ppc_form_autosave',
         description: 'PPC form reached step 3 with all required fields filled; submit was not pressed yet.',
@@ -372,6 +384,24 @@ export async function POST(req: NextRequest) {
         step: 3,
         address,
         attribution,
+      })
+
+      await enqueuePpcConversion({
+        eventName: 'lead_stage3_completed',
+        eventCategory: 'form',
+        leadId: resolvedLeadId,
+        manifestId,
+        activityId,
+        dedupeKey: `lead:${resolvedLeadId}:lead_stage3_completed`,
+        optimizationRole: 'secondary',
+        conversionValue: 10,
+        attribution,
+        payload: {
+          form_status: 'stage_3_complete_no_submit',
+          form_submitted: false,
+          step: 3,
+          address: address ?? null,
+        },
       })
 
       return NextResponse.json({
@@ -383,7 +413,7 @@ export async function POST(req: NextRequest) {
       }, { headers: corsHeaders })
     }
 
-    await upsertPpcFormActivity({
+    const activityId = await upsertPpcFormActivity({
       leadId: resolvedLeadId,
       source: 'ppc_form_submit',
       description: 'PPC form submitted.',
@@ -391,6 +421,24 @@ export async function POST(req: NextRequest) {
       step: 3,
       address,
       attribution,
+    })
+
+    await enqueuePpcConversion({
+      eventName: 'lead_submitted',
+      eventCategory: 'form',
+      leadId: resolvedLeadId,
+      manifestId,
+      activityId,
+      dedupeKey: `lead:${resolvedLeadId}:lead_submitted`,
+      optimizationRole: 'primary',
+      conversionValue: 25,
+      attribution,
+      payload: {
+        form_status: 'submitted',
+        form_submitted: true,
+        step: 3,
+        address: address ?? null,
+      },
     })
 
     return NextResponse.json({ ok: true, manifestId, leadId: resolvedLeadId }, { headers: corsHeaders })
