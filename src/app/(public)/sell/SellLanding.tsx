@@ -205,6 +205,14 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
             <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
           </nav>
           <div className="topbar-right">
+            <div className="topbar-trust">
+              <span className="stars">★★★★★</span>
+              <span><strong>100+</strong> KC homeowners helped</span>
+            </div>
+            <a href={`tel:${phoneTel}`} className="topbar-phone">
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
+              {phoneDisplay}
+            </a>
             <a
               href="#quiz"
               className={`nav-jump ${navJumpVisible ? 'visible' : ''}`}
@@ -214,14 +222,6 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
             >
               Get My Offer
               <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
-            </a>
-            <div className="topbar-trust">
-              <span className="stars">★★★★★</span>
-              <span><strong>100+</strong> KC homeowners helped</span>
-            </div>
-            <a href={`tel:${phoneTel}`} className="topbar-phone">
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
-              {phoneDisplay}
             </a>
             <button
               type="button"
