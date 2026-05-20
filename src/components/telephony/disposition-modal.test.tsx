@@ -21,9 +21,9 @@ describe('DispositionModal', () => {
     const html = renderModal()
 
     expect(html).toContain('grid grid-cols-2 xl:grid-cols-3')
-    expect(html).toContain('Answered')
-    expect(html).toContain('Spoke With Seller')
-    expect(html).toContain('Callback Requested')
+    expect(html).toContain('Contact')
+    expect(html).toContain('Not Contacted')
+    expect(html).toContain('Left Voicemail')
     expect(html).toContain('Save &amp; Next Lead')
   })
 
