@@ -8,7 +8,7 @@ import { usePushNotifications } from '@/hooks/use-push-notifications'
 // prompt — these are for unauthenticated visitors (Google Ads landers,
 // legal pages, etc.). /sell is a cold-prospect lander; asking to "Show
 // notifications" tanks the trust signal.
-const PUBLIC_ROUTE_PREFIXES = ['/sell', '/login', '/privacy', '/terms']
+const PUBLIC_ROUTE_PREFIXES = ['/ppc', '/login', '/privacy', '/terms']
 
 export function PushManager() {
   const pathname = usePathname()
