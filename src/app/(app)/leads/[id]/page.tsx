@@ -33,6 +33,7 @@ import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
+import { formatDurationBetween, isOutboundAttempt } from '@/lib/contact-display'
 
 type LeadTriageValue = 'opportunity' | 'lead' | 'dead'
 
@@ -1432,6 +1433,14 @@ export default function LeadDetailPage() {
     }
   })()
 
+  const firstOutboundAt = [...activities]
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .find((activity) => isOutboundAttempt(activity))
+    ?.created_at ?? null
+  const firstOutboundLabel = firstOutboundAt
+    ? formatDurationBetween(lead.created_at, firstOutboundAt)
+    : null
+
   const property = {
     address: lead.property_address || '--',
     city: lead.city || undefined,
@@ -1964,6 +1973,13 @@ export default function LeadDetailPage() {
             <span className="text-[color:var(--ck-text-dim)]">·</span>
             <span className="text-xs font-medium text-[color:var(--ck-text-muted)]">
               {lastActivityLabel}
+            </span>
+            <span className="text-[color:var(--ck-text-dim)]">·</span>
+            <span
+              className="text-xs font-medium text-[color:var(--ck-text-muted)]"
+              title="Time from CRM entry to first outbound call, text, or email"
+            >
+              First outbound {firstOutboundLabel ?? 'not yet'}
             </span>
             {ghostProtocolStatus && (
               <>
