@@ -13,6 +13,8 @@ export const runtime = 'nodejs'
 // easy to find without scratching around in /tmp.
 const QUEUE_DIR = join(process.env.HOME ?? '/tmp', 'savingkc-landing-preview')
 const QUEUE_FILE = join(QUEUE_DIR, 'ppc-leads-queue.jsonl')
+const CRM_LEAD_SOURCE = 'website_form'
+const PPC_SOURCE = 'ppc-landing'
 
 async function queueLeadOffline(payload: unknown, error: unknown): Promise<void> {
   try {
@@ -188,7 +190,7 @@ export async function POST(req: NextRequest) {
           property_address: address ?? null,
           phone: phoneE164,
           email,
-          source: 'ppc-landing',
+          source: CRM_LEAD_SOURCE,
           station: 'new',
           priority: ppcPriority,
           ...(cityState.city ? { city: cityState.city } : {}),
@@ -214,7 +216,7 @@ export async function POST(req: NextRequest) {
       await supabase
         .from('leads')
         .update({
-          source: 'ppc-landing',
+          source: CRM_LEAD_SOURCE,
           full_name: fullName,
           phone: phoneE164,
           email,
@@ -240,8 +242,8 @@ export async function POST(req: NextRequest) {
     await updateManifestAndCascade(
       resolvedLeadId,
       (m) => {
-        m.source = 'ppc-landing'
-        m.leadSource = 'ppc-landing'
+        m.source = PPC_SOURCE
+        m.leadSource = PPC_SOURCE
         m.priority = ppcPriority
         if (situation) {
           const tag = SITUATION_TO_TAG[situation]
@@ -270,7 +272,7 @@ export async function POST(req: NextRequest) {
         }
         m.owner.fullName = fullName
         m.acquisition = {
-          source: 'ppc-landing',
+          source: PPC_SOURCE,
           channel: 'google-ads',
           attribution: {
             ...(attribution ?? {}),
@@ -278,7 +280,7 @@ export async function POST(req: NextRequest) {
           },
         }
       },
-      'ppc-landing',
+      PPC_SOURCE,
     )
 
     return NextResponse.json({ ok: true, manifestId, leadId: resolvedLeadId }, { headers: corsHeaders })
