@@ -1,0 +1,47 @@
+name: PPC conversion export
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Export queued PPC conversions
+        env:
+          PPC_CONVERSION_EXPORT_SECRET: ${{ secrets.PPC_CONVERSION_EXPORT_SECRET }}
+          PPC_CONVERSION_EXPORT_URL: https://crm.savingkc.com/api/workers/ppc-conversion-export?limit=25
+        run: |
+          if [ -z "$PPC_CONVERSION_EXPORT_SECRET" ]; then
+            echo "PPC_CONVERSION_EXPORT_SECRET is not configured."
+            exit 1
+          fi
+
+          response="$(curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${PPC_CONVERSION_EXPORT_SECRET}" \
+            "${PPC_CONVERSION_EXPORT_URL}")"
+
+          RESPONSE="$response" node - <<'NODE'
+          const result = JSON.parse(process.env.RESPONSE || '{}')
+          console.log(JSON.stringify({
+            ok: result.ok,
+            configured: result.configured,
+            scanned: result.scanned,
+            claimed: result.claimed,
+            sent: result.sent,
+            skipped: result.skipped,
+            failed: result.failed,
+            pending: result.pending,
+            missingConfig: result.missingConfig,
+          }))
+          if (!result.ok || result.failed > 0 || (result.missingConfig || []).length > 0) {
+            process.exit(1)
+          }
+          NODE
