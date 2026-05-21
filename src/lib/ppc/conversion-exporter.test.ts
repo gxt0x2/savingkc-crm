@@ -113,6 +113,7 @@ describe('ppc conversion exporter', () => {
       {
         dryRun: true,
         env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape',
           PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
         },
       },
@@ -126,6 +127,7 @@ describe('ppc conversion exporter', () => {
       scanned: 1,
       claimed: 0,
       pending: 1,
+      missingConfig: [],
     })
     expect(store.listRows).toHaveBeenCalledOnce()
     expect(store.claimRows).not.toHaveBeenCalled()
@@ -146,6 +148,7 @@ describe('ppc conversion exporter', () => {
     const result = await runPpcConversionExport(
       {
         env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape',
           PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
         },
       },
@@ -159,6 +162,7 @@ describe('ppc conversion exporter', () => {
     const [url, init] = calls[0]
     expect(String(url)).toContain('https://gtm.savingkc.com/data')
     expect(String(url)).toContain('event_name=lead_submitted')
+    expect(init?.headers).toMatchObject({ Origin: 'https://savingkc.com' })
     expect(JSON.parse(String(init?.body))).toMatchObject({
       event_name: 'lead_submitted',
       event_id: 'outbox-1',
