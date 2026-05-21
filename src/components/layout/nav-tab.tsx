@@ -10,6 +10,7 @@ const acquisitionTabs = [
   { label: 'Contacts', href: '/contacts', icon: 'contacts' },
   { label: 'Calendar', href: '/calendar?department=acquisitions', icon: 'calendar_today' },
   { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },
+  { label: 'Ads', href: '/marketing', icon: 'monitoring' },
   { label: 'KPIs', href: '/dashboard', icon: 'insights' },
 ]
 
@@ -65,6 +66,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
       pathname?.startsWith('/leads')
     )) return true
     if (href === '/dialer' && pathname?.startsWith('/dialer')) return true
+    if (href === '/marketing' && pathname?.startsWith('/marketing')) return true
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
     if (href === '/calendar?view=agenda') return pathname?.startsWith('/calendar') && searchParams.get('view') === 'agenda'
     if (href.startsWith('/calendar')) {
