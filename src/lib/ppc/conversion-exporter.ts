@@ -113,6 +113,7 @@ type GoogleAdsConfig = {
 type StapeConfig = {
   endpoint: string
   previewHeader: string | null
+  origin: string
 }
 
 type GoogleAdsUploadPlan =
@@ -345,9 +346,29 @@ function readStapeConfig(env: Env): { config: StapeConfig | null; missing: strin
     config: {
       endpoint,
       previewHeader: readEnv(env, 'STAPE_SGTM_PREVIEW_HEADER'),
+      origin: readEnv(env, 'PPC_STAPE_ORIGIN') || 'https://savingkc.com',
     },
     missing: [],
   }
+}
+
+function readEnabledDestinations(env: Env): { destinations: Set<DestinationResult['destination']>; missing: string[] } {
+  const raw = readEnv(env, 'PPC_CONVERSION_EXPORT_DESTINATIONS')
+  if (!raw) return { destinations: new Set(['google_ads', 'stape']), missing: [] }
+
+  const values = raw
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+
+  const destinations = new Set<DestinationResult['destination']>()
+  for (const value of values) {
+    if (value === 'google_ads' || value === 'stape') destinations.add(value)
+  }
+
+  return destinations.size > 0
+    ? { destinations, missing: [] }
+    : { destinations, missing: ['PPC_CONVERSION_EXPORT_DESTINATIONS'] }
 }
 
 function toGoogleAdsDateTime(value: string | Date): string {
@@ -580,6 +601,7 @@ async function sendStapeEvent(
     method: 'POST',
     headers: cleanJsonRecord({
       'Content-Type': 'application/json',
+      'Origin': config.origin,
       'X-Gtm-Server-Preview': config.previewHeader ?? undefined,
     }) as HeadersInit,
     body: JSON.stringify({
@@ -653,9 +675,14 @@ export async function runPpcConversionExport(
   const batchSize = clampBatchSize(options.batchSize)
   const fetchFn = deps.fetch ?? fetch
 
-  const google = readGoogleAdsConfig(env)
-  const stape = readStapeConfig(env)
-  const missingConfig = [...google.missing, ...stape.missing]
+  const enabled = readEnabledDestinations(env)
+  const google = enabled.destinations.has('google_ads')
+    ? readGoogleAdsConfig(env)
+    : { config: null, missing: [] }
+  const stape = enabled.destinations.has('stape')
+    ? readStapeConfig(env)
+    : { config: null, missing: [] }
+  const missingConfig = [...enabled.missing, ...google.missing, ...stape.missing]
 
   if (!google.config && !stape.config) {
     return emptyExportResult({ dryRun, configured: false, missingConfig })
