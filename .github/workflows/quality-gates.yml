@@ -28,6 +28,11 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Unit coverage gate
+        run: |
+          npm run test:coverage
+          npm run gate:kpi-coverage
+
       - name: Build
         run: npm run build
 
