@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
+import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
 
 function getSupabase() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    getSupabaseUrl(),
+    getSupabaseAdminKey(),
+    { auth: { autoRefreshToken: false, persistSession: false } },
   )
 }
 

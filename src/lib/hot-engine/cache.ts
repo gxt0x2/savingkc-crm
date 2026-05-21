@@ -15,11 +15,13 @@ import { generateHotSignal, isSignalStale } from './ari-signal'
 import type { ManifestV2 } from '../manifest-builder'
 import type { HotOpportunityData } from '@/types/hot-opportunity'
 import { ACQUISITION_STAGES } from '@/types/pipeline'
+import { getSupabaseAdminKey, getSupabaseUrl } from '../supabase/env'
 
 function getSupabase() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    getSupabaseUrl(),
+    getSupabaseAdminKey(),
+    { auth: { autoRefreshToken: false, persistSession: false } },
   )
 }
 
