@@ -8,6 +8,15 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
+
+function getSupabase() {
+  return createClient(
+    getSupabaseUrl(),
+    getSupabaseAdminKey(),
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  )
+}
 
 // ============================================================================
 // TYPES
@@ -56,28 +65,36 @@ export interface BriefingEvent {
 export async function createBriefingEvent(
   event: BriefingEvent
 ): Promise<{ success: boolean; id?: string }> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const supabase = createClient(supabaseUrl, supabaseKey)
+  const supabase = getSupabase()
 
+  const row = {
+    event_type: event.event_type,
+    priority: event.priority,
+    title: event.title,
+    description: event.description,
+    lead_id: event.lead_id || null,
+    action_url: event.action_url || null,
+    metadata: event.metadata || {},
+    read: false,
+    dismissed: false,
+    created_at: new Date().toISOString(),
+  }
   const { data, error } = await supabase
     .from('ari_briefing_events')
-    .insert({
-      event_type: event.event_type,
-      priority: event.priority,
-      title: event.title,
-      description: event.description,
-      lead_id: event.lead_id || null,
-      action_url: event.action_url || null,
-      metadata: event.metadata || {},
-      read: false,
-      dismissed: false,
-      created_at: new Date().toISOString(),
-    })
+    .insert(row)
     .select('id')
     .single()
 
   if (error) {
+    if (error.code === 'PGRST204' && error.message?.includes("'metadata' column")) {
+      const { metadata: _metadata, ...rowWithoutMetadata } = row
+      const retry = await supabase
+        .from('ari_briefing_events')
+        .insert(rowWithoutMetadata)
+        .select('id')
+        .single()
+      if (!retry.error) return { success: true, id: retry.data.id }
+    }
     console.error('Failed to create briefing event:', error)
     return { success: false }
   }
@@ -91,26 +108,29 @@ export async function createBriefingEvent(
 export async function createBriefingEvents(
   events: BriefingEvent[]
 ): Promise<{ success: boolean; count: number }> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const supabase = createClient(supabaseUrl, supabaseKey)
+  const supabase = getSupabase()
 
-  const { error } = await supabase.from('ari_briefing_events').insert(
-    events.map((e) => ({
-      event_type: e.event_type,
-      priority: e.priority,
-      title: e.title,
-      description: e.description,
-      lead_id: e.lead_id || null,
-      action_url: e.action_url || null,
-      metadata: e.metadata || {},
-      read: false,
-      dismissed: false,
-      created_at: new Date().toISOString(),
-    }))
-  )
+  const rows = events.map((e) => ({
+    event_type: e.event_type,
+    priority: e.priority,
+    title: e.title,
+    description: e.description,
+    lead_id: e.lead_id || null,
+    action_url: e.action_url || null,
+    metadata: e.metadata || {},
+    read: false,
+    dismissed: false,
+    created_at: new Date().toISOString(),
+  }))
+  const { error } = await supabase.from('ari_briefing_events').insert(rows)
 
   if (error) {
+    if (error.code === 'PGRST204' && error.message?.includes("'metadata' column")) {
+      const retry = await supabase.from('ari_briefing_events').insert(
+        rows.map(({ metadata: _metadata, ...row }) => row),
+      )
+      if (!retry.error) return { success: true, count: events.length }
+    }
     console.error('Failed to create briefing events:', error)
     return { success: false, count: 0 }
   }
@@ -134,9 +154,7 @@ export async function getBriefingEvents(options: {
 }): Promise<BriefingEvent[]> {
   const { limit = 10, includeRead = false, includeDismissed = false } = options
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const supabase = createClient(supabaseUrl, supabaseKey)
+  const supabase = getSupabase()
 
   let query = supabase
     .from('ari_briefing_events')
@@ -257,9 +275,7 @@ async function getTcRiskBriefingEvents(supabase: SupabaseClient<any, 'public', a
 export async function getLeadBriefingEvents(
   leadId: string
 ): Promise<BriefingEvent[]> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const supabase = createClient(supabaseUrl, supabaseKey)
+  const supabase = getSupabase()
 
   const { data } = await supabase
     .from('ari_briefing_events')
@@ -277,9 +293,7 @@ export async function getLeadBriefingEvents(
 export async function markBriefingEventRead(
   eventId: string
 ): Promise<boolean> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const supabase = createClient(supabaseUrl, supabaseKey)
+  const supabase = getSupabase()
 
   const { error } = await supabase
     .from('ari_briefing_events')
@@ -293,9 +307,7 @@ export async function markBriefingEventRead(
  * Dismiss event
  */
 export async function dismissBriefingEvent(eventId: string): Promise<boolean> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const supabase = createClient(supabaseUrl, supabaseKey)
+  const supabase = getSupabase()
 
   const { error } = await supabase
     .from('ari_briefing_events')

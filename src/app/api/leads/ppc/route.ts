@@ -4,6 +4,10 @@ import { mkdir, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
+import { notifyNewLead } from '@/lib/ari-briefing'
+import { regenerateBriefing } from '@/lib/briefing-regen'
+import { sendPushToAgents } from '@/lib/push-notifications'
+import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 
 export const runtime = 'nodejs'
@@ -14,6 +18,8 @@ export const runtime = 'nodejs'
 // easy to find without scratching around in /tmp.
 const QUEUE_DIR = join(process.env.HOME ?? '/tmp', 'savingkc-landing-preview')
 const QUEUE_FILE = join(QUEUE_DIR, 'ppc-leads-queue.jsonl')
+const CRM_LEAD_SOURCE = 'website_form'
+const PPC_SOURCE = 'ppc-landing'
 
 async function queueLeadOffline(payload: unknown, error: unknown): Promise<void> {
   try {
@@ -91,6 +97,13 @@ const TIMELINE_TO_URGENCY: Record<z.infer<typeof TimelineSchema>, 'critical' | '
   exploring: 'low',
 }
 
+const TIMELINE_TO_PRIORITY: Record<z.infer<typeof TimelineSchema>, 'hot' | 'warm'> = {
+  asap: 'hot',
+  '60-days': 'warm',
+  flexible: 'warm',
+  exploring: 'warm',
+}
+
 const CONDITION_TO_OVERALL: Record<z.infer<typeof ConditionSchema>, 'good' | 'fair' | 'poor' | 'uninhabitable'> = {
   good: 'good',
   'needs-work': 'fair',
@@ -119,7 +132,7 @@ async function findExistingPpcLeadId({
   const { data } = await supabase
     .from('leads')
     .select('id')
-    .eq('source', 'ppc-landing')
+    .eq('source', CRM_LEAD_SOURCE)
     .eq('phone', phone)
     .eq('email', email)
     .eq('property_address', address)
@@ -195,6 +208,66 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 
+async function triggerPpcLeadSideEffects(params: {
+  leadId: string
+  fullName: string
+  address?: string
+  phone: string
+}) {
+  const leadUrl = `/leads/${params.leadId}`
+  const publicLeadUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}${leadUrl}`
+  const addressPart = params.address ? ` at ${params.address}` : ''
+  const alertBody = `New PPC lead: ${params.fullName}${addressPart}. Phone: ${params.phone}. ${publicLeadUrl}`
+  const targets = [
+    { name: 'Casey', phone: process.env.CASEY_PHONE },
+    { name: 'Ernest', phone: process.env.ERNEST_PHONE },
+  ].filter((target): target is { name: string; phone: string } => Boolean(target.phone))
+
+  const smsResults = process.env.TWILIO_PHONE_NUMBER && targets.length > 0
+    ? await Promise.allSettled(
+      targets.map((target) =>
+        safeSendSMS({
+          body: alertBody,
+          from: process.env.TWILIO_PHONE_NUMBER!,
+          to: target.phone,
+        }).then((result) => ({ target: target.name, result })),
+      ),
+    )
+    : []
+
+  await Promise.allSettled([
+    notifyNewLead(params.leadId, params.fullName, PPC_SOURCE),
+    sendPushToAgents({
+      title: 'New PPC lead',
+      body: `${params.fullName}${addressPart}`,
+      url: leadUrl,
+      tag: `ppc-lead-${params.leadId}`,
+    }),
+    regenerateBriefing(params.leadId, 'ppc_lead_submitted', true),
+  ])
+
+  await supabase.from('lead_activities').insert({
+    lead_id: params.leadId,
+    activity_type: 'sms',
+    description: alertBody,
+    agent: 'System',
+    metadata: {
+      direction: 'outbound_alert',
+      to_agents: targets.map((target) => target.name),
+      trigger: 'ppc_lead_alert',
+      delivery_status: smsResults.map((entry) => {
+        if (entry.status === 'rejected') return { success: false, error: entry.reason?.message || 'Unknown error' }
+        return {
+          target: entry.value.target,
+          success: entry.value.result.success,
+          sid: entry.value.result.sid,
+          error: entry.value.result.error,
+        }
+      }),
+    },
+  })
+}
+
 export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders })
 }
@@ -220,6 +293,7 @@ export async function POST(req: NextRequest) {
   const fullName = contact.name.trim()
   const phoneE164 = normalizePhone(contact.phone)
   const email = contact.email.trim().toLowerCase()
+  const ppcPriority = timeline ? TIMELINE_TO_PRIORITY[timeline] : 'warm'
 
   try {
     // Dedupe by phone -> email -> address (in that order)
@@ -272,9 +346,9 @@ export async function POST(req: NextRequest) {
           property_address: address ?? null,
           phone: phoneE164,
           email,
-          source: 'ppc-landing',
+          source: CRM_LEAD_SOURCE,
           station: 'new',
-          priority: timeline === 'asap' ? 'hot' : 'normal',
+          priority: ppcPriority,
           ...(cityState.city ? { city: cityState.city } : {}),
           ...(cityState.state ? { state: cityState.state } : {}),
           ...(cityState.zip ? { zip: cityState.zip } : {}),
@@ -293,15 +367,11 @@ export async function POST(req: NextRequest) {
       }
 
       if (!leadId) {
-        // Graceful degrade: queue the lead offline so we don't lose it, then
-        // return success to the user. The conversion event still fires
-        // client-side, the homeowner gets the success state, and we recover
-        // the lead from ppc-leads-queue.jsonl once Supabase keys are sorted.
         console.error('[ppc/lead] insert failed — queuing offline', error)
         await queueLeadOffline(parsed, error)
         return NextResponse.json(
-          { ok: true, queued: true, manifestId: null, leadId: null },
-          { headers: corsHeaders },
+          { ok: false, queued: true, error: 'Lead could not be saved. Please call us so we do not miss you.' },
+          { status: 503, headers: corsHeaders },
         )
       }
     } else {
@@ -309,7 +379,7 @@ export async function POST(req: NextRequest) {
       await supabase
         .from('leads')
         .update({
-          source: 'ppc-landing',
+          source: CRM_LEAD_SOURCE,
           full_name: fullName,
           phone: phoneE164,
           email,
@@ -335,8 +405,9 @@ export async function POST(req: NextRequest) {
     await updateManifestAndCascade(
       resolvedLeadId,
       (m) => {
-        m.source = 'ppc-landing'
-        m.leadSource = 'ppc-landing'
+        m.source = PPC_SOURCE
+        m.leadSource = PPC_SOURCE
+        m.priority = ppcPriority
         if (situation) {
           const tag = SITUATION_TO_TAG[situation]
           if (!m.situation.type) m.situation.type = []
@@ -364,7 +435,7 @@ export async function POST(req: NextRequest) {
         }
         m.owner.fullName = fullName
         m.acquisition = {
-          source: 'ppc-landing',
+          source: PPC_SOURCE,
           channel: 'google-ads',
           attribution: {
             ...(attribution ?? {}),
@@ -372,7 +443,7 @@ export async function POST(req: NextRequest) {
           },
         }
       },
-      'ppc-landing',
+      PPC_SOURCE,
     )
 
     if (intent === 'autosave') {
@@ -441,10 +512,20 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    triggerPpcLeadSideEffects({
+      leadId: resolvedLeadId,
+      fullName,
+      address,
+      phone: phoneE164,
+    }).catch((err) => console.error('[ppc/lead] side effects failed', err))
+
     return NextResponse.json({ ok: true, manifestId, leadId: resolvedLeadId }, { headers: corsHeaders })
   } catch (err) {
     console.error('[ppc/lead] unexpected error — queuing offline', err)
     await queueLeadOffline(parsed, err)
-    return NextResponse.json({ ok: true, queued: true, manifestId: null, leadId: null }, { headers: corsHeaders })
+    return NextResponse.json(
+      { ok: false, queued: true, error: 'Lead could not be saved. Please call us so we do not miss you.' },
+      { status: 500, headers: corsHeaders },
+    )
   }
 }

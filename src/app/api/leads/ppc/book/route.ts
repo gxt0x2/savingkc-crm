@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     await updateManifestAndCascade(
       leadId,
       (m) => {
-        m.currentStation = 'appointment-booked'
+        m.currentStation = 'appointment_set'
         m.priority = 'hot'
         m.booking = {
           ...(m.booking ?? {}),
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Cascade failed' }, { status: 500 })
   }
 
-  await queueAppointmentBookedConversion({
+  const conversion = await queueAppointmentBookedConversion({
     leadId,
     manifestId: manifestId ?? null,
     bookingId: parsed.bookingId,
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     attribution,
   })
 
-  return NextResponse.json({ ok: true, leadId, manifestId: manifestId ?? null })
+  return NextResponse.json({ ok: true, leadId, manifestId: manifestId ?? null, conversion })
 }
 
 async function queueAppointmentBookedConversion(params: {
@@ -107,8 +107,8 @@ async function queueAppointmentBookedConversion(params: {
   attendeeEmail?: string
   attendeePhone?: string
   attribution: Record<string, unknown>
-}): Promise<void> {
-  await enqueuePpcConversion({
+}) {
+  return enqueuePpcConversion({
     eventName: 'appointment_booked',
     eventCategory: 'appointment',
     leadId: params.leadId,

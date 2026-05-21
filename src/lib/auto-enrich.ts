@@ -16,11 +16,13 @@ import { enrichManifestProperty, scoreManifest } from './manifest-enrichment'
 import { updateManifestAndCascade } from './manifest-sync'
 import type { ManifestV2 } from './manifest-builder'
 import type { ProspectMatch } from './prospect-lookup'
+import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
 
 function getSupabase() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    getSupabaseUrl(),
+    getSupabaseAdminKey(),
+    { auth: { autoRefreshToken: false, persistSession: false } },
   )
 }
 

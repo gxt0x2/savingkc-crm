@@ -70,7 +70,9 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
   const [state, setState] = useState<QuizState>(EMPTY_STATE)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [bookingOpen, setBookingOpen] = useState(false)
   const [manifestId, setManifestId] = useState<string | null>(null)
+  const [leadId, setLeadId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [quizStartedFired, setQuizStartedFired] = useState(false)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
@@ -276,6 +278,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         timeline: state.timeline || undefined,
         condition: state.condition || undefined,
       })
+      setLeadId(json.leadId ?? null)
       setManifestId(json.manifestId ?? null)
       setSubmitted(true)
     } catch (e) {
@@ -285,11 +288,28 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     }
   }
 
-  const openCalcom = () => {
-    const link = process.env.NEXT_PUBLIC_CALCOM_PPC_LINK ?? 'https://cal.com/savingkc/sell-consult'
-    const url = manifestId ? `${link}?metadata[manifestId]=${manifestId}` : link
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
+  const openBooking = () => setBookingOpen(true)
+  const closeBooking = () => setBookingOpen(false)
+
+  const bookingUrl = (() => {
+    const base = process.env.NEXT_PUBLIC_BOOKING_URL ?? 'https://savingkc.com/call/'
+    const params = new URLSearchParams({ source: 'ppc-landing' })
+    if (leadId) params.set('leadId', leadId)
+    if (manifestId) params.set('manifestId', manifestId)
+    return `${base}?${params.toString()}`
+  })()
+
+  useEffect(() => {
+    if (!bookingOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeBooking() }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [bookingOpen])
 
   const select = <K extends keyof QuizState>(key: K, value: QuizState[K]) => {
     const previous = state[key]
@@ -477,7 +497,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                     We&apos;ll text and email your cash-offer range within the hour. If anything needs clarification, we&apos;ll reach out directly.
                   </p>
                   {showBookingCta && (
-                    <button type="button" className="btn-continue" onClick={openCalcom}>
+                    <button type="button" className="btn-continue" onClick={openBooking}>
                       Book a 15-min Call
                       <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                     </button>
@@ -886,6 +906,32 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
           </div>
         </div>
       </footer>
+
+      {bookingOpen && (
+        <div
+          className="call-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Book a 15-minute call"
+          onClick={closeBooking}
+        >
+          <div className="call-modal-card" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="call-modal-close"
+              aria-label="Close booking modal"
+              onClick={closeBooking}
+            >
+              <span className="material-symbols-outlined" aria-hidden>close</span>
+            </button>
+            <iframe
+              title="Book a 15-minute call"
+              className="call-modal-iframe"
+              src={bookingUrl}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
