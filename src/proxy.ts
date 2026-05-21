@@ -9,6 +9,7 @@ const PUBLIC_API_EXACT = new Set([
   '/api/availability',
   '/api/book',
   '/api/buyers/intake',
+  '/api/leads',
   '/api/leads/ppc',
   '/api/leads/ppc/book',
   '/api/google-maps-key',
