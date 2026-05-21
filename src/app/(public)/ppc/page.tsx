@@ -6,6 +6,7 @@ import { EditOverlay } from './EditOverlay'
 
 const PPC_PHONE_DISPLAY = process.env.NEXT_PUBLIC_PPC_PHONE ?? '(816) 608-8808'
 const PPC_PHONE_TEL = (process.env.NEXT_PUBLIC_PPC_PHONE_TEL ?? '+18166088808').replace(/[^+\d]/g, '')
+const SHOW_BOOKING_CTA = process.env.NEXT_PUBLIC_PPC_SHOW_BOOKING_CTA === 'true'
 
 export const metadata: Metadata = {
   title: 'Sell Your Tax-Delinquent or Inherited KC House — Saving KC Homebuyers',
@@ -22,7 +23,7 @@ export default function SellPage() {
   return (
     <>
       <GoogleTagManager />
-      <SellLanding phoneDisplay={PPC_PHONE_DISPLAY} phoneTel={PPC_PHONE_TEL} />
+      <SellLanding phoneDisplay={PPC_PHONE_DISPLAY} phoneTel={PPC_PHONE_TEL} showBookingCta={SHOW_BOOKING_CTA} />
       <EditOverlay />
     </>
   )
