@@ -161,7 +161,7 @@ export async function enqueuePpcConversion(
     if (!error) return { queued: true, row }
 
     const reason = error.message ?? error.code ?? 'Unknown outbox error'
-    if (error.code === '42P01') {
+    if (error.code === '42P01' || error.code === 'PGRST205') {
       console.error('[ppc/conversion-outbox] table missing; migration has not been applied yet', reason)
     } else {
       console.error('[ppc/conversion-outbox] enqueue failed', error)
