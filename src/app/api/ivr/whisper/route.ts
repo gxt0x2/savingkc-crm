@@ -89,6 +89,11 @@ export async function POST(req: Request) {
     } else {
       whisper = 'Call from new lead'
     }
+  } else if (type === 'google_ads') {
+    const parts: string[] = ['Google Ads']
+    if (name) parts.push(name)
+    if (address) parts.push(address)
+    whisper = parts.join('. ') + '.'
   } else {
     const parts: string[] = []
     if (type === 'seller') {

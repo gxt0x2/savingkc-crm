@@ -12,6 +12,8 @@ describe('contact-display', () => {
   it('uses GA avatar and Google Ads source label for PPC leads', () => {
     expect(getAvatarLabel('Casey Seller', '+18165551212', 'ppc-landing')).toBe('GA')
     expect(formatLeadSource('ppc-landing')).toBe('Google Ads')
+    expect(getAvatarLabel('Google Ads Caller', '+18165551212', 'google_ads_phone')).toBe('GA')
+    expect(formatLeadSource('google_ads_phone')).toBe('Google Ads')
   })
 
   it('falls back to phone when the stored name is only a caller placeholder', () => {

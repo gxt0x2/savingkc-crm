@@ -11,6 +11,9 @@ export type CallQualityMilestone = {
 }
 
 export const PPC_TRACKING_PHONE_DIGITS = '8166088808'
+export const GOOGLE_ADS_PHONE_NUMBER = '+18166088808'
+export const GOOGLE_ADS_PHONE_SOURCE = 'google_ads_phone'
+export const GOOGLE_ADS_CAMPAIGN = 'Search 2026'
 
 export const CALL_QUALITY_MILESTONES: CallQualityMilestone[] = [
   {
@@ -47,6 +50,10 @@ export function parseCallDurationSeconds(value: unknown): number | null {
 export function isPpcTrackingNumber(raw: string): boolean {
   const digits = raw.replace(/\D/g, '')
   return digits === PPC_TRACKING_PHONE_DIGITS || digits === `1${PPC_TRACKING_PHONE_DIGITS}`
+}
+
+export function isGoogleAdsPhoneNumber(raw: string): boolean {
+  return isPpcTrackingNumber(raw)
 }
 
 export function getCallQualityMilestones(durationSeconds: number | null | undefined): CallQualityMilestone[] {

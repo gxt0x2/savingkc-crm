@@ -26,7 +26,7 @@ const baseInput: PpcReportInput = {
       full_name: 'Google Ads Caller',
       phone: '+18165550000',
       email: null,
-      source: 'ppc-landing',
+      source: 'google_ads_phone',
       station: 'appointment_set',
       priority: 'hot',
       property_address: null,
