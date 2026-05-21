@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
     ? await Promise.all([
       db
         .from('lead_activities')
-        .select('id, lead_id, activity_type, type, description, metadata, created_at, agent')
+        .select('id, lead_id, activity_type, description, metadata, created_at, agent')
         .in('lead_id', leadIds)
         .gte('created_at', sinceIso)
         .order('created_at', { ascending: true })
