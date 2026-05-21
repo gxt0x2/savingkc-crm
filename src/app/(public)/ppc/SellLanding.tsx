@@ -59,7 +59,13 @@ const CONDITION_TILES: { value: Condition; icon: string; label: string }[] = [
   { value: 'vacant', icon: 'door_front', label: 'Vacant' },
 ]
 
-export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; phoneTel: string }) {
+type SellLandingProps = {
+  phoneDisplay: string
+  phoneTel: string
+  showBookingCta?: boolean
+}
+
+export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: SellLandingProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [state, setState] = useState<QuizState>(EMPTY_STATE)
   const [submitting, setSubmitting] = useState(false)
@@ -409,12 +415,14 @@ export function SellLanding({ phoneDisplay, phoneTel }: { phoneDisplay: string; 
                   </div>
                   <h3 style={{ fontSize: 22, marginBottom: 8 }}>You&apos;re in.</h3>
                   <p style={{ color: 'var(--text-muted)', fontSize: 15, marginBottom: 20 }}>
-                    We&apos;ll text and email your cash-offer range within the hour. Lock in a quick call now and we&apos;ll walk you through it.
+                    We&apos;ll text and email your cash-offer range within the hour. If anything needs clarification, we&apos;ll reach out directly.
                   </p>
-                  <button type="button" className="btn-continue" onClick={openCalcom}>
-                    Book a 15-min Call
-                    <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
-                  </button>
+                  {showBookingCta && (
+                    <button type="button" className="btn-continue" onClick={openCalcom}>
+                      Book a 15-min Call
+                      <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+                    </button>
+                  )}
                 </div>
               ) : step === 1 ? (
                 <div style={{ marginTop: 18 }}>
