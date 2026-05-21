@@ -60,7 +60,7 @@ export async function POST(req: Request) {
 
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${dialAction}" method="POST" timeout="20" callerId="${calledNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${dialAction}" method="POST" timeout="10" callerId="${calledNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number url="${whisperBase}&amp;agent=${esc(routing.primary.name)}">${routing.primary.phone}</Number>
     <Number url="${whisperBase}&amp;agent=${esc(routing.secondary.name)}">${routing.secondary.phone}</Number>
   </Dial>
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
     console.error('[IVR/google-ads] Critical error:', error)
     const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="15">
+  <Dial timeout="10">
     <Number>${getAgentRouting(GOOGLE_ADS_PHONE_NUMBER).primary.phone}</Number>
   </Dial>
 </Response>`
