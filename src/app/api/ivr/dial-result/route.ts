@@ -480,7 +480,7 @@ export async function POST(req: Request) {
   }
 
   // Route caller to voicemail
-  const vmAgent = routing.primary.name
+  const vmAgent = isGoogleAdsCall ? 'SavingKC' : routing.primary.name
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Redirect method="POST">${BASE_URL}/api/ivr/voicemail?agent=${encodeURIComponent(vmAgent)}&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(resolvedLeadId || '')}&amp;calledNumber=${encodeURIComponent(calledNumber)}</Redirect>

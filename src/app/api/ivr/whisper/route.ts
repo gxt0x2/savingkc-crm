@@ -90,10 +90,7 @@ export async function POST(req: Request) {
       whisper = 'Call from new lead'
     }
   } else if (type === 'google_ads') {
-    const parts: string[] = ['Google Ads']
-    if (name) parts.push(name)
-    if (address) parts.push(address)
-    whisper = parts.join('. ') + '.'
+    whisper = 'Google Ads'
   } else {
     const parts: string[] = []
     if (type === 'seller') {
