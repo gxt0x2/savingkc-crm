@@ -73,12 +73,14 @@ function loadGoogleMaps(apiKey: string): Promise<void> {
 export function AddressAutocomplete({
   value,
   onChange,
+  onPlaceSelected,
   placeholder,
   id,
   autoComplete = 'street-address',
 }: {
   value: string
   onChange: (v: string) => void
+  onPlaceSelected?: () => void
   placeholder?: string
   id?: string
   autoComplete?: string
@@ -109,7 +111,10 @@ export function AddressAutocomplete({
         } as unknown as Record<string, unknown>)
         autocomplete.addListener('place_changed', () => {
           const place = autocomplete.getPlace()
-          if (place?.formatted_address) onChange(place.formatted_address)
+          if (place?.formatted_address) {
+            onChange(place.formatted_address)
+            onPlaceSelected?.()
+          }
         })
         setAttached(true)
       })

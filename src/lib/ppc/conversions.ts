@@ -1,24 +1,45 @@
 /**
- * PPC Conversion Tracking
+ * PPC dataLayer events. Web GTM owns the GA4/Google Ads tags.
  *
- * Four dataLayer conversion events. Web GTM owns the Google Ads/GA4 tags:
- *   lead_quiz_started     ($1)  — step 1 -> 2
- *   lead_quiz_qualified   ($5)  — step 2 -> 3
- *   lead_submitted        ($25) — primary, fires on contact submit
- *   appointment_booked    ($100) — primary, fires server-side after Cal.com webhook
+ * Keep raw PII out of browser analytics payloads. The CRM/API receives contact
+ * details; GA4 gets funnel facts such as selected options and completion state.
  */
 
 export type ConversionEvent =
   | 'lead_quiz_started'
   | 'lead_quiz_qualified'
+  | 'lead_stage3_completed'
   | 'lead_submitted'
   | 'appointment_booked'
+
+export type PpcMicroEvent =
+  | 'skc_phone_number_selected'
+  | 'phone_click'
+  | 'situation_selected'
+  | 'timeline_selected'
+  | 'condition_selected'
+  | 'address_selected'
+  | 'form_error'
+  | 'step_3_field_completed'
+
+export type PpcTrackingEvent = ConversionEvent | PpcMicroEvent
+
+type OptimizationRole = 'primary' | 'secondary' | 'diagnostic'
 
 export const CONVERSION_VALUES: Record<ConversionEvent, number> = {
   lead_quiz_started: 1,
   lead_quiz_qualified: 5,
+  lead_stage3_completed: 10,
   lead_submitted: 25,
   appointment_booked: 100,
+}
+
+export const CONVERSION_OPTIMIZATION_ROLES: Record<ConversionEvent, OptimizationRole> = {
+  lead_quiz_started: 'diagnostic',
+  lead_quiz_qualified: 'secondary',
+  lead_stage3_completed: 'secondary',
+  lead_submitted: 'primary',
+  appointment_booked: 'primary',
 }
 
 declare global {
@@ -27,7 +48,7 @@ declare global {
   }
 }
 
-function makeEventId(event: ConversionEvent): string {
+function makeEventId(event: PpcTrackingEvent): string {
   const rand =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID()
@@ -35,22 +56,56 @@ function makeEventId(event: ConversionEvent): string {
   return `skc_${event}_${Date.now()}_${rand}`
 }
 
-export function fireConversion(event: ConversionEvent): void {
-  if (typeof window === 'undefined') return
+function cleanPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined))
+}
 
-  const value = CONVERSION_VALUES[event]
+export function firePpcTrackingEvent(
+  event: PpcTrackingEvent,
+  payload: Record<string, unknown> = {},
+): Record<string, unknown> | null {
+  if (typeof window === 'undefined') return null
 
-  window.dataLayer = window.dataLayer || []
-  window.dataLayer.push({
+  const dataLayerEvent = cleanPayload({
     event,
     event_id: makeEventId(event),
+    event_time: new Date().toISOString(),
+    traffic_source: 'google_ads',
+    campaign: 'Search 2026',
+    ...payload,
+  })
+
+  window.dataLayer = window.dataLayer || []
+  window.dataLayer.push(dataLayerEvent)
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[ppc/conversions] fired', event)
+  }
+
+  return dataLayerEvent
+}
+
+export function fireConversion(
+  event: ConversionEvent,
+  payload: Record<string, unknown> = {},
+): Record<string, unknown> | null {
+  const value = CONVERSION_VALUES[event]
+
+  return firePpcTrackingEvent(event, {
+    ...payload,
     conversion_value: value,
     value,
     currency: 'USD',
-    traffic_source: 'google_ads',
+    optimization_role: CONVERSION_OPTIMIZATION_ROLES[event],
   })
+}
 
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('[ppc/conversions] fired', event, '$' + value)
-  }
+export function fireFormError(
+  errorMessage: string,
+  payload: Record<string, unknown> = {},
+): Record<string, unknown> | null {
+  return firePpcTrackingEvent('form_error', {
+    ...payload,
+    error_message: errorMessage,
+  })
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { captureAttribution, getAttribution } from '@/lib/ppc/attribution'
-import { fireConversion } from '@/lib/ppc/conversions'
+import { fireConversion, fireFormError, firePpcTrackingEvent } from '@/lib/ppc/conversions'
 import { AddressAutocomplete } from './AddressAutocomplete'
 
 type Situation =
@@ -81,10 +81,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
 
   useEffect(() => {
     captureAttribution()
-    window.dataLayer = window.dataLayer || []
-    window.dataLayer.push({
-      event: 'skc_phone_number_selected',
-      traffic_source: 'google_ads',
+    firePpcTrackingEvent('skc_phone_number_selected', {
       ppc_phone_display: phoneDisplay,
       ppc_phone_tel: phoneTel,
       landing_page: window.location.href,
@@ -122,6 +119,17 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     }
   }, [])
 
+  const trackFormError = (message: string, field: string, formStep: 1 | 2 | 3) => {
+    setError(message)
+    fireFormError(message, {
+      form_step: formStep,
+      field,
+      situation: state.situation || undefined,
+      timeline: state.timeline || undefined,
+      condition: state.condition || undefined,
+    })
+  }
+
   useEffect(() => {
     if (submitted || step !== 3) return
 
@@ -157,12 +165,20 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         if (r.ok && json?.ok) {
           stage3AutosavedKeyRef.current = autosaveKey
           if (json.manifestId) setManifestId(json.manifestId)
-          window.dataLayer = window.dataLayer || []
-          window.dataLayer.push({
-            event: 'lead_stage3_completed',
-            traffic_source: 'google_ads',
+          const stage3Payload = {
+            form_step: 3,
             form_status: 'stage_3_complete_no_submit',
-          })
+            form_submitted: false,
+            has_address: true,
+            has_name: true,
+            has_phone: true,
+            has_email: true,
+            situation: state.situation || undefined,
+            timeline: state.timeline || undefined,
+            condition: state.condition || undefined,
+          }
+          firePpcTrackingEvent('step_3_field_completed', stage3Payload)
+          fireConversion('lead_stage3_completed', stage3Payload)
         }
       } catch {
         // best-effort only; final submit still owns the real conversion.
@@ -186,21 +202,29 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     setError(null)
     if (toStep === 2) {
       if (!state.situation) {
-        setError('Pick a situation to continue.')
+        trackFormError('Pick a situation to continue.', 'situation', 1)
         return
       }
       if (!quizStartedFired) {
-        fireConversion('lead_quiz_started')
+        fireConversion('lead_quiz_started', {
+          form_step: 1,
+          situation: state.situation,
+        })
         setQuizStartedFired(true)
       }
       postPartial(1, { situation: state.situation })
     }
     if (toStep === 3) {
       if (!state.timeline || !state.condition) {
-        setError('Answer both questions to continue.')
+        trackFormError('Answer both questions to continue.', !state.timeline ? 'timeline' : 'condition', 2)
         return
       }
-      fireConversion('lead_quiz_qualified')
+      fireConversion('lead_quiz_qualified', {
+        form_step: 2,
+        situation: state.situation,
+        timeline: state.timeline,
+        condition: state.condition,
+      })
       postPartial(2, {
         situation: state.situation,
         timeline: state.timeline,
@@ -213,7 +237,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
   const submit = async () => {
     setError(null)
     if (!state.address.trim() || !state.name.trim() || !state.phone.trim() || !state.email.trim()) {
-      setError('We need all four to send you a custom offer.')
+      trackFormError('We need all four to send you a custom offer.', 'contact_fields', 3)
       return
     }
     setSubmitting(true)
@@ -239,11 +263,23 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       })
       const json = await r.json()
       if (!r.ok || !json?.ok) throw new Error(json?.error ?? 'Submit failed')
-      fireConversion('lead_submitted')
+      fireConversion('lead_submitted', {
+        form_step: 3,
+        form_status: 'submitted',
+        form_submitted: true,
+        stage3_autosaved: Boolean(manifestId || json.manifestId),
+        has_address: true,
+        has_name: true,
+        has_phone: true,
+        has_email: true,
+        situation: state.situation || undefined,
+        timeline: state.timeline || undefined,
+        condition: state.condition || undefined,
+      })
       setManifestId(json.manifestId ?? null)
       setSubmitted(true)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Submit failed. Please try again or call us.')
+      trackFormError(e instanceof Error ? e.message : 'Submit failed. Please try again or call us.', 'submit', 3)
     } finally {
       setSubmitting(false)
     }
@@ -255,8 +291,33 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
-  const select = <K extends keyof QuizState>(key: K, value: QuizState[K]) =>
+  const select = <K extends keyof QuizState>(key: K, value: QuizState[K]) => {
+    const previous = state[key]
     setState((s) => ({ ...s, [key]: value }))
+    if (previous === value) return
+
+    if (key === 'situation') {
+      firePpcTrackingEvent('situation_selected', {
+        form_step: 1,
+        situation: value,
+      })
+    }
+    if (key === 'timeline') {
+      firePpcTrackingEvent('timeline_selected', {
+        form_step: 2,
+        situation: state.situation || undefined,
+        timeline: value,
+      })
+    }
+    if (key === 'condition') {
+      firePpcTrackingEvent('condition_selected', {
+        form_step: 2,
+        situation: state.situation || undefined,
+        timeline: state.timeline || undefined,
+        condition: value,
+      })
+    }
+  }
 
   const scrollToQuiz = () => document.getElementById('quiz')?.scrollIntoView({ behavior: 'smooth' })
   const scrollToId = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -264,13 +325,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     setMobileMenuOpen(false)
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
-  const trackPhoneClick = () => {
-    window.dataLayer = window.dataLayer || []
-    window.dataLayer.push({
-      event: 'phone_click',
-      traffic_source: 'google_ads',
+  const trackPhoneClick = (clickLocation: string) => {
+    firePpcTrackingEvent('phone_click', {
       phone_number: phoneTel,
       phone_display: phoneDisplay,
+      click_location: clickLocation,
     })
   }
 
@@ -294,7 +353,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
               <span className="stars">★★★★★</span>
               <span><strong>100+</strong> KC homeowners helped</span>
             </div>
-            <a href={`tel:${phoneTel}`} className="topbar-phone" onClick={trackPhoneClick}>
+            <a href={`tel:${phoneTel}`} className="topbar-phone" onClick={() => trackPhoneClick('topbar')}>
               <span className="material-symbols-outlined" aria-hidden>call</span>
               {phoneDisplay}
             </a>
@@ -329,7 +388,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
               <span className="stars">★★★★★</span>
               <span><strong>100+</strong> KC homeowners helped</span>
             </div>
-            <a href={`tel:${phoneTel}`} className="mobile-phone" onClick={trackPhoneClick}>
+            <a href={`tel:${phoneTel}`} className="mobile-phone" onClick={() => trackPhoneClick('mobile_menu')}>
               <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden>call</span>
               {phoneDisplay}
             </a>
@@ -522,6 +581,16 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                       placeholder="Start typing your address…"
                       value={state.address}
                       onChange={(v) => select('address', v)}
+                      onPlaceSelected={() => {
+                        firePpcTrackingEvent('address_selected', {
+                          form_step: 3,
+                          address_source: 'google_places',
+                          has_address: true,
+                          situation: state.situation || undefined,
+                          timeline: state.timeline || undefined,
+                          condition: state.condition || undefined,
+                        })
+                      }}
                     />
                   </div>
                   <div className="form-row-2">
@@ -658,7 +727,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                   See My Number
                   <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                 </a>
-                <a href={`tel:${phoneTel}`} className="btn-secondary" onClick={trackPhoneClick}>
+                <a href={`tel:${phoneTel}`} className="btn-secondary" onClick={() => trackPhoneClick('mid_page_cta')}>
                   <span className="material-symbols-outlined" aria-hidden>call</span>
                   Call {phoneDisplay}
                 </a>
@@ -796,7 +865,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
             </a>
             <div className="micro">
               Or call us directly at{' '}
-              <a href={`tel:${phoneTel}`} style={{ color: 'var(--text)' }} onClick={trackPhoneClick}>
+              <a href={`tel:${phoneTel}`} style={{ color: 'var(--text)' }} onClick={() => trackPhoneClick('bottom_cta_text')}>
                 {phoneDisplay}
               </a>{' '}
               · Mon–Sat, 8am–8pm CT
@@ -813,7 +882,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
           <div className="footer-links">
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
-            <a href={`tel:${phoneTel}`} onClick={trackPhoneClick}>Contact</a>
+            <a href={`tel:${phoneTel}`} onClick={() => trackPhoneClick('footer_contact')}>Contact</a>
           </div>
         </div>
       </footer>
