@@ -3,6 +3,16 @@ import { defineConfig, devices } from '@playwright/test';
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3002';
 const useManagedWebServer = !process.env.PLAYWRIGHT_BASE_URL;
 const authProxyTestBypassSecret = 'playwright-smoke-bypass';
+const playwrightEnv = {
+  ...process.env,
+  AUTH_PROXY_TEST_BYPASS_SECRET: authProxyTestBypassSecret,
+  NEXT_PUBLIC_SUPABASE_URL:
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://example.supabase.co',
+  NEXT_PUBLIC_SUPABASE_ANON_KEY:
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'ci-placeholder-anon-key',
+  SUPABASE_SERVICE_ROLE_KEY:
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 'ci-placeholder-service-role-key',
+};
 
 export default defineConfig({
   testDir: './tests',
@@ -27,7 +37,8 @@ export default defineConfig({
   ],
   webServer: useManagedWebServer
     ? {
-        command: `AUTH_PROXY_TEST_BYPASS_SECRET=${authProxyTestBypassSecret} npm run start -- --port 3002`,
+        command: 'npm run start -- --port 3002',
+        env: playwrightEnv,
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120000,
