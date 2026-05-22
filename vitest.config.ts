@@ -14,8 +14,8 @@ export default defineConfig({
       reporter: ['text', 'json', 'html', 'lcov'],
       include: [
         'src/lib/manifest/**',
-        'src/app/(app)/dashboard/lib/bottleneck.ts',
-        'src/app/(app)/dashboard/components/**/*.{ts,tsx}',
+        'src/app/**/dashboard/lib/bottleneck.ts',
+        'src/app/**/dashboard/components/**/*.{ts,tsx}',
       ],
       exclude: [
         '**/*.test.*',
@@ -29,7 +29,7 @@ export default defineConfig({
           branches: 100,
           lines: 100,
         },
-        'src/app/(app)/dashboard/components/**/*.{ts,tsx}': {
+        'src/app/**/dashboard/components/**/*.{ts,tsx}': {
           statements: 90,
           functions: 90,
           branches: 90,
