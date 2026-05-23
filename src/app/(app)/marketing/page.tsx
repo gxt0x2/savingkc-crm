@@ -591,6 +591,22 @@ function ExportSetupPanel({ report }: { report: PpcReport }) {
       </div>
 
       {google.enabled && (
+        <div className="mt-3 flex flex-col gap-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="font-black text-[var(--ck-text)]">Google Ads OAuth</div>
+            <div className="text-xs">Connect the Google Ads account once, then production can use the saved Ads-scoped refresh token.</div>
+          </div>
+          <Link
+            href="/api/auth/google-ads/authorize?return_to=/marketing"
+            className="inline-flex w-fit items-center gap-2 rounded-lg border border-[#E32E2E]/40 bg-[#E32E2E]/15 px-3 py-2 text-xs font-black uppercase tracking-wide text-[#FCA5A5] transition hover:bg-[#E32E2E]/25"
+          >
+            <Icon name="login" size="text-base" />
+            Connect Ads
+          </Link>
+        </div>
+      )}
+
+      {google.enabled && (
         <div className="mt-4 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">
             <Icon name="schema" size="text-base" className="text-[#E32E2E]" />

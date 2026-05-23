@@ -103,10 +103,30 @@ describe('ppc conversion exporter', () => {
       customerId: '646966429',
       configuredActionMappings: ['lead_submitted'],
     })
-    expect(health.googleAds.missingConfig).toContain('GOOGLE_ADS_REFRESH_TOKEN')
+    expect(health.googleAds.missingConfig).toContain('GOOGLE_ADS_REFRESH_TOKEN or GOOGLE_ADS_REFRESH_TOKEN_USER_EMAIL')
     expect(health.googleAds.missingActionMappings).toEqual(
       expect.arrayContaining(['qualified_lead', 'call_connected_2m', 'call_connected_5m']),
     )
+  })
+
+  it('accepts a saved Google Ads OAuth token email as the refresh-token source', () => {
+    const health = getPpcConversionExportConfigHealth({
+      PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads',
+      GOOGLE_ADS_CUSTOMER_ID: '646-966-429',
+      GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
+      GOOGLE_ADS_CLIENT_ID: 'client-id',
+      GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
+      GOOGLE_ADS_REFRESH_TOKEN_USER_EMAIL: 'savingkc@gmail.com',
+      GOOGLE_ADS_CONVERSION_ACTION_LEAD_SUBMITTED: '111',
+      GOOGLE_ADS_CONVERSION_ACTION_QUALIFIED_LEAD: '222',
+      GOOGLE_ADS_CONVERSION_ACTION_APPOINTMENT_BOOKED: '333',
+      GOOGLE_ADS_CONVERSION_ACTION_CALL_CONNECTED_60S: '444',
+      GOOGLE_ADS_CONVERSION_ACTION_CALL_CONNECTED_2M: '555',
+      GOOGLE_ADS_CONVERSION_ACTION_CALL_CONNECTED_5M: '666',
+    })
+
+    expect(health.googleAds.missingConfig).toEqual([])
+    expect(health.googleAds.ready).toBe(true)
   })
 
   it('builds Google Ads click conversion payloads with exactly one click id', () => {
