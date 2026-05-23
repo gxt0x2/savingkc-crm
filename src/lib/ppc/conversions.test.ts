@@ -54,8 +54,8 @@ describe('ppc browser tracking', () => {
     })
   })
 
-  it('marks stage 3 completion as secondary and separate from final submit', () => {
-    const event = fireConversion('lead_stage3_completed', {
+  it('tracks stage 3 completion as a diagnostic field-completion signal', () => {
+    const event = firePpcTrackingEvent('step_3_field_completed', {
       form_step: 3,
       form_status: 'stage_3_complete_no_submit',
       form_submitted: false,
@@ -63,14 +63,12 @@ describe('ppc browser tracking', () => {
     })
 
     expect(event).toMatchObject({
-      event: 'lead_stage3_completed',
-      conversion_value: 10,
-      value: 10,
-      currency: 'USD',
-      optimization_role: 'secondary',
+      event: 'step_3_field_completed',
       form_status: 'stage_3_complete_no_submit',
       form_submitted: false,
     })
+    expect(event).not.toHaveProperty('conversion_value')
+    expect(event).not.toHaveProperty('optimization_role')
   })
 
   it('tracks validation errors as diagnostic form_error events', () => {

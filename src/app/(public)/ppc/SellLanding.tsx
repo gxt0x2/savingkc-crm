@@ -306,7 +306,6 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
             condition: state.condition || undefined,
           }
           firePpcTrackingEvent('step_3_field_completed', stage3Payload)
-          fireConversion('lead_stage3_completed', stage3Payload)
         }
       } catch {
         // best-effort only; final submit still owns the real conversion.

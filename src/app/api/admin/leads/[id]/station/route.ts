@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { updateManifestAndCascade } from '@/lib/manifest-sync'
+import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 
 const ALLOWED_STATIONS = new Set([
   'intake', 'not_contacted', 'new',
@@ -70,6 +71,17 @@ export async function POST(
     })
   }, 'admin_set_station').catch(() => false)
 
+  const ppcQualifiedConversion = await queuePpcQualifiedLeadConversion({
+    leadId: id,
+    fromStation: prevStation,
+    toStation: body.station,
+    changedBy: 'system:admin_set_station',
+    reason: body.reason ?? null,
+  }).catch((error) => ({
+    queued: false as const,
+    reason: error instanceof Error ? error.message : String(error),
+  }))
+
   return NextResponse.json({
     ok: true,
     leadId: id,
@@ -77,5 +89,6 @@ export async function POST(
     from: prevStation,
     to: body.station,
     cascaded: cascadeOk,
+    ppcQualifiedConversion,
   })
 }

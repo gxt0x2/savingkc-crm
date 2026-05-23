@@ -5,6 +5,7 @@ import { regenerateBriefing, EAGER_REGEN_EVENTS } from '@/lib/briefing-regen'
 import { notifyNewLead } from '@/lib/ari-briefing'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
+import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { supabase } from '@/lib/supabase-lazy'
 
@@ -818,6 +819,16 @@ export async function PATCH(req: NextRequest) {
     }
 
     const previousTriageData = previousTriageLead?.data ?? null
+    if (typeof fields.station === 'string') {
+      await queuePpcQualifiedLeadConversion({
+        leadId: id,
+        fromStation: previousTriageData?.station ?? null,
+        toStation: fields.station,
+        changedBy: activityAgent,
+        reason: triageClassification ? `manual triage: ${triageClassification}` : 'lead patch station update',
+      }).catch((error) => console.error('[leads PATCH] PPC qualified conversion queue failed:', error))
+    }
+
     if (triageClassification && previousTriageData?.classification !== triageClassification) {
       const triage = LEAD_TRIAGE[triageClassification]
       const { error: triageActivityError } = await supabase.from('lead_activities').insert({

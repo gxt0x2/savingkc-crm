@@ -11,8 +11,11 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
+import type { ManifestV2 } from '@/lib/manifest-builder'
 
 const STAGE_ORDER = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'closed_lost', 'dead'] as const
+type ManifestPipelineStageKey = Exclude<Extract<keyof ManifestV2['pipeline'], string>, 'appointment'>
 
 type AutoTrigger = 'outbound_contact' | 'appointment_set' | 'appointment_completed' | 'contract_sent' | 'contract_signed'
 
@@ -72,8 +75,8 @@ export async function checkAutoAdvance(
   if (!newStation || newStation === current) return { advanced: false }
 
   // Don't go backwards
-  const currentIdx = STAGE_ORDER.indexOf(current as any)
-  const newIdx = STAGE_ORDER.indexOf(newStation as any)
+  const currentIdx = STAGE_ORDER.indexOf(current as typeof STAGE_ORDER[number])
+  const newIdx = STAGE_ORDER.indexOf(newStation as typeof STAGE_ORDER[number])
   if (currentIdx >= 0 && newIdx >= 0 && newIdx <= currentIdx) {
     return { advanced: false }
   }
@@ -81,10 +84,10 @@ export async function checkAutoAdvance(
   // Use updateManifestAndCascade for proper Hot Engine sync
   const { updateManifestAndCascade } = await import('./manifest-sync')
 
-  const cascaded = await updateManifestAndCascade(leadId, (manifest: any) => {
+  const cascaded = await updateManifestAndCascade(leadId, (manifest: ManifestV2) => {
     manifest.currentStation = newStation
 
-    const stageMap: Record<string, string> = {
+    const stageMap: Partial<Record<string, ManifestPipelineStageKey>> = {
       contacted: 'qualifying', qualified: 'discovery',
       appointment_set: 'discovery', offer_made: 'offer', under_contract: 'contract', closed_won: 'closed',
     }
@@ -127,6 +130,14 @@ export async function checkAutoAdvance(
       new_station: newStation,
     },
   })
+
+  await queuePpcQualifiedLeadConversion({
+    leadId,
+    fromStation: current,
+    toStation: newStation,
+    changedBy: 'system:pipeline',
+    reason: trigger,
+  }).catch((error) => console.error('[pipeline-auto-advance] PPC qualified conversion queue failed:', error))
 
   return { advanced: true, from: current, to: newStation }
 }

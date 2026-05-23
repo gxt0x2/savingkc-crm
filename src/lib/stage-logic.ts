@@ -5,6 +5,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import type { ManifestV2 } from '@/lib/manifest-builder'
 
 // ============================================================================
 // TYPES
@@ -23,8 +24,16 @@ export type StageId =
 export interface StageRequirement {
   field: string
   label: string
-  check: (lead: any) => boolean
+  check: (lead: StageLeadData) => boolean
   critical: boolean // If true, blocks advancement
+}
+
+type StageLeadData = {
+  full_name?: string | null
+  property_address?: string | null
+  phone?: string | null
+  source?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 export interface StageDefinition {
@@ -217,7 +226,7 @@ export const STAGE_DEFINITIONS: Record<StageId, StageDefinition> = {
         label: 'Earnest Money Status',
         check: (lead) =>
           ['paid', 'pending', 'waived'].includes(
-            lead.metadata?.earnest_money_status
+            typeof lead.metadata?.earnest_money_status === 'string' ? lead.metadata.earnest_money_status : ''
           ),
         critical: true,
       },
@@ -501,7 +510,7 @@ export async function advanceLeadStage(
   // Cascade to manifest
   try {
     const { updateManifestAndCascade } = await import('./manifest-sync')
-    await updateManifestAndCascade(leadId, (manifest: any) => {
+    await updateManifestAndCascade(leadId, (manifest: ManifestV2) => {
       manifest.currentStation = targetStage
       if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
       manifest.ariIntelligence.briefingStale = true
@@ -530,6 +539,15 @@ export async function advanceLeadStage(
 
   // Execute auto-actions for the new stage
   await executeStageAutoActions(leadId, targetStage)
+
+  const { queuePpcQualifiedLeadConversion } = await import('@/lib/ppc/qualified-lead-conversion')
+  await queuePpcQualifiedLeadConversion({
+    leadId,
+    fromStation: fromStage,
+    toStation: targetStage,
+    changedBy,
+    reason: reason ?? method,
+  }).catch((error) => console.error('[stage-logic] PPC qualified conversion queue failed:', error))
 
   return { success: true, errors: [] }
 }
@@ -568,7 +586,7 @@ async function executeStageAutoActions(leadId: string, stage: StageId) {
       // Cascade to manifest
       try {
         const { updateManifestAndCascade } = await import('./manifest-sync')
-        await updateManifestAndCascade(leadId, (manifest: any) => {
+        await updateManifestAndCascade(leadId, (manifest: ManifestV2) => {
           manifest.priority = 'hot'
           if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
           manifest.ariIntelligence.briefingStale = true
@@ -640,7 +658,7 @@ export async function migrateLeadsWithoutStage(): Promise<{
   try {
     const { updateManifestAndCascade } = await import('./manifest-sync')
     for (const lead of leadsWithoutStage) {
-      await updateManifestAndCascade(lead.id, (manifest: any) => {
+      await updateManifestAndCascade(lead.id, (manifest: ManifestV2) => {
         manifest.currentStation = 'new'
         if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
         manifest.ariIntelligence.briefingStale = true
