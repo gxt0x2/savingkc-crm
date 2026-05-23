@@ -99,6 +99,9 @@ const TIMELINE_TO_PRIORITY: Record<z.infer<typeof TimelineSchema>, 'hot' | 'warm
   exploring: 'warm',
 }
 
+const SMOKE_MARKER_RE = /(^|[^a-z0-9])(codex|dummy|probe|smoke|test)([^a-z0-9]|$)/i
+const FAKE_PHONE_RE = /^1?816555/
+
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, '')
   if (digits.length === 10) return `+1${digits}`
@@ -127,6 +130,43 @@ function normalizeEmailOrNull(email: string | null | undefined): string | null {
   if (!value) return null
   const parsed = z.string().email().safeParse(value)
   return parsed.success ? value : null
+}
+
+function hasSmokeMarker(...values: Array<unknown>): boolean {
+  return values.some((value) => typeof value === 'string' && SMOKE_MARKER_RE.test(value))
+}
+
+function isFakePhone(value: string | null | undefined): boolean {
+  return Boolean(value && FAKE_PHONE_RE.test(value.replace(/\D/g, '')))
+}
+
+function isSmokeMarkedSubmit(input: {
+  fullName: string | null
+  email: string | null
+  phone: string | null
+  address?: string
+  sessionId?: string
+  visitorId?: string
+  attribution: z.infer<typeof AttributionSchema>
+}): boolean {
+  const attribution = input.attribution ?? {}
+  const hasMarker = hasSmokeMarker(
+    input.fullName,
+    input.email,
+    input.address,
+    input.sessionId,
+    input.visitorId,
+    attribution.gclid,
+    attribution.gbraid,
+    attribution.wbraid,
+  )
+  const hasFakeContact = (
+    isFakePhone(input.phone) ||
+    Boolean(input.email?.endsWith('@example.com')) ||
+    Boolean(input.fullName && /^codex smoke test\b/i.test(input.fullName))
+  )
+
+  return hasMarker && hasFakeContact
 }
 
 async function findExistingPpcLeadId({
@@ -399,6 +439,15 @@ export async function POST(req: NextRequest) {
   const hasPhone = Boolean(phoneE164)
   const hasEmail = Boolean(email)
   const hasSubmitFields = Boolean(address && fullName && phoneE164 && email)
+  const suppressLeadSideEffects = intent === 'submit' && isSmokeMarkedSubmit({
+    fullName,
+    email,
+    phone: phoneE164,
+    address,
+    sessionId: parsed.sessionId,
+    visitorId: parsed.visitorId,
+    attribution,
+  })
 
   if (intent === 'submit' && !hasSubmitFields) {
     return NextResponse.json({ ok: false, error: 'Missing required contact fields' }, { status: 400, headers: corsHeaders })
@@ -745,17 +794,25 @@ export async function POST(req: NextRequest) {
         address,
         address_source: addressSource,
         source: 'ppc_form_submit',
+        side_effects_suppressed: suppressLeadSideEffects,
       }),
     })
 
-    triggerPpcLeadSideEffects({
-      leadId: resolvedLeadId,
-      fullName: fullName ?? 'PPC Lead',
-      address,
-      phone: phoneE164 ?? '',
-    }).catch((err) => console.error('[ppc/lead] side effects failed', err))
+    if (!suppressLeadSideEffects) {
+      triggerPpcLeadSideEffects({
+        leadId: resolvedLeadId,
+        fullName: fullName ?? 'PPC Lead',
+        address,
+        phone: phoneE164 ?? '',
+      }).catch((err) => console.error('[ppc/lead] side effects failed', err))
+    }
 
-    return NextResponse.json({ ok: true, manifestId, leadId: resolvedLeadId }, { headers: corsHeaders })
+    return NextResponse.json({
+      ok: true,
+      manifestId,
+      leadId: resolvedLeadId,
+      ...(suppressLeadSideEffects ? { notificationsSkipped: true } : {}),
+    }, { headers: corsHeaders })
   } catch (err) {
     console.error('[ppc/lead] unexpected error — queuing offline', err)
     await queueLeadOffline(parsed, err)
