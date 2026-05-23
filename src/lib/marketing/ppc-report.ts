@@ -33,6 +33,7 @@ export type PpcOutboxRow = {
   event_category: string | null
   dedupe_key?: string | null
   status: string | null
+  approved_for_google_ads?: boolean | null
   optimization_role: string | null
   lead_id: string | null
   conversion_value: number | string | null
@@ -70,6 +71,43 @@ export type PpcManifestRow = {
   created_at: string | null
 }
 
+export type PpcTrackingEventRow = {
+  id: string
+  event_id: string | null
+  event_name: string | null
+  event_category: string | null
+  event_time: string | null
+  session_id: string | null
+  visitor_id: string | null
+  lead_id: string | null
+  page_location?: string | null
+  page_referrer?: string | null
+  traffic_source?: string | null
+  campaign?: string | null
+  utm_source?: string | null
+  utm_medium?: string | null
+  utm_campaign?: string | null
+  utm_term?: string | null
+  utm_content?: string | null
+  gclid?: string | null
+  gbraid?: string | null
+  wbraid?: string | null
+  gad_source?: string | null
+  gad_campaignid?: string | null
+  gad_adgroupid?: string | null
+  form_step: number | null
+  form_status: string | null
+  situation_raw: string | null
+  timeline_raw: string | null
+  condition_raw: string | null
+  phone_number: string | null
+  sms_consent: boolean | null
+  is_test: boolean | null
+  attribution?: Record<string, unknown> | null
+  payload: Record<string, unknown> | null
+  created_at: string | null
+}
+
 export type PpcReportInput = {
   days: number
   since: string
@@ -77,6 +115,7 @@ export type PpcReportInput = {
   leads: PpcLeadRow[]
   activities: PpcActivityRow[]
   outbox: PpcOutboxRow[]
+  trackingEvents: PpcTrackingEventRow[]
   appointments: PpcAppointmentRow[]
   revenue: PpcRevenueRow[]
   manifests: PpcManifestRow[]
@@ -90,6 +129,14 @@ export type PpcReport = {
     until: string
   }
   summary: {
+    paidVisits: number
+    eventLogTotal: number
+    optionSelections: number
+    step1Completions: number
+    step2Completions: number
+    phoneClicks: number
+    consentedSubmits: number
+    testRecords: number
     totalLeads: number
     formSubmits: number
     stage3NoSubmit: number
@@ -147,6 +194,7 @@ export type PpcReport = {
     failed: number
     deadLetter: number
     skipped: number
+    awaitingApproval: number
   }
   dataQuality: {
     clickIdCoverage: number
@@ -158,9 +206,30 @@ export type PpcReport = {
   daily: Array<{
     date: string
     leads: number
+    visits: number
     formSubmits: number
     ppcCalls: number
+    phoneClicks: number
     appointments: number
+  }>
+  recentSessions: Array<{
+    key: string
+    firstEventAt: string | null
+    lastEventAt: string | null
+    eventCount: number
+    status: 'visit_only' | 'phone_click' | 'engaged' | 'reached_step_3' | 'address_only' | 'potential' | 'step_3_no_submit' | 'submitted'
+    maxStep: number
+    lastEvent: string
+    campaign: string
+    source: string
+    medium: string
+    clickId: string
+    device: string
+    situation: string
+    timeline: string
+    condition: string
+    addressSignal: string
+    leadId: string | null
   }>
   recentLeads: Array<{
     id: string
@@ -171,7 +240,7 @@ export type PpcReport = {
     createdAt: string | null
     lastSignalAt: string | null
     lastSignal: string
-    formStatus: 'submitted' | 'stage_3_no_submit' | 'call_only' | 'lead_only'
+    formStatus: 'submitted' | 'stage_3_no_submit' | 'potential_no_submit' | 'call_only' | 'lead_only'
     campaign: string
     keyword: string
     clickId: string
@@ -185,6 +254,7 @@ type LeadState = {
   attribution: Record<string, unknown>
   formSubmitted: boolean
   stage3Complete: boolean
+  potentialNoSubmit: boolean
   hasPpcCall: boolean
   connectedCallIds: Set<string>
   milestone60s: Set<string>
@@ -304,6 +374,14 @@ function isStage3Complete(activity: PpcActivityRow): boolean {
   )
 }
 
+function isPotentialNoSubmit(activity: PpcActivityRow): boolean {
+  const meta = metadata(activity)
+  return (
+    text(meta.source) === 'ppc_form_potential' ||
+    text(meta.form_status) === 'potential_no_submit'
+  )
+}
+
 function latestAt(a: string | null, b: string | null): string | null {
   if (!a) return b
   if (!b) return a
@@ -342,6 +420,26 @@ function extractAttributionFromOutbox(row: PpcOutboxRow): Record<string, unknown
     ...record(row.payload),
     click_id: row.click_id,
     click_id_type: row.click_id_type,
+  })
+}
+
+function extractAttributionFromTracking(row: PpcTrackingEventRow): Record<string, unknown> {
+  const payload = record(row.payload)
+  return cleanAttribution({
+    ...record(payload.attribution),
+    traffic_source: row.traffic_source,
+    campaign: row.campaign,
+    utm_source: row.utm_source,
+    utm_medium: row.utm_medium,
+    utm_campaign: row.utm_campaign,
+    utm_term: row.utm_term,
+    utm_content: row.utm_content,
+    gclid: row.gclid,
+    gbraid: row.gbraid,
+    wbraid: row.wbraid,
+    gad_source: row.gad_source,
+    gad_campaignid: row.gad_campaignid,
+    gad_adgroupid: row.gad_adgroupid,
   })
 }
 
@@ -411,12 +509,128 @@ function displayName(lead: PpcLeadRow): string {
   return displayPhone(lead.phone)
 }
 
+function hasTestMarker(...values: Array<unknown>): boolean {
+  return values.some((value) => typeof value === 'string' && /(^|[^a-z0-9])(codex|test|dummy|probe|smoke)([^a-z0-9]|$)/i.test(value))
+}
+
+function isTestAttribution(attribution: Record<string, unknown>): boolean {
+  return hasTestMarker(attribution.gclid, attribution.gbraid, attribution.wbraid, attribution.click_id, attribution.utm_term, attribution.utm_content)
+}
+
+function isTestState(state: LeadState): boolean {
+  return hasTestMarker(state.lead.full_name, state.lead.email, state.lead.property_address, state.lead.phone) || isTestAttribution(state.attribution)
+}
+
+function isTestTrackingEvent(row: PpcTrackingEventRow): boolean {
+  const attribution = extractAttributionFromTracking(row)
+  return Boolean(row.is_test) || hasTestMarker(
+    row.event_id,
+    row.session_id,
+    row.visitor_id,
+    row.gclid,
+    row.gbraid,
+    row.wbraid,
+    attribution.gclid,
+    attribution.gbraid,
+    attribution.wbraid,
+    row.payload?.gclid,
+    row.payload?.gbraid,
+    row.payload?.wbraid,
+  )
+}
+
+function eventName(row: PpcTrackingEventRow): string {
+  return text(row.event_name)
+}
+
+function eventKey(row: PpcTrackingEventRow): string {
+  return text(row.session_id) || text(row.visitor_id) || text(row.event_id) || row.id
+}
+
+function clickIdFromTracking(row: PpcTrackingEventRow): string {
+  const attribution = extractAttributionFromTracking(row)
+  return text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id)
+}
+
+function sessionKey(row: PpcTrackingEventRow): string {
+  return clickIdFromTracking(row) || eventKey(row)
+}
+
+function payloadText(row: PpcTrackingEventRow, key: string): string {
+  return text(record(row.payload)[key])
+}
+
+function payloadRecord(row: PpcTrackingEventRow, key: string): Record<string, unknown> {
+  return record(record(row.payload)[key])
+}
+
+function sessionDevice(rows: PpcTrackingEventRow[]): string {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index]
+    if (!row) continue
+    const device = payloadRecord(row, 'device')
+    const browser = payloadRecord(row, 'browser')
+    const platform = text(device.device_platform) || text(browser.platform)
+    const type = text(device.device_type)
+    const mobile = device.device_mobile
+    const fallbackType = mobile === true
+      ? 'mobile'
+      : mobile === false
+        ? 'desktop'
+        : Number(browser.touch_points) > 0
+          ? 'touch'
+          : ''
+    const label = [platform, type || fallbackType].filter(Boolean).join(' / ')
+    if (label) return label
+  }
+  return '--'
+}
+
+function latestRowText(rows: PpcTrackingEventRow[], key: keyof PpcTrackingEventRow): string {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const value = text(rows[index]?.[key])
+    if (value) return value
+  }
+  return '--'
+}
+
+function compactClickId(value: string): string {
+  if (!value) return '--'
+  return value.length > 18 ? `${value.slice(0, 10)}...${value.slice(-4)}` : value
+}
+
+function sessionStatus(rows: PpcTrackingEventRow[]): PpcReport['recentSessions'][number]['status'] {
+  const names = new Set(rows.map(eventName))
+  const statuses = new Set(rows.map((row) => text(row.form_status)))
+  if (names.has('lead_submitted') || statuses.has('submitted')) return 'submitted'
+  if (names.has('lead_stage3_completed') || names.has('step_3_field_completed') || statuses.has('stage_3_complete_no_submit')) return 'step_3_no_submit'
+  if (names.has('ppc_potential_lead_created') || statuses.has('potential_no_submit')) return 'potential'
+  if (names.has('address_typed')) return 'address_only'
+  if (rows.some((row) => (row.form_step ?? 0) >= 3) || names.has('lead_quiz_qualified')) return 'reached_step_3'
+  if (names.has('cta_click') || names.has('nav_click') || names.has('faq_opened') || names.has('scroll_depth_reached')) return 'engaged'
+  if (names.has('situation_selected') || names.has('timeline_selected') || names.has('condition_selected') || names.has('form_step_completed')) return 'engaged'
+  if (names.has('phone_click')) return 'phone_click'
+  return 'visit_only'
+}
+
+function sessionLabel(status: PpcReport['recentSessions'][number]['status']): string {
+  if (status === 'visit_only') return 'Visit only'
+  if (status === 'phone_click') return 'Phone click'
+  if (status === 'engaged') return 'Engaged'
+  if (status === 'reached_step_3') return 'Reached Step 3'
+  if (status === 'address_only') return 'Address typed'
+  if (status === 'potential') return 'Potential'
+  if (status === 'step_3_no_submit') return 'Step 3 only'
+  return 'Submitted'
+}
+
 function makeLeadState(lead: PpcLeadRow): LeadState {
   return {
     lead,
     attribution: {},
     formSubmitted: false,
     stage3Complete: false,
+    potentialNoSubmit: false,
     hasPpcCall: false,
     connectedCallIds: new Set(),
     milestone60s: new Set(),
@@ -432,7 +646,7 @@ function makeLeadState(lead: PpcLeadRow): LeadState {
 function ensureBucket(buckets: Map<string, PpcReport['daily'][number]>, date: string | null) {
   const key = date || new Date().toISOString().slice(0, 10)
   if (!buckets.has(key)) {
-    buckets.set(key, { date: key, leads: 0, formSubmits: 0, ppcCalls: 0, appointments: 0 })
+    buckets.set(key, { date: key, leads: 0, visits: 0, formSubmits: 0, ppcCalls: 0, phoneClicks: 0, appointments: 0 })
   }
   return buckets.get(key)!
 }
@@ -462,6 +676,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     failed: 0,
     deadLetter: 0,
     skipped: 0,
+    awaitingApproval: 0,
   }
 
   for (const row of input.outbox) {
@@ -470,6 +685,9 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     if (role === 'secondary') exportHealth.secondary += 1
 
     const status = text(row.status).toLowerCase()
+    if (row.approved_for_google_ads === false && (status === 'pending' || status === 'processing' || status === 'failed')) {
+      exportHealth.awaitingApproval += 1
+    }
     if (status === 'pending' || status === 'processing') exportHealth.pending += 1
     if (status === 'sent') exportHealth.sent += 1
     if (status === 'failed') exportHealth.failed += 1
@@ -503,6 +721,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       ensureBucket(buckets, compactDate(activity.created_at)).formSubmits += 1
     }
     if (isStage3Complete(activity)) state.stage3Complete = true
+    if (isPotentialNoSubmit(activity)) state.potentialNoSubmit = true
 
     const event = activityEvent(activity)
     const id = activityId(activity)
@@ -545,7 +764,25 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     state.revenue += money(row.amount)
   }
 
-  const states = Array.from(leadStates.values())
+  const allStates = Array.from(leadStates.values())
+  const testLeadCount = allStates.filter(isTestState).length
+  const states = allStates.filter((state) => !isTestState(state))
+  const trackingEvents = input.trackingEvents.filter((row) => !isTestTrackingEvent(row))
+  const testEventCount = input.trackingEvents.length - trackingEvents.length
+  const visitKeys = new Set(
+    trackingEvents
+      .filter((row) => {
+        const name = eventName(row)
+        return name === 'ppc_visit_started' || name === 'page_view'
+      })
+      .map(eventKey),
+  )
+  const paidVisits = visitKeys.size
+  const phoneClicks = trackingEvents.filter((row) => eventName(row) === 'phone_click').length
+  const optionSelections = trackingEvents.filter((row) => ['situation_selected', 'timeline_selected', 'condition_selected'].includes(eventName(row))).length
+  const step1Completions = trackingEvents.filter((row) => eventName(row) === 'form_step_completed' && row.form_step === 1).length
+  const step2Completions = trackingEvents.filter((row) => eventName(row) === 'form_step_completed' && row.form_step === 2).length
+  const consentedSubmits = trackingEvents.filter((row) => eventName(row) === 'lead_submitted' && row.sms_consent === true).length
   const totalLeads = states.length
   const formSubmits = states.filter((state) => state.formSubmitted).length
   const stage3NoSubmit = states.filter((state) => state.stage3Complete && !state.formSubmitted).length
@@ -583,6 +820,78 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     { key: '2m', label: '2+ Minutes', count: call2m, shareOfConnected: pct(call2m, connectedCalls) },
     { key: '5m', label: '5+ Minutes', count: call5m, shareOfConnected: pct(call5m, connectedCalls) },
   ]
+
+  const dailyBuckets = new Map<string, PpcReport['daily'][number]>()
+  const activeLeadIds = new Set(states.map((state) => state.lead.id))
+  for (const state of states) ensureBucket(dailyBuckets, compactDate(state.lead.created_at)).leads += 1
+  for (const row of trackingEvents) {
+    const bucket = ensureBucket(dailyBuckets, compactDate(row.event_time || row.created_at))
+    const name = eventName(row)
+    if (name === 'ppc_visit_started' || name === 'page_view') bucket.visits += 1
+    if (name === 'phone_click') bucket.phoneClicks += 1
+    if (name === 'lead_submitted') bucket.formSubmits += 1
+  }
+  for (const activity of input.activities) {
+    if (!activity.lead_id || !activeLeadIds.has(activity.lead_id)) continue
+    if (isPpcActivity(activity) && isConnectedCall(activity)) {
+      ensureBucket(dailyBuckets, compactDate(activity.created_at)).ppcCalls += 1
+    }
+  }
+  for (const appointment of input.appointments) {
+    if (!appointment.lead_id || !activeLeadIds.has(appointment.lead_id)) continue
+    const status = text(appointment.status).toLowerCase()
+    if (status !== 'cancelled' && status !== 'no_show') {
+      ensureBucket(dailyBuckets, compactDate(appointment.created_at || appointment.scheduled_at)).appointments += 1
+    }
+  }
+
+  const sessionGroups = new Map<string, PpcTrackingEventRow[]>()
+  for (const row of trackingEvents) {
+    const key = sessionKey(row)
+    sessionGroups.set(key, [...(sessionGroups.get(key) ?? []), row])
+  }
+
+  const recentSessions = Array.from(sessionGroups.entries())
+    .map(([key, rows]) => {
+      const ordered = [...rows].sort((a, b) => new Date(a.event_time || a.created_at || 0).getTime() - new Date(b.event_time || b.created_at || 0).getTime())
+      const first = ordered[0]
+      const last = ordered[ordered.length - 1]
+      const attribution = ordered.reduce<Record<string, unknown>>(
+        (acc, row) => mergeAttribution(acc, extractAttributionFromTracking(row)),
+        {},
+      )
+      const leadIds = Array.from(new Set(ordered.map((row) => row.lead_id).filter((id): id is string => Boolean(id))))
+      const addressSources = Array.from(new Set(ordered.map((row) => payloadText(row, 'address_source')).filter(Boolean)))
+      const addressSignal = addressSources.includes('google_places')
+        ? 'Google Places'
+        : addressSources.includes('typed')
+          ? 'Typed'
+          : ordered.some((row) => eventName(row) === 'address_typed')
+            ? 'Typed'
+            : '--'
+      const status = sessionStatus(ordered)
+      return {
+        key,
+        firstEventAt: first?.event_time || first?.created_at || null,
+        lastEventAt: last?.event_time || last?.created_at || null,
+        eventCount: ordered.length,
+        status,
+        maxStep: Math.max(0, ...ordered.map((row) => row.form_step ?? 0)),
+        lastEvent: sessionLabel(status),
+        campaign: campaignName(attribution),
+        source: sourceName(attribution),
+        medium: mediumName(attribution),
+        clickId: compactClickId(clickIdFromTracking(first) || text(attribution.click_id)),
+        device: sessionDevice(ordered),
+        situation: latestRowText(ordered, 'situation_raw'),
+        timeline: latestRowText(ordered, 'timeline_raw'),
+        condition: latestRowText(ordered, 'condition_raw'),
+        addressSignal,
+        leadId: leadIds[0] ?? null,
+      } satisfies PpcReport['recentSessions'][number]
+    })
+    .sort((a, b) => new Date(b.lastEventAt || b.firstEventAt || 0).getTime() - new Date(a.lastEventAt || a.firstEventAt || 0).getTime())
+    .slice(0, 25)
 
   const attributionMap = new Map<string, PpcReport['attributionRows'][number]>()
   for (const state of states) {
@@ -646,9 +955,11 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
         ? 'submitted'
         : state.stage3Complete
           ? 'stage_3_no_submit'
-          : state.hasPpcCall
-            ? 'call_only'
-            : 'lead_only'
+          : state.potentialNoSubmit
+            ? 'potential_no_submit'
+            : state.hasPpcCall
+              ? 'call_only'
+              : 'lead_only'
       const clickId = text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id) || '--'
       return {
         id: state.lead.id,
@@ -678,6 +989,14 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       until: input.until,
     },
     summary: {
+      paidVisits,
+      eventLogTotal: trackingEvents.length,
+      optionSelections,
+      step1Completions,
+      step2Completions,
+      phoneClicks,
+      consentedSubmits,
+      testRecords: testLeadCount + testEventCount,
       totalLeads,
       formSubmits,
       stage3NoSubmit,
@@ -703,12 +1022,13 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     exportHealth,
     dataQuality: {
       clickIdCoverage: pct(clickIds, totalLeads) ?? 0,
-      attributionCoverage: pct(attributionCoverage, totalLeads) ?? 0,
+      attributionCoverage: totalLeads > 0 ? pct(attributionCoverage, totalLeads) ?? 0 : paidVisits > 0 ? 100 : 0,
       sourceMediumCoverage: pct(sourceMediumCoverage, totalLeads) ?? 0,
-      pendingExports: exportHealth.pending,
+      pendingExports: exportHealth.pending + exportHealth.awaitingApproval,
       failedExports: exportHealth.failed + exportHealth.deadLetter,
     },
-    daily: Array.from(buckets.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    daily: Array.from(dailyBuckets.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    recentSessions,
     recentLeads,
   }
 }

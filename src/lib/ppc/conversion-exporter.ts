@@ -29,6 +29,7 @@ export type PpcConversionOutboxExportRow = {
   event_category: PpcConversionCategory
   destination: 'google_ads'
   dedupe_key: string
+  approved_for_google_ads: boolean
   status: PpcConversionOutboxExportStatus
   optimization_role: PpcOptimizationRole
   lead_id: string | null
@@ -205,6 +206,7 @@ class SupabaseOutboxStore implements OutboxStore {
     const { data, error } = await this.client
       .from('ppc_conversion_outbox')
       .select('*')
+      .eq('approved_for_google_ads', true)
       .in('status', ['pending', 'failed'])
       .lt('attempts', this.maxAttempts)
       .order('event_time', { ascending: true })
@@ -700,6 +702,19 @@ export async function runPpcConversionExport(
     if (dryRun) {
       const destinations = plannedDestinations(row, google.config, stape.config)
       results.push({ id: row.id, eventName: row.event_name, status: 'pending', destinations })
+      continue
+    }
+
+    if (!row.approved_for_google_ads) {
+      const destinations: DestinationResult[] = [
+        { destination: 'google_ads', status: 'skipped', detail: 'Awaiting approval for Google Ads export' },
+      ]
+      if (stape.config) {
+        destinations.unshift({ destination: 'stape', status: 'skipped', detail: 'Awaiting approval for Google Ads export' })
+      }
+      const summary = rowSummary(row, destinations, now)
+      await store.markSkipped(row, 'Awaiting approval for Google Ads export', summary, now)
+      results.push({ id: row.id, eventName: row.event_name, status: 'skipped', destinations })
       continue
     }
 

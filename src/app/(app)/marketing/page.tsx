@@ -46,9 +46,17 @@ function formatDate(value: string | null): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function formatTime(value: string | null): string {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '--'
+  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
 function statusLabel(status: PpcReport['recentLeads'][number]['formStatus']): string {
   if (status === 'submitted') return 'Submitted'
   if (status === 'stage_3_no_submit') return 'Step 3 only'
+  if (status === 'potential_no_submit') return 'Potential'
   if (status === 'call_only') return 'Call only'
   return 'Lead only'
 }
@@ -56,7 +64,17 @@ function statusLabel(status: PpcReport['recentLeads'][number]['formStatus']): st
 function statusClass(status: PpcReport['recentLeads'][number]['formStatus']): string {
   if (status === 'submitted') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
   if (status === 'stage_3_no_submit') return 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+  if (status === 'potential_no_submit') return 'border-sky-500/30 bg-sky-500/10 text-sky-300'
   if (status === 'call_only') return 'border-violet-500/30 bg-violet-500/10 text-violet-300'
+  return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
+}
+
+function sessionStatusClass(status: PpcReport['recentSessions'][number]['status']): string {
+  if (status === 'submitted') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+  if (status === 'step_3_no_submit') return 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+  if (status === 'potential') return 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+  if (status === 'address_only' || status === 'reached_step_3') return 'border-orange-500/30 bg-orange-500/10 text-orange-300'
+  if (status === 'engaged' || status === 'phone_click') return 'border-violet-500/30 bg-violet-500/10 text-violet-300'
   return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
 }
 
@@ -158,7 +176,8 @@ export default function MarketingPage() {
 
         {report && (
           <div className="space-y-5 pb-20">
-            <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+            <section className="grid grid-cols-2 gap-3 lg:grid-cols-7">
+              <KpiCard icon="ads_click" label="Paid Visits" value={formatNumber(report.summary.paidVisits)} detail={`${formatNumber(report.summary.eventLogTotal)} logged events`} tone="info" />
               <KpiCard icon="person_add" label="PPC Leads" value={formatNumber(report.summary.totalLeads)} />
               <KpiCard icon="done_all" label="Form Submits" value={formatNumber(report.summary.formSubmits)} detail={`${formatPct(report.summary.submitRate)} submit rate`} tone="success" />
               <KpiCard icon="edit_note" label="Step 3 Only" value={formatNumber(report.summary.stage3NoSubmit)} detail="No submit yet" tone="warn" />
@@ -166,6 +185,16 @@ export default function MarketingPage() {
               <KpiCard icon="event_available" label="Appointments" value={formatNumber(report.summary.appointments)} detail={`${formatPct(report.summary.appointmentRate)} of leads`} tone="success" />
               <KpiCard icon="payments" label="Revenue" value={formatMoney(report.summary.revenue)} detail={`${formatNumber(report.summary.contracts)} contracts`} tone="money" />
             </section>
+
+            <Panel title="Click-to-Close Tracking Flow" icon="account_tree">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+                <FlowStep icon="ads_click" label="Ad Click" value="Ads UI" detail="Spend, CPC, campaign" tone="red" />
+                <FlowStep icon="web_traffic" label="Visit Logged" value={formatNumber(report.summary.paidVisits)} detail="First-party event rows" tone="violet" />
+                <FlowStep icon="fact_check" label="Form Signals" value={formatNumber(report.summary.optionSelections)} detail={`${formatNumber(report.summary.step2Completions)} reached Step 3`} tone="amber" />
+                <FlowStep icon="person_add" label="CRM Lead" value={formatNumber(report.summary.totalLeads)} detail={`${formatNumber(report.summary.consentedSubmits)} with consent`} tone="emerald" />
+                <FlowStep icon="verified" label="Ads Export" value={formatNumber(report.exportHealth.awaitingApproval)} detail="Awaiting approval" tone="slate" />
+              </div>
+            </Panel>
 
             <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.15fr_0.85fr]">
               <Panel title="Submit-First Funnel" icon="filter_alt">
@@ -229,8 +258,12 @@ export default function MarketingPage() {
                   <QualityRow label="Source / Medium Map" value={report.dataQuality.sourceMediumCoverage} />
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3">
-                  <ExportBox label="Pending Exports" value={report.exportHealth.pending} tone={report.exportHealth.pending > 0 ? 'warn' : 'ok'} />
+                  <ExportBox label="Awaiting Approval" value={report.exportHealth.awaitingApproval} tone={report.exportHealth.awaitingApproval > 0 ? 'warn' : 'ok'} />
                   <ExportBox label="Failed Exports" value={report.exportHealth.failed + report.exportHealth.deadLetter} tone={report.exportHealth.failed + report.exportHealth.deadLetter > 0 ? 'bad' : 'ok'} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <ExportBox label="Phone Clicks" value={report.summary.phoneClicks} tone="ok" />
+                  <ExportBox label="Test Records Hidden" value={report.summary.testRecords} tone={report.summary.testRecords > 0 ? 'warn' : 'ok'} />
                 </div>
               </Panel>
 
@@ -250,9 +283,11 @@ export default function MarketingPage() {
                           color: 'var(--ck-text)',
                         }}
                       />
+                      <Bar dataKey="visits" name="Paid visits" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="leads" name="Leads" fill="#E32E2E" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="formSubmits" name="Submits" fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="ppcCalls" name="Calls" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="ppcCalls" name="Calls" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="phoneClicks" name="Phone clicks" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="appointments" name="Appointments" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -296,6 +331,62 @@ export default function MarketingPage() {
                         <td className="py-3 pr-4 text-right tabular-nums">{formatNumber(row.appointments)}</td>
                         <td className="py-3 pr-4 text-right tabular-nums">{formatNumber(row.contracts)}</td>
                         <td className="py-3 text-right font-bold tabular-nums">{formatMoney(row.revenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+
+            <Panel title="Recent Paid Click Sessions" icon="timeline">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--ck-border)] text-left text-xs uppercase tracking-wide text-[var(--ck-text-dim)]">
+                      <th className="py-3 pr-4">Time</th>
+                      <th className="py-3 pr-4">Journey</th>
+                      <th className="py-3 pr-4">Choices</th>
+                      <th className="py-3 pr-4">Campaign</th>
+                      <th className="py-3 pr-4">Click ID</th>
+                      <th className="py-3 text-right">CRM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.recentSessions.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-[var(--ck-text-muted)]">No paid click sessions in this period.</td>
+                      </tr>
+                    ) : report.recentSessions.map((session) => (
+                      <tr key={session.key} className="border-b border-[var(--ck-border)] last:border-b-0">
+                        <td className="py-3 pr-4">
+                          <div className="font-bold text-[var(--ck-text)]">{formatTime(session.firstEventAt)}</div>
+                          <div className="text-xs text-[var(--ck-text-dim)]">{formatDate(session.firstEventAt)} · {session.eventCount} events</div>
+                          <div className="text-xs text-[var(--ck-text-dim)]">{session.device}</div>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span className={`inline-flex rounded-lg border px-2 py-1 text-xs font-bold ${sessionStatusClass(session.status)}`}>
+                            {session.lastEvent}
+                          </span>
+                          <div className="mt-1 text-xs text-[var(--ck-text-dim)]">max step {session.maxStep || 1} · address {session.addressSignal}</div>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <div className="capitalize">{session.situation.replace(/-/g, ' ')}</div>
+                          <div className="text-xs capitalize text-[var(--ck-text-dim)]">{session.timeline.replace(/-/g, ' ')} · {session.condition.replace(/-/g, ' ')}</div>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <div>{session.campaign}</div>
+                          <div className="text-xs text-[var(--ck-text-dim)]">{session.source} / {session.medium}</div>
+                        </td>
+                        <td className="py-3 pr-4 max-w-[180px] truncate font-mono text-xs text-[var(--ck-text-muted)]">{session.clickId}</td>
+                        <td className="py-3 text-right">
+                          {session.leadId ? (
+                            <Link href={`/leads/${session.leadId}`} className="font-bold text-[#FCA5A5] hover:text-[#FEE2E2]">
+                              Lead
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-[var(--ck-text-dim)]">No lead yet</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -369,6 +460,39 @@ function Panel({ title, icon, children }: { title: string; icon: string; childre
       </div>
       {children}
     </section>
+  )
+}
+
+function FlowStep({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  icon: string
+  label: string
+  value: string
+  detail: string
+  tone: 'red' | 'violet' | 'amber' | 'emerald' | 'slate'
+}) {
+  const toneClass = {
+    red: 'border-[#E32E2E]/35 bg-[#E32E2E]/10 text-[#FCA5A5]',
+    violet: 'border-violet-500/35 bg-violet-500/10 text-violet-300',
+    amber: 'border-amber-500/35 bg-amber-500/10 text-amber-300',
+    emerald: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300',
+    slate: 'border-sky-500/35 bg-sky-500/10 text-sky-300',
+  }[tone]
+
+  return (
+    <div className={`relative rounded-lg border p-4 ${toneClass}`}>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="text-xs font-black uppercase tracking-wide">{label}</div>
+        <Icon name={icon} size="text-xl" />
+      </div>
+      <div className="text-2xl font-black tabular-nums text-[var(--ck-text)]">{value}</div>
+      <div className="mt-1 text-xs font-medium text-[var(--ck-text-muted)]">{detail}</div>
+    </div>
   )
 }
 
