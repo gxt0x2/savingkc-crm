@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildGoogleAdsUploadPlan,
+  getPpcConversionExportConfigHealth,
   runPpcConversionExport,
   type PpcConversionOutboxExportRow,
 } from './conversion-exporter'
@@ -54,6 +55,60 @@ function googleConfig() {
 }
 
 describe('ppc conversion exporter', () => {
+  it('summarizes Stape-only export configuration without exposing secrets', () => {
+    const health = getPpcConversionExportConfigHealth({
+      PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape',
+      PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+      STAPE_SGTM_PREVIEW_HEADER: 'secret-preview-token',
+    })
+
+    expect(health).toMatchObject({
+      configured: true,
+      mode: 'stape_only',
+      enabledDestinations: ['stape'],
+      stape: {
+        enabled: true,
+        ready: true,
+        endpointHost: 'gtm.savingkc.com',
+        previewHeaderConfigured: true,
+      },
+      googleAds: {
+        enabled: false,
+        ready: false,
+      },
+    })
+    expect(JSON.stringify(health)).not.toContain('secret-preview-token')
+    expect(health.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Stape/server GTM only'),
+      ]),
+    )
+  })
+
+  it('reports missing Google Ads API credentials and action mappings', () => {
+    const health = getPpcConversionExportConfigHealth({
+      PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads,stape',
+      PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+      GOOGLE_ADS_CUSTOMER_ID: '646-966-429',
+      GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
+      GOOGLE_ADS_CLIENT_ID: 'client-id',
+      GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
+      GOOGLE_ADS_CONVERSION_ACTION_LEAD_SUBMITTED: '111',
+    })
+
+    expect(health.configured).toBe(true)
+    expect(health.googleAds).toMatchObject({
+      enabled: true,
+      ready: false,
+      customerId: '646966429',
+      configuredActionMappings: ['lead_submitted'],
+    })
+    expect(health.googleAds.missingConfig).toContain('GOOGLE_ADS_REFRESH_TOKEN')
+    expect(health.googleAds.missingActionMappings).toEqual(
+      expect.arrayContaining(['qualified_lead', 'call_connected_2m', 'call_connected_5m']),
+    )
+  })
+
   it('builds Google Ads click conversion payloads with exactly one click id', () => {
     const plan = buildGoogleAdsUploadPlan(makeRow(), googleConfig())
 

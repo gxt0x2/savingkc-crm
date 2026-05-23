@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserEmail } from '@/lib/auth/admin'
 import { buildPpcReport } from '@/lib/marketing/ppc-report'
+import { getPpcConversionExportConfigHealth } from '@/lib/ppc/conversion-exporter'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -160,6 +161,7 @@ export async function GET(req: NextRequest) {
     appointments: appointments ?? [],
     revenue: revenue ?? [],
     manifests: manifests ?? [],
+    exportConfig: getPpcConversionExportConfigHealth(process.env),
   })
 
   return NextResponse.json(report, { headers: NO_STORE_HEADERS })

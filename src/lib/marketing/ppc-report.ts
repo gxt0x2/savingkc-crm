@@ -7,6 +7,7 @@ import {
   type GoogleAdsQualityScore,
 } from '@/lib/ppc/conversion-approval'
 import { isGoogleAdsExportablePpcEvent } from '@/lib/ppc/exportable-events'
+import type { PpcConversionExportConfigHealth } from '@/lib/ppc/conversion-exporter'
 
 export type PpcLeadRow = {
   id: string
@@ -130,6 +131,7 @@ export type PpcReportInput = {
   appointments: PpcAppointmentRow[]
   revenue: PpcRevenueRow[]
   manifests: PpcManifestRow[]
+  exportConfig?: PpcConversionExportConfigHealth
   now?: string | Date
 }
 
@@ -258,6 +260,7 @@ export type PpcReport = {
     pendingExports: number
     failedExports: number
   }
+  exportConfig: PpcConversionExportConfigHealth
   daily: Array<{
     date: string
     leads: number
@@ -951,6 +954,31 @@ function buildJourneySteps({
   ]
 }
 
+function fallbackExportConfig(): PpcConversionExportConfigHealth {
+  return {
+    configured: false,
+    mode: 'not_configured',
+    enabledDestinations: [],
+    googleAds: {
+      enabled: false,
+      ready: false,
+      customerId: null,
+      apiVersion: null,
+      missingConfig: [],
+      configuredActionMappings: [],
+      missingActionMappings: [],
+    },
+    stape: {
+      enabled: false,
+      ready: false,
+      endpointHost: null,
+      previewHeaderConfigured: false,
+      missingConfig: [],
+    },
+    warnings: ['Export worker configuration was not included in this report response.'],
+  }
+}
+
 export function buildPpcReport(input: PpcReportInput): PpcReport {
   const reportNow = input.now instanceof Date
     ? input.now
@@ -1422,6 +1450,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       pendingExports: exportHealth.pending + exportHealth.awaitingApproval,
       failedExports: exportHealth.failed + exportHealth.deadLetter,
     },
+    exportConfig: input.exportConfig ?? fallbackExportConfig(),
     daily: Array.from(dailyBuckets.values()).sort((a, b) => a.date.localeCompare(b.date)),
     recentSessions,
     journeySessions,

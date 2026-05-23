@@ -113,6 +113,34 @@ function scoreLabel(score: GoogleAdsQualityScore): string {
   return item ? `${item.score} - ${item.title}` : String(score)
 }
 
+function exportModeLabel(mode: PpcReport['exportConfig']['mode']): string {
+  if (mode === 'google_ads_and_stape') return 'Google Ads API + Stape'
+  if (mode === 'google_ads_only') return 'Google Ads API only'
+  if (mode === 'stape_only') return 'Stape/server GTM only'
+  return 'Not configured'
+}
+
+function setupStatusLabel(enabled: boolean, ready: boolean): string {
+  if (!enabled) return 'Disabled'
+  return ready ? 'Ready' : 'Needs setup'
+}
+
+function setupStatusClass(enabled: boolean, ready: boolean): string {
+  if (!enabled) return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
+  if (ready) return 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
+  return 'border-amber-500/40 bg-amber-500/12 text-amber-200'
+}
+
+function formatEventName(value: string): string {
+  if (value === 'lead_submitted') return 'Final submit'
+  if (value === 'qualified_lead') return 'Qualified lead'
+  if (value === 'appointment_booked') return 'Appointment'
+  if (value === 'call_connected_60s') return 'Call 60s+'
+  if (value === 'call_connected_2m') return 'Call 2m+'
+  if (value === 'call_connected_5m') return 'Call 5m+'
+  return value.replace(/_/g, ' ')
+}
+
 function usePpcReport(days: number, refreshKey: number): LoadState {
   const [state, setState] = useState<LoadState>({ status: 'loading', data: null, error: null })
 
@@ -232,6 +260,8 @@ export default function MarketingPage() {
                 <FlowStep icon="verified" label="Ads Export" value={formatNumber(report.exportHealth.awaitingApproval)} detail="Awaiting approval" tone="slate" />
               </div>
             </Panel>
+
+            <ExportSetupPanel report={report} />
 
             <ApprovalQueuePanel
               report={report}
@@ -508,6 +538,135 @@ export default function MarketingPage() {
             </Panel>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function ExportSetupPanel({ report }: { report: PpcReport }) {
+  const config = report.exportConfig
+  const google = config.googleAds
+  const stape = config.stape
+  const missingActionCount = google.missingActionMappings.length
+
+  return (
+    <Panel title="Export Setup Health" icon="settings_input_component">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">Current export mode</div>
+          <div className="mt-1 text-2xl font-black tracking-tight">{exportModeLabel(config.mode)}</div>
+          <div className="mt-1 text-sm text-[var(--ck-text-muted)]">
+            Approved rows are exported only through destinations marked ready.
+          </div>
+        </div>
+        <span className={`inline-flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-black uppercase tracking-wide ${config.configured ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200' : 'border-[#E32E2E]/40 bg-[#E32E2E]/10 text-[#FCA5A5]'}`}>
+          <Icon name={config.configured ? 'verified' : 'warning'} size="text-base" />
+          {config.configured ? 'Worker has a live destination' : 'Worker destination incomplete'}
+        </span>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <SetupCard
+          icon="cloud_sync"
+          title="Stape Server GTM"
+          status={setupStatusLabel(stape.enabled, stape.ready)}
+          statusClass={setupStatusClass(stape.enabled, stape.ready)}
+          primary={stape.endpointHost || 'No endpoint host'}
+          details={[
+            stape.previewHeaderConfigured ? 'Preview header configured' : 'No preview header',
+            ...stape.missingConfig,
+          ]}
+        />
+        <SetupCard
+          icon="upload_file"
+          title="Direct Google Ads API"
+          status={setupStatusLabel(google.enabled, google.ready)}
+          statusClass={setupStatusClass(google.enabled, google.ready)}
+          primary={google.customerId ? `Customer ${google.customerId}` : 'No customer ID'}
+          details={[
+            `${google.configuredActionMappings.length} of ${google.configuredActionMappings.length + missingActionCount} action mappings ready`,
+            ...google.missingConfig,
+          ]}
+        />
+      </div>
+
+      {google.enabled && (
+        <div className="mt-4 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+          <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">
+            <Icon name="schema" size="text-base" className="text-[#E32E2E]" />
+            Google Ads conversion action mappings
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[...google.configuredActionMappings, ...google.missingActionMappings].map((eventName) => {
+              const ready = google.configuredActionMappings.includes(eventName)
+              return (
+                <span
+                  key={eventName}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-bold ${
+                    ready
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                      : 'border-amber-500/35 bg-amber-500/10 text-amber-200'
+                  }`}
+                >
+                  <Icon name={ready ? 'check_circle' : 'pending'} size="text-sm" />
+                  {formatEventName(eventName)}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {config.warnings.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {config.warnings.map((warning) => (
+            <div key={warning} className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+              <Icon name="info" size="text-base" className="mt-0.5 text-amber-300" />
+              <span>{warning}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function SetupCard({
+  icon,
+  title,
+  status,
+  statusClass,
+  primary,
+  details,
+}: {
+  icon: string
+  title: string
+  status: string
+  statusClass: string
+  primary: string
+  details: string[]
+}) {
+  return (
+    <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Icon name={icon} size="text-xl" className="text-[#E32E2E]" />
+          <div>
+            <div className="text-sm font-black text-[var(--ck-text)]">{title}</div>
+            <div className="mt-0.5 text-xs text-[var(--ck-text-muted)]">{primary}</div>
+          </div>
+        </div>
+        <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-black ${statusClass}`}>{status}</span>
+      </div>
+      <div className="space-y-1 text-xs text-[var(--ck-text-muted)]">
+        {details.length === 0 ? (
+          <div>No missing setup detected.</div>
+        ) : details.map((detail) => (
+          <div key={detail} className="flex items-start gap-2">
+            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ck-text-dim)]" />
+            <span>{detail}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
