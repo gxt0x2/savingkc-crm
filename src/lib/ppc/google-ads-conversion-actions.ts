@@ -22,6 +22,13 @@ export type GoogleAdsConversionActionSuggestion = {
   action: GoogleAdsConversionActionSummary | null
 }
 
+export type GoogleAdsConversionActionAccountError = {
+  customerId: string
+  message: string
+  status: string | null
+  code: number | null
+}
+
 export type GoogleAdsConversionActionInspection = {
   ok: boolean
   configured: boolean
@@ -29,6 +36,7 @@ export type GoogleAdsConversionActionInspection = {
   customerId: string | null
   loginCustomerId: string | null
   actions: GoogleAdsConversionActionSummary[]
+  accountErrors: GoogleAdsConversionActionAccountError[]
   suggestedMappings: GoogleAdsConversionActionSuggestion[]
 }
 
@@ -115,14 +123,22 @@ function suggestedMappings(actions: GoogleAdsConversionActionSummary[]): GoogleA
   }))
 }
 
-function summarizeRemoteError(body: Record<string, unknown>, fallback: string): string {
+function googleAdsError(body: Record<string, unknown>, fallback: string): Omit<GoogleAdsConversionActionAccountError, 'customerId'> {
   const error = body.error
-  if (typeof error === 'string') return error
-  if (error && typeof error === 'object') {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === 'string') return message
+  if (typeof error === 'string') {
+    return { message: error, status: null, code: null }
   }
-  return fallback
+
+  if (error && typeof error === 'object') {
+    const typed = error as { message?: unknown; status?: unknown; code?: unknown }
+    return {
+      message: typeof typed.message === 'string' ? typed.message : fallback,
+      status: typeof typed.status === 'string' ? typed.status : null,
+      code: typeof typed.code === 'number' ? typed.code : null,
+    }
+  }
+
+  return { message: fallback, status: null, code: null }
 }
 
 function toActionSummary(
@@ -149,7 +165,7 @@ async function searchConversionActionsForCustomer(
   accessToken: string,
   customerId: string,
   fetchFn: typeof fetch,
-): Promise<GoogleAdsConversionActionSummary[]> {
+): Promise<{ actions: GoogleAdsConversionActionSummary[]; error: GoogleAdsConversionActionAccountError | null }> {
   const response = await fetchFn(
     `https://googleads.googleapis.com/${config.apiVersion}/customers/${customerId}/googleAds:searchStream`,
     {
@@ -166,16 +182,25 @@ async function searchConversionActionsForCustomer(
 
   const body = await response.json().catch(() => ({})) as SearchStreamResponse | Record<string, unknown>
   if (!response.ok) {
-    throw new Error(summarizeRemoteError(body as Record<string, unknown>, `Google Ads conversion action search failed (${response.status})`))
+    return {
+      actions: [],
+      error: {
+        customerId,
+        ...googleAdsError(body as Record<string, unknown>, `Google Ads conversion action search failed (${response.status})`),
+      },
+    }
   }
 
-  if (!Array.isArray(body)) return []
+  if (!Array.isArray(body)) return { actions: [], error: null }
 
-  return body.flatMap((chunk) =>
-    (chunk.results ?? [])
-      .map((result) => result.conversionAction ? toActionSummary(customerId, result.conversionAction) : null)
-      .filter((action): action is GoogleAdsConversionActionSummary => Boolean(action)),
-  )
+  return {
+    actions: body.flatMap((chunk) =>
+      (chunk.results ?? [])
+        .map((result) => result.conversionAction ? toActionSummary(customerId, result.conversionAction) : null)
+        .filter((action): action is GoogleAdsConversionActionSummary => Boolean(action)),
+    ),
+    error: null,
+  }
 }
 
 export async function inspectGoogleAdsConversionActions(
@@ -191,23 +216,29 @@ export async function inspectGoogleAdsConversionActions(
       customerId: digits(env.GOOGLE_ADS_CUSTOMER_ID ?? null),
       loginCustomerId: digits(env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? env.GOOGLE_ADS_MANAGER_CUSTOMER_ID ?? null),
       actions: [],
+      accountErrors: [],
       suggestedMappings: suggestedMappings([]),
     }
   }
 
   const accessToken = await getGoogleAdsAccessToken(config, fetchFn)
   const customerIds = Array.from(new Set([config.customerId, config.loginCustomerId].filter(Boolean))) as string[]
-  const actions = (await Promise.all(
+  const accountResults = await Promise.all(
     customerIds.map((customerId) => searchConversionActionsForCustomer(config, accessToken, customerId, fetchFn)),
-  )).flat()
+  )
+  const actions = accountResults.flatMap((result) => result.actions)
+  const accountErrors = accountResults
+    .map((result) => result.error)
+    .filter((error): error is GoogleAdsConversionActionAccountError => Boolean(error))
 
   return {
-    ok: true,
+    ok: accountErrors.length === 0 || actions.length > 0,
     configured: true,
     missingConfig: [],
     customerId: config.customerId,
     loginCustomerId: config.loginCustomerId,
     actions,
+    accountErrors,
     suggestedMappings: suggestedMappings(actions),
   }
 }
