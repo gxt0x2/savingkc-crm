@@ -231,6 +231,32 @@ export type PpcReport = {
     addressSignal: string
     leadId: string | null
   }>
+  journeySessions: Array<{
+    key: string
+    firstEventAt: string | null
+    lastEventAt: string | null
+    eventCount: number
+    campaign: string
+    source: string
+    medium: string
+    clickId: string
+    device: string
+    leadId: string | null
+    leadName: string
+    choices: {
+      situation: string
+      timeline: string
+      condition: string
+      address: string
+    }
+    steps: Array<{
+      key: string
+      label: string
+      status: 'complete' | 'active' | 'missing'
+      detail: string
+      at: string | null
+    }>
+  }>
   recentLeads: Array<{
     id: string
     name: string
@@ -609,7 +635,7 @@ function sessionStatus(rows: PpcTrackingEventRow[]): PpcReport['recentSessions']
   if (rows.some((row) => (row.form_step ?? 0) >= 3) || names.has('lead_quiz_qualified')) return 'reached_step_3'
   if (names.has('cta_click') || names.has('nav_click') || names.has('faq_opened') || names.has('scroll_depth_reached')) return 'engaged'
   if (names.has('situation_selected') || names.has('timeline_selected') || names.has('condition_selected') || names.has('form_step_completed')) return 'engaged'
-  if (names.has('phone_click')) return 'phone_click'
+  if (rows.some((row) => isPhoneSignal(row))) return 'phone_click'
   return 'visit_only'
 }
 
@@ -649,6 +675,141 @@ function ensureBucket(buckets: Map<string, PpcReport['daily'][number]>, date: st
     buckets.set(key, { date: key, leads: 0, visits: 0, formSubmits: 0, ppcCalls: 0, phoneClicks: 0, appointments: 0 })
   }
   return buckets.get(key)!
+}
+
+function eventAt(row: PpcTrackingEventRow | PpcOutboxRow | null | undefined): string | null {
+  if (!row) return null
+  return ('event_time' in row ? row.event_time : null) || ('created_at' in row ? row.created_at : null)
+}
+
+function firstEventAt(rows: PpcTrackingEventRow[], predicate: (row: PpcTrackingEventRow) => boolean): string | null {
+  return eventAt(rows.find(predicate))
+}
+
+function hasEvent(rows: PpcTrackingEventRow[], name: string): boolean {
+  return rows.some((row) => eventName(row) === name)
+}
+
+function isPhoneSignal(row: PpcTrackingEventRow): boolean {
+  const name = eventName(row)
+  return name === 'phone_click' || name === 'skc_phone_number_selected'
+}
+
+function displayChoice(value: string): string {
+  if (!value || value === '--') return '--'
+  return value.replace(/-/g, ' ')
+}
+
+function outboxStatus(row: PpcOutboxRow): string {
+  const status = text(row.status).toLowerCase() || 'pending'
+  if (row.approved_for_google_ads === false && (status === 'pending' || status === 'processing' || status === 'failed')) {
+    return 'Awaiting approval'
+  }
+  return status.replace(/_/g, ' ')
+}
+
+function buildJourneySteps({
+  ordered,
+  attribution,
+  leadState,
+  outboxRows,
+}: {
+  ordered: PpcTrackingEventRow[]
+  attribution: Record<string, unknown>
+  leadState: LeadState | null
+  outboxRows: PpcOutboxRow[]
+}): PpcReport['journeySessions'][number]['steps'] {
+  const clickId = clickIdFromTracking(ordered[0]) || text(attribution.click_id)
+  const visitAt = firstEventAt(ordered, (row) => eventName(row) === 'ppc_visit_started' || eventName(row) === 'page_view')
+  const phoneAt = firstEventAt(ordered, isPhoneSignal)
+  const situation = latestRowText(ordered, 'situation_raw')
+  const timeline = latestRowText(ordered, 'timeline_raw')
+  const condition = latestRowText(ordered, 'condition_raw')
+  const step2At = firstEventAt(ordered, (row) => eventName(row) === 'form_step_completed' && (row.form_step ?? 0) >= 2)
+  const step3At = firstEventAt(ordered, (row) => (
+    (row.form_step ?? 0) >= 3 ||
+    eventName(row) === 'lead_quiz_qualified' ||
+    eventName(row) === 'lead_stage3_completed' ||
+    eventName(row) === 'step_3_field_completed'
+  ))
+  const addressAt = firstEventAt(ordered, (row) => eventName(row) === 'address_typed' || Boolean(payloadText(row, 'address')))
+  const addressSource = Array.from(new Set(ordered.map((row) => payloadText(row, 'address_source')).filter(Boolean)))[0] || ''
+  const submittedAt = firstEventAt(ordered, (row) => eventName(row) === 'lead_submitted' || text(row.form_status) === 'submitted')
+  const submitOutbox = outboxRows.find((row) => text(row.event_name) === 'lead_submitted')
+  const leadAt = leadState?.lead.created_at ?? null
+
+  return [
+    {
+      key: 'ad_click',
+      label: 'Ad Click',
+      status: clickId ? 'complete' : 'active',
+      detail: clickId ? compactClickId(clickId) : 'No click ID',
+      at: ordered[0]?.event_time || ordered[0]?.created_at || null,
+    },
+    {
+      key: 'page_visit',
+      label: 'Page Visit',
+      status: visitAt ? 'complete' : 'missing',
+      detail: visitAt ? 'Visit logged' : 'No visit event',
+      at: visitAt,
+    },
+    {
+      key: 'phone_signal',
+      label: 'PPC Phone',
+      status: phoneAt ? 'complete' : 'missing',
+      detail: phoneAt ? '816-608-8808 shown' : 'No phone signal',
+      at: phoneAt,
+    },
+    {
+      key: 'situation',
+      label: 'Situation',
+      status: situation !== '--' || hasEvent(ordered, 'situation_selected') ? 'complete' : 'missing',
+      detail: displayChoice(situation),
+      at: firstEventAt(ordered, (row) => eventName(row) === 'situation_selected' || Boolean(row.situation_raw)),
+    },
+    {
+      key: 'step_2',
+      label: 'Step 2 Done',
+      status: step2At ? 'complete' : 'missing',
+      detail: [displayChoice(timeline), displayChoice(condition)].filter((value) => value !== '--').join(' / ') || 'Not reached',
+      at: step2At,
+    },
+    {
+      key: 'step_3',
+      label: 'Step 3 Ready',
+      status: step3At ? 'complete' : 'missing',
+      detail: step3At ? 'Qualified/contact step' : 'Not reached',
+      at: step3At,
+    },
+    {
+      key: 'address',
+      label: 'Address',
+      status: addressAt ? 'complete' : 'missing',
+      detail: addressSource === 'google_places' ? 'Google Places' : addressSource === 'typed' ? 'Typed' : 'No address',
+      at: addressAt,
+    },
+    {
+      key: 'crm_lead',
+      label: 'CRM Lead',
+      status: leadState ? 'complete' : 'missing',
+      detail: leadState ? displayName(leadState.lead) : 'No CRM lead',
+      at: leadAt,
+    },
+    {
+      key: 'final_submit',
+      label: 'Final Submit',
+      status: submittedAt || leadState?.formSubmitted ? 'complete' : leadState ? 'active' : 'missing',
+      detail: submittedAt || leadState?.formSubmitted ? 'Submitted' : leadState ? 'Lead saved, no submit' : 'Not submitted',
+      at: submittedAt,
+    },
+    {
+      key: 'ads_outbox',
+      label: 'Ads Outbox',
+      status: submitOutbox ? 'complete' : submittedAt ? 'active' : 'missing',
+      detail: submitOutbox ? outboxStatus(submitOutbox) : submittedAt ? 'Missing outbox row' : 'Not queued',
+      at: eventAt(submitOutbox),
+    },
+  ]
 }
 
 export function buildPpcReport(input: PpcReportInput): PpcReport {
@@ -778,7 +939,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       .map(eventKey),
   )
   const paidVisits = visitKeys.size
-  const phoneClicks = trackingEvents.filter((row) => eventName(row) === 'phone_click').length
+  const phoneClicks = trackingEvents.filter(isPhoneSignal).length
   const optionSelections = trackingEvents.filter((row) => ['situation_selected', 'timeline_selected', 'condition_selected'].includes(eventName(row))).length
   const step1Completions = trackingEvents.filter((row) => eventName(row) === 'form_step_completed' && row.form_step === 1).length
   const step2Completions = trackingEvents.filter((row) => eventName(row) === 'form_step_completed' && row.form_step === 2).length
@@ -828,7 +989,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     const bucket = ensureBucket(dailyBuckets, compactDate(row.event_time || row.created_at))
     const name = eventName(row)
     if (name === 'ppc_visit_started' || name === 'page_view') bucket.visits += 1
-    if (name === 'phone_click') bucket.phoneClicks += 1
+    if (isPhoneSignal(row)) bucket.phoneClicks += 1
     if (name === 'lead_submitted') bucket.formSubmits += 1
   }
   for (const activity of input.activities) {
@@ -849,6 +1010,12 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
   for (const row of trackingEvents) {
     const key = sessionKey(row)
     sessionGroups.set(key, [...(sessionGroups.get(key) ?? []), row])
+  }
+  const statesByLeadId = new Map(states.map((state) => [state.lead.id, state]))
+  const outboxByLeadId = new Map<string, PpcOutboxRow[]>()
+  for (const row of input.outbox) {
+    if (!row.lead_id) continue
+    outboxByLeadId.set(row.lead_id, [...(outboxByLeadId.get(row.lead_id) ?? []), row])
   }
 
   const recentSessions = Array.from(sessionGroups.entries())
@@ -892,6 +1059,47 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     })
     .sort((a, b) => new Date(b.lastEventAt || b.firstEventAt || 0).getTime() - new Date(a.lastEventAt || a.firstEventAt || 0).getTime())
     .slice(0, 25)
+
+  const journeySessions = Array.from(sessionGroups.entries())
+    .map(([key, rows]) => {
+      const ordered = [...rows].sort((a, b) => new Date(a.event_time || a.created_at || 0).getTime() - new Date(b.event_time || b.created_at || 0).getTime())
+      const first = ordered[0]
+      const last = ordered[ordered.length - 1]
+      const attribution = ordered.reduce<Record<string, unknown>>(
+        (acc, row) => mergeAttribution(acc, extractAttributionFromTracking(row)),
+        {},
+      )
+      const leadIds = Array.from(new Set(ordered.map((row) => row.lead_id).filter((id): id is string => Boolean(id))))
+      const leadState = leadIds.map((id) => statesByLeadId.get(id)).find((state): state is LeadState => Boolean(state)) ?? null
+      const linkedOutbox = leadIds.flatMap((id) => outboxByLeadId.get(id) ?? [])
+      const address = [...ordered]
+        .reverse()
+        .map((row) => payloadText(row, 'address'))
+        .find(Boolean) || '--'
+
+      return {
+        key,
+        firstEventAt: first?.event_time || first?.created_at || null,
+        lastEventAt: last?.event_time || last?.created_at || null,
+        eventCount: ordered.length,
+        campaign: campaignName(attribution),
+        source: sourceName(attribution),
+        medium: mediumName(attribution),
+        clickId: compactClickId(clickIdFromTracking(first) || text(attribution.click_id)),
+        device: sessionDevice(ordered),
+        leadId: leadState?.lead.id ?? leadIds[0] ?? null,
+        leadName: leadState ? displayName(leadState.lead) : 'No CRM lead',
+        choices: {
+          situation: displayChoice(latestRowText(ordered, 'situation_raw')),
+          timeline: displayChoice(latestRowText(ordered, 'timeline_raw')),
+          condition: displayChoice(latestRowText(ordered, 'condition_raw')),
+          address,
+        },
+        steps: buildJourneySteps({ ordered, attribution, leadState, outboxRows: linkedOutbox }),
+      } satisfies PpcReport['journeySessions'][number]
+    })
+    .sort((a, b) => new Date(b.lastEventAt || b.firstEventAt || 0).getTime() - new Date(a.lastEventAt || a.firstEventAt || 0).getTime())
+    .slice(0, 12)
 
   const attributionMap = new Map<string, PpcReport['attributionRows'][number]>()
   for (const state of states) {
@@ -1029,6 +1237,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     },
     daily: Array.from(dailyBuckets.values()).sort((a, b) => a.date.localeCompare(b.date)),
     recentSessions,
+    journeySessions,
     recentLeads,
   }
 }
