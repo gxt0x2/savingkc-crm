@@ -250,6 +250,67 @@ describe('ppc conversion exporter', () => {
     })
   })
 
+  it('validates Google Ads uploads without claiming or mutating rows', async () => {
+    const row = makeRow()
+    const store = {
+      listRows: vi.fn(async () => [row]),
+      claimRows: vi.fn(async () => {
+        throw new Error('validate-only should not claim rows')
+      }),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'access-token' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [{}] }), { status: 200 }))
+
+    const result = await runPpcConversionExport(
+      {
+        validateOnly: true,
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads,stape',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+          GOOGLE_ADS_CUSTOMER_ID: '646966429',
+          GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
+          GOOGLE_ADS_CLIENT_ID: 'client-id',
+          GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
+          GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
+          GOOGLE_ADS_CONVERSION_ACTION_LEAD_SUBMITTED: '111',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      scanned: 1,
+      claimed: 0,
+      sent: 0,
+      pending: 1,
+    })
+    expect(store.listRows).toHaveBeenCalledOnce()
+    expect(store.claimRows).not.toHaveBeenCalled()
+    expect(store.markSent).not.toHaveBeenCalled()
+    expect(store.markSkipped).not.toHaveBeenCalled()
+    expect(store.markFailed).not.toHaveBeenCalled()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const googleCall = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(String(googleCall[0])).toContain(':uploadClickConversions')
+    expect(JSON.parse(String(googleCall[1].body))).toMatchObject({
+      validateOnly: true,
+    })
+    expect(result.results[0]?.destinations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ destination: 'stape', status: 'would_send' }),
+        expect.objectContaining({ destination: 'google_ads', status: 'would_send' }),
+      ]),
+    )
+  })
+
   it('skips rows that are still waiting on approval', async () => {
     const row = makeRow({ approved_for_google_ads: false })
     const store = {

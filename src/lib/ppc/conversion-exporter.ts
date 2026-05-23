@@ -752,8 +752,8 @@ async function uploadGoogleAdsConversion(
 
   return {
     destination: 'google_ads',
-    status: 'sent',
-    detail: `${method}:${row.event_name}`,
+    status: validateOnly ? 'would_send' : 'sent',
+    detail: `${validateOnly ? 'validateOnly:' : ''}${method}:${row.event_name}`,
   }
 }
 
@@ -857,6 +857,8 @@ export async function runPpcConversionExport(
   const env = options.env ?? process.env
   const now = options.now ?? new Date()
   const dryRun = options.dryRun === true
+  const validateOnly = options.validateOnly === true
+  const readOnly = dryRun || validateOnly
   const maxAttempts = parsePositiveInt(options.maxAttempts, DEFAULT_MAX_ATTEMPTS)
   const batchSize = clampBatchSize(options.batchSize)
   const fetchFn = deps.fetch ?? fetch
@@ -875,7 +877,7 @@ export async function runPpcConversionExport(
   }
 
   const store = deps.store ?? new SupabaseOutboxStore(supabaseAdmin(), maxAttempts)
-  const rows = dryRun
+  const rows = readOnly
     ? await store.listRows(batchSize, now)
     : await store.claimRows(batchSize, now)
 
@@ -896,6 +898,10 @@ export async function runPpcConversionExport(
       if (stape.config) {
         destinations.unshift({ destination: 'stape', status: 'skipped', detail: 'Awaiting approval for Google Ads export' })
       }
+      if (validateOnly) {
+        results.push({ id: row.id, eventName: row.event_name, status: 'pending', destinations })
+        continue
+      }
       const summary = rowSummary(row, destinations, now)
       await store.markSkipped(row, 'Awaiting approval for Google Ads export', summary, now)
       results.push({ id: row.id, eventName: row.event_name, status: 'skipped', destinations })
@@ -908,6 +914,10 @@ export async function runPpcConversionExport(
         ...(stape.config ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
         ...(google.config ? [{ destination: 'google_ads' as const, status: 'skipped' as const, detail }] : []),
       ]
+      if (validateOnly) {
+        results.push({ id: row.id, eventName: row.event_name, status: 'skipped', destinations })
+        continue
+      }
       await store.markSkipped(row, detail, rowSummary(row, destinations, now), now)
       results.push({ id: row.id, eventName: row.event_name, status: 'skipped', destinations })
       continue
@@ -920,6 +930,10 @@ export async function runPpcConversionExport(
         ...(stape.config ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
         ...(google.config ? [{ destination: 'google_ads' as const, status: 'failed' as const, detail }] : []),
       ]
+      if (validateOnly) {
+        results.push({ id: row.id, eventName: row.event_name, status: 'failed', destinations })
+        continue
+      }
       await store.markFailed(row, detail, rowSummary(row, destinations, now), now)
       results.push({ id: row.id, eventName: row.event_name, status: 'failed', destinations })
       continue
@@ -928,7 +942,11 @@ export async function runPpcConversionExport(
     const destinations: DestinationResult[] = []
 
     if (stape.config) {
-      destinations.push(await sendStapeEvent(row, stape.config, fetchFn))
+      destinations.push(
+        validateOnly
+          ? { destination: 'stape', status: 'would_send', detail: 'Validate-only run; Stape request not sent' }
+          : await sendStapeEvent(row, stape.config, fetchFn),
+      )
     }
 
     if (google.config) {
@@ -945,7 +963,7 @@ export async function runPpcConversionExport(
             google.config,
             accessToken,
             fetchFn,
-            options.validateOnly === true,
+            validateOnly,
           ),
         )
       }
@@ -954,6 +972,11 @@ export async function runPpcConversionExport(
     const failed = destinations.filter((destination) => destination.status === 'failed')
     const sent = destinations.filter((destination) => destination.status === 'sent')
     const summary = rowSummary(row, destinations, now)
+
+    if (validateOnly) {
+      results.push({ id: row.id, eventName: row.event_name, status: failed.length > 0 ? 'failed' : 'pending', destinations })
+      continue
+    }
 
     if (failed.length > 0) {
       const reason = failed.map((failure) => `${failure.destination}: ${failure.detail || 'failed'}`).join('; ')
@@ -978,7 +1001,7 @@ export async function runPpcConversionExport(
     dryRun,
     configured: true,
     scanned: rows.length,
-    claimed: dryRun ? 0 : rows.length,
+    claimed: readOnly ? 0 : rows.length,
     sent: results.filter((result) => result.status === 'sent').length,
     skipped: results.filter((result) => result.status === 'skipped').length,
     failed: results.filter((result) => result.status === 'failed').length,
