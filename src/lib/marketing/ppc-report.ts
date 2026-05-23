@@ -1,4 +1,11 @@
 import { PPC_TRACKING_PHONE_DIGITS } from '@/lib/call-quality-events'
+import {
+  conversionDeadline,
+  defaultGoogleAdsQualityScore,
+  resolveGoogleAdsQualityScore,
+  type ConversionDeadlineStatus,
+  type GoogleAdsQualityScore,
+} from '@/lib/ppc/conversion-approval'
 
 export type PpcLeadRow = {
   id: string
@@ -45,6 +52,9 @@ export type PpcOutboxRow = {
   attempts: number | null
   last_error: string | null
   sent_at: string | null
+  approved_at?: string | null
+  approved_by?: string | null
+  approval_note?: string | null
   created_at: string | null
 }
 
@@ -119,6 +129,7 @@ export type PpcReportInput = {
   appointments: PpcAppointmentRow[]
   revenue: PpcRevenueRow[]
   manifests: PpcManifestRow[]
+  now?: string | Date
 }
 
 export type PpcReport = {
@@ -195,11 +206,54 @@ export type PpcReport = {
     deadLetter: number
     skipped: number
     awaitingApproval: number
+    approvedPending: number
   }
+  conversionApproval: {
+    awaitingApproval: number
+    approvedPending: number
+    review: number
+    urgent: number
+    critical: number
+    expired: number
+    score1: number
+    score2: number
+    score3: number
+  }
+  conversionApprovalQueue: Array<{
+    id: string
+    eventName: string
+    eventLabel: string
+    category: string
+    role: string
+    status: string
+    leadId: string | null
+    leadName: string
+    leadPhone: string
+    leadAddress: string
+    campaign: string
+    clickId: string
+    clickIdType: string
+    eventTime: string | null
+    expiresAt: string | null
+    ageDays: number | null
+    daysLeft: number | null
+    deadlineStatus: ConversionDeadlineStatus
+    qualityScore: GoogleAdsQualityScore | null
+    suggestedQualityScore: GoogleAdsQualityScore
+    attempts: number
+    lastError: string
+    approvedAt: string | null
+    approvedBy: string
+    approvalNote: string
+  }>
   dataQuality: {
     clickIdCoverage: number
     attributionCoverage: number
     sourceMediumCoverage: number
+    gclidRows: number
+    gbraidRows: number
+    wbraidRows: number
+    missingClickIdRows: number
     pendingExports: number
     failedExports: number
   }
@@ -708,6 +762,89 @@ function outboxStatus(row: PpcOutboxRow): string {
   return status.replace(/_/g, ' ')
 }
 
+function eventLabel(name: string | null): string {
+  const value = text(name)
+  if (value === 'lead_submitted') return 'Final Form Submit'
+  if (value === 'lead_stage3_completed') return 'Step 3 Complete'
+  if (value === 'appointment_booked') return 'Appointment Booked'
+  if (value === 'call_connected_60s') return 'Call 60+ Seconds'
+  if (value === 'call_connected_2m') return 'Call 2+ Minutes'
+  if (value === 'call_connected_5m') return 'Call 5+ Minutes'
+  return value.replace(/_/g, ' ') || 'Conversion'
+}
+
+function isTestOutboxRow(row: PpcOutboxRow): boolean {
+  const attribution = record(row.attribution)
+  const payload = record(row.payload)
+  return hasTestMarker(
+    row.id,
+    row.dedupe_key,
+    row.click_id,
+    attribution.gclid,
+    attribution.gbraid,
+    attribution.wbraid,
+    attribution.utm_term,
+    attribution.utm_content,
+    payload.gclid,
+    payload.gbraid,
+    payload.wbraid,
+    payload.email,
+    payload.phone,
+    payload.name,
+  )
+}
+
+function clickIdType(row: PpcOutboxRow, attribution: Record<string, unknown>): string {
+  return text(row.click_id_type) ||
+    (text(attribution.gclid) ? 'gclid' : text(attribution.gbraid) ? 'gbraid' : text(attribution.wbraid) ? 'wbraid' : '--')
+}
+
+function clickIdForOutbox(row: PpcOutboxRow, attribution: Record<string, unknown>): string {
+  return compactClickId(text(row.click_id) || text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id))
+}
+
+function buildConversionApprovalRow(
+  row: PpcOutboxRow,
+  statesByLeadId: Map<string, LeadState>,
+  now: Date,
+): PpcReport['conversionApprovalQueue'][number] {
+  const state = row.lead_id ? statesByLeadId.get(row.lead_id) ?? null : null
+  const attribution = state
+    ? mergeAttribution(state.attribution, extractAttributionFromOutbox(row))
+    : extractAttributionFromOutbox(row)
+  const deadline = conversionDeadline(row.event_time || row.created_at, now)
+  const qualityScore = resolveGoogleAdsQualityScore(row.conversion_value, row.payload)
+  const suggestedQualityScore = qualityScore ?? defaultGoogleAdsQualityScore(text(row.event_name))
+
+  return {
+    id: row.id,
+    eventName: text(row.event_name) || 'conversion',
+    eventLabel: eventLabel(row.event_name),
+    category: text(row.event_category) || 'conversion',
+    role: text(row.optimization_role) || 'secondary',
+    status: outboxStatus(row),
+    leadId: row.lead_id,
+    leadName: state ? displayName(state.lead) : 'Unlinked conversion',
+    leadPhone: state ? displayPhone(state.lead.phone) : '--',
+    leadAddress: state ? text(state.lead.property_address) || text(state.lead.city) || '--' : '--',
+    campaign: campaignName(attribution),
+    clickId: clickIdForOutbox(row, attribution),
+    clickIdType: clickIdType(row, attribution),
+    eventTime: row.event_time || row.created_at,
+    expiresAt: deadline.expiresAt,
+    ageDays: deadline.ageDays,
+    daysLeft: deadline.daysLeft,
+    deadlineStatus: deadline.status,
+    qualityScore,
+    suggestedQualityScore,
+    attempts: Number(row.attempts ?? 0),
+    lastError: text(row.last_error),
+    approvedAt: row.approved_at ?? null,
+    approvedBy: text(row.approved_by) || '--',
+    approvalNote: text(row.approval_note),
+  }
+}
+
 function buildJourneySteps({
   ordered,
   attribution,
@@ -813,6 +950,11 @@ function buildJourneySteps({
 }
 
 export function buildPpcReport(input: PpcReportInput): PpcReport {
+  const reportNow = input.now instanceof Date
+    ? input.now
+    : typeof input.now === 'string'
+      ? new Date(input.now)
+      : new Date()
   const leadStates = new Map<string, LeadState>()
   const buckets = new Map<string, PpcReport['daily'][number]>()
 
@@ -838,6 +980,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     deadLetter: 0,
     skipped: 0,
     awaitingApproval: 0,
+    approvedPending: 0,
   }
 
   for (const row of input.outbox) {
@@ -848,6 +991,9 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     const status = text(row.status).toLowerCase()
     if (row.approved_for_google_ads === false && (status === 'pending' || status === 'processing' || status === 'failed')) {
       exportHealth.awaitingApproval += 1
+    }
+    if (row.approved_for_google_ads === true && (status === 'pending' || status === 'processing' || status === 'failed')) {
+      exportHealth.approvedPending += 1
     }
     if (status === 'pending' || status === 'processing') exportHealth.pending += 1
     if (status === 'sent') exportHealth.sent += 1
@@ -959,6 +1105,10 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
   const clickIds = states.filter((state) => hasClickId(state.attribution)).length
   const attributionCoverage = states.filter((state) => campaignName(state.attribution) !== 'Search 2026' || hasClickId(state.attribution)).length
   const sourceMediumCoverage = states.filter((state) => sourceName(state.attribution) && mediumName(state.attribution)).length
+  const gclidRows = states.filter((state) => text(state.attribution.gclid) || text(state.attribution.click_id_type) === 'gclid').length
+  const gbraidRows = states.filter((state) => text(state.attribution.gbraid) || text(state.attribution.click_id_type) === 'gbraid').length
+  const wbraidRows = states.filter((state) => text(state.attribution.wbraid) || text(state.attribution.click_id_type) === 'wbraid').length
+  const missingClickIdRows = Math.max(0, totalLeads - clickIds)
 
   const funnelCounts = [
     { key: 'leads', label: 'PPC CRM Leads', count: totalLeads },
@@ -1189,8 +1339,35 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     .sort((a, b) => new Date(b.lastSignalAt || b.createdAt || 0).getTime() - new Date(a.lastSignalAt || a.createdAt || 0).getTime())
     .slice(0, 25)
 
+  const conversionApprovalQueue = input.outbox
+    .filter((row) => text(row.status).toLowerCase() !== 'sent')
+    .filter((row) => !isTestOutboxRow(row))
+    .filter((row) => {
+      if (!row.lead_id) return true
+      return statesByLeadId.has(row.lead_id)
+    })
+    .map((row) => buildConversionApprovalRow(row, statesByLeadId, reportNow))
+    .sort((a, b) => {
+      const severity = { expired: 0, critical: 1, urgent: 2, review: 3, normal: 4 } satisfies Record<ConversionDeadlineStatus, number>
+      return severity[a.deadlineStatus] - severity[b.deadlineStatus] ||
+        new Date(a.eventTime || 0).getTime() - new Date(b.eventTime || 0).getTime()
+    })
+    .slice(0, 50)
+
+  const conversionApproval = {
+    awaitingApproval: conversionApprovalQueue.filter((row) => row.qualityScore == null).length,
+    approvedPending: conversionApprovalQueue.filter((row) => row.qualityScore != null && row.status !== 'sent').length,
+    review: conversionApprovalQueue.filter((row) => row.deadlineStatus === 'review').length,
+    urgent: conversionApprovalQueue.filter((row) => row.deadlineStatus === 'urgent').length,
+    critical: conversionApprovalQueue.filter((row) => row.deadlineStatus === 'critical').length,
+    expired: conversionApprovalQueue.filter((row) => row.deadlineStatus === 'expired').length,
+    score1: conversionApprovalQueue.filter((row) => row.qualityScore === 1).length,
+    score2: conversionApprovalQueue.filter((row) => row.qualityScore === 2).length,
+    score3: conversionApprovalQueue.filter((row) => row.qualityScore === 3).length,
+  }
+
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: Number.isNaN(reportNow.getTime()) ? new Date().toISOString() : reportNow.toISOString(),
     period: {
       days: input.days,
       since: input.since,
@@ -1228,10 +1405,16 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       .sort((a, b) => b.revenue - a.revenue || b.formSubmits - a.formSubmits || b.leads - a.leads)
       .slice(0, 25),
     exportHealth,
+    conversionApproval,
+    conversionApprovalQueue,
     dataQuality: {
       clickIdCoverage: pct(clickIds, totalLeads) ?? 0,
       attributionCoverage: totalLeads > 0 ? pct(attributionCoverage, totalLeads) ?? 0 : paidVisits > 0 ? 100 : 0,
       sourceMediumCoverage: pct(sourceMediumCoverage, totalLeads) ?? 0,
+      gclidRows,
+      gbraidRows,
+      wbraidRows,
+      missingClickIdRows,
       pendingExports: exportHealth.pending + exportHealth.awaitingApproval,
       failedExports: exportHealth.failed + exportHealth.deadLetter,
     },

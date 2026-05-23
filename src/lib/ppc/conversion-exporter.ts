@@ -7,6 +7,7 @@ import {
   type PpcConversionEventName,
   type PpcOptimizationRole,
 } from '@/lib/ppc/conversion-outbox'
+import { resolveGoogleAdsQualityScore } from '@/lib/ppc/conversion-approval'
 
 const DEFAULT_BATCH_SIZE = 25
 const DEFAULT_MAX_ATTEMPTS = 8
@@ -381,11 +382,6 @@ function toGoogleAdsDateTime(value: string | Date): string {
   return `${iso.slice(0, 10)} ${iso.slice(11, 19)}+00:00`
 }
 
-function conversionValue(value: number | string | null): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
-}
-
 function truncateOrderId(value: string): string {
   return value.length <= 100 ? value : value.slice(0, 100)
 }
@@ -409,6 +405,14 @@ function eventPayload(row: PpcConversionOutboxExportRow): Record<string, unknown
   return row.payload ?? {}
 }
 
+function googleAdsQualityScore(row: PpcConversionOutboxExportRow): number | null {
+  return resolveGoogleAdsQualityScore(row.conversion_value, row.payload)
+}
+
+function missingQualityScoreReason(row: PpcConversionOutboxExportRow): string {
+  return `${row.event_name} must be approved with a Google Ads quality score of 1, 2, or 3 before export`
+}
+
 function inferCallStartDate(row: PpcConversionOutboxExportRow): Date {
   const payload = eventPayload(row)
   const explicit =
@@ -429,6 +433,15 @@ export function buildGoogleAdsUploadPlan(
   row: PpcConversionOutboxExportRow,
   config: GoogleAdsConfig,
 ): GoogleAdsUploadPlan {
+  const qualityScore = googleAdsQualityScore(row)
+  if (!qualityScore) {
+    return {
+      kind: 'skip',
+      reason: missingQualityScoreReason(row),
+      hardFailure: true,
+    }
+  }
+
   const conversionAction = config.conversionActions[row.event_name]
   if (!conversionAction) {
     return {
@@ -441,7 +454,7 @@ export function buildGoogleAdsUploadPlan(
   const base = {
     conversionAction,
     conversionDateTime: toGoogleAdsDateTime(row.event_time),
-    conversionValue: conversionValue(row.conversion_value),
+    conversionValue: qualityScore,
     currencyCode: row.currency || 'USD',
   }
 
@@ -488,6 +501,7 @@ export function buildGoogleAdsUploadPlan(
 function buildStapeEventData(row: PpcConversionOutboxExportRow): Record<string, unknown> {
   const attribution = row.attribution ?? {}
   const payload = row.payload ?? {}
+  const qualityScore = googleAdsQualityScore(row)
   const pageLocation =
     attribution.landingUrl ||
     attribution.page_location ||
@@ -500,7 +514,7 @@ function buildStapeEventData(row: PpcConversionOutboxExportRow): Record<string, 
     event_time: row.event_time,
     event_category: row.event_category,
     optimization_role: row.optimization_role,
-    value: conversionValue(row.conversion_value),
+    value: qualityScore,
     currency: row.currency || 'USD',
     page_location: pageLocation,
     page_hostname: 'savingkc.com',
@@ -644,6 +658,15 @@ function plannedDestinations(
   googleConfig: GoogleAdsConfig | null,
   stapeConfig: StapeConfig | null,
 ): DestinationResult[] {
+  const qualityScore = googleAdsQualityScore(row)
+  if (!qualityScore) {
+    const detail = missingQualityScoreReason(row)
+    return [
+      ...(stapeConfig ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
+      ...(googleConfig ? [{ destination: 'google_ads' as const, status: 'failed' as const, detail }] : []),
+    ]
+  }
+
   const destinations: DestinationResult[] = []
   if (stapeConfig) destinations.push({ destination: 'stape', status: 'would_send', detail: stapeConfig.endpoint })
 
@@ -715,6 +738,18 @@ export async function runPpcConversionExport(
       const summary = rowSummary(row, destinations, now)
       await store.markSkipped(row, 'Awaiting approval for Google Ads export', summary, now)
       results.push({ id: row.id, eventName: row.event_name, status: 'skipped', destinations })
+      continue
+    }
+
+    const qualityScore = googleAdsQualityScore(row)
+    if (!qualityScore) {
+      const detail = missingQualityScoreReason(row)
+      const destinations: DestinationResult[] = [
+        ...(stape.config ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
+        ...(google.config ? [{ destination: 'google_ads' as const, status: 'failed' as const, detail }] : []),
+      ]
+      await store.markFailed(row, detail, rowSummary(row, destinations, now), now)
+      results.push({ id: row.id, eventName: row.event_name, status: 'failed', destinations })
       continue
     }
 
