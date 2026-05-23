@@ -135,7 +135,8 @@ type GoogleAdsConfig = {
   developerToken: string
   clientId: string
   clientSecret: string
-  refreshToken: string
+  refreshToken: string | null
+  refreshTokenUserEmail: string | null
   adUserDataConsent: string | null
   conversionActions: Partial<Record<PpcConversionEventName, string>>
 }
@@ -327,18 +328,19 @@ function readGoogleAdsConfig(env: Env): { config: GoogleAdsConfig | null; missin
   const clientId = readEnv(env, 'GOOGLE_ADS_CLIENT_ID') || readEnv(env, 'GOOGLE_OAUTH_CLIENT_ID')
   const clientSecret = readEnv(env, 'GOOGLE_ADS_CLIENT_SECRET') || readEnv(env, 'GOOGLE_OAUTH_CLIENT_SECRET')
   const refreshToken = readEnv(env, 'GOOGLE_ADS_REFRESH_TOKEN')
+  const refreshTokenUserEmail = readEnv(env, 'GOOGLE_ADS_REFRESH_TOKEN_USER_EMAIL')
 
   const missing = ([
     ['GOOGLE_ADS_CUSTOMER_ID', customerId],
     ['GOOGLE_ADS_DEVELOPER_TOKEN', developerToken],
     ['GOOGLE_ADS_CLIENT_ID', clientId],
     ['GOOGLE_ADS_CLIENT_SECRET', clientSecret],
-    ['GOOGLE_ADS_REFRESH_TOKEN', refreshToken],
+    ['GOOGLE_ADS_REFRESH_TOKEN or GOOGLE_ADS_REFRESH_TOKEN_USER_EMAIL', refreshToken || refreshTokenUserEmail],
   ] as Array<[string, string | null]>)
     .filter(([, value]) => !value)
     .map(([key]) => key)
 
-  if (missing.length || !customerId || !developerToken || !clientId || !clientSecret || !refreshToken) {
+  if (missing.length || !customerId || !developerToken || !clientId || !clientSecret || (!refreshToken && !refreshTokenUserEmail)) {
     return { config: null, missing }
   }
 
@@ -351,6 +353,7 @@ function readGoogleAdsConfig(env: Env): { config: GoogleAdsConfig | null; missin
       clientId,
       clientSecret,
       refreshToken,
+      refreshTokenUserEmail,
       adUserDataConsent: readEnv(env, 'GOOGLE_ADS_AD_USER_DATA_CONSENT'),
       conversionActions: loadConversionActions(env, customerId),
     },
@@ -644,14 +647,47 @@ function buildStapeEventData(row: PpcConversionOutboxExportRow): Record<string, 
   })
 }
 
-async function fetchGoogleAdsAccessToken(config: GoogleAdsConfig, fetchFn: typeof fetch): Promise<string> {
+async function resolveGoogleAdsRefreshToken(config: GoogleAdsConfig, client: SupabaseClient): Promise<string> {
+  if (config.refreshToken) return config.refreshToken
+
+  if (!config.refreshTokenUserEmail) {
+    throw new Error('Missing Google Ads refresh token configuration')
+  }
+
+  const { data, error } = await client
+    .from('user_oauth_tokens')
+    .select('refresh_token, scope')
+    .eq('provider', 'google_ads')
+    .eq('user_email', config.refreshTokenUserEmail)
+    .maybeSingle()
+
+  if (error) throw new Error(`Google Ads OAuth lookup failed: ${error.message}`)
+
+  const refreshToken = typeof data?.refresh_token === 'string' ? data.refresh_token.trim() : ''
+  if (!refreshToken) {
+    throw new Error(`No saved Google Ads OAuth refresh token for ${config.refreshTokenUserEmail}`)
+  }
+
+  const scope = typeof data?.scope === 'string' ? data.scope : ''
+  if (!scope.split(/\s+/).includes('https://www.googleapis.com/auth/adwords')) {
+    throw new Error(`Saved Google Ads OAuth token for ${config.refreshTokenUserEmail} is missing the adwords scope`)
+  }
+
+  return refreshToken
+}
+
+async function fetchGoogleAdsAccessToken(
+  config: GoogleAdsConfig,
+  refreshToken: string,
+  fetchFn: typeof fetch,
+): Promise<string> {
   const response = await fetchFn('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: config.clientId,
       client_secret: config.clientSecret,
-      refresh_token: config.refreshToken,
+      refresh_token: refreshToken,
       grant_type: 'refresh_token',
     }),
   })
@@ -662,6 +698,11 @@ async function fetchGoogleAdsAccessToken(config: GoogleAdsConfig, fetchFn: typeo
   }
 
   return body.access_token
+}
+
+async function getGoogleAdsAccessToken(config: GoogleAdsConfig, fetchFn: typeof fetch): Promise<string> {
+  const refreshToken = config.refreshToken ?? await resolveGoogleAdsRefreshToken(config, supabaseAdmin())
+  return fetchGoogleAdsAccessToken(config, refreshToken, fetchFn)
 }
 
 async function uploadGoogleAdsConversion(
@@ -895,7 +936,7 @@ export async function runPpcConversionExport(
       if (plan.kind === 'skip') {
         destinations.push({ destination: 'google_ads', status: plan.hardFailure ? 'failed' : 'skipped', detail: plan.reason })
       } else {
-        tokenPromise = tokenPromise ?? fetchGoogleAdsAccessToken(google.config, fetchFn)
+        tokenPromise = tokenPromise ?? getGoogleAdsAccessToken(google.config, fetchFn)
         const accessToken = await tokenPromise
         destinations.push(
           await uploadGoogleAdsConversion(
