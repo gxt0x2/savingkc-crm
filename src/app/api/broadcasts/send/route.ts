@@ -82,7 +82,6 @@ export async function POST(req: NextRequest) {
     const address = snapshot.property_address || 'Address TBD'
     const pType = snapshot.property_type || 'Property'
     const arv = snapshot.arv ? `$${Number(snapshot.arv).toLocaleString()}` : 'N/A'
-    const price = snapshot.asking_price ? `$${Number(snapshot.asking_price).toLocaleString()}` : 'N/A'
     const beds = snapshot.beds ?? '?'
     const baths = snapshot.baths_full ?? '?'
     const sqft = snapshot.sqft ? Number(snapshot.sqft).toLocaleString() : '?'
@@ -91,16 +90,19 @@ export async function POST(req: NextRequest) {
     let dealPageUrl = ''
     const { data: dealPage } = await db
       .from('deal_pages')
-      .select('slug')
+      .select('slug, asking_price')
       .eq('lead_id', broadcast.lead_id)
       .eq('is_active', true)
+      .order('created_at', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
 
     if (dealPage) {
       const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.savingkc.com'
       dealPageUrl = `${baseUrl}/deals/${dealPage.slug}`
     }
+    const buyerFacingPrice = dealPage?.asking_price ?? snapshot.asking_price
+    const price = buyerFacingPrice ? `$${Number(buyerFacingPrice).toLocaleString()}` : 'N/A'
 
     let smsSent = 0
     let emailsSent = 0

@@ -11,6 +11,8 @@ interface OfferFormProps {
   photo?: string
   propertyAddress?: string
   location?: string
+  triggerClassName?: string
+  triggerLabel?: string
 }
 
 function fmt(n: number | null | undefined): string {
@@ -19,8 +21,18 @@ function fmt(n: number | null | undefined): string {
 }
 
 const input = 'w-full border border-[#e0e0e0] rounded-xl px-3.5 py-2.5 text-[14px] text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 transition-colors placeholder:text-[#ccc]'
+const defaultTriggerClassName = 'w-full bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-xl px-4 py-3 text-[14px] font-semibold transition-colors'
 
-export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddress, location }: OfferFormProps) {
+export default function OfferForm({
+  slug,
+  askingPrice,
+  arv,
+  photo,
+  propertyAddress,
+  location,
+  triggerClassName,
+  triggerLabel = 'Make offer',
+}: OfferFormProps) {
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -102,15 +114,15 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
           trackEvent(slug, 'offer_modal_open', {
             section: 'pricing_sidebar',
             cta_id: 'deal_make_offer',
-            cta_label: 'Make offer',
+            cta_label: triggerLabel,
             destination: 'offer_modal',
             asking_price_visible: Boolean(askingPrice),
             arv_visible: Boolean(arv),
           })
         }}
-        className="w-full bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-xl px-4 py-3 text-[14px] font-semibold transition-colors"
+        className={triggerClassName ?? defaultTriggerClassName}
       >
-        Make offer
+        {triggerLabel}
       </button>
     )
   }
@@ -298,9 +310,9 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
       {/* The trigger button */}
       <button
         onClick={() => { setOpen(true); trackEvent(slug, 'offer_modal_open') }}
-        className="w-full bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-xl px-4 py-3 text-[14px] font-semibold transition-colors"
+        className={triggerClassName ?? defaultTriggerClassName}
       >
-        Make offer
+        {triggerLabel}
       </button>
     </>
   )

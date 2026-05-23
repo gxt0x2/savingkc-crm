@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
       const allowedLeadFields = [
         'beds', 'baths_full', 'baths_half', 'sqft', 'lot_size', 'year_built',
         'property_type', 'property_address', 'city', 'state', 'zip', 'county',
-        'arv', 'offer_amount', 'asking_price', 'repair_estimate',
+        'arv', 'offer_amount', 'repair_estimate',
       ]
       const updates: Record<string, unknown> = {}
       for (const key of allowedLeadFields) {
