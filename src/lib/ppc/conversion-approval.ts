@@ -58,7 +58,12 @@ export function resolveGoogleAdsQualityScore(
 }
 
 export function defaultGoogleAdsQualityScore(eventName: string | null | undefined): GoogleAdsQualityScore {
-  if (eventName === 'lead_submitted' || eventName === 'appointment_booked' || eventName === 'call_connected_5m') {
+  if (
+    eventName === 'lead_submitted' ||
+    eventName === 'qualified_lead' ||
+    eventName === 'appointment_booked' ||
+    eventName === 'call_connected_5m'
+  ) {
     return 2
   }
   return 1

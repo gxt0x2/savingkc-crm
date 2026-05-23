@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { supabase } from '@/lib/supabase-lazy'
 import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
 import { normalizeDealStage } from '@/types/pipeline'
+import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 
 // Stations that should auto-advance to appointment_set when an appointment
 // is scheduled. We never demote a more-advanced station (offer_made,
@@ -85,6 +86,13 @@ export async function POST(req: NextRequest) {
           details: { from: leadRow?.station, to: 'appointment_set', trigger: 'appointment_created' },
         })
       }, 'appointment_modal:auto_advance').catch(() => false)
+      await queuePpcQualifiedLeadConversion({
+        leadId,
+        fromStation: leadRow?.station ?? null,
+        toStation: 'appointment_set',
+        changedBy: assignedTo || 'appointment_modal',
+        reason: 'appointment_created',
+      }).catch((error) => console.error('[create-appointment] PPC qualified conversion queue failed:', error))
     }
 
     // 3. Log to lead_activities for calendar/timeline display

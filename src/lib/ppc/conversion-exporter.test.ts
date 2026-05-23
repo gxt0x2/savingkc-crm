@@ -47,6 +47,7 @@ function googleConfig() {
     adUserDataConsent: null,
     conversionActions: {
       lead_submitted: 'customers/646966429/conversionActions/111',
+      qualified_lead: 'customers/646966429/conversionActions/333',
       call_connected_60s: 'customers/646966429/conversionActions/222',
     },
   } as Parameters<typeof buildGoogleAdsUploadPlan>[1]
@@ -246,6 +247,63 @@ describe('ppc conversion exporter', () => {
       expect.stringContaining('quality score of 1, 2, or 3'),
       expect.objectContaining({
         destinations: expect.arrayContaining([
+          expect.objectContaining({ destination: 'stape', status: 'skipped' }),
+        ]),
+      }),
+      expect.any(Date),
+    )
+  })
+
+  it('keeps stage 3 diagnostic rows out of Google and Stape exports', async () => {
+    const row = makeRow({
+      event_name: 'lead_stage3_completed',
+      event_category: 'form',
+      optimization_role: 'secondary',
+      conversion_value: 1,
+      payload: { form_status: 'stage_3_complete_no_submit', google_ads_quality_score: 1 },
+    })
+    const plan = buildGoogleAdsUploadPlan(row, googleConfig())
+
+    expect(plan.kind).toBe('skip')
+    if (plan.kind !== 'skip') throw new Error('Expected skip upload plan')
+    expect(plan.reason).toContain('CRM diagnostic signal')
+
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi.fn()
+
+    const result = await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads,stape',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+          GOOGLE_ADS_CUSTOMER_ID: '646966429',
+          GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
+          GOOGLE_ADS_CLIENT_ID: 'client-id',
+          GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
+          GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
+          GOOGLE_ADS_CONVERSION_ACTIONS_JSON: JSON.stringify({
+            lead_submitted: 'customers/646966429/conversionActions/111',
+            qualified_lead: 'customers/646966429/conversionActions/333',
+          }),
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result.skipped).toBe(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(store.markSkipped).toHaveBeenCalledWith(
+      row,
+      expect.stringContaining('CRM diagnostic signal'),
+      expect.objectContaining({
+        destinations: expect.arrayContaining([
+          expect.objectContaining({ destination: 'google_ads', status: 'skipped' }),
           expect.objectContaining({ destination: 'stape', status: 'skipped' }),
         ]),
       }),

@@ -669,29 +669,6 @@ export async function POST(req: NextRequest) {
         requestPayload,
       })
 
-      await enqueuePpcConversion({
-        eventName: 'lead_stage3_completed',
-        eventCategory: 'form',
-        leadId: resolvedLeadId,
-        manifestId,
-        activityId,
-        dedupeKey: `lead:${resolvedLeadId}:lead_stage3_completed`,
-        optimizationRole: 'secondary',
-        conversionValue: 10,
-        attribution,
-        payload: withRequestPayload({
-          form_status: 'stage_3_complete_no_submit',
-          form_submitted: false,
-          step: 3,
-          has_address: Boolean(address),
-          address_source: addressSource,
-          situation_raw: situation ?? null,
-          timeline_raw: timeline ?? null,
-          condition_raw: condition ?? null,
-          sms_consent: smsConsent,
-        }),
-      })
-
       await recordPpcTrackingEvent({
         eventId: `server:lead_stage3_completed:${resolvedLeadId}`,
         eventName: 'lead_stage3_completed',

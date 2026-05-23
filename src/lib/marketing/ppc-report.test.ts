@@ -338,6 +338,66 @@ describe('ppc report', () => {
     expect(report.recentLeads.find((lead) => lead.id === 'lead-form')?.formStatus).toBe('stage_3_no_submit')
   })
 
+  it('does not ask for approval on stage 3 diagnostic rows', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      outbox: [
+        ...baseInput.outbox,
+        {
+          id: 'outbox-stage3',
+          event_name: 'lead_stage3_completed',
+          event_category: 'form',
+          dedupe_key: 'lead:lead-form:lead_stage3_completed',
+          status: 'pending',
+          approved_for_google_ads: false,
+          optimization_role: 'secondary',
+          lead_id: 'lead-form',
+          conversion_value: 1,
+          event_time: '2026-05-20T14:05:00.000Z',
+          click_id: 'click-form',
+          click_id_type: 'gclid',
+          attribution: { gclid: 'click-form', utm_campaign: 'Search 2026' },
+          payload: { form_status: 'stage_3_complete_no_submit' },
+          attempts: 0,
+          last_error: null,
+          sent_at: null,
+          created_at: '2026-05-20T14:05:00.000Z',
+        },
+        {
+          id: 'outbox-qualified',
+          event_name: 'qualified_lead',
+          event_category: 'form',
+          dedupe_key: 'lead:lead-form:qualified_lead',
+          status: 'pending',
+          approved_for_google_ads: false,
+          optimization_role: 'primary',
+          lead_id: 'lead-form',
+          conversion_value: null,
+          event_time: '2026-05-20T14:08:00.000Z',
+          click_id: 'click-form',
+          click_id_type: 'gclid',
+          attribution: { gclid: 'click-form', utm_campaign: 'Search 2026' },
+          payload: { form_status: 'qualified_lead' },
+          attempts: 0,
+          last_error: null,
+          sent_at: null,
+          created_at: '2026-05-20T14:08:00.000Z',
+        },
+      ],
+    })
+
+    expect(report.conversionApprovalQueue.map((row) => row.eventName)).not.toContain('lead_stage3_completed')
+    expect(report.conversionApprovalQueue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventName: 'qualified_lead',
+          eventLabel: 'Qualified Lead',
+          suggestedQualityScore: 2,
+        }),
+      ]),
+    )
+  })
+
   it('labels partial PPC captures as potential until step 3 is complete', () => {
     const report = buildPpcReport({
       ...baseInput,

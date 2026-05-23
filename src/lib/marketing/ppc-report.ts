@@ -6,6 +6,7 @@ import {
   type ConversionDeadlineStatus,
   type GoogleAdsQualityScore,
 } from '@/lib/ppc/conversion-approval'
+import { isGoogleAdsExportablePpcEvent } from '@/lib/ppc/exportable-events'
 
 export type PpcLeadRow = {
   id: string
@@ -765,6 +766,7 @@ function outboxStatus(row: PpcOutboxRow): string {
 function eventLabel(name: string | null): string {
   const value = text(name)
   if (value === 'lead_submitted') return 'Final Form Submit'
+  if (value === 'qualified_lead') return 'Qualified Lead'
   if (value === 'lead_stage3_completed') return 'Step 3 Complete'
   if (value === 'appointment_booked') return 'Appointment Booked'
   if (value === 'call_connected_60s') return 'Call 60+ Seconds'
@@ -970,8 +972,10 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     state.attribution = mergeAttribution(state.attribution, extractAttributionFromManifest(row.manifest))
   }
 
+  const exportableOutbox = input.outbox.filter((row) => isGoogleAdsExportablePpcEvent(text(row.event_name)))
+
   const exportHealth = {
-    total: input.outbox.length,
+    total: exportableOutbox.length,
     primary: 0,
     secondary: 0,
     pending: 0,
@@ -983,7 +987,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     approvedPending: 0,
   }
 
-  for (const row of input.outbox) {
+  for (const row of exportableOutbox) {
     const role = text(row.optimization_role).toLowerCase()
     if (role === 'primary') exportHealth.primary += 1
     if (role === 'secondary') exportHealth.secondary += 1
@@ -1163,7 +1167,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
   }
   const statesByLeadId = new Map(states.map((state) => [state.lead.id, state]))
   const outboxByLeadId = new Map<string, PpcOutboxRow[]>()
-  for (const row of input.outbox) {
+  for (const row of exportableOutbox) {
     if (!row.lead_id) continue
     outboxByLeadId.set(row.lead_id, [...(outboxByLeadId.get(row.lead_id) ?? []), row])
   }
@@ -1339,7 +1343,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     .sort((a, b) => new Date(b.lastSignalAt || b.createdAt || 0).getTime() - new Date(a.lastSignalAt || a.createdAt || 0).getTime())
     .slice(0, 25)
 
-  const conversionApprovalQueue = input.outbox
+  const conversionApprovalQueue = exportableOutbox
     .filter((row) => text(row.status).toLowerCase() !== 'sent')
     .filter((row) => !isTestOutboxRow(row))
     .filter((row) => {

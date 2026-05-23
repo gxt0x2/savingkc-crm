@@ -8,6 +8,11 @@ import {
   type PpcOptimizationRole,
 } from '@/lib/ppc/conversion-outbox'
 import { resolveGoogleAdsQualityScore } from '@/lib/ppc/conversion-approval'
+import {
+  GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES,
+  isGoogleAdsExportablePpcEvent,
+  nonExportablePpcEventReason,
+} from '@/lib/ppc/exportable-events'
 
 const DEFAULT_BATCH_SIZE = 25
 const DEFAULT_MAX_ATTEMPTS = 8
@@ -433,6 +438,14 @@ export function buildGoogleAdsUploadPlan(
   row: PpcConversionOutboxExportRow,
   config: GoogleAdsConfig,
 ): GoogleAdsUploadPlan {
+  if (!isGoogleAdsExportablePpcEvent(row.event_name)) {
+    return {
+      kind: 'skip',
+      reason: nonExportablePpcEventReason(row.event_name),
+      hardFailure: false,
+    }
+  }
+
   const qualityScore = googleAdsQualityScore(row)
   if (!qualityScore) {
     return {
@@ -658,6 +671,14 @@ function plannedDestinations(
   googleConfig: GoogleAdsConfig | null,
   stapeConfig: StapeConfig | null,
 ): DestinationResult[] {
+  if (!isGoogleAdsExportablePpcEvent(row.event_name)) {
+    const detail = nonExportablePpcEventReason(row.event_name)
+    return [
+      ...(stapeConfig ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
+      ...(googleConfig ? [{ destination: 'google_ads' as const, status: 'skipped' as const, detail }] : []),
+    ]
+  }
+
   const qualityScore = googleAdsQualityScore(row)
   if (!qualityScore) {
     const detail = missingQualityScoreReason(row)
@@ -737,6 +758,17 @@ export async function runPpcConversionExport(
       }
       const summary = rowSummary(row, destinations, now)
       await store.markSkipped(row, 'Awaiting approval for Google Ads export', summary, now)
+      results.push({ id: row.id, eventName: row.event_name, status: 'skipped', destinations })
+      continue
+    }
+
+    if (!isGoogleAdsExportablePpcEvent(row.event_name)) {
+      const detail = nonExportablePpcEventReason(row.event_name)
+      const destinations: DestinationResult[] = [
+        ...(stape.config ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
+        ...(google.config ? [{ destination: 'google_ads' as const, status: 'skipped' as const, detail }] : []),
+      ]
+      await store.markSkipped(row, detail, rowSummary(row, destinations, now), now)
       results.push({ id: row.id, eventName: row.event_name, status: 'skipped', destinations })
       continue
     }
@@ -832,11 +864,4 @@ function emptyExportResult(input: { dryRun: boolean; configured: boolean; missin
   }
 }
 
-const PPC_EVENT_NAMES: PpcConversionEventName[] = [
-  'lead_stage3_completed',
-  'lead_submitted',
-  'appointment_booked',
-  'call_connected_60s',
-  'call_connected_2m',
-  'call_connected_5m',
-]
+const PPC_EVENT_NAMES: PpcConversionEventName[] = GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES

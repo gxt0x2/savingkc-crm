@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserEmail } from '@/lib/auth/admin'
 import { googleAdsQualityPayload, normalizeGoogleAdsQualityScore } from '@/lib/ppc/conversion-approval'
 import { cleanJsonRecord } from '@/lib/ppc/conversion-outbox'
+import { isGoogleAdsExportablePpcEvent, nonExportablePpcEventReason } from '@/lib/ppc/exportable-events'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -57,6 +58,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   if (!existing) {
     return NextResponse.json({ error: 'Conversion not found' }, { status: 404, headers: NO_STORE_HEADERS })
+  }
+  if (!isGoogleAdsExportablePpcEvent(existing.event_name)) {
+    return NextResponse.json(
+      { error: nonExportablePpcEventReason(existing.event_name) },
+      { status: 400, headers: NO_STORE_HEADERS },
+    )
   }
 
   const status = typeof existing.status === 'string' ? existing.status : ''

@@ -4,6 +4,7 @@ import type { CallQualityEventName } from '@/lib/call-quality-events'
 export type PpcConversionEventName =
   | 'lead_stage3_completed'
   | 'lead_submitted'
+  | 'qualified_lead'
   | 'appointment_booked'
   | CallQualityEventName
 
