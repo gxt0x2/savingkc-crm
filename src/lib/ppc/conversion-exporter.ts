@@ -128,7 +128,7 @@ type PpcConversionExportDeps = {
   fetch?: typeof fetch
 }
 
-type GoogleAdsConfig = {
+export type GoogleAdsConfig = {
   apiVersion: string
   customerId: string
   loginCustomerId: string | null
@@ -317,7 +317,7 @@ function normalizeConversionActionResource(value: string, customerId: string): s
   return trimmed
 }
 
-function readGoogleAdsConfig(env: Env): { config: GoogleAdsConfig | null; missing: string[] } {
+export function readGoogleAdsConfig(env: Env): { config: GoogleAdsConfig | null; missing: string[] } {
   const rawCustomerId = readEnv(env, 'GOOGLE_ADS_CUSTOMER_ID')
   const customerId = normalizeCustomerId(rawCustomerId)
   const loginCustomerId = normalizeCustomerId(
@@ -700,7 +700,7 @@ async function fetchGoogleAdsAccessToken(
   return body.access_token
 }
 
-async function getGoogleAdsAccessToken(config: GoogleAdsConfig, fetchFn: typeof fetch): Promise<string> {
+export async function getGoogleAdsAccessToken(config: GoogleAdsConfig, fetchFn: typeof fetch): Promise<string> {
   const refreshToken = config.refreshToken ?? await resolveGoogleAdsRefreshToken(config, supabaseAdmin())
   return fetchGoogleAdsAccessToken(config, refreshToken, fetchFn)
 }
