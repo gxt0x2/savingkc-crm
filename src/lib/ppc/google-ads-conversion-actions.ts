@@ -40,6 +40,23 @@ export type GoogleAdsConversionActionInspection = {
   suggestedMappings: GoogleAdsConversionActionSuggestion[]
 }
 
+export type GoogleAdsOfflineActionSpec = {
+  eventName: PpcConversionEventName
+  envKey: string
+  name: string
+  type: 'UPLOAD_CLICKS' | 'UPLOAD_CALLS'
+  category: string
+  defaultValue: number
+}
+
+export type GoogleAdsOfflineActionEnsureResult = {
+  ok: boolean
+  created: GoogleAdsConversionActionSummary[]
+  existing: GoogleAdsConversionActionSummary[]
+  accountErrors: GoogleAdsConversionActionAccountError[]
+  inspection: GoogleAdsConversionActionInspection
+}
+
 type SearchStreamResponse = Array<{
   results?: Array<{
     conversionAction?: {
@@ -51,6 +68,55 @@ type SearchStreamResponse = Array<{
     }
   }>
 }>
+
+type MutateConversionActionResponse = {
+  results?: Array<{
+    resourceName?: string
+  }>
+}
+
+export const SEARCH_2026_OFFLINE_ACTION_SPECS: GoogleAdsOfflineActionSpec[] = [
+  {
+    eventName: 'qualified_lead',
+    envKey: envKey('qualified_lead'),
+    name: 'Search 2026 - Qualified Lead',
+    type: 'UPLOAD_CLICKS',
+    category: 'QUALIFIED_LEAD',
+    defaultValue: 2,
+  },
+  {
+    eventName: 'appointment_booked',
+    envKey: envKey('appointment_booked'),
+    name: 'Search 2026 - Appointment Booked',
+    type: 'UPLOAD_CLICKS',
+    category: 'BOOK_APPOINTMENT',
+    defaultValue: 3,
+  },
+  {
+    eventName: 'call_connected_60s',
+    envKey: envKey('call_connected_60s'),
+    name: 'Search 2026 - Call Connected 60s',
+    type: 'UPLOAD_CALLS',
+    category: 'PHONE_CALL_LEAD',
+    defaultValue: 1,
+  },
+  {
+    eventName: 'call_connected_2m',
+    envKey: envKey('call_connected_2m'),
+    name: 'Search 2026 - Call Connected 2m',
+    type: 'UPLOAD_CALLS',
+    category: 'PHONE_CALL_LEAD',
+    defaultValue: 2,
+  },
+  {
+    eventName: 'call_connected_5m',
+    envKey: envKey('call_connected_5m'),
+    name: 'Search 2026 - Call Connected 5m',
+    type: 'UPLOAD_CALLS',
+    category: 'PHONE_CALL_LEAD',
+    defaultValue: 3,
+  },
+]
 
 const CONVERSION_ACTION_QUERY = `
   SELECT
@@ -79,6 +145,18 @@ function isEnabled(action: GoogleAdsConversionActionSummary): boolean {
 
 function normalizeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function actionIdFromResourceName(resourceName: string): string {
+  return resourceName.split('/').pop() || ''
+}
+
+function actionWithName(
+  actions: GoogleAdsConversionActionSummary[],
+  name: string,
+): GoogleAdsConversionActionSummary | null {
+  const normalizedName = normalizeName(name)
+  return actions.find((action) => normalizeName(action.name) === normalizedName) ?? null
 }
 
 function findAction(
@@ -166,6 +244,65 @@ function toActionSummary(
   }
 }
 
+async function createOfflineConversionAction(
+  config: GoogleAdsConfig,
+  accessToken: string,
+  spec: GoogleAdsOfflineActionSpec,
+  fetchFn: typeof fetch,
+): Promise<GoogleAdsConversionActionSummary> {
+  const response = await fetchFn(
+    `https://googleads.googleapis.com/${config.apiVersion}/customers/${config.customerId}/conversionActions:mutate`,
+    {
+      method: 'POST',
+      headers: cleanJsonRecord({
+        'Content-Type': 'application/json',
+        'developer-token': config.developerToken,
+        'Authorization': `Bearer ${accessToken}`,
+        'login-customer-id': config.loginCustomerId ?? undefined,
+      }) as HeadersInit,
+      body: JSON.stringify({
+        operations: [
+          {
+            create: {
+              name: spec.name,
+              type: spec.type,
+              category: spec.category,
+              status: 'ENABLED',
+              countingType: 'ONE_PER_CLICK',
+              clickThroughLookbackWindowDays: 90,
+              valueSettings: {
+                defaultValue: spec.defaultValue,
+                defaultCurrencyCode: 'USD',
+                alwaysUseDefaultValue: false,
+              },
+            },
+          },
+        ],
+      }),
+    },
+  )
+
+  const body = await response.json().catch(() => ({})) as MutateConversionActionResponse | Record<string, unknown>
+  if (!response.ok) {
+    const error = googleAdsError(body as Record<string, unknown>, `Google Ads conversion action create failed (${response.status})`)
+    throw new Error(error.message)
+  }
+
+  const resourceName = (body as MutateConversionActionResponse).results?.[0]?.resourceName
+  if (!resourceName) {
+    throw new Error(`Google Ads did not return a resource name for ${spec.name}`)
+  }
+
+  return {
+    id: actionIdFromResourceName(resourceName),
+    resourceName,
+    name: spec.name,
+    type: spec.type,
+    status: 'ENABLED',
+    customerId: config.customerId,
+  }
+}
+
 async function searchConversionActionsForCustomer(
   config: GoogleAdsConfig,
   accessToken: string,
@@ -246,5 +383,51 @@ export async function inspectGoogleAdsConversionActions(
     actions,
     accountErrors,
     suggestedMappings: suggestedMappings(actions),
+  }
+}
+
+export async function ensureSearch2026OfflineConversionActions(
+  env: Env = process.env,
+  fetchFn: typeof fetch = fetch,
+): Promise<GoogleAdsOfflineActionEnsureResult> {
+  const { config, missing } = readGoogleAdsConfig(env)
+  if (!config) {
+    const inspection: GoogleAdsConversionActionInspection = {
+      ok: false,
+      configured: false,
+      missingConfig: missing,
+      customerId: digits(env.GOOGLE_ADS_CUSTOMER_ID ?? null),
+      loginCustomerId: digits(env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? env.GOOGLE_ADS_MANAGER_CUSTOMER_ID ?? null),
+      actions: [],
+      accountErrors: [],
+      suggestedMappings: suggestedMappings([]),
+    }
+    return { ok: false, created: [], existing: [], accountErrors: [], inspection }
+  }
+
+  const before = await inspectGoogleAdsConversionActions(env, fetchFn)
+  const existing = SEARCH_2026_OFFLINE_ACTION_SPECS
+    .map((spec) => actionWithName(before.actions, spec.name))
+    .filter((action): action is GoogleAdsConversionActionSummary => Boolean(action))
+
+  if (before.accountErrors.length > 0 && before.actions.length === 0) {
+    return { ok: false, created: [], existing, accountErrors: before.accountErrors, inspection: before }
+  }
+
+  const accessToken = await getGoogleAdsAccessToken(config, fetchFn)
+  const created: GoogleAdsConversionActionSummary[] = []
+
+  for (const spec of SEARCH_2026_OFFLINE_ACTION_SPECS) {
+    if (actionWithName(before.actions, spec.name)) continue
+    created.push(await createOfflineConversionAction(config, accessToken, spec, fetchFn))
+  }
+
+  const inspection = await inspectGoogleAdsConversionActions(env, fetchFn)
+  return {
+    ok: inspection.accountErrors.length === 0,
+    created,
+    existing,
+    accountErrors: inspection.accountErrors,
+    inspection,
   }
 }
