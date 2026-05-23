@@ -83,6 +83,29 @@ export type PpcConversionExportResult = {
   results: RowExportResult[]
 }
 
+export type PpcConversionExportConfigHealth = {
+  configured: boolean
+  mode: 'google_ads_and_stape' | 'google_ads_only' | 'stape_only' | 'not_configured'
+  enabledDestinations: DestinationResult['destination'][]
+  googleAds: {
+    enabled: boolean
+    ready: boolean
+    customerId: string | null
+    apiVersion: string | null
+    missingConfig: string[]
+    configuredActionMappings: PpcConversionEventName[]
+    missingActionMappings: PpcConversionEventName[]
+  }
+  stape: {
+    enabled: boolean
+    ready: boolean
+    endpointHost: string | null
+    previewHeaderConfigured: boolean
+    missingConfig: string[]
+  }
+  warnings: string[]
+}
+
 type OutboxStore = {
   listRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]>
   claimRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]>
@@ -377,6 +400,82 @@ function readEnabledDestinations(env: Env): { destinations: Set<DestinationResul
   return destinations.size > 0
     ? { destinations, missing: [] }
     : { destinations, missing: ['PPC_CONVERSION_EXPORT_DESTINATIONS'] }
+}
+
+function endpointHost(endpoint: string | null | undefined): string | null {
+  if (!endpoint) return null
+  try {
+    return new URL(endpoint).host
+  } catch {
+    return endpoint.replace(/^https?:\/\//, '').split('/')[0] || null
+  }
+}
+
+function configMode(destinations: Set<DestinationResult['destination']>): PpcConversionExportConfigHealth['mode'] {
+  const googleAds = destinations.has('google_ads')
+  const stape = destinations.has('stape')
+  if (googleAds && stape) return 'google_ads_and_stape'
+  if (googleAds) return 'google_ads_only'
+  if (stape) return 'stape_only'
+  return 'not_configured'
+}
+
+export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcConversionExportConfigHealth {
+  const enabled = readEnabledDestinations(env)
+  const googleEnabled = enabled.destinations.has('google_ads')
+  const stapeEnabled = enabled.destinations.has('stape')
+  const customerId = normalizeCustomerId(readEnv(env, 'GOOGLE_ADS_CUSTOMER_ID'))
+  const actionMappings = customerId ? loadConversionActions(env, customerId) : {}
+  const configuredActionMappings = GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES.filter((eventName) => Boolean(actionMappings[eventName]))
+  const missingActionMappings = GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES.filter((eventName) => !actionMappings[eventName])
+  const google = googleEnabled
+    ? readGoogleAdsConfig(env)
+    : { config: null, missing: [] }
+  const stape = stapeEnabled
+    ? readStapeConfig(env)
+    : { config: null, missing: [] }
+  const googleReady = Boolean(google.config && missingActionMappings.length === 0)
+  const stapeReady = Boolean(stape.config)
+  const warnings: string[] = []
+
+  if (enabled.missing.length) {
+    warnings.push('No valid export destination is enabled.')
+  }
+  if (stapeEnabled && stapeReady && !googleEnabled) {
+    warnings.push('Approved conversions are configured for Stape/server GTM only; direct Google Ads API upload is not enabled.')
+  }
+  if (googleEnabled && google.missing.length > 0) {
+    warnings.push(`Direct Google Ads API upload is missing ${google.missing.length} required credential value${google.missing.length === 1 ? '' : 's'}.`)
+  }
+  if (googleEnabled && missingActionMappings.length > 0) {
+    warnings.push(`Direct Google Ads API upload is missing ${missingActionMappings.length} conversion action mapping${missingActionMappings.length === 1 ? '' : 's'}.`)
+  }
+  if (stapeEnabled && !stapeReady) {
+    warnings.push('Stape/server GTM is enabled but its endpoint is not configured.')
+  }
+
+  return {
+    configured: (googleEnabled && googleReady) || (stapeEnabled && stapeReady),
+    mode: configMode(enabled.destinations),
+    enabledDestinations: Array.from(enabled.destinations),
+    googleAds: {
+      enabled: googleEnabled,
+      ready: googleReady,
+      customerId,
+      apiVersion: google.config?.apiVersion ?? readEnv(env, 'GOOGLE_ADS_API_VERSION') ?? DEFAULT_GOOGLE_ADS_API_VERSION,
+      missingConfig: google.missing,
+      configuredActionMappings,
+      missingActionMappings,
+    },
+    stape: {
+      enabled: stapeEnabled,
+      ready: stapeReady,
+      endpointHost: endpointHost(stape.config?.endpoint ?? readEnv(env, 'PPC_STAPE_ENDPOINT_URL') ?? readEnv(env, 'STAPE_SGTM_DOMAIN')),
+      previewHeaderConfigured: Boolean(stape.config?.previewHeader),
+      missingConfig: stape.missing,
+    },
+    warnings,
+  }
 }
 
 function toGoogleAdsDateTime(value: string | Date): string {
