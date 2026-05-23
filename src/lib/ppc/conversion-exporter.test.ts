@@ -12,6 +12,7 @@ function makeRow(overrides: Partial<PpcConversionOutboxExportRow> = {}): PpcConv
     event_category: 'form',
     destination: 'google_ads',
     dedupe_key: 'lead:123:lead_submitted',
+    approved_for_google_ads: true,
     status: 'pending',
     optimization_role: 'primary',
     lead_id: 'lead-123',
@@ -170,6 +171,41 @@ describe('ppc conversion exporter', () => {
       currency: 'USD',
       gclid: 'test-gclid',
     })
+  })
+
+  it('skips rows that are still waiting on approval', async () => {
+    const row = makeRow({ approved_for_google_ads: false })
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi.fn()
+
+    const result = await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result.skipped).toBe(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(store.markSkipped).toHaveBeenCalledWith(
+      row,
+      'Awaiting approval for Google Ads export',
+      expect.objectContaining({
+        destinations: expect.arrayContaining([
+          expect.objectContaining({ destination: 'stape', status: 'skipped' }),
+        ]),
+      }),
+      expect.any(Date),
+    )
   })
 
   it('leaves the queue untouched when no export destination is configured', async () => {

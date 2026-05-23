@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { captureAttribution, getAttribution } from '@/lib/ppc/attribution'
 import { fireConversion, fireFormError, firePpcTrackingEvent } from '@/lib/ppc/conversions'
+import { getPpcSessionContext } from '@/lib/ppc/tracking-client'
 import { AddressAutocomplete } from './AddressAutocomplete'
 
 type Situation =
@@ -15,6 +16,7 @@ type Situation =
 
 type Timeline = 'asap' | '60-days' | 'flexible' | 'exploring'
 type Condition = 'good' | 'needs-work' | 'major-repair' | 'vacant'
+type AddressSource = 'typed' | 'google_places'
 
 interface QuizState {
   situation: Situation | ''
@@ -68,6 +70,7 @@ type SellLandingProps = {
 export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: SellLandingProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [state, setState] = useState<QuizState>(EMPTY_STATE)
+  const [addressSource, setAddressSource] = useState<AddressSource>('typed')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [bookingOpen, setBookingOpen] = useState(false)
@@ -80,9 +83,30 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
   const [navJumpVisible, setNavJumpVisible] = useState(false)
   const toolCardRef = useRef<HTMLDivElement | null>(null)
   const stage3AutosavedKeyRef = useRef<string | null>(null)
+  const addressCapturedKeyRef = useRef<string | null>(null)
+  const potentialLeadKeyRef = useRef<string | null>(null)
+  const formContextRef = useRef<Record<string, unknown>>({})
+  const sectionViewedRef = useRef<Set<string>>(new Set())
+  const scrollDepthRef = useRef<Set<number>>(new Set())
+
+  useEffect(() => {
+    formContextRef.current = {
+      form_step: step,
+      situation: state.situation || undefined,
+      timeline: state.timeline || undefined,
+      condition: state.condition || undefined,
+      form_status: submitted ? 'submitted' : step === 3 ? 'step_3_visible' : 'in_progress',
+    }
+  }, [state.condition, state.situation, state.timeline, step, submitted])
 
   useEffect(() => {
     captureAttribution()
+    firePpcTrackingEvent('ppc_visit_started', {
+      form_step: 1,
+      page_path: window.location.pathname,
+      landing_page: window.location.href,
+      referrer: document.referrer || undefined,
+    })
     firePpcTrackingEvent('skc_phone_number_selected', {
       ppc_phone_display: phoneDisplay,
       ppc_phone_tel: phoneTel,
@@ -104,9 +128,80 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     return () => obs.disconnect()
   }, [])
 
+  useEffect(() => {
+    const sections = Array.from(document.querySelectorAll<HTMLElement>('[data-track-section]'))
+    if (!sections.length) return
+
+    const markViewed = (section: string) => {
+      if (sectionViewedRef.current.has(section)) return
+      sectionViewedRef.current.add(section)
+      firePpcTrackingEvent('section_viewed', {
+        section,
+        ...formContextRef.current,
+      })
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      markViewed('hero_quiz')
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.35) continue
+          const section = entry.target instanceof HTMLElement ? entry.target.dataset.trackSection : undefined
+          if (section) markViewed(section)
+        }
+      },
+      { threshold: [0.35, 0.55] },
+    )
+
+    sections.forEach((section) => observer.observe(section))
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const thresholds = [25, 50, 75, 90]
+    let ticking = false
+
+    const measure = () => {
+      ticking = false
+      const doc = document.documentElement
+      const body = document.body
+      const scrollHeight = Math.max(doc.scrollHeight, body?.scrollHeight ?? 0)
+      const viewed = window.scrollY + window.innerHeight
+      const depth = scrollHeight <= 0 ? 100 : Math.round((viewed / scrollHeight) * 100)
+
+      for (const threshold of thresholds) {
+        if (depth < threshold || scrollDepthRef.current.has(threshold)) continue
+        scrollDepthRef.current.add(threshold)
+        firePpcTrackingEvent('scroll_depth_reached', {
+          scroll_depth: threshold,
+          ...formContextRef.current,
+        })
+      }
+    }
+
+    const onScroll = () => {
+      if (ticking) return
+      ticking = true
+      window.requestAnimationFrame(measure)
+    }
+
+    measure()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [])
+
   const postPartial = useCallback(async (currentStep: 1 | 2 | 3, partial: Partial<QuizState>) => {
     try {
       const attribution = getAttribution()
+      const { sessionId, visitorId } = getPpcSessionContext()
       await fetch('/api/leads/ppc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,10 +209,34 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
           step: currentStep,
           ...partial,
           attribution,
+          sessionId,
+          visitorId,
+          smsConsent: true,
         }),
       })
     } catch {
       // best-effort
+    }
+  }, [])
+
+  const postPpcLeadSignal = useCallback(async (payload: Record<string, unknown>) => {
+    try {
+      const attribution = getAttribution()
+      const { sessionId, visitorId } = getPpcSessionContext()
+      const response = await fetch('/api/leads/ppc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          attribution,
+          sessionId,
+          visitorId,
+          smsConsent: true,
+        }),
+      })
+      return await response.json().catch(() => null)
+    } catch {
+      return null
     }
   }, [])
 
@@ -149,6 +268,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     const timer = window.setTimeout(async () => {
       try {
         const attribution = getAttribution()
+        const { sessionId, visitorId } = getPpcSessionContext()
         const r = await fetch('/api/leads/ppc', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -156,11 +276,15 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
             intent: 'autosave',
             step: 3,
             address,
+            addressSource,
             situation: state.situation,
             timeline: state.timeline,
             condition: state.condition,
             contact: { name, phone, email },
             attribution,
+            sessionId,
+            visitorId,
+            smsConsent: true,
           }),
         })
         const json = await r.json().catch(() => null)
@@ -172,9 +296,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
             form_status: 'stage_3_complete_no_submit',
             form_submitted: false,
             has_address: true,
+            address_source: addressSource,
             has_name: true,
             has_phone: true,
             has_email: true,
+            sms_consent: true,
             situation: state.situation || undefined,
             timeline: state.timeline || undefined,
             condition: state.condition || undefined,
@@ -189,6 +315,94 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
 
     return () => window.clearTimeout(timer)
   }, [
+    state.address,
+    addressSource,
+    state.condition,
+    state.email,
+    state.name,
+    state.phone,
+    state.situation,
+    state.timeline,
+    step,
+    submitted,
+  ])
+
+  useEffect(() => {
+    if (submitted || step !== 3) return
+
+    const address = state.address.trim().replace(/\s+/g, ' ')
+    if (address.length < 8 || !/\d/.test(address)) return
+
+    const key = `${address}|${addressSource}`
+    if (addressCapturedKeyRef.current === key) return
+
+    const timer = window.setTimeout(async () => {
+      const json = await postPpcLeadSignal({
+        intent: 'address_capture',
+        step: 3,
+        address,
+        addressSource,
+        situation: state.situation || undefined,
+        timeline: state.timeline || undefined,
+        condition: state.condition || undefined,
+      })
+      if (json?.ok) addressCapturedKeyRef.current = key
+    }, 1400)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    addressSource,
+    postPpcLeadSignal,
+    state.address,
+    state.condition,
+    state.situation,
+    state.timeline,
+    step,
+    submitted,
+  ])
+
+  useEffect(() => {
+    if (submitted || step !== 3) return
+
+    const address = state.address.trim().replace(/\s+/g, ' ')
+    const name = state.name.trim()
+    const phone = state.phone.trim()
+    const email = state.email.trim().toLowerCase()
+    const phoneDigits = phone.replace(/\D/g, '')
+    const hasPhone = phoneDigits.length >= 10
+    const hasEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    const hasSubmitFields = Boolean(address && name && hasPhone && hasEmail)
+
+    if (address.length < 8 || !/\d/.test(address) || hasSubmitFields || (!hasPhone && !hasEmail)) return
+
+    const key = [address, name, hasPhone ? phoneDigits : '', hasEmail ? email : '', addressSource].join('|')
+    if (potentialLeadKeyRef.current === key) return
+
+    const timer = window.setTimeout(async () => {
+      const json = await postPpcLeadSignal({
+        intent: 'potential',
+        step: 3,
+        address,
+        addressSource,
+        situation: state.situation || undefined,
+        timeline: state.timeline || undefined,
+        condition: state.condition || undefined,
+        contact: {
+          name: name || undefined,
+          phone: hasPhone ? phone : undefined,
+          email: hasEmail ? email : undefined,
+        },
+      })
+      if (json?.ok) {
+        potentialLeadKeyRef.current = key
+        if (json.manifestId) setManifestId(json.manifestId)
+      }
+    }, 1800)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    addressSource,
+    postPpcLeadSignal,
     state.address,
     state.condition,
     state.email,
@@ -215,6 +429,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         setQuizStartedFired(true)
       }
       postPartial(1, { situation: state.situation })
+      firePpcTrackingEvent('form_step_completed', {
+        form_step: 1,
+        next_step: 2,
+        situation: state.situation,
+      })
     }
     if (toStep === 3) {
       if (!state.timeline || !state.condition) {
@@ -232,6 +451,13 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         timeline: state.timeline,
         condition: state.condition,
       })
+      firePpcTrackingEvent('form_step_completed', {
+        form_step: 2,
+        next_step: 3,
+        situation: state.situation,
+        timeline: state.timeline,
+        condition: state.condition,
+      })
     }
     setStep(toStep)
   }
@@ -245,6 +471,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     setSubmitting(true)
     try {
       const attribution = getAttribution()
+      const { sessionId, visitorId } = getPpcSessionContext()
       const r = await fetch('/api/leads/ppc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -252,6 +479,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
           step: 3,
           intent: 'submit',
           address: state.address,
+          addressSource,
           situation: state.situation,
           timeline: state.timeline,
           condition: state.condition,
@@ -261,6 +489,9 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
             email: state.email,
           },
           attribution,
+          sessionId,
+          visitorId,
+          smsConsent: true,
         }),
       })
       const json = await r.json()
@@ -271,9 +502,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         form_submitted: true,
         stage3_autosaved: Boolean(manifestId || json.manifestId),
         has_address: true,
+        address_source: addressSource,
         has_name: true,
         has_phone: true,
         has_email: true,
+        sms_consent: true,
         situation: state.situation || undefined,
         timeline: state.timeline || undefined,
         condition: state.condition || undefined,
@@ -339,10 +572,34 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     }
   }
 
+  const updateAddress = (value: string, source: AddressSource = 'typed') => {
+    setAddressSource(source)
+    select('address', value)
+  }
+
+  const trackCtaClick = (clickLocation: string, targetSection = 'quiz') => {
+    firePpcTrackingEvent('cta_click', {
+      click_location: clickLocation,
+      target_section: targetSection,
+      ...formContextRef.current,
+    })
+  }
+
   const scrollToQuiz = () => document.getElementById('quiz')?.scrollIntoView({ behavior: 'smooth' })
-  const scrollToId = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
+  const jumpToQuiz = (e: MouseEvent<HTMLAnchorElement>, clickLocation: string) => {
+    e.preventDefault()
+    trackCtaClick(clickLocation)
+    scrollToQuiz()
+  }
+
+  const scrollToId = (id: string, clickLocation: string) => (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault()
     setMobileMenuOpen(false)
+    firePpcTrackingEvent('nav_click', {
+      click_location: clickLocation,
+      target_section: id,
+      ...formContextRef.current,
+    })
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
   const trackPhoneClick = (clickLocation: string) => {
@@ -350,6 +607,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       phone_number: phoneTel,
       phone_display: phoneDisplay,
       click_location: clickLocation,
+      ...formContextRef.current,
     })
   }
 
@@ -358,15 +616,15 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       {/* ============ TOP BAR ============ */}
       <div className="topbar">
         <div className="container topbar-inner">
-          <a href="#quiz" className="logo" onClick={scrollToId('quiz')}>
+          <a href="#quiz" className="logo" onClick={scrollToId('quiz', 'topbar_logo')}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/skc-logo.png" alt="Saving KC Homebuyers" className="topbar-logo" width={489} height={141} />
           </a>
           <nav className="nav-links" aria-label="primary">
-            <a href="#how" onClick={scrollToId('how')}>How it works</a>
-            <a href="#about" onClick={scrollToId('about')}>About us</a>
-            <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
-            <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
+            <a href="#how" onClick={scrollToId('how', 'top_nav_how')}>How it works</a>
+            <a href="#about" onClick={scrollToId('about', 'top_nav_about')}>About us</a>
+            <a href="#faq" onClick={scrollToId('faq', 'top_nav_faq')}>FAQ</a>
+            <a href="#reviews" onClick={scrollToId('reviews', 'top_nav_reviews')}>Reviews</a>
           </nav>
           <div className="topbar-right">
             <div className="topbar-trust">
@@ -381,7 +639,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
               <a
                 href="#quiz"
                 className="nav-jump visible"
-                onClick={scrollToId('quiz')}
+                onClick={(e) => jumpToQuiz(e, 'sticky_offer_cta')}
               >
                 Get My Offer
                 <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
@@ -400,10 +658,10 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         </div>
         <div className={`mobile-menu ${mobileMenuOpen ? 'open' : ''}`}>
           <div className="mobile-menu-inner">
-            <a href="#how" onClick={scrollToId('how')}>How it works</a>
-            <a href="#about" onClick={scrollToId('about')}>About us</a>
-            <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
-            <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
+            <a href="#how" onClick={scrollToId('how', 'mobile_nav_how')}>How it works</a>
+            <a href="#about" onClick={scrollToId('about', 'mobile_nav_about')}>About us</a>
+            <a href="#faq" onClick={scrollToId('faq', 'mobile_nav_faq')}>FAQ</a>
+            <a href="#reviews" onClick={scrollToId('reviews', 'mobile_nav_reviews')}>Reviews</a>
             <div className="mobile-trust">
               <span className="stars">★★★★★</span>
               <span><strong>100+</strong> KC homeowners helped</span>
@@ -417,7 +675,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       </div>
 
       {/* ============ HERO ============ */}
-      <section className="hero" id="quiz">
+      <section className="hero" id="quiz" data-track-section="hero_quiz">
         <div className="container">
           <div className="hero-grid">
             <div className="hero-copy">
@@ -600,8 +858,9 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                       id="address"
                       placeholder="Start typing your address…"
                       value={state.address}
-                      onChange={(v) => select('address', v)}
-                      onPlaceSelected={() => {
+                      onChange={(v) => updateAddress(v, 'typed')}
+                      onPlaceSelected={(address) => {
+                        updateAddress(address, 'google_places')
                         firePpcTrackingEvent('address_selected', {
                           form_step: 3,
                           address_source: 'google_places',
@@ -657,7 +916,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                   </button>
                   <p className="form-footer">
                     <span className="material-symbols-outlined" style={{ fontSize: 14, verticalAlign: 'middle', marginRight: 3 }} aria-hidden>lock</span>
-                    Inbound-only · We never sell your info · A2P 10DLC compliant
+                    We never sell your info. By clicking, you agree we may call, text, or email about your property offer. Consent is not required to sell. Msg/data rates may apply. Reply STOP to opt out.
                   </p>
                 </div>
               )}
@@ -668,7 +927,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       </section>
 
       {/* ============ HOW IT WORKS ============ */}
-      <section className="block" id="how">
+      <section className="block" id="how" data-track-section="how_it_works">
         <div className="container">
           <div className="section-eyebrow">How it works</div>
           <h2 className="section-title">Out from under it in 3 steps.</h2>
@@ -712,7 +971,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       </section>
 
       {/* ============ SITUATIONS ============ */}
-      <section className="block" id="about">
+      <section className="block" id="about" data-track-section="situations">
         <div className="container">
           <div className="section-eyebrow">Who we help</div>
           <h2 className="section-title">If life put you here, we can help.</h2>
@@ -721,18 +980,18 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
           </p>
 
           <div className="situations-grid">
-            <SitCard icon="gavel" title="Back taxes piling up" body="Stop the auction clock and walk away with the equity you’d otherwise lose at the courthouse steps. We pay the county directly." cta="Protect what you’ve built" />
-            <SitCard icon="family_history" title="Inherited more than you bargained for" body="Turn a house full of memories and obligations into one clean check your family can split. We work alongside probate — you don’t have to wait for it." cta="Honor the past, move forward" />
-            <SitCard icon="person_off" title="Done being everybody’s landlord" body="Hand us the keys, the tenant, and the headache. We close with renters in place — no evictions, no awkward conversations, no 60-day notices." cta="Get your weekends back" />
-            <SitCard icon="construction" title="A house you can’t afford to fix" body="Fire damage, foundation cracks, code violations, a kitchen frozen in 1978 — none of it scares us, and none of it lowers our offer the way a retail buyer would." cta="Sell it exactly as it sits" />
-            <SitCard icon="schedule_send" title="Foreclosure, divorce, or a fast move" body="When life forces a fast decision, we move at your speed and protect your privacy. 14-day closings with title partners who already know our paperwork." cta="Close on your timeline" />
-            <SitCard icon="landscape" title="Land or lots draining your wallet" body="Vacant lots, ag parcels, that infill piece your uncle left you — if it’s costing you taxes every year and earning you nothing, we’ll take it off your books." cta="Stop paying for nothing" />
+            <SitCard icon="gavel" title="Back taxes piling up" body="Stop the auction clock and walk away with the equity you’d otherwise lose at the courthouse steps. We pay the county directly." cta="Protect what you’ve built" onClick={(e) => jumpToQuiz(e, 'situation_card_back_taxes')} />
+            <SitCard icon="family_history" title="Inherited more than you bargained for" body="Turn a house full of memories and obligations into one clean check your family can split. We work alongside probate — you don’t have to wait for it." cta="Honor the past, move forward" onClick={(e) => jumpToQuiz(e, 'situation_card_inherited')} />
+            <SitCard icon="person_off" title="Done being everybody’s landlord" body="Hand us the keys, the tenant, and the headache. We close with renters in place — no evictions, no awkward conversations, no 60-day notices." cta="Get your weekends back" onClick={(e) => jumpToQuiz(e, 'situation_card_landlord')} />
+            <SitCard icon="construction" title="A house you can’t afford to fix" body="Fire damage, foundation cracks, code violations, a kitchen frozen in 1978 — none of it scares us, and none of it lowers our offer the way a retail buyer would." cta="Sell it exactly as it sits" onClick={(e) => jumpToQuiz(e, 'situation_card_repairs')} />
+            <SitCard icon="schedule_send" title="Foreclosure, divorce, or a fast move" body="When life forces a fast decision, we move at your speed and protect your privacy. 14-day closings with title partners who already know our paperwork." cta="Close on your timeline" onClick={(e) => jumpToQuiz(e, 'situation_card_life_event')} />
+            <SitCard icon="landscape" title="Land or lots draining your wallet" body="Vacant lots, ag parcels, that infill piece your uncle left you — if it’s costing you taxes every year and earning you nothing, we’ll take it off your books." cta="Stop paying for nothing" onClick={(e) => jumpToQuiz(e, 'situation_card_land')} />
           </div>
         </div>
       </section>
 
       {/* ============ MID CTA ============ */}
-      <section className="block">
+      <section className="block" data-track-section="mid_cta">
         <div className="container">
           <div className="mid-cta">
             <div className="mid-cta-content">
@@ -743,7 +1002,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                 Property problems compound. Taxes accrue interest. Vacant houses get vandalized. Estates rack up legal costs. Tenants disappear with the security deposit. The number you get six months from now will be smaller than the number you can get this week. Let&apos;s see yours.
               </p>
               <div className="mid-cta-actions">
-                <a href="#quiz" className="btn-secondary" onClick={(e) => { e.preventDefault(); scrollToQuiz() }}>
+                <a href="#quiz" className="btn-secondary" onClick={(e) => jumpToQuiz(e, 'mid_page_offer_cta')}>
                   See My Number
                   <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                 </a>
@@ -768,7 +1027,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       </section>
 
       {/* ============ COUNTIES ============ */}
-      <section className="block">
+      <section className="block" data-track-section="service_area">
         <div className="container">
           <div className="section-eyebrow">Service area</div>
           <h2 className="section-title">We know your county. And your block.</h2>
@@ -798,7 +1057,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       </section>
 
       {/* ============ TESTIMONIALS ============ */}
-      <section className="block" id="reviews">
+      <section className="block" id="reviews" data-track-section="reviews">
         <div className="container">
           <div className="section-eyebrow">What KC homeowners say</div>
           <h2 className="section-title">100+ neighbors. Real stories.</h2>
@@ -836,7 +1095,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       </section>
 
       {/* ============ FAQ ============ */}
-      <section className="block" id="faq">
+      <section className="block" id="faq" data-track-section="faq">
         <div className="container">
           <div className="section-eyebrow">Common questions</div>
           <h2 className="section-title">Questions worth asking.</h2>
@@ -848,7 +1107,16 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                   type="button"
                   className="faq-q"
                   aria-expanded={openFaq === i}
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  onClick={() => {
+                    if (openFaq !== i) {
+                      firePpcTrackingEvent('faq_opened', {
+                        faq_index: i,
+                        faq_question: faq.q,
+                        ...formContextRef.current,
+                      })
+                    }
+                    setOpenFaq(openFaq === i ? null : i)
+                  }}
                 >
                   {faq.q} <span className="plus">+</span>
                 </button>
@@ -862,7 +1130,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       </section>
 
       {/* ============ FINAL CTA ============ */}
-      <section className="block">
+      <section className="block" data-track-section="final_cta">
         <div className="container">
           <div className="final-cta">
             <h2>
@@ -875,10 +1143,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
             <a
               href="#quiz"
               className="btn-secondary lg"
-              onClick={(e) => {
-                e.preventDefault()
-                scrollToQuiz()
-              }}
+              onClick={(e) => jumpToQuiz(e, 'final_offer_cta')}
             >
               Get My Free Offer Estimate
               <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
@@ -936,9 +1201,21 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
   )
 }
 
-function SitCard({ icon, title, body, cta }: { icon: string; title: string; body: string; cta: string }) {
+function SitCard({
+  icon,
+  title,
+  body,
+  cta,
+  onClick,
+}: {
+  icon: string
+  title: string
+  body: string
+  cta: string
+  onClick?: (e: MouseEvent<HTMLAnchorElement>) => void
+}) {
   return (
-    <a href="#quiz" className="sit-card">
+    <a href="#quiz" className="sit-card" onClick={onClick}>
       <div className="sit-icon">
         <span className="material-symbols-outlined" style={{ fontSize: 22 }} aria-hidden>{icon}</span>
       </div>

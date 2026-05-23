@@ -53,6 +53,7 @@ describe('ppc conversion outbox', () => {
       event_category: 'form',
       destination: 'google_ads',
       dedupe_key: 'lead:123:lead_submitted',
+      approved_for_google_ads: false,
       optimization_role: 'primary',
       lead_id: 'lead-123',
       manifest_id: 'manifest-123',

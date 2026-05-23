@@ -1,54 +1,26 @@
 /**
  * POST /api/admin/sync-mojo-session
- * Reads the Mojo session file from disk (production Mac) and stores it in Supabase.
- * This endpoint only works on the production Mac where the session file exists.
+ * Stores a Mojo session id in Supabase.
+ *
+ * Vercel cannot read the local Mac's ~/.openclaw session file. Keep this route
+ * explicit so production builds do not trace arbitrary local filesystem paths.
  */
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
-import { readFile } from 'fs/promises'
-import { homedir } from 'os'
-import { join } from 'path'
-
-
-
-const SESSION_FILE_PATHS = [
-  join(homedir(), '.openclaw/workspace/memory/mojo-session.json'),
-  '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json',
-]
-
 export async function POST(req: Request) {
   const unauthorized = await requireAdminOrSecret(req)
   if (unauthorized) return unauthorized
 
-  const results: string[] = []
-
-  // Try to read session from disk
-  let sessionId: string | null = null
-  for (const filePath of SESSION_FILE_PATHS) {
-    try {
-      const content = await readFile(filePath, 'utf8')
-      const session = JSON.parse(content)
-      if (!session.expired && session.sessionId) {
-        sessionId = session.sessionId
-        results.push(`Found session in ${filePath}`)
-        break
-      } else {
-        results.push(`Session at ${filePath} is expired or missing sessionId`)
-      }
-    } catch (e: any) {
-      results.push(`Cannot read ${filePath}: ${e.code || e.message}`)
-    }
-  }
+  const body = await req.json().catch(() => ({}))
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : ''
 
   if (!sessionId) {
     return NextResponse.json({
       success: false,
-      message: 'No valid Mojo session file found on this machine',
-      details: results,
-      homedir: homedir(),
-    })
+      message: 'Missing sessionId. Extract it on the Mac, then POST { "sessionId": "..." } to this route.',
+    }, { status: 400 })
   }
 
   // Upsert the session (system_config table must exist)
@@ -64,14 +36,12 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: false,
       message: `Failed to store in Supabase: ${error.message}`,
-      details: results,
     })
   }
 
-  results.push('Session stored in Supabase system_config')
   return NextResponse.json({
     success: true,
     sessionPrefix: sessionId.substring(0, 10) + '...',
-    details: results,
+    details: ['Session stored in Supabase system_config'],
   })
 }

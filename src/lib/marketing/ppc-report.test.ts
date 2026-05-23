@@ -112,6 +112,7 @@ const baseInput: PpcReportInput = {
       event_category: 'form',
       dedupe_key: 'lead:lead-form:lead_submitted',
       status: 'sent',
+      approved_for_google_ads: true,
       optimization_role: 'primary',
       lead_id: 'lead-form',
       conversion_value: 25,
@@ -131,6 +132,7 @@ const baseInput: PpcReportInput = {
       event_category: 'call',
       dedupe_key: 'call:call-123:call_connected_2m',
       status: 'pending',
+      approved_for_google_ads: false,
       optimization_role: 'secondary',
       lead_id: 'lead-call',
       conversion_value: 25,
@@ -143,6 +145,92 @@ const baseInput: PpcReportInput = {
       last_error: null,
       sent_at: null,
       created_at: '2026-05-21T14:07:00.000Z',
+    },
+  ],
+  trackingEvents: [
+    {
+      id: 'event-visit',
+      event_id: 'event-visit',
+      event_name: 'ppc_visit_started',
+      event_category: 'visit',
+      event_time: '2026-05-20T14:00:00.000Z',
+      session_id: 'session-form',
+      visitor_id: 'visitor-form',
+      lead_id: null,
+      form_step: 1,
+      form_status: null,
+      situation_raw: null,
+      timeline_raw: null,
+      condition_raw: null,
+      phone_number: null,
+      sms_consent: null,
+      is_test: false,
+      attribution: { gclid: 'click-form' },
+      payload: {},
+      created_at: '2026-05-20T14:00:00.000Z',
+    },
+    {
+      id: 'event-situation',
+      event_id: 'event-situation',
+      event_name: 'situation_selected',
+      event_category: 'form',
+      event_time: '2026-05-20T14:01:00.000Z',
+      session_id: 'session-form',
+      visitor_id: 'visitor-form',
+      lead_id: null,
+      form_step: 1,
+      form_status: null,
+      situation_raw: 'tax-delinquent',
+      timeline_raw: null,
+      condition_raw: null,
+      phone_number: null,
+      sms_consent: null,
+      is_test: false,
+      attribution: { gclid: 'click-form' },
+      payload: {},
+      created_at: '2026-05-20T14:01:00.000Z',
+    },
+    {
+      id: 'event-step2',
+      event_id: 'event-step2',
+      event_name: 'form_step_completed',
+      event_category: 'form',
+      event_time: '2026-05-20T14:03:00.000Z',
+      session_id: 'session-form',
+      visitor_id: 'visitor-form',
+      lead_id: null,
+      form_step: 2,
+      form_status: null,
+      situation_raw: 'tax-delinquent',
+      timeline_raw: 'asap',
+      condition_raw: 'needs-work',
+      phone_number: null,
+      sms_consent: null,
+      is_test: false,
+      attribution: { gclid: 'click-form' },
+      payload: {},
+      created_at: '2026-05-20T14:03:00.000Z',
+    },
+    {
+      id: 'event-submit',
+      event_id: 'event-submit',
+      event_name: 'lead_submitted',
+      event_category: 'conversion',
+      event_time: '2026-05-20T14:06:00.000Z',
+      session_id: 'session-form',
+      visitor_id: 'visitor-form',
+      lead_id: 'lead-form',
+      form_step: 3,
+      form_status: 'submitted',
+      situation_raw: 'tax-delinquent',
+      timeline_raw: 'asap',
+      condition_raw: 'needs-work',
+      phone_number: null,
+      sms_consent: true,
+      is_test: false,
+      attribution: { gclid: 'click-form' },
+      payload: {},
+      created_at: '2026-05-20T14:06:00.000Z',
     },
   ],
   appointments: [
@@ -171,6 +259,10 @@ describe('ppc report', () => {
     const report = buildPpcReport(baseInput)
 
     expect(report.summary.totalLeads).toBe(2)
+    expect(report.summary.paidVisits).toBe(1)
+    expect(report.summary.optionSelections).toBe(1)
+    expect(report.summary.step2Completions).toBe(1)
+    expect(report.summary.consentedSubmits).toBe(1)
     expect(report.summary.formSubmits).toBe(1)
     expect(report.summary.stage3NoSubmit).toBe(0)
     expect(report.summary.callLeads).toBe(1)
@@ -182,6 +274,7 @@ describe('ppc report', () => {
     expect(report.exportHealth.secondary).toBe(1)
     expect(report.exportHealth.pending).toBe(1)
     expect(report.exportHealth.sent).toBe(1)
+    expect(report.exportHealth.awaitingApproval).toBe(1)
   })
 
   it('keeps stage 3 completion separate from final submit', () => {
@@ -194,5 +287,76 @@ describe('ppc report', () => {
     expect(report.summary.formSubmits).toBe(0)
     expect(report.summary.stage3NoSubmit).toBe(1)
     expect(report.recentLeads.find((lead) => lead.id === 'lead-form')?.formStatus).toBe('stage_3_no_submit')
+  })
+
+  it('labels partial PPC captures as potential until step 3 is complete', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      leads: [
+        ...baseInput.leads,
+        {
+          id: 'lead-potential',
+          full_name: 'PPC Potential Lead',
+          phone: '+18165551212',
+          email: null,
+          source: 'ppc-landing',
+          station: 'new',
+          priority: 'normal',
+          property_address: '900 Oak St',
+          city: 'Kansas City',
+          created_at: '2026-05-22T15:00:00.000Z',
+          updated_at: '2026-05-22T15:01:00.000Z',
+          classification: null,
+          opportunity_score: null,
+        },
+      ],
+      activities: [
+        ...baseInput.activities,
+        {
+          id: 'activity-potential',
+          lead_id: 'lead-potential',
+          activity_type: 'status_change',
+          description: 'PPC form captured a potential lead before final submit.',
+          metadata: { source: 'ppc_form_potential', form_status: 'potential_no_submit' },
+          created_at: '2026-05-22T15:01:00.000Z',
+        },
+      ],
+    })
+
+    expect(report.recentLeads.find((lead) => lead.id === 'lead-potential')?.formStatus).toBe('potential_no_submit')
+  })
+
+  it('excludes underscore-delimited QA traffic from production metrics', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      trackingEvents: [
+        ...baseInput.trackingEvents,
+        {
+          id: 'event-test-visit',
+          event_id: 'skc_ppc_visit_started_codex_final_qa',
+          event_name: 'ppc_visit_started',
+          event_category: 'visit',
+          event_time: '2026-05-22T14:00:00.000Z',
+          session_id: 'codex_final_session',
+          visitor_id: 'visitor-test',
+          lead_id: null,
+          gclid: 'codex_final_qa_123',
+          form_step: 1,
+          form_status: null,
+          situation_raw: null,
+          timeline_raw: null,
+          condition_raw: null,
+          phone_number: null,
+          sms_consent: null,
+          is_test: false,
+          attribution: { gclid: 'codex_final_qa_123' },
+          payload: {},
+          created_at: '2026-05-22T14:00:00.000Z',
+        },
+      ],
+    })
+
+    expect(report.summary.paidVisits).toBe(1)
+    expect(report.summary.testRecords).toBe(1)
   })
 })

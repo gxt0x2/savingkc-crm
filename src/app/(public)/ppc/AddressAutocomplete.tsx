@@ -142,7 +142,7 @@ export function AddressAutocomplete({
 }: {
   value: string
   onChange: (v: string) => void
-  onPlaceSelected?: () => void
+  onPlaceSelected?: (address: string) => void
   placeholder?: string
   id?: string
   autoComplete?: string
@@ -229,7 +229,7 @@ export function AddressAutocomplete({
     if (!text) return
     lastSelectedValueRef.current = text
     onChange(text)
-    onPlaceSelected?.()
+    onPlaceSelected?.(text)
     setSuggestions([])
     setActiveIndex(-1)
     sessionTokenRef.current = null

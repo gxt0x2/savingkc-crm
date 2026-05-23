@@ -43,7 +43,11 @@ export async function GET(req: NextRequest) {
   const untilIso = until.toISOString()
   const db = supabaseAdmin()
 
-  const [{ data: periodLeads, error: leadError }, { data: outbox, error: outboxError }] = await Promise.all([
+  const [
+    { data: periodLeads, error: leadError },
+    { data: outbox, error: outboxError },
+    { data: trackingEvents, error: trackingError },
+  ] = await Promise.all([
     db
       .from('leads')
       .select(LEAD_SELECT)
@@ -52,10 +56,16 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false }),
     db
       .from('ppc_conversion_outbox')
-      .select('id, event_name, event_category, dedupe_key, status, optimization_role, lead_id, conversion_value, event_time, click_id, click_id_type, attribution, payload, attempts, last_error, sent_at, created_at')
+      .select('id, event_name, event_category, dedupe_key, status, approved_for_google_ads, optimization_role, lead_id, conversion_value, event_time, click_id, click_id_type, attribution, payload, attempts, last_error, sent_at, created_at')
       .gte('event_time', sinceIso)
       .order('event_time', { ascending: false })
       .limit(2000),
+    db
+      .from('ppc_tracking_events')
+      .select('id, event_id, event_name, event_category, event_time, session_id, visitor_id, lead_id, page_location, page_referrer, traffic_source, campaign, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, gbraid, wbraid, gad_source, gad_campaignid, gad_adgroupid, form_step, form_status, situation_raw, timeline_raw, condition_raw, phone_number, sms_consent, is_test, payload, created_at')
+      .gte('event_time', sinceIso)
+      .order('event_time', { ascending: false })
+      .limit(5000),
   ])
 
   if (leadError) {
@@ -65,8 +75,12 @@ export async function GET(req: NextRequest) {
   if (outboxError && !isMissingTable(outboxError)) {
     return NextResponse.json({ error: outboxError.message }, { status: 500, headers: NO_STORE_HEADERS })
   }
+  if (trackingError && !isMissingTable(trackingError)) {
+    return NextResponse.json({ error: trackingError.message }, { status: 500, headers: NO_STORE_HEADERS })
+  }
 
   const outboxRows = outboxError ? [] : outbox ?? []
+  const trackingRows = trackingError ? [] : trackingEvents ?? []
   const periodLeadRows = periodLeads ?? []
   const periodLeadIds = new Set(periodLeadRows.map((lead) => lead.id))
   const missingOutboxLeadIds = Array.from(
@@ -142,6 +156,7 @@ export async function GET(req: NextRequest) {
     leads,
     activities: activities ?? [],
     outbox: outboxRows,
+    trackingEvents: trackingRows,
     appointments: appointments ?? [],
     revenue: revenue ?? [],
     manifests: manifests ?? [],

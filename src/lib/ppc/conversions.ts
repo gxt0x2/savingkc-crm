@@ -5,6 +5,8 @@
  * details; GA4 gets funnel facts such as selected options and completion state.
  */
 
+import { sendPpcTrackingEvent } from '@/lib/ppc/tracking-client'
+
 export type ConversionEvent =
   | 'lead_quiz_started'
   | 'lead_quiz_qualified'
@@ -13,14 +15,21 @@ export type ConversionEvent =
   | 'appointment_booked'
 
 export type PpcMicroEvent =
+  | 'ppc_visit_started'
   | 'skc_phone_number_selected'
   | 'phone_click'
   | 'situation_selected'
   | 'timeline_selected'
   | 'condition_selected'
   | 'address_selected'
+  | 'form_step_completed'
   | 'form_error'
   | 'step_3_field_completed'
+  | 'section_viewed'
+  | 'scroll_depth_reached'
+  | 'cta_click'
+  | 'nav_click'
+  | 'faq_opened'
 
 export type PpcTrackingEvent = ConversionEvent | PpcMicroEvent
 
@@ -60,6 +69,10 @@ function cleanPayload(payload: Record<string, unknown>): Record<string, unknown>
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined))
 }
 
+function isServerRecorded(event: PpcTrackingEvent): boolean {
+  return event === 'lead_stage3_completed' || event === 'lead_submitted' || event === 'appointment_booked'
+}
+
 export function firePpcTrackingEvent(
   event: PpcTrackingEvent,
   payload: Record<string, unknown> = {},
@@ -77,6 +90,7 @@ export function firePpcTrackingEvent(
 
   window.dataLayer = window.dataLayer || []
   window.dataLayer.push(dataLayerEvent)
+  if (!isServerRecorded(event)) sendPpcTrackingEvent(dataLayerEvent)
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[ppc/conversions] fired', event)

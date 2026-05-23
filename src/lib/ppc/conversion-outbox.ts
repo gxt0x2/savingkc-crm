@@ -34,6 +34,7 @@ export type PpcConversionOutboxRow = {
   event_category: PpcConversionCategory
   destination: 'google_ads'
   dedupe_key: string
+  approved_for_google_ads: boolean
   optimization_role: PpcOptimizationRole
   lead_id: string | null
   manifest_id: string | null
@@ -127,6 +128,7 @@ export function buildPpcConversionOutboxRow(input: EnqueuePpcConversionInput): P
     event_category: input.eventCategory,
     destination: input.destination ?? 'google_ads',
     dedupe_key: input.dedupeKey,
+    approved_for_google_ads: false,
     optimization_role: optimizationRole,
     lead_id: input.leadId ?? null,
     manifest_id: input.manifestId ?? null,
