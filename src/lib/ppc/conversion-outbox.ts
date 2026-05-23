@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase-lazy'
 import type { CallQualityEventName } from '@/lib/call-quality-events'
+import { isGoogleAdsFactualPpcEvent } from '@/lib/ppc/exportable-events'
 
 export type PpcConversionEventName =
   | 'lead_stage3_completed'
@@ -23,6 +24,7 @@ export type EnqueuePpcConversionInput = {
   activityId?: string | null
   destination?: 'google_ads'
   optimizationRole?: PpcOptimizationRole
+  approvedForGoogleAds?: boolean
   conversionValue?: number | null
   currency?: string
   eventTime?: string | Date
@@ -123,13 +125,14 @@ export function buildPpcConversionOutboxRow(input: EnqueuePpcConversionInput): P
   const attribution = cleanJsonRecord(input.attribution)
   const { clickId, clickIdType } = pickBestClickId(attribution)
   const optimizationRole = input.optimizationRole ?? 'secondary'
+  const approvedForGoogleAds = input.approvedForGoogleAds ?? isGoogleAdsFactualPpcEvent(input.eventName)
 
   return {
     event_name: input.eventName,
     event_category: input.eventCategory,
     destination: input.destination ?? 'google_ads',
     dedupe_key: input.dedupeKey,
-    approved_for_google_ads: false,
+    approved_for_google_ads: approvedForGoogleAds,
     optimization_role: optimizationRole,
     lead_id: input.leadId ?? null,
     manifest_id: input.manifestId ?? null,

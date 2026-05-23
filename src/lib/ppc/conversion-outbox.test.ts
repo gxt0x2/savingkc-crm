@@ -84,27 +84,27 @@ describe('ppc conversion outbox', () => {
     })
   })
 
-  it('builds qualified lead rows that require later approval scoring', () => {
+  it('builds qualified lead rows as automatic factual conversion signals', () => {
     const row = buildPpcConversionOutboxRow({
       eventName: 'qualified_lead',
       eventCategory: 'form',
       dedupeKey: 'lead:123:qualified_lead',
       leadId: 'lead-123',
       optimizationRole: 'primary',
-      conversionValue: null,
+      conversionValue: 1,
       attribution: { gclid: 'click-123', utm_campaign: 'Search 2026' },
-      payload: { source: 'crm_qualified_lead_review', approval_required: true },
+      payload: { source: 'crm_qualified_stage', approval_required: false },
     })
 
     expect(row).toMatchObject({
       event_name: 'qualified_lead',
       optimization_role: 'primary',
-      approved_for_google_ads: false,
-      conversion_value: null,
+      approved_for_google_ads: true,
+      conversion_value: 1,
       click_id: 'click-123',
       payload: expect.objectContaining({
-        source: 'crm_qualified_lead_review',
-        approval_required: true,
+        source: 'crm_qualified_stage',
+        approval_required: false,
       }),
     })
   })

@@ -116,12 +116,12 @@ const baseInput: PpcReportInput = {
       approved_for_google_ads: true,
       optimization_role: 'primary',
       lead_id: 'lead-form',
-      conversion_value: 2,
+      conversion_value: 1,
       event_time: '2026-05-20T14:06:00.000Z',
       click_id: 'click-form',
       click_id_type: 'gclid',
       attribution: { gclid: 'click-form', utm_campaign: 'Search 2026' },
-      payload: { form_status: 'qualified', google_ads_quality_score: 2 },
+      payload: { form_status: 'qualified', google_ads_value_basis: 'factual_stage_conversion' },
       attempts: 1,
       last_error: null,
       sent_at: '2026-05-20T14:07:00.000Z',
@@ -302,16 +302,9 @@ describe('ppc report', () => {
     expect(report.exportHealth.secondary).toBe(1)
     expect(report.exportHealth.pending).toBe(1)
     expect(report.exportHealth.sent).toBe(1)
-    expect(report.exportHealth.awaitingApproval).toBe(1)
-    expect(report.conversionApproval.awaitingApproval).toBe(1)
-    expect(report.conversionApprovalQueue).toHaveLength(1)
-    expect(report.conversionApprovalQueue[0]).toMatchObject({
-      id: 'outbox-2m',
-      eventLabel: 'Call 2+ Minutes',
-      qualityScore: null,
-      suggestedQualityScore: 1,
-      deadlineStatus: 'normal',
-    })
+    expect(report.exportHealth.awaitingApproval).toBe(0)
+    expect(report.conversionApproval.awaitingApproval).toBe(0)
+    expect(report.conversionApprovalQueue).toHaveLength(0)
     expect(report.journeySessions[0]?.steps.map((step) => [step.key, step.status])).toEqual([
       ['ad_click', 'complete'],
       ['page_visit', 'complete'],
@@ -338,7 +331,7 @@ describe('ppc report', () => {
     expect(report.recentLeads.find((lead) => lead.id === 'lead-form')?.formStatus).toBe('stage_3_no_submit')
   })
 
-  it('does not ask for approval on stage 3 diagnostic rows', () => {
+  it('only asks for approval on rows explicitly marked approval_required', () => {
     const report = buildPpcReport({
       ...baseInput,
       outbox: [
@@ -364,10 +357,10 @@ describe('ppc report', () => {
           created_at: '2026-05-20T14:05:00.000Z',
         },
         {
-          id: 'outbox-qualified',
+          id: 'outbox-qualified-review',
           event_name: 'qualified_lead',
           event_category: 'form',
-          dedupe_key: 'lead:lead-form:qualified_lead',
+          dedupe_key: 'lead:lead-form:qualified_lead_review',
           status: 'pending',
           approved_for_google_ads: false,
           optimization_role: 'primary',
@@ -377,7 +370,7 @@ describe('ppc report', () => {
           click_id: 'click-form',
           click_id_type: 'gclid',
           attribution: { gclid: 'click-form', utm_campaign: 'Search 2026' },
-          payload: { form_status: 'qualified_lead' },
+          payload: { form_status: 'qualified_lead', approval_required: true },
           attempts: 0,
           last_error: null,
           sent_at: null,
@@ -392,6 +385,7 @@ describe('ppc report', () => {
         expect.objectContaining({
           eventName: 'qualified_lead',
           eventLabel: 'Qualified Lead',
+          id: 'outbox-qualified-review',
           suggestedQualityScore: 2,
         }),
       ]),

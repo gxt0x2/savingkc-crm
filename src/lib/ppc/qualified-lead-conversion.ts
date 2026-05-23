@@ -160,17 +160,18 @@ export async function queuePpcQualifiedLeadConversion(input: {
     manifestId: (manifest as ManifestRow | null)?.id ?? null,
     dedupeKey: `lead:${input.leadId}:qualified_lead`,
     optimizationRole: 'primary',
-    conversionValue: null,
+    approvedForGoogleAds: true,
+    conversionValue: 1,
     attribution,
     payload: {
-      source: 'crm_qualified_lead_review',
+      source: 'crm_qualified_stage',
       form_status: 'qualified_lead',
       lead_stage: input.toStation ?? null,
       previous_stage: input.fromStation ?? null,
       changed_by: input.changedBy ?? null,
       reason: input.reason ?? null,
-      approval_required: true,
-      google_ads_value_basis: 'quality_score_1_3',
+      approval_required: false,
+      google_ads_value_basis: 'factual_stage_conversion',
     },
   })
 
