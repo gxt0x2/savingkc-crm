@@ -174,7 +174,6 @@ function findAction(
     call_connected_60s: [/search 2026.*call.*(60|1 min|1 minute|60s)/, /call.*(60|1 min|1 minute|60s)/],
     call_connected_2m: [/search 2026.*call.*(2 min|2 minute|120|2m)/, /call.*(2 min|2 minute|120|2m)/],
     call_connected_5m: [/search 2026.*call.*(5 min|5 minute|300|5m)/, /call.*(5 min|5 minute|300|5m)/],
-    lead_submitted: [/search 2026.*lead.*form.*submit/, /lead.*form.*submit/, /lead.*submit/],
   }
 
   for (const pattern of exactPatterns[eventName] ?? []) {

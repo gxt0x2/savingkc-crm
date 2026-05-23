@@ -108,20 +108,20 @@ const baseInput: PpcReportInput = {
   ],
   outbox: [
     {
-      id: 'outbox-submit',
-      event_name: 'lead_submitted',
+      id: 'outbox-qualified',
+      event_name: 'qualified_lead',
       event_category: 'form',
-      dedupe_key: 'lead:lead-form:lead_submitted',
+      dedupe_key: 'lead:lead-form:qualified_lead',
       status: 'sent',
       approved_for_google_ads: true,
       optimization_role: 'primary',
       lead_id: 'lead-form',
-      conversion_value: 25,
+      conversion_value: 2,
       event_time: '2026-05-20T14:06:00.000Z',
       click_id: 'click-form',
       click_id_type: 'gclid',
       attribution: { gclid: 'click-form', utm_campaign: 'Search 2026' },
-      payload: { form_status: 'submitted' },
+      payload: { form_status: 'qualified', google_ads_quality_score: 2 },
       attempts: 1,
       last_error: null,
       sent_at: '2026-05-20T14:07:00.000Z',
@@ -330,7 +330,7 @@ describe('ppc report', () => {
     const report = buildPpcReport({
       ...baseInput,
       activities: baseInput.activities.filter((activity) => activity.id !== 'activity-submit'),
-      outbox: baseInput.outbox.filter((row) => row.id !== 'outbox-submit'),
+      outbox: baseInput.outbox.filter((row) => row.id !== 'outbox-qualified'),
     })
 
     expect(report.summary.formSubmits).toBe(0)
