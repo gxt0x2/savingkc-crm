@@ -6,7 +6,7 @@ import {
   type ConversionDeadlineStatus,
   type GoogleAdsQualityScore,
 } from '@/lib/ppc/conversion-approval'
-import { isGoogleAdsExportablePpcEvent } from '@/lib/ppc/exportable-events'
+import { isGoogleAdsApprovalRequiredPpcEvent, isGoogleAdsExportablePpcEvent } from '@/lib/ppc/exportable-events'
 import type { PpcConversionExportConfigHealth } from '@/lib/ppc/conversion-exporter'
 
 export type PpcLeadRow = {
@@ -1021,7 +1021,8 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     if (role === 'secondary') exportHealth.secondary += 1
 
     const status = text(row.status).toLowerCase()
-    if (row.approved_for_google_ads === false && (status === 'pending' || status === 'processing' || status === 'failed')) {
+    const needsApproval = isGoogleAdsApprovalRequiredPpcEvent(text(row.event_name), row.payload)
+    if (needsApproval && row.approved_for_google_ads === false && (status === 'pending' || status === 'processing' || status === 'failed')) {
       exportHealth.awaitingApproval += 1
     }
     if (row.approved_for_google_ads === true && (status === 'pending' || status === 'processing' || status === 'failed')) {
@@ -1373,6 +1374,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
 
   const conversionApprovalQueue = exportableOutbox
     .filter((row) => text(row.status).toLowerCase() !== 'sent')
+    .filter((row) => isGoogleAdsApprovalRequiredPpcEvent(text(row.event_name), row.payload))
     .filter((row) => !isTestOutboxRow(row))
     .filter((row) => {
       if (!row.lead_id) return true

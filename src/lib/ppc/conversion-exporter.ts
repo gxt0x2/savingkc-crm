@@ -9,8 +9,11 @@ import {
 } from '@/lib/ppc/conversion-outbox'
 import { resolveGoogleAdsQualityScore } from '@/lib/ppc/conversion-approval'
 import {
+  GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES,
   GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES,
+  isGoogleAdsApprovalRequiredPpcEvent,
   isGoogleAdsExportablePpcEvent,
+  isGoogleAdsFactualPpcEvent,
   nonExportablePpcEventReason,
 } from '@/lib/ppc/exportable-events'
 
@@ -236,14 +239,16 @@ class SupabaseOutboxStore implements OutboxStore {
     const { data, error } = await this.client
       .from('ppc_conversion_outbox')
       .select('*')
-      .eq('approved_for_google_ads', true)
+      .or(`approved_for_google_ads.eq.true,event_name.in.(${GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES.join(',')})`)
       .in('status', ['pending', 'failed'])
       .lt('attempts', this.maxAttempts)
       .order('event_time', { ascending: true })
-      .limit(limit)
+      .limit(Math.min(100, limit * 3))
 
     if (error) throw new Error(error.message)
-    return (data ?? []) as PpcConversionOutboxExportRow[]
+    return ((data ?? []) as PpcConversionOutboxExportRow[])
+      .filter((row) => row.approved_for_google_ads || !approvalRequired(row))
+      .slice(0, limit)
   }
 
   private async updateRow(row: PpcConversionOutboxExportRow, values: Record<string, unknown>): Promise<void> {
@@ -512,7 +517,12 @@ function eventPayload(row: PpcConversionOutboxExportRow): Record<string, unknown
   return row.payload ?? {}
 }
 
-function googleAdsQualityScore(row: PpcConversionOutboxExportRow): number | null {
+function approvalRequired(row: PpcConversionOutboxExportRow): boolean {
+  return isGoogleAdsApprovalRequiredPpcEvent(row.event_name, row.payload)
+}
+
+function googleAdsConversionValue(row: PpcConversionOutboxExportRow): number | null {
+  if (isGoogleAdsFactualPpcEvent(row.event_name) && !approvalRequired(row)) return 1
   return resolveGoogleAdsQualityScore(row.conversion_value, row.payload)
 }
 
@@ -548,8 +558,8 @@ export function buildGoogleAdsUploadPlan(
     }
   }
 
-  const qualityScore = googleAdsQualityScore(row)
-  if (!qualityScore) {
+  const conversionValue = googleAdsConversionValue(row)
+  if (!conversionValue) {
     return {
       kind: 'skip',
       reason: missingQualityScoreReason(row),
@@ -569,7 +579,7 @@ export function buildGoogleAdsUploadPlan(
   const base = {
     conversionAction,
     conversionDateTime: toGoogleAdsDateTime(row.event_time),
-    conversionValue: qualityScore,
+    conversionValue,
     currencyCode: row.currency || 'USD',
   }
 
@@ -616,7 +626,7 @@ export function buildGoogleAdsUploadPlan(
 function buildStapeEventData(row: PpcConversionOutboxExportRow): Record<string, unknown> {
   const attribution = row.attribution ?? {}
   const payload = row.payload ?? {}
-  const qualityScore = googleAdsQualityScore(row)
+  const conversionValue = googleAdsConversionValue(row)
   const pageLocation =
     attribution.landingUrl ||
     attribution.page_location ||
@@ -629,7 +639,7 @@ function buildStapeEventData(row: PpcConversionOutboxExportRow): Record<string, 
     event_time: row.event_time,
     event_category: row.event_category,
     optimization_role: row.optimization_role,
-    value: qualityScore,
+    value: conversionValue,
     currency: row.currency || 'USD',
     page_location: pageLocation,
     page_hostname: 'savingkc.com',
@@ -819,8 +829,8 @@ function plannedDestinations(
     ]
   }
 
-  const qualityScore = googleAdsQualityScore(row)
-  if (!qualityScore) {
+  const conversionValue = googleAdsConversionValue(row)
+  if (!conversionValue) {
     const detail = missingQualityScoreReason(row)
     return [
       ...(stapeConfig ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
@@ -891,7 +901,7 @@ export async function runPpcConversionExport(
       continue
     }
 
-    if (!row.approved_for_google_ads) {
+    if (!row.approved_for_google_ads && approvalRequired(row)) {
       const destinations: DestinationResult[] = [
         { destination: 'google_ads', status: 'skipped', detail: 'Awaiting approval for Google Ads export' },
       ]
@@ -923,8 +933,8 @@ export async function runPpcConversionExport(
       continue
     }
 
-    const qualityScore = googleAdsQualityScore(row)
-    if (!qualityScore) {
+    const conversionValue = googleAdsConversionValue(row)
+    if (!conversionValue) {
       const detail = missingQualityScoreReason(row)
       const destinations: DestinationResult[] = [
         ...(stape.config ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),

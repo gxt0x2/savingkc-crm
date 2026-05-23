@@ -19,13 +19,13 @@ function makeRow(overrides: Partial<PpcConversionOutboxExportRow> = {}): PpcConv
     lead_id: 'lead-123',
     manifest_id: 'manifest-123',
     activity_id: 'activity-123',
-    conversion_value: 2,
+    conversion_value: null,
     currency: 'USD',
     event_time: '2026-05-20T23:49:40.251Z',
     click_id: 'test-gclid',
     click_id_type: 'gclid',
     attribution: { landingUrl: 'https://savingkc.com/ppc?gclid=test-gclid' },
-    payload: { form_status: 'qualified', google_ads_quality_score: 2 },
+    payload: { form_status: 'qualified', google_ads_value_basis: 'factual_stage_conversion' },
     attempts: 0,
     last_error: null,
     locked_at: null,
@@ -136,7 +136,7 @@ describe('ppc conversion exporter', () => {
       conversionAction: 'customers/646966429/conversionActions/333',
       gclid: 'test-gclid',
       conversionDateTime: '2026-05-20 23:49:40+00:00',
-      conversionValue: 2,
+      conversionValue: 1,
       currencyCode: 'USD',
       orderId: 'lead:123:qualified_lead',
     })
@@ -172,7 +172,6 @@ describe('ppc conversion exporter', () => {
       payload: {
         from: '(816) 555-1212',
         duration: 70,
-        google_ads_quality_score: 1,
       },
     })
 
@@ -259,10 +258,37 @@ describe('ppc conversion exporter', () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({
       event_name: 'qualified_lead',
       event_id: 'outbox-1',
-      value: 2,
+      value: 1,
       currency: 'USD',
       gclid: 'test-gclid',
     })
+  })
+
+  it('exports factual qualified leads without manual 1-3 approval', async () => {
+    const row = makeRow({ approved_for_google_ads: false, conversion_value: null })
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi.fn(async () => new Response('ok', { status: 200 }))
+
+    const result = await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result.sent).toBe(1)
+    expect(store.markSent).toHaveBeenCalledOnce()
+    expect(store.markSkipped).not.toHaveBeenCalled()
+    expect(store.markFailed).not.toHaveBeenCalled()
   })
 
   it('validates Google Ads uploads without claiming or mutating rows', async () => {
@@ -326,8 +352,8 @@ describe('ppc conversion exporter', () => {
     )
   })
 
-  it('skips rows that are still waiting on approval', async () => {
-    const row = makeRow({ approved_for_google_ads: false })
+  it('skips rows explicitly marked as waiting on approval', async () => {
+    const row = makeRow({ approved_for_google_ads: false, payload: { approval_required: true } })
     const store = {
       listRows: vi.fn(),
       claimRows: vi.fn(async () => [row]),
@@ -361,10 +387,10 @@ describe('ppc conversion exporter', () => {
     )
   })
 
-  it('blocks approved exports that are missing a 1-3 quality score', async () => {
+  it('blocks approval-required exports that are missing a 1-3 quality score', async () => {
     const row = makeRow({
       conversion_value: 25,
-      payload: { form_status: 'submitted' },
+      payload: { approval_required: true },
     })
     const plan = buildGoogleAdsUploadPlan(row, googleConfig())
 
