@@ -123,8 +123,14 @@ function suggestedMappings(actions: GoogleAdsConversionActionSummary[]): GoogleA
   }))
 }
 
-function googleAdsError(body: Record<string, unknown>, fallback: string): Omit<GoogleAdsConversionActionAccountError, 'customerId'> {
-  const error = body.error
+function googleAdsError(
+  body: SearchStreamResponse | Record<string, unknown>,
+  fallback: string,
+): Omit<GoogleAdsConversionActionAccountError, 'customerId'> {
+  const source = Array.isArray(body) && body[0] && typeof body[0] === 'object'
+    ? body[0] as Record<string, unknown>
+    : body as Record<string, unknown>
+  const error = source.error
   if (typeof error === 'string') {
     return { message: error, status: null, code: null }
   }
@@ -186,7 +192,7 @@ async function searchConversionActionsForCustomer(
       actions: [],
       error: {
         customerId,
-        ...googleAdsError(body as Record<string, unknown>, `Google Ads conversion action search failed (${response.status})`),
+        ...googleAdsError(body, `Google Ads conversion action search failed (${response.status})`),
       },
     }
   }
