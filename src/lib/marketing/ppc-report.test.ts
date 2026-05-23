@@ -165,9 +165,32 @@ const baseInput: PpcReportInput = {
       phone_number: null,
       sms_consent: null,
       is_test: false,
+      gclid: 'click-form',
       attribution: { gclid: 'click-form' },
       payload: {},
       created_at: '2026-05-20T14:00:00.000Z',
+    },
+    {
+      id: 'event-phone',
+      event_id: 'event-phone',
+      event_name: 'skc_phone_number_selected',
+      event_category: 'phone',
+      event_time: '2026-05-20T14:00:30.000Z',
+      session_id: 'session-form',
+      visitor_id: 'visitor-form',
+      lead_id: null,
+      form_step: 1,
+      form_status: null,
+      situation_raw: null,
+      timeline_raw: null,
+      condition_raw: null,
+      phone_number: '+18166088808',
+      sms_consent: null,
+      is_test: false,
+      gclid: 'click-form',
+      attribution: { gclid: 'click-form' },
+      payload: {},
+      created_at: '2026-05-20T14:00:30.000Z',
     },
     {
       id: 'event-situation',
@@ -186,6 +209,7 @@ const baseInput: PpcReportInput = {
       phone_number: null,
       sms_consent: null,
       is_test: false,
+      gclid: 'click-form',
       attribution: { gclid: 'click-form' },
       payload: {},
       created_at: '2026-05-20T14:01:00.000Z',
@@ -207,6 +231,7 @@ const baseInput: PpcReportInput = {
       phone_number: null,
       sms_consent: null,
       is_test: false,
+      gclid: 'click-form',
       attribution: { gclid: 'click-form' },
       payload: {},
       created_at: '2026-05-20T14:03:00.000Z',
@@ -228,6 +253,7 @@ const baseInput: PpcReportInput = {
       phone_number: null,
       sms_consent: true,
       is_test: false,
+      gclid: 'click-form',
       attribution: { gclid: 'click-form' },
       payload: {},
       created_at: '2026-05-20T14:06:00.000Z',
@@ -261,6 +287,7 @@ describe('ppc report', () => {
     expect(report.summary.totalLeads).toBe(2)
     expect(report.summary.paidVisits).toBe(1)
     expect(report.summary.optionSelections).toBe(1)
+    expect(report.summary.phoneClicks).toBe(1)
     expect(report.summary.step2Completions).toBe(1)
     expect(report.summary.consentedSubmits).toBe(1)
     expect(report.summary.formSubmits).toBe(1)
@@ -275,6 +302,18 @@ describe('ppc report', () => {
     expect(report.exportHealth.pending).toBe(1)
     expect(report.exportHealth.sent).toBe(1)
     expect(report.exportHealth.awaitingApproval).toBe(1)
+    expect(report.journeySessions[0]?.steps.map((step) => [step.key, step.status])).toEqual([
+      ['ad_click', 'complete'],
+      ['page_visit', 'complete'],
+      ['phone_signal', 'complete'],
+      ['situation', 'complete'],
+      ['step_2', 'complete'],
+      ['step_3', 'complete'],
+      ['address', 'missing'],
+      ['crm_lead', 'complete'],
+      ['final_submit', 'complete'],
+      ['ads_outbox', 'complete'],
+    ])
   })
 
   it('keeps stage 3 completion separate from final submit', () => {

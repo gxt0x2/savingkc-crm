@@ -78,6 +78,18 @@ function sessionStatusClass(status: PpcReport['recentSessions'][number]['status'
   return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
 }
 
+function journeyStepClass(status: PpcReport['journeySessions'][number]['steps'][number]['status']): string {
+  if (status === 'complete') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+  if (status === 'active') return 'border-amber-500/35 bg-amber-500/10 text-amber-200'
+  return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-dim)]'
+}
+
+function journeyStepIcon(status: PpcReport['journeySessions'][number]['steps'][number]['status']): string {
+  if (status === 'complete') return 'check_circle'
+  if (status === 'active') return 'pending'
+  return 'radio_button_unchecked'
+}
+
 function usePpcReport(days: number): LoadState {
   const [state, setState] = useState<LoadState>({ status: 'loading', data: null, error: null })
 
@@ -193,6 +205,18 @@ export default function MarketingPage() {
                 <FlowStep icon="fact_check" label="Form Signals" value={formatNumber(report.summary.optionSelections)} detail={`${formatNumber(report.summary.step2Completions)} reached Step 3`} tone="amber" />
                 <FlowStep icon="person_add" label="CRM Lead" value={formatNumber(report.summary.totalLeads)} detail={`${formatNumber(report.summary.consentedSubmits)} with consent`} tone="emerald" />
                 <FlowStep icon="verified" label="Ads Export" value={formatNumber(report.exportHealth.awaitingApproval)} detail="Awaiting approval" tone="slate" />
+              </div>
+            </Panel>
+
+            <Panel title="Paid Click Journey" icon="conversion_path">
+              <div className="space-y-3">
+                {report.journeySessions.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-[var(--ck-border)] p-6 text-center text-sm text-[var(--ck-text-muted)]">
+                    No paid click journeys in this period.
+                  </div>
+                ) : report.journeySessions.map((session) => (
+                  <JourneySessionCard key={session.key} session={session} />
+                ))}
               </div>
             </Panel>
 
@@ -528,6 +552,63 @@ function KpiCard({
       <div className="text-2xl font-black tracking-tight tabular-nums">{value}</div>
       <div className="mt-1 min-h-4 text-xs text-[var(--ck-text-muted)]">{detail ?? '\u00a0'}</div>
     </div>
+  )
+}
+
+function JourneySessionCard({ session }: { session: PpcReport['journeySessions'][number] }) {
+  return (
+    <article className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md border border-[#E32E2E]/30 bg-[#E32E2E]/10 px-2 py-1 text-xs font-black uppercase text-[#FCA5A5]">
+              {formatTime(session.firstEventAt)}
+            </span>
+            <span className="text-sm font-black text-[var(--ck-text)]">{session.campaign}</span>
+            <span className="text-xs text-[var(--ck-text-dim)]">{session.source} / {session.medium}</span>
+            <span className="font-mono text-xs text-[var(--ck-text-dim)]">{session.clickId}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--ck-text-muted)]">
+            <span>{session.eventCount} events</span>
+            <span>{session.device}</span>
+            <span>Situation: <b className="capitalize text-[var(--ck-text)]">{session.choices.situation}</b></span>
+            <span>Timeline: <b className="capitalize text-[var(--ck-text)]">{session.choices.timeline}</b></span>
+            <span>Condition: <b className="capitalize text-[var(--ck-text)]">{session.choices.condition}</b></span>
+          </div>
+          {session.choices.address !== '--' && (
+            <div className="mt-1 max-w-full truncate text-xs text-[var(--ck-text-dim)]">
+              Address: {session.choices.address}
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 text-left xl:text-right">
+          {session.leadId ? (
+            <Link href={`/leads/${session.leadId}`} className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-200 hover:bg-emerald-500/15">
+              <Icon name="person_search" size="text-base" />
+              {session.leadName}
+            </Link>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-xs font-bold text-[var(--ck-text-dim)]">
+              <Icon name="person_off" size="text-base" />
+              No CRM lead
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {session.steps.map((step) => (
+          <div key={step.key} className={`min-h-[86px] rounded-lg border p-3 ${journeyStepClass(step.status)}`}>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-xs font-black uppercase tracking-wide">{step.label}</div>
+              <Icon name={journeyStepIcon(step.status)} size="text-base" />
+            </div>
+            <div className="truncate text-xs font-medium text-[var(--ck-text-muted)]">{step.detail}</div>
+            <div className="mt-2 text-xs font-bold tabular-nums text-[var(--ck-text-dim)]">{formatTime(step.at)}</div>
+          </div>
+        ))}
+      </div>
+    </article>
   )
 }
 
