@@ -5,6 +5,7 @@ const baseInput: PpcReportInput = {
   days: 30,
   since: '2026-05-01T00:00:00.000Z',
   until: '2026-05-31T00:00:00.000Z',
+  now: '2026-05-23T12:00:00.000Z',
   leads: [
     {
       id: 'lead-form',
@@ -302,6 +303,15 @@ describe('ppc report', () => {
     expect(report.exportHealth.pending).toBe(1)
     expect(report.exportHealth.sent).toBe(1)
     expect(report.exportHealth.awaitingApproval).toBe(1)
+    expect(report.conversionApproval.awaitingApproval).toBe(1)
+    expect(report.conversionApprovalQueue).toHaveLength(1)
+    expect(report.conversionApprovalQueue[0]).toMatchObject({
+      id: 'outbox-2m',
+      eventLabel: 'Call 2+ Minutes',
+      qualityScore: null,
+      suggestedQualityScore: 1,
+      deadlineStatus: 'normal',
+    })
     expect(report.journeySessions[0]?.steps.map((step) => [step.key, step.status])).toEqual([
       ['ad_click', 'complete'],
       ['page_visit', 'complete'],

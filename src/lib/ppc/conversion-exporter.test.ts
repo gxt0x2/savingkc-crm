@@ -18,13 +18,13 @@ function makeRow(overrides: Partial<PpcConversionOutboxExportRow> = {}): PpcConv
     lead_id: 'lead-123',
     manifest_id: 'manifest-123',
     activity_id: 'activity-123',
-    conversion_value: 25,
+    conversion_value: 2,
     currency: 'USD',
     event_time: '2026-05-20T23:49:40.251Z',
     click_id: 'test-gclid',
     click_id_type: 'gclid',
     attribution: { landingUrl: 'https://savingkc.com/ppc?gclid=test-gclid' },
-    payload: { form_status: 'submitted' },
+    payload: { form_status: 'submitted', google_ads_quality_score: 2 },
     attempts: 0,
     last_error: null,
     locked_at: null,
@@ -62,7 +62,7 @@ describe('ppc conversion exporter', () => {
       conversionAction: 'customers/646966429/conversionActions/111',
       gclid: 'test-gclid',
       conversionDateTime: '2026-05-20 23:49:40+00:00',
-      conversionValue: 25,
+      conversionValue: 2,
       currencyCode: 'USD',
       orderId: 'lead:123:lead_submitted',
     })
@@ -77,10 +77,11 @@ describe('ppc conversion exporter', () => {
       optimization_role: 'secondary',
       click_id: null,
       click_id_type: null,
-      conversion_value: 15,
+      conversion_value: 1,
       payload: {
         from: '(816) 555-1212',
         duration: 70,
+        google_ads_quality_score: 1,
       },
     })
 
@@ -93,7 +94,7 @@ describe('ppc conversion exporter', () => {
       callerId: '+18165551212',
       callStartDateTime: '2026-05-20 23:48:30+00:00',
       conversionDateTime: '2026-05-20 23:49:40+00:00',
-      conversionValue: 15,
+      conversionValue: 1,
       currencyCode: 'USD',
     })
   })
@@ -167,7 +168,7 @@ describe('ppc conversion exporter', () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({
       event_name: 'lead_submitted',
       event_id: 'outbox-1',
-      value: 25,
+      value: 2,
       currency: 'USD',
       gclid: 'test-gclid',
     })
@@ -199,6 +200,50 @@ describe('ppc conversion exporter', () => {
     expect(store.markSkipped).toHaveBeenCalledWith(
       row,
       'Awaiting approval for Google Ads export',
+      expect.objectContaining({
+        destinations: expect.arrayContaining([
+          expect.objectContaining({ destination: 'stape', status: 'skipped' }),
+        ]),
+      }),
+      expect.any(Date),
+    )
+  })
+
+  it('blocks approved exports that are missing a 1-3 quality score', async () => {
+    const row = makeRow({
+      conversion_value: 25,
+      payload: { form_status: 'submitted' },
+    })
+    const plan = buildGoogleAdsUploadPlan(row, googleConfig())
+
+    expect(plan.kind).toBe('skip')
+    if (plan.kind !== 'skip') throw new Error('Expected skip upload plan')
+    expect(plan.reason).toContain('quality score of 1, 2, or 3')
+
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi.fn()
+
+    const result = await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result.failed).toBe(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(store.markFailed).toHaveBeenCalledWith(
+      row,
+      expect.stringContaining('quality score of 1, 2, or 3'),
       expect.objectContaining({
         destinations: expect.arrayContaining([
           expect.objectContaining({ destination: 'stape', status: 'skipped' }),

@@ -13,6 +13,7 @@ import {
 } from 'recharts'
 import { Icon } from '@/components/ui/icon'
 import type { PpcReport } from '@/lib/marketing/ppc-report'
+import { GOOGLE_ADS_QUALITY_SCALE, type GoogleAdsQualityScore } from '@/lib/ppc/conversion-approval'
 
 const PERIODS = [7, 30, 90, 180] as const
 
@@ -90,7 +91,29 @@ function journeyStepIcon(status: PpcReport['journeySessions'][number]['steps'][n
   return 'radio_button_unchecked'
 }
 
-function usePpcReport(days: number): LoadState {
+function deadlineStatusClass(status: PpcReport['conversionApprovalQueue'][number]['deadlineStatus']): string {
+  if (status === 'expired') return 'border-[#E32E2E]/45 bg-[#E32E2E]/15 text-[#FCA5A5]'
+  if (status === 'critical') return 'border-orange-500/40 bg-orange-500/15 text-orange-200'
+  if (status === 'urgent') return 'border-amber-500/40 bg-amber-500/15 text-amber-200'
+  if (status === 'review') return 'border-sky-500/35 bg-sky-500/10 text-sky-200'
+  return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
+}
+
+function deadlineLabel(row: PpcReport['conversionApprovalQueue'][number]): string {
+  if (row.deadlineStatus === 'expired') return 'Expired'
+  if (row.daysLeft == null) return 'No deadline'
+  if (row.deadlineStatus === 'critical') return `${row.daysLeft}d left`
+  if (row.deadlineStatus === 'urgent') return `${row.daysLeft}d left`
+  if (row.deadlineStatus === 'review') return `${row.daysLeft}d left`
+  return `${row.daysLeft}d left`
+}
+
+function scoreLabel(score: GoogleAdsQualityScore): string {
+  const item = GOOGLE_ADS_QUALITY_SCALE.find((option) => option.score === score)
+  return item ? `${item.score} - ${item.title}` : String(score)
+}
+
+function usePpcReport(days: number, refreshKey: number): LoadState {
   const [state, setState] = useState<LoadState>({ status: 'loading', data: null, error: null })
 
   useEffect(() => {
@@ -120,14 +143,16 @@ function usePpcReport(days: number): LoadState {
     return () => {
       cancelled = true
     }
-  }, [days])
+  }, [days, refreshKey])
 
   return state
 }
 
 export default function MarketingPage() {
   const [days, setDays] = useState<number>(30)
-  const state = usePpcReport(days)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [approvalMessage, setApprovalMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const state = usePpcReport(days, refreshKey)
   const report = state.status === 'ready' ? state.data : null
 
   const maxFunnel = useMemo(() => Math.max(...(report?.funnel.map((step) => step.count) ?? [1]), 1), [report])
@@ -208,6 +233,13 @@ export default function MarketingPage() {
               </div>
             </Panel>
 
+            <ApprovalQueuePanel
+              report={report}
+              message={approvalMessage}
+              onMessage={setApprovalMessage}
+              onApproved={() => setRefreshKey((value) => value + 1)}
+            />
+
             <Panel title="Paid Click Journey" icon="conversion_path">
               <div className="space-y-3">
                 {report.journeySessions.length === 0 ? (
@@ -281,12 +313,18 @@ export default function MarketingPage() {
                   <QualityRow label="Campaign / Keyword Map" value={report.dataQuality.attributionCoverage} />
                   <QualityRow label="Source / Medium Map" value={report.dataQuality.sourceMediumCoverage} />
                 </div>
+                <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs">
+                  <MiniMetric label="GCLID" value={report.dataQuality.gclidRows} />
+                  <MiniMetric label="GBRAID" value={report.dataQuality.gbraidRows} />
+                  <MiniMetric label="WBRAID" value={report.dataQuality.wbraidRows} />
+                  <MiniMetric label="No ID" value={report.dataQuality.missingClickIdRows} />
+                </div>
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <ExportBox label="Awaiting Approval" value={report.exportHealth.awaitingApproval} tone={report.exportHealth.awaitingApproval > 0 ? 'warn' : 'ok'} />
-                  <ExportBox label="Failed Exports" value={report.exportHealth.failed + report.exportHealth.deadLetter} tone={report.exportHealth.failed + report.exportHealth.deadLetter > 0 ? 'bad' : 'ok'} />
+                  <ExportBox label="Approved Pending" value={report.exportHealth.approvedPending} tone={report.exportHealth.approvedPending > 0 ? 'warn' : 'ok'} />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  <ExportBox label="Phone Clicks" value={report.summary.phoneClicks} tone="ok" />
+                  <ExportBox label="Failed Exports" value={report.exportHealth.failed + report.exportHealth.deadLetter} tone={report.exportHealth.failed + report.exportHealth.deadLetter > 0 ? 'bad' : 'ok'} />
                   <ExportBox label="Test Records Hidden" value={report.summary.testRecords} tone={report.summary.testRecords > 0 ? 'warn' : 'ok'} />
                 </div>
               </Panel>
@@ -475,6 +513,176 @@ export default function MarketingPage() {
   )
 }
 
+function ApprovalQueuePanel({
+  report,
+  message,
+  onMessage,
+  onApproved,
+}: {
+  report: PpcReport
+  message: { tone: 'success' | 'error'; text: string } | null
+  onMessage: (message: { tone: 'success' | 'error'; text: string } | null) => void
+  onApproved: () => void
+}) {
+  const [selectedScores, setSelectedScores] = useState<Record<string, GoogleAdsQualityScore>>({})
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  async function approve(row: PpcReport['conversionApprovalQueue'][number]) {
+    const qualityScore = selectedScores[row.id] ?? row.qualityScore ?? row.suggestedQualityScore
+    setBusyId(row.id)
+    onMessage(null)
+
+    try {
+      const response = await fetch(`/api/marketing/ppc-conversions/${row.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qualityScore }),
+      })
+      const body = await response.json().catch(() => ({})) as { error?: string }
+      if (!response.ok) throw new Error(body.error || `Approval failed: ${response.status}`)
+      onMessage({ tone: 'success', text: `${row.eventLabel} approved with Google Ads score ${qualityScore}.` })
+      onApproved()
+    } catch (error) {
+      onMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : 'Approval failed',
+      })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <Panel title="Conversion Approval Queue" icon="approval">
+      <div className="mb-4 grid gap-3 xl:grid-cols-[1fr_1.2fr]">
+        <div className="grid grid-cols-3 gap-2">
+          <ExportBox label="Awaiting" value={report.conversionApproval.awaitingApproval} tone={report.conversionApproval.awaitingApproval > 0 ? 'warn' : 'ok'} />
+          <ExportBox label="Urgent" value={report.conversionApproval.urgent + report.conversionApproval.critical} tone={report.conversionApproval.urgent + report.conversionApproval.critical > 0 ? 'bad' : 'ok'} />
+          <ExportBox label="Expired" value={report.conversionApproval.expired} tone={report.conversionApproval.expired > 0 ? 'bad' : 'ok'} />
+        </div>
+        <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+          <div className="grid gap-2 sm:grid-cols-3">
+            {GOOGLE_ADS_QUALITY_SCALE.map((item) => (
+              <div key={item.score} className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">Score {item.score}</span>
+                  <span className="rounded-md bg-[#E32E2E]/15 px-2 py-1 text-xs font-black text-[#FCA5A5]">{item.googleSignal}</span>
+                </div>
+                <div className="mt-2 text-sm font-black text-[var(--ck-text)]">{item.title}</div>
+                <div className="mt-1 text-xs leading-5 text-[var(--ck-text-muted)]">{item.internalStandard}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {message && (
+        <div className={`mb-3 rounded-lg border px-3 py-2 text-sm font-bold ${
+          message.tone === 'success'
+            ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
+            : 'border-[#E32E2E]/40 bg-[#E32E2E]/10 text-[#FCA5A5]'
+        }`}>
+          {message.text}
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="border-b border-[var(--ck-border)] text-left text-xs uppercase tracking-wide text-[var(--ck-text-dim)]">
+              <th className="py-3 pr-4">Conversion</th>
+              <th className="py-3 pr-4">Lead</th>
+              <th className="py-3 pr-4">Deadline</th>
+              <th className="py-3 pr-4">Click ID</th>
+              <th className="py-3 pr-4">Google Value</th>
+              <th className="py-3 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.conversionApprovalQueue.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="py-8 text-center text-[var(--ck-text-muted)]">
+                  No conversions need approval right now.
+                </td>
+              </tr>
+            ) : report.conversionApprovalQueue.map((row) => {
+              const selectedScore = selectedScores[row.id] ?? row.qualityScore ?? row.suggestedQualityScore
+              const canApprove = row.status !== 'sent' && row.deadlineStatus !== 'expired'
+
+              return (
+                <tr key={row.id} className="border-b border-[var(--ck-border)] last:border-b-0">
+                  <td className="py-3 pr-4">
+                    <div className="font-black text-[var(--ck-text)]">{row.eventLabel}</div>
+                    <div className="text-xs text-[var(--ck-text-dim)]">
+                      {row.role} · {row.category} · {formatDate(row.eventTime)} {formatTime(row.eventTime)}
+                    </div>
+                    {row.lastError && <div className="mt-1 max-w-[320px] truncate text-xs text-[#FCA5A5]">{row.lastError}</div>}
+                  </td>
+                  <td className="py-3 pr-4">
+                    {row.leadId ? (
+                      <Link href={`/leads/${row.leadId}`} className="font-bold text-[var(--ck-text)] hover:text-[#FCA5A5]">
+                        {row.leadName}
+                      </Link>
+                    ) : (
+                      <span className="font-bold text-[var(--ck-text-muted)]">{row.leadName}</span>
+                    )}
+                    <div className="text-xs text-[var(--ck-text-dim)]">{row.leadPhone} · {row.leadAddress}</div>
+                    <div className="text-xs text-[var(--ck-text-dim)]">{row.campaign}</div>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <span className={`inline-flex rounded-lg border px-2 py-1 text-xs font-black capitalize ${deadlineStatusClass(row.deadlineStatus)}`}>
+                      {deadlineLabel(row)}
+                    </span>
+                    <div className="mt-1 text-xs text-[var(--ck-text-dim)]">
+                      age {row.ageDays ?? '--'}d · expires {formatDate(row.expiresAt)}
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <div className="font-mono text-xs text-[var(--ck-text-muted)]">{row.clickId}</div>
+                    <div className="text-xs uppercase text-[var(--ck-text-dim)]">{row.clickIdType}</div>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <select
+                      value={selectedScore}
+                      onChange={(event) => {
+                        const next = Number(event.target.value) as GoogleAdsQualityScore
+                        setSelectedScores((current) => ({ ...current, [row.id]: next }))
+                      }}
+                      className="min-w-[190px] rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-bold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                      aria-label={`Google Ads quality score for ${row.eventLabel}`}
+                    >
+                      {GOOGLE_ADS_QUALITY_SCALE.map((item) => (
+                        <option key={item.score} value={item.score}>{scoreLabel(item.score)}</option>
+                      ))}
+                    </select>
+                    <div className="mt-1 text-xs text-[var(--ck-text-dim)]">
+                      Google receives {selectedScore}; profit stays internal.
+                    </div>
+                  </td>
+                  <td className="py-3 text-right">
+                    <button
+                      type="button"
+                      disabled={!canApprove || busyId === row.id}
+                      onClick={() => approve(row)}
+                      className="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-lg border border-[#E32E2E] bg-[#E32E2E] px-3 py-2 text-xs font-black text-white transition-colors hover:bg-[#c92323] disabled:cursor-not-allowed disabled:border-[var(--ck-border)] disabled:bg-[var(--ck-surface-elev)] disabled:text-[var(--ck-text-dim)]"
+                    >
+                      <Icon name={busyId === row.id ? 'hourglass_top' : 'check_circle'} size="text-base" />
+                      {busyId === row.id ? 'Saving' : 'Approve'}
+                    </button>
+                    {row.approvedAt && (
+                      <div className="mt-1 text-xs text-[var(--ck-text-dim)]">approved {formatDate(row.approvedAt)}</div>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  )
+}
+
 function Panel({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4 shadow-sm">
@@ -625,6 +833,15 @@ function QualityRow({ label, value }: { label: string; value: number }) {
           style={{ width: `${Math.min(Math.max(value, 0), 100)}%` }}
         />
       </div>
+    </div>
+  )
+}
+
+function MiniMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-2">
+      <div className="font-black tabular-nums text-[var(--ck-text)]">{formatNumber(value)}</div>
+      <div className="mt-0.5 font-bold uppercase tracking-wide text-[var(--ck-text-dim)]">{label}</div>
     </div>
   )
 }

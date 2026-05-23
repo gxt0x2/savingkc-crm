@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false }),
     db
       .from('ppc_conversion_outbox')
-      .select('id, event_name, event_category, dedupe_key, status, approved_for_google_ads, optimization_role, lead_id, conversion_value, event_time, click_id, click_id_type, attribution, payload, attempts, last_error, sent_at, created_at')
+      .select('id, event_name, event_category, dedupe_key, status, approved_for_google_ads, optimization_role, lead_id, conversion_value, event_time, click_id, click_id_type, attribution, payload, attempts, last_error, sent_at, approved_at, approved_by, approval_note, created_at')
       .gte('event_time', sinceIso)
       .order('event_time', { ascending: false })
       .limit(2000),
