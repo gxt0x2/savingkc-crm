@@ -9,10 +9,10 @@ import {
 function makeRow(overrides: Partial<PpcConversionOutboxExportRow> = {}): PpcConversionOutboxExportRow {
   return {
     id: 'outbox-1',
-    event_name: 'lead_submitted',
+    event_name: 'qualified_lead',
     event_category: 'form',
     destination: 'google_ads',
-    dedupe_key: 'lead:123:lead_submitted',
+    dedupe_key: 'lead:123:qualified_lead',
     approved_for_google_ads: true,
     status: 'pending',
     optimization_role: 'primary',
@@ -25,7 +25,7 @@ function makeRow(overrides: Partial<PpcConversionOutboxExportRow> = {}): PpcConv
     click_id: 'test-gclid',
     click_id_type: 'gclid',
     attribution: { landingUrl: 'https://savingkc.com/ppc?gclid=test-gclid' },
-    payload: { form_status: 'submitted', google_ads_quality_score: 2 },
+    payload: { form_status: 'qualified', google_ads_quality_score: 2 },
     attempts: 0,
     last_error: null,
     locked_at: null,
@@ -47,7 +47,6 @@ function googleConfig() {
     refreshToken: 'refresh-token',
     adUserDataConsent: null,
     conversionActions: {
-      lead_submitted: 'customers/646966429/conversionActions/111',
       qualified_lead: 'customers/646966429/conversionActions/333',
       call_connected_60s: 'customers/646966429/conversionActions/222',
     },
@@ -93,7 +92,7 @@ describe('ppc conversion exporter', () => {
       GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
       GOOGLE_ADS_CLIENT_ID: 'client-id',
       GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
-      GOOGLE_ADS_CONVERSION_ACTION_LEAD_SUBMITTED: '111',
+      GOOGLE_ADS_CONVERSION_ACTION_QUALIFIED_LEAD: '333',
     })
 
     expect(health.configured).toBe(true)
@@ -101,11 +100,11 @@ describe('ppc conversion exporter', () => {
       enabled: true,
       ready: false,
       customerId: '646966429',
-      configuredActionMappings: ['lead_submitted'],
+      configuredActionMappings: ['qualified_lead'],
     })
     expect(health.googleAds.missingConfig).toContain('GOOGLE_ADS_REFRESH_TOKEN or GOOGLE_ADS_REFRESH_TOKEN_USER_EMAIL')
     expect(health.googleAds.missingActionMappings).toEqual(
-      expect.arrayContaining(['qualified_lead', 'call_connected_2m', 'call_connected_5m']),
+      expect.arrayContaining(['appointment_booked', 'call_connected_60s', 'call_connected_2m', 'call_connected_5m']),
     )
   })
 
@@ -117,7 +116,6 @@ describe('ppc conversion exporter', () => {
       GOOGLE_ADS_CLIENT_ID: 'client-id',
       GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
       GOOGLE_ADS_REFRESH_TOKEN_USER_EMAIL: 'savingkc@gmail.com',
-      GOOGLE_ADS_CONVERSION_ACTION_LEAD_SUBMITTED: '111',
       GOOGLE_ADS_CONVERSION_ACTION_QUALIFIED_LEAD: '222',
       GOOGLE_ADS_CONVERSION_ACTION_APPOINTMENT_BOOKED: '333',
       GOOGLE_ADS_CONVERSION_ACTION_CALL_CONNECTED_60S: '444',
@@ -135,15 +133,32 @@ describe('ppc conversion exporter', () => {
     expect(plan.kind).toBe('click')
     if (plan.kind !== 'click') throw new Error('Expected click upload plan')
     expect(plan.conversion).toMatchObject({
-      conversionAction: 'customers/646966429/conversionActions/111',
+      conversionAction: 'customers/646966429/conversionActions/333',
       gclid: 'test-gclid',
       conversionDateTime: '2026-05-20 23:49:40+00:00',
       conversionValue: 2,
       currencyCode: 'USD',
-      orderId: 'lead:123:lead_submitted',
+      orderId: 'lead:123:qualified_lead',
     })
     expect(plan.conversion).not.toHaveProperty('gbraid')
     expect(plan.conversion).not.toHaveProperty('wbraid')
+  })
+
+  it('keeps final form submits out of offline Google Ads API uploads', () => {
+    const row = makeRow({
+      event_name: 'lead_submitted',
+      event_category: 'form',
+      optimization_role: 'primary',
+      dedupe_key: 'lead:123:lead_submitted',
+      payload: { form_status: 'submitted', google_ads_quality_score: 2 },
+    })
+
+    const plan = buildGoogleAdsUploadPlan(row, googleConfig())
+
+    expect(plan.kind).toBe('skip')
+    if (plan.kind !== 'skip') throw new Error('Expected skip upload plan')
+    expect(plan.hardFailure).toBe(false)
+    expect(plan.reason).toContain('website/GTM primary conversion')
   })
 
   it('builds Google Ads call conversion payloads from call metadata', () => {
@@ -239,10 +254,10 @@ describe('ppc conversion exporter', () => {
     const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
     const [url, init] = calls[0]
     expect(String(url)).toContain('https://gtm.savingkc.com/data')
-    expect(String(url)).toContain('event_name=lead_submitted')
+    expect(String(url)).toContain('event_name=qualified_lead')
     expect(init?.headers).toMatchObject({ Origin: 'https://savingkc.com' })
     expect(JSON.parse(String(init?.body))).toMatchObject({
-      event_name: 'lead_submitted',
+      event_name: 'qualified_lead',
       event_id: 'outbox-1',
       value: 2,
       currency: 'USD',
@@ -277,7 +292,7 @@ describe('ppc conversion exporter', () => {
           GOOGLE_ADS_CLIENT_ID: 'client-id',
           GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
           GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
-          GOOGLE_ADS_CONVERSION_ACTION_LEAD_SUBMITTED: '111',
+          GOOGLE_ADS_CONVERSION_ACTION_QUALIFIED_LEAD: '333',
         },
       },
       { store, fetch: fetchMock as unknown as typeof fetch },
@@ -424,7 +439,6 @@ describe('ppc conversion exporter', () => {
           GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
           GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
           GOOGLE_ADS_CONVERSION_ACTIONS_JSON: JSON.stringify({
-            lead_submitted: 'customers/646966429/conversionActions/111',
             qualified_lead: 'customers/646966429/conversionActions/333',
           }),
         },

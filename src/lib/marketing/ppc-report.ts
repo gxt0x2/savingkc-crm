@@ -877,7 +877,7 @@ function buildJourneySteps({
   const addressAt = firstEventAt(ordered, (row) => eventName(row) === 'address_typed' || Boolean(payloadText(row, 'address')))
   const addressSource = Array.from(new Set(ordered.map((row) => payloadText(row, 'address_source')).filter(Boolean)))[0] || ''
   const submittedAt = firstEventAt(ordered, (row) => eventName(row) === 'lead_submitted' || text(row.form_status) === 'submitted')
-  const submitOutbox = outboxRows.find((row) => text(row.event_name) === 'lead_submitted')
+  const exportOutbox = outboxRows.find((row) => outboxStatus(row) === 'sent') ?? outboxRows[0] ?? null
   const leadAt = leadState?.lead.created_at ?? null
 
   return [
@@ -946,10 +946,10 @@ function buildJourneySteps({
     },
     {
       key: 'ads_outbox',
-      label: 'Ads Outbox',
-      status: submitOutbox ? 'complete' : submittedAt ? 'active' : 'missing',
-      detail: submitOutbox ? outboxStatus(submitOutbox) : submittedAt ? 'Missing outbox row' : 'Not queued',
-      at: eventAt(submitOutbox),
+      label: 'Conversion Signal',
+      status: exportOutbox ? (outboxStatus(exportOutbox) === 'sent' ? 'complete' : 'active') : submittedAt ? 'complete' : 'missing',
+      detail: exportOutbox ? `${eventLabel(exportOutbox.event_name)}: ${outboxStatus(exportOutbox)}` : submittedAt ? 'Primary conversion tracked by GTM' : 'Not queued',
+      at: eventAt(exportOutbox) ?? submittedAt,
     },
   ]
 }
