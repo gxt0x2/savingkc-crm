@@ -8,6 +8,7 @@ import {
   parseCallDurationSeconds,
   PPC_TRACKING_PHONE_DIGITS,
 } from '@/lib/call-quality-events'
+import { phoneLookupVariants } from '@/lib/google-ads-phone'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 
 /**
@@ -146,11 +147,19 @@ export async function POST(req: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     )
 
-    const cleanTo = to.replace(/[^\d+]/g, '')
     let leadId: string | null = null
-    if (cleanTo) {
-      const { data } = await supabase.from('leads').select('id').eq('phone', cleanTo).maybeSingle()
-      leadId = data?.id || null
+    for (const variant of phoneLookupVariants(to)) {
+      const { data } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('phone', variant)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data?.id) {
+        leadId = data.id
+        break
+      }
     }
 
     // Stamp a diagnostic activity row so it shows up in the Activity Feed

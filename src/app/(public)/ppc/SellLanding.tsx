@@ -170,6 +170,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       const doc = document.documentElement
       const body = document.body
       const scrollHeight = Math.max(doc.scrollHeight, body?.scrollHeight ?? 0)
+      if (scrollHeight <= window.innerHeight + 200) return
       const viewed = window.scrollY + window.innerHeight
       const depth = scrollHeight <= 0 ? 100 : Math.round((viewed / scrollHeight) * 100)
 

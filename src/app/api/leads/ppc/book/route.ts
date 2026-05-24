@@ -34,7 +34,37 @@ const BodySchema = z.object({
     .optional(),
 })
 
+function configuredWebhookSecret(): string | null {
+  const secret = process.env.PPC_BOOKING_WEBHOOK_SECRET || process.env.CAL_COM_WEBHOOK_SECRET || ''
+  return secret.trim() || null
+}
+
+function requestWebhookSecret(req: NextRequest): string | null {
+  const auth = req.headers.get('authorization') || ''
+  const bearer = auth.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
+  return (
+    bearer ||
+    req.headers.get('x-ppc-booking-secret')?.trim() ||
+    req.headers.get('x-webhook-secret')?.trim() ||
+    null
+  )
+}
+
+function unauthorizedWebhook(req: NextRequest): NextResponse | null {
+  const expected = configuredWebhookSecret()
+  if (!expected) {
+    console.error('[ppc/book] PPC booking webhook secret is not configured')
+    return NextResponse.json({ ok: false, error: 'Webhook secret is not configured' }, { status: 503 })
+  }
+
+  if (requestWebhookSecret(req) === expected) return null
+  return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+}
+
 export async function POST(req: NextRequest) {
+  const unauthorized = unauthorizedWebhook(req)
+  if (unauthorized) return unauthorized
+
   let parsed: z.infer<typeof BodySchema>
   try {
     parsed = BodySchema.parse(await req.json())
