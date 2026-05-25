@@ -140,7 +140,6 @@ export default async function DealPage({
         inspectionReports={inspectionReports}
         askingPrice={askingPrice}
         arv={arv}
-        grossMargin={grossMargin}
       />
 
       <div className="hidden md:block">

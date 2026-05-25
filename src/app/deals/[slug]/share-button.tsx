@@ -18,12 +18,11 @@ export default function ShareButton({
 }) {
   const [copied, setCopied] = useState(false)
 
-  function handleCopy() {
+  async function handleShare() {
     // Generate a simple share code so visits via this link can be attributed
     const shareCode = Math.random().toString(36).slice(2, 10)
     const url = new URL(window.location.href)
     url.searchParams.set('s', shareCode)
-    navigator.clipboard.writeText(url.toString()).catch(() => {})
 
     if (slug) {
       trackEvent(slug, 'share_click', {
@@ -34,6 +33,20 @@ export default function ShareButton({
         share_code: shareCode,
       })
     }
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: document.title || 'Saving KC deal',
+          url: url.toString(),
+        })
+        return
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+      }
+    }
+
+    await navigator.clipboard?.writeText(url.toString()).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -41,7 +54,7 @@ export default function ShareButton({
   return (
     <>
       <button
-        onClick={handleCopy}
+        onClick={handleShare}
         className={className ?? 'w-full flex items-center justify-center gap-2 border border-[#ddd] text-[#444] hover:border-[#bbb] hover:bg-[#fafafa] rounded-xl px-4 py-2.5 text-[14px] font-medium transition-all'}
         aria-label={ariaLabel}
       >

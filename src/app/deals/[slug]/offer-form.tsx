@@ -130,9 +130,12 @@ export default function OfferForm({
   return (
     <>
       {/* Modal backdrop */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setOpen(false)}>
+      <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => setOpen(false)}>
         <div
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto border border-[#eaeaea]"
+          data-testid="offer-modal-scroll"
+          data-track-scroll-container
+          className="max-h-[calc(100dvh-24px)] w-full overflow-y-auto overscroll-contain rounded-t-2xl border border-[#eaeaea] bg-white shadow-2xl sm:max-h-[90vh] sm:max-w-md sm:rounded-2xl"
+          style={{ WebkitOverflowScrolling: 'touch' }}
           onClick={e => e.stopPropagation()}
         >
           {submitted ? (
@@ -187,7 +190,6 @@ export default function OfferForm({
                     {([
                       ['cash', 'Cash'],
                       ['hard_money', 'Hard Money'],
-                      ['conventional', 'Conventional'],
                     ] as const).map(([val, label], i) => (
                       <button
                         key={val}
@@ -307,13 +309,6 @@ export default function OfferForm({
         </div>
       </div>
 
-      {/* The trigger button */}
-      <button
-        onClick={() => { setOpen(true); trackEvent(slug, 'offer_modal_open') }}
-        className={triggerClassName ?? defaultTriggerClassName}
-      >
-        {triggerLabel}
-      </button>
     </>
   )
 }

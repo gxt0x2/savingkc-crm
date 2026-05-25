@@ -1,6 +1,8 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
-import type { ReactNode } from 'react'
 
 type Lead = {
   property_address: string | null
@@ -57,7 +59,17 @@ type MobileDealPageProps = {
   inspectionReports: InspectionReport[]
   askingPrice: number | null
   arv: number | null
-  grossMargin: number | null
+}
+
+const BRAND = '#da2524'
+const ORANGE = '#f97316'
+const SHEET_COLLAPSED = 42
+const SHEET_MID = 60
+const SHEET_EXPANDED = 84
+const SHEET_SNAPS = [SHEET_COLLAPSED, SHEET_MID, SHEET_EXPANDED]
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
 }
 
 function fmt(n: number | null | undefined): string {
@@ -68,17 +80,6 @@ function fmt(n: number | null | undefined): string {
 function fmtNum(n: number | null | undefined): string {
   if (n == null) return '-'
   return n.toLocaleString('en-US')
-}
-
-function timeAgo(iso: string): string {
-  const then = new Date(iso).getTime()
-  if (Number.isNaN(then)) return 'Recently'
-  const days = Math.max(0, Math.floor((Date.now() - then) / 86_400_000))
-  if (days === 0) return 'Today'
-  if (days === 1) return '1 day ago'
-  if (days < 60) return `${days} days ago`
-  const months = Math.floor(days / 30)
-  return `${months} month${months === 1 ? '' : 's'} ago`
 }
 
 function bathText(full: number | null | undefined, half: number | null | undefined): string | null {
@@ -97,8 +98,15 @@ function addressLine(lead: Lead | null, showAddress: boolean): string {
   return `${[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}` || 'Kansas City area'
 }
 
-function IconClose({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+function displayDescription(description: string | null): string {
+  if (!description) return 'No description provided.'
+  const cleaned = description
+    .split(/\r?\n/)
+    .filter((line) => !/gross\s*margin/i.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return cleaned || 'No description provided.'
 }
 
 function IconHeart({ className = '' }: { className?: string }) {
@@ -113,10 +121,6 @@ function IconPin({ className = '' }: { className?: string }) {
   return <svg className={className} fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.25A7.25 7.25 0 0 0 4.75 9.5c0 5.14 6.36 11.75 6.63 12.03a.87.87 0 0 0 1.24 0c.27-.28 6.63-6.89 6.63-12.03A7.25 7.25 0 0 0 12 2.25Zm0 10.12a2.87 2.87 0 1 1 0-5.74 2.87 2.87 0 0 1 0 5.74Z" /></svg>
 }
 
-function IconEye({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12s3.75-6.75 9.75-6.75S21.75 12 21.75 12 18 18.75 12 18.75 2.25 12 2.25 12Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
-}
-
 function IconBed({ className = '' }: { className?: string }) {
   return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3 19V9.75M3 16h18M5.25 12.75h5.25V10.5A1.5 1.5 0 0 0 9 9H5.25v3.75Zm5.25 0h8.25A2.25 2.25 0 0 1 21 15v4" /></svg>
 }
@@ -129,10 +133,18 @@ function IconHome({ className = '' }: { className?: string }) {
   return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="m3 10.75 9-7.5 9 7.5M5 9.5V20h5.25v-5.5h3.5V20H19V9.5" /></svg>
 }
 
+function IconChevron({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" /></svg>
+}
+
+function IconCloseSmall({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.1}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+}
+
 function Metric({ icon, value }: { icon: ReactNode; value: string }) {
   return (
-    <div className="flex items-center gap-1.5 whitespace-nowrap text-[16px] font-semibold text-[#151515]">
-      <span className="text-[#111]">{icon}</span>
+    <div className="flex items-center gap-1.5 whitespace-nowrap text-[15px] font-semibold text-[#0a0a0b]">
+      <span className="text-[#36363d]">{icon}</span>
       {value}
     </div>
   )
@@ -148,77 +160,148 @@ export default function MobileDealPage({
   inspectionReports,
   askingPrice,
   arv,
-  grossMargin,
 }: MobileDealPageProps) {
   const showAddress = dealPage.show_address !== false
   const location = addressLine(lead, showAddress)
-  const fullAddress = addressLine(lead, true)
-  const mapsHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
   const bathValue = bathText(lead?.baths_full, lead?.baths_half)
   const repairEstimate = dealPage.repair_estimate_low != null && dealPage.repair_estimate_high != null
     ? `${fmt(dealPage.repair_estimate_low)} - ${fmt(dealPage.repair_estimate_high)}`
     : fmt(dealPage.repair_estimate_low ?? dealPage.repair_estimate_high)
   const hasTerms = dealPage.contract_close_date || dealPage.earnest_money != null || dealPage.inspection_period_days != null || dealPage.financing_terms
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
+  const [sheetHeight, setSheetHeight] = useState(SHEET_COLLAPSED)
+  const currentSheetHeightRef = useRef(SHEET_COLLAPSED)
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
+  const overviewText = displayDescription(dealPage.description)
+
+  const setClampedSheetHeight = useCallback((nextHeight: number) => {
+    const height = clamp(nextHeight, SHEET_COLLAPSED, SHEET_EXPANDED)
+    currentSheetHeightRef.current = height
+    setSheetHeight(height)
+  }, [])
+
+  const beginSheetDrag = useCallback((clientY: number) => {
+    dragRef.current = {
+      startY: clientY,
+      startHeight: currentSheetHeightRef.current,
+    }
+  }, [])
+
+  const updateSheetDrag = useCallback((clientY: number) => {
+    if (!dragRef.current) return
+    const deltaVh = ((dragRef.current.startY - clientY) / window.innerHeight) * 100
+    setClampedSheetHeight(dragRef.current.startHeight + deltaVh)
+  }, [setClampedSheetHeight])
+
+  const finishSheetDrag = useCallback(() => {
+    if (!dragRef.current) return
+    const current = currentSheetHeightRef.current
+    const snap = SHEET_SNAPS.reduce((closest, point) => (
+      Math.abs(point - current) < Math.abs(closest - current) ? point : closest
+    ), SHEET_COLLAPSED)
+    dragRef.current = null
+    setClampedSheetHeight(snap)
+  }, [setClampedSheetHeight])
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!dragRef.current) return
+      event.preventDefault()
+      updateSheetDrag(event.clientY)
+    }
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!dragRef.current || event.touches.length === 0) return
+      event.preventDefault()
+      updateSheetDrag(event.touches[0].clientY)
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', finishSheetDrag)
+    window.addEventListener('touchmove', handleTouchMove, { passive: false })
+    window.addEventListener('touchend', finishSheetDrag)
+    window.addEventListener('touchcancel', finishSheetDrag)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', finishSheetDrag)
+      window.removeEventListener('touchmove', handleTouchMove)
+      window.removeEventListener('touchend', finishSheetDrag)
+      window.removeEventListener('touchcancel', finishSheetDrag)
+    }
+  }, [finishSheetDrag, updateSheetDrag])
+
+  const handleSheetPointerStart = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    beginSheetDrag(event.clientY)
+  }, [beginSheetDrag])
+
+  const handleSheetPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    updateSheetDrag(event.clientY)
+  }, [updateSheetDrag])
+
+  const stepGallery = useCallback((direction: -1 | 1) => {
+    if (photos.length === 0) return
+    setGalleryIndex((current) => {
+      if (current == null) return current
+      return (current + direction + photos.length) % photos.length
+    })
+  }, [photos.length])
 
   return (
-    <section className="fixed inset-0 z-40 block overflow-hidden bg-black text-[#111] md:hidden">
+    <section className="fixed inset-0 z-40 block overflow-hidden bg-black text-[#0a0a0b] md:hidden">
       <div
-        className="absolute inset-0 overflow-y-auto overscroll-contain bg-black pb-[62svh]"
+        className="absolute inset-0 overflow-y-auto overscroll-contain bg-black pb-[48svh]"
         data-track-scroll-container
         data-track-section="mobile_photos"
         aria-label="Property photos"
       >
         {photos.length > 0 ? (
           photos.map((src, index) => (
-            <figure key={`${src}-${index}`} className={`relative border-b border-white ${index === 0 ? 'h-[48svh]' : 'h-[34svh]'}`}>
+            <button
+              key={`${src}-${index}`}
+              type="button"
+              onClick={() => setGalleryIndex(index)}
+              aria-label={`Open photo ${index + 1} of ${photos.length}`}
+              className={`relative block w-full border-b border-white bg-black text-left ${index === 0 ? 'h-[46svh]' : 'h-[34svh]'}`}
+            >
               <img
                 src={src}
                 alt={`${title} photo ${index + 1}`}
                 className="h-full w-full object-cover"
                 loading={index === 0 ? 'eager' : 'lazy'}
               />
-              {index === 0 && (
-                <>
-                  <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/10" />
-                  <span className="absolute left-24 top-24 rounded-md bg-[#2563eb] px-4 py-2 text-[16px] font-bold tracking-wide text-white shadow-lg">
-                    FOR SALE
-                  </span>
-                </>
-              )}
-            </figure>
+              {index === 0 && <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/10" />}
+            </button>
           ))
         ) : (
-          <div className="flex h-[55svh] items-end bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)] p-6 text-white">
+          <div className="flex h-[52svh] items-end bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)] p-6 text-white">
             <div>
-              <p className="mb-2 inline-flex rounded-md bg-[#2563eb] px-3 py-1.5 text-[13px] font-bold tracking-wide">FOR SALE</p>
+              <p className="mb-2 inline-flex rounded-full bg-[#f97316] px-3 py-1.5 text-[13px] font-bold tracking-wide">FOR SALE</p>
               <h1 className="max-w-[18rem] text-[30px] font-bold leading-tight">{title}</h1>
             </div>
           </div>
         )}
-        <div className="h-[42svh]" aria-hidden="true" />
+        <div className="h-[40svh]" aria-hidden="true" />
       </div>
 
       <div className="pointer-events-none fixed inset-x-0 top-0 z-20 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top)+16px)]">
-        <a
-          href="https://savingkc.com"
-          aria-label="Close"
-          className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/88 text-black shadow-lg backdrop-blur-md"
+        <span
+          className="pointer-events-auto inline-flex h-12 items-center rounded-full px-4 text-[13px] font-extrabold uppercase tracking-[0.12em] text-white shadow-[0_8px_22px_rgba(249,115,22,0.36)]"
+          style={{ backgroundColor: ORANGE }}
         >
-          <IconClose className="h-7 w-7" />
-        </a>
+          For Sale
+        </span>
         <div className="flex items-center gap-3">
           <button
             type="button"
             aria-label="Save deal"
-            className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/88 text-black shadow-lg backdrop-blur-md"
+            className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-md transition-transform active:scale-95"
           >
             <IconHeart className="h-7 w-7" />
           </button>
           <ShareButton
             slug={slug}
             ariaLabel="Share deal"
-            className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/88 text-black shadow-lg backdrop-blur-md"
-            toastClassName="fixed bottom-[calc(env(safe-area-inset-bottom)+84px)] left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-xl bg-[#111] px-5 py-3 text-[13px] font-medium text-white shadow-lg"
+            className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-md transition-transform active:scale-95"
+            toastClassName="fixed bottom-[calc(env(safe-area-inset-bottom)+84px)] left-1/2 z-[90] flex -translate-x-1/2 items-center gap-2 rounded-xl bg-[#0f0f12] px-5 py-3 text-[13px] font-medium text-white shadow-lg"
           >
             <IconShare className="h-6 w-6" />
           </ShareButton>
@@ -226,79 +309,79 @@ export default function MobileDealPage({
       </div>
 
       <div
-        className="fixed inset-x-0 bottom-0 z-30 max-h-[64svh] overflow-y-auto overscroll-contain rounded-t-[28px] bg-[#fbfdf8] px-5 pt-3 shadow-[0_-18px_40px_rgba(0,0,0,0.28)]"
+        className="fixed inset-x-0 bottom-0 z-30 overflow-y-auto overscroll-contain rounded-t-[24px] border-t border-[#e5e5ea] bg-white px-5 pt-2 shadow-[0_-18px_44px_rgba(10,10,11,0.22)] transition-[height] duration-150"
+        style={{
+          height: `${sheetHeight}svh`,
+          colorScheme: 'light',
+          WebkitOverflowScrolling: 'touch',
+        }}
         data-track-scroll-container
         data-track-section="mobile_deal_sheet"
       >
-        <div className="mx-auto mb-6 h-1 w-14 rounded-full bg-[#d4d8d0]" />
+        <button
+          type="button"
+          aria-label="Resize deal details"
+          onPointerDown={handleSheetPointerStart}
+          onPointerMove={handleSheetPointerMove}
+          onPointerUp={finishSheetDrag}
+          onPointerCancel={finishSheetDrag}
+          onMouseDown={(event) => beginSheetDrag(event.clientY)}
+          onTouchStart={(event) => {
+            if (event.touches.length > 0) beginSheetDrag(event.touches[0].clientY)
+          }}
+          className="mx-auto mb-4 flex h-7 w-28 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+        >
+          <span className="h-1.5 w-16 rounded-full bg-[#d1d1d6]" />
+        </button>
 
-        <div className="space-y-4 pb-[calc(env(safe-area-inset-bottom)+92px)]">
-          <div>
-            <div className="flex items-baseline gap-2">
-              {dealPage.show_asking_price !== false && askingPrice != null ? (
-                <h1 className="text-[40px] font-semibold leading-none tracking-normal text-[#101010]">{fmt(askingPrice)}</h1>
-              ) : (
-                <h1 className="text-[34px] font-semibold leading-none tracking-normal text-[#101010]">Price TBD</h1>
-              )}
-              {dealPage.show_arv !== false && arv != null && (
-                <span className="text-[22px] font-semibold leading-none text-[#1d4ed8]">(ARV: {fmt(arv)})</span>
-              )}
+        <div className="space-y-5 pb-[calc(env(safe-area-inset-bottom)+92px)]">
+          <section className="space-y-4">
+            <div>
+              <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
+                {dealPage.show_asking_price !== false && askingPrice != null ? (
+                  <h1 className="text-[38px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">{fmt(askingPrice)}</h1>
+                ) : (
+                  <h1 className="text-[32px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">Price TBD</h1>
+                )}
+                {dealPage.show_arv !== false && arv != null && (
+                  <span className="pb-1 text-[19px] font-extrabold leading-none" style={{ color: BRAND }}>
+                    (ARV: {fmt(arv)})
+                  </span>
+                )}
+              </div>
+              <div className="mt-4 flex items-start gap-2 text-[18px] font-bold leading-snug text-[#0a0a0b]">
+                <IconPin className="mt-0.5 h-5 w-5 shrink-0 text-[#36363d]" />
+                <p>{location}</p>
+              </div>
             </div>
-            <div className="mt-4 flex items-start gap-2 text-[19px] font-semibold leading-snug text-[#151515]">
-              <IconPin className="mt-0.5 h-5 w-5 shrink-0 text-[#1f2937]" />
-              <p>{location}</p>
+
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+              {lead?.beds != null && <Metric icon={<IconBed className="h-6 w-6" />} value={`${lead.beds} Beds`} />}
+              {bathValue && <Metric icon={<IconBath className="h-6 w-6" />} value={bathValue} />}
+              {lead?.sqft != null && <Metric icon={<IconHome className="h-6 w-6" />} value={`${fmtNum(lead.sqft)} Sq.Ft.`} />}
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            {lead?.beds != null && <Metric icon={<IconBed className="h-6 w-6" />} value={`${lead.beds} Beds`} />}
-            {bathValue && <Metric icon={<IconBath className="h-6 w-6" />} value={bathValue} />}
-            {lead?.sqft != null && <Metric icon={<IconHome className="h-6 w-6" />} value={`${fmtNum(lead.sqft)} Sq.Ft.`} />}
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[18px] font-medium text-[#929292]">{timeAgo(dealPage.created_at)}</span>
-            {showAddress && lead?.property_address ? (
-              <a
-                href={mapsHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md bg-[#2563eb] px-3 py-2 text-[15px] font-bold text-white shadow-sm"
-              >
-                <IconEye className="h-4 w-4" />
-                View Full Address
-              </a>
-            ) : (
-              <span className="rounded-md border border-[#cfd7e6] px-3 py-2 text-[13px] font-bold text-[#1d4ed8]">Address hidden</span>
-            )}
-          </div>
-
-          {dealPage.show_arv !== false && grossMargin != null && grossMargin > 0 && (
-            <div className="text-[22px] font-semibold text-[#111]">
-              Gross margin: <span className="text-[#0f766e]">{fmt(grossMargin)}</span>
-            </div>
-          )}
-
-          <section className="border-t border-[#e2e7dd] pt-4" data-track-section="mobile_overview">
-            <h2 className="mb-2 text-[18px] font-bold text-[#111]">{title}</h2>
-            <p className="whitespace-pre-wrap text-[15px] leading-7 text-[#3f463f]">
-              {dealPage.description || 'No description provided.'}
-            </p>
           </section>
 
-          <section className="grid grid-cols-2 gap-3 border-t border-[#e2e7dd] pt-4" data-track-section="mobile_details">
+          <section className="grid grid-cols-2 gap-2.5 border-t border-[#e5e5ea] pt-5" data-track-section="mobile_details">
             {lead?.property_type && <Info label="Type" value={lead.property_type} />}
             {dealPage.parking && <Info label="Parking" value={dealPage.parking} />}
-            {lead?.year_built && <Info label="Built" value={String(lead.year_built)} />}
-            {lead?.lot_size && <Info label="Lot" value={String(lead.lot_size)} />}
+            {lead?.year_built && <Info label="Built in" value={String(lead.year_built)} />}
+            {lead?.lot_size && <Info label="Lot size" value={String(lead.lot_size)} />}
             {dealPage.property_condition && <Info label="Condition" value={dealPage.property_condition} />}
             {repairEstimate !== '-' && <Info label="Repairs" value={repairEstimate} />}
           </section>
 
+          <section className="border-t border-[#e5e5ea] pt-5" data-track-section="mobile_overview">
+            <h2 className="mb-3 text-[22px] font-extrabold text-[#0a0a0b]">Overview</h2>
+            <p className="whitespace-pre-wrap text-[16px] leading-7 text-[#36363d]">
+              {overviewText}
+            </p>
+          </section>
+
           {hasTerms && (
-            <section className="space-y-3 border-t border-[#e2e7dd] pt-4" data-track-section="mobile_terms">
-              <h2 className="text-[17px] font-bold text-[#111]">Contract Terms</h2>
-              <div className="grid grid-cols-2 gap-3">
+            <section className="space-y-3 border-t border-[#e5e5ea] pt-5" data-track-section="mobile_terms">
+              <h2 className="text-[20px] font-extrabold text-[#0a0a0b]">Contract Terms</h2>
+              <div className="grid grid-cols-2 gap-2.5">
                 {dealPage.contract_close_date && (
                   <Info
                     label="Close Date"
@@ -309,13 +392,13 @@ export default function MobileDealPage({
                 {dealPage.inspection_period_days != null && <Info label="Inspection" value={`${dealPage.inspection_period_days} days`} />}
                 {dealPage.financing_terms && <Info label="Financing" value={dealPage.financing_terms} />}
               </div>
-              {dealPage.contract_notes && <p className="whitespace-pre-wrap text-[14px] leading-6 text-[#4b554d]">{dealPage.contract_notes}</p>}
+              {dealPage.contract_notes && <p className="whitespace-pre-wrap text-[14px] leading-6 text-[#4f5058]">{dealPage.contract_notes}</p>}
             </section>
           )}
 
           {videos.length > 0 && (
-            <section className="space-y-3 border-t border-[#e2e7dd] pt-4" data-track-section="mobile_videos">
-              <h2 className="text-[17px] font-bold text-[#111]">Videos</h2>
+            <section className="space-y-3 border-t border-[#e5e5ea] pt-5" data-track-section="mobile_videos">
+              <h2 className="text-[20px] font-extrabold text-[#0a0a0b]">Videos</h2>
               {videos.map((url, index) => (
                 <video key={`${url}-${index}`} controls className="w-full rounded-xl bg-black" preload="metadata">
                   <source src={url} />
@@ -325,30 +408,30 @@ export default function MobileDealPage({
           )}
 
           {inspectionReports.length > 0 && (
-            <section className="space-y-2 border-t border-[#e2e7dd] pt-4" data-track-section="mobile_reports">
-              <h2 className="text-[17px] font-bold text-[#111]">Inspection Reports</h2>
+            <section className="space-y-2 border-t border-[#e5e5ea] pt-5" data-track-section="mobile_reports">
+              <h2 className="text-[20px] font-extrabold text-[#0a0a0b]">Inspection Reports</h2>
               {inspectionReports.map((report, index) => (
                 <a
                   key={`${report.url}-${index}`}
                   href={report.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between rounded-xl border border-[#d9dfd3] bg-white px-4 py-3 text-[14px] font-semibold text-[#111]"
+                  className="flex items-center justify-between rounded-[10px] border border-[#e5e5ea] bg-white px-4 py-3 text-[14px] font-semibold text-[#0a0a0b]"
                 >
                   <span className="truncate">{report.name}</span>
-                  <span className="text-[#2563eb]">PDF</span>
+                  <span style={{ color: BRAND }}>PDF</span>
                 </a>
               ))}
             </section>
           )}
 
-          <div className="flex items-center justify-end border-t border-[#e2e7dd] py-4 text-[12px] font-medium text-[#9a9f96]">
+          <div className="flex items-center justify-end border-t border-[#e5e5ea] py-4 text-[12px] font-medium text-[#8a8a94]">
             <span>Saving KC Homebuyers</span>
           </div>
         </div>
 
         {dealPage.accept_offers !== false && (
-          <div className="sticky bottom-0 -mx-5 bg-[#fbfdf8]/96 px-5 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur">
+          <div className="sticky bottom-0 -mx-5 border-t border-[#e5e5ea] bg-white/96 px-5 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur">
             <OfferForm
               slug={slug}
               askingPrice={askingPrice}
@@ -356,21 +439,62 @@ export default function MobileDealPage({
               photo={photos[0]}
               propertyAddress={lead?.property_address || title}
               location={lead ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ') : ''}
-              triggerClassName="w-full rounded-md border-2 border-[#1d4ed8] bg-white px-4 py-4 text-[18px] font-semibold text-[#1d4ed8] shadow-sm transition-colors hover:bg-[#eff6ff]"
+              triggerClassName="w-full rounded-[12px] bg-[#da2524] px-4 py-4 text-[17px] font-extrabold text-white shadow-[0_8px_22px_rgba(218,37,36,0.35)] transition-colors hover:bg-[#b81e1d]"
               triggerLabel="Make offer"
             />
           </div>
         )}
       </div>
+
+      {galleryIndex != null && photos[galleryIndex] && (
+        <div className="fixed inset-0 z-[80] bg-black text-white" data-track-section="mobile_photo_gallery">
+          <button
+            type="button"
+            onClick={() => setGalleryIndex(null)}
+            aria-label="Close gallery"
+            className="absolute right-5 top-[calc(env(safe-area-inset-top)+16px)] z-10 flex h-12 w-12 items-center justify-center rounded-full bg-white/14 text-white backdrop-blur-md"
+          >
+            <IconCloseSmall className="h-7 w-7" />
+          </button>
+          <div className="absolute left-5 top-[calc(env(safe-area-inset-top)+24px)] z-10 rounded-full bg-black/45 px-3 py-1 text-[13px] font-semibold backdrop-blur">
+            {galleryIndex + 1} / {photos.length}
+          </div>
+          <img
+            src={photos[galleryIndex]}
+            alt={`${title} expanded photo ${galleryIndex + 1}`}
+            className="h-full w-full object-contain"
+          />
+          {photos.length > 1 && (
+            <>
+              <button
+                type="button"
+                aria-label="Previous photo"
+                onClick={() => stepGallery(-1)}
+                className="absolute left-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white backdrop-blur-md"
+              >
+                <IconChevron className="h-8 w-8" />
+              </button>
+              <button
+                type="button"
+                aria-label="Next photo"
+                onClick={() => stepGallery(1)}
+                className="absolute right-3 top-1/2 flex h-12 w-12 -translate-y-1/2 rotate-180 items-center justify-center rounded-full bg-white/14 text-white backdrop-blur-md"
+              >
+                <IconChevron className="h-8 w-8" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </section>
   )
 }
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-xl bg-white/80 px-3 py-3 ring-1 ring-[#e3e8dc]">
-      <p className="text-[11px] font-bold uppercase tracking-wide text-[#879080]">{label}</p>
-      <p className="mt-1 break-words text-[14px] font-semibold leading-5 text-[#161a16]">{value}</p>
+    <div className="min-w-0 rounded-[10px] border border-[#e5e5ea] bg-[#fafafa] px-3 py-3">
+      <p className="text-[11px] font-extrabold uppercase tracking-[0.08em]" style={{ color: BRAND }}>{label}</p>
+      <p className="mt-1 break-words text-[14px] font-bold leading-5 text-[#0a0a0b]">{value}</p>
     </div>
   )
 }
