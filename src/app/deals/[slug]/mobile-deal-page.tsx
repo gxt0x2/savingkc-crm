@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type UIEvent as ReactUIEvent } from 'react'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
@@ -68,6 +69,7 @@ const SHEET_SCROLL_LIFT = 50
 const SHEET_MID = 56
 const SHEET_EXPANDED = 76
 const SHEET_SNAPS = [SHEET_COLLAPSED, SHEET_MID, SHEET_EXPANDED]
+const INITIAL_PHOTO_RENDER_COUNT = 2
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -179,12 +181,33 @@ export default function MobileDealPage({
   const hasTerms = dealPage.contract_close_date || dealPage.earnest_money != null || dealPage.inspection_period_days != null || dealPage.financing_terms
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
   const [sheetHeight, setSheetHeight] = useState(SHEET_COLLAPSED)
+  const [renderedPhotoCount, setRenderedPhotoCount] = useState(() => Math.min(INITIAL_PHOTO_RENDER_COUNT, photos.length))
+  const [priorityPhotoLoadCount, setPriorityPhotoLoadCount] = useState(0)
   const sheetRef = useRef<HTMLDivElement | null>(null)
   const currentSheetHeightRef = useRef(SHEET_COLLAPSED)
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const dragFrameRef = useRef<number | null>(null)
   const pendingSheetHeightRef = useRef<number | null>(null)
+  const loadedPriorityPhotoIndexesRef = useRef<Set<number>>(new Set())
   const overviewText = displayDescription(dealPage.description)
+
+  useEffect(() => {
+    if (photos.length <= INITIAL_PHOTO_RENDER_COUNT || renderedPhotoCount >= photos.length) return
+
+    const priorityTarget = Math.min(INITIAL_PHOTO_RENDER_COUNT, photos.length)
+    const priorityPhotosLoaded = priorityPhotoLoadCount >= priorityTarget
+    const timeoutId = globalThis.setTimeout(
+      () => setRenderedPhotoCount(photos.length),
+      priorityPhotosLoaded ? 300 : 2500
+    )
+    return () => globalThis.clearTimeout(timeoutId)
+  }, [photos.length, priorityPhotoLoadCount, renderedPhotoCount])
+
+  const markPriorityPhotoLoaded = useCallback((index: number) => {
+    if (index >= INITIAL_PHOTO_RENDER_COUNT || loadedPriorityPhotoIndexesRef.current.has(index)) return
+    loadedPriorityPhotoIndexesRef.current.add(index)
+    setPriorityPhotoLoadCount(loadedPriorityPhotoIndexesRef.current.size)
+  }, [])
 
   const applySheetHeight = useCallback((nextHeight: number, commitState = true) => {
     const height = clamp(nextHeight, SHEET_COLLAPSED, SHEET_EXPANDED)
@@ -298,23 +321,39 @@ export default function MobileDealPage({
         aria-label="Property photos"
       >
         {photos.length > 0 ? (
-          photos.map((src, index) => (
-            <button
-              key={`${src}-${index}`}
-              type="button"
-              onClick={() => setGalleryIndex(index)}
-              aria-label={`Open photo ${index + 1} of ${photos.length}`}
-              className={`relative block w-full border-b border-white bg-black text-left ${index === 0 ? 'h-[38svh]' : 'h-[30svh]'}`}
-            >
-              <img
-                src={src}
-                alt={`${title} photo ${index + 1}`}
-                className="h-full w-full object-cover"
-                loading={index === 0 ? 'eager' : 'lazy'}
-              />
-              {index === 0 && <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/10" />}
-            </button>
-          ))
+          photos.map((src, index) => {
+            const isPriorityPhoto = index < 2
+            const shouldRenderImage = index < renderedPhotoCount
+
+            return (
+              <button
+                key={`${src}-${index}`}
+                type="button"
+                onClick={() => setGalleryIndex(index)}
+                aria-label={`Open photo ${index + 1} of ${photos.length}`}
+                className={`relative block w-full border-b border-white bg-black text-left ${index === 0 ? 'h-[38svh]' : 'h-[30svh]'}`}
+              >
+                {shouldRenderImage ? (
+                  <Image
+                    src={src}
+                    alt={`${title} photo ${index + 1}`}
+                    fill
+                    className="object-cover"
+                    sizes="100vw"
+                    quality={isPriorityPhoto ? 78 : 68}
+                  preload={isPriorityPhoto}
+                  loading={isPriorityPhoto ? undefined : 'lazy'}
+                  fetchPriority={isPriorityPhoto ? 'high' : 'low'}
+                  decoding="async"
+                  onLoad={() => markPriorityPhotoLoaded(index)}
+                />
+                ) : (
+                  <span className="absolute inset-0 bg-black" aria-hidden="true" />
+                )}
+                {index === 0 && <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/10" />}
+              </button>
+            )
+          })
         ) : (
           <div className="flex h-[42svh] items-end bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)] p-6 text-white">
             <div>
