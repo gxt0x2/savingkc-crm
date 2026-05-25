@@ -95,6 +95,7 @@ export async function POST(
         .from('buyers')
         .insert({
           name: data.buyer_name.trim(),
+          company: data.buyer_company?.trim() || null,
           phone: normalizedPhone,
           email: data.buyer_email.toLowerCase(),
         })
@@ -110,6 +111,15 @@ export async function POST(
       }
 
       buyerId = newBuyer.id
+    }
+
+    if (buyerId && data.buyer_company) {
+      db.from('buyers')
+        .update({ company: data.buyer_company.trim() })
+        .eq('id', buyerId)
+        .then(({ error: updateErr }) => {
+          if (updateErr) console.error('[deals/:slug/offer] Buyer company update error:', updateErr.message)
+        })
     }
 
     // Insert offer
@@ -167,7 +177,10 @@ export async function POST(
       })
 
     const notifTitle = `New Offer: ${fmtAmount}`
-    const notifBody = `${data.buyer_name} offered ${fmtAmount} on ${leadAddress}`
+    const buyerDisplay = data.buyer_company
+      ? `${data.buyer_name} (${data.buyer_company})`
+      : data.buyer_name
+    const notifBody = `${buyerDisplay} offered ${fmtAmount} on ${leadAddress}`
 
     // 1) Push notification to all agents
     sendPushToAgents({
@@ -189,6 +202,8 @@ export async function POST(
           deal_page_id: dealPage.id,
           lead_id: dealPage.lead_id,
           buyer_name: data.buyer_name,
+          buyer_company: data.buyer_company || null,
+          buyer_email: data.buyer_email,
           offer_amount: data.offer_amount,
           financing_type: data.financing_type,
         },
@@ -203,7 +218,7 @@ export async function POST(
     safeSendSMS({
       to: NOTIFY_PHONE,
       from: smsFrom,
-      body: `🏠 NEW OFFER\n${fmtAmount} from ${data.buyer_name}\n${leadAddress}\nFinancing: ${data.financing_type || 'cash'}\nEMD: $${(data.earnest_money || 0).toLocaleString()}\n\nView: https://crm.savingkc.com/dispo/offers`,
+      body: `🏠 NEW OFFER\n${fmtAmount} from ${buyerDisplay}\n${data.buyer_email}\n${leadAddress}\nFinancing: ${data.financing_type || 'cash'}\nEMD: $${(data.earnest_money || 0).toLocaleString()}\n\nView: https://crm.savingkc.com/dispo/offers`,
     }).catch(() => {})
 
     return NextResponse.json(

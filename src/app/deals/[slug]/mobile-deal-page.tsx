@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type UIEvent as ReactUIEvent } from 'react'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
 
@@ -61,11 +61,12 @@ type MobileDealPageProps = {
   arv: number | null
 }
 
-const BRAND = '#da2524'
-const ORANGE = '#f97316'
-const SHEET_COLLAPSED = 42
-const SHEET_MID = 60
-const SHEET_EXPANDED = 84
+const ACCENT_RED = '#ef4444'
+const SALE_BLUE = '#2563eb'
+const SHEET_COLLAPSED = 38
+const SHEET_SCROLL_LIFT = 50
+const SHEET_MID = 56
+const SHEET_EXPANDED = 76
 const SHEET_SNAPS = [SHEET_COLLAPSED, SHEET_MID, SHEET_EXPANDED]
 
 function clamp(value: number, min: number, max: number): number {
@@ -170,14 +171,19 @@ export default function MobileDealPage({
   const hasTerms = dealPage.contract_close_date || dealPage.earnest_money != null || dealPage.inspection_period_days != null || dealPage.financing_terms
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
   const [sheetHeight, setSheetHeight] = useState(SHEET_COLLAPSED)
+  const sheetRef = useRef<HTMLDivElement | null>(null)
   const currentSheetHeightRef = useRef(SHEET_COLLAPSED)
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
+  const dragFrameRef = useRef<number | null>(null)
+  const pendingSheetHeightRef = useRef<number | null>(null)
   const overviewText = displayDescription(dealPage.description)
 
-  const setClampedSheetHeight = useCallback((nextHeight: number) => {
+  const applySheetHeight = useCallback((nextHeight: number, commitState = true) => {
     const height = clamp(nextHeight, SHEET_COLLAPSED, SHEET_EXPANDED)
     currentSheetHeightRef.current = height
-    setSheetHeight(height)
+    if (sheetRef.current) sheetRef.current.style.height = `${height}svh`
+    if (commitState) setSheetHeight(height)
+    return height
   }, [])
 
   const beginSheetDrag = useCallback((clientY: number) => {
@@ -190,18 +196,37 @@ export default function MobileDealPage({
   const updateSheetDrag = useCallback((clientY: number) => {
     if (!dragRef.current) return
     const deltaVh = ((dragRef.current.startY - clientY) / window.innerHeight) * 100
-    setClampedSheetHeight(dragRef.current.startHeight + deltaVh)
-  }, [setClampedSheetHeight])
+    const nextHeight = dragRef.current.startHeight + deltaVh
+    pendingSheetHeightRef.current = nextHeight
+    if (dragFrameRef.current) cancelAnimationFrame(dragFrameRef.current)
+    dragFrameRef.current = requestAnimationFrame(() => {
+      applySheetHeight(nextHeight, false)
+      pendingSheetHeightRef.current = null
+    })
+  }, [applySheetHeight])
 
   const finishSheetDrag = useCallback(() => {
     if (!dragRef.current) return
+    if (dragFrameRef.current) {
+      cancelAnimationFrame(dragFrameRef.current)
+      dragFrameRef.current = null
+    }
+    if (pendingSheetHeightRef.current != null) {
+      applySheetHeight(pendingSheetHeightRef.current, false)
+      pendingSheetHeightRef.current = null
+    }
     const current = currentSheetHeightRef.current
     const snap = SHEET_SNAPS.reduce((closest, point) => (
       Math.abs(point - current) < Math.abs(closest - current) ? point : closest
     ), SHEET_COLLAPSED)
     dragRef.current = null
-    setClampedSheetHeight(snap)
-  }, [setClampedSheetHeight])
+    applySheetHeight(snap, true)
+  }, [applySheetHeight])
+
+  const handleSheetScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
+    if (dragRef.current || currentSheetHeightRef.current !== SHEET_COLLAPSED) return
+    if (event.currentTarget.scrollTop > 18) applySheetHeight(SHEET_SCROLL_LIFT, true)
+  }, [applySheetHeight])
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
@@ -214,14 +239,25 @@ export default function MobileDealPage({
       event.preventDefault()
       updateSheetDrag(event.touches[0].clientY)
     }
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!dragRef.current) return
+      event.preventDefault()
+      updateSheetDrag(event.clientY)
+    }
     window.addEventListener('mousemove', handleMouseMove)
     window.addEventListener('mouseup', finishSheetDrag)
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', finishSheetDrag)
+    window.addEventListener('pointercancel', finishSheetDrag)
     window.addEventListener('touchmove', handleTouchMove, { passive: false })
     window.addEventListener('touchend', finishSheetDrag)
     window.addEventListener('touchcancel', finishSheetDrag)
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', finishSheetDrag)
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', finishSheetDrag)
+      window.removeEventListener('pointercancel', finishSheetDrag)
       window.removeEventListener('touchmove', handleTouchMove)
       window.removeEventListener('touchend', finishSheetDrag)
       window.removeEventListener('touchcancel', finishSheetDrag)
@@ -248,7 +284,7 @@ export default function MobileDealPage({
   return (
     <section className="fixed inset-0 z-40 block overflow-hidden bg-black text-[#0a0a0b] md:hidden">
       <div
-        className="absolute inset-0 overflow-y-auto overscroll-contain bg-black pb-[48svh]"
+        className="absolute inset-0 overflow-y-auto overscroll-contain bg-black pb-[42svh]"
         data-track-scroll-container
         data-track-section="mobile_photos"
         aria-label="Property photos"
@@ -260,7 +296,7 @@ export default function MobileDealPage({
               type="button"
               onClick={() => setGalleryIndex(index)}
               aria-label={`Open photo ${index + 1} of ${photos.length}`}
-              className={`relative block w-full border-b border-white bg-black text-left ${index === 0 ? 'h-[46svh]' : 'h-[34svh]'}`}
+              className={`relative block w-full border-b border-white bg-black text-left ${index === 0 ? 'h-[38svh]' : 'h-[30svh]'}`}
             >
               <img
                 src={src}
@@ -272,84 +308,88 @@ export default function MobileDealPage({
             </button>
           ))
         ) : (
-          <div className="flex h-[52svh] items-end bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)] p-6 text-white">
+          <div className="flex h-[42svh] items-end bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)] p-6 text-white">
             <div>
-              <p className="mb-2 inline-flex rounded-full bg-[#f97316] px-3 py-1.5 text-[13px] font-bold tracking-wide">FOR SALE</p>
+              <p className="mb-2 inline-flex rounded-[14px] bg-[#2563eb] px-3 py-1.5 text-[13px] font-bold tracking-wide">FOR SALE</p>
               <h1 className="max-w-[18rem] text-[30px] font-bold leading-tight">{title}</h1>
             </div>
           </div>
         )}
-        <div className="h-[40svh]" aria-hidden="true" />
+        <div className="h-[34svh]" aria-hidden="true" />
       </div>
 
-      <div className="pointer-events-none fixed inset-x-0 top-0 z-20 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top)+16px)]">
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-20 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top)+14px)]">
         <span
-          className="pointer-events-auto inline-flex h-12 items-center rounded-full px-4 text-[13px] font-extrabold uppercase tracking-[0.12em] text-white shadow-[0_8px_22px_rgba(249,115,22,0.36)]"
-          style={{ backgroundColor: ORANGE }}
+          className="pointer-events-auto inline-flex h-10 items-center rounded-[15px] px-3.5 text-[12px] font-extrabold uppercase tracking-[0.12em] text-white shadow-[0_8px_18px_rgba(37,99,235,0.28)]"
+          style={{ backgroundColor: SALE_BLUE }}
         >
           For Sale
         </span>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             aria-label="Save deal"
-            className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-md transition-transform active:scale-95"
+            className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-md transition-transform active:scale-95"
           >
-            <IconHeart className="h-7 w-7" />
+            <IconHeart className="h-6 w-6" />
           </button>
           <ShareButton
             slug={slug}
             ariaLabel="Share deal"
-            className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-md transition-transform active:scale-95"
+            className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-md transition-transform active:scale-95"
             toastClassName="fixed bottom-[calc(env(safe-area-inset-bottom)+84px)] left-1/2 z-[90] flex -translate-x-1/2 items-center gap-2 rounded-xl bg-[#0f0f12] px-5 py-3 text-[13px] font-medium text-white shadow-lg"
           >
-            <IconShare className="h-6 w-6" />
+            <IconShare className="h-5 w-5" />
           </ShareButton>
         </div>
       </div>
 
       <div
-        className="fixed inset-x-0 bottom-0 z-30 overflow-y-auto overscroll-contain rounded-t-[24px] border-t border-[#e5e5ea] bg-white px-5 pt-2 shadow-[0_-18px_44px_rgba(10,10,11,0.22)] transition-[height] duration-150"
+        ref={sheetRef}
+        className="fixed inset-x-0 bottom-0 z-30 overflow-y-auto overscroll-contain rounded-t-[30px] border-t border-[#e5e5ea] bg-white px-5 shadow-[0_-16px_38px_rgba(10,10,11,0.18)] transition-[height] duration-100"
         style={{
           height: `${sheetHeight}svh`,
           colorScheme: 'light',
           WebkitOverflowScrolling: 'touch',
         }}
+        onScroll={handleSheetScroll}
         data-track-scroll-container
         data-track-section="mobile_deal_sheet"
       >
-        <button
-          type="button"
-          aria-label="Resize deal details"
-          onPointerDown={handleSheetPointerStart}
-          onPointerMove={handleSheetPointerMove}
-          onPointerUp={finishSheetDrag}
-          onPointerCancel={finishSheetDrag}
-          onMouseDown={(event) => beginSheetDrag(event.clientY)}
-          onTouchStart={(event) => {
-            if (event.touches.length > 0) beginSheetDrag(event.touches[0].clientY)
-          }}
-          className="mx-auto mb-4 flex h-7 w-28 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
-        >
-          <span className="h-1.5 w-16 rounded-full bg-[#d1d1d6]" />
-        </button>
+        <div className="sticky top-0 z-20 -mx-5 bg-white/96 px-5 pb-3 pt-2 backdrop-blur">
+          <button
+            type="button"
+            aria-label="Resize deal details"
+            onPointerDown={handleSheetPointerStart}
+            onPointerMove={handleSheetPointerMove}
+            onPointerUp={finishSheetDrag}
+            onPointerCancel={finishSheetDrag}
+            onMouseDown={(event) => beginSheetDrag(event.clientY)}
+            onTouchStart={(event) => {
+              if (event.touches.length > 0) beginSheetDrag(event.touches[0].clientY)
+            }}
+            className="mx-auto flex h-7 w-28 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+          >
+            <span className="h-1.5 w-16 rounded-full bg-[#d1d1d6]" />
+          </button>
+        </div>
 
         <div className="space-y-5 pb-[calc(env(safe-area-inset-bottom)+92px)]">
           <section className="space-y-4">
             <div>
               <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
                 {dealPage.show_asking_price !== false && askingPrice != null ? (
-                  <h1 className="text-[38px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">{fmt(askingPrice)}</h1>
+                  <h1 className="text-[34px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">{fmt(askingPrice)}</h1>
                 ) : (
                   <h1 className="text-[32px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">Price TBD</h1>
                 )}
                 {dealPage.show_arv !== false && arv != null && (
-                  <span className="pb-1 text-[19px] font-extrabold leading-none" style={{ color: BRAND }}>
+                  <span className="pb-1 text-[17px] font-extrabold leading-none" style={{ color: ACCENT_RED }}>
                     (ARV: {fmt(arv)})
                   </span>
                 )}
               </div>
-              <div className="mt-4 flex items-start gap-2 text-[18px] font-bold leading-snug text-[#0a0a0b]">
+              <div className="mt-3.5 flex items-start gap-2 text-[17px] font-bold leading-snug text-[#0a0a0b]">
                 <IconPin className="mt-0.5 h-5 w-5 shrink-0 text-[#36363d]" />
                 <p>{location}</p>
               </div>
@@ -372,7 +412,7 @@ export default function MobileDealPage({
           </section>
 
           <section className="border-t border-[#e5e5ea] pt-5" data-track-section="mobile_overview">
-            <h2 className="mb-3 text-[22px] font-extrabold text-[#0a0a0b]">Overview</h2>
+            <h2 className="mb-3 text-[21px] font-extrabold text-[#0a0a0b]">Overview</h2>
             <p className="whitespace-pre-wrap text-[16px] leading-7 text-[#36363d]">
               {overviewText}
             </p>
@@ -419,7 +459,7 @@ export default function MobileDealPage({
                   className="flex items-center justify-between rounded-[10px] border border-[#e5e5ea] bg-white px-4 py-3 text-[14px] font-semibold text-[#0a0a0b]"
                 >
                   <span className="truncate">{report.name}</span>
-                  <span style={{ color: BRAND }}>PDF</span>
+                  <span style={{ color: ACCENT_RED }}>PDF</span>
                 </a>
               ))}
             </section>
@@ -436,10 +476,11 @@ export default function MobileDealPage({
               slug={slug}
               askingPrice={askingPrice}
               arv={arv}
+              earnestMoney={dealPage.earnest_money}
               photo={photos[0]}
               propertyAddress={lead?.property_address || title}
               location={lead ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ') : ''}
-              triggerClassName="w-full rounded-[12px] bg-[#da2524] px-4 py-4 text-[17px] font-extrabold text-white shadow-[0_8px_22px_rgba(218,37,36,0.35)] transition-colors hover:bg-[#b81e1d]"
+              triggerClassName="w-full rounded-[18px] bg-[#ef4444] px-4 py-3.5 text-[16px] font-extrabold text-white shadow-[0_8px_22px_rgba(239,68,68,0.26)] transition-colors hover:bg-[#dc2626]"
               triggerLabel="Make offer"
             />
           </div>
@@ -492,8 +533,8 @@ export default function MobileDealPage({
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-[10px] border border-[#e5e5ea] bg-[#fafafa] px-3 py-3">
-      <p className="text-[11px] font-extrabold uppercase tracking-[0.08em]" style={{ color: BRAND }}>{label}</p>
+    <div className="min-w-0 rounded-[16px] border border-[#e5e5ea] bg-[#fafafa] px-3 py-3">
+      <p className="text-[11px] font-extrabold uppercase tracking-[0.08em]" style={{ color: ACCENT_RED }}>{label}</p>
       <p className="mt-1 break-words text-[14px] font-bold leading-5 text-[#0a0a0b]">{value}</p>
     </div>
   )
