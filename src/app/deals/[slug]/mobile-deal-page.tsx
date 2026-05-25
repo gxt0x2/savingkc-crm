@@ -83,6 +83,14 @@ function fmtNum(n: number | null | undefined): string {
   return n.toLocaleString('en-US')
 }
 
+function fmtDate(dateValue: string): string {
+  const [year, month, day] = dateValue.split('T')[0].split('-').map(Number)
+  if (year && month && day) {
+    return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+  return new Date(dateValue).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 function bathText(full: number | null | undefined, half: number | null | undefined): string | null {
   if (full == null && !half) return null
   const total = (full ?? 0) + (half ? 0.5 : 0)
@@ -425,7 +433,7 @@ export default function MobileDealPage({
                 {dealPage.contract_close_date && (
                   <Info
                     label="Close Date"
-                    value={new Date(dealPage.contract_close_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    value={fmtDate(dealPage.contract_close_date)}
                   />
                 )}
                 {dealPage.earnest_money != null && <Info label="EMD" value={fmt(dealPage.earnest_money)} />}

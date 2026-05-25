@@ -319,6 +319,7 @@ export default function OfferForm({
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#bbb] text-[14px]">$</span>
                     <input
                       type="number"
+                      name="offer_amount"
                       required
                       min={1}
                       value={form.offer_amount}
@@ -336,6 +337,7 @@ export default function OfferForm({
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#bbb] text-[14px]">$</span>
                     <input
                       type="number"
+                      name="earnest_money"
                       required
                       min={lockedEmdAmount}
                       value={form.earnest_money}
@@ -353,6 +355,7 @@ export default function OfferForm({
                   <label className="block text-[13px] font-medium text-[#666] mb-1.5">Your Name *</label>
                   <input
                     type="text"
+                    name="buyer_name"
                     required
                     value={form.buyer_name}
                     onChange={e => set('buyer_name', e.target.value)}
@@ -365,6 +368,7 @@ export default function OfferForm({
                   <label className="block text-[13px] font-medium text-[#666] mb-1.5">Buying Company *</label>
                   <input
                     type="text"
+                    name="buyer_company"
                     required
                     value={form.buyer_company}
                     onChange={e => set('buyer_company', e.target.value)}
@@ -379,6 +383,7 @@ export default function OfferForm({
                     <label className="block text-[13px] font-medium text-[#666] mb-1.5">Phone *</label>
                     <input
                       type="tel"
+                      name="buyer_phone"
                       required
                       value={form.buyer_phone}
                       onChange={e => set('buyer_phone', e.target.value)}
@@ -390,6 +395,7 @@ export default function OfferForm({
                     <label className="block text-[13px] font-medium text-[#666] mb-1.5">Email *</label>
                     <input
                       type="email"
+                      name="buyer_email"
                       required
                       value={form.buyer_email}
                       onChange={e => set('buyer_email', e.target.value)}
@@ -403,6 +409,7 @@ export default function OfferForm({
                 <div>
                   <label className="block text-[13px] font-medium text-[#666] mb-1.5">Add comment</label>
                   <textarea
+                    name="notes"
                     rows={3}
                     value={form.notes}
                     onChange={e => set('notes', e.target.value)}

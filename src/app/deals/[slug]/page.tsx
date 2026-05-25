@@ -21,6 +21,14 @@ function fmtNum(n: number | null | undefined): string {
   return n.toLocaleString('en-US')
 }
 
+function fmtDate(dateValue: string): string {
+  const [year, month, day] = dateValue.split('T')[0].split('-').map(Number)
+  if (year && month && day) {
+    return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+  return new Date(dateValue).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 /* ── Outline icon components (thin, strokeWidth 1.5, matching InvestorLift) ── */
 
 function IconBed({ className = '' }: { className?: string }) {
@@ -271,7 +279,7 @@ export default async function DealPage({
                     <div>
                       <p className="text-[13px] text-[#888] leading-none">Close Date</p>
                       <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">
-                        {new Date(dealPage.contract_close_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {fmtDate(dealPage.contract_close_date)}
                       </p>
                     </div>
                   )}
