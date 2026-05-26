@@ -22,6 +22,14 @@ function fmt(n: number | null | undefined): string {
   return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
+function CloseIcon({ className = 'h-5 w-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  )
+}
+
 const input = 'w-full border border-[#e0e0e0] rounded-2xl px-3.5 py-2.5 text-[14px] text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 transition-colors placeholder:text-[#ccc]'
 const defaultTriggerClassName = 'w-full bg-[#ef4444] text-white hover:bg-[#dc2626] rounded-2xl px-4 py-3 text-[14px] font-semibold transition-colors'
 const EMD_DEFAULT_AMOUNT = 5000
@@ -212,6 +220,14 @@ export default function OfferForm({
   const modal = (
     <>
       <div className="fixed inset-0 z-[90] flex items-start justify-center bg-black/45 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+8px)] backdrop-blur-sm sm:items-center sm:p-4" onClick={closeModal}>
+        <button
+          type="button"
+          onClick={closeModal}
+          className="fixed right-4 top-[calc(env(safe-area-inset-top)+14px)] z-[120] flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white/95 text-[#1a1a1a] shadow-[0_8px_24px_rgba(0,0,0,0.22)] backdrop-blur transition-transform active:scale-95 sm:hidden"
+          aria-label="Close offer form"
+        >
+          <CloseIcon className="h-6 w-6" />
+        </button>
         <div
           data-testid="offer-modal-scroll"
           data-track-scroll-container
@@ -270,9 +286,7 @@ export default function OfferForm({
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[15px] font-semibold text-[#1a1a1a] truncate">{propertyAddress || 'Property'}</p>
                     <button type="button" onClick={closeModal} className="p-1 hover:bg-[#f5f5f5] rounded-xl text-[#999] transition-colors flex-shrink-0">
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                      <CloseIcon />
                     </button>
                   </div>
                   {location && <p className="text-[13px] text-[#888] mt-0.5">{location}</p>}
