@@ -10,6 +10,7 @@ import { sendPpcTrackingEvent } from '@/lib/ppc/tracking-client'
 export type ConversionEvent =
   | 'lead_quiz_started'
   | 'lead_quiz_qualified'
+  | 'lead_stage3_completed'
   | 'lead_submitted'
   | 'appointment_booked'
 
@@ -20,6 +21,7 @@ export type PpcMicroEvent =
   | 'situation_selected'
   | 'timeline_selected'
   | 'condition_selected'
+  | 'auction_status_selected'
   | 'address_selected'
   | 'form_step_completed'
   | 'form_error'
@@ -37,6 +39,7 @@ type OptimizationRole = 'primary' | 'secondary' | 'diagnostic'
 export const CONVERSION_VALUES: Record<ConversionEvent, number> = {
   lead_quiz_started: 1,
   lead_quiz_qualified: 5,
+  lead_stage3_completed: 10,
   lead_submitted: 25,
   appointment_booked: 100,
 }
@@ -44,6 +47,7 @@ export const CONVERSION_VALUES: Record<ConversionEvent, number> = {
 export const CONVERSION_OPTIMIZATION_ROLES: Record<ConversionEvent, OptimizationRole> = {
   lead_quiz_started: 'diagnostic',
   lead_quiz_qualified: 'secondary',
+  lead_stage3_completed: 'secondary',
   lead_submitted: 'primary',
   appointment_booked: 'primary',
 }
