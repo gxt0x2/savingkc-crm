@@ -4,7 +4,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
-import { Icon } from '@/components/ui/icon'
 import type { AppMode } from '@/hooks/use-app-mode'
 
 interface ModeSwitcherProps {
@@ -18,21 +17,21 @@ const PORTALS: Array<{
   shortLabel?: string
   caption: string
   description: string
-  icon: string
+  icon: 'home' | 'deal' | 'tc'
 }> = [
   {
     mode: 'acquisitions',
     label: 'Acquisitions',
     caption: 'Seller pipeline',
     description: 'Leads, ARI, dialer, tasks, and KPIs.',
-    icon: 'home_work',
+    icon: 'home',
   },
   {
     mode: 'dispositions',
     label: 'Dispositions',
     caption: 'Buyer pipeline',
     description: 'Deal pages, buyers, broadcasts, offers, and contacts.',
-    icon: 'handshake',
+    icon: 'deal',
   },
   {
     mode: 'tc',
@@ -40,7 +39,7 @@ const PORTALS: Array<{
     shortLabel: 'TC Portal',
     caption: 'Reports to Dispositions',
     description: 'Closing files, drafts, calls, exceptions, and title work.',
-    icon: 'assignment_turned_in',
+    icon: 'tc',
   },
 ]
 
@@ -48,6 +47,59 @@ type MenuPosition = {
   left: number
   top: number
   width: number
+}
+
+function PortalIcon({ icon }: { icon: 'home' | 'deal' | 'tc' }) {
+  if (icon === 'home') {
+    return (
+      <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none">
+        <path d="M4 10.75 12 4l8 6.75" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6.5 9.75V20h11V9.75" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9.75 20v-5.5h4.5V20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+
+  if (icon === 'deal') {
+    return (
+      <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none">
+        <path d="M7.5 12.5 10 15a2.1 2.1 0 0 0 3 0l4.5-4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="m8 9 1.75-1.75a3 3 0 0 1 4.25 0L16 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3.5 12.5 7 16a3 3 0 0 0 4.25 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M20.5 12.5 17 16a3 3 0 0 1-4.25 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none">
+      <rect x="5" y="4" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="2" />
+      <path d="m9 12 2 2 4-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 7.5h7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4 text-[#E32E2E]" aria-hidden="true" fill="none">
+      <path d="m4.5 10.5 3.25 3.25L15.5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5 shrink-0 text-[var(--ck-text-muted)]" aria-hidden="true" fill="none">
+      <path
+        d={open ? 'm5 12 5-5 5 5' : 'm5 8 5 5 5-5'}
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
 }
 
 export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
@@ -155,13 +207,13 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
             'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
             portal.mode === mode ? 'border-[#E32E2E]/30 bg-[#E32E2E]/15 text-[#E32E2E]' : 'border-[var(--ck-border)] text-[var(--ck-text-muted)]'
           )}>
-            <Icon name={portal.icon} size="text-lg" />
+            <PortalIcon icon={portal.icon} />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-black text-[var(--ck-text)]">{portal.label}</span>
             <span className="mt-0.5 block text-xs leading-snug text-[var(--ck-text-muted)]">{portal.description}</span>
           </span>
-          {portal.mode === mode && <Icon name="check" size="text-base" className="text-[#E32E2E]" />}
+          {portal.mode === mode && <CheckIcon />}
         </button>
       ))}
     </div>,
@@ -188,7 +240,7 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
           <span className="block truncate text-sm font-black leading-none">{activeLabel}</span>
           <span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">{active.caption}</span>
         </span>
-        <Icon name={open ? 'expand_less' : 'expand_more'} size="text-lg" className="shrink-0 text-[var(--ck-text-muted)]" />
+        <ChevronIcon open={open} />
       </button>
       {menu}
     </>
