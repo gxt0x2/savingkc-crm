@@ -1,10 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import { trackEvent } from './track-events'
 
 const input = 'w-full border border-[#e0e0e0] rounded-xl px-3.5 py-2.5 text-[14px] text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 transition-colors placeholder:text-[#ccc]'
 
-export default function InquiryModal({ propertyAddress }: { propertyAddress: string }) {
+interface InquiryModalProps {
+  propertyAddress: string
+  slug?: string
+}
+
+export default function InquiryModal({ propertyAddress, slug }: InquiryModalProps) {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     name: '',
@@ -15,8 +21,22 @@ export default function InquiryModal({ propertyAddress }: { propertyAddress: str
   const toEmail = 'ernest@savingkc.com'
   const subject = `Info: ${propertyAddress}`
 
+  function handleOpen() {
+    if (!open && slug) {
+      trackEvent(slug, 'inquiry_modal_open')
+    }
+    setOpen(true)
+  }
+
   function handleSend() {
     const body = form.message || `Hi, I'm interested in learning more about ${propertyAddress}.`
+    if (slug) {
+      trackEvent(slug, 'inquiry_submit', {
+        has_name: Boolean(form.name.trim()),
+        has_email: Boolean(form.email.trim()),
+        has_message: Boolean(form.message.trim()),
+      })
+    }
     const mailto = `mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(form.name ? `From: ${form.name}\n${form.email ? `Email: ${form.email}\n` : ''}\n${body}` : body)}`
     window.open(mailto, '_blank')
     setOpen(false)
@@ -25,7 +45,7 @@ export default function InquiryModal({ propertyAddress }: { propertyAddress: str
   if (!open) {
     return (
       <button
-        onClick={() => setOpen(true)}
+        onClick={handleOpen}
         className="w-full flex items-center justify-center gap-2 border border-[#ddd] text-[#444] hover:border-[#bbb] hover:bg-[#fafafa] rounded-xl px-4 py-2.5 text-[14px] font-medium transition-all"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -39,7 +59,7 @@ export default function InquiryModal({ propertyAddress }: { propertyAddress: str
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={handleOpen}
         className="w-full flex items-center justify-center gap-2 border border-[#ddd] text-[#444] hover:border-[#bbb] hover:bg-[#fafafa] rounded-xl px-4 py-2.5 text-[14px] font-medium transition-all"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

@@ -1,6 +1,11 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import {
+  getDealTrackingRequestContext,
+  isSchemaColumnError,
+  legacyHashedValue,
+} from '@/lib/deals/tracking-context'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const corsHeaders = {
@@ -11,6 +16,36 @@ const corsHeaders = {
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders })
+}
+
+type SupabaseWriteError = {
+  code?: string
+  message?: string
+}
+
+function cleanString(value: unknown, max = 500): string | null {
+  if (typeof value !== 'string') return null
+  const cleaned = value.trim()
+  if (!cleaned) return null
+  return cleaned.slice(0, max)
+}
+
+function cleanUuid(value: unknown): string | null {
+  const cleaned = cleanString(value, 80)
+  return cleaned && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cleaned)
+    ? cleaned
+    : null
+}
+
+async function upsertSessionWithFallback(
+  db: ReturnType<typeof supabaseAdmin>,
+  nextRow: Record<string, unknown>,
+  legacyRow: Record<string, unknown>,
+) {
+  const result = await db.from('deal_page_sessions').upsert(nextRow, { onConflict: 'session_id' })
+  if (!result.error) return result
+  if (!isSchemaColumnError(result.error as SupabaseWriteError)) return result
+  return db.from('deal_page_sessions').upsert(legacyRow, { onConflict: 'session_id' })
 }
 
 // POST /api/deals/:slug/session
@@ -39,37 +74,74 @@ export async function POST(
     }
 
     if (action === 'start') {
-      const ip =
-        req.headers.get('cf-connecting-ip') ||
-        req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-        null
-      const userAgent = req.headers.get('user-agent') || ''
+      const requestContext = getDealTrackingRequestContext(req)
       const country = req.headers.get('cf-ipcountry') || null
       const region = req.headers.get('cf-ipregion') || null
       const city = req.headers.get('cf-ipcity') || null
 
-      await db.from('deal_page_sessions').upsert({
+      const nextRow = {
         deal_page_id: dealPage.id,
         session_id,
-        visitor_id: body.visitor_id || null,
-        ip_address: ip,
-        user_agent: userAgent.slice(0, 500),
-        referrer: body.referrer || null,
-        ref_code: body.ref_code || null,
-        utm_source: body.utm_source || null,
-        utm_medium: body.utm_medium || null,
-        utm_campaign: body.utm_campaign || null,
+        visitor_id: cleanString(body.visitor_id, 80),
+        buyer_id: cleanUuid(body.buyer_id),
+        broadcast_id: cleanUuid(body.broadcast_id),
+        broadcast_recipient_id: cleanUuid(body.broadcast_recipient_id),
+        share_id: cleanString(body.share_id, 120),
+        ip_hash: requestContext.ipHash,
+        user_agent_hash: requestContext.userAgentHash,
+        ip_address: null,
+        user_agent: null,
+        referrer: cleanString(body.referrer, 1000),
+        ref_code: cleanString(body.ref_code, 120),
+        page_path: cleanString(body.page_path, 500),
+        page_location: cleanString(body.page_location, 1000),
+        utm_source: cleanString(body.utm_source, 200),
+        utm_medium: cleanString(body.utm_medium, 200),
+        utm_campaign: cleanString(body.utm_campaign, 200),
+        utm_term: cleanString(body.utm_term, 200),
+        utm_content: cleanString(body.utm_content, 200),
         country,
         region,
         city,
-        device_type: body.device_type || null,
-        browser: body.browser || null,
-        os: body.os || null,
+        device_type: cleanString(body.device_type, 50),
+        browser: cleanString(body.browser, 50),
+        os: cleanString(body.os, 50),
         screen_width: body.screen_width || null,
         screen_height: body.screen_height || null,
         viewport_width: body.viewport_width || null,
         viewport_height: body.viewport_height || null,
-      }, { onConflict: 'session_id' })
+        request_context: requestContext.payload,
+        is_internal: requestContext.isInternal,
+      }
+
+      const legacyRow = {
+        deal_page_id: dealPage.id,
+        session_id,
+        visitor_id: cleanString(body.visitor_id, 80),
+        ip_address: legacyHashedValue('ip', requestContext.ipHash),
+        user_agent: legacyHashedValue('ua', requestContext.userAgentHash),
+        referrer: cleanString(body.referrer, 1000),
+        ref_code: cleanString(body.ref_code, 120),
+        utm_source: cleanString(body.utm_source, 200),
+        utm_medium: cleanString(body.utm_medium, 200),
+        utm_campaign: cleanString(body.utm_campaign, 200),
+        country,
+        region,
+        city,
+        device_type: cleanString(body.device_type, 50),
+        browser: cleanString(body.browser, 50),
+        os: cleanString(body.os, 50),
+        screen_width: body.screen_width || null,
+        screen_height: body.screen_height || null,
+        viewport_width: body.viewport_width || null,
+        viewport_height: body.viewport_height || null,
+      }
+
+      const { error: upsertError } = await upsertSessionWithFallback(db, nextRow, legacyRow)
+      if (upsertError) {
+        console.error('[deals/:slug/session] Start upsert error:', upsertError)
+        return NextResponse.json({ error: 'Failed to record session' }, { status: 500, headers: corsHeaders })
+      }
 
       return NextResponse.json({ ok: true }, { headers: corsHeaders })
     }

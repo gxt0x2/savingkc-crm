@@ -1,8 +1,13 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
+import {
+  getDealTrackingRequestContext,
+  isSchemaColumnError,
+  legacyHashedValue,
+} from '@/lib/deals/tracking-context'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { createHash } from 'crypto'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,10 +31,42 @@ const VALID_EVENTS = [
   'map_view_open',
   'inquiry_modal_open',
   'inquiry_submit',
+  'offer_submit_error',
+  'deal_document_open',
   'click',
   'section_view',
   'conversion',
 ] as const
+
+type SupabaseWriteError = {
+  code?: string
+  message?: string
+}
+
+function cleanString(value: unknown, max = 500): string | null {
+  if (typeof value !== 'string') return null
+  const cleaned = value.trim()
+  if (!cleaned) return null
+  return cleaned.slice(0, max)
+}
+
+function cleanUuid(value: unknown): string | null {
+  const cleaned = cleanString(value, 80)
+  return cleaned && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cleaned)
+    ? cleaned
+    : null
+}
+
+async function insertEventWithFallback(
+  db: ReturnType<typeof supabaseAdmin>,
+  nextRow: Record<string, unknown>,
+  legacyRow: Record<string, unknown>,
+) {
+  const result = await db.from('deal_page_events').insert(nextRow)
+  if (!result.error) return result
+  if (!isSchemaColumnError(result.error as SupabaseWriteError)) return result
+  return db.from('deal_page_events').insert(legacyRow)
+}
 
 // POST /api/deals/:slug/events
 // Body: { event_type, ref_code?, metadata? }
@@ -41,7 +78,19 @@ export async function POST(
   try {
     const { slug } = await params
     const body = await req.json()
-    const { event_type, ref_code, metadata, session_id, x_pct, y_pct, scroll_pct, section, element_tag, element_text } = body
+    const {
+      event_type,
+      ref_code,
+      metadata,
+      session_id,
+      visitor_id,
+      x_pct,
+      y_pct,
+      scroll_pct,
+      section,
+      element_tag,
+      element_text,
+    } = body
 
     if (!event_type || !VALID_EVENTS.includes(event_type)) {
       return NextResponse.json(
@@ -63,32 +112,68 @@ export async function POST(
       return NextResponse.json({ error: 'Deal not found' }, { status: 404, headers: corsHeaders })
     }
 
-    // Visitor fingerprint — hash of IP + UA (reasonably stable, no cookies)
-    const ip =
-      req.headers.get('cf-connecting-ip') ||
-      req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-      '0.0.0.0'
-    const userAgent = req.headers.get('user-agent') || ''
+    const requestContext = getDealTrackingRequestContext(req)
     const referrer = req.headers.get('referer') || null
-    const visitorId = createHash('sha256').update(`${ip}:${userAgent}`).digest('hex').slice(0, 32)
+    const visitorId = cleanString(visitor_id, 80) || requestContext.ipHash?.slice(0, 32) || null
+    const eventId = cleanString(body.event_id, 120) || randomUUID()
 
-    await db.from('deal_page_events').insert({
+    const nextRow = {
       deal_page_id: dealPage.id,
+      event_id: eventId,
       event_type,
       visitor_id: visitorId,
-      ip_address: ip,
-      user_agent: userAgent.slice(0, 500),
+      buyer_id: cleanUuid(body.buyer_id),
+      broadcast_id: cleanUuid(body.broadcast_id),
+      broadcast_recipient_id: cleanUuid(body.broadcast_recipient_id),
+      share_id: cleanString(body.share_id, 120),
+      ip_hash: requestContext.ipHash,
+      user_agent_hash: requestContext.userAgentHash,
+      ip_address: null,
+      user_agent: null,
       referrer,
-      ref_code: ref_code || null,
-      metadata: metadata || {},
-      session_id: session_id || null,
+      ref_code: cleanString(ref_code, 120),
+      page_path: cleanString(body.page_path, 500),
+      page_location: cleanString(body.page_location, 1000),
+      utm_source: cleanString(body.utm_source, 200),
+      utm_medium: cleanString(body.utm_medium, 200),
+      utm_campaign: cleanString(body.utm_campaign, 200),
+      utm_term: cleanString(body.utm_term, 200),
+      utm_content: cleanString(body.utm_content, 200),
+      metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {},
+      request_context: requestContext.payload,
+      is_internal: requestContext.isInternal,
+      session_id: cleanString(session_id, 120),
       x_pct: typeof x_pct === 'number' ? x_pct : null,
       y_pct: typeof y_pct === 'number' ? y_pct : null,
       scroll_pct: typeof scroll_pct === 'number' ? scroll_pct : null,
-      section: section || null,
-      element_tag: element_tag || null,
+      section: cleanString(section, 120),
+      element_tag: cleanString(element_tag, 80),
       element_text: element_text ? String(element_text).slice(0, 100) : null,
-    })
+    }
+
+    const legacyRow = {
+      deal_page_id: dealPage.id,
+      event_type,
+      visitor_id: visitorId,
+      ip_address: legacyHashedValue('ip', requestContext.ipHash),
+      user_agent: legacyHashedValue('ua', requestContext.userAgentHash),
+      referrer,
+      ref_code: cleanString(ref_code, 120),
+      metadata: nextRow.metadata,
+      session_id: cleanString(session_id, 120),
+      x_pct: nextRow.x_pct,
+      y_pct: nextRow.y_pct,
+      scroll_pct: nextRow.scroll_pct,
+      section: nextRow.section,
+      element_tag: nextRow.element_tag,
+      element_text: nextRow.element_text,
+    }
+
+    const { error: insertError } = await insertEventWithFallback(db, nextRow, legacyRow)
+    if (insertError) {
+      console.error('[deals/:slug/events] Insert error:', insertError)
+      return NextResponse.json({ error: 'Failed to record event' }, { status: 500, headers: corsHeaders })
+    }
 
     return NextResponse.json({ ok: true }, { headers: corsHeaders })
   } catch (err) {

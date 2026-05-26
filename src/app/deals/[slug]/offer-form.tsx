@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { trackEvent } from './track-events'
+import { dispatchConversion } from './tracker'
 
 interface OfferFormProps {
   slug: string
@@ -43,6 +44,11 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
     e.preventDefault()
     setError(null)
     setSubmitting(true)
+    trackEvent(slug, 'offer_submit_started', {
+      has_offer_amount: Boolean(form.offer_amount),
+      has_earnest_money: Boolean(form.earnest_money),
+      financing: form.financing_type,
+    })
 
     try {
       const res = await fetch(`/api/deals/${slug}/offer`, {
@@ -59,18 +65,24 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
         }),
       })
 
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const data = await res.json()
         throw new Error(data.error || 'Failed to submit offer')
       }
 
-      trackEvent(slug, 'offer_submit', {
+      dispatchConversion('offer_submit', {
+        offer_id: data.offer_id,
         amount: Number(form.offer_amount),
         financing: form.financing_type,
       })
       setSubmitted(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit offer')
+      const message = err instanceof Error ? err.message : 'Failed to submit offer'
+      trackEvent(slug, 'offer_submit_error', {
+        error_type: message === 'Validation failed' ? 'validation' : 'submit_failed',
+        financing: form.financing_type,
+      })
+      setError(message)
     } finally {
       setSubmitting(false)
     }
