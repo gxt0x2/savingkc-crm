@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type UIEvent as ReactUIEvent } from 'react'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
+import { trackEvent } from './track-events'
 
 type Lead = {
   property_address: string | null
@@ -120,8 +121,8 @@ function displayDescription(description: string | null): string {
   return cleaned || 'No description provided.'
 }
 
-function IconHeart({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.9 0-3.535 1.08-4.312 2.633C11.223 4.83 9.588 3.75 7.688 3.75 5.099 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" /></svg>
+function IconHeart({ className = '', filled = false }: { className?: string; filled?: boolean }) {
+  return <svg className={className} fill={filled ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.9 0-3.535 1.08-4.312 2.633C11.223 4.83 9.588 3.75 7.688 3.75 5.099 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" /></svg>
 }
 
 function IconShare({ className = '' }: { className?: string }) {
@@ -185,6 +186,7 @@ export default function MobileDealPage({
   const hasTerms = dealPage.contract_close_date || dealPage.earnest_money != null || dealPage.inspection_period_days != null || dealPage.financing_terms
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
   const [sheetHeight, setSheetHeight] = useState(SHEET_COLLAPSED)
+  const [saved, setSaved] = useState(false)
   const [renderedPhotoCount, setRenderedPhotoCount] = useState(() => Math.min(INITIAL_PHOTO_RENDER_COUNT, photos.length))
   const [priorityPhotoLoadCount, setPriorityPhotoLoadCount] = useState(0)
   const sheetRef = useRef<HTMLDivElement | null>(null)
@@ -195,6 +197,7 @@ export default function MobileDealPage({
   const loadedPriorityPhotoIndexesRef = useRef<Set<number>>(new Set())
   const overviewText = displayDescription(dealPage.description)
   const primaryInspectionReport = inspectionReports[0] ?? null
+  const saveStorageKey = `skc_saved_deal_${slug}`
 
   useEffect(() => {
     if (photos.length <= INITIAL_PHOTO_RENDER_COUNT || renderedPhotoCount >= photos.length) return
@@ -208,11 +211,39 @@ export default function MobileDealPage({
     return () => globalThis.clearTimeout(timeoutId)
   }, [photos.length, priorityPhotoLoadCount, renderedPhotoCount])
 
+  useEffect(() => {
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+      try {
+        setSaved(localStorage.getItem(saveStorageKey) === 'true')
+      } catch {
+        setSaved(false)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [saveStorageKey])
+
   const markPriorityPhotoLoaded = useCallback((index: number) => {
     if (index >= INITIAL_PHOTO_RENDER_COUNT || loadedPriorityPhotoIndexesRef.current.has(index)) return
     loadedPriorityPhotoIndexesRef.current.add(index)
     setPriorityPhotoLoadCount(loadedPriorityPhotoIndexesRef.current.size)
   }, [])
+
+  const toggleSaved = useCallback(() => {
+    const next = !saved
+    setSaved(next)
+    try {
+      localStorage.setItem(saveStorageKey, String(next))
+    } catch {}
+    trackEvent(slug, 'save_toggle', {
+      saved: next,
+      action: next ? 'saved' : 'unsaved',
+      surface: 'mobile_deal_header',
+    })
+  }, [saveStorageKey, saved, slug])
 
   const applySheetHeight = useCallback((nextHeight: number, commitState = true) => {
     const height = clamp(nextHeight, SHEET_COLLAPSED, SHEET_EXPANDED)
@@ -380,10 +411,14 @@ export default function MobileDealPage({
         <div className="flex items-center gap-2.5">
           <button
             type="button"
-            aria-label="Save deal"
-            className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-md transition-transform active:scale-95"
+            aria-label={saved ? 'Unsave deal' : 'Save deal'}
+            aria-pressed={saved}
+            onClick={toggleSaved}
+            className={`pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full shadow-lg backdrop-blur-md transition-[transform,background-color,color] active:scale-95 ${
+              saved ? 'bg-[#fff1f2]/95 text-[#e11d48]' : 'bg-white/90 text-black'
+            }`}
           >
-            <IconHeart className="h-6 w-6" />
+            <IconHeart className="h-6 w-6" filled={saved} />
           </button>
           <ShareButton
             slug={slug}
