@@ -221,6 +221,62 @@
 .skc-sell .hero h1 .accent { color: var(--brand); }
 .skc-sell .hero .sub { font-size: 19px; color: var(--text-muted); line-height: 1.55; margin-bottom: 28px; max-width: 540px; }
 
+.skc-sell.tax-landing .hero::after {
+  background:
+    linear-gradient(90deg,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(255, 255, 255, 0.88) 42%,
+      rgba(255, 255, 255, 0.58) 68%,
+      rgba(255, 255, 255, 0.32) 100%),
+    linear-gradient(180deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.12) 52%,
+      #ffffff 100%);
+}
+.skc-sell.tax-landing .hero h1 {
+  max-width: 680px;
+  font-size: 58px;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  margin-bottom: 16px;
+}
+.skc-sell.tax-landing .tax-hero-summary {
+  max-width: 620px;
+  margin: 0 0 18px;
+  font-size: 20px;
+  line-height: 1.5;
+  color: #222329;
+}
+.skc-sell.tax-landing .fresh-start-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+  padding: 14px 18px;
+  border: 1px solid rgba(31, 160, 90, 0.42);
+  border-left: 6px solid var(--green);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(31, 160, 90, 0.16), rgba(245, 165, 36, 0.10));
+  box-shadow: 0 12px 30px rgba(31, 160, 90, 0.13);
+}
+.skc-sell.tax-landing .fresh-start-panel .material-symbols-outlined {
+  color: var(--green);
+  font-size: 30px;
+  font-variation-settings: 'FILL' 1, 'wght' 700;
+}
+.skc-sell.tax-landing .fresh-start-panel strong {
+  display: block;
+  color: #086b3d;
+  font-size: 17px;
+  line-height: 1.2;
+}
+.skc-sell.tax-landing .fresh-start-panel div span {
+  display: block;
+  color: #1f1f24;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .skc-sell .hero-bullets { list-style: none; display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; padding: 0; }
 .skc-sell .hero-bullets li { display: flex; align-items: flex-start; gap: 12px; font-size: 15px; color: var(--text); }
 .skc-sell .hero-bullets .check {
@@ -231,6 +287,24 @@
   margin-top: 1px;
 }
 .skc-sell .hero-bullets strong { color: var(--text); font-weight: 600; }
+.skc-sell.tax-landing .hero-bullets {
+  gap: 14px;
+  max-width: 620px;
+}
+.skc-sell.tax-landing .hero-bullets li {
+  color: #151519;
+  font-size: 16px;
+  line-height: 1.55;
+}
+.skc-sell.tax-landing .hero-bullets .check {
+  background: #0f7a48;
+  color: #ffffff;
+  box-shadow: 0 6px 14px rgba(15, 122, 72, 0.22);
+}
+.skc-sell.tax-landing .hero-bullets strong {
+  color: #050506;
+  font-weight: 800;
+}
 
 .skc-sell .hero-trust-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .skc-sell .stars { color: var(--amber); font-size: 16px; letter-spacing: 2px; }
@@ -270,6 +344,21 @@
 }
 .skc-sell .tool-card h2 { font-size: 26px; line-height: 1.12; margin-bottom: 8px; letter-spacing: -0.025em; font-weight: 800; }
 .skc-sell .tool-card .tool-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.45; }
+.skc-sell.tax-landing .tool-card {
+  border-color: rgba(31, 160, 90, 0.42);
+  box-shadow: 0 12px 28px rgba(31, 160, 90, 0.12), 0 34px 68px rgba(10, 10, 11, 0.12);
+}
+.skc-sell.tax-landing .tool-card::before {
+  background: linear-gradient(135deg, rgba(31, 160, 90, 0.26), rgba(245, 165, 36, 0.10) 62%);
+}
+.skc-sell.tax-landing .tool-card h2 {
+  color: #0f7a48;
+  font-size: 29px;
+}
+.skc-sell.tax-landing .tool-card .tool-sub {
+  color: #35363d;
+  font-weight: 600;
+}
 
 .skc-sell .step-indicator {
   display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
@@ -299,6 +388,31 @@
   transition: width 0.3s ease;
 }
 .skc-sell .step-label { font-size: 12px; color: var(--text-dim); font-weight: 500; margin-bottom: 10px; }
+.skc-sell.tax-landing .step-pill {
+  background: #ffffff;
+  color: #0f7a48;
+  border: 1px solid rgba(31, 160, 90, 0.42);
+  box-shadow: 0 6px 16px rgba(31, 160, 90, 0.12);
+}
+.skc-sell.tax-landing .step-pill .step-num-circle {
+  background: #0f7a48;
+  color: #ffffff;
+}
+.skc-sell.tax-landing .step-pill .step-num-text {
+  color: #0f7a48;
+  font-weight: 800;
+}
+.skc-sell.tax-landing .step-track {
+  background: #e0eee5;
+}
+.skc-sell.tax-landing .step-track-fill {
+  background: linear-gradient(90deg, #f5c542 0%, #91c84d 46%, #1fa05a 100%);
+  box-shadow: 0 0 12px rgba(31, 160, 90, 0.24);
+}
+.skc-sell.tax-landing .step-label {
+  color: #0f7a48;
+  font-weight: 800;
+}
 
 .skc-sell .form-field { margin-bottom: 10px; }
 .skc-sell .form-field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
@@ -521,6 +635,66 @@
 .skc-sell .step h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; letter-spacing: -0.01em; }
 .skc-sell .step p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
 
+.skc-sell.tax-landing .tax-timeline-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+.skc-sell.tax-landing .tax-timeline-step {
+  background: #ffffff;
+  border: 1px solid #cfd9cf;
+  border-radius: 18px;
+  padding: 28px;
+  text-align: center;
+  box-shadow: 0 16px 34px rgba(10, 10, 11, 0.07);
+}
+.skc-sell.tax-landing .tax-timeline-circle {
+  width: 74px;
+  height: 74px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+.skc-sell.tax-landing .tax-timeline-step.today .tax-timeline-circle {
+  background: #fff3bf;
+  color: #7a4a00;
+  border: 2px solid #f5c542;
+}
+.skc-sell.tax-landing .tax-timeline-step.tomorrow .tax-timeline-circle {
+  background: #dff5e8;
+  color: #0f6f42;
+  border: 2px solid #53b879;
+}
+.skc-sell.tax-landing .tax-timeline-step.closing .tax-timeline-circle {
+  background: #0f7a48;
+  color: #ffffff;
+  border: 2px solid #095d37;
+}
+.skc-sell.tax-landing .tax-timeline-label {
+  color: #0f7a48;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 9px;
+}
+.skc-sell.tax-landing .tax-timeline-step h3 {
+  color: #08080a;
+  font-size: 20px;
+  line-height: 1.2;
+  margin-bottom: 10px;
+}
+.skc-sell.tax-landing .tax-timeline-step p {
+  color: #3c3d44;
+  font-size: 14px;
+  line-height: 1.58;
+}
+
 /* ============ SITUATIONS ============ */
 .skc-sell .situations-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .skc-sell .sit-card {
@@ -541,6 +715,176 @@
 .skc-sell .sit-card p { font-size: 14px; color: var(--text-muted); line-height: 1.55; margin-bottom: 14px; }
 .skc-sell .sit-link { font-size: 13px; font-weight: 600; color: var(--brand); }
 .skc-sell .sit-link::after { content: " →"; }
+
+.skc-sell.tax-landing #roles {
+  background: linear-gradient(180deg, #f6faf6 0%, #ffffff 100%);
+}
+.skc-sell.tax-landing .tax-stage-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.skc-sell.tax-landing .tax-stage-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(15, 122, 72, 0.24);
+  border-radius: 18px;
+  background: #ffffff;
+  color: inherit;
+  text-decoration: none;
+  box-shadow: 0 16px 34px rgba(10, 10, 11, 0.07);
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.skc-sell.tax-landing .tax-stage-column:hover {
+  border-color: rgba(15, 122, 72, 0.55);
+  transform: translateY(-3px);
+  box-shadow: 0 20px 42px rgba(15, 122, 72, 0.13);
+}
+.skc-sell.tax-landing .tax-stage-header {
+  min-height: 126px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 14px;
+  background: linear-gradient(135deg, #0f7a48, #1fa05a);
+  color: #ffffff;
+}
+.skc-sell.tax-landing .tax-stage-header .material-symbols-outlined {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 26px;
+  font-variation-settings: 'FILL' 1, 'wght' 700;
+}
+.skc-sell.tax-landing .tax-stage-header h3 {
+  font-size: 22px;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+.skc-sell.tax-landing .tax-stage-kicker {
+  padding: 20px 22px 0;
+  color: #0f7a48;
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.skc-sell.tax-landing .tax-stage-body {
+  padding: 10px 22px 0;
+  color: #2f3036;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.skc-sell.tax-landing .tax-stage-column ul {
+  list-style: none;
+  padding: 18px 22px 4px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.skc-sell.tax-landing .tax-stage-column li {
+  display: flex;
+  gap: 9px;
+  color: #16171b;
+  font-size: 14px;
+  line-height: 1.42;
+  font-weight: 650;
+}
+.skc-sell.tax-landing .tax-stage-column li .material-symbols-outlined {
+  color: #0f7a48;
+  font-size: 18px;
+  font-variation-settings: 'FILL' 1, 'wght' 700;
+}
+.skc-sell.tax-landing .tax-stage-link {
+  margin: auto 22px 22px;
+  display: inline-flex;
+  align-items: center;
+  color: #0f7a48;
+  font-size: 14px;
+  font-weight: 900;
+}
+.skc-sell.tax-landing .tax-stage-link::after { content: " →"; }
+
+.skc-sell.tax-landing .tax-about-section {
+  background: #0f1712;
+  color: #ffffff;
+}
+.skc-sell.tax-landing .tax-about-section .section-eyebrow,
+.skc-sell.tax-landing .tax-about-section .section-title {
+  text-align: left;
+}
+.skc-sell.tax-landing .tax-about-section .section-eyebrow {
+  color: #7ee0a7;
+}
+.skc-sell.tax-landing .tax-about-section .section-title {
+  color: #ffffff;
+  margin-bottom: 18px;
+}
+.skc-sell.tax-landing .tax-about-grid {
+  display: grid;
+  grid-template-columns: 1.08fr 0.92fr;
+  gap: 48px;
+  align-items: center;
+}
+.skc-sell.tax-landing .tax-about-copy p {
+  max-width: 640px;
+  color: #d8ded9;
+  font-size: 17px;
+  line-height: 1.68;
+  margin-bottom: 16px;
+}
+.skc-sell.tax-landing .tax-team-panel {
+  display: grid;
+  gap: 14px;
+}
+.skc-sell.tax-landing .tax-team-card,
+.skc-sell.tax-landing .tax-about-proof {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+}
+.skc-sell.tax-landing .tax-team-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #7ee0a7;
+  color: #0f1712;
+  font-weight: 900;
+}
+.skc-sell.tax-landing .tax-team-card h3 {
+  color: #ffffff;
+  font-size: 17px;
+}
+.skc-sell.tax-landing .tax-team-card p,
+.skc-sell.tax-landing .tax-about-proof span {
+  color: #c6d2ca;
+  font-size: 14px;
+}
+.skc-sell.tax-landing .tax-about-proof {
+  display: block;
+}
+.skc-sell.tax-landing .tax-about-proof strong {
+  display: block;
+  color: #ffffff;
+  font-size: 18px;
+  margin-bottom: 4px;
+}
 
 /* ============ MID CTA ============ */
 .skc-sell .mid-cta {
@@ -692,6 +1036,11 @@
   .skc-sell .hero h1 { font-size: 38px; }
   .skc-sell .steps-grid { grid-template-columns: 1fr; gap: 16px; }
   .skc-sell .steps-grid::before { display: none; }
+  .skc-sell.tax-landing .tax-timeline-grid { grid-template-columns: 1fr; }
+  .skc-sell.tax-landing .tax-stage-columns { grid-template-columns: 1fr; }
+  .skc-sell.tax-landing .tax-about-grid { grid-template-columns: 1fr; gap: 28px; }
+  .skc-sell.tax-landing .tax-about-section .section-eyebrow,
+  .skc-sell.tax-landing .tax-about-section .section-title { text-align: center; }
   .skc-sell .situations-grid { grid-template-columns: 1fr 1fr; }
   .skc-sell .mid-cta { grid-template-columns: 1fr; padding: 36px; }
   .skc-sell .mid-cta h2 { font-size: 26px; }
@@ -716,6 +1065,14 @@
   .skc-sell .radio-tile .material-symbols-outlined { font-size: 17px; }
   .skc-sell .tool-card { padding: 16px; }
   .skc-sell .tool-card h2 { font-size: 21px; }
+  .skc-sell.tax-landing .hero h1 { font-size: 40px; }
+  .skc-sell.tax-landing .tax-hero-summary { font-size: 17px; }
+  .skc-sell.tax-landing .fresh-start-panel {
+    display: flex;
+    align-items: flex-start;
+    padding: 12px 14px;
+  }
+  .skc-sell.tax-landing .tool-card h2 { font-size: 24px; }
   .skc-sell .tool-card .tool-sub { font-size: 12.5px; margin-bottom: 10px; line-height: 1.4; }
   .skc-sell .form-field { margin-bottom: 8px; }
   .skc-sell .form-field label { font-size: 12.5px; margin-bottom: 3px; }

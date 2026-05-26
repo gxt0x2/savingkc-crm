@@ -54,6 +54,25 @@ describe('ppc browser tracking', () => {
     })
   })
 
+  it('adds page context for the tax PPC landing page', () => {
+    vi.stubGlobal('window', {
+      dataLayer: [],
+      location: {
+        pathname: '/ppc-tax',
+        href: 'https://crm.savingkc.com/ppc-tax?gclid=test-click',
+      },
+    })
+
+    const event = firePpcTrackingEvent('ppc_visit_started')
+
+    expect(event).toMatchObject({
+      event: 'ppc_visit_started',
+      page_path: '/ppc-tax',
+      page_location: 'https://crm.savingkc.com/ppc-tax?gclid=test-click',
+      page_variant: 'ppc_tax',
+    })
+  })
+
   it('tracks stage 3 completion as a diagnostic field-completion signal', () => {
     const event = firePpcTrackingEvent('step_3_field_completed', {
       form_step: 3,
