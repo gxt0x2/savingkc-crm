@@ -18,12 +18,8 @@ import {
 } from '@/lib/call-quality-events'
 import {
   createGoogleAdsMissedEscalationTask,
-  googleAdsEscalationReminderMessage,
   googleAdsMissedCallerMessage,
-  hasGoogleAdsLeadRespondedSince,
-  notifyGoogleAdsTeam,
   resolveGoogleAdsLeadContext,
-  startGoogleAdsAgentCallback,
 } from '@/lib/google-ads-phone'
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
@@ -341,7 +337,7 @@ export async function POST(req: Request) {
         }
       })
 
-      const escalationTask = await createGoogleAdsMissedEscalationTask({
+      await createGoogleAdsMissedEscalationTask({
         leadId: resolvedLeadId,
         from,
         calledNumber,
@@ -350,61 +346,6 @@ export async function POST(req: Request) {
         dialCallDuration,
         routing,
       })
-
-      const googleAdsLeadId = resolvedLeadId
-      sendDelayed(async () => {
-        const responded = await hasGoogleAdsLeadRespondedSince(googleAdsLeadId, escalationTask.missedAt)
-        if (responded) {
-          if (escalationTask.taskId) {
-            await supabase.from('lead_activities')
-              .update({
-                metadata: {
-                  ...escalationTask.metadata,
-                  status: 'completed',
-                  completed_at: new Date().toISOString(),
-                  skipped_reason: 'lead_responded_before_escalation',
-                }
-              })
-              .eq('id', escalationTask.taskId)
-          }
-          return
-        }
-
-        const reminder = googleAdsEscalationReminderMessage(from, googleAdsLeadId)
-        await notifyGoogleAdsTeam(reminder, {
-          leadId: googleAdsLeadId,
-          routing,
-          trigger: 'google_ads_missed_call_escalation_reminder',
-          metadata: {
-            task_id: escalationTask.taskId,
-          },
-        })
-
-        const callback = await startGoogleAdsAgentCallback({
-          leadId: googleAdsLeadId,
-          leadPhone: from,
-          calledNumber,
-          agentName: routing.primary.name,
-          agentPhone: routing.primary.phone,
-          triggerCallSid: parentCallSid,
-        })
-
-        if (escalationTask.taskId) {
-          await supabase.from('lead_activities')
-            .update({
-              metadata: {
-                ...escalationTask.metadata,
-                status: 'completed',
-                completed_at: new Date().toISOString(),
-                reminder_sent_at: new Date().toISOString(),
-                callback_started: callback.started,
-                callback_sid: callback.sid,
-                callback_error: callback.error,
-              }
-            })
-            .eq('id', escalationTask.taskId)
-        }
-      }, 300, 300)
     } else {
     // Alert both agents for IVR calls
     const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${from} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`

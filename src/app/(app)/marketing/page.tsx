@@ -131,6 +131,31 @@ function setupStatusClass(enabled: boolean, ready: boolean): string {
   return 'border-amber-500/40 bg-amber-500/12 text-amber-200'
 }
 
+function opsStatusClass(status: 'healthy' | 'attention' | 'blocked'): string {
+  if (status === 'healthy') return 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
+  if (status === 'attention') return 'border-amber-500/40 bg-amber-500/12 text-amber-200'
+  return 'border-[#E32E2E]/40 bg-[#E32E2E]/10 text-[#FCA5A5]'
+}
+
+function opsStatusLabel(status: 'healthy' | 'attention' | 'blocked'): string {
+  if (status === 'healthy') return 'Healthy'
+  if (status === 'attention') return 'Needs attention'
+  return 'Blocked'
+}
+
+function formatAgeHours(value: number | null): string {
+  if (value == null) return '--'
+  if (value < 1) return '<1h'
+  return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`
+}
+
+function formatAgeMinutes(value: number | null): string {
+  if (value == null) return '--'
+  if (value < 60) return `${value}m`
+  const hours = Math.round((value / 60) * 10) / 10
+  return `${hours.toFixed(hours % 1 === 0 ? 0 : 1)}h`
+}
+
 function formatEventName(value: string): string {
   if (value === 'lead_submitted') return 'Final submit'
   if (value === 'qualified_lead') return 'Qualified lead'
@@ -262,6 +287,8 @@ export default function MarketingPage() {
             </Panel>
 
             <ExportSetupPanel report={report} />
+
+            <OperationsHealthPanel report={report} />
 
             <ApprovalQueuePanel
               report={report}
@@ -538,6 +565,108 @@ export default function MarketingPage() {
             </Panel>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function OperationsHealthPanel({ report }: { report: PpcReport }) {
+  const exportWorker = report.operationsHealth.ppcExportWorker
+  const missedCalls = report.operationsHealth.googleAdsMissedCalls
+
+  return (
+    <Panel title="Cron & Worker Health" icon="schedule">
+      <div className="grid gap-3 xl:grid-cols-2">
+        <OpsCard
+          icon="cloud_upload"
+          title="PPC Conversion Export"
+          path={exportWorker.path}
+          schedule={exportWorker.schedule}
+          status={exportWorker.status}
+          stats={[
+            ['Ready', formatNumber(exportWorker.readyToExport)],
+            ['Pending', formatNumber(exportWorker.pending)],
+            ['Failed', formatNumber(exportWorker.failed + exportWorker.deadLetter)],
+          ]}
+          details={[
+            `Oldest ready: ${formatAgeHours(exportWorker.oldestReadyAgeHours)}`,
+            `Last sent: ${formatDate(exportWorker.lastSentAt)} ${formatTime(exportWorker.lastSentAt)}`,
+            `Approvals waiting: ${formatNumber(exportWorker.awaitingApproval)}`,
+          ]}
+        />
+        <OpsCard
+          icon="phone_callback"
+          title="Google Ads Missed Calls"
+          path={missedCalls.path}
+          schedule={missedCalls.schedule}
+          status={missedCalls.status}
+          stats={[
+            ['Pending', formatNumber(missedCalls.pendingEscalations)],
+            ['Due', formatNumber(missedCalls.overdueEscalations)],
+            ['Oldest', formatAgeMinutes(missedCalls.oldestDueAgeMinutes)],
+          ]}
+          details={[
+            `Oldest due: ${formatDate(missedCalls.oldestDueAt)} ${formatTime(missedCalls.oldestDueAt)}`,
+            'Escalation source: scheduled worker',
+          ]}
+        />
+      </div>
+    </Panel>
+  )
+}
+
+function OpsCard({
+  icon,
+  title,
+  path,
+  schedule,
+  status,
+  stats,
+  details,
+}: {
+  icon: string
+  title: string
+  path: string
+  schedule: string
+  status: 'healthy' | 'attention' | 'blocked'
+  stats: Array<[string, string]>
+  details: string[]
+}) {
+  return (
+    <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E32E2E]/15 text-[#E32E2E]">
+            <Icon name={icon} size="text-xl" />
+          </div>
+          <div>
+            <div className="font-black text-[var(--ck-text)]">{title}</div>
+            <div className="mt-1 font-mono text-xs text-[var(--ck-text-dim)]">{path}</div>
+            <div className="mt-1 text-xs font-bold text-[var(--ck-text-muted)]">{schedule}</div>
+          </div>
+        </div>
+        <span className={`inline-flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-black uppercase tracking-wide ${opsStatusClass(status)}`}>
+          <Icon name={status === 'healthy' ? 'check_circle' : status === 'attention' ? 'pending' : 'warning'} size="text-base" />
+          {opsStatusLabel(status)}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        {stats.map(([label, value]) => (
+          <div key={label} className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
+            <div className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">{label}</div>
+            <div className="mt-1 text-xl font-black tabular-nums text-[var(--ck-text)]">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 space-y-1 text-xs text-[var(--ck-text-muted)]">
+        {details.map((detail) => (
+          <div key={detail} className="flex items-start gap-2">
+            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ck-text-dim)]" />
+            <span>{detail}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
