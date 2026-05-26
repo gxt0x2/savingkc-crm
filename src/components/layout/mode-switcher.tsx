@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import type { CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
 import type { AppMode } from '@/hooks/use-app-mode'
@@ -52,6 +53,7 @@ type MenuPosition = {
 export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
   const [open, setOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState<MenuPosition>({ left: 0, top: 0, width: 340 })
+  const [menuTheme, setMenuTheme] = useState<CSSProperties>({})
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const active = PORTALS.find((portal) => portal.mode === mode) ?? PORTALS[0]
@@ -61,7 +63,8 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
     if (!open || !triggerRef.current) return
 
     function updatePosition() {
-      const rect = triggerRef.current?.getBoundingClientRect()
+      const trigger = triggerRef.current
+      const rect = trigger?.getBoundingClientRect()
       if (!rect) return
 
       const gutter = 16
@@ -73,6 +76,17 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
         top: rect.bottom + 8,
         width,
       })
+
+      if (trigger) {
+        const computed = window.getComputedStyle(trigger)
+        setMenuTheme({
+          '--ck-surface': computed.getPropertyValue('--ck-surface') || '#ffffff',
+          '--ck-surface-elev': computed.getPropertyValue('--ck-surface-elev') || '#f8fafc',
+          '--ck-border': computed.getPropertyValue('--ck-border') || '#d8dee9',
+          '--ck-text': computed.getPropertyValue('--ck-text') || '#111827',
+          '--ck-text-muted': computed.getPropertyValue('--ck-text-muted') || '#4b5565',
+        } as CSSProperties)
+      }
     }
 
     updatePosition()
@@ -111,12 +125,14 @@ export function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
       ref={menuRef}
       className="fixed overflow-hidden rounded-xl border py-1 shadow-2xl"
       style={{
+        ...menuTheme,
         left: menuPosition.left,
         top: menuPosition.top,
         width: menuPosition.width,
         zIndex: 1000,
-        background: 'var(--ck-surface)',
-        borderColor: 'var(--ck-border)',
+        background: 'var(--ck-surface, #ffffff)',
+        borderColor: 'var(--ck-border, #d8dee9)',
+        color: 'var(--ck-text, #111827)',
       }}
       role="menu"
       aria-label="Department options"
