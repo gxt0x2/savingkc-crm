@@ -68,6 +68,7 @@ const SHEET_SCROLL_LIFT = 42.5
 const SHEET_MID = 56
 const SHEET_EXPANDED = 76
 const SHEET_SNAPS = [SHEET_COLLAPSED, SHEET_MID, SHEET_EXPANDED]
+const SHEET_SNAP_TRANSITION = 'height 130ms cubic-bezier(0.2, 0, 0, 1)'
 const INITIAL_PHOTO_RENDER_COUNT = 2
 
 function clamp(value: number, min: number, max: number): number {
@@ -192,7 +193,9 @@ export default function MobileDealPage({
   const currentSheetHeightRef = useRef(SHEET_COLLAPSED)
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const dragFrameRef = useRef<number | null>(null)
-  const pendingSheetHeightRef = useRef<number | null>(null)
+  const lastSheetDragYRef = useRef<number | null>(null)
+  const sheetDragPointerIdRef = useRef<number | null>(null)
+  const snapTransitionTimeoutRef = useRef<number | null>(null)
   const loadedPriorityPhotoIndexesRef = useRef<Set<number>>(new Set())
   const overviewText = displayDescription(dealPage.description)
   const primaryInspectionReport = inspectionReports[0] ?? null
@@ -245,7 +248,11 @@ export default function MobileDealPage({
   }, [saveStorageKey, saved, slug])
 
   const applySheetHeight = useCallback((nextHeight: number, commitState = true) => {
-    const height = clamp(nextHeight, SHEET_COLLAPSED, SHEET_EXPANDED)
+    const height = Math.round(clamp(nextHeight, SHEET_COLLAPSED, SHEET_EXPANDED) * 10) / 10
+    if (Math.abs(currentSheetHeightRef.current - height) < 0.05) {
+      if (commitState) setSheetHeight(height)
+      return height
+    }
     currentSheetHeightRef.current = height
     if (sheetRef.current) sheetRef.current.style.height = `${height}svh`
     if (commitState) setSheetHeight(height)
@@ -253,6 +260,19 @@ export default function MobileDealPage({
   }, [])
 
   const beginSheetDrag = useCallback((clientY: number) => {
+    if (snapTransitionTimeoutRef.current != null) {
+      window.clearTimeout(snapTransitionTimeoutRef.current)
+      snapTransitionTimeoutRef.current = null
+    }
+    if (dragFrameRef.current != null) {
+      cancelAnimationFrame(dragFrameRef.current)
+      dragFrameRef.current = null
+    }
+    if (sheetRef.current) {
+      sheetRef.current.style.transition = 'none'
+      sheetRef.current.style.willChange = 'height'
+    }
+    lastSheetDragYRef.current = clientY
     dragRef.current = {
       startY: clientY,
       startHeight: currentSheetHeightRef.current,
@@ -261,32 +281,51 @@ export default function MobileDealPage({
 
   const updateSheetDrag = useCallback((clientY: number) => {
     if (!dragRef.current) return
-    const deltaVh = ((dragRef.current.startY - clientY) / window.innerHeight) * 100
-    const nextHeight = dragRef.current.startHeight + deltaVh
-    pendingSheetHeightRef.current = nextHeight
-    if (dragFrameRef.current) cancelAnimationFrame(dragFrameRef.current)
+    lastSheetDragYRef.current = clientY
+    if (dragFrameRef.current != null) return
     dragFrameRef.current = requestAnimationFrame(() => {
+      dragFrameRef.current = null
+      const latestY = lastSheetDragYRef.current
+      const drag = dragRef.current
+      if (!drag || latestY == null) return
+      const viewportHeight = window.innerHeight || 1
+      const deltaVh = ((drag.startY - latestY) / viewportHeight) * 100
+      const nextHeight = drag.startHeight + deltaVh
       applySheetHeight(nextHeight, false)
-      pendingSheetHeightRef.current = null
     })
   }, [applySheetHeight])
 
   const finishSheetDrag = useCallback(() => {
-    if (!dragRef.current) return
-    if (dragFrameRef.current) {
+    const drag = dragRef.current
+    if (!drag) return
+    if (dragFrameRef.current != null) {
       cancelAnimationFrame(dragFrameRef.current)
       dragFrameRef.current = null
     }
-    if (pendingSheetHeightRef.current != null) {
-      applySheetHeight(pendingSheetHeightRef.current, false)
-      pendingSheetHeightRef.current = null
+    if (lastSheetDragYRef.current != null) {
+      const viewportHeight = window.innerHeight || 1
+      const deltaVh = ((drag.startY - lastSheetDragYRef.current) / viewportHeight) * 100
+      applySheetHeight(drag.startHeight + deltaVh, false)
     }
     const current = currentSheetHeightRef.current
     const snap = SHEET_SNAPS.reduce((closest, point) => (
       Math.abs(point - current) < Math.abs(closest - current) ? point : closest
     ), SHEET_COLLAPSED)
     dragRef.current = null
+    lastSheetDragYRef.current = null
+    sheetDragPointerIdRef.current = null
+    if (sheetRef.current) {
+      sheetRef.current.style.transition = SHEET_SNAP_TRANSITION
+      sheetRef.current.style.willChange = 'height'
+    }
     applySheetHeight(snap, true)
+    snapTransitionTimeoutRef.current = window.setTimeout(() => {
+      if (!dragRef.current && sheetRef.current) {
+        sheetRef.current.style.transition = ''
+        sheetRef.current.style.willChange = ''
+      }
+      snapTransitionTimeoutRef.current = null
+    }, 160)
   }, [applySheetHeight])
 
   const handleSheetScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
@@ -295,49 +334,39 @@ export default function MobileDealPage({
   }, [applySheetHeight])
 
   useEffect(() => {
-    const handleMouseMove = (event: MouseEvent) => {
-      if (!dragRef.current) return
-      event.preventDefault()
-      updateSheetDrag(event.clientY)
-    }
-    const handleTouchMove = (event: TouchEvent) => {
-      if (!dragRef.current || event.touches.length === 0) return
-      event.preventDefault()
-      updateSheetDrag(event.touches[0].clientY)
-    }
     const handlePointerMove = (event: PointerEvent) => {
       if (!dragRef.current) return
+      if (sheetDragPointerIdRef.current != null && event.pointerId !== sheetDragPointerIdRef.current) return
       event.preventDefault()
       updateSheetDrag(event.clientY)
     }
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', finishSheetDrag)
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', finishSheetDrag)
-    window.addEventListener('pointercancel', finishSheetDrag)
-    window.addEventListener('touchmove', handleTouchMove, { passive: false })
-    window.addEventListener('touchend', finishSheetDrag)
-    window.addEventListener('touchcancel', finishSheetDrag)
+    const handlePointerEnd = (event: PointerEvent) => {
+      if (sheetDragPointerIdRef.current != null && event.pointerId !== sheetDragPointerIdRef.current) return
+      finishSheetDrag()
+    }
+    window.addEventListener('pointermove', handlePointerMove, { passive: false })
+    window.addEventListener('pointerup', handlePointerEnd)
+    window.addEventListener('pointercancel', handlePointerEnd)
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', finishSheetDrag)
       window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', finishSheetDrag)
-      window.removeEventListener('pointercancel', finishSheetDrag)
-      window.removeEventListener('touchmove', handleTouchMove)
-      window.removeEventListener('touchend', finishSheetDrag)
-      window.removeEventListener('touchcancel', finishSheetDrag)
+      window.removeEventListener('pointerup', handlePointerEnd)
+      window.removeEventListener('pointercancel', handlePointerEnd)
     }
   }, [finishSheetDrag, updateSheetDrag])
 
+  useEffect(() => () => {
+    if (dragFrameRef.current != null) cancelAnimationFrame(dragFrameRef.current)
+    if (snapTransitionTimeoutRef.current != null) window.clearTimeout(snapTransitionTimeoutRef.current)
+  }, [])
+
   const handleSheetPointerStart = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+    sheetDragPointerIdRef.current = event.pointerId
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {}
     beginSheetDrag(event.clientY)
   }, [beginSheetDrag])
-
-  const handleSheetPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    updateSheetDrag(event.clientY)
-  }, [updateSheetDrag])
 
   const stepGallery = useCallback((direction: -1 | 1) => {
     if (photos.length === 0) return
@@ -432,7 +461,7 @@ export default function MobileDealPage({
 
       <div
         ref={sheetRef}
-        className="fixed inset-x-0 bottom-0 z-30 overflow-y-auto overscroll-contain rounded-t-[30px] border-t border-[#e5e5ea] bg-white px-5 shadow-[0_-16px_38px_rgba(10,10,11,0.18)] transition-[height] duration-100"
+        className="fixed inset-x-0 bottom-0 z-30 overflow-y-auto overscroll-contain rounded-t-[30px] border-t border-[#e5e5ea] bg-white px-5 shadow-[0_-16px_38px_rgba(10,10,11,0.18)]"
         style={{
           height: `${sheetHeight}svh`,
           colorScheme: 'light',
@@ -447,14 +476,9 @@ export default function MobileDealPage({
             type="button"
             aria-label="Resize deal details"
             onPointerDown={handleSheetPointerStart}
-            onPointerMove={handleSheetPointerMove}
             onPointerUp={finishSheetDrag}
             onPointerCancel={finishSheetDrag}
-            onMouseDown={(event) => beginSheetDrag(event.clientY)}
-            onTouchStart={(event) => {
-              if (event.touches.length > 0) beginSheetDrag(event.touches[0].clientY)
-            }}
-            className="mx-auto flex h-6 w-24 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+            className="mx-auto flex h-6 w-24 touch-none select-none items-center justify-center rounded-full cursor-grab active:cursor-grabbing"
           >
             <span className="h-1.5 w-14 rounded-full bg-[#d1d1d6]" />
           </button>
