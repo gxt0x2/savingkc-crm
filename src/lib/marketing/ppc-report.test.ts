@@ -303,6 +303,9 @@ describe('ppc report', () => {
     expect(report.exportHealth.pending).toBe(1)
     expect(report.exportHealth.sent).toBe(1)
     expect(report.exportHealth.awaitingApproval).toBe(0)
+    expect(report.operationsHealth.ppcExportWorker.status).toBe('attention')
+    expect(report.operationsHealth.ppcExportWorker.readyToExport).toBe(1)
+    expect(report.operationsHealth.googleAdsMissedCalls.status).toBe('healthy')
     expect(report.conversionApproval.awaitingApproval).toBe(0)
     expect(report.conversionApprovalQueue).toHaveLength(0)
     expect(report.journeySessions[0]?.steps.map((step) => [step.key, step.status])).toEqual([
@@ -461,5 +464,28 @@ describe('ppc report', () => {
 
     expect(report.summary.paidVisits).toBe(1)
     expect(report.summary.testRecords).toBe(1)
+  })
+
+  it('surfaces overdue Google Ads missed-call escalations', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      missedCallTasks: [
+        {
+          id: 'task-overdue',
+          lead_id: 'lead-call',
+          created_at: '2026-05-23T11:45:00.000Z',
+          metadata: {
+            task_type: 'google_ads_missed_call_escalation',
+            status: 'pending',
+            due_date: '2026-05-23T11:50:00.000Z',
+          },
+        },
+      ],
+    })
+
+    expect(report.operationsHealth.googleAdsMissedCalls.pendingEscalations).toBe(1)
+    expect(report.operationsHealth.googleAdsMissedCalls.overdueEscalations).toBe(1)
+    expect(report.operationsHealth.googleAdsMissedCalls.status).toBe('attention')
+    expect(report.operationsHealth.googleAdsMissedCalls.oldestDueAgeMinutes).toBe(10)
   })
 })

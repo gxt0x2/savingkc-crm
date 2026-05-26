@@ -120,6 +120,13 @@ export type PpcTrackingEventRow = {
   created_at: string | null
 }
 
+export type PpcMissedCallTaskRow = {
+  id: string
+  lead_id: string | null
+  created_at: string | null
+  metadata: Record<string, unknown> | null
+}
+
 export type PpcReportInput = {
   days: number
   since: string
@@ -131,6 +138,7 @@ export type PpcReportInput = {
   appointments: PpcAppointmentRow[]
   revenue: PpcRevenueRow[]
   manifests: PpcManifestRow[]
+  missedCallTasks?: PpcMissedCallTaskRow[]
   exportConfig?: PpcConversionExportConfigHealth
   now?: string | Date
 }
@@ -260,6 +268,30 @@ export type PpcReport = {
     pendingExports: number
     failedExports: number
   }
+  operationsHealth: {
+    ppcExportWorker: {
+      path: string
+      schedule: string
+      status: 'healthy' | 'attention' | 'blocked'
+      readyToExport: number
+      pending: number
+      awaitingApproval: number
+      failed: number
+      deadLetter: number
+      oldestReadyAt: string | null
+      oldestReadyAgeHours: number | null
+      lastSentAt: string | null
+    }
+    googleAdsMissedCalls: {
+      path: string
+      schedule: string
+      status: 'healthy' | 'attention' | 'blocked'
+      pendingEscalations: number
+      overdueEscalations: number
+      oldestDueAt: string | null
+      oldestDueAgeMinutes: number | null
+    }
+  }
   exportConfig: PpcConversionExportConfigHealth
   daily: Array<{
     date: string
@@ -378,6 +410,38 @@ function money(value: unknown): number {
 function pct(numerator: number, denominator: number): number | null {
   if (denominator <= 0) return null
   return Math.round((numerator / denominator) * 1000) / 10
+}
+
+function validDate(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function olderIso(current: string | null, next: string | null | undefined): string | null {
+  const nextDate = validDate(next)
+  if (!nextDate) return current
+  const currentDate = validDate(current)
+  return !currentDate || nextDate.getTime() < currentDate.getTime() ? nextDate.toISOString() : current
+}
+
+function newerIso(current: string | null, next: string | null | undefined): string | null {
+  const nextDate = validDate(next)
+  if (!nextDate) return current
+  const currentDate = validDate(current)
+  return !currentDate || nextDate.getTime() > currentDate.getTime() ? nextDate.toISOString() : current
+}
+
+function ageHours(value: string | null, now: Date): number | null {
+  const date = validDate(value)
+  if (!date || Number.isNaN(now.getTime())) return null
+  return Math.max(0, Math.round(((now.getTime() - date.getTime()) / 3_600_000) * 10) / 10)
+}
+
+function ageMinutes(value: string | null, now: Date): number | null {
+  const date = validDate(value)
+  if (!date || Number.isNaN(now.getTime())) return null
+  return Math.max(0, Math.round((now.getTime() - date.getTime()) / 60_000))
 }
 
 function normalizeStage(stage: string | null | undefined): string {
@@ -1400,6 +1464,49 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     score3: conversionApprovalQueue.filter((row) => row.qualityScore === 3).length,
   }
 
+  const readyExportRows = exportableOutbox.filter((row) => {
+    const status = text(row.status).toLowerCase()
+    if (!['pending', 'processing', 'failed'].includes(status)) return false
+    return row.approved_for_google_ads || !isGoogleAdsApprovalRequiredPpcEvent(text(row.event_name), row.payload)
+  })
+  const oldestReadyAt = readyExportRows.reduce<string | null>(
+    (oldest, row) => olderIso(oldest, row.event_time || row.created_at),
+    null,
+  )
+  const lastSentAt = exportableOutbox.reduce<string | null>(
+    (newest, row) => newerIso(newest, row.sent_at),
+    null,
+  )
+  const oldestReadyAgeHours = ageHours(oldestReadyAt, reportNow)
+  const exportFailureCount = exportHealth.failed + exportHealth.deadLetter
+  const exportStatus = exportFailureCount > 0
+    ? 'blocked'
+    : readyExportRows.length > 0 && (oldestReadyAgeHours ?? 0) >= 1
+      ? 'attention'
+      : 'healthy'
+
+  let pendingEscalations = 0
+  let overdueEscalations = 0
+  let oldestDueAt: string | null = null
+  for (const task of input.missedCallTasks ?? []) {
+    const metadata = record(task.metadata)
+    if (text(metadata.task_type) !== 'google_ads_missed_call_escalation') continue
+    if (text(metadata.status).toLowerCase() !== 'pending') continue
+    pendingEscalations += 1
+    const dueAt = text(metadata.due_date) || task.created_at
+    const dueDate = validDate(dueAt)
+    if (!dueDate || dueDate.getTime() <= reportNow.getTime()) {
+      overdueEscalations += 1
+      oldestDueAt = olderIso(oldestDueAt, dueAt)
+    }
+  }
+  const oldestDueAgeMinutes = ageMinutes(oldestDueAt, reportNow)
+  const missedCallStatus = overdueEscalations > 0 && (oldestDueAgeMinutes ?? 0) >= 15
+    ? 'blocked'
+    : overdueEscalations > 0 || pendingEscalations > 0
+      ? 'attention'
+      : 'healthy'
+
   return {
     generatedAt: Number.isNaN(reportNow.getTime()) ? new Date().toISOString() : reportNow.toISOString(),
     period: {
@@ -1451,6 +1558,30 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       missingClickIdRows,
       pendingExports: exportHealth.pending + exportHealth.awaitingApproval,
       failedExports: exportHealth.failed + exportHealth.deadLetter,
+    },
+    operationsHealth: {
+      ppcExportWorker: {
+        path: '/api/workers/ppc-conversion-export',
+        schedule: 'Every 15 minutes',
+        status: exportStatus,
+        readyToExport: readyExportRows.length,
+        pending: exportHealth.pending,
+        awaitingApproval: exportHealth.awaitingApproval,
+        failed: exportHealth.failed,
+        deadLetter: exportHealth.deadLetter,
+        oldestReadyAt,
+        oldestReadyAgeHours,
+        lastSentAt,
+      },
+      googleAdsMissedCalls: {
+        path: '/api/cron/google-ads-missed-calls',
+        schedule: 'Every 5 minutes',
+        status: missedCallStatus,
+        pendingEscalations,
+        overdueEscalations,
+        oldestDueAt,
+        oldestDueAgeMinutes,
+      },
     },
     exportConfig: input.exportConfig ?? fallbackExportConfig(),
     daily: Array.from(dailyBuckets.values()).sort((a, b) => a.date.localeCompare(b.date)),
