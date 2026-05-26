@@ -29,6 +29,19 @@ function fmtDate(dateValue: string): string {
   return new Date(dateValue).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function displayDescription(description: string | null): string {
+  if (!description) return 'No description provided.'
+  const cleaned = description
+    .replace(/\s+with\s+\$?[\d,]+\s+ARV\b\.?/gi, '.')
+    .replace(/\s*\(?ARV:\s*\$?[\d,]+\)?/gi, '')
+    .split(/\r?\n/)
+    .filter((line) => !/gross\s*margin|^\s*ARV\b/i.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return cleaned || 'No description provided.'
+}
+
 /* ── Outline icon components (thin, strokeWidth 1.5, matching InvestorLift) ── */
 
 function IconBed({ className = '' }: { className?: string }) {
@@ -64,11 +77,8 @@ function IconShield({ className = '' }: { className?: string }) {
 function IconEye({ className = '' }: { className?: string }) {
   return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
 }
-function IconDoc({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-}
-function IconDownload({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+function IconWarningTriangle({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3.75 21 19.5H3L12 3.75Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4.25M12 16.25h.01" /></svg>
 }
 /* ── Card wrapper — consistent styling ── */
 const card = 'bg-white border border-[#eaeaea] rounded-2xl'
@@ -126,6 +136,7 @@ export default async function DealPage({
   const askingPrice = dealPage.asking_price ?? null
   const arv = lead?.arv
   const grossMargin = askingPrice && arv ? arv - askingPrice : null
+  const overviewText = displayDescription(dealPage.description)
 
   // Stats
   const statItems = [
@@ -162,7 +173,6 @@ export default async function DealPage({
         videos={videos}
         inspectionReports={inspectionReports}
         askingPrice={askingPrice}
-        arv={arv}
       />
 
       <div className="hidden md:block">
@@ -226,7 +236,7 @@ export default async function DealPage({
               <div className="px-6 py-6">
                 <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-3">Overview</h2>
                 <p className="text-[14px] text-[#555] leading-[1.7] whitespace-pre-wrap">
-                  {dealPage.description || 'No description provided.'}
+                  {overviewText}
                 </p>
               </div>
             </section>
@@ -372,12 +382,6 @@ export default async function DealPage({
               )}
 
               <div className="space-y-3 mb-6">
-                {dealPage.show_arv !== false && arv && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[14px] text-[#888]">ARV</span>
-                    <span className="text-[14px] font-semibold text-[#1a1a1a]">{fmt(arv)}</span>
-                  </div>
-                )}
                 {dealPage.show_arv !== false && grossMargin && grossMargin > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-[14px] text-[#888]">Gross margin</span>
@@ -399,20 +403,19 @@ export default async function DealPage({
                     href={primaryInspectionReport.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-[#bbf7d0] bg-[#f0fdf4] px-4 py-3 text-[14px] font-semibold text-[#166534] shadow-[0_6px_18px_rgba(22,163,74,0.10)] transition-all hover:border-[#86efac] hover:bg-[#ecfdf5]"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-[#fed7aa] bg-[#fff7ed] px-4 py-3 text-[14px] font-semibold text-[#c2410c] shadow-[0_6px_18px_rgba(249,115,22,0.12)] transition-all hover:border-[#fdba74] hover:bg-[#ffedd5]"
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <IconDoc className="h-5 w-5 shrink-0" />
-                      <span className="truncate">View inspection report</span>
+                      <IconWarningTriangle className="h-5 w-5 shrink-0" />
+                      <span className="truncate">Inspection Report</span>
                     </span>
-                    <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.12em] text-[#16a34a]">PDF</span>
+                    <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.08em] text-[#ea580c]">View Report</span>
                   </a>
                 )}
                 {dealPage.accept_offers && (
                   <OfferForm
                     slug={slug}
                     askingPrice={askingPrice}
-                    arv={arv}
                     photo={photos[0]}
                     propertyAddress={lead?.property_address || title}
                     location={lead ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ') : ''}

@@ -17,7 +17,6 @@ type Lead = {
   baths_full: number | null
   baths_half: number | null
   sqft: number | null
-  arv: number | null
   offer_amount: number | null
   asking_price?: number | null
   lot_size: number | null
@@ -60,7 +59,6 @@ type MobileDealPageProps = {
   videos: string[]
   inspectionReports: InspectionReport[]
   askingPrice: number | null
-  arv: number | null
 }
 
 const ACCENT_RED = '#ef4444'
@@ -113,8 +111,10 @@ function addressLine(lead: Lead | null, showAddress: boolean): string {
 function displayDescription(description: string | null): string {
   if (!description) return 'No description provided.'
   const cleaned = description
+    .replace(/\s+with\s+\$?[\d,]+\s+ARV\b\.?/gi, '.')
+    .replace(/\s*\(?ARV:\s*\$?[\d,]+\)?/gi, '')
     .split(/\r?\n/)
-    .filter((line) => !/gross\s*margin/i.test(line))
+    .filter((line) => !/gross\s*margin|^\s*ARV\b/i.test(line))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -145,8 +145,8 @@ function IconHome({ className = '' }: { className?: string }) {
   return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="m3 10.75 9-7.5 9 7.5M5 9.5V20h5.25v-5.5h3.5V20H19V9.5" /></svg>
 }
 
-function IconReport({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 3.75h6.4L18.75 8.6v11.65H7.5A2.25 2.25 0 0 1 5.25 18V6A2.25 2.25 0 0 1 7.5 3.75Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M13.75 3.75V8.5h5M8.75 12h6.5M8.75 15h6.5" /></svg>
+function IconWarningTriangle({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.9}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3.75 21 19.5H3L12 3.75Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4.25M12 16.25h.01" /></svg>
 }
 
 function IconChevron({ className = '' }: { className?: string }) {
@@ -175,7 +175,6 @@ export default function MobileDealPage({
   videos,
   inspectionReports,
   askingPrice,
-  arv,
 }: MobileDealPageProps) {
   const showAddress = dealPage.show_address !== false
   const location = addressLine(lead, showAddress)
@@ -470,11 +469,6 @@ export default function MobileDealPage({
                 ) : (
                   <h1 className="text-[29px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">Price TBD</h1>
                 )}
-                {dealPage.show_arv !== false && arv != null && (
-                  <span className="pb-0.5 text-[15px] font-extrabold leading-none" style={{ color: ACCENT_RED }}>
-                    (ARV: {fmt(arv)})
-                  </span>
-                )}
               </div>
               <div className="mt-2.5 flex items-start gap-2 text-[15px] font-bold leading-snug text-[#0a0a0b]">
                 <IconPin className="mt-0.5 h-[18px] w-[18px] shrink-0 text-[#36363d]" />
@@ -493,13 +487,13 @@ export default function MobileDealPage({
                 href={primaryInspectionReport.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-between rounded-[14px] border border-[#bbf7d0] bg-[#f0fdf4] px-3.5 py-2.5 text-[13px] font-extrabold text-[#166534] shadow-[0_5px_14px_rgba(22,163,74,0.10)]"
+                className="flex items-center justify-between rounded-[14px] border border-[#fed7aa] bg-[#fff7ed] px-3.5 py-2.5 text-[13px] font-extrabold text-[#c2410c] shadow-[0_5px_14px_rgba(249,115,22,0.12)]"
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <IconReport className="h-[18px] w-[18px] shrink-0" />
-                  <span className="truncate">Inspection report</span>
+                  <IconWarningTriangle className="h-[18px] w-[18px] shrink-0" />
+                  <span className="truncate">Inspection Report</span>
                 </span>
-                <span className="ml-3 shrink-0 text-[11px] uppercase tracking-[0.12em] text-[#16a34a]">PDF</span>
+                <span className="ml-3 shrink-0 text-[11px] uppercase tracking-[0.08em] text-[#ea580c]">View Report</span>
               </a>
             )}
           </section>
@@ -558,10 +552,13 @@ export default function MobileDealPage({
                   href={report.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between rounded-[10px] border border-[#e5e5ea] bg-white px-4 py-3 text-[14px] font-semibold text-[#0a0a0b]"
+                  className="flex items-center justify-between gap-3 rounded-[10px] border border-[#fed7aa] bg-[#fff7ed] px-4 py-3 text-[14px] font-semibold text-[#0a0a0b]"
                 >
-                  <span className="truncate">{report.name}</span>
-                  <span style={{ color: ACCENT_RED }}>PDF</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <IconWarningTriangle className="h-[18px] w-[18px] shrink-0 text-[#ea580c]" />
+                    <span className="truncate">{report.name}</span>
+                  </span>
+                  <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.08em] text-[#ea580c]">View Report</span>
                 </a>
               ))}
             </section>
@@ -577,7 +574,6 @@ export default function MobileDealPage({
             <OfferForm
               slug={slug}
               askingPrice={askingPrice}
-              arv={arv}
               earnestMoney={dealPage.earnest_money}
               photo={photos[0]}
               propertyAddress={lead?.property_address || title}

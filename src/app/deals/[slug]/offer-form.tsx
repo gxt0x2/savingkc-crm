@@ -8,7 +8,6 @@ import { dispatchConversion } from './tracker'
 interface OfferFormProps {
   slug: string
   askingPrice?: number | null
-  arv?: number | null
   earnestMoney?: number | null
   photo?: string
   propertyAddress?: string
@@ -37,7 +36,6 @@ const EMD_DEFAULT_AMOUNT = 5000
 export default function OfferForm({
   slug,
   askingPrice,
-  arv,
   earnestMoney,
   photo,
   propertyAddress,
@@ -292,7 +290,6 @@ export default function OfferForm({
                   {location && <p className="text-[13px] text-[#888] mt-0.5">{location}</p>}
                   <div className="flex items-center gap-3 mt-1">
                     {askingPrice && <span className="text-[14px] font-bold text-[#1a1a1a]">{fmt(askingPrice)}</span>}
-                    {arv && <span className="text-[12px] text-[#999]">ARV: {fmt(arv)}</span>}
                   </div>
                 </div>
               </div>
