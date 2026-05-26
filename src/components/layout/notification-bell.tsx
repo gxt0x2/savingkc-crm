@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Icon } from '@/components/ui/icon'
 import Link from 'next/link'
 
 interface Notification {
@@ -26,13 +25,22 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`
 }
 
-const typeIcons: Record<string, string> = {
-  offer: 'gavel',
-  sms: 'sms',
-  call: 'call',
-  appointment: 'event',
-  system: 'info',
-  info: 'info',
+const typeLabels: Record<string, string> = {
+  offer: '$',
+  sms: 'S',
+  call: 'C',
+  appointment: 'A',
+  system: 'i',
+  info: 'i',
+}
+
+function BellSvg() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5 text-[var(--ck-text-muted)]" aria-hidden="true" fill="none">
+      <path d="M6.5 10.5a5.5 5.5 0 0 1 11 0v3.6l1.5 2.4h-14l1.5-2.4v-3.6Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 19a2.2 2.2 0 0 0 4 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
 }
 
 export function NotificationBell() {
@@ -122,7 +130,7 @@ export function NotificationBell() {
         aria-label="Notifications"
         title="Notifications"
       >
-        <Icon name="notifications" size="text-xl" className="text-[var(--ck-text-muted)]" />
+        <BellSvg />
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-[#E32E2E] text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 ring-2 ring-[var(--ck-surface)]">
             {unreadCount > 99 ? '99+' : unreadCount}
@@ -164,7 +172,7 @@ export function NotificationBell() {
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                       !n.is_read ? 'bg-[#E32E2E]/10 text-[#E32E2E]' : 'bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
                     }`}>
-                      <Icon name={typeIcons[n.type] || 'info'} size="text-base" />
+                      <span className="text-xs font-black">{typeLabels[n.type] || 'i'}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`text-[13px] leading-tight ${!n.is_read ? 'font-semibold text-[var(--ck-text)]' : 'text-[var(--ck-text-muted)]'}`}>
