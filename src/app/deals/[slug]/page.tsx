@@ -148,6 +148,7 @@ export default async function DealPage({
     (dealPage.show_assignment_fee && dealPage.assignment_fee != null)
 
   const hasRepairEstimate = dealPage.repair_estimate_low != null || dealPage.repair_estimate_high != null
+  const primaryInspectionReport = inspectionReports[0] ?? null
 
   return (
     <div className="min-h-screen bg-white text-[#1a1a1a]" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
@@ -393,6 +394,20 @@ export default async function DealPage({
 
               {/* CTA Buttons */}
               <div className="space-y-2.5">
+                {primaryInspectionReport && (
+                  <a
+                    href={primaryInspectionReport.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-[#bbf7d0] bg-[#f0fdf4] px-4 py-3 text-[14px] font-semibold text-[#166534] shadow-[0_6px_18px_rgba(22,163,74,0.10)] transition-all hover:border-[#86efac] hover:bg-[#ecfdf5]"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <IconDoc className="h-5 w-5 shrink-0" />
+                      <span className="truncate">View inspection report</span>
+                    </span>
+                    <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.12em] text-[#16a34a]">PDF</span>
+                  </a>
+                )}
                 {dealPage.accept_offers && (
                   <OfferForm
                     slug={slug}

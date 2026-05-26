@@ -63,7 +63,7 @@ type MobileDealPageProps = {
 }
 
 const ACCENT_RED = '#ef4444'
-const SALE_BLUE = '#2563eb'
+const ACTIVE_GREEN = '#16a34a'
 const SHEET_COLLAPSED = 32.3
 const SHEET_SCROLL_LIFT = 42.5
 const SHEET_MID = 56
@@ -144,6 +144,10 @@ function IconHome({ className = '' }: { className?: string }) {
   return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="m3 10.75 9-7.5 9 7.5M5 9.5V20h5.25v-5.5h3.5V20H19V9.5" /></svg>
 }
 
+function IconReport({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 3.75h6.4L18.75 8.6v11.65H7.5A2.25 2.25 0 0 1 5.25 18V6A2.25 2.25 0 0 1 7.5 3.75Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M13.75 3.75V8.5h5M8.75 12h6.5M8.75 15h6.5" /></svg>
+}
+
 function IconChevron({ className = '' }: { className?: string }) {
   return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" /></svg>
 }
@@ -190,6 +194,7 @@ export default function MobileDealPage({
   const pendingSheetHeightRef = useRef<number | null>(null)
   const loadedPriorityPhotoIndexesRef = useRef<Set<number>>(new Set())
   const overviewText = displayDescription(dealPage.description)
+  const primaryInspectionReport = inspectionReports[0] ?? null
 
   useEffect(() => {
     if (photos.length <= INITIAL_PHOTO_RENDER_COUNT || renderedPhotoCount >= photos.length) return
@@ -357,7 +362,7 @@ export default function MobileDealPage({
         ) : (
           <div className="flex h-[42svh] items-end bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)] p-6 text-white">
             <div>
-              <p className="mb-2 inline-flex rounded-[14px] bg-[#2563eb] px-3 py-1.5 text-[13px] font-bold tracking-wide">FOR SALE</p>
+              <p className="mb-2 inline-flex rounded-[14px] px-3 py-1.5 text-[13px] font-bold tracking-wide" style={{ backgroundColor: ACTIVE_GREEN }}>ACTIVE</p>
               <h1 className="max-w-[18rem] text-[30px] font-bold leading-tight">{title}</h1>
             </div>
           </div>
@@ -367,10 +372,10 @@ export default function MobileDealPage({
 
       <div className="pointer-events-none fixed inset-x-0 top-0 z-20 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top)+14px)]">
         <span
-          className="pointer-events-auto inline-flex h-10 items-center rounded-[15px] px-3.5 text-[12px] font-extrabold uppercase tracking-[0.12em] text-white shadow-[0_8px_18px_rgba(37,99,235,0.28)]"
-          style={{ backgroundColor: SALE_BLUE }}
+          className="pointer-events-auto inline-flex h-10 items-center rounded-[15px] px-3.5 text-[12px] font-extrabold uppercase tracking-[0.12em] text-white shadow-[0_8px_18px_rgba(22,163,74,0.28)]"
+          style={{ backgroundColor: ACTIVE_GREEN }}
         >
-          For Sale
+          Active
         </span>
         <div className="flex items-center gap-2.5">
           <button
@@ -447,6 +452,21 @@ export default function MobileDealPage({
               {bathValue && <Metric icon={<IconBath className="h-5 w-5" />} value={bathValue} />}
               {lead?.sqft != null && <Metric icon={<IconHome className="h-5 w-5" />} value={`${fmtNum(lead.sqft)} Sq.Ft.`} />}
             </div>
+
+            {primaryInspectionReport && (
+              <a
+                href={primaryInspectionReport.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between rounded-[14px] border border-[#bbf7d0] bg-[#f0fdf4] px-3.5 py-2.5 text-[13px] font-extrabold text-[#166534] shadow-[0_5px_14px_rgba(22,163,74,0.10)]"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <IconReport className="h-[18px] w-[18px] shrink-0" />
+                  <span className="truncate">Inspection report</span>
+                </span>
+                <span className="ml-3 shrink-0 text-[11px] uppercase tracking-[0.12em] text-[#16a34a]">PDF</span>
+              </a>
+            )}
           </section>
 
           <section className="grid grid-cols-2 gap-2.5 border-t border-[#e5e5ea] pt-5" data-track-section="mobile_details">
