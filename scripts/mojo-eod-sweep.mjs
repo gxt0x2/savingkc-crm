@@ -518,7 +518,7 @@ async function eodSweep() {
     log(`Posting ${calls.length} calls to CRM...`)
     const crmResponse = await fetch(CRM_API_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: adminHeaders({ 'content-type': 'application/json' }),
       body: JSON.stringify({ calls }),
       signal: AbortSignal.timeout(120000),
     })
