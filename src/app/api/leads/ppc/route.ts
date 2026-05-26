@@ -52,6 +52,7 @@ const SituationSchema = z.enum([
 ])
 const TimelineSchema = z.enum(['asap', '60-days', 'flexible', 'exploring'])
 const ConditionSchema = z.enum(['good', 'needs-work', 'major-repair', 'vacant'])
+const AuctionStatusSchema = z.enum(['yes', 'no', 'not-sure'])
 
 const AttributionSchema = z
   .object({
@@ -73,12 +74,13 @@ const AttributionSchema = z
 
 const BodySchema = z.object({
   intent: z.enum(['address_capture', 'potential', 'autosave', 'submit']).optional(),
-  step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  step: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   address: z.string().min(3).max(200).optional(),
   addressSource: z.enum(['typed', 'google_places']).optional(),
   situation: SituationSchema.optional(),
   timeline: TimelineSchema.optional(),
   condition: ConditionSchema.optional(),
+  auctionStatus: AuctionStatusSchema.optional(),
   contact: z
     .object({
       name: z.string().max(120).optional(),
@@ -241,6 +243,7 @@ type PpcFormActivityInput = {
   situation?: z.infer<typeof SituationSchema>
   timeline?: z.infer<typeof TimelineSchema>
   condition?: z.infer<typeof ConditionSchema>
+  auctionStatus?: z.infer<typeof AuctionStatusSchema>
   smsConsent?: boolean
   hasName?: boolean
   hasPhone?: boolean
@@ -260,6 +263,7 @@ async function upsertPpcFormActivity(input: PpcFormActivityInput): Promise<strin
     situation_raw: input.situation ?? null,
     timeline_raw: input.timeline ?? null,
     condition_raw: input.condition ?? null,
+    auction_status: input.auctionStatus ?? null,
     situation_tag: input.situation ? SITUATION_TO_TAG[input.situation] : null,
     timeline_urgency: input.timeline ? TIMELINE_TO_URGENCY[input.timeline] : null,
     condition_overall: input.condition ? CONDITION_TO_OVERALL[input.condition] : null,
@@ -398,6 +402,7 @@ export async function POST(req: NextRequest) {
   const intent = parsed.intent ?? 'submit'
   const address = cleanText(parsed.address) ?? undefined
   const addressSource = parsed.addressSource ?? 'typed'
+  const formStep = parsed.step
   const landingPagePath = pagePathFromAttribution(parsed.attribution)
   const requestContext = getPpcRequestContext(req)
   const requestPayload = {
@@ -421,7 +426,7 @@ export async function POST(req: NextRequest) {
       sessionId: parsed.sessionId,
       visitorId: parsed.visitorId,
       pagePath: landingPagePath,
-      formStep: 3,
+      formStep,
       formStatus: 'address_typed_no_submit',
       situation: parsed.situation,
       timeline: parsed.timeline,
@@ -442,13 +447,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, tracked: true }, { headers: corsHeaders })
   }
 
-  // Steps 1 and 2 are progress signals only. Step 3 can create a potential
-  // lead once there is a contact path, then upgrade to autosaved/submitted.
+  // Pre-contact steps are progress signals only. The final contact step can
+  // create a potential lead, then upgrade to autosaved/submitted.
   if (parsed.step < 3 || !parsed.contact) {
     return NextResponse.json({ ok: true, deferred: true }, { headers: corsHeaders })
   }
 
-  const { contact, situation, timeline, condition, attribution } = parsed
+  const { contact, situation, timeline, condition, auctionStatus, attribution } = parsed
   const smsConsent = parsed.smsConsent ?? true
   const fullName = cleanText(contact.name)
   const phoneE164 = normalizePhoneOrNull(contact.phone)
@@ -587,6 +592,17 @@ export async function POST(req: NextRequest) {
             overall: CONDITION_TO_OVERALL[condition],
           }
         }
+        if (auctionStatus) {
+          const auctionFlag = `auction_status_${auctionStatus.replace('-', '_')}`
+          m.flags.opportunityFlags = (m.flags.opportunityFlags ?? []).filter(
+            (flag) => !flag.startsWith('auction_status_'),
+          )
+          m.flags.opportunityFlags.push(auctionFlag)
+          m.flags.redFlags = (m.flags.redFlags ?? []).filter((flag) => flag !== 'home_sold_at_auction')
+          if (auctionStatus === 'yes') {
+            m.flags.redFlags.push('home_sold_at_auction')
+          }
+        }
         if (address && !m.property.address) m.property.address = address
         if (phoneE164 && !m.owner.phones?.includes(phoneE164)) {
           m.owner.phones = [phoneE164, ...(m.owner.phones ?? [])]
@@ -613,12 +629,13 @@ export async function POST(req: NextRequest) {
         source: 'ppc_form_potential',
         description: 'PPC form captured a potential lead before final submit.',
         formStatus: 'potential_no_submit',
-        step: 3,
+        step: formStep,
         address,
         addressSource,
         situation,
         timeline,
         condition,
+        auctionStatus,
         smsConsent,
         hasName,
         hasPhone,
@@ -637,7 +654,7 @@ export async function POST(req: NextRequest) {
         manifestId,
         activityId,
         pagePath: landingPagePath,
-        formStep: 3,
+        formStep,
         formStatus: 'potential_no_submit',
         situation,
         timeline,
@@ -655,6 +672,7 @@ export async function POST(req: NextRequest) {
           has_email: hasEmail,
           address,
           address_source: addressSource,
+          auction_status: auctionStatus ?? null,
         }),
       })
 
@@ -671,14 +689,15 @@ export async function POST(req: NextRequest) {
       const activityId = await upsertPpcFormActivity({
         leadId: resolvedLeadId,
         source: 'ppc_form_autosave',
-        description: 'PPC form reached step 3 with all required fields filled; submit was not pressed yet.',
+        description: 'PPC form reached the contact step with all required fields filled; submit was not pressed yet.',
         formStatus: 'stage_3_complete_no_submit',
-        step: 3,
+        step: formStep,
         address,
         addressSource,
         situation,
         timeline,
         condition,
+        auctionStatus,
         smsConsent,
         hasName,
         hasPhone,
@@ -697,7 +716,7 @@ export async function POST(req: NextRequest) {
         manifestId,
         activityId,
         pagePath: landingPagePath,
-        formStep: 3,
+        formStep,
         formStatus: 'stage_3_complete_no_submit',
         situation,
         timeline,
@@ -710,6 +729,7 @@ export async function POST(req: NextRequest) {
           has_address: Boolean(address),
           address,
           address_source: addressSource,
+          auction_status: auctionStatus ?? null,
           source: 'ppc_form_autosave',
         }),
       })
@@ -728,12 +748,13 @@ export async function POST(req: NextRequest) {
       source: 'ppc_form_submit',
       description: 'PPC form submitted.',
       formStatus: 'submitted',
-      step: 3,
+      step: formStep,
       address,
       addressSource,
       situation,
       timeline,
       condition,
+      auctionStatus,
       smsConsent,
       hasName,
       hasPhone,
@@ -755,12 +776,13 @@ export async function POST(req: NextRequest) {
       payload: withRequestPayload({
         form_status: 'submitted',
         form_submitted: true,
-        step: 3,
+        step: formStep,
         has_address: Boolean(address),
         address_source: addressSource,
         situation_raw: situation ?? null,
         timeline_raw: timeline ?? null,
         condition_raw: condition ?? null,
+        auction_status: auctionStatus ?? null,
         sms_consent: smsConsent,
       }),
     })
@@ -775,7 +797,7 @@ export async function POST(req: NextRequest) {
       manifestId,
       activityId,
       pagePath: landingPagePath,
-      formStep: 3,
+      formStep,
       formStatus: 'submitted',
       situation,
       timeline,
@@ -788,6 +810,7 @@ export async function POST(req: NextRequest) {
         has_address: Boolean(address),
         address,
         address_source: addressSource,
+        auction_status: auctionStatus ?? null,
         source: 'ppc_form_submit',
         side_effects_suppressed: suppressLeadSideEffects,
       }),
