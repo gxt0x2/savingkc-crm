@@ -64,8 +64,8 @@ type MobileDealPageProps = {
 
 const ACCENT_RED = '#ef4444'
 const SALE_BLUE = '#2563eb'
-const SHEET_COLLAPSED = 38
-const SHEET_SCROLL_LIFT = 50
+const SHEET_COLLAPSED = 32.3
+const SHEET_SCROLL_LIFT = 42.5
 const SHEET_MID = 56
 const SHEET_EXPANDED = 76
 const SHEET_SNAPS = [SHEET_COLLAPSED, SHEET_MID, SHEET_EXPANDED]
@@ -154,7 +154,7 @@ function IconCloseSmall({ className = '' }: { className?: string }) {
 
 function Metric({ icon, value }: { icon: ReactNode; value: string }) {
   return (
-    <div className="flex items-center gap-1.5 whitespace-nowrap text-[15px] font-semibold text-[#0a0a0b]">
+    <div className="flex items-center gap-1.5 whitespace-nowrap text-[13px] font-semibold text-[#0a0a0b]">
       <span className="text-[#36363d]">{icon}</span>
       {value}
     </div>
@@ -403,7 +403,7 @@ export default function MobileDealPage({
         data-track-scroll-container
         data-track-section="mobile_deal_sheet"
       >
-        <div className="sticky top-0 z-20 -mx-5 bg-white/96 px-5 pb-3 pt-2 backdrop-blur">
+        <div className="sticky top-0 z-20 -mx-5 bg-white/96 px-5 pb-2 pt-1 backdrop-blur">
           <button
             type="button"
             aria-label="Resize deal details"
@@ -415,37 +415,37 @@ export default function MobileDealPage({
             onTouchStart={(event) => {
               if (event.touches.length > 0) beginSheetDrag(event.touches[0].clientY)
             }}
-            className="mx-auto flex h-7 w-28 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+            className="mx-auto flex h-6 w-24 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
           >
-            <span className="h-1.5 w-16 rounded-full bg-[#d1d1d6]" />
+            <span className="h-1.5 w-14 rounded-full bg-[#d1d1d6]" />
           </button>
         </div>
 
-        <div className="space-y-5 pb-[calc(env(safe-area-inset-bottom)+92px)]">
-          <section className="space-y-4">
+        <div className="space-y-4 pb-[calc(env(safe-area-inset-bottom)+78px)]">
+          <section className="space-y-3">
             <div>
               <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
                 {dealPage.show_asking_price !== false && askingPrice != null ? (
-                  <h1 className="text-[34px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">{fmt(askingPrice)}</h1>
+                  <h1 className="text-[30px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">{fmt(askingPrice)}</h1>
                 ) : (
-                  <h1 className="text-[32px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">Price TBD</h1>
+                  <h1 className="text-[29px] font-extrabold leading-none tracking-normal text-[#0a0a0b]">Price TBD</h1>
                 )}
                 {dealPage.show_arv !== false && arv != null && (
-                  <span className="pb-1 text-[17px] font-extrabold leading-none" style={{ color: ACCENT_RED }}>
+                  <span className="pb-0.5 text-[15px] font-extrabold leading-none" style={{ color: ACCENT_RED }}>
                     (ARV: {fmt(arv)})
                   </span>
                 )}
               </div>
-              <div className="mt-3.5 flex items-start gap-2 text-[17px] font-bold leading-snug text-[#0a0a0b]">
-                <IconPin className="mt-0.5 h-5 w-5 shrink-0 text-[#36363d]" />
+              <div className="mt-2.5 flex items-start gap-2 text-[15px] font-bold leading-snug text-[#0a0a0b]">
+                <IconPin className="mt-0.5 h-[18px] w-[18px] shrink-0 text-[#36363d]" />
                 <p>{location}</p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-              {lead?.beds != null && <Metric icon={<IconBed className="h-6 w-6" />} value={`${lead.beds} Beds`} />}
-              {bathValue && <Metric icon={<IconBath className="h-6 w-6" />} value={bathValue} />}
-              {lead?.sqft != null && <Metric icon={<IconHome className="h-6 w-6" />} value={`${fmtNum(lead.sqft)} Sq.Ft.`} />}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              {lead?.beds != null && <Metric icon={<IconBed className="h-5 w-5" />} value={`${lead.beds} Beds`} />}
+              {bathValue && <Metric icon={<IconBath className="h-5 w-5" />} value={bathValue} />}
+              {lead?.sqft != null && <Metric icon={<IconHome className="h-5 w-5" />} value={`${fmtNum(lead.sqft)} Sq.Ft.`} />}
             </div>
           </section>
 
@@ -518,7 +518,7 @@ export default function MobileDealPage({
         </div>
 
         {dealPage.accept_offers !== false && (
-          <div className="sticky bottom-0 -mx-5 border-t border-[#e5e5ea] bg-white/96 px-5 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur">
+          <div className="sticky bottom-0 -mx-5 border-t border-[#e5e5ea] bg-white/96 px-5 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 backdrop-blur">
             <OfferForm
               slug={slug}
               askingPrice={askingPrice}
@@ -527,7 +527,7 @@ export default function MobileDealPage({
               photo={photos[0]}
               propertyAddress={lead?.property_address || title}
               location={lead ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ') : ''}
-              triggerClassName="w-full rounded-[18px] bg-[#ef4444] px-4 py-3.5 text-[16px] font-extrabold text-white shadow-[0_8px_22px_rgba(239,68,68,0.26)] transition-colors hover:bg-[#dc2626]"
+              triggerClassName="w-full rounded-[16px] bg-[#ef4444] px-4 py-3 text-[15px] font-extrabold text-white shadow-[0_8px_22px_rgba(239,68,68,0.26)] transition-colors hover:bg-[#dc2626]"
               triggerLabel="Make offer"
             />
           </div>
