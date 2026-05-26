@@ -72,6 +72,15 @@ function IconDownload({ className = '' }: { className?: string }) {
 }
 /* ── Card wrapper — consistent styling ── */
 const card = 'bg-white border border-[#eaeaea] rounded-2xl'
+const TEST_DEAL_SLUG = '28_iezio'
+
+function testInspectionReport(slug: string) {
+  return {
+    name: 'Test Inspection Report',
+    url: `/api/deals/${slug}/test-inspection-report`,
+    uploaded_at: '2026-05-25T00:00:00.000Z',
+  }
+}
 
 export default async function DealPage({
   params,
@@ -107,7 +116,12 @@ export default async function DealPage({
   const title = dealPage.title || lead?.property_address || 'Investment Opportunity'
   const photos: string[] = dealPage.photos || []
   const videos: string[] = dealPage.videos || []
-  const inspectionReports: { name: string; url: string; uploaded_at: string }[] = dealPage.inspection_reports || []
+  const dbInspectionReports: { name: string; url: string; uploaded_at: string }[] = dealPage.inspection_reports || []
+  const inspectionReports = dbInspectionReports.length > 0
+    ? dbInspectionReports
+    : slug === TEST_DEAL_SLUG
+      ? [testInspectionReport(slug)]
+      : []
 
   const askingPrice = dealPage.asking_price ?? null
   const arv = lead?.arv
