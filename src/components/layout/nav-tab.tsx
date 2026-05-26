@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Icon } from '@/components/ui/icon'
 import { useAppMode } from '@/hooks/use-app-mode'
 
 const acquisitionTabs = [
@@ -105,11 +104,6 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
                   : inactiveText
               }`}
             >
-              <Icon
-                name={tab.icon}
-                size="text-xl"
-                className={active ? 'text-[#E32E2E]' : 'text-[var(--ck-text-muted)]'}
-              />
               {tab.label}
             </Link>
           )
@@ -134,11 +128,6 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
                 : inactiveText
             }`}
           >
-            <Icon
-              name={tab.icon}
-              size="text-base"
-              className={active ? 'text-[#E32E2E]' : 'text-[var(--ck-text-dim)]'}
-            />
             {tab.label}
           </Link>
         )
