@@ -37,6 +37,18 @@ function detectDevice(): { device_type: string; browser: string; os: string } {
   return { device_type, browser, os }
 }
 
+function randomEventId(): string {
+  try {
+    if (crypto.randomUUID) return crypto.randomUUID()
+  } catch { /* ignore */ }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function getParam(params: URLSearchParams, key: string): string | null {
+  const value = params.get(key)
+  return value && value.trim() ? value.trim() : null
+}
+
 function send(slug: string, path: string, body: Record<string, unknown>) {
   try {
     const blob = new Blob([JSON.stringify(body)], { type: 'application/json' })
@@ -55,23 +67,46 @@ function send(slug: string, path: string, body: Record<string, unknown>) {
 }
 
 export function trackEventV2(slug: string, session_id: string, event_type: string, extras?: Record<string, unknown>) {
-  send(slug, 'events', { event_type, session_id, ...extras })
+  const context = window.__skcDealTracking?.slug === slug ? window.__skcDealTracking : null
+  send(slug, 'events', {
+    event_id: randomEventId(),
+    event_type,
+    session_id,
+    visitor_id: context?.visitor_id,
+    buyer_id: context?.buyer_id,
+    broadcast_id: context?.broadcast_id,
+    broadcast_recipient_id: context?.broadcast_recipient_id,
+    ref_code: context?.ref_code,
+    share_id: context?.share_id,
+    page_path: context?.page_path || window.location.pathname,
+    page_location: context?.page_location || window.location.href,
+    utm_source: context?.utm_source,
+    utm_medium: context?.utm_medium,
+    utm_campaign: context?.utm_campaign,
+    utm_term: context?.utm_term,
+    utm_content: context?.utm_content,
+    ...extras,
+  })
 }
 
 export function DealTracker({ slug }: { slug: string }) {
   const sessionIdRef = useRef<string | null>(null)
   const visitorIdRef = useRef<string | null>(null)
-  const startedAtRef = useRef<number>(Date.now())
+  const startedAtRef = useRef<number>(0)
   const activeTimeRef = useRef<number>(0)
-  const lastActivityRef = useRef<number>(Date.now())
+  const lastActivityRef = useRef<number>(0)
   const maxScrollRef = useRef<number>(0)
   const interactionsRef = useRef<number>(0)
   const sectionsRef = useRef<Set<string>>(new Set())
   const bouncedRef = useRef<boolean>(true)
   const convertedRef = useRef<boolean>(false)
+  const conversionTypeRef = useRef<string | null>(null)
   const focusedRef = useRef<boolean>(true)
 
   useEffect(() => {
+    const startedAt = Date.now()
+    startedAtRef.current = startedAt
+    lastActivityRef.current = startedAt
     const session_id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
     const visitor_id = getOrCreateId('skc_visitor_id', localStorage)
     sessionIdRef.current = session_id
@@ -79,17 +114,48 @@ export function DealTracker({ slug }: { slug: string }) {
 
     const params = new URLSearchParams(window.location.search)
     const device = detectDevice()
+    const refCode = getParam(params, 's') || getParam(params, 'ref')
+    const shareId = getParam(params, 'share_id') || getParam(params, 's')
+    const trackingContext = {
+      slug,
+      session_id,
+      visitor_id,
+      buyer_id: getParam(params, 'buyer_id') || getParam(params, 'buyer'),
+      broadcast_id: getParam(params, 'broadcast_id') || getParam(params, 'broadcast'),
+      broadcast_recipient_id:
+        getParam(params, 'broadcast_recipient_id') ||
+        getParam(params, 'recipient_id') ||
+        getParam(params, 'recipient'),
+      ref_code: refCode,
+      share_id: shareId,
+      page_path: window.location.pathname,
+      page_location: window.location.href,
+      utm_source: getParam(params, 'utm_source'),
+      utm_medium: getParam(params, 'utm_medium'),
+      utm_campaign: getParam(params, 'utm_campaign'),
+      utm_term: getParam(params, 'utm_term'),
+      utm_content: getParam(params, 'utm_content'),
+    }
+    window.__skcDealTracking = trackingContext
 
     // Initial session record
     send(slug, 'session', {
       action: 'start',
       session_id,
       visitor_id,
+      buyer_id: trackingContext.buyer_id,
+      broadcast_id: trackingContext.broadcast_id,
+      broadcast_recipient_id: trackingContext.broadcast_recipient_id,
       referrer: document.referrer || null,
-      ref_code: params.get('s') || params.get('ref'),
-      utm_source: params.get('utm_source'),
-      utm_medium: params.get('utm_medium'),
-      utm_campaign: params.get('utm_campaign'),
+      ref_code: refCode,
+      share_id: shareId,
+      page_path: trackingContext.page_path,
+      page_location: trackingContext.page_location,
+      utm_source: trackingContext.utm_source,
+      utm_medium: trackingContext.utm_medium,
+      utm_campaign: trackingContext.utm_campaign,
+      utm_term: trackingContext.utm_term,
+      utm_content: trackingContext.utm_content,
       ...device,
       screen_width: window.screen.width,
       screen_height: window.screen.height,
@@ -99,9 +165,14 @@ export function DealTracker({ slug }: { slug: string }) {
 
     // Also fire a legacy page_view event for the simple stats
     trackEventV2(slug, session_id, 'page_view', {
-      ref_code: params.get('s') || params.get('ref'),
       metadata: { device },
     })
+    if (refCode) {
+      trackEventV2(slug, session_id, 'share_visit', {
+        share_id: shareId,
+        metadata: { ref_code: refCode, share_id: shareId },
+      })
+    }
 
     // ── Active time tracking ──
     let lastTick = Date.now()
@@ -116,16 +187,22 @@ export function DealTracker({ slug }: { slug: string }) {
     }, 1000)
 
     // ── Heartbeat (periodic session update) ──
+    const sessionUpdate = (action: 'heartbeat' | 'end') => ({
+      action,
+      session_id,
+      total_duration_ms: Date.now() - startedAtRef.current,
+      active_duration_ms: activeTimeRef.current,
+      max_scroll_pct: maxScrollRef.current,
+      sections_viewed: Array.from(sectionsRef.current),
+      interactions: interactionsRef.current,
+      is_bounced: bouncedRef.current,
+      converted: convertedRef.current,
+      conversion_type: conversionTypeRef.current,
+    })
+
     const heartbeat = setInterval(() => {
       send(slug, 'session', {
-        action: 'heartbeat',
-        session_id,
-        total_duration_ms: Date.now() - startedAtRef.current,
-        active_duration_ms: activeTimeRef.current,
-        max_scroll_pct: maxScrollRef.current,
-        sections_viewed: Array.from(sectionsRef.current),
-        interactions: interactionsRef.current,
-        is_bounced: bouncedRef.current,
+        ...sessionUpdate('heartbeat'),
       })
     }, HEARTBEAT_MS)
 
@@ -208,15 +285,7 @@ export function DealTracker({ slug }: { slug: string }) {
     // ── Session end ──
     const endSession = () => {
       send(slug, 'session', {
-        action: 'end',
-        session_id,
-        total_duration_ms: Date.now() - startedAtRef.current,
-        active_duration_ms: activeTimeRef.current,
-        max_scroll_pct: maxScrollRef.current,
-        sections_viewed: Array.from(sectionsRef.current),
-        interactions: interactionsRef.current,
-        is_bounced: bouncedRef.current,
-        converted: convertedRef.current,
+        ...sessionUpdate('end'),
       })
     }
     window.addEventListener('pagehide', endSession)
@@ -225,8 +294,17 @@ export function DealTracker({ slug }: { slug: string }) {
     // Listen for conversion events from other components
     const onConversion = (e: Event) => {
       const ce = e as CustomEvent
+      const type = typeof ce.detail?.type === 'string' ? ce.detail.type : 'conversion'
       convertedRef.current = true
-      trackEventV2(slug, session_id, ce.detail?.type || 'conversion', ce.detail)
+      conversionTypeRef.current = type
+      trackEventV2(slug, session_id, type, {
+        metadata: ce.detail?.metadata || {},
+      })
+      send(slug, 'session', {
+        ...sessionUpdate('heartbeat'),
+        converted: true,
+        conversion_type: type,
+      })
     }
     window.addEventListener('skc:conversion', onConversion)
 
@@ -244,6 +322,9 @@ export function DealTracker({ slug }: { slug: string }) {
       window.removeEventListener('skc:conversion', onConversion)
       observer.disconnect()
       endSession()
+      if (window.__skcDealTracking?.session_id === session_id) {
+        delete window.__skcDealTracking
+      }
     }
   }, [slug])
 
