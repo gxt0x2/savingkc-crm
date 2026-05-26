@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
     { data: periodLeads, error: leadError },
     { data: outbox, error: outboxError },
     { data: trackingEvents, error: trackingError },
+    { data: missedCallTasks, error: missedCallTaskError },
   ] = await Promise.all([
     db
       .from('leads')
@@ -67,6 +68,14 @@ export async function GET(req: NextRequest) {
       .gte('event_time', sinceIso)
       .order('event_time', { ascending: false })
       .limit(5000),
+    db
+      .from('lead_activities')
+      .select('id, lead_id, created_at, metadata')
+      .eq('activity_type', 'task')
+      .eq('metadata->>task_type', 'google_ads_missed_call_escalation')
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false })
+      .limit(500),
   ])
 
   if (leadError) {
@@ -79,9 +88,13 @@ export async function GET(req: NextRequest) {
   if (trackingError && !isMissingTable(trackingError)) {
     return NextResponse.json({ error: trackingError.message }, { status: 500, headers: NO_STORE_HEADERS })
   }
+  if (missedCallTaskError && !isMissingTable(missedCallTaskError)) {
+    return NextResponse.json({ error: missedCallTaskError.message }, { status: 500, headers: NO_STORE_HEADERS })
+  }
 
   const outboxRows = outboxError ? [] : outbox ?? []
   const trackingRows = trackingError ? [] : trackingEvents ?? []
+  const missedCallTaskRows = missedCallTaskError ? [] : missedCallTasks ?? []
   const periodLeadRows = periodLeads ?? []
   const periodLeadIds = new Set(periodLeadRows.map((lead) => lead.id))
   const missingOutboxLeadIds = Array.from(
@@ -161,6 +174,7 @@ export async function GET(req: NextRequest) {
     appointments: appointments ?? [],
     revenue: revenue ?? [],
     manifests: manifests ?? [],
+    missedCallTasks: missedCallTaskRows,
     exportConfig: getPpcConversionExportConfigHealth(process.env),
   })
 
