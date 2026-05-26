@@ -70,6 +70,19 @@ function isServerRecorded(event: PpcTrackingEvent): boolean {
   return event === 'lead_submitted' || event === 'appointment_booked'
 }
 
+function currentPageContext(): Record<string, unknown> {
+  if (typeof window === 'undefined') return {}
+
+  const pagePath = window.location?.pathname
+  if (!pagePath) return {}
+
+  return {
+    page_path: pagePath,
+    page_location: window.location?.href,
+    page_variant: pagePath.startsWith('/ppc-tax') ? 'ppc_tax' : pagePath.startsWith('/ppc') ? 'ppc' : undefined,
+  }
+}
+
 export function firePpcTrackingEvent(
   event: PpcTrackingEvent,
   payload: Record<string, unknown> = {},
@@ -82,6 +95,7 @@ export function firePpcTrackingEvent(
     event_time: new Date().toISOString(),
     traffic_source: 'google_ads',
     campaign: 'Search 2026',
+    ...currentPageContext(),
     ...payload,
   })
 

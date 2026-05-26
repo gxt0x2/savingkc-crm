@@ -65,9 +65,62 @@ type SellLandingProps = {
   phoneDisplay: string
   phoneTel: string
   showBookingCta?: boolean
+  variant?: 'default' | 'tax'
 }
 
-export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: SellLandingProps) {
+const TAX_TIMELINE_STEPS = [
+  {
+    number: '1',
+    label: 'Today',
+    title: 'Tell us what is going on',
+    body: 'Share the address, tax stage, and timeline. No judgment, no long intake, no pressure.',
+    tone: 'today',
+  },
+  {
+    number: '2',
+    label: 'Tomorrow',
+    title: 'We verify the tax picture',
+    body: 'We review county records, title issues, liens, and repair risk so the offer reflects the real situation.',
+    tone: 'tomorrow',
+  },
+  {
+    number: '3',
+    label: 'Closing Day',
+    title: 'Taxes cleared at closing',
+    body: 'The title company pays what is owed from closing funds, and you leave with a clean break.',
+    tone: 'closing',
+  },
+]
+
+const TAX_STAGE_COLUMNS = [
+  {
+    icon: 'event_upcoming',
+    stage: 'Pre-Auction',
+    kicker: 'County notices are starting to feel real',
+    body: 'You still have leverage. A fast sale can clear the tax balance before the deadline and protect equity that could be lost at auction.',
+    points: ['Stop waiting on payment plans that are not working', 'Avoid repairs, cleanup, showings, and listing delays', 'Know your offer path before the county date arrives'],
+    cta: 'See my pre-auction path',
+  },
+  {
+    icon: 'gavel',
+    stage: 'Post-Auction',
+    kicker: 'The clock is tighter, but options may remain',
+    body: 'If the sale or lien process has already started, speed and title clarity matter. We look at redemption windows, payoff amounts, and whether a sale can still preserve value.',
+    points: ['Review what can still be paid or redeemed', 'Coordinate with title before deadlines get worse', 'Move without public listing pressure'],
+    cta: 'Check my options',
+  },
+  {
+    icon: 'hourglass_top',
+    stage: '3+ Years Behind / Long-Term Delinquent',
+    kicker: 'Penalties and interest are compounding',
+    body: 'When the balance has stacked up for years, the problem can feel too large to touch. We structure the offer around back taxes, liens, condition, and a realistic closing path.',
+    points: ['Understand what the county and title will require', 'Sell as-is even with repairs or code issues', 'Turn a stuck property into a defined exit'],
+    cta: 'Find my fresh start',
+  },
+]
+
+export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, variant = 'default' }: SellLandingProps) {
+  const isTaxLanding = variant === 'tax'
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [state, setState] = useState<QuizState>(EMPTY_STATE)
   const [addressSource, setAddressSource] = useState<AddressSource>('typed')
@@ -612,7 +665,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
   }
 
   return (
-    <div className="skc-sell">
+    <div className={`skc-sell ${isTaxLanding ? 'tax-landing' : ''}`}>
       {/* ============ TOP BAR ============ */}
       <div className="topbar">
         <div className="container topbar-inner">
@@ -622,6 +675,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
           </a>
           <nav className="nav-links" aria-label="primary">
             <a href="#how" onClick={scrollToId('how', 'top_nav_how')}>How it works</a>
+            {isTaxLanding && <a href="#roles" onClick={scrollToId('roles', 'top_nav_roles')}>Where you are</a>}
             <a href="#about" onClick={scrollToId('about', 'top_nav_about')}>About us</a>
             <a href="#faq" onClick={scrollToId('faq', 'top_nav_faq')}>FAQ</a>
             <a href="#reviews" onClick={scrollToId('reviews', 'top_nav_reviews')}>Reviews</a>
@@ -659,6 +713,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         <div className={`mobile-menu ${mobileMenuOpen ? 'open' : ''}`}>
           <div className="mobile-menu-inner">
             <a href="#how" onClick={scrollToId('how', 'mobile_nav_how')}>How it works</a>
+            {isTaxLanding && <a href="#roles" onClick={scrollToId('roles', 'mobile_nav_roles')}>Where you are</a>}
             <a href="#about" onClick={scrollToId('about', 'mobile_nav_about')}>About us</a>
             <a href="#faq" onClick={scrollToId('faq', 'mobile_nav_faq')}>FAQ</a>
             <a href="#reviews" onClick={scrollToId('reviews', 'mobile_nav_reviews')}>Reviews</a>
@@ -682,28 +737,46 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
               <div className="hero-eyebrow">
                 <span className="dot"></span> Kansas City • MO + KS
               </div>
-              <h1>Sell My House In Kansas City Today.</h1>
-              <p className="sub">
-                Back taxes. A house you didn&apos;t ask for. A tenant you can&apos;t get out. Repairs you stopped counting. Whatever it is, you don&apos;t have to fix it, clean it, or explain it. Tell us the address. We bring a fair cash number in an hour. You pick the day it closes.
-              </p>
+              {isTaxLanding ? (
+                <>
+                  <h1>Behind on property taxes and want to sell?</h1>
+                  <p className="tax-hero-summary">
+                    Tax bills, penalties, county letters, and auction dates can turn a house into a source of daily stress. We help KC owners sell as-is, clear the tax problem at closing, and move forward without repairs, cleanout, or public showings.
+                  </p>
+                  <div className="fresh-start-panel" aria-label="Fresh start timing">
+                    <span className="material-symbols-outlined" aria-hidden>verified</span>
+                    <div>
+                      <strong>Fresh start in 60 minutes</strong>
+                      <span>Form today. Offer today.</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h1>Sell My House In Kansas City Today.</h1>
+                  <p className="sub">
+                    Back taxes. A house you didn&apos;t ask for. A tenant you can&apos;t get out. Repairs you stopped counting. Whatever it is, you don&apos;t have to fix it, clean it, or explain it. Tell us the address. We bring a fair cash number in an hour. You pick the day it closes.
+                  </p>
+                </>
+              )}
 
               <ul className="hero-bullets">
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>You pay $0.</strong> No fees, no commissions, no repairs, and no cleanup. The number we say is the check you get.
+                    <strong>{isTaxLanding ? 'Back taxes can be handled at closing.' : 'You pay $0.'}</strong> {isTaxLanding ? 'You do not have to catch everything up before talking with us. The payoff can be built into the title closing.' : 'No fees, no commissions, no repairs, and no cleanup. The number we say is the check you get.'}
                   </span>
                 </li>
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Keep your privacy.</strong> Handle things quietly at closing. Probate, liens, back taxes, hoarder mess. No neighbors. No judgment.
+                    <strong>Keep your privacy.</strong> Handle things quietly at closing. {isTaxLanding ? 'No public listing, no neighbors walking through, and no shame about how long this has been going on.' : 'Probate, liens, back taxes, hoarder mess. No neighbors. No judgment.'}
                   </span>
                 </li>
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Pick your payday.</strong> Close in 14 days if you need out fast, or take 60. You set the pace.
+                    <strong>{isTaxLanding ? 'Move before the county has more control.' : 'Pick your payday.'}</strong> {isTaxLanding ? 'We focus on speed, title clarity, and a clean path forward while there is still time to make a decision.' : 'Close in 14 days if you need out fast, or take 60. You set the pace.'}
                   </span>
                 </li>
               </ul>
@@ -725,9 +798,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                 <span className="material-symbols-outlined" aria-hidden>bolt</span>
                 Start here
               </span>
-              <h2>Get Your Cash Offer in 1 hour.</h2>
+              <h2>{isTaxLanding ? 'Your Fresh Start Starts Here' : 'Get Your Cash Offer in 1 hour.'}</h2>
               <p className="tool-sub">
-                Get a cash-offer range based on your property location, condition, and timeline in less than 1 hour.
+                {isTaxLanding
+                  ? 'Answer a few questions so we can review the property, tax stage, condition, and best next step.'
+                  : 'Get a cash-offer range based on your property location, condition, and timeline in less than 1 hour.'}
               </p>
 
               <div className="step-indicator">
@@ -740,7 +815,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                 </span>
               </div>
               <div className="step-label">
-                {step === 3 ? '15 seconds to finish' : step === 2 ? '20 seconds' : '30 seconds'}
+                {isTaxLanding ? 'Fresh start in 60 minutes' : step === 3 ? '15 seconds to finish' : step === 2 ? '20 seconds' : '30 seconds'}
               </div>
 
               {submitted ? (
@@ -929,66 +1004,133 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       {/* ============ HOW IT WORKS ============ */}
       <section className="block" id="how" data-track-section="how_it_works">
         <div className="container">
-          <div className="section-eyebrow">How it works</div>
-          <h2 className="section-title">Out from under it in 3 steps.</h2>
-          <p className="section-sub">
-            No back-and-forth, no surprise fees, no walk-throughs unless you want one. Here&apos;s what actually happens.
-          </p>
+          {isTaxLanding ? (
+            <>
+              <div className="section-eyebrow">Fresh start plan</div>
+              <h2 className="section-title">Form today. Offer today.</h2>
+              <p className="section-sub">
+                A tax problem feels complicated because the deadlines, payoff balances, and title questions are all moving at once. We make the next step visible fast.
+              </p>
 
-          <div className="steps-grid">
-            <div className="step">
-              <div className="step-icon">
-                <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>location_on</span>
+              <div className="tax-timeline-grid">
+                {TAX_TIMELINE_STEPS.map((item) => (
+                  <TaxTimelineStep key={item.label} {...item} />
+                ))}
               </div>
-              <div className="step-num">Step 1 · 30 sec</div>
-              <h3>Tell us about the property</h3>
-              <p>
-                Address, situation, timeline. That&apos;s it. No SSN, no income docs, no credit check — we&apos;re buying the house, not lending to you.
+            </>
+          ) : (
+            <>
+              <div className="section-eyebrow">How it works</div>
+              <h2 className="section-title">Out from under it in 3 steps.</h2>
+              <p className="section-sub">
+                No back-and-forth, no surprise fees, no walk-throughs unless you want one. Here&apos;s what actually happens.
               </p>
-            </div>
-            <div className="step">
-              <div className="step-icon">
-                <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>call</span>
+
+              <div className="steps-grid">
+                <div className="step">
+                  <div className="step-icon">
+                    <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>location_on</span>
+                  </div>
+                  <div className="step-num">Step 1 · 30 sec</div>
+                  <h3>Tell us about the property</h3>
+                  <p>
+                    Address, situation, timeline. That&apos;s it. No SSN, no income docs, no credit check — we&apos;re buying the house, not lending to you.
+                  </p>
+                </div>
+                <div className="step">
+                  <div className="step-icon">
+                    <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>call</span>
+                  </div>
+                  <div className="step-num">Step 2 · 1 hour</div>
+                  <h3>We build a structured offer</h3>
+                  <p>
+                    We pull title, check the back-tax balance, and structure an offer that <em>actually accounts for your situation</em> — probate, liens, code violations, all of it.
+                  </p>
+                </div>
+                <div className="step">
+                  <div className="step-icon">
+                    <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>key</span>
+                  </div>
+                  <div className="step-num">Step 3 · 7–30 days</div>
+                  <h3>You pick the closing date</h3>
+                  <p>
+                    Cash at closing through a local KC title company. We pay the back taxes, handle the paperwork, and you walk away clean. Need to stay 30 days? We work that in.
+                  </p>
+                </div>
               </div>
-              <div className="step-num">Step 2 · 1 hour</div>
-              <h3>We build a structured offer</h3>
-              <p>
-                We pull title, check the back-tax balance, and structure an offer that <em>actually accounts for your situation</em> — probate, liens, code violations, all of it.
-              </p>
-            </div>
-            <div className="step">
-              <div className="step-icon">
-                <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>key</span>
-              </div>
-              <div className="step-num">Step 3 · 7–30 days</div>
-              <h3>You pick the closing date</h3>
-              <p>
-                Cash at closing through a local KC title company. We pay the back taxes, handle the paperwork, and you walk away clean. Need to stay 30 days? We work that in.
-              </p>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </section>
 
       {/* ============ SITUATIONS ============ */}
-      <section className="block" id="about" data-track-section="situations">
+      <section className="block" id={isTaxLanding ? 'roles' : 'about'} data-track-section={isTaxLanding ? 'tax_stage_roles' : 'situations'}>
         <div className="container">
-          <div className="section-eyebrow">Who we help</div>
-          <h2 className="section-title">If life put you here, we can help.</h2>
-          <p className="section-sub">
-            No matter how you ended up holding this house, you&apos;re not the first and you won&apos;t be the last. We&apos;ve built the offer for every one of these — quietly, fairly, fast.
-          </p>
+          {isTaxLanding ? (
+            <>
+              <div className="section-eyebrow">Find your role</div>
+              <h2 className="section-title">See your fresh start from where you are now.</h2>
+              <p className="section-sub">
+                The right next step depends on how far the tax process has gone. Pick the column that sounds closest, then start the form so we can review the details.
+              </p>
 
-          <div className="situations-grid">
-            <SitCard icon="gavel" title="Back taxes piling up" body="Stop the auction clock and walk away with the equity you’d otherwise lose at the courthouse steps. We pay the county directly." cta="Protect what you’ve built" onClick={(e) => jumpToQuiz(e, 'situation_card_back_taxes')} />
-            <SitCard icon="family_history" title="Inherited more than you bargained for" body="Turn a house full of memories and obligations into one clean check your family can split. We work alongside probate — you don’t have to wait for it." cta="Honor the past, move forward" onClick={(e) => jumpToQuiz(e, 'situation_card_inherited')} />
-            <SitCard icon="person_off" title="Done being everybody’s landlord" body="Hand us the keys, the tenant, and the headache. We close with renters in place — no evictions, no awkward conversations, no 60-day notices." cta="Get your weekends back" onClick={(e) => jumpToQuiz(e, 'situation_card_landlord')} />
-            <SitCard icon="construction" title="A house you can’t afford to fix" body="Fire damage, foundation cracks, code violations, a kitchen frozen in 1978 — none of it scares us, and none of it lowers our offer the way a retail buyer would." cta="Sell it exactly as it sits" onClick={(e) => jumpToQuiz(e, 'situation_card_repairs')} />
-            <SitCard icon="schedule_send" title="Foreclosure, divorce, or a fast move" body="When life forces a fast decision, we move at your speed and protect your privacy. 14-day closings with title partners who already know our paperwork." cta="Close on your timeline" onClick={(e) => jumpToQuiz(e, 'situation_card_life_event')} />
-            <SitCard icon="landscape" title="Land or lots draining your wallet" body="Vacant lots, ag parcels, that infill piece your uncle left you — if it’s costing you taxes every year and earning you nothing, we’ll take it off your books." cta="Stop paying for nothing" onClick={(e) => jumpToQuiz(e, 'situation_card_land')} />
-          </div>
+              <div className="tax-stage-columns">
+                {TAX_STAGE_COLUMNS.map((stage) => (
+                  <TaxStageColumn
+                    key={stage.stage}
+                    {...stage}
+                    onClick={(e) => jumpToQuiz(e, `tax_stage_${stage.stage.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`)}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="section-eyebrow">Who we help</div>
+              <h2 className="section-title">If life put you here, we can help.</h2>
+              <p className="section-sub">
+                No matter how you ended up holding this house, you&apos;re not the first and you won&apos;t be the last. We&apos;ve built the offer for every one of these — quietly, fairly, fast.
+              </p>
+
+              <div className="situations-grid">
+                <SitCard icon="gavel" title="Back taxes piling up" body="Stop the auction clock and walk away with the equity you’d otherwise lose at the courthouse steps. We pay the county directly." cta="Protect what you’ve built" onClick={(e) => jumpToQuiz(e, 'situation_card_back_taxes')} />
+                <SitCard icon="family_history" title="Inherited more than you bargained for" body="Turn a house full of memories and obligations into one clean check your family can split. We work alongside probate — you don’t have to wait for it." cta="Honor the past, move forward" onClick={(e) => jumpToQuiz(e, 'situation_card_inherited')} />
+                <SitCard icon="person_off" title="Done being everybody’s landlord" body="Hand us the keys, the tenant, and the headache. We close with renters in place — no evictions, no awkward conversations, no 60-day notices." cta="Get your weekends back" onClick={(e) => jumpToQuiz(e, 'situation_card_landlord')} />
+                <SitCard icon="construction" title="A house you can’t afford to fix" body="Fire damage, foundation cracks, code violations, a kitchen frozen in 1978 — none of it scares us, and none of it lowers our offer the way a retail buyer would." cta="Sell it exactly as it sits" onClick={(e) => jumpToQuiz(e, 'situation_card_repairs')} />
+                <SitCard icon="schedule_send" title="Foreclosure, divorce, or a fast move" body="When life forces a fast decision, we move at your speed and protect your privacy. 14-day closings with title partners who already know our paperwork." cta="Close on your timeline" onClick={(e) => jumpToQuiz(e, 'situation_card_life_event')} />
+                <SitCard icon="landscape" title="Land or lots draining your wallet" body="Vacant lots, ag parcels, that infill piece your uncle left you — if it’s costing you taxes every year and earning you nothing, we’ll take it off your books." cta="Stop paying for nothing" onClick={(e) => jumpToQuiz(e, 'situation_card_land')} />
+              </div>
+            </>
+          )}
         </div>
       </section>
+
+      {isTaxLanding && (
+        <section className="block tax-about-section" id="about" data-track-section="tax_about_team">
+          <div className="container">
+            <div className="tax-about-grid">
+              <div className="tax-about-copy">
+                <div className="section-eyebrow">About Saving KC</div>
+                <h2 className="section-title">Local people helping KC owners get unstuck.</h2>
+                <p>
+                  You are not calling a national call center or a lead buyer. You are reaching Ernest, Casey, and a Kansas City team that works directly with owners facing back taxes, inherited homes, repairs, liens, and tight timelines.
+                </p>
+                <p>
+                  Our job is to give you a clear number, explain the title and tax payoff path, and let you decide without pressure. If a cash sale is not the right move, we will say that plainly.
+                </p>
+              </div>
+              <div className="tax-team-panel">
+                <TeamTrustCard initials="ED" name="Ernest Dodson" role="Owner · Local KC homebuyer" />
+                <TeamTrustCard initials="CD" name="Casey Davis" role="Seller follow-up · Fast response" />
+                <div className="tax-about-proof">
+                  <strong>100+ KC homeowners helped</strong>
+                  <span>11+ years in the Kansas City market</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ============ MID CTA ============ */}
       <section className="block" data-track-section="mid_cta">
@@ -1223,6 +1365,79 @@ function SitCard({
       <p>{body}</p>
       <span className="sit-link">{cta}</span>
     </a>
+  )
+}
+
+function TaxTimelineStep({
+  number,
+  label,
+  title,
+  body,
+  tone,
+}: {
+  number: string
+  label: string
+  title: string
+  body: string
+  tone: string
+}) {
+  return (
+    <div className={`tax-timeline-step ${tone}`}>
+      <div className="tax-timeline-circle">{number}</div>
+      <div className="tax-timeline-label">{label}</div>
+      <h3>{title}</h3>
+      <p>{body}</p>
+    </div>
+  )
+}
+
+function TaxStageColumn({
+  icon,
+  stage,
+  kicker,
+  body,
+  points,
+  cta,
+  onClick,
+}: {
+  icon: string
+  stage: string
+  kicker: string
+  body: string
+  points: string[]
+  cta: string
+  onClick?: (e: MouseEvent<HTMLAnchorElement>) => void
+}) {
+  return (
+    <a href="#quiz" className="tax-stage-column" onClick={onClick}>
+      <div className="tax-stage-header">
+        <span className="material-symbols-outlined" aria-hidden>{icon}</span>
+        <h3>{stage}</h3>
+      </div>
+      <p className="tax-stage-kicker">{kicker}</p>
+      <p className="tax-stage-body">{body}</p>
+      <ul>
+        {points.map((point) => (
+          <li key={point}>
+            <span className="material-symbols-outlined" aria-hidden>check_circle</span>
+            {point}
+          </li>
+        ))}
+      </ul>
+      <span className="tax-stage-link">{cta}</span>
+    </a>
+  )
+}
+
+function TeamTrustCard({ initials, name, role }: { initials: string; name: string; role: string }) {
+  return (
+    <div className="tax-team-card">
+      <div className="tax-team-avatar">{initials}</div>
+      <div>
+        <h3>{name}</h3>
+        <p>{role}</p>
+      </div>
+    </div>
   )
 }
 

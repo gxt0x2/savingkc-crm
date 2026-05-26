@@ -136,6 +136,22 @@ function hasSmokeMarker(...values: Array<unknown>): boolean {
   return values.some((value) => typeof value === 'string' && SMOKE_MARKER_RE.test(value))
 }
 
+function pagePathFromAttribution(attribution: z.infer<typeof AttributionSchema>): string {
+  const landingUrl = cleanText(attribution?.landingUrl)
+  if (!landingUrl) return '/ppc'
+
+  try {
+    const path = new URL(landingUrl).pathname
+    if (path.startsWith('/ppc-tax')) return '/ppc-tax'
+    if (path.startsWith('/ppc')) return '/ppc'
+    return path || '/ppc'
+  } catch {
+    if (landingUrl.startsWith('/ppc-tax')) return '/ppc-tax'
+    if (landingUrl.startsWith('/ppc')) return '/ppc'
+    return '/ppc'
+  }
+}
+
 function isFakePhone(value: string | null | undefined): boolean {
   return Boolean(value && FAKE_PHONE_RE.test(value.replace(/\D/g, '')))
 }
@@ -382,11 +398,13 @@ export async function POST(req: NextRequest) {
   const intent = parsed.intent ?? 'submit'
   const address = cleanText(parsed.address) ?? undefined
   const addressSource = parsed.addressSource ?? 'typed'
+  const landingPagePath = pagePathFromAttribution(parsed.attribution)
   const requestContext = getPpcRequestContext(req)
   const requestPayload = {
     device: requestContext.devicePayload,
     is_internal: requestContext.isInternal,
     internal_reasons: requestContext.internalReasons,
+    landing_page_path: landingPagePath,
   }
   const withRequestPayload = (payload: Record<string, unknown>): Record<string, unknown> => ({
     ...payload,
@@ -402,7 +420,7 @@ export async function POST(req: NextRequest) {
       eventCategory: 'form',
       sessionId: parsed.sessionId,
       visitorId: parsed.visitorId,
-      pagePath: '/ppc',
+      pagePath: landingPagePath,
       formStep: 3,
       formStatus: 'address_typed_no_submit',
       situation: parsed.situation,
@@ -618,7 +636,7 @@ export async function POST(req: NextRequest) {
         leadId: resolvedLeadId,
         manifestId,
         activityId,
-        pagePath: '/ppc',
+        pagePath: landingPagePath,
         formStep: 3,
         formStatus: 'potential_no_submit',
         situation,
@@ -678,7 +696,7 @@ export async function POST(req: NextRequest) {
         leadId: resolvedLeadId,
         manifestId,
         activityId,
-        pagePath: '/ppc',
+        pagePath: landingPagePath,
         formStep: 3,
         formStatus: 'stage_3_complete_no_submit',
         situation,
@@ -756,7 +774,7 @@ export async function POST(req: NextRequest) {
       leadId: resolvedLeadId,
       manifestId,
       activityId,
-      pagePath: '/ppc',
+      pagePath: landingPagePath,
       formStep: 3,
       formStatus: 'submitted',
       situation,
