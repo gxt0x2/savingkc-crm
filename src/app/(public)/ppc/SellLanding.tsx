@@ -877,7 +877,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         </div>
       </section>
 
-      {!isTaxLanding && <GeneralVideoTestimonials />}
+      <GeneralVideoTestimonials />
 
       {/* ============ TESTIMONIALS ============ */}
       <section className="block" id="reviews">
@@ -1291,7 +1291,6 @@ function GeneralVideoTestimonials() {
                 <div className="video-card-label">
                   <span className="material-symbols-outlined" aria-hidden>play_circle</span>
                   <span className="video-card-title">{video.title}</span>
-                  <span className="video-card-duration">{video.runtime}</span>
                 </div>
               </article>
             ))}

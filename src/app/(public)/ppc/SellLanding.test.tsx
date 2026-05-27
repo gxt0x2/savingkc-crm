@@ -47,6 +47,7 @@ describe('SellLanding', () => {
     expect(html).toContain('/ppc/seller-story-local-help.webp')
     expect(html).toContain('1:08')
     expect(html).toContain('1:29')
+    expect(html).not.toContain('video-card-duration')
     expect(html).toContain('100+ KC neighbors. <span class="accent-green">All the way home.</span>')
     expect(html).toContain('Closed fast')
     expect(html).not.toContain('We know your county. And your block.')
@@ -64,6 +65,10 @@ describe('SellLanding', () => {
 
     expect(html).toContain('Are you behind on property taxes?')
     expect(html).toContain('Get My Cash Offer In 1 hour.')
+    expect(html).toContain('Hear from sellers who <span class="accent-green">got unstuck.</span>')
+    expect(html).toContain('/ppc/seller-story-cleaner-way-out.webp')
+    expect(html).toContain('/ppc/seller-story-local-help.webp')
+    expect(html).not.toContain('video-card-duration')
     expect(html).not.toContain('&amp;apos;')
   })
 })
