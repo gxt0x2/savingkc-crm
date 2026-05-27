@@ -8,6 +8,19 @@ import { supabase } from '@/lib/supabase-lazy'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { syncCoOwners } from '@/lib/co-owners'
 
+type RecordingCallbackMeta = {
+  callSid?: string
+  direction?: 'inbound' | 'outbound'
+  duration: number
+  from?: string
+  recordingSid: string
+  recordingSourceUrl: string
+  recordingStatus: string
+  recordingUrl: string
+  source: 'twilio_recording_callback'
+  to?: string
+}
+
 // WebRTC-initiated calls record against the parent leg whose To/From are
 // client identifiers rather than the dialed number. When the lookup-by-phone
 // falls through, we ask Twilio for the child legs and match on their `to`.
@@ -39,6 +52,66 @@ async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | nul
   return null
 }
 
+async function logPlayableRecordingActivity({
+  leadId,
+  recordingSid,
+  recordingUrl,
+  callSid,
+  duration,
+  recordingStatus,
+  from,
+  to,
+}: {
+  leadId: string
+  recordingSid: string
+  recordingUrl: string
+  callSid: string
+  duration: number
+  recordingStatus: string
+  from: string
+  to: string
+}) {
+  const playableUrl = `/api/recordings/${recordingSid}`
+  const direction = from?.startsWith('client:') ? 'outbound' : 'inbound'
+  const metadata: RecordingCallbackMeta = {
+    callSid,
+    direction,
+    duration,
+    from,
+    recordingSid,
+    recordingSourceUrl: recordingUrl,
+    recordingStatus,
+    recordingUrl: playableUrl,
+    source: 'twilio_recording_callback',
+    to,
+  }
+
+  const { data: existing } = await supabase
+    .from('lead_activities')
+    .select('id, metadata')
+    .eq('lead_id', leadId)
+    .eq('activity_type', 'call')
+    .contains('metadata', { recordingSid })
+    .limit(1)
+    .maybeSingle()
+
+  if (existing?.id) {
+    await supabase
+      .from('lead_activities')
+      .update({ metadata: { ...(existing.metadata || {}), ...metadata } })
+      .eq('id', existing.id)
+    return
+  }
+
+  await supabase.from('lead_activities').insert({
+    lead_id: leadId,
+    activity_type: 'call',
+    description: 'Call recording available',
+    agent: 'System',
+    metadata,
+  })
+}
+
 /**
  * Twilio recording status callback.
  * Called automatically when a call recording is ready.
@@ -52,6 +125,8 @@ export async function POST(req: Request) {
     const callSid = body.get('CallSid') as string
     const recordingDuration = parseInt(body.get('RecordingDuration') as string || '0')
     const recordingStatus = body.get('RecordingStatus') as string
+    const to = body.get('To') as string
+    const from = body.get('From') as string
 
     console.log(`[recording-callback] Recording ${recordingSid}: status=${recordingStatus} duration=${recordingDuration}s`)
 
@@ -66,18 +141,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, skipped: 'too_short' })
     }
 
-    // Find the lead associated with this call via recent call activities
-    const { data: recentActivity } = await supabase
-      .from('lead_activities')
-      .select('lead_id, metadata')
-      .eq('activity_type', 'call')
-      .order('created_at', { ascending: false })
-      .limit(20)
-
-    // Match by looking for the phone number in recent call activities
-    // Twilio sends the call's To/From in separate params
-    const to = body.get('To') as string
-    const from = body.get('From') as string
+    // Match the recorded call back to a lead by the external phone number.
     const callerPhone = from?.startsWith('client:') ? to : from
     const cleanPhone = callerPhone?.replace(/[^\d+]/g, '') || ''
 
@@ -108,6 +172,17 @@ export async function POST(req: Request) {
     }
 
     console.log(`[recording-callback] Processing recording for lead ${leadId}`)
+
+    await logPlayableRecordingActivity({
+      leadId,
+      recordingSid,
+      recordingUrl,
+      callSid,
+      duration: recordingDuration,
+      recordingStatus,
+      from,
+      to,
+    })
 
     // Fire-and-forget: download, transcribe, analyze, store
     processRecording(recordingUrl, recordingSid, leadId, recordingDuration).catch(err =>
