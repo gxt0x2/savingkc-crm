@@ -440,16 +440,17 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             ) : (
               <>
                 <a href="#how" onClick={scrollToId('how')}>How it works</a>
-                <a href="#about" onClick={scrollToId('about')}>About us</a>
+                <a href="#problems" onClick={scrollToId('problems')}>What we buy</a>
+                <a href="#about" onClick={scrollToId('about')}>Who we are</a>
               </>
             )}
             <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
             <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
           </nav>
-          <div className="topbar-right">
+          <div className={`topbar-right ${navJumpVisible ? 'has-jump' : ''}`}>
             <div className="topbar-trust">
               <span className="stars">★★★★★</span>
-              <span><strong>100+</strong> KC homeowners helped</span>
+              <span><strong>100+</strong> Owners helped</span>
             </div>
             <a href={`tel:${phoneTel}`} className="topbar-phone" onClick={() => trackPhoneClick('topbar')}>
               <span className="material-symbols-outlined" aria-hidden>call</span>
@@ -487,7 +488,8 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             ) : (
               <>
                 <a href="#how" onClick={scrollToId('how')}>How it works</a>
-                <a href="#about" onClick={scrollToId('about')}>About us</a>
+                <a href="#problems" onClick={scrollToId('problems')}>What we buy</a>
+                <a href="#about" onClick={scrollToId('about')}>Who we are</a>
               </>
             )}
             <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
@@ -551,7 +553,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               <div className="hero-trust-row">
                 <span className="stars">★★★★★</span>
                 <span className="trust-text">
-                  <strong>4.9/5</strong> from <strong>100+ KC homeowners</strong>
+                  <strong>4.9/5</strong> from <strong>100+ Owners helped</strong>
                 </span>
                 <span className="trust-text">
                   • <strong>11 years</strong> in the KC market
@@ -814,7 +816,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         </div>
       </section>
 
-      {isTaxLanding && <TaxTrustStrip />}
+      <TaxTrustStrip />
 
       {isTaxLanding ? (
         <>
@@ -825,69 +827,10 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         </>
       ) : (
         <>
-          {/* ============ HOW IT WORKS ============ */}
-          <section className="block" id="how">
-            <div className="container">
-              <div className="section-eyebrow">How it works</div>
-              <h2 className="section-title">Out from under it in 3 steps.</h2>
-              <p className="section-sub">
-                No back-and-forth, no surprise fees, no walk-throughs unless you want one. Here&apos;s what actually happens.
-              </p>
-
-              <div className="steps-grid">
-                <div className="step">
-                  <div className="step-icon">
-                    <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>location_on</span>
-                  </div>
-                  <div className="step-num">Step 1 · 30 sec</div>
-                  <h3>Tell us about the property</h3>
-                  <p>
-                    Address, situation, timeline. That&apos;s it. No SSN, no income docs, no credit check — we&apos;re buying the house, not lending to you.
-                  </p>
-                </div>
-                <div className="step">
-                  <div className="step-icon">
-                    <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>call</span>
-                  </div>
-                  <div className="step-num">Step 2 · 1 hour</div>
-                  <h3>We build a structured offer</h3>
-                  <p>
-                    We pull title, check the back-tax balance, and structure an offer that actually accounts for your situation — probate, liens, code violations, all of it.
-                  </p>
-                </div>
-                <div className="step">
-                  <div className="step-icon">
-                    <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>key</span>
-                  </div>
-                  <div className="step-num">Step 3 · 7-60 days</div>
-                  <h3>You pick the closing date</h3>
-                  <p>
-                    Cash at closing through a local KC title company. We pay the back taxes, handle the paperwork, and you walk away clean. Need to stay 30 days? We work that in.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* ============ SITUATIONS ============ */}
-          <section className="block" id="about">
-            <div className="container">
-              <div className="section-eyebrow">Who we help</div>
-              <h2 className="section-title">If life put you here, we can help.</h2>
-              <p className="section-sub">
-                No matter how you ended up holding this house, you&apos;re not the first and you won&apos;t be the last. We&apos;ve built the offer for every one of these — quietly, fairly, fast.
-              </p>
-
-              <div className="situations-grid">
-                <SitCard icon="gavel" title="Back taxes piling up" body="Stop the auction clock and walk away with the equity you'd otherwise lose at the courthouse steps. We pay the county directly." cta="Protect what you've built" />
-                <SitCard icon="family_history" title="Inherited more than you bargained for" body="Turn a house full of memories and obligations into one clean check your family can split. We work alongside probate — you don't have to wait for it." cta="Honor the past, move forward" />
-                <SitCard icon="person_off" title="Done being everybody's landlord" body="Hand us the keys, the tenant, and the headache. We close with renters in place — no evictions, no awkward conversations, no 60-day notices." cta="Get your weekends back" />
-                <SitCard icon="construction" title="A house you can't afford to fix" body="Fire damage, foundation cracks, code violations, a kitchen frozen in 1978 — none of it scares us, and none of it lowers our offer the way a retail buyer would." cta="Sell it exactly as it sits" />
-                <SitCard icon="schedule_send" title="Foreclosure, divorce, or a fast move" body="When life forces a fast decision, we move at your speed and protect your privacy. 14-day closings with title partners who already know our paperwork." cta="Close on your timeline" />
-                <SitCard icon="landscape" title="Land or lots draining your wallet" body="Vacant lots, ag parcels, that infill piece your uncle left you — if it's costing you taxes every year and earning you nothing, we'll take it off your books." cta="Stop paying for nothing" />
-              </div>
-            </div>
-          </section>
+          <GeneralFreshStartTimeline />
+          <GeneralProblemRows scrollToQuiz={scrollToQuiz} />
+          <GeneralPromise />
+          <GeneralTeamSection />
         </>
       )}
 
@@ -903,11 +846,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               <p>
                 {isTaxLanding
                   ? 'Interest compounds. Penalties stack. Auction dates lock. The number you can walk away with this week can be smaller next month. Get your real number now.'
-                  : "Property problems compound. Taxes accrue interest. Vacant houses get vandalized. Estates rack up legal costs. Tenants disappear with the security deposit. The number you get six months from now will be smaller than the number you can get this week. Let's see yours."}
+                  : 'Taxes grow. Repairs get worse. Empty houses get damaged. Bad tenants can cost more each month. Get a clear number today, then decide what is best for you.'}
               </p>
               <div className="mid-cta-actions">
                 <a href="#quiz" className="btn-secondary" onClick={(e) => { e.preventDefault(); scrollToQuiz() }}>
-                  {isTaxLanding ? 'Start My Fresh Start' : 'See My Number'}
+                  {isTaxLanding ? 'Start My Fresh Start' : 'Get My Number'}
                   <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                 </a>
                 <a href={`tel:${phoneTel}`} className="btn-secondary" onClick={() => trackPhoneClick('mid_page_cta')}>
@@ -918,15 +861,15 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             </div>
             <div className="mid-cta-stat">
               <div className="stat-box">
-                <div className="num">$45K</div>
+                <div className="num">{isTaxLanding ? '$45K' : '$0'}</div>
                 <div className="label">
-                  {isTaxLanding ? 'Average walk-away cash' : "Average cash in homeowners' pockets at closing"}
+                  {isTaxLanding ? 'Average walk-away cash' : 'Needed before you sell'}
                 </div>
               </div>
               <div className="stat-box">
-                <div className="num">18 days</div>
+                <div className="num">{isTaxLanding ? '18 days' : '7-60 days'}</div>
                 <div className="label">
-                  {isTaxLanding ? 'Fastest pre-DLT close' : 'Fastest close when you need out now'}
+                  {isTaxLanding ? 'Fastest pre-DLT close' : 'You pick the closing day'}
                 </div>
               </div>
             </div>
@@ -934,60 +877,30 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         </div>
       </section>
 
-      {!isTaxLanding && (
-        <>
-          {/* ============ COUNTIES ============ */}
-          <section className="block">
-            <div className="container">
-              <div className="section-eyebrow">Service area</div>
-              <h2 className="section-title">We know your county. And your block.</h2>
-              <p className="section-sub">
-                We work both sides of the state line. If your property is in any of these counties, we can help.
-              </p>
-
-              <div className="county-grid">
-                {[
-                  ['JA', 'Jackson County', 'Missouri'],
-                  ['CL', 'Clay County', 'Missouri'],
-                  ['PL', 'Platte County', 'Missouri'],
-                  ['WY', 'Wyandotte County', 'Kansas'],
-                  ['JO', 'Johnson County', 'Kansas'],
-                  ['+', 'Surrounding metro', 'Case-by-case'],
-                ].map(([flag, name, sub]) => (
-                  <div key={name} className="county-card">
-                    <div className="county-flag">{flag}</div>
-                    <div>
-                      <h4>{name}</h4>
-                      <div className="state">{sub}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        </>
-      )}
+      {!isTaxLanding && <GeneralVideoTestimonials />}
 
       {/* ============ TESTIMONIALS ============ */}
       <section className="block" id="reviews">
         <div className="container">
-          <div className="section-eyebrow">{isTaxLanding ? 'Real fresh starts' : 'What KC homeowners say'}</div>
+          <div className="section-eyebrow">Real fresh starts</div>
           <h2 className="section-title">
             {isTaxLanding ? (
               <>
                 100+ KC neighbors. <span className="accent-green">All the way home.</span>
               </>
             ) : (
-              '100+ neighbors. Real stories.'
+              <>
+                100+ KC neighbors. <span className="accent-green">All the way home.</span>
+              </>
             )}
           </h2>
           <p className="section-sub">
             {isTaxLanding
               ? 'No actors. Real sellers, real tax pressure, real closing-table outcomes.'
-              : "These aren't paid testimonials. They're people we've actually helped — and you can ask them yourself before we close."}
+              : 'No actors. Real sellers, real house trouble, real closing-table outcomes.'}
           </p>
 
-          <div className="testimonials">
+          <div className="testimonials featured-testimonials">
             {(isTaxLanding ? TAX_TESTIMONIALS : TESTIMONIALS).map((testimonial) => (
               <Testimonial key={`${testimonial.initials}-${testimonial.name}`} {...testimonial} />
             ))}
@@ -1028,14 +941,14 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             <h2>
               {isTaxLanding ? 'Your ' : 'Stop wondering. '}
               <span className="accent">
-                {isTaxLanding ? 'fresh start' : 'Find out what your house is actually worth in 30 seconds.'}
+                {isTaxLanding ? 'fresh start' : 'Get your cash offer in 1 hour.'}
               </span>
               {isTaxLanding ? ' is one form away.' : ''}
             </h2>
             <p>
               {isTaxLanding
                 ? '60 seconds. Four questions. Cash offer in an hour. Closing timeline built around title and your situation.'
-                : 'No phone call until you ask. No pressure, no spam. Just a real offer range based on your address and your situation.'}
+                : 'Tell us the address and what is going on. We will give you a real number. You can say yes or no.'}
             </p>
             <a
               href="#quiz"
@@ -1045,7 +958,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 scrollToQuiz()
               }}
             >
-              {isTaxLanding ? 'Start My Fresh Start' : 'Get My Free Offer Estimate'}
+              {isTaxLanding ? 'Start My Fresh Start' : 'Get My Cash Offer'}
               <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
             </a>
             <div className="micro">
@@ -1101,16 +1014,263 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   )
 }
 
-function SitCard({ icon, title, body, cta }: { icon: string; title: string; body: string; cta: string }) {
+function GeneralFreshStartTimeline() {
   return (
-    <a href="#quiz" className="sit-card">
-      <div className="sit-icon">
-        <span className="material-symbols-outlined" style={{ fontSize: 22 }} aria-hidden>{icon}</span>
+    <section className="block tax-timeline-section" id="how">
+      <div className="container">
+        <div className="section-eyebrow">How it works</div>
+        <h2 className="section-title">
+          Tell us the mess. <span className="accent-green">We bring a number.</span>
+        </h2>
+        <p className="section-sub">
+          You do not need a perfect house. You do not need money to fix it. You only need the address and the truth.
+        </p>
+
+        <div className="tax-timeline">
+          <div className="tax-timeline-rail" />
+          {[
+            ['1', 'Today', 'Tell us what is wrong', 'Taxes, repairs, a tenant, probate, or junk. Say it in plain words.'],
+            ['2', '1 hour', 'Get a real cash number', 'We check the house, title, taxes, and repairs. Then we show you the math.'],
+            ['3', 'Your day', 'Close and move on', 'Pick 7 days or 60 days. We close at title and pay the agreed costs.'],
+          ].map(([day, label, title, body], index) => (
+            <div className={`tax-timeline-step step-${index + 1}`} key={title}>
+              <div className="tax-day">
+                <span className="day-num">{day}</span>
+                <span className="day-label">{label}</span>
+              </div>
+              <h3>{title}</h3>
+              <p>{body}</p>
+            </div>
+          ))}
+        </div>
       </div>
-      <h3>{title}</h3>
-      <p>{body}</p>
-      <span className="sit-link">{cta}</span>
-    </a>
+    </section>
+  )
+}
+
+function GeneralProblemRows({ scrollToQuiz }: { scrollToQuiz: () => void }) {
+  const rows = [
+    {
+      tone: 'brand',
+      icon: 'gavel',
+      stage: 'Back taxes',
+      title: 'Tax letters keep coming',
+      body: 'Fees grow each month. The county may set a sale date.',
+      ifLabel: 'What we can do',
+      ifValue: 'We can pay the back taxes at closing if we buy the house.',
+      thenLabel: 'You get',
+      thenValue: <>A clear cash offer and a way out</>,
+      cta: 'Show me',
+    },
+    {
+      tone: 'amber',
+      icon: 'family_history',
+      stage: 'Inherited house',
+      title: 'You got a house you did not ask for',
+      body: 'Family may not agree. The house may need work. You may live far away.',
+      ifLabel: 'What we can do',
+      ifValue: 'We can buy it as-is and work with the probate path.',
+      thenLabel: 'You get',
+      thenValue: <>One clean closing for the family</>,
+      cta: 'Show me',
+    },
+    {
+      tone: 'green',
+      icon: 'construction',
+      stage: 'Tenant or repairs',
+      title: 'The house is too much right now',
+      body: 'The tenant will not leave, or the repairs cost more than you have.',
+      ifLabel: 'What we can do',
+      ifValue: 'We buy with tenants, junk, old stuff, and repairs still there.',
+      thenLabel: 'You get',
+      thenValue: <>No cleaning. No fixing. No showings.</>,
+      cta: 'Start',
+    },
+  ]
+
+  return (
+    <section className="block tax-decision-section" id="problems">
+      <div className="container">
+        <div className="section-eyebrow">What kind of trouble is it?</div>
+        <h2 className="section-title">
+          Pick the problem. <span className="accent-green">We show the next step.</span>
+        </h2>
+        <p className="section-sub">
+          Most sellers who call us are tired, stuck, or scared of what comes next. That is exactly who we help.
+        </p>
+
+        <div className="tax-decision-block">
+          <div className="decision-top">
+            You do not have to fix it first. <strong>We buy the hard houses.</strong>
+          </div>
+          <div className="decision-rows">
+            {rows.map((row) => (
+              <button
+                type="button"
+                className={`decision-row decision-card ${row.tone}`}
+                key={row.stage}
+                onClick={scrollToQuiz}
+              >
+                <span className="decision-stage">{row.stage}</span>
+                <span className="if-block decision-card-head">
+                  <span className="if-icon">
+                    <span className="material-symbols-outlined" aria-hidden>{row.icon}</span>
+                  </span>
+                  <span className="if-text">
+                    <span className="decision-title">{row.title}</span>
+                    <span className="decision-body">{row.body}</span>
+                  </span>
+                </span>
+                <span className="if-label">{row.ifLabel}</span>
+                <span className="if-value">{row.ifValue}</span>
+                <span className="then-text">
+                  <span className="then-label">{row.thenLabel}</span>
+                  <span className="then-value">{row.thenValue}</span>
+                </span>
+                <span className="row-cta">
+                  {row.cta}
+                  <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="tax-county-chips">
+          {[
+            ['Jackson', 'MO'],
+            ['Clay', 'MO'],
+            ['Platte', 'MO'],
+            ['Wyandotte', 'KS'],
+            ['Johnson', 'KS'],
+          ].map(([county, state]) => (
+            <span className="tax-county-chip" key={county}>
+              <span className="material-symbols-outlined" aria-hidden>location_on</span>
+              {county} <span>{state}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function GeneralPromise() {
+  return (
+    <section className="block tax-guarantee-section">
+      <div className="container">
+        <div className="tax-guarantee">
+          <div className="guarantee-seal">
+            <span className="material-symbols-outlined" aria-hidden>verified_user</span>
+            <span>Our promise</span>
+          </div>
+          <div className="guarantee-copy">
+            <h2>
+              You do not have to <span className="accent-green">fix the house</span> first.
+            </h2>
+            <p>
+              Take what you want and leave the rest. Tell us what is really going on. We will give you a number and explain it in plain English.
+            </p>
+          </div>
+          <div className="guarantee-checks">
+            <span><span className="material-symbols-outlined" aria-hidden>check</span>No repairs</span>
+            <span><span className="material-symbols-outlined" aria-hidden>check</span>No cleaning</span>
+            <span><span className="material-symbols-outlined" aria-hidden>check</span>No open houses</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function GeneralTeamSection() {
+  return (
+    <section className="block tax-team-section" id="about">
+      <div className="container">
+        <div className="tax-team">
+          <div className="tax-team-copy">
+            <div className="section-eyebrow">Who you&apos;ll talk to</div>
+            <h2 className="section-title">Local KC people, not a call center.</h2>
+            <p>
+              You talk with Ernest Dodson and Casey Davis. We look at the house, taxes, title, repairs, and your time. Then we tell you what we can pay and when we can close. No pushy script.
+            </p>
+            <div className="tax-team-proof">
+              <span><strong>11+</strong> years in KC</span>
+              <span><strong>100+</strong> sellers helped</span>
+              <span><strong>4.9</strong> Google rating</span>
+            </div>
+          </div>
+          <div className="tax-team-cards" aria-label="Saving KC team">
+            <article className="tax-team-card">
+              <div className="tax-team-photo">
+                <Image src="/ernest-profile.png" alt="Ernest Dodson" width={192} height={192} sizes="96px" />
+              </div>
+              <h3>Ernest Dodson</h3>
+              <p className="tax-team-title">Lead House Hunter</p>
+              <p>Helps you understand the offer, the title path, and the cleanest way out.</p>
+            </article>
+            <article className="tax-team-card">
+              <div className="tax-team-photo">
+                <Image src="/casey.jpg" alt="Casey Davis" width={192} height={192} sizes="96px" />
+              </div>
+              <h3>Casey Davis</h3>
+              <p className="tax-team-title">Junior House Hunter</p>
+              <p>Keeps follow-up simple, fast, and clear while your file moves to closing.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function GeneralVideoTestimonials() {
+  const videos = [
+    {
+      id: 'bZyZYbI0sg4',
+      title: 'Seller story: a cleaner way out',
+      url: 'https://www.youtube.com/embed/bZyZYbI0sg4',
+    },
+    {
+      id: 'eA55Ehd17mI',
+      title: 'Seller story: local help in KC',
+      url: 'https://www.youtube.com/embed/eA55Ehd17mI',
+    },
+  ]
+
+  return (
+    <section className="block video-testimonial-section" aria-labelledby="video-testimonials-title">
+      <div className="container">
+        <div className="video-testimonial-panel">
+          <div className="section-eyebrow">Video testimonials</div>
+          <h2 className="section-title" id="video-testimonials-title">
+            Hear from sellers who <span className="accent-green">got unstuck.</span>
+          </h2>
+          <p className="section-sub">
+            Two short stories from real people who needed a simple way to sell.
+          </p>
+
+          <div className="video-testimonial-grid">
+            {videos.map((video) => (
+              <article className="video-testimonial-card" key={video.id}>
+                <div className="video-frame">
+                  <iframe
+                    src={video.url}
+                    title={video.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                </div>
+                <div className="video-card-label">
+                  <span className="material-symbols-outlined" aria-hidden>play_circle</span>
+                  {video.title}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -1394,28 +1554,25 @@ const TESTIMONIALS: Array<{
   result?: string
 }> = [
   {
-    initials: 'RM',
-    name: 'Renee M.',
-    meta: 'Inherited property · Jackson County, MO',
-    quote: '"Three years of unpaid taxes on a house I inherited from my dad. Every other buyer wanted to deduct the taxes twice from the offer. Saving KC paid the back taxes at closing and still gave me a fair number. Closed in 18 days."',
-  },
-  {
-    initials: 'DT',
-    name: 'David T.',
-    meta: 'Tired landlord · Wyandotte County, KS',
-    quote: '"Bad tenants, busted HVAC, and I live in Denver. I didn’t have the time or the heart to deal with it. Ernest’s team handled the tenant conversation, took the property as-is with everything still inside. Done."',
-  },
-  {
     initials: 'JK',
     name: 'Jerome K.',
-    meta: 'Pre-DLT auction · Jackson County, MO',
-    quote: '"I was 60 days from the DLT auction. Two other ‘we buy houses’ guys ghosted me when they saw the title. Saving KC didn’t blink — closed in 14 days. I walked away with money instead of a court notice."',
+    meta: 'Jackson County, MO',
+    result: 'Closed fast',
+    quote: '"I was close to a tax sale. Other buyers stopped calling when they saw the title. Saving KC stayed with it and closed fast."',
+  },
+  {
+    initials: 'RM',
+    name: 'Renee M.',
+    meta: 'Wyandotte County, KS',
+    result: 'Inherited · 18 days',
+    quote: '"I had a house from my dad and three years of taxes. Saving KC paid the taxes at closing. I got a fair check."',
   },
   {
     initials: 'SP',
     name: 'Sandra P.',
-    meta: 'Probate sale · Clay County, MO',
-    quote: '"My brother and I disagreed on everything about the estate. They worked with both of us, kept the communication separate when we needed it, and got us to closing without making it worse. That’s rare."',
+    meta: 'Clay County, MO',
+    result: 'Probate sale',
+    quote: '"My brother and I did not agree on the house. They kept it calm, talked to both of us, and got us to closing."',
   },
 ]
 
@@ -1469,30 +1626,30 @@ const TAX_FAQS: { q: string; a: string }[] = [
 const FAQS: { q: string; a: string }[] = [
   {
     q: 'How much will I actually get?',
-    a: "Depends on the property's after-repair value, condition, and any liens or back taxes. Our offers typically come in 65–85% of after-repair value, minus repairs and back taxes. We show you the math — no black-box numbers. If our offer doesn't make sense for you, we'll tell you that too.",
+    a: 'We look at what the house is worth, what repairs cost, and any taxes or liens. Then we show you the number in plain English. No hidden math.',
   },
   {
     q: 'Do I need to pay the back taxes before selling?',
-    a: "No. We pay them directly to the county at closing out of the sale proceeds. You don't write a check — it comes off the top of our offer, and you see exactly how it's calculated.",
+    a: 'No. If we buy the house, the back taxes can be paid at closing from the sale money. You do not need to write a check first.',
   },
   {
     q: 'Can you buy if the house is still in probate?',
-    a: "Yes, in most cases. We've closed deals where probate was still open — we just structure the timing around the court's process. We work with KC probate attorneys regularly and can refer you to one if you don't have one.",
+    a: 'Often, yes. We can work with the probate path and help you understand what needs to happen before closing.',
   },
   {
     q: 'What if there are tenants in the property?',
-    a: "We buy with tenants in place. You don't have to evict, give notice, or have an awkward conversation. We take the lease as-is at closing.",
+    a: 'We can buy with tenants in place. You do not have to evict first or have a hard talk before you call us.',
   },
   {
     q: 'Are there any fees or commissions?',
-    a: 'None. No agent commissions, no closing costs on your end, no inspection fees. The number on our offer is what hits your bank account (minus payoffs and back taxes, which we disclose line-by-line).',
+    a: 'No. No agent commission, no repair bill from us, and no cleanup bill from us. We show any taxes or payoffs before you sign.',
   },
   {
     q: 'How fast can you close?',
-    a: "Fastest we've done is 18 days from offer to close on a pre-DLT property. Typical is 21–30 days, but we'll close on your timeline — including if you need 60–90 days to find your next place.",
+    a: 'Often 7 to 30 days if title is clear. If you need more time, we can usually give you 60 days.',
   },
   {
     q: 'Why should I trust Saving KC over the other "cash for houses" guys?',
-    a: "Fair question. Three things: (1) We're a real KC business with 11 years here, not a national lead-buyer reselling your info. (2) We close most of what we put under contract — we don't tie up your property and back out. (3) We'll give you references to homeowners we've closed with in the last 90 days. Call them before you sign anything.",
+    a: 'We are local KC buyers. We do not sell your lead to a list. You talk with our team, get a clear offer, and choose if it works for you.',
   },
 ]

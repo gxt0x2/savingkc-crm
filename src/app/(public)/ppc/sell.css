@@ -44,15 +44,16 @@
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
-.skc-sell .topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 32px; }
+.skc-sell .topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .skc-sell .logo { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .skc-sell .topbar-logo { height: 36px; width: auto; display: block; }
-.skc-sell .topbar-right { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
+.skc-sell .topbar-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; min-width: 0; }
 .skc-sell .topbar-trust {
   font-size: 13px; color: var(--text-muted);
   display: flex; align-items: center; gap: 8px;
   white-space: nowrap;
 }
+.skc-sell .topbar-right.has-jump .topbar-trust { display: none; }
 .skc-sell .topbar-trust strong { color: var(--text); font-weight: 700; }
 
 /* Phone treatment — elevated to match the rest of the design system.
@@ -78,8 +79,8 @@
   font-variation-settings: 'FILL' 1, 'wght' 600;
 }
 .skc-sell .nav-links {
-  display: flex; align-items: center; gap: 26px;
-  flex: 1; justify-content: flex-start; margin-left: 24px;
+  display: flex; align-items: center; gap: clamp(14px, 1.6vw, 24px);
+  flex: 1; justify-content: flex-start; margin-left: 10px;
   min-width: 0;
 }
 .skc-sell .nav-links a {
@@ -1197,7 +1198,11 @@
 .skc-sell .form-footer .lock { display: inline-block; margin-right: 4px; }
 
 /* ============ SECTION SHARED ============ */
-.skc-sell section.block { padding: 80px 0; border-top: 1px solid var(--border); }
+.skc-sell section.block {
+  padding: 80px 0;
+  border-top: 1px solid var(--border);
+  scroll-margin-top: 82px;
+}
 .skc-sell .section-eyebrow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--brand); margin-bottom: 12px; text-align: center; }
 .skc-sell .section-title { font-size: 38px; line-height: 1.1; letter-spacing: -0.02em; font-weight: 800; text-align: center; margin-bottom: 16px; }
 .skc-sell .section-sub { font-size: 17px; color: var(--text-muted); text-align: center; max-width: 640px; margin: 0 auto 48px; line-height: 1.55; }
@@ -1309,11 +1314,60 @@
 .skc-sell .county-card h4 { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
 .skc-sell .county-card .state { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
 
+/* ============ VIDEO TESTIMONIALS ============ */
+.skc-sell .video-testimonial-section {
+  background:
+    linear-gradient(135deg, rgba(31, 160, 90, 0.07), rgba(218, 37, 36, 0.035) 46%, #ffffff 100%);
+}
+.skc-sell .video-testimonial-panel .section-sub {
+  margin-bottom: 32px;
+}
+.skc-sell .video-testimonial-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+.skc-sell .video-testimonial-card {
+  border: 1px solid rgba(31, 160, 90, 0.24);
+  border-radius: 14px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 16px 38px rgba(10, 10, 11, 0.08);
+}
+.skc-sell .video-frame {
+  aspect-ratio: 16 / 9;
+  background: #0a0a0b;
+}
+.skc-sell .video-frame iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.skc-sell .video-card-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 15px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+}
+.skc-sell .video-card-label .material-symbols-outlined {
+  color: var(--green);
+  font-size: 18px;
+  font-variation-settings: 'FILL' 1, 'wght' 700;
+}
+
 /* ============ SOCIAL PROOF ============ */
 .skc-sell .testimonials { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+.skc-sell .testimonials.featured-testimonials { grid-template-columns: repeat(3, 1fr); }
 .skc-sell .testimonial {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 28px;
+  box-shadow: 0 1px 2px rgba(10, 10, 11, 0.04);
 }
 .skc-sell .testimonial .stars { margin-bottom: 12px; }
 .skc-sell .testimonial-quote { font-size: 16px; color: var(--text); line-height: 1.6; margin-bottom: 20px; }
@@ -1387,6 +1441,7 @@
 .skc-sell .footer-links a:hover { color: var(--text); }
 
 @media (max-width: 1180px) {
+  .skc-sell .topbar-trust { display: none; }
   .skc-sell.tax-landing .topbar-trust { display: none; }
 }
 
@@ -1437,7 +1492,9 @@
   .skc-sell .mid-cta { grid-template-columns: 1fr; padding: 36px; }
   .skc-sell .mid-cta h2 { font-size: 26px; }
   .skc-sell .county-grid { grid-template-columns: 1fr 1fr; }
+  .skc-sell .video-testimonial-grid { grid-template-columns: 1fr; max-width: 680px; }
   .skc-sell .testimonials { grid-template-columns: 1fr; }
+  .skc-sell .testimonials.featured-testimonials { grid-template-columns: 1fr; }
   .skc-sell.tax-landing .testimonials { grid-template-columns: 1fr; }
   .skc-sell .tax-team { grid-template-columns: 1fr; }
   .skc-sell .final-cta { padding: 40px 24px; }
