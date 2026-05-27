@@ -447,10 +447,10 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
             <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
           </nav>
-          <div className="topbar-right">
+          <div className={`topbar-right ${navJumpVisible ? 'has-jump' : ''}`}>
             <div className="topbar-trust">
               <span className="stars">★★★★★</span>
-              <span><strong>100+</strong> KC homeowners helped</span>
+              <span><strong>100+</strong> Owners helped</span>
             </div>
             <a href={`tel:${phoneTel}`} className="topbar-phone" onClick={() => trackPhoneClick('topbar')}>
               <span className="material-symbols-outlined" aria-hidden>call</span>
@@ -553,7 +553,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               <div className="hero-trust-row">
                 <span className="stars">★★★★★</span>
                 <span className="trust-text">
-                  <strong>4.9/5</strong> from <strong>100+ KC homeowners</strong>
+                  <strong>4.9/5</strong> from <strong>100+ Owners helped</strong>
                 </span>
                 <span className="trust-text">
                   • <strong>11 years</strong> in the KC market
@@ -877,60 +877,30 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         </div>
       </section>
 
-      {!isTaxLanding && (
-        <>
-          {/* ============ COUNTIES ============ */}
-          <section className="block">
-            <div className="container">
-              <div className="section-eyebrow">Service area</div>
-              <h2 className="section-title">We know your county. And your block.</h2>
-              <p className="section-sub">
-                We work both sides of the state line. If your property is in any of these counties, we can help.
-              </p>
-
-              <div className="county-grid">
-                {[
-                  ['JA', 'Jackson County', 'Missouri'],
-                  ['CL', 'Clay County', 'Missouri'],
-                  ['PL', 'Platte County', 'Missouri'],
-                  ['WY', 'Wyandotte County', 'Kansas'],
-                  ['JO', 'Johnson County', 'Kansas'],
-                  ['+', 'Surrounding metro', 'Case-by-case'],
-                ].map(([flag, name, sub]) => (
-                  <div key={name} className="county-card">
-                    <div className="county-flag">{flag}</div>
-                    <div>
-                      <h4>{name}</h4>
-                      <div className="state">{sub}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        </>
-      )}
+      {!isTaxLanding && <GeneralVideoTestimonials />}
 
       {/* ============ TESTIMONIALS ============ */}
       <section className="block" id="reviews">
         <div className="container">
-          <div className="section-eyebrow">{isTaxLanding ? 'Real fresh starts' : 'What KC homeowners say'}</div>
+          <div className="section-eyebrow">Real fresh starts</div>
           <h2 className="section-title">
             {isTaxLanding ? (
               <>
                 100+ KC neighbors. <span className="accent-green">All the way home.</span>
               </>
             ) : (
-              '100+ neighbors. Real stories.'
+              <>
+                100+ KC neighbors. <span className="accent-green">All the way home.</span>
+              </>
             )}
           </h2>
           <p className="section-sub">
             {isTaxLanding
               ? 'No actors. Real sellers, real tax pressure, real closing-table outcomes.'
-              : "These aren't paid testimonials. They're people we've actually helped — and you can ask them yourself before we close."}
+              : 'No actors. Real sellers, real house trouble, real closing-table outcomes.'}
           </p>
 
-          <div className="testimonials">
+          <div className="testimonials featured-testimonials">
             {(isTaxLanding ? TAX_TESTIMONIALS : TESTIMONIALS).map((testimonial) => (
               <Testimonial key={`${testimonial.initials}-${testimonial.name}`} {...testimonial} />
             ))}
@@ -1199,7 +1169,7 @@ function GeneralPromise() {
               You do not have to <span className="accent-green">fix the house</span> first.
             </h2>
             <p>
-              Leave the junk. Skip the repairs. Tell us what is really going on. We will give you a number and explain it in plain English.
+              Take what you want and leave the rest. Tell us what is really going on. We will give you a number and explain it in plain English.
             </p>
           </div>
           <div className="guarantee-checks">
@@ -1247,6 +1217,56 @@ function GeneralTeamSection() {
               <p className="tax-team-title">Junior House Hunter</p>
               <p>Keeps follow-up simple, fast, and clear while your file moves to closing.</p>
             </article>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function GeneralVideoTestimonials() {
+  const videos = [
+    {
+      id: 'bZyZYbI0sg4',
+      title: 'Seller story: a cleaner way out',
+      url: 'https://www.youtube.com/embed/bZyZYbI0sg4',
+    },
+    {
+      id: 'eA55Ehd17mI',
+      title: 'Seller story: local help in KC',
+      url: 'https://www.youtube.com/embed/eA55Ehd17mI',
+    },
+  ]
+
+  return (
+    <section className="block video-testimonial-section" aria-labelledby="video-testimonials-title">
+      <div className="container">
+        <div className="video-testimonial-panel">
+          <div className="section-eyebrow">Video testimonials</div>
+          <h2 className="section-title" id="video-testimonials-title">
+            Hear from sellers who <span className="accent-green">got unstuck.</span>
+          </h2>
+          <p className="section-sub">
+            Two short stories from real people who needed a simple way to sell.
+          </p>
+
+          <div className="video-testimonial-grid">
+            {videos.map((video) => (
+              <article className="video-testimonial-card" key={video.id}>
+                <div className="video-frame">
+                  <iframe
+                    src={video.url}
+                    title={video.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                </div>
+                <div className="video-card-label">
+                  <span className="material-symbols-outlined" aria-hidden>play_circle</span>
+                  {video.title}
+                </div>
+              </article>
+            ))}
           </div>
         </div>
       </div>
@@ -1534,27 +1554,24 @@ const TESTIMONIALS: Array<{
   result?: string
 }> = [
   {
-    initials: 'RM',
-    name: 'Renee M.',
-    meta: 'Inherited property · Jackson County, MO',
-    quote: '"I had a house from my dad and three years of taxes. Saving KC paid the taxes at closing. I got a fair check and it was done in 18 days."',
-  },
-  {
-    initials: 'DT',
-    name: 'David T.',
-    meta: 'Tired landlord · Wyandotte County, KS',
-    quote: '"The tenant was hard to deal with and the house needed work. I live out of town. They bought it as-is and handled the next steps."',
-  },
-  {
     initials: 'JK',
     name: 'Jerome K.',
-    meta: 'Tax sale pressure · Jackson County, MO',
+    meta: 'Jackson County, MO',
+    result: 'Closed fast',
     quote: '"I was close to a tax sale. Other buyers stopped calling when they saw the title. Saving KC stayed with it and closed fast."',
+  },
+  {
+    initials: 'RM',
+    name: 'Renee M.',
+    meta: 'Wyandotte County, KS',
+    result: 'Inherited · 18 days',
+    quote: '"I had a house from my dad and three years of taxes. Saving KC paid the taxes at closing. I got a fair check."',
   },
   {
     initials: 'SP',
     name: 'Sandra P.',
-    meta: 'Probate sale · Clay County, MO',
+    meta: 'Clay County, MO',
+    result: 'Probate sale',
     quote: '"My brother and I did not agree on the house. They kept it calm, talked to both of us, and got us to closing."',
   },
 ]
