@@ -1331,7 +1331,7 @@
 }
 .skc-sell .video-testimonial-card {
   border: 1px solid rgba(31, 160, 90, 0.24);
-  border-radius: 14px;
+  border-radius: 8px;
   background: #ffffff;
   overflow: hidden;
   box-shadow: 0 16px 38px rgba(10, 10, 11, 0.08);
@@ -1339,12 +1339,116 @@
 .skc-sell .video-frame {
   aspect-ratio: 16 / 9;
   background: #0a0a0b;
+  position: relative;
 }
 .skc-sell .video-frame iframe {
   width: 100%;
   height: 100%;
   border: 0;
   display: block;
+}
+.skc-sell .video-preview {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: left;
+  color: #ffffff;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  font-family: inherit;
+}
+.skc-sell .video-preview::before {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  pointer-events: none;
+}
+.skc-sell .video-preview-red {
+  background:
+    linear-gradient(135deg, rgba(10, 10, 11, 0.92), rgba(64, 16, 18, 0.88)),
+    linear-gradient(135deg, #da2524, #1fa05a);
+}
+.skc-sell .video-preview-green {
+  background:
+    linear-gradient(135deg, rgba(10, 10, 11, 0.92), rgba(12, 57, 36, 0.88)),
+    linear-gradient(135deg, #1fa05a, #da2524);
+}
+.skc-sell .video-preview-top,
+.skc-sell .video-preview-copy,
+.skc-sell .video-preview-action {
+  position: relative;
+  z-index: 1;
+}
+.skc-sell .video-preview-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.skc-sell .video-preview-kicker {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.skc-sell .video-duration-badge {
+  background: #ffffff;
+  color: #0a0a0b;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+.skc-sell .video-preview-copy {
+  display: grid;
+  gap: 10px;
+  max-width: 350px;
+}
+.skc-sell .video-preview-copy strong {
+  font-size: clamp(25px, 3.1vw, 36px);
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+.skc-sell .video-preview-copy span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.skc-sell .video-preview-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 900;
+  width: 100%;
+  padding-top: 13px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+.skc-sell .video-play-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: var(--brand);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+}
+.skc-sell .video-play-icon .material-symbols-outlined {
+  font-size: 28px;
+  font-variation-settings: 'FILL' 1, 'wght' 800;
 }
 .skc-sell .video-card-label {
   display: flex;
@@ -1355,10 +1459,25 @@
   font-size: 14px;
   font-weight: 800;
 }
+.skc-sell .video-card-label span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
 .skc-sell .video-card-label .material-symbols-outlined {
   color: var(--green);
   font-size: 18px;
   font-variation-settings: 'FILL' 1, 'wght' 700;
+}
+.skc-sell .video-card-duration {
+  border: 1px solid rgba(31, 160, 90, 0.18);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--text-muted);
+  background: rgba(31, 160, 90, 0.06);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  flex: 0 0 auto;
 }
 
 /* ============ SOCIAL PROOF ============ */
