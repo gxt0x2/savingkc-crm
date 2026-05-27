@@ -21,6 +21,14 @@ describe('SellLanding', () => {
   it('renders the general landing question without leaking HTML entities', () => {
     const html = renderLanding()
 
+    expect(html).toContain('Sell My House In Kansas City <span class="accent">Today.</span>')
+    expect(html).toContain('wb_sunny')
+    expect(html).toContain('The <span class="em">fresh start</span> you&#x27;ve been waiting for.')
+    expect(html).toContain('$0 due before you sell.')
+    expect(html).toContain('100% private.')
+    expect(html).toContain('Close in 7-60 days')
+    expect(html).toContain('Back taxes paid at closing.')
+    expect(html).not.toContain('You pay $0.')
     expect(html).toMatch(/What(?:'|&#x27;)s your situation\?/)
     expect(html).toContain('radio-tile selected"><span class="material-symbols-outlined" aria-hidden="true">gavel</span>Behind on taxes')
     expect(html).not.toContain('&amp;apos;')

@@ -527,43 +527,24 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 </>
               ) : (
                 <>
-                  <h1>Sell My House In Kansas City Today.</h1>
+                  <h1>Sell My House In Kansas City <span className="accent">Today.</span></h1>
                   <p className="sub">
                     Back taxes. A house you didn&apos;t ask for. A tenant you can&apos;t get out. Repairs you stopped counting. Whatever it is, you don&apos;t have to fix it, clean it, or explain it. Tell us the address. We bring a fair cash number in an hour. You pick the day it closes.
                   </p>
+                  <div className="fresh-start">
+                    <span className="fresh-start-icon material-symbols-outlined" aria-hidden>wb_sunny</span>
+                    <span className="fresh-start-text">
+                      The <span className="em">fresh start</span>{' '}you&apos;ve been waiting for.
+                    </span>
+                  </div>
                 </>
               )}
 
               <ul className="hero-bullets">
-                {isTaxLanding ? (
-                  <>
-                    <li><span className="check">✓</span><span><strong>$0 due before you sell.</strong></span></li>
-                    <li><span className="check">✓</span><span><strong>100% private.</strong> <span className="muted-inline">No yard signs. No open houses.</span></span></li>
-                    <li><span className="check">✓</span><span><strong>Close in 7-60 days</strong> <span className="muted-inline">- you pick the day.</span></span></li>
-                    <li><span className="check">✓</span><span><strong>Back taxes paid at closing.</strong></span></li>
-                  </>
-                ) : (
-                  <>
-                    <li>
-                      <span className="check">✓</span>
-                      <span>
-                        <strong>You pay $0.</strong> No fees, no commissions, no repairs, and no cleanup. The number we say is the check you get.
-                      </span>
-                    </li>
-                    <li>
-                      <span className="check">✓</span>
-                      <span>
-                        <strong>Keep your privacy.</strong> Handle things quietly at closing. Probate, liens, back taxes, hoarder mess. No neighbors. No judgment.
-                      </span>
-                    </li>
-                    <li>
-                      <span className="check">✓</span>
-                      <span>
-                        <strong>Pick your payday.</strong> Close in 14 days if you need out fast, or take 60. You set the pace.
-                      </span>
-                    </li>
-                  </>
-                )}
+                <li><span className="check">✓</span><span><strong>$0 due before you sell.</strong></span></li>
+                <li><span className="check">✓</span><span><strong>100% private.</strong> <span className="muted-inline">No yard signs. No open houses.</span></span></li>
+                <li><span className="check">✓</span><span><strong>Close in 7-60 days</strong> <span className="muted-inline">- you pick the day.</span></span></li>
+                <li><span className="check">✓</span><span><strong>Back taxes paid at closing.</strong></span></li>
               </ul>
 
               <div className="hero-trust-row">
