@@ -528,11 +528,10 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               ) : (
                 <>
                   <h1>Sell My House In <span className="accent">Kansas City</span> Today.</h1>
-                  <p className="sub">
-                    Back taxes. An inherited headache. A tenant who won’t leave. Repairs that never end.
-                    <br /><br />
-                    Whatever stress you’re facing, you don’t have to fix it, clean it, or explain it. Just give us the address and we’ll bring you a fair cash offer in under an hour. You pick the closing date.
-                  </p>
+                  <div className="sub">
+                    <p>Back taxes. An inherited headache. A tenant who won’t leave. Repairs that never end.</p>
+                    <p>Whatever stress you’re facing, you don’t have to fix it, clean it, or explain it. Just give us the address and we’ll bring you a fair cash offer in under an hour. You pick the closing date.</p>
+                  </div>
                   <div className="fresh-start">
                     <span className="fresh-start-icon material-symbols-outlined" aria-hidden>wb_sunny</span>
                     <span className="fresh-start-text">
