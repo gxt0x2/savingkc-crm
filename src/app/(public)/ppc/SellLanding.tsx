@@ -527,9 +527,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 </>
               ) : (
                 <>
-                  <h1>Sell My House In Kansas City <span className="accent">Today.</span></h1>
+                  <h1>Sell My House In <span className="accent">Kansas City</span> Today.</h1>
                   <p className="sub">
-                    Back taxes. A house you didn&apos;t ask for. A tenant you can&apos;t get out. Repairs you stopped counting. Whatever it is, you don&apos;t have to fix it, clean it, or explain it. Tell us the address. We bring a fair cash number in an hour. You pick the day it closes.
+                    Back taxes. An inherited headache. A tenant who won’t leave. Repairs that never end.
+                    <br /><br />
+                    Whatever stress you’re facing, you don’t have to fix it, clean it, or explain it. Just give us the address and we’ll bring you a fair cash offer in under an hour. You pick the closing date.
                   </p>
                   <div className="fresh-start">
                     <span className="fresh-start-icon material-symbols-outlined" aria-hidden>wb_sunny</span>

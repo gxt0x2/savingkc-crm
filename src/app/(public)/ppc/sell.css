@@ -228,7 +228,7 @@
 
 .skc-sell .hero h1 { font-size: 52px; line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; margin-bottom: 20px; }
 .skc-sell .hero h1 .accent { color: var(--brand); }
-.skc-sell .hero .sub { font-size: 19px; color: var(--text-muted); line-height: 1.55; margin-bottom: 28px; max-width: 540px; }
+.skc-sell .hero .sub { font-size: 19px; color: #161719; line-height: 1.55; margin-bottom: 28px; max-width: 540px; }
 .skc-sell .tax-hero-summary {
   max-width: 620px;
   margin: -6px 0 18px;
