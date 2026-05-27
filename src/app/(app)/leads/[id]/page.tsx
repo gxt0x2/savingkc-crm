@@ -1585,6 +1585,7 @@ export default function LeadDetailPage() {
       let link: string | undefined
       let linkLabel: string | undefined
       let recordingUrl: string | undefined
+      let recordingDuration: number | undefined
 
       if (a.activity_type === 'status_change' && a.metadata) {
         const newStation = a.metadata.new_station as string | undefined
@@ -1603,6 +1604,10 @@ export default function LeadDetailPage() {
         const callSid = (a.metadata.callSid || a.metadata.CallSid) as string | undefined
         const recordingSid = (a.metadata.recordingSid || a.metadata.RecordingSid) as string | undefined
         recordingUrl = toPlayableRecordingUrl(fromMeta) || findTranscriptUrl(a.created_at, callSid, recordingSid)
+        const durationValue = Number(a.metadata.duration || a.metadata.recordingDuration || a.metadata.RecordingDuration)
+        if (Number.isFinite(durationValue) && durationValue > 0) {
+          recordingDuration = durationValue
+        }
       }
 
       const typeMap: Record<string, string> = {
@@ -1631,7 +1636,9 @@ export default function LeadDetailPage() {
         const callerPart = descParts[0]?.trim() || ''
         const statusPart = descParts[1]?.trim() || status || ''
 
-        if (direction === 'inbound') {
+        if (a.metadata?.source === 'twilio_recording_callback' || a.metadata?.source === 'recording_activity_backfill') {
+          title = 'Call recording'
+        } else if (direction === 'inbound') {
           // Extract just the name (remove "Inbound call from" prefix if present)
           const nameMatch = callerPart.match(/(?:Inbound call from|from)\s+(.+)/i)
           const callerName = nameMatch?.[1] || callerPart || 'Unknown'
@@ -1749,6 +1756,7 @@ export default function LeadDetailPage() {
         link,
         linkLabel,
         recordingUrl,
+        recordingDuration,
         rawType: a.activity_type,
         agentName: a.agent || undefined,
         metadata: a.metadata || undefined,
