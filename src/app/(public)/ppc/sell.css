@@ -1197,7 +1197,11 @@
 .skc-sell .form-footer .lock { display: inline-block; margin-right: 4px; }
 
 /* ============ SECTION SHARED ============ */
-.skc-sell section.block { padding: 80px 0; border-top: 1px solid var(--border); }
+.skc-sell section.block {
+  padding: 80px 0;
+  border-top: 1px solid var(--border);
+  scroll-margin-top: 82px;
+}
 .skc-sell .section-eyebrow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--brand); margin-bottom: 12px; text-align: center; }
 .skc-sell .section-title { font-size: 38px; line-height: 1.1; letter-spacing: -0.02em; font-weight: 800; text-align: center; margin-bottom: 16px; }
 .skc-sell .section-sub { font-size: 17px; color: var(--text-muted); text-align: center; max-width: 640px; margin: 0 auto 48px; line-height: 1.55; }
