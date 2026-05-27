@@ -1225,15 +1225,20 @@ function GeneralTeamSection() {
 }
 
 function GeneralVideoTestimonials() {
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null)
   const videos = [
     {
       id: 'bZyZYbI0sg4',
       title: 'Seller story: a cleaner way out',
+      runtime: '1:08',
+      thumbnail: '/ppc/seller-story-cleaner-way-out.webp',
       url: 'https://www.youtube.com/embed/bZyZYbI0sg4',
     },
     {
       id: 'eA55Ehd17mI',
       title: 'Seller story: local help in KC',
+      runtime: '1:29',
+      thumbnail: '/ppc/seller-story-local-help.webp',
       url: 'https://www.youtube.com/embed/eA55Ehd17mI',
     },
   ]
@@ -1254,16 +1259,39 @@ function GeneralVideoTestimonials() {
             {videos.map((video) => (
               <article className="video-testimonial-card" key={video.id}>
                 <div className="video-frame">
-                  <iframe
-                    src={video.url}
-                    title={video.title}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                  />
+                  {activeVideoId === video.id ? (
+                    <iframe
+                      src={`${video.url}?autoplay=1&rel=0`}
+                      title={video.title}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                    />
+                  ) : (
+                    <button
+                      className="video-thumbnail-button"
+                      type="button"
+                      data-video-url={video.url}
+                      onClick={() => setActiveVideoId(video.id)}
+                      aria-label={`Play ${video.title}, ${video.runtime}`}
+                    >
+                      <Image
+                        src={video.thumbnail}
+                        alt=""
+                        fill
+                        sizes="(max-width: 980px) 90vw, 470px"
+                        className="video-thumbnail-image"
+                      />
+                      <span className="video-duration-badge">{video.runtime}</span>
+                      <span className="video-youtube-play" aria-hidden>
+                        <span className="video-youtube-triangle" />
+                      </span>
+                    </button>
+                  )}
                 </div>
                 <div className="video-card-label">
                   <span className="material-symbols-outlined" aria-hidden>play_circle</span>
-                  {video.title}
+                  <span className="video-card-title">{video.title}</span>
+                  <span className="video-card-duration">{video.runtime}</span>
                 </div>
               </article>
             ))}
