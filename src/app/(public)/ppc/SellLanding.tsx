@@ -627,7 +627,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 <div style={{ marginTop: 18 }}>
                   <div className="form-field form-field-prominent">
                     <span className="field-label">
-                      {isTaxLanding ? 'Are you behind on property taxes?' : 'What&apos;s your situation?'}
+                      {isTaxLanding ? 'Are you behind on property taxes?' : "What's your situation?"}
                     </span>
                     {isTaxLanding ? (
                       <div className="radio-group yesno">
