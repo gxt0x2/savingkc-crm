@@ -77,10 +77,8 @@ type SellLandingProps = {
   variant?: 'general' | 'tax'
 }
 
-function initialQuizState(variant: SellLandingProps['variant']): QuizState {
-  return variant === 'tax'
-    ? { ...EMPTY_STATE, situation: 'tax-delinquent' }
-    : EMPTY_STATE
+function initialQuizState(): QuizState {
+  return { ...EMPTY_STATE, situation: 'tax-delinquent' }
 }
 
 export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, variant = 'general' }: SellLandingProps) {
@@ -88,7 +86,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   const totalSteps = isTaxLanding ? 4 : 3
   const finalStep = isTaxLanding ? 4 : 3
   const [step, setStep] = useState<FormStep>(1)
-  const [state, setState] = useState<QuizState>(() => initialQuizState(variant))
+  const [state, setState] = useState<QuizState>(() => initialQuizState())
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [bookingOpen, setBookingOpen] = useState(false)
@@ -529,43 +527,25 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 </>
               ) : (
                 <>
-                  <h1>Sell My House In Kansas City Today.</h1>
-                  <p className="sub">
-                    Back taxes. A house you didn&apos;t ask for. A tenant you can&apos;t get out. Repairs you stopped counting. Whatever it is, you don&apos;t have to fix it, clean it, or explain it. Tell us the address. We bring a fair cash number in an hour. You pick the day it closes.
-                  </p>
+                  <h1>Sell My House In <span className="accent">Kansas City</span> Today.</h1>
+                  <div className="sub">
+                    <p>Back taxes. An inherited headache. A tenant who won’t leave. Repairs that never end.</p>
+                    <p>Whatever stress you’re facing, you don’t have to fix it, clean it, or explain it. Just give us the address and we’ll bring you a fair cash offer in under an hour. You pick the closing date.</p>
+                  </div>
+                  <div className="fresh-start">
+                    <span className="fresh-start-icon material-symbols-outlined" aria-hidden>wb_sunny</span>
+                    <span className="fresh-start-text">
+                      The <span className="em">fresh start</span>{' '}you&apos;ve been waiting for.
+                    </span>
+                  </div>
                 </>
               )}
 
               <ul className="hero-bullets">
-                {isTaxLanding ? (
-                  <>
-                    <li><span className="check">✓</span><span><strong>$0 due before you sell.</strong></span></li>
-                    <li><span className="check">✓</span><span><strong>100% private.</strong> <span className="muted-inline">No yard signs. No open houses.</span></span></li>
-                    <li><span className="check">✓</span><span><strong>Close in 7-60 days</strong> <span className="muted-inline">- you pick the day.</span></span></li>
-                    <li><span className="check">✓</span><span><strong>Back taxes paid at closing.</strong></span></li>
-                  </>
-                ) : (
-                  <>
-                    <li>
-                      <span className="check">✓</span>
-                      <span>
-                        <strong>You pay $0.</strong> No fees, no commissions, no repairs, and no cleanup. The number we say is the check you get.
-                      </span>
-                    </li>
-                    <li>
-                      <span className="check">✓</span>
-                      <span>
-                        <strong>Keep your privacy.</strong> Handle things quietly at closing. Probate, liens, back taxes, hoarder mess. No neighbors. No judgment.
-                      </span>
-                    </li>
-                    <li>
-                      <span className="check">✓</span>
-                      <span>
-                        <strong>Pick your payday.</strong> Close in 14 days if you need out fast, or take 60. You set the pace.
-                      </span>
-                    </li>
-                  </>
-                )}
+                <li><span className="check">✓</span><span><strong>$0 due before you sell.</strong></span></li>
+                <li><span className="check">✓</span><span><strong>100% private.</strong> <span className="muted-inline">No yard signs. No open houses.</span></span></li>
+                <li><span className="check">✓</span><span><strong>Close in 7-60 days</strong> <span className="muted-inline">- you pick the day.</span></span></li>
+                <li><span className="check">✓</span><span><strong>Back taxes paid at closing.</strong></span></li>
               </ul>
 
               <div className="hero-trust-row">
@@ -585,7 +565,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 <span className="material-symbols-outlined" aria-hidden>{isTaxLanding ? 'wb_sunny' : 'bolt'}</span>
                 {isTaxLanding ? 'Your fresh start starts here' : 'Start here'}
               </span>
-              <h2>{isTaxLanding ? 'Get your cash offer in 60 minutes.' : 'Get Your Cash Offer in 1 hour.'}</h2>
+              <h2>{isTaxLanding ? 'Get My Cash Offer In 1 hour.' : 'Get Your Cash Offer in 1 hour.'}</h2>
               <p className="tool-sub">
                 {isTaxLanding
                   ? "Four quick questions. Answer or don't."
@@ -627,7 +607,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 <div style={{ marginTop: 18 }}>
                   <div className="form-field form-field-prominent">
                     <span className="field-label">
-                      {isTaxLanding ? 'Are you behind on property taxes?' : 'What&apos;s your situation?'}
+                      {isTaxLanding ? 'Are you behind on property taxes?' : "What's your situation?"}
                     </span>
                     {isTaxLanding ? (
                       <div className="radio-group yesno">

@@ -228,7 +228,9 @@
 
 .skc-sell .hero h1 { font-size: 52px; line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; margin-bottom: 20px; }
 .skc-sell .hero h1 .accent { color: var(--brand); }
-.skc-sell .hero .sub { font-size: 19px; color: var(--text-muted); line-height: 1.55; margin-bottom: 28px; max-width: 540px; }
+.skc-sell .hero .sub { font-size: 19px; color: #161719; line-height: 1.55; margin-bottom: 28px; max-width: 540px; }
+.skc-sell .hero .sub p { margin: 0; }
+.skc-sell .hero .sub p + p { margin-top: 16px; }
 .skc-sell .tax-hero-summary {
   max-width: 620px;
   margin: -6px 0 18px;
@@ -951,11 +953,11 @@
 }
 .skc-sell .tool-eyebrow {
   display: inline-flex; align-items: center; gap: 8px;
-  background: var(--orange); color: white;
+  background: var(--green); color: white;
   font-size: 11px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase;
   padding: 5px 12px; border-radius: 999px;
   margin-bottom: 10px;
-  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+  box-shadow: 0 6px 18px rgba(31, 160, 90, 0.28);
 }
 .skc-sell .tool-eyebrow .material-symbols-outlined {
   font-size: 14px; font-variation-settings: 'FILL' 1, 'wght' 800;
@@ -974,9 +976,9 @@
 }
 .skc-sell .step-pill {
   display: flex; align-items: center; gap: 8px;
-  background: var(--orange); color: white;
+  background: var(--green); color: white;
   padding: 6px 14px 6px 6px; border-radius: 999px;
-  box-shadow: 0 6px 18px rgba(249, 115, 22, 0.28);
+  box-shadow: 0 6px 18px rgba(31, 160, 90, 0.28);
   flex: 0 0 auto;
 }
 .skc-sell.tax-landing .step-pill {
@@ -986,7 +988,7 @@
 }
 .skc-sell .step-pill .step-num-circle {
   width: 26px; height: 26px; border-radius: 50%;
-  background: rgba(255,255,255,0.2); color: white;
+  background: #f8d34b; color: #0d2617;
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 14px;
 }
@@ -1003,7 +1005,7 @@
 }
 .skc-sell .step-track-fill {
   position: absolute; left: 0; top: 0; bottom: 0;
-  background: linear-gradient(90deg, var(--orange) 0%, #f5a524 100%);
+  background: linear-gradient(90deg, #f8d34b 0%, #94d36c 52%, var(--green) 100%);
   border-radius: 999px;
   transition: width 0.3s ease;
 }
