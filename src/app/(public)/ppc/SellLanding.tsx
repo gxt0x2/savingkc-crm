@@ -485,7 +485,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               </>
             )}
             <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
-            <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
+            <a href="#video-testimonials" onClick={scrollToId('video-testimonials')}>Reviews</a>
           </nav>
           <div className={`topbar-right ${navJumpVisible ? 'has-jump' : ''}`}>
             <div className="topbar-trust">
@@ -533,7 +533,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               </>
             )}
             <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
-            <a href="#reviews" onClick={scrollToId('reviews')}>Reviews</a>
+            <a href="#video-testimonials" onClick={scrollToId('video-testimonials')}>Reviews</a>
             <div className="mobile-trust">
               <span className="stars">★★★★★</span>
               <span><strong>100+</strong> KC homeowners helped</span>
@@ -1391,7 +1391,7 @@ function GeneralVideoTestimonials() {
   }, [clearPlayRetryTimers, sendPlayCommand])
 
   return (
-    <section className="block video-testimonial-section" aria-labelledby="video-testimonials-title">
+    <section id="video-testimonials" className="block video-testimonial-section" aria-labelledby="video-testimonials-title">
       <div className="container">
         <div className="video-testimonial-panel">
           <div className="section-eyebrow">Video testimonials</div>
