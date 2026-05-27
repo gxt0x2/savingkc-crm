@@ -227,7 +227,7 @@
 }
 .skc-sell .hero-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 4px rgba(218, 37, 36, 0.2); }
 
-.skc-sell .hero h1 { font-size: 52px; line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; margin-bottom: 20px; }
+.skc-sell .hero h1 { font-size: 58px; line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; margin-bottom: 20px; }
 .skc-sell .hero h1 .accent { color: var(--brand); }
 .skc-sell .hero .sub { font-size: 19px; color: #161719; line-height: 1.55; margin-bottom: 28px; max-width: 540px; }
 .skc-sell .hero .sub p { margin: 0; }
@@ -1523,7 +1523,7 @@
      above the fold, then the hero copy is below for the curious. */
   .skc-sell .hero-form { order: -1; }
   .skc-sell .hero-copy { order: 1; }
-  .skc-sell .hero h1 { font-size: 38px; }
+  .skc-sell .hero h1 { font-size: 42px; }
   .skc-sell.tax-landing .hero h1 { font-size: 42px; }
   .skc-sell .tax-hero-summary { font-size: 16px; max-width: none; }
   .skc-sell .tax-trust-inner { align-items: stretch; flex-direction: column; gap: 12px; }
@@ -1576,7 +1576,7 @@
   .skc-sell .county-grid { grid-template-columns: 1fr; }
   .skc-sell .fresh-start { padding: 11px 13px; margin-bottom: 18px; max-width: 100%; }
   .skc-sell .fresh-start-text { font-size: 15.5px; }
-  .skc-sell.tax-landing .hero h1 { font-size: 37px; max-width: 100%; }
+  .skc-sell.tax-landing .hero h1 { max-width: 100%; }
   .skc-sell .tax-hero-summary { font-size: 15px; line-height: 1.55; }
   .skc-sell .tax-trust-logos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .skc-sell .tax-trust-logo { min-height: 58px; padding: 8px; }
