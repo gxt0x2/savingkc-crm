@@ -77,10 +77,8 @@ type SellLandingProps = {
   variant?: 'general' | 'tax'
 }
 
-function initialQuizState(variant: SellLandingProps['variant']): QuizState {
-  return variant === 'tax'
-    ? { ...EMPTY_STATE, situation: 'tax-delinquent' }
-    : EMPTY_STATE
+function initialQuizState(): QuizState {
+  return { ...EMPTY_STATE, situation: 'tax-delinquent' }
 }
 
 export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, variant = 'general' }: SellLandingProps) {
@@ -88,7 +86,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   const totalSteps = isTaxLanding ? 4 : 3
   const finalStep = isTaxLanding ? 4 : 3
   const [step, setStep] = useState<FormStep>(1)
-  const [state, setState] = useState<QuizState>(() => initialQuizState(variant))
+  const [state, setState] = useState<QuizState>(() => initialQuizState())
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [bookingOpen, setBookingOpen] = useState(false)
@@ -585,7 +583,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 <span className="material-symbols-outlined" aria-hidden>{isTaxLanding ? 'wb_sunny' : 'bolt'}</span>
                 {isTaxLanding ? 'Your fresh start starts here' : 'Start here'}
               </span>
-              <h2>{isTaxLanding ? 'Get your cash offer in 60 minutes.' : 'Get Your Cash Offer in 1 hour.'}</h2>
+              <h2>{isTaxLanding ? 'Get My Cash Offer In 1 hour.' : 'Get Your Cash Offer in 1 hour.'}</h2>
               <p className="tool-sub">
                 {isTaxLanding
                   ? "Four quick questions. Answer or don't."

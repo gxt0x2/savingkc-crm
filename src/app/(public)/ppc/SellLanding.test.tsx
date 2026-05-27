@@ -22,6 +22,7 @@ describe('SellLanding', () => {
     const html = renderLanding()
 
     expect(html).toMatch(/What(?:'|&#x27;)s your situation\?/)
+    expect(html).toContain('radio-tile selected"><span class="material-symbols-outlined" aria-hidden="true">gavel</span>Behind on taxes')
     expect(html).not.toContain('&amp;apos;')
   })
 
@@ -29,6 +30,7 @@ describe('SellLanding', () => {
     const html = renderLanding('tax')
 
     expect(html).toContain('Are you behind on property taxes?')
+    expect(html).toContain('Get My Cash Offer In 1 hour.')
     expect(html).not.toContain('&amp;apos;')
   })
 })
