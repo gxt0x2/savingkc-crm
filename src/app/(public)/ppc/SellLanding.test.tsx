@@ -1,4 +1,7 @@
+// @vitest-environment jsdom
+
 import React from 'react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { SellLanding } from './SellLanding'
@@ -43,6 +46,8 @@ describe('SellLanding', () => {
     expect(html).toContain('Hear from sellers who <span class="accent-green">got unstuck.</span>')
     expect(html).toContain('data-video-url="https://www.youtube.com/embed/bZyZYbI0sg4"')
     expect(html).toContain('data-video-url="https://www.youtube.com/embed/eA55Ehd17mI"')
+    expect(html).toContain('enablejsapi=1')
+    expect(html).not.toContain('autoplay=1')
     expect(html).toContain('/ppc/seller-story-cleaner-way-out.webp')
     expect(html).toContain('/ppc/seller-story-local-help.webp')
     expect(html).toContain('1:08')
@@ -68,7 +73,38 @@ describe('SellLanding', () => {
     expect(html).toContain('Hear from sellers who <span class="accent-green">got unstuck.</span>')
     expect(html).toContain('/ppc/seller-story-cleaner-way-out.webp')
     expect(html).toContain('/ppc/seller-story-local-help.webp')
+    expect(html).toContain('enablejsapi=1')
+    expect(html).not.toContain('autoplay=1')
     expect(html).not.toContain('video-card-duration')
     expect(html).not.toContain('&amp;apos;')
+  })
+
+  it('sends a YouTube play command on the first thumbnail press', () => {
+    const postMessage = vi.fn()
+    render(
+      <SellLanding
+        phoneDisplay="(816) 608-8808"
+        phoneTel="+18166088808"
+      />,
+    )
+
+    const frame = screen.getByTitle('Seller story: a cleaner way out') as HTMLIFrameElement
+    Object.defineProperty(frame, 'contentWindow', {
+      configurable: true,
+      value: { postMessage },
+    })
+
+    const playButton = screen.getByRole('button', {
+      name: 'Play Seller story: a cleaner way out, 1:08',
+    })
+    fireEvent.pointerDown(playButton, { button: 0 })
+
+    expect(postMessage).toHaveBeenCalledWith(
+      JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+      'https://www.youtube.com',
+    )
+    expect(screen.queryByRole('button', {
+      name: 'Play Seller story: a cleaner way out, 1:08',
+    })).not.toBeInTheDocument()
   })
 })

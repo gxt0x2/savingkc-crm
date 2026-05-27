@@ -77,6 +77,46 @@ type SellLandingProps = {
   variant?: 'general' | 'tax'
 }
 
+type YouTubePlayer = {
+  playVideo: () => void
+  destroy: () => void
+}
+
+type YouTubePlayerEvent = {
+  target: YouTubePlayer
+}
+
+type YouTubeNamespace = {
+  Player: new (
+    element: string | HTMLIFrameElement,
+    options: { events?: { onReady?: (event: YouTubePlayerEvent) => void } },
+  ) => YouTubePlayer
+}
+
+declare global {
+  interface Window {
+    YT?: YouTubeNamespace
+    onYouTubeIframeAPIReady?: () => void
+  }
+}
+
+const VIDEO_TESTIMONIALS = [
+  {
+    id: 'bZyZYbI0sg4',
+    title: 'Seller story: a cleaner way out',
+    runtime: '1:08',
+    thumbnail: '/ppc/seller-story-cleaner-way-out.webp',
+    url: 'https://www.youtube.com/embed/bZyZYbI0sg4',
+  },
+  {
+    id: 'eA55Ehd17mI',
+    title: 'Seller story: local help in KC',
+    runtime: '1:29',
+    thumbnail: '/ppc/seller-story-local-help.webp',
+    url: 'https://www.youtube.com/embed/eA55Ehd17mI',
+  },
+]
+
 function initialQuizState(): QuizState {
   return { ...EMPTY_STATE, situation: 'tax-delinquent' }
 }
@@ -1226,22 +1266,129 @@ function GeneralTeamSection() {
 
 function GeneralVideoTestimonials() {
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null)
-  const videos = [
-    {
-      id: 'bZyZYbI0sg4',
-      title: 'Seller story: a cleaner way out',
-      runtime: '1:08',
-      thumbnail: '/ppc/seller-story-cleaner-way-out.webp',
-      url: 'https://www.youtube.com/embed/bZyZYbI0sg4',
-    },
-    {
-      id: 'eA55Ehd17mI',
-      title: 'Seller story: local help in KC',
-      runtime: '1:29',
-      thumbnail: '/ppc/seller-story-local-help.webp',
-      url: 'https://www.youtube.com/embed/eA55Ehd17mI',
-    },
-  ]
+  const videoFrameRefs = useRef<Record<string, HTMLIFrameElement | null>>({})
+  const videoPlayers = useRef<Record<string, YouTubePlayer | null>>({})
+  const initializingVideoIds = useRef<Set<string>>(new Set())
+  const playerInitAttempts = useRef<Record<string, number>>({})
+  const playerInitRetryTimers = useRef<number[]>([])
+  const initializePlayersRef = useRef<() => void>(() => undefined)
+  const pendingPlayVideoId = useRef<string | null>(null)
+  const playRetryTimers = useRef<number[]>([])
+
+  const clearPlayRetryTimers = useCallback(() => {
+    playRetryTimers.current.forEach((timerId) => window.clearTimeout(timerId))
+    playRetryTimers.current = []
+  }, [])
+
+  const clearPlayerInitRetryTimers = useCallback(() => {
+    playerInitRetryTimers.current.forEach((timerId) => window.clearTimeout(timerId))
+    playerInitRetryTimers.current = []
+  }, [])
+
+  const resetVideoPlayers = useCallback(() => {
+    Object.values(videoPlayers.current).forEach((player) => player?.destroy())
+    videoPlayers.current = {}
+    initializingVideoIds.current.clear()
+    playerInitAttempts.current = {}
+  }, [])
+
+  const sendPlayCommand = useCallback((videoId: string) => {
+    const player = videoPlayers.current[videoId]
+    if (player) {
+      player.playVideo()
+      pendingPlayVideoId.current = null
+      return
+    }
+
+    videoFrameRefs.current[videoId]?.contentWindow?.postMessage(
+      JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+      'https://www.youtube.com',
+    )
+  }, [])
+
+  const initializePlayers = useCallback(() => {
+    const YouTubePlayerConstructor = window.YT?.Player
+    if (!YouTubePlayerConstructor) return
+
+    VIDEO_TESTIMONIALS.forEach((video) => {
+      const frame = videoFrameRefs.current[video.id]
+      if (!frame || videoPlayers.current[video.id] || initializingVideoIds.current.has(video.id)) return
+
+      initializingVideoIds.current.add(video.id)
+      playerInitAttempts.current[video.id] = (playerInitAttempts.current[video.id] ?? 0) + 1
+      new YouTubePlayerConstructor(`seller-video-player-${video.id}`, {
+        events: {
+          onReady: (event) => {
+            videoPlayers.current[video.id] = event.target
+            initializingVideoIds.current.delete(video.id)
+            if (pendingPlayVideoId.current === video.id) {
+              sendPlayCommand(video.id)
+            }
+          },
+        },
+      })
+
+      if (playerInitAttempts.current[video.id] < 4) {
+        const retryTimer = window.setTimeout(() => {
+          if (videoPlayers.current[video.id]) return
+          initializingVideoIds.current.delete(video.id)
+          initializePlayersRef.current()
+        }, 1200)
+        playerInitRetryTimers.current.push(retryTimer)
+      }
+    })
+  }, [sendPlayCommand])
+
+  useEffect(() => {
+    initializePlayersRef.current = initializePlayers
+  }, [initializePlayers])
+
+  useEffect(() => {
+    return () => {
+      clearPlayRetryTimers()
+      clearPlayerInitRetryTimers()
+      resetVideoPlayers()
+    }
+  }, [clearPlayerInitRetryTimers, clearPlayRetryTimers, resetVideoPlayers])
+
+  useEffect(() => {
+    const previousReadyHandler = window.onYouTubeIframeAPIReady
+    const handleReady = () => {
+      previousReadyHandler?.()
+      initializePlayers()
+    }
+
+    if (window.YT?.Player) {
+      initializePlayers()
+      return
+    }
+
+    window.onYouTubeIframeAPIReady = handleReady
+
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const script = document.createElement('script')
+      script.src = 'https://www.youtube.com/iframe_api'
+      script.async = true
+      document.head.appendChild(script)
+    }
+
+    return () => {
+      if (window.onYouTubeIframeAPIReady === handleReady) {
+        window.onYouTubeIframeAPIReady = previousReadyHandler
+      }
+    }
+  }, [initializePlayers])
+
+  const startVideo = useCallback((videoId: string) => {
+    clearPlayRetryTimers()
+    setActiveVideoId(videoId)
+    pendingPlayVideoId.current = videoId
+
+    sendPlayCommand(videoId)
+    playRetryTimers.current = [120, 360, 700, 1100, 1700, 2500, 3600].map((delay) =>
+      window.setTimeout(() => sendPlayCommand(videoId), delay),
+    )
+  }, [clearPlayRetryTimers, sendPlayCommand])
 
   return (
     <section className="block video-testimonial-section" aria-labelledby="video-testimonials-title">
@@ -1256,22 +1403,28 @@ function GeneralVideoTestimonials() {
           </p>
 
           <div className="video-testimonial-grid">
-            {videos.map((video) => (
+            {VIDEO_TESTIMONIALS.map((video) => (
               <article className="video-testimonial-card" key={video.id}>
                 <div className="video-frame">
-                  {activeVideoId === video.id ? (
-                    <iframe
-                      src={`${video.url}?autoplay=1&rel=0`}
-                      title={video.title}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      allowFullScreen
-                    />
-                  ) : (
+                  <iframe
+                    id={`seller-video-player-${video.id}`}
+                    ref={(node) => {
+                      videoFrameRefs.current[video.id] = node
+                    }}
+                    src={`${video.url}?enablejsapi=1&rel=0&playsinline=1`}
+                    title={video.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                  {activeVideoId !== video.id && (
                     <button
                       className="video-thumbnail-button"
                       type="button"
                       data-video-url={video.url}
-                      onClick={() => setActiveVideoId(video.id)}
+                      onPointerDown={(event) => {
+                        if (event.button === 0) startVideo(video.id)
+                      }}
+                      onClick={() => startVideo(video.id)}
                       aria-label={`Play ${video.title}, ${video.runtime}`}
                     >
                       <Image
