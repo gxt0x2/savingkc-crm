@@ -1225,25 +1225,16 @@ function GeneralTeamSection() {
 }
 
 function GeneralVideoTestimonials() {
-  const [activeVideoId, setActiveVideoId] = useState<string | null>(null)
   const videos = [
     {
       id: 'bZyZYbI0sg4',
       title: 'Seller story: a cleaner way out',
-      previewTitle: 'A cleaner way out',
-      previewCopy: 'A KC seller explains how they moved on without repairs or cleanup.',
-      runtime: '1:08',
       url: 'https://www.youtube.com/embed/bZyZYbI0sg4',
-      tone: 'red',
     },
     {
       id: 'eA55Ehd17mI',
       title: 'Seller story: local help in KC',
-      previewTitle: 'Local help in KC',
-      previewCopy: 'A short closing-table story from sellers who needed a simple next step.',
-      runtime: '1:29',
       url: 'https://www.youtube.com/embed/eA55Ehd17mI',
-      tone: 'green',
     },
   ]
 
@@ -1263,42 +1254,16 @@ function GeneralVideoTestimonials() {
             {videos.map((video) => (
               <article className="video-testimonial-card" key={video.id}>
                 <div className="video-frame">
-                  {activeVideoId === video.id ? (
-                    <iframe
-                      src={`${video.url}?autoplay=1&rel=0`}
-                      title={video.title}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      allowFullScreen
-                    />
-                  ) : (
-                    <button
-                      className={`video-preview video-preview-${video.tone}`}
-                      type="button"
-                      data-video-url={video.url}
-                      onClick={() => setActiveVideoId(video.id)}
-                      aria-label={`Play ${video.title}, ${video.runtime}`}
-                    >
-                      <span className="video-preview-top">
-                        <span className="video-preview-kicker">Real seller video</span>
-                        <span className="video-duration-badge">{video.runtime}</span>
-                      </span>
-                      <span className="video-preview-copy">
-                        <strong>{video.previewTitle}</strong>
-                        <span>{video.previewCopy}</span>
-                      </span>
-                      <span className="video-preview-action">
-                        <span className="video-play-icon">
-                          <span className="material-symbols-outlined" aria-hidden>play_arrow</span>
-                        </span>
-                        Watch story
-                      </span>
-                    </button>
-                  )}
+                  <iframe
+                    src={video.url}
+                    title={video.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
                 </div>
                 <div className="video-card-label">
                   <span className="material-symbols-outlined" aria-hidden>play_circle</span>
-                  <span>{video.title}</span>
-                  <span className="video-card-duration">{video.runtime}</span>
+                  {video.title}
                 </div>
               </article>
             ))}
