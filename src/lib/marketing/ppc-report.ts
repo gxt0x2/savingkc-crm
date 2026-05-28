@@ -363,6 +363,17 @@ export type PpcReport = {
     callQuality: string
     revenue: number
   }>
+  resultCounts: {
+    journeySessionsShown: number
+    journeySessionsTotal: number
+    journeySessionsHiddenNoClickId: number
+    recentSessionsShown: number
+    recentSessionsTotal: number
+    recentLeadsShown: number
+    recentLeadsTotal: number
+    attributionRowsShown: number
+    attributionRowsTotal: number
+  }
 }
 
 type LeadState = {
@@ -385,6 +396,10 @@ type LeadState = {
 const QUALIFIED_STAGES = new Set(['qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'contract_signed', 'closed'])
 const CONTRACT_STAGES = new Set(['under_contract', 'closed_won', 'contract_signed', 'closed'])
 const APPOINTMENT_STAGES = new Set(['appointment_set', 'offer_made', 'under_contract', 'closed_won', 'contract_signed', 'closed'])
+const JOURNEY_SESSION_LIMIT = 12
+const RECENT_SESSION_LIMIT = 25
+const RECENT_LEAD_LIMIT = 25
+const ATTRIBUTION_ROW_LIMIT = 25
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -582,6 +597,8 @@ function extractAttributionFromTracking(row: PpcTrackingEventRow): Record<string
     utm_campaign: row.utm_campaign,
     utm_term: row.utm_term,
     utm_content: row.utm_content,
+    keyword: payload.keyword,
+    matchtype: payload.matchtype,
     gclid: row.gclid,
     gbraid: row.gbraid,
     wbraid: row.wbraid,
@@ -629,7 +646,11 @@ function mediumName(attribution: Record<string, unknown>): string {
 }
 
 function keywordName(attribution: Record<string, unknown>): string {
-  return text(attribution.utm_term) || 'Unmapped keyword'
+  return text(attribution.utm_term) ||
+    text(attribution.keyword) ||
+    queryParamFromAttribution(attribution, 'utm_term') ||
+    queryParamFromAttribution(attribution, 'keyword') ||
+    'Keyword not passed'
 }
 
 function contentName(attribution: Record<string, unknown>): string {
@@ -637,11 +658,21 @@ function contentName(attribution: Record<string, unknown>): string {
 }
 
 function campaignId(attribution: Record<string, unknown>): string {
-  return text(attribution.gad_campaignid) || text(attribution.campaign_id) || 'unmapped'
+  return text(attribution.gad_campaignid) ||
+    text(attribution.campaign_id) ||
+    text(attribution.campaignid) ||
+    queryParamFromAttribution(attribution, 'gad_campaignid') ||
+    queryParamFromAttribution(attribution, 'campaignid') ||
+    'unmapped'
 }
 
 function adGroupId(attribution: Record<string, unknown>): string {
-  return text(attribution.gad_adgroupid) || text(attribution.adgroup_id) || 'unmapped'
+  return text(attribution.gad_adgroupid) ||
+    text(attribution.adgroup_id) ||
+    text(attribution.adgroupid) ||
+    queryParamFromAttribution(attribution, 'gad_adgroupid') ||
+    queryParamFromAttribution(attribution, 'adgroupid') ||
+    'unmapped'
 }
 
 function displayPhone(phone: string | null): string {
@@ -740,6 +771,16 @@ function latestRowText(rows: PpcTrackingEventRow[], key: keyof PpcTrackingEventR
     if (value) return value
   }
   return '--'
+}
+
+function queryParamFromAttribution(attribution: Record<string, unknown>, key: string): string {
+  const landingUrl = text(attribution.landingUrl)
+  if (!landingUrl) return ''
+  try {
+    return text(new URL(landingUrl).searchParams.get(key))
+  } catch {
+    return ''
+  }
 }
 
 function compactClickId(value: string): string {
@@ -1265,7 +1306,13 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     outboxByLeadId.set(row.lead_id, [...(outboxByLeadId.get(row.lead_id) ?? []), row])
   }
 
-  const recentSessions = Array.from(sessionGroups.entries())
+  const allSessionEntries = Array.from(sessionGroups.entries())
+  const adClickSessionEntries = allSessionEntries.filter(([, rows]) =>
+    rows.some((row) => hasClickId(extractAttributionFromTracking(row)) || Boolean(clickIdFromTracking(row))),
+  )
+  const hiddenNoClickIdSessionCount = allSessionEntries.length - adClickSessionEntries.length
+
+  const recentSessions = adClickSessionEntries
     .map(([key, rows]) => {
       const ordered = [...rows].sort((a, b) => new Date(a.event_time || a.created_at || 0).getTime() - new Date(b.event_time || b.created_at || 0).getTime())
       const first = ordered[0]
@@ -1305,9 +1352,9 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       } satisfies PpcReport['recentSessions'][number]
     })
     .sort((a, b) => new Date(b.lastEventAt || b.firstEventAt || 0).getTime() - new Date(a.lastEventAt || a.firstEventAt || 0).getTime())
-    .slice(0, 25)
+    .slice(0, RECENT_SESSION_LIMIT)
 
-  const journeySessions = Array.from(sessionGroups.entries())
+  const journeySessions = adClickSessionEntries
     .map(([key, rows]) => {
       const ordered = [...rows].sort((a, b) => new Date(a.event_time || a.created_at || 0).getTime() - new Date(b.event_time || b.created_at || 0).getTime())
       const first = ordered[0]
@@ -1346,7 +1393,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       } satisfies PpcReport['journeySessions'][number]
     })
     .sort((a, b) => new Date(b.lastEventAt || b.firstEventAt || 0).getTime() - new Date(a.lastEventAt || a.firstEventAt || 0).getTime())
-    .slice(0, 12)
+    .slice(0, JOURNEY_SESSION_LIMIT)
 
   const attributionMap = new Map<string, PpcReport['attributionRows'][number]>()
   for (const state of states) {
@@ -1394,7 +1441,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     group.revenue += state.revenue
   }
 
-  const recentLeads = states
+  const allRecentLeads = states
     .map((state) => {
       const attribution = state.attribution
       const highestCallQuality = state.milestone5m.size > 0
@@ -1434,7 +1481,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       } satisfies PpcReport['recentLeads'][number]
     })
     .sort((a, b) => new Date(b.lastSignalAt || b.createdAt || 0).getTime() - new Date(a.lastSignalAt || a.createdAt || 0).getTime())
-    .slice(0, 25)
+  const recentLeads = allRecentLeads.slice(0, RECENT_LEAD_LIMIT)
 
   const conversionApprovalQueue = exportableOutbox
     .filter((row) => text(row.status).toLowerCase() !== 'sent')
@@ -1506,6 +1553,9 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     : overdueEscalations > 0 || pendingEscalations > 0
       ? 'attention'
       : 'healthy'
+  const allAttributionRows = Array.from(attributionMap.values())
+    .sort((a, b) => b.revenue - a.revenue || b.formSubmits - a.formSubmits || b.leads - a.leads)
+  const attributionRows = allAttributionRows.slice(0, ATTRIBUTION_ROW_LIMIT)
 
   return {
     generatedAt: Number.isNaN(reportNow.getTime()) ? new Date().toISOString() : reportNow.toISOString(),
@@ -1542,9 +1592,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     },
     funnel,
     callQuality,
-    attributionRows: Array.from(attributionMap.values())
-      .sort((a, b) => b.revenue - a.revenue || b.formSubmits - a.formSubmits || b.leads - a.leads)
-      .slice(0, 25),
+    attributionRows,
     exportHealth,
     conversionApproval,
     conversionApprovalQueue,
@@ -1588,5 +1636,16 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     recentSessions,
     journeySessions,
     recentLeads,
+    resultCounts: {
+      journeySessionsShown: journeySessions.length,
+      journeySessionsTotal: adClickSessionEntries.length,
+      journeySessionsHiddenNoClickId: hiddenNoClickIdSessionCount,
+      recentSessionsShown: recentSessions.length,
+      recentSessionsTotal: adClickSessionEntries.length,
+      recentLeadsShown: recentLeads.length,
+      recentLeadsTotal: allRecentLeads.length,
+      attributionRowsShown: attributionRows.length,
+      attributionRowsTotal: allAttributionRows.length,
+    },
   }
 }

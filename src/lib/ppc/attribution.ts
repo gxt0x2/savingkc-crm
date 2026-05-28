@@ -13,6 +13,10 @@ export interface AttributionPayload {
   utm_campaign?: string
   utm_term?: string
   utm_content?: string
+  keyword?: string
+  matchtype?: string
+  campaignid?: string
+  adgroupid?: string
   gclid?: string
   gbraid?: string
   wbraid?: string
@@ -33,6 +37,10 @@ const UTM_KEYS = [
   'utm_campaign',
   'utm_term',
   'utm_content',
+  'keyword',
+  'matchtype',
+  'campaignid',
+  'adgroupid',
   'gclid',
   'gbraid',
   'wbraid',

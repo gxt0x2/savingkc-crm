@@ -20,7 +20,7 @@ const LEAD_SELECT = 'id, full_name, phone, email, source, station, priority, pro
 function readDays(value: string | null): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return 30
-  return Math.min(Math.max(Math.round(parsed), 7), 365)
+  return Math.min(Math.max(Math.round(parsed), 1), 365)
 }
 
 function isMissingTable(error: { code?: string; message?: string } | null): boolean {

@@ -32,6 +32,10 @@ export type PpcTrackingAttribution = {
   utm_campaign?: string
   utm_term?: string
   utm_content?: string
+  keyword?: string
+  matchtype?: string
+  campaignid?: string
+  adgroupid?: string
   gclid?: string
   gbraid?: string
   wbraid?: string

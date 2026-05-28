@@ -334,6 +334,69 @@ describe('ppc report', () => {
     expect(report.recentLeads.find((lead) => lead.id === 'lead-form')?.formStatus).toBe('stage_3_no_submit')
   })
 
+  it('shows paid click journeys only when an ad click id is present', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      trackingEvents: [
+        ...baseInput.trackingEvents,
+        {
+          id: 'event-no-click',
+          event_id: 'event-no-click',
+          event_name: 'ppc_visit_started',
+          event_category: 'visit',
+          event_time: '2026-05-21T18:00:00.000Z',
+          session_id: 'session-no-click',
+          visitor_id: 'visitor-no-click',
+          lead_id: null,
+          form_step: 1,
+          form_status: null,
+          situation_raw: null,
+          timeline_raw: null,
+          condition_raw: null,
+          phone_number: null,
+          sms_consent: null,
+          is_test: false,
+          gclid: null,
+          attribution: {},
+          payload: {},
+          created_at: '2026-05-21T18:00:00.000Z',
+        },
+      ],
+    })
+
+    expect(report.resultCounts.journeySessionsTotal).toBe(1)
+    expect(report.resultCounts.journeySessionsHiddenNoClickId).toBe(1)
+    expect(report.journeySessions).toHaveLength(1)
+    expect(report.journeySessions[0]?.clickId).toBe('click-form')
+  })
+
+  it('maps keyword from Google Ads ValueTrack keyword fields when utm_term is absent', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      manifests: [
+        {
+          lead_id: 'lead-form',
+          created_at: '2026-05-20T14:00:00.000Z',
+          manifest: {
+            acquisition: {
+              attribution: {
+                gclid: 'click-form',
+                utm_source: 'google',
+                utm_medium: 'cpc',
+                utm_campaign: 'Search 2026',
+                keyword: 'cash home buyer kc',
+                campaignid: 'campaign-1',
+                adgroupid: 'adgroup-1',
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    expect(report.attributionRows.some((row) => row.keyword === 'cash home buyer kc')).toBe(true)
+  })
+
   it('only asks for approval on rows explicitly marked approval_required', () => {
     const report = buildPpcReport({
       ...baseInput,

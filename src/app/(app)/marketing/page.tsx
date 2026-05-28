@@ -15,7 +15,13 @@ import { Icon } from '@/components/ui/icon'
 import type { PpcReport } from '@/lib/marketing/ppc-report'
 import { GOOGLE_ADS_QUALITY_SCALE, type GoogleAdsQualityScore } from '@/lib/ppc/conversion-approval'
 
-const PERIODS = [7, 30, 90, 180] as const
+const PERIODS = [
+  { value: 1, label: 'Today', helper: 'Last 24h' },
+  { value: 7, label: 'Last 7 days', helper: '1 week' },
+  { value: 30, label: 'Last 30 days', helper: '1 month' },
+  { value: 90, label: 'Last 90 days', helper: 'Quarter' },
+  { value: 180, label: 'Last 180 days', helper: 'Long view' },
+] as const
 
 type LoadState =
   | { status: 'loading'; data: null; error: null }
@@ -83,12 +89,6 @@ function journeyStepClass(status: PpcReport['journeySessions'][number]['steps'][
   if (status === 'complete') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
   if (status === 'active') return 'border-amber-500/35 bg-amber-500/10 text-amber-200'
   return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-dim)]'
-}
-
-function journeyStepIcon(status: PpcReport['journeySessions'][number]['steps'][number]['status']): string {
-  if (status === 'complete') return 'check_circle'
-  if (status === 'active') return 'pending'
-  return 'radio_button_unchecked'
 }
 
 function deadlineStatusClass(status: PpcReport['conversionApprovalQueue'][number]['deadlineStatus']): string {
@@ -166,11 +166,23 @@ function formatEventName(value: string): string {
   return value.replace(/_/g, ' ')
 }
 
+function periodLabel(days: number): string {
+  return PERIODS.find((period) => period.value === days)?.label ?? `${days} days`
+}
+
+function countSummary(shown: number, total: number): string {
+  if (total <= shown) return `Showing ${formatNumber(shown)}`
+  return `Showing ${formatNumber(shown)} of ${formatNumber(total)}`
+}
+
 function usePpcReport(days: number, refreshKey: number): LoadState {
   const [state, setState] = useState<LoadState>({ status: 'loading', data: null, error: null })
 
   useEffect(() => {
     let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) setState({ status: 'loading', data: null, error: null })
+    })
 
     fetch(`/api/marketing/ppc-report?days=${days}`, { cache: 'no-store' })
       .then(async (res) => {
@@ -234,21 +246,22 @@ export default function MarketingPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {PERIODS.map((period) => (
-              <button
-                key={period}
-                type="button"
-                onClick={() => setDays(period)}
-                className={`rounded-lg border px-3 py-2 text-sm font-bold transition-colors ${
-                  days === period
-                    ? 'border-[#E32E2E] bg-[#E32E2E] text-white'
-                    : 'border-[var(--ck-border)] bg-[var(--ck-surface)] text-[var(--ck-text-muted)] hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]'
-                }`}
-              >
-                {period}d
-              </button>
-            ))}
+          <div className="flex flex-col gap-1 sm:min-w-[220px]">
+            <label htmlFor="marketing-period" className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">
+              Reporting window
+            </label>
+            <select
+              id="marketing-period"
+              value={days}
+              onChange={(event) => setDays(Number(event.target.value))}
+              className="h-11 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-black text-[var(--ck-text)] outline-none transition focus:border-[#E32E2E]"
+            >
+              {PERIODS.map((period) => (
+                <option key={period.value} value={period.value}>
+                  {period.label} - {period.helper}
+                </option>
+              ))}
+            </select>
           </div>
         </header>
 
@@ -276,32 +289,49 @@ export default function MarketingPage() {
               <KpiCard icon="payments" label="Revenue" value={formatMoney(report.summary.revenue)} detail={`${formatNumber(report.summary.contracts)} contracts`} tone="money" />
             </section>
 
-            <Panel title="Click-to-Close Tracking Flow" icon="account_tree">
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-                <FlowStep icon="ads_click" label="Ad Click" value="Ads UI" detail="Spend, CPC, campaign" tone="red" />
-                <FlowStep icon="web_traffic" label="Visit Logged" value={formatNumber(report.summary.paidVisits)} detail="First-party event rows" tone="violet" />
-                <FlowStep icon="fact_check" label="Form Signals" value={formatNumber(report.summary.optionSelections)} detail={`${formatNumber(report.summary.step2Completions)} reached Step 3`} tone="amber" />
-                <FlowStep icon="person_add" label="CRM Lead" value={formatNumber(report.summary.totalLeads)} detail={`${formatNumber(report.summary.consentedSubmits)} with consent`} tone="emerald" />
-                <FlowStep icon="verified" label="Ads Export" value={formatNumber(report.exportHealth.awaitingApproval)} detail="Awaiting approval" tone="slate" />
+            <Panel title="Decision Snapshot" icon="insights">
+              <div className="grid gap-3 lg:grid-cols-4">
+                <DecisionMetric
+                  icon="calendar_today"
+                  label="Window"
+                  value={periodLabel(days)}
+                  detail={`${formatDate(report.period.since)} - ${formatDate(report.period.until)}`}
+                />
+                <DecisionMetric
+                  icon="conversion_path"
+                  label="Ad-click journeys"
+                  value={countSummary(report.resultCounts.journeySessionsShown, report.resultCounts.journeySessionsTotal)}
+                  detail={`${formatNumber(report.resultCounts.journeySessionsHiddenNoClickId)} no-click-ID sessions hidden`}
+                />
+                <DecisionMetric
+                  icon="key"
+                  label="Click ID coverage"
+                  value={formatPct(report.dataQuality.clickIdCoverage)}
+                  detail={`${formatNumber(report.dataQuality.missingClickIdRows)} PPC leads missing an ad click ID`}
+                />
+                <DecisionMetric
+                  icon="warning"
+                  label="Needs action"
+                  value={formatNumber(report.exportHealth.awaitingApproval + report.exportHealth.failed + report.exportHealth.deadLetter)}
+                  detail="Approvals, failed exports, or dead letters"
+                  tone={report.exportHealth.awaitingApproval + report.exportHealth.failed + report.exportHealth.deadLetter > 0 ? 'warn' : 'ok'}
+                />
               </div>
             </Panel>
 
-            <ExportSetupPanel report={report} />
-
-            <OperationsHealthPanel report={report} />
-
-            <ApprovalQueuePanel
-              report={report}
-              message={approvalMessage}
-              onMessage={setApprovalMessage}
-              onApproved={() => setRefreshKey((value) => value + 1)}
-            />
-
             <Panel title="Paid Click Journey" icon="conversion_path">
+              <div className="mb-3 flex flex-col gap-1 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  {countSummary(report.resultCounts.journeySessionsShown, report.resultCounts.journeySessionsTotal)} click-ID journeys.
+                </span>
+                <span>
+                  {formatNumber(report.resultCounts.journeySessionsHiddenNoClickId)} no-click-ID sessions hidden by default.
+                </span>
+              </div>
               <div className="space-y-3">
                 {report.journeySessions.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-[var(--ck-border)] p-6 text-center text-sm text-[var(--ck-text-muted)]">
-                    No paid click journeys in this period.
+                    No paid click journeys with an ad click ID in this period.
                   </div>
                 ) : report.journeySessions.map((session) => (
                   <JourneySessionCard key={session.key} session={session} />
@@ -415,6 +445,14 @@ export default function MarketingPage() {
             </section>
 
             <Panel title="Campaign / Keyword Breakdown" icon="table_chart">
+              <div className="mb-3 flex flex-col gap-1 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  {countSummary(report.resultCounts.attributionRowsShown, report.resultCounts.attributionRowsTotal)} campaign/keyword rows.
+                </span>
+                <span>
+                  Keyword not passed means Google Ads did not send `utm_term` or `keyword`.
+                </span>
+              </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead>
@@ -441,7 +479,7 @@ export default function MarketingPage() {
                           <div className="text-xs text-[var(--ck-text-dim)]">{row.source} / {row.medium} · campaign {row.campaignId}</div>
                         </td>
                         <td className="py-3 pr-4">
-                          <div className="font-medium">{row.keyword}</div>
+                          <div className={`font-medium ${row.keyword === 'Keyword not passed' ? 'text-amber-300' : ''}`}>{row.keyword}</div>
                           <div className="text-xs text-[var(--ck-text-dim)]">ad group {row.adGroupId}</div>
                         </td>
                         <td className="py-3 pr-4 text-right tabular-nums">{formatNumber(row.leads)}</td>
@@ -458,6 +496,10 @@ export default function MarketingPage() {
             </Panel>
 
             <Panel title="Recent Paid Click Sessions" icon="timeline">
+              <div className="mb-3 flex flex-col gap-1 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+                <span>{countSummary(report.resultCounts.recentSessionsShown, report.resultCounts.recentSessionsTotal)} click-ID sessions.</span>
+                <span>No-click-ID sessions stay out of this table by default.</span>
+              </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead>
@@ -473,7 +515,7 @@ export default function MarketingPage() {
                   <tbody>
                     {report.recentSessions.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-[var(--ck-text-muted)]">No paid click sessions in this period.</td>
+                        <td colSpan={6} className="py-8 text-center text-[var(--ck-text-muted)]">No paid click sessions with an ad click ID in this period.</td>
                       </tr>
                     ) : report.recentSessions.map((session) => (
                       <tr key={session.key} className="border-b border-[var(--ck-border)] last:border-b-0">
@@ -514,6 +556,9 @@ export default function MarketingPage() {
             </Panel>
 
             <Panel title="Lead-Level Proof" icon="receipt_long">
+              <div className="mb-3 text-sm text-[var(--ck-text-muted)]">
+                {countSummary(report.resultCounts.recentLeadsShown, report.resultCounts.recentLeadsTotal)} PPC leads.
+              </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead>
@@ -563,6 +608,18 @@ export default function MarketingPage() {
                 </table>
               </div>
             </Panel>
+
+            <ApprovalQueuePanel
+              report={report}
+              message={approvalMessage}
+              onMessage={setApprovalMessage}
+              onApproved={() => setRefreshKey((value) => value + 1)}
+            />
+
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+              <OperationsHealthPanel report={report} />
+              <ExportSetupPanel report={report} />
+            </section>
           </div>
         )}
       </div>
@@ -999,34 +1056,32 @@ function Panel({ title, icon, children }: { title: string; icon: string; childre
   )
 }
 
-function FlowStep({
+function DecisionMetric({
   icon,
   label,
   value,
   detail,
-  tone,
+  tone = 'neutral',
 }: {
   icon: string
   label: string
   value: string
   detail: string
-  tone: 'red' | 'violet' | 'amber' | 'emerald' | 'slate'
+  tone?: 'neutral' | 'ok' | 'warn'
 }) {
   const toneClass = {
-    red: 'border-[#E32E2E]/35 bg-[#E32E2E]/10 text-[#FCA5A5]',
-    violet: 'border-violet-500/35 bg-violet-500/10 text-violet-300',
-    amber: 'border-amber-500/35 bg-amber-500/10 text-amber-300',
-    emerald: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300',
-    slate: 'border-sky-500/35 bg-sky-500/10 text-sky-300',
+    neutral: 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]',
+    ok: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+    warn: 'border-amber-500/35 bg-amber-500/10 text-amber-300',
   }[tone]
 
   return (
-    <div className={`relative rounded-lg border p-4 ${toneClass}`}>
-      <div className="mb-3 flex items-center justify-between gap-2">
+    <div className={`rounded-lg border p-3 ${toneClass}`}>
+      <div className="mb-2 flex items-center gap-2">
+        <Icon name={icon} size="text-lg" />
         <div className="text-xs font-black uppercase tracking-wide">{label}</div>
-        <Icon name={icon} size="text-xl" />
       </div>
-      <div className="text-2xl font-black tabular-nums text-[var(--ck-text)]">{value}</div>
+      <div className="text-xl font-black tabular-nums text-[var(--ck-text)]">{value}</div>
       <div className="mt-1 text-xs font-medium text-[var(--ck-text-muted)]">{detail}</div>
     </div>
   )
@@ -1069,8 +1124,8 @@ function KpiCard({
 
 function JourneySessionCard({ session }: { session: PpcReport['journeySessions'][number] }) {
   return (
-    <article className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+    <article className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+      <div className="mb-3 flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-md border border-[#E32E2E]/30 bg-[#E32E2E]/10 px-2 py-1 text-xs font-black uppercase text-[#FCA5A5]">
@@ -1080,7 +1135,7 @@ function JourneySessionCard({ session }: { session: PpcReport['journeySessions']
             <span className="text-xs text-[var(--ck-text-dim)]">{session.source} / {session.medium}</span>
             <span className="font-mono text-xs text-[var(--ck-text-dim)]">{session.clickId}</span>
           </div>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--ck-text-muted)]">
+          <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--ck-text-muted)]">
             <span>{session.eventCount} events</span>
             <span>{session.device}</span>
             <span>Situation: <b className="capitalize text-[var(--ck-text)]">{session.choices.situation}</b></span>
@@ -1095,12 +1150,12 @@ function JourneySessionCard({ session }: { session: PpcReport['journeySessions']
         </div>
         <div className="shrink-0 text-left xl:text-right">
           {session.leadId ? (
-            <Link href={`/leads/${session.leadId}`} className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-200 hover:bg-emerald-500/15">
+            <Link href={`/leads/${session.leadId}`} className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-black text-emerald-200 hover:bg-emerald-500/15">
               <Icon name="person_search" size="text-base" />
               {session.leadName}
             </Link>
           ) : (
-            <span className="inline-flex items-center gap-1 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-xs font-bold text-[var(--ck-text-dim)]">
+            <span className="inline-flex items-center gap-1 rounded-md border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2.5 py-1.5 text-xs font-bold text-[var(--ck-text-dim)]">
               <Icon name="person_off" size="text-base" />
               No CRM lead
             </span>
@@ -1108,20 +1163,29 @@ function JourneySessionCard({ session }: { session: PpcReport['journeySessions']
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5 xl:grid-cols-10">
         {session.steps.map((step) => (
-          <div key={step.key} className={`min-h-[86px] rounded-lg border p-3 ${journeyStepClass(step.status)}`}>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="text-xs font-black uppercase tracking-wide">{step.label}</div>
-              <Icon name={journeyStepIcon(step.status)} size="text-base" />
+          <div key={step.key} className={`rounded-md border px-2 py-2 ${journeyStepClass(step.status)}`}>
+            <div className="mb-1 flex items-center gap-1.5">
+              <JourneyStatusDot status={step.status} />
+              <div className="truncate text-[11px] font-black uppercase leading-4">{step.label}</div>
             </div>
-            <div className="truncate text-xs font-medium text-[var(--ck-text-muted)]">{step.detail}</div>
-            <div className="mt-2 text-xs font-bold tabular-nums text-[var(--ck-text-dim)]">{formatTime(step.at)}</div>
+            <div className="truncate text-[11px] font-medium leading-4 text-[var(--ck-text-muted)]">{step.detail}</div>
+            <div className="mt-1 text-[11px] font-bold tabular-nums leading-4 text-[var(--ck-text-dim)]">{formatTime(step.at)}</div>
           </div>
         ))}
       </div>
     </article>
   )
+}
+
+function JourneyStatusDot({ status }: { status: PpcReport['journeySessions'][number]['steps'][number]['status'] }) {
+  const classes = status === 'complete'
+    ? 'bg-emerald-400 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]'
+    : status === 'active'
+      ? 'bg-amber-300 shadow-[0_0_0_3px_rgba(245,158,11,0.14)]'
+      : 'bg-[var(--ck-border-strong)]'
+  return <span className={`h-2 w-2 shrink-0 rounded-full ${classes}`} />
 }
 
 function QualityRow({ label, value }: { label: string; value: number }) {
