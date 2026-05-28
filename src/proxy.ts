@@ -33,6 +33,9 @@ const PUBLIC_API_PREFIXES = [
   '/api/ivr/',
   '/api/audio/',
   '/api/mojo/',
+  // Mobile routes validate Supabase bearer tokens inside route handlers.
+  // Let CORS preflight and Authorization-bearing mobile requests reach them.
+  '/api/mobile/',
 ]
 
 // Routes that are guarded inside their route handlers by a shared server secret.
