@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { captureAttribution, getAttribution } from '@/lib/ppc/attribution'
 import { fireConversion, fireFormError, firePpcTrackingEvent } from '@/lib/ppc/conversions'
+import { getPpcSessionContext } from '@/lib/ppc/tracking-client'
 import { AddressAutocomplete } from './AddressAutocomplete'
 
 type Situation =
@@ -139,15 +140,27 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   const [navJumpVisible, setNavJumpVisible] = useState(false)
   const toolCardRef = useRef<HTMLDivElement | null>(null)
   const stage3AutosavedKeyRef = useRef<string | null>(null)
+  const addressCaptureKeyRef = useRef<string | null>(null)
+  const potentialLeadKeyRef = useRef<string | null>(null)
+  const viewedSectionsRef = useRef<Set<string>>(new Set())
+  const scrollDepthsRef = useRef<Set<number>>(new Set())
 
   useEffect(() => {
     captureAttribution()
+    firePpcTrackingEvent('ppc_visit_started', {
+      ppc_phone_display: phoneDisplay,
+      ppc_phone_tel: phoneTel,
+      landing_page: window.location.href,
+      page_title: document.title,
+      total_steps: totalSteps,
+    })
     firePpcTrackingEvent('skc_phone_number_selected', {
       ppc_phone_display: phoneDisplay,
       ppc_phone_tel: phoneTel,
       landing_page: window.location.href,
+      total_steps: totalSteps,
     })
-  }, [phoneDisplay, phoneTel])
+  }, [phoneDisplay, phoneTel, totalSteps])
 
   useEffect(() => {
     const el = toolCardRef.current
@@ -166,6 +179,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   const postPartial = useCallback(async (currentStep: FormStep, partial: Partial<QuizState>) => {
     try {
       const attribution = getAttribution()
+      const { sessionId, visitorId } = getPpcSessionContext()
       await fetch('/api/leads/ppc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -173,6 +187,8 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
           step: currentStep,
           ...partial,
           attribution,
+          sessionId: sessionId ?? undefined,
+          visitorId: visitorId ?? undefined,
         }),
       })
     } catch {
@@ -192,6 +208,206 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     })
   }
 
+  const commonFunnelPayload = useCallback(() => ({
+    form_step: step,
+    total_steps: totalSteps,
+    situation: state.situation || undefined,
+    timeline: state.timeline || undefined,
+    condition: state.condition || undefined,
+    auctionStatus: state.auctionStatus || undefined,
+  }), [
+    state.auctionStatus,
+    state.condition,
+    state.situation,
+    state.timeline,
+    step,
+    totalSteps,
+  ])
+
+  useEffect(() => {
+    const thresholds = [25, 50, 75, 90]
+
+    const measure = () => {
+      const doc = document.documentElement
+      const body = document.body
+      const scrollHeight = Math.max(doc.scrollHeight, body.scrollHeight)
+      const viewportHeight = window.innerHeight || doc.clientHeight
+      const scrollTop = window.scrollY || doc.scrollTop || body.scrollTop || 0
+      const scrollable = scrollHeight - viewportHeight
+
+      if (scrollable <= 200 || scrollTop < 10) return
+
+      const depth = Math.min(100, Math.round(((scrollTop + viewportHeight) / scrollHeight) * 100))
+      thresholds.forEach((threshold) => {
+        if (depth < threshold || scrollDepthsRef.current.has(threshold)) return
+        scrollDepthsRef.current.add(threshold)
+        firePpcTrackingEvent('scroll_depth_reached', {
+          ...commonFunnelPayload(),
+          scroll_depth: threshold,
+          percent_scrolled: depth,
+        })
+      })
+    }
+
+    measure()
+    window.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure)
+      window.removeEventListener('resize', measure)
+    }
+  }, [commonFunnelPayload])
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return
+
+    const sectionIds = isTaxLanding
+      ? ['quiz', 'timeline', 'stages', 'team', 'video-testimonials', 'reviews', 'faq']
+      : ['quiz', 'how', 'problems', 'about', 'video-testimonials', 'reviews', 'faq']
+    const sections = sectionIds
+      .map((id) => document.getElementById(id))
+      .filter((section): section is HTMLElement => Boolean(section))
+
+    if (!sections.length) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const sectionId = entry.target.id
+          if (!entry.isIntersecting || viewedSectionsRef.current.has(sectionId)) return
+          viewedSectionsRef.current.add(sectionId)
+          firePpcTrackingEvent('section_viewed', {
+            ...commonFunnelPayload(),
+            section_id: sectionId,
+            section_name: sectionId.replace(/-/g, ' '),
+          })
+        })
+      },
+      { threshold: 0.25, rootMargin: '-10% 0px -35% 0px' },
+    )
+
+    sections.forEach((section) => observer.observe(section))
+    return () => observer.disconnect()
+  }, [commonFunnelPayload, isTaxLanding])
+
+  useEffect(() => {
+    if (submitted || step !== finalStep) return
+
+    const address = state.address.trim()
+    if (address.length < 6) return
+
+    const addressCaptureKey = [
+      address,
+      state.situation,
+      state.timeline,
+      state.condition,
+      state.auctionStatus,
+    ].join('|')
+    if (addressCaptureKeyRef.current === addressCaptureKey) return
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const attribution = getAttribution()
+        const { sessionId, visitorId } = getPpcSessionContext()
+        const r = await fetch('/api/leads/ppc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            intent: 'address_capture',
+            step: finalStep,
+            address,
+            addressSource: 'typed',
+            situation: state.situation || undefined,
+            timeline: state.timeline || undefined,
+            condition: state.condition || undefined,
+            auctionStatus: state.auctionStatus || undefined,
+            attribution,
+            sessionId: sessionId ?? undefined,
+            visitorId: visitorId ?? undefined,
+          }),
+        })
+        if (r.ok) addressCaptureKeyRef.current = addressCaptureKey
+      } catch {
+        // best-effort only; the actual form can still submit normally.
+      }
+    }, 900)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    finalStep,
+    state.address,
+    state.auctionStatus,
+    state.condition,
+    state.situation,
+    state.timeline,
+    step,
+    submitted,
+  ])
+
+  useEffect(() => {
+    if (submitted || step !== finalStep) return
+
+    const address = state.address.trim()
+    const name = state.name.trim()
+    const phone = state.phone.trim()
+    const email = state.email.trim().toLowerCase()
+    const phoneDigits = phone.replace(/\D/g, '')
+    const hasPhoneOrEmail = phoneDigits.length >= 10 || email.includes('@')
+    const hasSubmitFields = Boolean(address && name && phoneDigits.length >= 10 && email.includes('@'))
+
+    if (!address || !hasPhoneOrEmail || hasSubmitFields) return
+
+    const potentialLeadKey = [address, name, phoneDigits, email].join('|')
+    if (potentialLeadKeyRef.current === potentialLeadKey) return
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const attribution = getAttribution()
+        const { sessionId, visitorId } = getPpcSessionContext()
+        const r = await fetch('/api/leads/ppc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            intent: 'potential',
+            step: finalStep,
+            address,
+            addressSource: 'typed',
+            situation: state.situation,
+            timeline: state.timeline,
+            condition: state.condition,
+            auctionStatus: state.auctionStatus || undefined,
+            contact: { name, phone, email },
+            attribution,
+            sessionId: sessionId ?? undefined,
+            visitorId: visitorId ?? undefined,
+          }),
+        })
+        const json = await r.json().catch(() => null)
+        if (r.ok && json?.ok) {
+          potentialLeadKeyRef.current = potentialLeadKey
+          if (json.manifestId) setManifestId(json.manifestId)
+          if (json.leadId) setLeadId(json.leadId)
+        }
+      } catch {
+        // best-effort only; final submit still owns notifications and conversion.
+      }
+    }, 1500)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    finalStep,
+    state.address,
+    state.auctionStatus,
+    state.condition,
+    state.email,
+    state.name,
+    state.phone,
+    state.situation,
+    state.timeline,
+    step,
+    submitted,
+  ])
+
   useEffect(() => {
     if (submitted || step !== finalStep) return
 
@@ -209,6 +425,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     const timer = window.setTimeout(async () => {
       try {
         const attribution = getAttribution()
+        const { sessionId, visitorId } = getPpcSessionContext()
         const r = await fetch('/api/leads/ppc', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -222,6 +439,8 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             auctionStatus: state.auctionStatus || undefined,
             contact: { name, phone, email },
             attribution,
+            sessionId: sessionId ?? undefined,
+            visitorId: visitorId ?? undefined,
           }),
         })
         const json = await r.json().catch(() => null)
@@ -321,6 +540,12 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         auctionStatus: state.auctionStatus || undefined,
       })
     }
+    firePpcTrackingEvent('form_step_completed', {
+      ...commonFunnelPayload(),
+      completed_step: step,
+      next_step: toStep,
+      form_status: toStep === finalStep ? 'qualified' : 'in_progress',
+    })
     setStep(toStep)
   }
 
@@ -333,6 +558,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     setSubmitting(true)
     try {
       const attribution = getAttribution()
+      const { sessionId, visitorId } = getPpcSessionContext()
       const r = await fetch('/api/leads/ppc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -350,6 +576,8 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             email: state.email,
           },
           attribution,
+          sessionId: sessionId ?? undefined,
+          visitorId: visitorId ?? undefined,
         }),
       })
       const json = await r.json()
@@ -436,9 +664,29 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     }
   }
 
+  const trackCtaClick = (clickLocation: string, ctaLabel: string, ctaTarget = 'quiz') => {
+    firePpcTrackingEvent('cta_click', {
+      ...commonFunnelPayload(),
+      click_location: clickLocation,
+      cta_label: ctaLabel,
+      cta_target: ctaTarget,
+    })
+  }
+  const trackNavClick = (id: string, clickLocation: string) => {
+    firePpcTrackingEvent('nav_click', {
+      ...commonFunnelPayload(),
+      nav_target: id,
+      click_location: clickLocation,
+    })
+  }
   const scrollToQuiz = () => document.getElementById('quiz')?.scrollIntoView({ behavior: 'smooth' })
+  const handleQuizCta = (clickLocation: string, ctaLabel: string) => {
+    trackCtaClick(clickLocation, ctaLabel)
+    scrollToQuiz()
+  }
   const scrollToId = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault()
+    trackNavClick(id, mobileMenuOpen ? 'mobile_nav' : 'top_nav')
     setMobileMenuOpen(false)
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -861,14 +1109,14 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
       {isTaxLanding ? (
         <>
           <TaxFreshStartTimeline />
-          <TaxDecisionRows scrollToQuiz={scrollToQuiz} />
+          <TaxDecisionRows scrollToQuiz={() => handleQuizCta('tax_decision_row', 'Tax decision row')} />
           <TaxGuarantee />
           <TaxTeamSection />
         </>
       ) : (
         <>
           <GeneralFreshStartTimeline />
-          <GeneralProblemRows scrollToQuiz={scrollToQuiz} />
+          <GeneralProblemRows scrollToQuiz={() => handleQuizCta('problem_row', 'Problem row')} />
           <GeneralPromise />
           <GeneralTeamSection />
         </>
@@ -889,7 +1137,14 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   : 'Taxes grow. Repairs get worse. Empty houses get damaged. Bad tenants can cost more each month. Get a clear number today, then decide what is best for you.'}
               </p>
               <div className="mid-cta-actions">
-                <a href="#quiz" className="btn-secondary" onClick={(e) => { e.preventDefault(); scrollToQuiz() }}>
+                <a
+                  href="#quiz"
+                  className="btn-secondary"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleQuizCta('mid_page_cta', isTaxLanding ? 'Start My Fresh Start' : 'Get My Number')
+                  }}
+                >
                   {isTaxLanding ? 'Start My Fresh Start' : 'Get My Number'}
                   <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                 </a>
@@ -961,7 +1216,16 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   type="button"
                   className="faq-q"
                   aria-expanded={openFaq === i}
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  onClick={() => {
+                    const willOpen = openFaq !== i
+                    setOpenFaq(willOpen ? i : null)
+                    if (!willOpen) return
+                    firePpcTrackingEvent('faq_opened', {
+                      ...commonFunnelPayload(),
+                      faq_index: i + 1,
+                      faq_question: faq.q,
+                    })
+                  }}
                 >
                   {faq.q} <span className="plus">+</span>
                 </button>
@@ -995,7 +1259,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               className="btn-secondary lg"
               onClick={(e) => {
                 e.preventDefault()
-                scrollToQuiz()
+                handleQuizCta('final_cta', isTaxLanding ? 'Start My Fresh Start' : 'Get My Cash Offer')
               }}
             >
               {isTaxLanding ? 'Start My Fresh Start' : 'Get My Cash Offer'}

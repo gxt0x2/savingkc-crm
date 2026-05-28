@@ -57,10 +57,11 @@ export async function POST(req: Request) {
 
     const dialAction = `${BASE_URL}/api/ivr/dial-result?from=${esc(from)}&amp;leadId=${esc(lead.leadId || '')}&amp;calledNumber=${esc(calledNumber)}&amp;type=google_ads`
     const whisperBase = `${BASE_URL}/api/ivr/whisper?type=google_ads&amp;from=${esc(from)}&amp;leadId=${esc(lead.leadId || '')}&amp;calledNumber=${esc(calledNumber)}`
+    const recordingCallback = `${BASE_URL}/api/twilio-recording-callback?source=google_ads_phone&amp;from=${esc(from)}&amp;leadId=${esc(lead.leadId || '')}&amp;calledNumber=${esc(calledNumber)}&amp;callSid=${esc(callSid)}`
 
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${dialAction}" method="POST" timeout="10" callerId="${calledNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${dialAction}" method="POST" timeout="10" callerId="${calledNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${recordingCallback}" recordingStatusCallbackMethod="POST">
     <Number url="${whisperBase}&amp;agent=${esc(routing.primary.name)}">${routing.primary.phone}</Number>
     <Number url="${whisperBase}&amp;agent=${esc(routing.secondary.name)}">${routing.secondary.phone}</Number>
   </Dial>

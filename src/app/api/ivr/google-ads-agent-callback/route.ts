@@ -37,10 +37,11 @@ export async function POST(req: Request) {
   }
 
   const resultAction = `${BASE_URL}/api/ivr/google-ads-agent-callback-result?leadId=${esc(leadId)}&amp;leadPhone=${esc(leadPhone)}&amp;calledNumber=${esc(calledNumber)}&amp;agentName=${esc(agentName)}&amp;triggerCallSid=${esc(triggerCallSid)}`
+  const recordingCallback = `${BASE_URL}/api/twilio-recording-callback?source=google_ads_phone&amp;from=${esc(leadPhone)}&amp;leadId=${esc(leadId)}&amp;calledNumber=${esc(calledNumber)}&amp;callSid=${esc(triggerCallSid)}`
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna">Google Ads lead callback. Calling ${callerPhoneLabel(leadPhone)} now.</Say>
-  <Dial action="${resultAction}" method="POST" timeout="20" callerId="${calledNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${resultAction}" method="POST" timeout="20" callerId="${calledNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${recordingCallback}" recordingStatusCallbackMethod="POST">
     <Number>${leadPhone}</Number>
   </Dial>
 </Response>`
