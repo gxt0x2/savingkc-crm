@@ -2,15 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import { Icon } from '@/components/ui/icon'
 import type { PpcReport } from '@/lib/marketing/ppc-report'
 import { GOOGLE_ADS_QUALITY_SCALE, type GoogleAdsQualityScore } from '@/lib/ppc/conversion-approval'
@@ -23,10 +14,24 @@ const PERIODS = [
   { value: 180, label: 'Last 180 days', helper: 'Long view' },
 ] as const
 
+const TOP_JOURNEY_LIMIT = 6
+const TOP_DRIVER_LIMIT = 5
+
 type LoadState =
   | { status: 'loading'; data: null; error: null }
   | { status: 'ready'; data: PpcReport; error: null }
   | { status: 'error'; data: null; error: string }
+
+type Tone = 'good' | 'warn' | 'bad' | 'neutral' | 'info'
+
+type ActionItem = {
+  key: string
+  icon: string
+  title: string
+  value: string
+  detail: string
+  tone: Tone
+}
 
 function formatMoney(value: number): string {
   if (!Number.isFinite(value) || value === 0) return '$0'
@@ -60,89 +65,6 @@ function formatTime(value: string | null): string {
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-function statusLabel(status: PpcReport['recentLeads'][number]['formStatus']): string {
-  if (status === 'submitted') return 'Submitted'
-  if (status === 'stage_3_no_submit') return 'Step 3 only'
-  if (status === 'potential_no_submit') return 'Potential'
-  if (status === 'call_only') return 'Call only'
-  return 'Lead only'
-}
-
-function statusClass(status: PpcReport['recentLeads'][number]['formStatus']): string {
-  if (status === 'submitted') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-  if (status === 'stage_3_no_submit') return 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-  if (status === 'potential_no_submit') return 'border-sky-500/30 bg-sky-500/10 text-sky-300'
-  if (status === 'call_only') return 'border-violet-500/30 bg-violet-500/10 text-violet-300'
-  return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
-}
-
-function sessionStatusClass(status: PpcReport['recentSessions'][number]['status']): string {
-  if (status === 'submitted') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-  if (status === 'step_3_no_submit') return 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-  if (status === 'potential') return 'border-sky-500/30 bg-sky-500/10 text-sky-300'
-  if (status === 'address_only' || status === 'reached_step_3') return 'border-orange-500/30 bg-orange-500/10 text-orange-300'
-  if (status === 'engaged' || status === 'phone_click') return 'border-violet-500/30 bg-violet-500/10 text-violet-300'
-  return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
-}
-
-function journeyStepClass(status: PpcReport['journeySessions'][number]['steps'][number]['status']): string {
-  if (status === 'complete') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-  if (status === 'active') return 'border-amber-500/35 bg-amber-500/10 text-amber-200'
-  return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-dim)]'
-}
-
-function deadlineStatusClass(status: PpcReport['conversionApprovalQueue'][number]['deadlineStatus']): string {
-  if (status === 'expired') return 'border-[#E32E2E]/45 bg-[#E32E2E]/15 text-[#FCA5A5]'
-  if (status === 'critical') return 'border-orange-500/40 bg-orange-500/15 text-orange-200'
-  if (status === 'urgent') return 'border-amber-500/40 bg-amber-500/15 text-amber-200'
-  if (status === 'review') return 'border-sky-500/35 bg-sky-500/10 text-sky-200'
-  return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
-}
-
-function deadlineLabel(row: PpcReport['conversionApprovalQueue'][number]): string {
-  if (row.deadlineStatus === 'expired') return 'Expired'
-  if (row.daysLeft == null) return 'No deadline'
-  if (row.deadlineStatus === 'critical') return `${row.daysLeft}d left`
-  if (row.deadlineStatus === 'urgent') return `${row.daysLeft}d left`
-  if (row.deadlineStatus === 'review') return `${row.daysLeft}d left`
-  return `${row.daysLeft}d left`
-}
-
-function scoreLabel(score: GoogleAdsQualityScore): string {
-  const item = GOOGLE_ADS_QUALITY_SCALE.find((option) => option.score === score)
-  return item ? `${item.score} - ${item.title}` : String(score)
-}
-
-function exportModeLabel(mode: PpcReport['exportConfig']['mode']): string {
-  if (mode === 'google_ads_and_stape') return 'Google Ads API + Stape'
-  if (mode === 'google_ads_only') return 'Google Ads API only'
-  if (mode === 'stape_only') return 'Stape/server GTM only'
-  return 'Not configured'
-}
-
-function setupStatusLabel(enabled: boolean, ready: boolean): string {
-  if (!enabled) return 'Disabled'
-  return ready ? 'Ready' : 'Needs setup'
-}
-
-function setupStatusClass(enabled: boolean, ready: boolean): string {
-  if (!enabled) return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
-  if (ready) return 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
-  return 'border-amber-500/40 bg-amber-500/12 text-amber-200'
-}
-
-function opsStatusClass(status: 'healthy' | 'attention' | 'blocked'): string {
-  if (status === 'healthy') return 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
-  if (status === 'attention') return 'border-amber-500/40 bg-amber-500/12 text-amber-200'
-  return 'border-[#E32E2E]/40 bg-[#E32E2E]/10 text-[#FCA5A5]'
-}
-
-function opsStatusLabel(status: 'healthy' | 'attention' | 'blocked'): string {
-  if (status === 'healthy') return 'Healthy'
-  if (status === 'attention') return 'Needs attention'
-  return 'Blocked'
-}
-
 function formatAgeHours(value: number | null): string {
   if (value == null) return '--'
   if (value < 1) return '<1h'
@@ -156,16 +78,6 @@ function formatAgeMinutes(value: number | null): string {
   return `${hours.toFixed(hours % 1 === 0 ? 0 : 1)}h`
 }
 
-function formatEventName(value: string): string {
-  if (value === 'lead_submitted') return 'Final submit'
-  if (value === 'qualified_lead') return 'Qualified lead'
-  if (value === 'appointment_booked') return 'Appointment'
-  if (value === 'call_connected_60s') return 'Call 60s+'
-  if (value === 'call_connected_2m') return 'Call 2m+'
-  if (value === 'call_connected_5m') return 'Call 5m+'
-  return value.replace(/_/g, ' ')
-}
-
 function periodLabel(days: number): string {
   return PERIODS.find((period) => period.value === days)?.label ?? `${days} days`
 }
@@ -173,6 +85,43 @@ function periodLabel(days: number): string {
 function countSummary(shown: number, total: number): string {
   if (total <= shown) return `Showing ${formatNumber(shown)}`
   return `Showing ${formatNumber(shown)} of ${formatNumber(total)}`
+}
+
+function compactText(value: string): string {
+  return value === '--' ? '--' : value.replace(/-/g, ' ')
+}
+
+function toneClasses(tone: Tone): string {
+  if (tone === 'good') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+  if (tone === 'warn') return 'border-amber-500/35 bg-amber-500/10 text-amber-200'
+  if (tone === 'bad') return 'border-[#E32E2E]/45 bg-[#E32E2E]/12 text-[#FCA5A5]'
+  if (tone === 'info') return 'border-sky-500/30 bg-sky-500/10 text-sky-200'
+  return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
+}
+
+function statusDotClass(status: PpcReport['journeySessions'][number]['steps'][number]['status']): string {
+  if (status === 'complete') return 'bg-emerald-400'
+  if (status === 'active') return 'bg-amber-300'
+  return 'bg-[var(--ck-border-strong)]'
+}
+
+function deadlineStatusClass(status: PpcReport['conversionApprovalQueue'][number]['deadlineStatus']): string {
+  if (status === 'expired') return 'border-[#E32E2E]/45 bg-[#E32E2E]/15 text-[#FCA5A5]'
+  if (status === 'critical') return 'border-orange-500/40 bg-orange-500/15 text-orange-200'
+  if (status === 'urgent') return 'border-amber-500/40 bg-amber-500/15 text-amber-200'
+  if (status === 'review') return 'border-sky-500/35 bg-sky-500/10 text-sky-200'
+  return 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
+}
+
+function deadlineLabel(row: PpcReport['conversionApprovalQueue'][number]): string {
+  if (row.deadlineStatus === 'expired') return 'Expired'
+  if (row.daysLeft == null) return 'No deadline'
+  return `${row.daysLeft}d left`
+}
+
+function scoreLabel(score: GoogleAdsQualityScore): string {
+  const item = GOOGLE_ADS_QUALITY_SCALE.find((option) => option.score === score)
+  return item ? `${item.score} - ${item.title}` : String(score)
 }
 
 function usePpcReport(days: number, refreshKey: number): LoadState {
@@ -213,6 +162,185 @@ function usePpcReport(days: number, refreshKey: number): LoadState {
   return state
 }
 
+function decisionBrief(report: PpcReport): { tone: Tone; icon: string; label: string; headline: string; detail: string } {
+  const paidJourneys = report.resultCounts.journeySessionsTotal
+
+  if (report.exportHealth.failed + report.exportHealth.deadLetter > 0) {
+    return {
+      tone: 'bad',
+      icon: 'error',
+      label: 'Fix first',
+      headline: 'Conversion export has failures.',
+      detail: `${formatNumber(report.exportHealth.failed + report.exportHealth.deadLetter)} failed or dead-letter rows need cleanup before trusting Google feedback.`,
+    }
+  }
+
+  if (report.exportHealth.awaitingApproval > 0) {
+    return {
+      tone: 'warn',
+      icon: 'approval',
+      label: 'Decision needed',
+      headline: 'Approve quality conversions.',
+      detail: `${formatNumber(report.exportHealth.awaitingApproval)} conversion${report.exportHealth.awaitingApproval === 1 ? '' : 's'} waiting for Google Ads quality scoring.`,
+    }
+  }
+
+  if (paidJourneys > 0 && report.summary.totalLeads === 0) {
+    return {
+      tone: 'warn',
+      icon: 'conversion_path',
+      label: 'Traffic leak',
+      headline: 'Paid clicks are not becoming CRM leads.',
+      detail: `${formatNumber(paidJourneys)} click-ID journey${paidJourneys === 1 ? '' : 's'} found, but no PPC lead was created in this window.`,
+    }
+  }
+
+  if (report.summary.stage3NoSubmit > 0) {
+    return {
+      tone: 'info',
+      icon: 'edit_note',
+      label: 'Follow-up pool',
+      headline: 'Some sellers reached the serious step but did not submit.',
+      detail: `${formatNumber(report.summary.stage3NoSubmit)} Step 3 signal${report.summary.stage3NoSubmit === 1 ? '' : 's'} may be worth manual review.`,
+    }
+  }
+
+  if (paidJourneys === 0 && report.summary.paidVisits === 0) {
+    return {
+      tone: 'neutral',
+      icon: 'do_not_disturb_on',
+      label: 'No signal',
+      headline: 'No paid-search activity in this window.',
+      detail: 'The dashboard is quiet because no paid click or PPC lead signal was logged.',
+    }
+  }
+
+  return {
+    tone: 'good',
+    icon: 'check_circle',
+    label: 'Clean',
+    headline: 'No critical PPC blockers right now.',
+    detail: 'Traffic, leads, approvals, and export health do not show an urgent issue in this window.',
+  }
+}
+
+function criticalActions(report: PpcReport): ActionItem[] {
+  const items: ActionItem[] = []
+  const failedExports = report.exportHealth.failed + report.exportHealth.deadLetter
+
+  if (failedExports > 0) {
+    items.push({
+      key: 'failed-exports',
+      icon: 'sync_problem',
+      title: 'Failed exports',
+      value: formatNumber(failedExports),
+      detail: 'Google feedback is blocked until these are fixed.',
+      tone: 'bad',
+    })
+  }
+
+  if (report.exportHealth.awaitingApproval > 0) {
+    items.push({
+      key: 'awaiting-approval',
+      icon: 'approval',
+      title: 'Needs approval',
+      value: formatNumber(report.exportHealth.awaitingApproval),
+      detail: 'Score these before the export worker sends them.',
+      tone: 'warn',
+    })
+  }
+
+  if (report.summary.stage3NoSubmit > 0) {
+    items.push({
+      key: 'stage3',
+      icon: 'edit_note',
+      title: 'Step 3, no submit',
+      value: formatNumber(report.summary.stage3NoSubmit),
+      detail: 'High-intent sellers who did not finish the final submit.',
+      tone: 'info',
+    })
+  }
+
+  if (report.dataQuality.missingClickIdRows > 0) {
+    items.push({
+      key: 'missing-click-id',
+      icon: 'key_off',
+      title: 'Missing click IDs',
+      value: formatNumber(report.dataQuality.missingClickIdRows),
+      detail: 'Leads without a Google click ID cannot be tied back cleanly.',
+      tone: 'warn',
+    })
+  }
+
+  if (!report.exportConfig.configured) {
+    items.push({
+      key: 'export-config',
+      icon: 'settings_input_component',
+      title: 'Export destination',
+      value: 'Setup',
+      detail: 'The worker does not have a complete live destination.',
+      tone: 'bad',
+    })
+  }
+
+  if (items.length === 0) {
+    items.push({
+      key: 'clean',
+      icon: 'verified',
+      title: 'No urgent work',
+      value: 'Clear',
+      detail: 'No approvals, failed exports, or major tracking gaps need action.',
+      tone: 'good',
+    })
+  }
+
+  return items.slice(0, 4)
+}
+
+function funnelSteps(report: PpcReport): Array<{ key: string; label: string; count: number; detail: string }> {
+  return [
+    {
+      key: 'paid-clicks',
+      label: 'Paid click IDs',
+      count: report.resultCounts.journeySessionsTotal,
+      detail: `${formatNumber(report.resultCounts.journeySessionsHiddenNoClickId)} no-ID sessions hidden`,
+    },
+    {
+      key: 'submits',
+      label: 'Final submits',
+      count: report.summary.formSubmits,
+      detail: `${formatPct(report.summary.submitRate)} submit rate`,
+    },
+    {
+      key: 'appointments',
+      label: 'Appointments',
+      count: report.summary.appointments,
+      detail: `${formatPct(report.summary.appointmentRate)} of leads`,
+    },
+    {
+      key: 'contracts',
+      label: 'Contracts',
+      count: report.summary.contracts,
+      detail: formatMoney(report.summary.revenue),
+    },
+  ]
+}
+
+function journeyProgress(session: PpcReport['journeySessions'][number]): { complete: number; total: number; current: string } {
+  const complete = session.steps.filter((step) => step.status === 'complete').length
+  const active = session.steps.find((step) => step.status === 'active')
+  const lastComplete = [...session.steps].reverse().find((step) => step.status === 'complete')
+  return {
+    complete,
+    total: session.steps.length,
+    current: active?.label || lastComplete?.label || 'Ad click',
+  }
+}
+
+function dailySignalValue(day: PpcReport['daily'][number]): number {
+  return day.leads + day.formSubmits + day.ppcCalls + day.appointments
+}
+
 export default function MarketingPage() {
   const [days, setDays] = useState<number>(30)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -220,33 +348,28 @@ export default function MarketingPage() {
   const state = usePpcReport(days, refreshKey)
   const report = state.status === 'ready' ? state.data : null
 
-  const maxFunnel = useMemo(() => Math.max(...(report?.funnel.map((step) => step.count) ?? [1]), 1), [report])
-  const qualityScore = report
-    ? Math.round((
-      report.dataQuality.clickIdCoverage * 0.45 +
-      report.dataQuality.attributionCoverage * 0.25 +
-      Math.max(0, 100 - report.dataQuality.failedExports * 15 - report.dataQuality.pendingExports * 2) * 0.30
-    ))
-    : 0
+  const brief = useMemo(() => (report ? decisionBrief(report) : null), [report])
+  const actions = useMemo(() => (report ? criticalActions(report) : []), [report])
+  const steps = useMemo(() => (report ? funnelSteps(report) : []), [report])
+  const latestJourneys = report?.journeySessions.slice(0, TOP_JOURNEY_LIMIT) ?? []
+  const topDrivers = report?.attributionRows.slice(0, TOP_DRIVER_LIMIT) ?? []
 
   return (
     <div className="min-h-screen bg-[var(--ck-bg)] text-[var(--ck-text)]">
-      <div className="mx-auto w-full max-w-[1536px] px-4 py-6 sm:px-6 lg:px-8">
-        <header className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#E32E2E]/15 text-[#E32E2E]">
-              <Icon name="monitoring" size="text-2xl" />
+      <div className="mx-auto w-full max-w-[1360px] px-4 py-6 sm:px-6 lg:px-8">
+        <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-[#E32E2E]">
+              <Icon name="monitoring" size="text-base" />
+              Search 2026
             </div>
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#E32E2E]">Search 2026</p>
-              <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Google Ads Intelligence</h1>
-              <p className="mt-1 text-sm text-[var(--ck-text-muted)]">
-                Final submit stays primary. Calls and step signals stay diagnostic until they prove quality.
-              </p>
-            </div>
+            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Marketing Command</h1>
+            <p className="mt-1 max-w-3xl text-sm text-[var(--ck-text-muted)]">
+              A short read on what is working, what needs action, and where paid sellers drop.
+            </p>
           </div>
 
-          <div className="flex flex-col gap-1 sm:min-w-[220px]">
+          <div className="flex flex-col gap-1 sm:min-w-[232px]">
             <label htmlFor="marketing-period" className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">
               Reporting window
             </label>
@@ -267,7 +390,7 @@ export default function MarketingPage() {
 
         {state.status === 'loading' && (
           <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-8 text-center text-sm text-[var(--ck-text-muted)]">
-            Loading Google Ads intelligence...
+            Loading marketing command...
           </div>
         )}
 
@@ -277,349 +400,62 @@ export default function MarketingPage() {
           </div>
         )}
 
-        {report && (
+        {report && brief && (
           <div className="space-y-5 pb-20">
-            <section className="grid grid-cols-2 gap-3 lg:grid-cols-7">
-              <KpiCard icon="ads_click" label="Paid Visits" value={formatNumber(report.summary.paidVisits)} detail={`${formatNumber(report.summary.eventLogTotal)} logged events`} tone="info" />
-              <KpiCard icon="person_add" label="PPC Leads" value={formatNumber(report.summary.totalLeads)} />
-              <KpiCard icon="done_all" label="Form Submits" value={formatNumber(report.summary.formSubmits)} detail={`${formatPct(report.summary.submitRate)} submit rate`} tone="success" />
-              <KpiCard icon="edit_note" label="Step 3 Only" value={formatNumber(report.summary.stage3NoSubmit)} detail="No submit yet" tone="warn" />
-              <KpiCard icon="phone_in_talk" label="PPC Calls" value={formatNumber(report.summary.callLeads)} detail={`${formatNumber(report.summary.call2m)} at 2m+`} tone="info" />
-              <KpiCard icon="event_available" label="Appointments" value={formatNumber(report.summary.appointments)} detail={`${formatPct(report.summary.appointmentRate)} of leads`} tone="success" />
-              <KpiCard icon="payments" label="Revenue" value={formatMoney(report.summary.revenue)} detail={`${formatNumber(report.summary.contracts)} contracts`} tone="money" />
+            <section className="grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
+              <ExecutiveBrief report={report} brief={brief} days={days} />
+              <CriticalWork items={actions} />
             </section>
 
-            <Panel title="Decision Snapshot" icon="insights">
-              <div className="grid gap-3 lg:grid-cols-4">
-                <DecisionMetric
-                  icon="calendar_today"
-                  label="Window"
-                  value={periodLabel(days)}
-                  detail={`${formatDate(report.period.since)} - ${formatDate(report.period.until)}`}
-                />
-                <DecisionMetric
-                  icon="conversion_path"
-                  label="Ad-click journeys"
-                  value={countSummary(report.resultCounts.journeySessionsShown, report.resultCounts.journeySessionsTotal)}
-                  detail={`${formatNumber(report.resultCounts.journeySessionsHiddenNoClickId)} no-click-ID sessions hidden`}
-                />
-                <DecisionMetric
-                  icon="key"
-                  label="Click ID coverage"
-                  value={formatPct(report.dataQuality.clickIdCoverage)}
-                  detail={`${formatNumber(report.dataQuality.missingClickIdRows)} PPC leads missing an ad click ID`}
-                />
-                <DecisionMetric
-                  icon="warning"
-                  label="Needs action"
-                  value={formatNumber(report.exportHealth.awaitingApproval + report.exportHealth.failed + report.exportHealth.deadLetter)}
-                  detail="Approvals, failed exports, or dead letters"
-                  tone={report.exportHealth.awaitingApproval + report.exportHealth.failed + report.exportHealth.deadLetter > 0 ? 'warn' : 'ok'}
-                />
-              </div>
-            </Panel>
-
-            <Panel title="Paid Click Journey" icon="conversion_path">
-              <div className="mb-3 flex flex-col gap-1 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-                <span>
-                  {countSummary(report.resultCounts.journeySessionsShown, report.resultCounts.journeySessionsTotal)} click-ID journeys.
-                </span>
-                <span>
-                  {formatNumber(report.resultCounts.journeySessionsHiddenNoClickId)} no-click-ID sessions hidden by default.
-                </span>
-              </div>
-              <div className="space-y-3">
-                {report.journeySessions.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-[var(--ck-border)] p-6 text-center text-sm text-[var(--ck-text-muted)]">
-                    No paid click journeys with an ad click ID in this period.
-                  </div>
-                ) : report.journeySessions.map((session) => (
-                  <JourneySessionCard key={session.key} session={session} />
-                ))}
-              </div>
-            </Panel>
-
-            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-              <Panel title="Submit-First Funnel" icon="filter_alt">
-                <div className="space-y-3">
-                  {report.funnel.map((step) => (
-                    <div key={step.key} className="grid grid-cols-[140px_1fr_96px] items-center gap-3 text-sm">
-                      <div>
-                        <div className="font-bold text-[var(--ck-text)]">{step.label}</div>
-                        <div className="text-xs text-[var(--ck-text-dim)]">
-                          {step.rateFromPrevious == null ? 'Start' : `${formatPct(step.rateFromPrevious)} from prior`}
-                        </div>
-                      </div>
-                      <div className="h-9 overflow-hidden rounded-lg bg-[var(--ck-surface-elev)]">
-                        <div
-                          className="flex h-full items-center justify-end rounded-lg bg-[#E32E2E] px-3 text-xs font-black text-white transition-all"
-                          style={{ width: `${Math.max((step.count / maxFunnel) * 100, step.count > 0 ? 8 : 0)}%` }}
-                        >
-                          {step.count > 0 ? formatNumber(step.count) : ''}
-                        </div>
-                      </div>
-                      <div className="text-right text-xs font-bold text-[var(--ck-text-muted)]">
-                        {step.rateFromLead == null ? '--' : `${formatPct(step.rateFromLead)} of leads`}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Panel>
-
-              <Panel title="Call Quality" icon="phone_in_talk">
-                <div className="grid grid-cols-2 gap-3">
-                  {report.callQuality.map((item) => (
-                    <div key={item.key} className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-                      <div className="text-xs font-bold uppercase tracking-wide text-[var(--ck-text-dim)]">{item.label}</div>
-                      <div className="mt-2 text-3xl font-black tabular-nums">{formatNumber(item.count)}</div>
-                      <div className="mt-1 text-xs text-[var(--ck-text-muted)]">
-                        {item.shareOfConnected == null ? 'Baseline' : `${formatPct(item.shareOfConnected)} of connected`}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Panel>
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <CoreMetric
+                icon="ads_click"
+                label="Paid journeys"
+                value={formatNumber(report.resultCounts.journeySessionsTotal)}
+                detail={`${countSummary(report.resultCounts.journeySessionsShown, report.resultCounts.journeySessionsTotal)} click-ID paths`}
+                tone="info"
+              />
+              <CoreMetric
+                icon="person_add"
+                label="Lead capture"
+                value={formatNumber(report.summary.totalLeads)}
+                detail={`${formatNumber(report.summary.formSubmits)} final submits · ${formatPct(report.summary.submitRate)}`}
+                tone={report.summary.totalLeads > 0 ? 'good' : 'neutral'}
+              />
+              <CoreMetric
+                icon="event_available"
+                label="Appointments"
+                value={formatNumber(report.summary.appointments)}
+                detail={`${formatNumber(report.summary.contracts)} contracts`}
+                tone={report.summary.appointments > 0 ? 'good' : 'neutral'}
+              />
+              <CoreMetric
+                icon="payments"
+                label="Revenue"
+                value={formatMoney(report.summary.revenue)}
+                detail={`${formatNumber(report.summary.call2m)} calls at 2m+`}
+                tone={report.summary.revenue > 0 ? 'good' : 'neutral'}
+              />
             </section>
 
-            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[0.85fr_1.15fr]">
-              <Panel title="Data Quality" icon="fact_check">
-                <div className="mb-4 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-                  <div className="flex items-end justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-bold uppercase tracking-wide text-[var(--ck-text-dim)]">Setup Grade</div>
-                      <div className="mt-1 text-4xl font-black">{qualityScore >= 90 ? 'A' : qualityScore >= 82 ? 'B+' : qualityScore >= 75 ? 'B' : 'C'}</div>
-                    </div>
-                    <div className="text-right text-sm text-[var(--ck-text-muted)]">
-                      <div>{formatPct(report.dataQuality.clickIdCoverage)} click ID coverage</div>
-                      <div>{formatPct(report.dataQuality.attributionCoverage)} attribution coverage</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <QualityRow label="Click IDs" value={report.dataQuality.clickIdCoverage} />
-                  <QualityRow label="Campaign / Keyword Map" value={report.dataQuality.attributionCoverage} />
-                  <QualityRow label="Source / Medium Map" value={report.dataQuality.sourceMediumCoverage} />
-                </div>
-                <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs">
-                  <MiniMetric label="GCLID" value={report.dataQuality.gclidRows} />
-                  <MiniMetric label="GBRAID" value={report.dataQuality.gbraidRows} />
-                  <MiniMetric label="WBRAID" value={report.dataQuality.wbraidRows} />
-                  <MiniMetric label="No ID" value={report.dataQuality.missingClickIdRows} />
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <ExportBox label="Awaiting Approval" value={report.exportHealth.awaitingApproval} tone={report.exportHealth.awaitingApproval > 0 ? 'warn' : 'ok'} />
-                  <ExportBox label="Approved Pending" value={report.exportHealth.approvedPending} tone={report.exportHealth.approvedPending > 0 ? 'warn' : 'ok'} />
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <ExportBox label="Failed Exports" value={report.exportHealth.failed + report.exportHealth.deadLetter} tone={report.exportHealth.failed + report.exportHealth.deadLetter > 0 ? 'bad' : 'ok'} />
-                  <ExportBox label="Test Records Hidden" value={report.summary.testRecords} tone={report.summary.testRecords > 0 ? 'warn' : 'ok'} />
-                </div>
-              </Panel>
-
-              <Panel title="Daily Signal" icon="bar_chart">
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={report.daily} margin={{ top: 10, right: 8, left: -20, bottom: 0 }}>
-                      <CartesianGrid stroke="var(--ck-border)" vertical={false} />
-                      <XAxis dataKey="date" tickFormatter={(value) => formatDate(`${value}T12:00:00.000Z`)} tick={{ fill: 'var(--ck-text-dim)', fontSize: 11 }} tickLine={false} axisLine={{ stroke: 'var(--ck-border)' }} />
-                      <YAxis allowDecimals={false} tick={{ fill: 'var(--ck-text-dim)', fontSize: 11 }} tickLine={false} axisLine={false} />
-                      <Tooltip
-                        cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                        contentStyle={{
-                          background: 'var(--ck-surface)',
-                          border: '1px solid var(--ck-border)',
-                          borderRadius: 8,
-                          color: 'var(--ck-text)',
-                        }}
-                      />
-                      <Bar dataKey="visits" name="Paid visits" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="leads" name="Leads" fill="#E32E2E" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="formSubmits" name="Submits" fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="ppcCalls" name="Calls" fill="#14b8a6" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="phoneClicks" name="Phone clicks" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="appointments" name="Appointments" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </Panel>
+            <section className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
+              <FunnelSection steps={steps} daily={report.daily} />
+              <SystemIntegrity report={report} />
             </section>
 
-            <Panel title="Campaign / Keyword Breakdown" icon="table_chart">
-              <div className="mb-3 flex flex-col gap-1 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-                <span>
-                  {countSummary(report.resultCounts.attributionRowsShown, report.resultCounts.attributionRowsTotal)} campaign/keyword rows.
-                </span>
-                <span>
-                  Keyword not passed means Google Ads did not send `utm_term` or `keyword`.
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--ck-border)] text-left text-xs uppercase tracking-wide text-[var(--ck-text-dim)]">
-                      <th className="py-3 pr-4">Campaign</th>
-                      <th className="py-3 pr-4">Keyword</th>
-                      <th className="py-3 pr-4 text-right">Leads</th>
-                      <th className="py-3 pr-4 text-right">Submits</th>
-                      <th className="py-3 pr-4 text-right">Calls</th>
-                      <th className="py-3 pr-4 text-right">Appts</th>
-                      <th className="py-3 pr-4 text-right">Contracts</th>
-                      <th className="py-3 text-right">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.attributionRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-8 text-center text-[var(--ck-text-muted)]">No PPC attribution rows in this period.</td>
-                      </tr>
-                    ) : report.attributionRows.map((row) => (
-                      <tr key={row.key} className="border-b border-[var(--ck-border)] last:border-b-0">
-                        <td className="py-3 pr-4">
-                          <div className="font-bold text-[var(--ck-text)]">{row.campaign}</div>
-                          <div className="text-xs text-[var(--ck-text-dim)]">{row.source} / {row.medium} · campaign {row.campaignId}</div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <div className={`font-medium ${row.keyword === 'Keyword not passed' ? 'text-amber-300' : ''}`}>{row.keyword}</div>
-                          <div className="text-xs text-[var(--ck-text-dim)]">ad group {row.adGroupId}</div>
-                        </td>
-                        <td className="py-3 pr-4 text-right tabular-nums">{formatNumber(row.leads)}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums">{formatNumber(row.formSubmits)}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums">{formatNumber(row.callLeads)}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums">{formatNumber(row.appointments)}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums">{formatNumber(row.contracts)}</td>
-                        <td className="py-3 text-right font-bold tabular-nums">{formatMoney(row.revenue)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
-
-            <Panel title="Recent Paid Click Sessions" icon="timeline">
-              <div className="mb-3 flex flex-col gap-1 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-                <span>{countSummary(report.resultCounts.recentSessionsShown, report.resultCounts.recentSessionsTotal)} click-ID sessions.</span>
-                <span>No-click-ID sessions stay out of this table by default.</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--ck-border)] text-left text-xs uppercase tracking-wide text-[var(--ck-text-dim)]">
-                      <th className="py-3 pr-4">Time</th>
-                      <th className="py-3 pr-4">Journey</th>
-                      <th className="py-3 pr-4">Choices</th>
-                      <th className="py-3 pr-4">Campaign</th>
-                      <th className="py-3 pr-4">Click ID</th>
-                      <th className="py-3 text-right">CRM</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.recentSessions.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-8 text-center text-[var(--ck-text-muted)]">No paid click sessions with an ad click ID in this period.</td>
-                      </tr>
-                    ) : report.recentSessions.map((session) => (
-                      <tr key={session.key} className="border-b border-[var(--ck-border)] last:border-b-0">
-                        <td className="py-3 pr-4">
-                          <div className="font-bold text-[var(--ck-text)]">{formatTime(session.firstEventAt)}</div>
-                          <div className="text-xs text-[var(--ck-text-dim)]">{formatDate(session.firstEventAt)} · {session.eventCount} events</div>
-                          <div className="text-xs text-[var(--ck-text-dim)]">{session.device}</div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className={`inline-flex rounded-lg border px-2 py-1 text-xs font-bold ${sessionStatusClass(session.status)}`}>
-                            {session.lastEvent}
-                          </span>
-                          <div className="mt-1 text-xs text-[var(--ck-text-dim)]">max step {session.maxStep || 1} · address {session.addressSignal}</div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <div className="capitalize">{session.situation.replace(/-/g, ' ')}</div>
-                          <div className="text-xs capitalize text-[var(--ck-text-dim)]">{session.timeline.replace(/-/g, ' ')} · {session.condition.replace(/-/g, ' ')}</div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <div>{session.campaign}</div>
-                          <div className="text-xs text-[var(--ck-text-dim)]">{session.source} / {session.medium}</div>
-                        </td>
-                        <td className="py-3 pr-4 max-w-[180px] truncate font-mono text-xs text-[var(--ck-text-muted)]">{session.clickId}</td>
-                        <td className="py-3 text-right">
-                          {session.leadId ? (
-                            <Link href={`/leads/${session.leadId}`} className="font-bold text-[#FCA5A5] hover:text-[#FEE2E2]">
-                              Lead
-                            </Link>
-                          ) : (
-                            <span className="text-xs text-[var(--ck-text-dim)]">No lead yet</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
-
-            <Panel title="Lead-Level Proof" icon="receipt_long">
-              <div className="mb-3 text-sm text-[var(--ck-text-muted)]">
-                {countSummary(report.resultCounts.recentLeadsShown, report.resultCounts.recentLeadsTotal)} PPC leads.
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--ck-border)] text-left text-xs uppercase tracking-wide text-[var(--ck-text-dim)]">
-                      <th className="py-3 pr-4">Lead</th>
-                      <th className="py-3 pr-4">Status</th>
-                      <th className="py-3 pr-4">Signal</th>
-                      <th className="py-3 pr-4">Campaign</th>
-                      <th className="py-3 pr-4">Click ID</th>
-                      <th className="py-3 pr-4 text-right">Call</th>
-                      <th className="py-3 text-right">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.recentLeads.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-8 text-center text-[var(--ck-text-muted)]">No PPC leads in this period.</td>
-                      </tr>
-                    ) : report.recentLeads.map((lead) => (
-                      <tr key={lead.id} className="border-b border-[var(--ck-border)] last:border-b-0">
-                        <td className="py-3 pr-4">
-                          <Link href={`/leads/${lead.id}`} className="font-bold text-[var(--ck-text)] hover:text-[#FCA5A5]">
-                            {lead.name}
-                          </Link>
-                          <div className="text-xs text-[var(--ck-text-dim)]">{lead.phone} · {lead.address}</div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className={`inline-flex rounded-lg border px-2 py-1 text-xs font-bold ${statusClass(lead.formStatus)}`}>
-                            {statusLabel(lead.formStatus)}
-                          </span>
-                          <div className="mt-1 text-xs capitalize text-[var(--ck-text-dim)]">{lead.stage}</div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <div className="max-w-[260px] truncate">{lead.lastSignal}</div>
-                          <div className="text-xs text-[var(--ck-text-dim)]">{formatDate(lead.lastSignalAt || lead.createdAt)}</div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <div>{lead.campaign}</div>
-                          <div className="text-xs text-[var(--ck-text-dim)]">{lead.keyword}</div>
-                        </td>
-                        <td className="py-3 pr-4 max-w-[180px] truncate font-mono text-xs text-[var(--ck-text-muted)]">{lead.clickId}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums">{lead.callQuality}</td>
-                        <td className="py-3 text-right font-bold tabular-nums">{formatMoney(lead.revenue)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
-
-            <ApprovalQueuePanel
-              report={report}
-              message={approvalMessage}
-              onMessage={setApprovalMessage}
-              onApproved={() => setRefreshKey((value) => value + 1)}
-            />
-
-            <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <OperationsHealthPanel report={report} />
-              <ExportSetupPanel report={report} />
+            <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+              <LatestJourneys sessions={latestJourneys} total={report.resultCounts.journeySessionsTotal} />
+              <TopDrivers rows={topDrivers} total={report.resultCounts.attributionRowsTotal} shown={report.resultCounts.attributionRowsShown} />
             </section>
+
+            {report.conversionApprovalQueue.length > 0 && (
+              <ApprovalQueuePanel
+                report={report}
+                message={approvalMessage}
+                onMessage={setApprovalMessage}
+                onApproved={() => setRefreshKey((value) => value + 1)}
+              />
+            )}
           </div>
         )}
       </div>
@@ -627,249 +463,356 @@ export default function MarketingPage() {
   )
 }
 
-function OperationsHealthPanel({ report }: { report: PpcReport }) {
-  const exportWorker = report.operationsHealth.ppcExportWorker
-  const missedCalls = report.operationsHealth.googleAdsMissedCalls
-
+function ExecutiveBrief({
+  report,
+  brief,
+  days,
+}: {
+  report: PpcReport
+  brief: ReturnType<typeof decisionBrief>
+  days: number
+}) {
   return (
-    <Panel title="Cron & Worker Health" icon="schedule">
-      <div className="grid gap-3 xl:grid-cols-2">
-        <OpsCard
-          icon="cloud_upload"
-          title="PPC Conversion Export"
-          path={exportWorker.path}
-          schedule={exportWorker.schedule}
-          status={exportWorker.status}
-          stats={[
-            ['Ready', formatNumber(exportWorker.readyToExport)],
-            ['Pending', formatNumber(exportWorker.pending)],
-            ['Failed', formatNumber(exportWorker.failed + exportWorker.deadLetter)],
-          ]}
-          details={[
-            `Oldest ready: ${formatAgeHours(exportWorker.oldestReadyAgeHours)}`,
-            `Last sent: ${formatDate(exportWorker.lastSentAt)} ${formatTime(exportWorker.lastSentAt)}`,
-            `Approvals waiting: ${formatNumber(exportWorker.awaitingApproval)}`,
-          ]}
-        />
-        <OpsCard
-          icon="phone_callback"
-          title="Google Ads Missed Calls"
-          path={missedCalls.path}
-          schedule={missedCalls.schedule}
-          status={missedCalls.status}
-          stats={[
-            ['Pending', formatNumber(missedCalls.pendingEscalations)],
-            ['Due', formatNumber(missedCalls.overdueEscalations)],
-            ['Oldest', formatAgeMinutes(missedCalls.oldestDueAgeMinutes)],
-          ]}
-          details={[
-            `Oldest due: ${formatDate(missedCalls.oldestDueAt)} ${formatTime(missedCalls.oldestDueAt)}`,
-            'Escalation source: scheduled worker',
-          ]}
-        />
+    <section className={`rounded-lg border p-5 ${toneClasses(brief.tone)}`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-current/25 bg-black/10 px-2.5 py-1 text-xs font-black uppercase tracking-wide">
+            <Icon name={brief.icon} size="text-base" />
+            {brief.label}
+          </div>
+          <h2 className="max-w-3xl text-2xl font-black tracking-tight text-[var(--ck-text)] sm:text-3xl">
+            {brief.headline}
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--ck-text-muted)]">{brief.detail}</p>
+        </div>
+        <div className="grid min-w-[260px] grid-cols-2 gap-2 text-sm">
+          <SignalPill label="Window" value={periodLabel(days)} />
+          <SignalPill label="Range" value={`${formatDate(report.period.since)}-${formatDate(report.period.until)}`} />
+          <SignalPill label="Click ID" value={formatPct(report.dataQuality.clickIdCoverage)} />
+          <SignalPill label="Actions" value={formatNumber(report.exportHealth.awaitingApproval + report.exportHealth.failed + report.exportHealth.deadLetter)} />
+        </div>
       </div>
-    </Panel>
+    </section>
   )
 }
 
-function OpsCard({
+function SignalPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[var(--ck-border)] bg-[var(--ck-bg)]/40 px-3 py-2">
+      <div className="text-[11px] font-black uppercase tracking-wide text-[var(--ck-text-dim)]">{label}</div>
+      <div className="mt-1 truncate text-sm font-black text-[var(--ck-text)]">{value}</div>
+    </div>
+  )
+}
+
+function CriticalWork({ items }: { items: ActionItem[] }) {
+  return (
+    <section className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4">
+      <SectionTitle icon="priority_high" title="Critical Work" />
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.key} className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border px-3 py-3 ${toneClasses(item.tone)}`}>
+            <Icon name={item.icon} size="text-xl" />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-black text-[var(--ck-text)]">{item.title}</div>
+              <div className="mt-0.5 truncate text-xs text-[var(--ck-text-muted)]">{item.detail}</div>
+            </div>
+            <div className="text-right text-xl font-black tabular-nums text-[var(--ck-text)]">{item.value}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CoreMetric({
   icon,
-  title,
-  path,
-  schedule,
-  status,
-  stats,
-  details,
+  label,
+  value,
+  detail,
+  tone,
 }: {
   icon: string
-  title: string
-  path: string
-  schedule: string
-  status: 'healthy' | 'attention' | 'blocked'
-  stats: Array<[string, string]>
-  details: string[]
+  label: string
+  value: string
+  detail: string
+  tone: Tone
 }) {
   return (
-    <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E32E2E]/15 text-[#E32E2E]">
-            <Icon name={icon} size="text-xl" />
-          </div>
-          <div>
-            <div className="font-black text-[var(--ck-text)]">{title}</div>
-            <div className="mt-1 font-mono text-xs text-[var(--ck-text-dim)]">{path}</div>
-            <div className="mt-1 text-xs font-bold text-[var(--ck-text-muted)]">{schedule}</div>
-          </div>
+    <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">{label}</div>
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toneClasses(tone)}`}>
+          <Icon name={icon} size="text-lg" />
         </div>
-        <span className={`inline-flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-black uppercase tracking-wide ${opsStatusClass(status)}`}>
-          <Icon name={status === 'healthy' ? 'check_circle' : status === 'attention' ? 'pending' : 'warning'} size="text-base" />
-          {opsStatusLabel(status)}
-        </span>
       </div>
+      <div className="text-3xl font-black tracking-tight tabular-nums">{value}</div>
+      <div className="mt-1 text-xs font-medium text-[var(--ck-text-muted)]">{detail}</div>
+    </div>
+  )
+}
 
-      <div className="grid grid-cols-3 gap-2">
-        {stats.map(([label, value]) => (
-          <div key={label} className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
-            <div className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">{label}</div>
-            <div className="mt-1 text-xl font-black tabular-nums text-[var(--ck-text)]">{value}</div>
-          </div>
-        ))}
+function FunnelSection({
+  steps,
+  daily,
+}: {
+  steps: Array<{ key: string; label: string; count: number; detail: string }>
+  daily: PpcReport['daily']
+}) {
+  const maxCount = Math.max(...steps.map((step) => step.count), 1)
+  return (
+    <section className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4">
+      <SectionTitle icon="filter_alt" title="Funnel That Matters" />
+      <div className="space-y-3">
+        {steps.map((step, index) => {
+          const previous = index === 0 ? null : steps[index - 1]
+          const rate = previous && previous.count > 0 ? (step.count / previous.count) * 100 : null
+          return (
+            <div key={step.key} className="grid gap-2 sm:grid-cols-[150px_1fr_94px] sm:items-center">
+              <div>
+                <div className="text-sm font-black">{step.label}</div>
+                <div className="text-xs text-[var(--ck-text-dim)]">{step.detail}</div>
+              </div>
+              <div className="h-8 overflow-hidden rounded-md bg-[var(--ck-surface-elev)]">
+                <div
+                  className="flex h-full items-center justify-end rounded-md bg-[#E32E2E] px-2 text-xs font-black text-white"
+                  style={{ width: `${Math.max((step.count / maxCount) * 100, step.count > 0 ? 8 : 0)}%` }}
+                >
+                  {step.count > 0 ? formatNumber(step.count) : ''}
+                </div>
+              </div>
+              <div className="text-left text-xs font-black text-[var(--ck-text-muted)] sm:text-right">
+                {rate == null ? 'Start' : formatPct(rate)}
+              </div>
+            </div>
+          )
+        })}
       </div>
+      <DailyPulse days={daily.slice(-10)} />
+    </section>
+  )
+}
 
-      <div className="mt-4 space-y-1 text-xs text-[var(--ck-text-muted)]">
-        {details.map((detail) => (
-          <div key={detail} className="flex items-start gap-2">
-            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ck-text-dim)]" />
-            <span>{detail}</span>
-          </div>
-        ))}
+function DailyPulse({ days }: { days: PpcReport['daily'] }) {
+  const max = Math.max(...days.map(dailySignalValue), 1)
+  return (
+    <div className="mt-5 border-t border-[var(--ck-border)] pt-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">Recent pulse</div>
+        <div className="text-xs text-[var(--ck-text-muted)]">Leads, submits, calls, appointments</div>
+      </div>
+      <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
+        {days.map((day) => {
+          const value = dailySignalValue(day)
+          return (
+            <div key={day.date} className="flex min-h-[92px] flex-col justify-end gap-2 rounded-md bg-[var(--ck-surface-elev)] px-2 py-2">
+              <div className="flex flex-1 items-end">
+                <div
+                  className="w-full rounded-sm bg-[#E32E2E]"
+                  style={{ height: `${Math.max((value / max) * 100, value > 0 ? 8 : 2)}%` }}
+                  title={`${formatDate(`${day.date}T12:00:00.000Z`)}: ${formatNumber(value)} signals`}
+                />
+              </div>
+              <div className="truncate text-center text-[10px] font-bold text-[var(--ck-text-dim)]">{formatDate(`${day.date}T12:00:00.000Z`)}</div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function ExportSetupPanel({ report }: { report: PpcReport }) {
-  const config = report.exportConfig
-  const google = config.googleAds
-  const stape = config.stape
-  const missingActionCount = google.missingActionMappings.length
+function SystemIntegrity({ report }: { report: PpcReport }) {
+  const exportWorker = report.operationsHealth.ppcExportWorker
+  const missedCalls = report.operationsHealth.googleAdsMissedCalls
+  const failedExports = report.exportHealth.failed + report.exportHealth.deadLetter
+  const actionCount = report.exportHealth.awaitingApproval + failedExports
 
   return (
-    <Panel title="Export Setup Health" icon="settings_input_component">
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">Current export mode</div>
-          <div className="mt-1 text-2xl font-black tracking-tight">{exportModeLabel(config.mode)}</div>
-          <div className="mt-1 text-sm text-[var(--ck-text-muted)]">
-            Approved rows are exported only through destinations marked ready.
-          </div>
-        </div>
-        <span className={`inline-flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-black uppercase tracking-wide ${config.configured ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200' : 'border-[#E32E2E]/40 bg-[#E32E2E]/10 text-[#FCA5A5]'}`}>
-          <Icon name={config.configured ? 'verified' : 'warning'} size="text-base" />
-          {config.configured ? 'Worker has a live destination' : 'Worker destination incomplete'}
-        </span>
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <SetupCard
-          icon="cloud_sync"
-          title="Stape Server GTM"
-          status={setupStatusLabel(stape.enabled, stape.ready)}
-          statusClass={setupStatusClass(stape.enabled, stape.ready)}
-          primary={stape.endpointHost || 'No endpoint host'}
-          details={[
-            stape.previewHeaderConfigured ? 'Preview header configured' : 'No preview header',
-            ...stape.missingConfig,
-          ]}
+    <section className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4">
+      <SectionTitle icon="verified" title="System Integrity" />
+      <div className="space-y-3">
+        <IntegrityRow
+          icon="key"
+          label="Click ID coverage"
+          value={formatPct(report.dataQuality.clickIdCoverage)}
+          detail={`${formatNumber(report.dataQuality.missingClickIdRows)} PPC leads missing an ID`}
+          tone={report.dataQuality.missingClickIdRows > 0 ? 'warn' : 'good'}
         />
-        <SetupCard
-          icon="upload_file"
-          title="Direct Google Ads API"
-          status={setupStatusLabel(google.enabled, google.ready)}
-          statusClass={setupStatusClass(google.enabled, google.ready)}
-          primary={google.customerId ? `Customer ${google.customerId}` : 'No customer ID'}
-          details={[
-            `${google.configuredActionMappings.length} of ${google.configuredActionMappings.length + missingActionCount} action mappings ready`,
-            ...google.missingConfig,
-          ]}
+        <IntegrityRow
+          icon="cloud_upload"
+          label="Conversion export"
+          value={actionCount > 0 ? `${formatNumber(actionCount)} open` : 'Clear'}
+          detail={`${formatNumber(report.exportHealth.approvedPending)} approved pending · oldest ${formatAgeHours(exportWorker.oldestReadyAgeHours)}`}
+          tone={failedExports > 0 ? 'bad' : actionCount > 0 ? 'warn' : 'good'}
+        />
+        <IntegrityRow
+          icon="schedule"
+          label="Workers"
+          value={exportWorker.status === 'healthy' && missedCalls.status === 'healthy' ? 'Healthy' : 'Check'}
+          detail={`Export ${exportWorker.schedule.toLowerCase()} · missed calls ${missedCalls.schedule.toLowerCase()}`}
+          tone={exportWorker.status === 'blocked' || missedCalls.status === 'blocked' ? 'bad' : exportWorker.status === 'attention' || missedCalls.status === 'attention' ? 'warn' : 'good'}
+        />
+        <IntegrityRow
+          icon="phone_callback"
+          label="Missed-call follow-up"
+          value={formatNumber(missedCalls.pendingEscalations)}
+          detail={`${formatNumber(missedCalls.overdueEscalations)} overdue · oldest ${formatAgeMinutes(missedCalls.oldestDueAgeMinutes)}`}
+          tone={missedCalls.overdueEscalations > 0 ? 'bad' : missedCalls.pendingEscalations > 0 ? 'warn' : 'good'}
         />
       </div>
-
-      {google.enabled && (
-        <div className="mt-3 flex flex-col gap-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="font-black text-[var(--ck-text)]">Google Ads OAuth</div>
-            <div className="text-xs">Connect the Google Ads account once, then production can use the saved Ads-scoped refresh token.</div>
-          </div>
-          <Link
-            href="/api/auth/google-ads/authorize?return_to=/marketing"
-            className="inline-flex w-fit items-center gap-2 rounded-lg border border-[#E32E2E]/40 bg-[#E32E2E]/15 px-3 py-2 text-xs font-black uppercase tracking-wide text-[#FCA5A5] transition hover:bg-[#E32E2E]/25"
-          >
-            <Icon name="login" size="text-base" />
-            Connect Ads
-          </Link>
-        </div>
-      )}
-
-      {google.enabled && (
-        <div className="mt-4 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
-          <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">
-            <Icon name="schema" size="text-base" className="text-[#E32E2E]" />
-            Google Ads conversion action mappings
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[...google.configuredActionMappings, ...google.missingActionMappings].map((eventName) => {
-              const ready = google.configuredActionMappings.includes(eventName)
-              return (
-                <span
-                  key={eventName}
-                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-bold ${
-                    ready
-                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-                      : 'border-amber-500/35 bg-amber-500/10 text-amber-200'
-                  }`}
-                >
-                  <Icon name={ready ? 'check_circle' : 'pending'} size="text-sm" />
-                  {formatEventName(eventName)}
-                </span>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {config.warnings.length > 0 && (
-        <div className="mt-4 space-y-2">
-          {config.warnings.map((warning) => (
-            <div key={warning} className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-              <Icon name="info" size="text-base" className="mt-0.5 text-amber-300" />
-              <span>{warning}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </Panel>
+    </section>
   )
 }
 
-function SetupCard({
+function IntegrityRow({
   icon,
-  title,
-  status,
-  statusClass,
-  primary,
-  details,
+  label,
+  value,
+  detail,
+  tone,
 }: {
   icon: string
-  title: string
-  status: string
-  statusClass: string
-  primary: string
-  details: string[]
+  label: string
+  value: string
+  detail: string
+  tone: Tone
 }) {
   return (
-    <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Icon name={icon} size="text-xl" className="text-[#E32E2E]" />
-          <div>
-            <div className="text-sm font-black text-[var(--ck-text)]">{title}</div>
-            <div className="mt-0.5 text-xs text-[var(--ck-text-muted)]">{primary}</div>
+    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-[var(--ck-border)] pb-3 last:border-b-0 last:pb-0">
+      <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${toneClasses(tone)}`}>
+        <Icon name={icon} size="text-lg" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-black text-[var(--ck-text)]">{label}</div>
+        <div className="mt-0.5 truncate text-xs text-[var(--ck-text-muted)]">{detail}</div>
+      </div>
+      <div className="text-right text-sm font-black text-[var(--ck-text)]">{value}</div>
+    </div>
+  )
+}
+
+function LatestJourneys({
+  sessions,
+  total,
+}: {
+  sessions: PpcReport['journeySessions']
+  total: number
+}) {
+  return (
+    <section className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4">
+      <SectionTitle icon="conversion_path" title="Latest Paid Journeys" detail={`${formatNumber(sessions.length)} of ${formatNumber(total)} shown`} />
+      <div className="space-y-3">
+        {sessions.length === 0 ? (
+          <EmptyState text="No click-ID paid journeys in this window." />
+        ) : sessions.map((session) => (
+          <JourneyRow key={session.key} session={session} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function JourneyRow({ session }: { session: PpcReport['journeySessions'][number] }) {
+  const progress = journeyProgress(session)
+  return (
+    <article className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+      <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-[#E32E2E]/15 px-2 py-1 text-xs font-black text-[#FCA5A5]">{formatTime(session.firstEventAt)}</span>
+            <span className="truncate text-sm font-black text-[var(--ck-text)]">{session.campaign}</span>
+            <span className="font-mono text-xs text-[var(--ck-text-dim)]">{session.clickId}</span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-2 text-xs capitalize text-[var(--ck-text-muted)]">
+            <span>{progress.complete}/{progress.total} steps</span>
+            <span>Current: <b className="text-[var(--ck-text)]">{progress.current}</b></span>
+            <span>{compactText(session.choices.situation)}</span>
+            <span>{compactText(session.choices.timeline)}</span>
           </div>
         </div>
-        <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-black ${statusClass}`}>{status}</span>
+        {session.leadId ? (
+          <Link href={`/leads/${session.leadId}`} className="inline-flex w-fit items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-black text-emerald-200 hover:bg-emerald-500/15">
+            <Icon name="person_search" size="text-base" />
+            {session.leadName}
+          </Link>
+        ) : (
+          <span className="inline-flex w-fit items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-black text-amber-200">
+            <Icon name="person_off" size="text-base" />
+            No CRM lead
+          </span>
+        )}
       </div>
-      <div className="space-y-1 text-xs text-[var(--ck-text-muted)]">
-        {details.length === 0 ? (
-          <div>No missing setup detected.</div>
-        ) : details.map((detail) => (
-          <div key={detail} className="flex items-start gap-2">
-            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ck-text-dim)]" />
-            <span>{detail}</span>
+      <div className="grid grid-cols-10 gap-1" aria-label={`${progress.complete} of ${progress.total} journey steps complete`}>
+        {session.steps.map((step) => (
+          <div key={step.key} className={`h-2 rounded-full ${statusDotClass(step.status)}`} title={`${step.label}: ${step.detail}`} />
+        ))}
+      </div>
+    </article>
+  )
+}
+
+function TopDrivers({
+  rows,
+  shown,
+  total,
+}: {
+  rows: PpcReport['attributionRows']
+  shown: number
+  total: number
+}) {
+  return (
+    <section className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4">
+      <SectionTitle icon="table_chart" title="Top Drivers" detail={`${countSummary(shown, total)} campaign/keyword rows`} />
+      <div className="space-y-2">
+        {rows.length === 0 ? (
+          <EmptyState text="No PPC attribution rows in this window." />
+        ) : rows.map((row) => (
+          <div key={row.key} className="grid grid-cols-[1fr_auto] gap-3 border-b border-[var(--ck-border)] py-3 last:border-b-0">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-black text-[var(--ck-text)]">{row.campaign}</div>
+              <div className={`mt-0.5 truncate text-xs ${row.keyword === 'Keyword not passed' ? 'text-amber-300' : 'text-[var(--ck-text-muted)]'}`}>
+                {row.keyword}
+              </div>
+            </div>
+            <div className="grid min-w-[220px] grid-cols-4 gap-2 text-right text-xs">
+              <DriverStat label="Leads" value={formatNumber(row.leads)} />
+              <DriverStat label="Submits" value={formatNumber(row.formSubmits)} />
+              <DriverStat label="Appts" value={formatNumber(row.appointments)} />
+              <DriverStat label="Revenue" value={formatMoney(row.revenue)} />
+            </div>
           </div>
         ))}
       </div>
+    </section>
+  )
+}
+
+function DriverStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="font-black tabular-nums text-[var(--ck-text)]">{value}</div>
+      <div className="mt-0.5 uppercase tracking-wide text-[var(--ck-text-dim)]">{label}</div>
+    </div>
+  )
+}
+
+function SectionTitle({ icon, title, detail }: { icon: string; title: string; detail?: string }) {
+  return (
+    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-2">
+        <Icon name={icon} size="text-lg" className="text-[#E32E2E]" />
+        <h2 className="text-sm font-black uppercase tracking-wide text-[var(--ck-text)]">{title}</h2>
+      </div>
+      {detail && <div className="text-xs font-bold text-[var(--ck-text-muted)]">{detail}</div>}
+    </div>
+  )
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-[var(--ck-border)] p-6 text-center text-sm text-[var(--ck-text-muted)]">
+      {text}
     </div>
   )
 }
@@ -914,27 +857,13 @@ function ApprovalQueuePanel({
   }
 
   return (
-    <Panel title="Conversion Approval Queue" icon="approval">
-      <div className="mb-4 grid gap-3 xl:grid-cols-[1fr_1.2fr]">
-        <div className="grid grid-cols-3 gap-2">
-          <ExportBox label="Awaiting" value={report.conversionApproval.awaitingApproval} tone={report.conversionApproval.awaitingApproval > 0 ? 'warn' : 'ok'} />
-          <ExportBox label="Urgent" value={report.conversionApproval.urgent + report.conversionApproval.critical} tone={report.conversionApproval.urgent + report.conversionApproval.critical > 0 ? 'bad' : 'ok'} />
-          <ExportBox label="Expired" value={report.conversionApproval.expired} tone={report.conversionApproval.expired > 0 ? 'bad' : 'ok'} />
-        </div>
-        <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
-          <div className="grid gap-2 sm:grid-cols-3">
-            {GOOGLE_ADS_QUALITY_SCALE.map((item) => (
-              <div key={item.score} className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-black uppercase tracking-wide text-[var(--ck-text-dim)]">Score {item.score}</span>
-                  <span className="rounded-md bg-[#E32E2E]/15 px-2 py-1 text-xs font-black text-[#FCA5A5]">{item.googleSignal}</span>
-                </div>
-                <div className="mt-2 text-sm font-black text-[var(--ck-text)]">{item.title}</div>
-                <div className="mt-1 text-xs leading-5 text-[var(--ck-text-muted)]">{item.internalStandard}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+    <section className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4">
+      <SectionTitle icon="approval" title="Approval Queue" detail={`${formatNumber(report.conversionApprovalQueue.length)} waiting`} />
+
+      <div className="mb-4 grid gap-2 sm:grid-cols-3">
+        <QueueStat label="Awaiting" value={report.conversionApproval.awaitingApproval} tone={report.conversionApproval.awaitingApproval > 0 ? 'warn' : 'good'} />
+        <QueueStat label="Urgent" value={report.conversionApproval.urgent + report.conversionApproval.critical} tone={report.conversionApproval.urgent + report.conversionApproval.critical > 0 ? 'bad' : 'good'} />
+        <QueueStat label="Expired" value={report.conversionApproval.expired} tone={report.conversionApproval.expired > 0 ? 'bad' : 'good'} />
       </div>
 
       {message && (
@@ -954,19 +883,12 @@ function ApprovalQueuePanel({
               <th className="py-3 pr-4">Conversion</th>
               <th className="py-3 pr-4">Lead</th>
               <th className="py-3 pr-4">Deadline</th>
-              <th className="py-3 pr-4">Click ID</th>
-              <th className="py-3 pr-4">Google Value</th>
+              <th className="py-3 pr-4">Google value</th>
               <th className="py-3 text-right">Action</th>
             </tr>
           </thead>
           <tbody>
-            {report.conversionApprovalQueue.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="py-8 text-center text-[var(--ck-text-muted)]">
-                  No conversions need approval right now.
-                </td>
-              </tr>
-            ) : report.conversionApprovalQueue.map((row) => {
+            {report.conversionApprovalQueue.map((row) => {
               const selectedScore = selectedScores[row.id] ?? row.qualityScore ?? row.suggestedQualityScore
               const canApprove = row.status !== 'sent' && row.deadlineStatus !== 'expired'
 
@@ -975,7 +897,7 @@ function ApprovalQueuePanel({
                   <td className="py-3 pr-4">
                     <div className="font-black text-[var(--ck-text)]">{row.eventLabel}</div>
                     <div className="text-xs text-[var(--ck-text-dim)]">
-                      {row.role} · {row.category} · {formatDate(row.eventTime)} {formatTime(row.eventTime)}
+                      {row.role} · {formatDate(row.eventTime)} {formatTime(row.eventTime)}
                     </div>
                     {row.lastError && <div className="mt-1 max-w-[320px] truncate text-xs text-[#FCA5A5]">{row.lastError}</div>}
                   </td>
@@ -994,13 +916,7 @@ function ApprovalQueuePanel({
                     <span className={`inline-flex rounded-lg border px-2 py-1 text-xs font-black capitalize ${deadlineStatusClass(row.deadlineStatus)}`}>
                       {deadlineLabel(row)}
                     </span>
-                    <div className="mt-1 text-xs text-[var(--ck-text-dim)]">
-                      age {row.ageDays ?? '--'}d · expires {formatDate(row.expiresAt)}
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <div className="font-mono text-xs text-[var(--ck-text-muted)]">{row.clickId}</div>
-                    <div className="text-xs uppercase text-[var(--ck-text-dim)]">{row.clickIdType}</div>
+                    <div className="mt-1 text-xs text-[var(--ck-text-dim)]">age {row.ageDays ?? '--'}d</div>
                   </td>
                   <td className="py-3 pr-4">
                     <select
@@ -1009,30 +925,24 @@ function ApprovalQueuePanel({
                         const next = Number(event.target.value) as GoogleAdsQualityScore
                         setSelectedScores((current) => ({ ...current, [row.id]: next }))
                       }}
-                      className="min-w-[190px] rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-bold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                      className="min-w-[174px] rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-bold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
                       aria-label={`Google Ads quality score for ${row.eventLabel}`}
                     >
                       {GOOGLE_ADS_QUALITY_SCALE.map((item) => (
                         <option key={item.score} value={item.score}>{scoreLabel(item.score)}</option>
                       ))}
                     </select>
-                    <div className="mt-1 text-xs text-[var(--ck-text-dim)]">
-                      Google receives {selectedScore}; profit stays internal.
-                    </div>
                   </td>
                   <td className="py-3 text-right">
                     <button
                       type="button"
                       disabled={!canApprove || busyId === row.id}
                       onClick={() => approve(row)}
-                      className="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-lg border border-[#E32E2E] bg-[#E32E2E] px-3 py-2 text-xs font-black text-white transition-colors hover:bg-[#c92323] disabled:cursor-not-allowed disabled:border-[var(--ck-border)] disabled:bg-[var(--ck-surface-elev)] disabled:text-[var(--ck-text-dim)]"
+                      className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border border-[#E32E2E] bg-[#E32E2E] px-3 py-2 text-xs font-black text-white transition-colors hover:bg-[#c92323] disabled:cursor-not-allowed disabled:border-[var(--ck-border)] disabled:bg-[var(--ck-surface-elev)] disabled:text-[var(--ck-text-dim)]"
                     >
                       <Icon name={busyId === row.id ? 'hourglass_top' : 'check_circle'} size="text-base" />
                       {busyId === row.id ? 'Saving' : 'Approve'}
                     </button>
-                    {row.approvedAt && (
-                      <div className="mt-1 text-xs text-[var(--ck-text-dim)]">approved {formatDate(row.approvedAt)}</div>
-                    )}
                   </td>
                 </tr>
               )
@@ -1040,190 +950,15 @@ function ApprovalQueuePanel({
           </tbody>
         </table>
       </div>
-    </Panel>
-  )
-}
-
-function Panel({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4 shadow-sm">
-      <div className="mb-4 flex items-center gap-2">
-        <Icon name={icon} size="text-lg" className="text-[#E32E2E]" />
-        <h2 className="text-sm font-black uppercase tracking-wide text-[var(--ck-text)]">{title}</h2>
-      </div>
-      {children}
     </section>
   )
 }
 
-function DecisionMetric({
-  icon,
-  label,
-  value,
-  detail,
-  tone = 'neutral',
-}: {
-  icon: string
-  label: string
-  value: string
-  detail: string
-  tone?: 'neutral' | 'ok' | 'warn'
-}) {
-  const toneClass = {
-    neutral: 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]',
-    ok: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-    warn: 'border-amber-500/35 bg-amber-500/10 text-amber-300',
-  }[tone]
-
+function QueueStat({ label, value, tone }: { label: string; value: number; tone: Tone }) {
   return (
-    <div className={`rounded-lg border p-3 ${toneClass}`}>
-      <div className="mb-2 flex items-center gap-2">
-        <Icon name={icon} size="text-lg" />
-        <div className="text-xs font-black uppercase tracking-wide">{label}</div>
-      </div>
-      <div className="text-xl font-black tabular-nums text-[var(--ck-text)]">{value}</div>
-      <div className="mt-1 text-xs font-medium text-[var(--ck-text-muted)]">{detail}</div>
-    </div>
-  )
-}
-
-function KpiCard({
-  icon,
-  label,
-  value,
-  detail,
-  tone = 'default',
-}: {
-  icon: string
-  label: string
-  value: string
-  detail?: string
-  tone?: 'default' | 'success' | 'warn' | 'info' | 'money'
-}) {
-  const toneClass = {
-    default: 'text-[#E32E2E] bg-[#E32E2E]/12',
-    success: 'text-emerald-300 bg-emerald-500/12',
-    warn: 'text-amber-300 bg-amber-500/12',
-    info: 'text-violet-300 bg-violet-500/12',
-    money: 'text-green-300 bg-green-500/12',
-  }[tone]
-
-  return (
-    <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="text-xs font-bold uppercase tracking-wide text-[var(--ck-text-dim)]">{label}</div>
-        <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${toneClass}`}>
-          <Icon name={icon} size="text-lg" />
-        </div>
-      </div>
-      <div className="text-2xl font-black tracking-tight tabular-nums">{value}</div>
-      <div className="mt-1 min-h-4 text-xs text-[var(--ck-text-muted)]">{detail ?? '\u00a0'}</div>
-    </div>
-  )
-}
-
-function JourneySessionCard({ session }: { session: PpcReport['journeySessions'][number] }) {
-  return (
-    <article className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
-      <div className="mb-3 flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-md border border-[#E32E2E]/30 bg-[#E32E2E]/10 px-2 py-1 text-xs font-black uppercase text-[#FCA5A5]">
-              {formatTime(session.firstEventAt)}
-            </span>
-            <span className="text-sm font-black text-[var(--ck-text)]">{session.campaign}</span>
-            <span className="text-xs text-[var(--ck-text-dim)]">{session.source} / {session.medium}</span>
-            <span className="font-mono text-xs text-[var(--ck-text-dim)]">{session.clickId}</span>
-          </div>
-          <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--ck-text-muted)]">
-            <span>{session.eventCount} events</span>
-            <span>{session.device}</span>
-            <span>Situation: <b className="capitalize text-[var(--ck-text)]">{session.choices.situation}</b></span>
-            <span>Timeline: <b className="capitalize text-[var(--ck-text)]">{session.choices.timeline}</b></span>
-            <span>Condition: <b className="capitalize text-[var(--ck-text)]">{session.choices.condition}</b></span>
-          </div>
-          {session.choices.address !== '--' && (
-            <div className="mt-1 max-w-full truncate text-xs text-[var(--ck-text-dim)]">
-              Address: {session.choices.address}
-            </div>
-          )}
-        </div>
-        <div className="shrink-0 text-left xl:text-right">
-          {session.leadId ? (
-            <Link href={`/leads/${session.leadId}`} className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-black text-emerald-200 hover:bg-emerald-500/15">
-              <Icon name="person_search" size="text-base" />
-              {session.leadName}
-            </Link>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-md border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2.5 py-1.5 text-xs font-bold text-[var(--ck-text-dim)]">
-              <Icon name="person_off" size="text-base" />
-              No CRM lead
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5 xl:grid-cols-10">
-        {session.steps.map((step) => (
-          <div key={step.key} className={`rounded-md border px-2 py-2 ${journeyStepClass(step.status)}`}>
-            <div className="mb-1 flex items-center gap-1.5">
-              <JourneyStatusDot status={step.status} />
-              <div className="truncate text-[11px] font-black uppercase leading-4">{step.label}</div>
-            </div>
-            <div className="truncate text-[11px] font-medium leading-4 text-[var(--ck-text-muted)]">{step.detail}</div>
-            <div className="mt-1 text-[11px] font-bold tabular-nums leading-4 text-[var(--ck-text-dim)]">{formatTime(step.at)}</div>
-          </div>
-        ))}
-      </div>
-    </article>
-  )
-}
-
-function JourneyStatusDot({ status }: { status: PpcReport['journeySessions'][number]['steps'][number]['status'] }) {
-  const classes = status === 'complete'
-    ? 'bg-emerald-400 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]'
-    : status === 'active'
-      ? 'bg-amber-300 shadow-[0_0_0_3px_rgba(245,158,11,0.14)]'
-      : 'bg-[var(--ck-border-strong)]'
-  return <span className={`h-2 w-2 shrink-0 rounded-full ${classes}`} />
-}
-
-function QualityRow({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-xs">
-        <span className="font-bold text-[var(--ck-text-muted)]">{label}</span>
-        <span className="font-black tabular-nums">{formatPct(value)}</span>
-      </div>
-      <div className="h-2 rounded-full bg-[var(--ck-surface-elev)]">
-        <div
-          className="h-full rounded-full bg-emerald-500"
-          style={{ width: `${Math.min(Math.max(value, 0), 100)}%` }}
-        />
-      </div>
-    </div>
-  )
-}
-
-function MiniMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-2">
-      <div className="font-black tabular-nums text-[var(--ck-text)]">{formatNumber(value)}</div>
-      <div className="mt-0.5 font-bold uppercase tracking-wide text-[var(--ck-text-dim)]">{label}</div>
-    </div>
-  )
-}
-
-function ExportBox({ label, value, tone }: { label: string; value: number; tone: 'ok' | 'warn' | 'bad' }) {
-  const classes = tone === 'ok'
-    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-    : tone === 'warn'
-      ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-      : 'border-[#E32E2E]/40 bg-[#E32E2E]/10 text-[#FCA5A5]'
-  return (
-    <div className={`rounded-lg border p-3 ${classes}`}>
-      <div className="text-xs font-bold uppercase tracking-wide">{label}</div>
-      <div className="mt-1 text-2xl font-black tabular-nums">{formatNumber(value)}</div>
+    <div className={`rounded-lg border px-3 py-2 ${toneClasses(tone)}`}>
+      <div className="text-xs font-black uppercase tracking-wide">{label}</div>
+      <div className="mt-1 text-2xl font-black tabular-nums text-[var(--ck-text)]">{formatNumber(value)}</div>
     </div>
   )
 }
