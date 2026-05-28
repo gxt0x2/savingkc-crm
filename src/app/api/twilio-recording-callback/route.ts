@@ -7,6 +7,16 @@ import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { supabase } from '@/lib/supabase-lazy'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { syncCoOwners } from '@/lib/co-owners'
+import {
+  GOOGLE_ADS_CAMPAIGN,
+  GOOGLE_ADS_PHONE_SOURCE,
+  PPC_TRACKING_PHONE_DIGITS,
+  isPpcTrackingNumber,
+} from '@/lib/call-quality-events'
+import {
+  markLeadAsGoogleAdsPhoneLead,
+  phoneLookupVariants,
+} from '@/lib/google-ads-phone'
 
 type RecordingCallbackMeta = {
   callSid?: string
@@ -19,6 +29,22 @@ type RecordingCallbackMeta = {
   recordingUrl: string
   source: 'twilio_recording_callback'
   to?: string
+  context_source?: string
+  traffic_source?: string
+  campaign?: string
+  lead_source?: string
+  tracking_number?: string
+}
+
+type RecordingContext = {
+  source?: string
+  from?: string
+  to?: string
+  calledNumber?: string
+  traffic_source?: string
+  campaign?: string
+  lead_source?: string
+  tracking_number?: string
 }
 
 // WebRTC-initiated calls record against the parent leg whose To/From are
@@ -43,8 +69,10 @@ async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | nul
       if (!child.to) continue
       const phone = child.to.replace(/[^\d+]/g, '')
       if (!phone) continue
-      const { data } = await supabase.from('leads').select('id').eq('phone', phone).limit(1).maybeSingle()
-      if (data?.id) return data.id
+      for (const variant of phoneLookupVariants(phone)) {
+        const { data } = await supabase.from('leads').select('id').eq('phone', variant).limit(1).maybeSingle()
+        if (data?.id) return data.id
+      }
     }
   } catch (err) {
     console.error('[recording-callback] child-leg lookup failed', (err as Error).message)
@@ -61,6 +89,7 @@ async function logPlayableRecordingActivity({
   recordingStatus,
   from,
   to,
+  context,
 }: {
   leadId: string
   recordingSid: string
@@ -70,6 +99,7 @@ async function logPlayableRecordingActivity({
   recordingStatus: string
   from: string
   to: string
+  context?: RecordingContext
 }) {
   const playableUrl = `/api/recordings/${recordingSid}`
   const direction = from?.startsWith('client:') ? 'outbound' : 'inbound'
@@ -84,6 +114,11 @@ async function logPlayableRecordingActivity({
     recordingUrl: playableUrl,
     source: 'twilio_recording_callback',
     to,
+    ...(context?.source && { context_source: context.source }),
+    ...(context?.traffic_source && { traffic_source: context.traffic_source }),
+    ...(context?.campaign && { campaign: context.campaign }),
+    ...(context?.lead_source && { lead_source: context.lead_source }),
+    ...(context?.tracking_number && { tracking_number: context.tracking_number }),
   }
 
   const { data: existing } = await supabase
@@ -119,14 +154,31 @@ async function logPlayableRecordingActivity({
  */
 export async function POST(req: Request) {
   try {
+    const url = new URL(req.url)
     const body = await req.formData()
     const recordingUrl = body.get('RecordingUrl') as string
     const recordingSid = body.get('RecordingSid') as string
-    const callSid = body.get('CallSid') as string
+    const callSid = (url.searchParams.get('callSid') || body.get('CallSid')) as string
     const recordingDuration = parseInt(body.get('RecordingDuration') as string || '0')
     const recordingStatus = body.get('RecordingStatus') as string
-    const to = body.get('To') as string
-    const from = body.get('From') as string
+    const to = (url.searchParams.get('calledNumber') || url.searchParams.get('to') || body.get('To') || '') as string
+    const from = (url.searchParams.get('from') || body.get('From') || '') as string
+    const hintedLeadId = url.searchParams.get('leadId') || ''
+    const sourceHint = url.searchParams.get('source') || ''
+    const calledNumber = url.searchParams.get('calledNumber') || to || ''
+    const isGoogleAdsRecording = sourceHint === GOOGLE_ADS_PHONE_SOURCE || isPpcTrackingNumber(calledNumber)
+    const recordingContext: RecordingContext = {
+      source: sourceHint || 'twilio_recording_callback',
+      from,
+      to,
+      calledNumber,
+      ...(isGoogleAdsRecording && {
+        traffic_source: 'google_ads',
+        campaign: GOOGLE_ADS_CAMPAIGN,
+        lead_source: GOOGLE_ADS_PHONE_SOURCE,
+        tracking_number: PPC_TRACKING_PHONE_DIGITS,
+      }),
+    }
 
     console.log(`[recording-callback] Recording ${recordingSid}: status=${recordingStatus} duration=${recordingDuration}s`)
 
@@ -147,15 +199,28 @@ export async function POST(req: Request) {
 
     let leadId: string | null = null
 
-    // Try to match via phone number in leads table
-    if (cleanPhone) {
-      const { data: lead } = await supabase
+    if (hintedLeadId) {
+      const { data: hintedLead } = await supabase
         .from('leads')
         .select('id')
-        .eq('phone', cleanPhone)
+        .eq('id', hintedLeadId)
         .limit(1)
         .maybeSingle()
-      leadId = lead?.id || null
+      leadId = hintedLead?.id || null
+    }
+
+    // Try to match via phone number in leads table
+    if (!leadId && cleanPhone) {
+      for (const variant of phoneLookupVariants(cleanPhone)) {
+        const { data: lead } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('phone', variant)
+          .limit(1)
+          .maybeSingle()
+        leadId = lead?.id || null
+        if (leadId) break
+      }
     }
 
     // Fallback: WebRTC parent legs have empty To — look at child legs via Twilio
@@ -173,6 +238,12 @@ export async function POST(req: Request) {
 
     console.log(`[recording-callback] Processing recording for lead ${leadId}`)
 
+    if (isGoogleAdsRecording && from) {
+      await markLeadAsGoogleAdsPhoneLead(leadId, from).catch((error) => {
+        console.error('[recording-callback] Google Ads attribution refresh failed:', error)
+      })
+    }
+
     await logPlayableRecordingActivity({
       leadId,
       recordingSid,
@@ -182,10 +253,11 @@ export async function POST(req: Request) {
       recordingStatus,
       from,
       to,
+      context: recordingContext,
     })
 
     // Fire-and-forget: download, transcribe, analyze, store
-    processRecording(recordingUrl, recordingSid, leadId, recordingDuration).catch(err =>
+    processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext).catch(err =>
       console.error('[recording-callback] Processing failed:', err)
     )
 
@@ -200,7 +272,8 @@ async function processRecording(
   recordingUrl: string,
   recordingSid: string,
   leadId: string,
-  duration: number
+  duration: number,
+  context: RecordingContext = {},
 ) {
   // 1. Download recording
   const filePath = await downloadRecording(recordingUrl, recordingSid)
@@ -306,6 +379,11 @@ async function processRecording(
         duration,
         agent: 'Casey',
         recordingUrl: recordingUrl + '.mp3',
+        source: context.source || 'twilio_recording_callback',
+        trafficSource: context.traffic_source || null,
+        campaign: context.campaign || null,
+        calledNumber: context.calledNumber || context.to || null,
+        callerPhone: context.from || null,
         fullTranscript: transcript,
         aiSummary: analysis?.summary || analysis?.aiSummary || null,
         extractedData: analysis ? {
@@ -469,6 +547,10 @@ async function processRecording(
           duration,
           transcriptLength: transcript.length,
           hasAnalysis: !!analysis,
+          source: context.source || 'twilio_recording_callback',
+          traffic_source: context.traffic_source || null,
+          campaign: context.campaign || null,
+          calledNumber: context.calledNumber || context.to || null,
         },
       })
     }, 'system:recording_callback')
