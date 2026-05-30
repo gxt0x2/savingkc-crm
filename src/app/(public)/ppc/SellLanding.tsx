@@ -124,8 +124,8 @@ function initialQuizState(): QuizState {
 
 export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, variant = 'general' }: SellLandingProps) {
   const isTaxLanding = variant === 'tax'
-  const totalSteps = isTaxLanding ? 4 : 3
-  const finalStep = isTaxLanding ? 4 : 3
+  const totalSteps = 4
+  const finalStep = 4
   const [step, setStep] = useState<FormStep>(1)
   const [state, setState] = useState<QuizState>(() => initialQuizState())
   const [submitting, setSubmitting] = useState(false)
@@ -483,6 +483,18 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     submitted,
   ])
 
+  const validateTimeline = (formStep: FormStep) => {
+    if (state.timeline) return true
+    trackFormError('Answer this question to continue.', 'timeline', formStep)
+    return false
+  }
+
+  const validateCondition = (formStep: FormStep) => {
+    if (state.condition) return true
+    trackFormError('Answer this question to continue.', 'condition', formStep)
+    return false
+  }
+
   const validateTimelineAndCondition = (formStep: FormStep) => {
     if (state.timeline && state.condition) return true
     trackFormError(
@@ -519,13 +531,22 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
           situation: state.situation,
           auctionStatus: state.auctionStatus,
         })
-      } else if (!validateTimelineAndCondition(2)) {
-        return
+      } else {
+        if (!validateTimeline(2)) return
+        postPartial(2, {
+          situation: state.situation,
+          timeline: state.timeline,
+        })
       }
     }
-    if ((isTaxLanding && toStep === 4) || (!isTaxLanding && toStep === 3)) {
-      const qualificationStep = isTaxLanding ? 3 : 2
-      if (!validateTimelineAndCondition(qualificationStep)) return
+    if (toStep === 4) {
+      const qualificationStep = 3
+      if (isTaxLanding) {
+        if (!validateTimelineAndCondition(qualificationStep)) return
+      } else {
+        if (!validateTimeline(2)) return
+        if (!validateCondition(qualificationStep)) return
+      }
       fireConversion('lead_quiz_qualified', {
         form_step: qualificationStep,
         situation: state.situation,
@@ -649,7 +670,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     }
     if (key === 'condition') {
       firePpcTrackingEvent('condition_selected', {
-        form_step: isTaxLanding ? 3 : 2,
+        form_step: 3,
         situation: state.situation || undefined,
         timeline: state.timeline || undefined,
         condition: value,
@@ -700,6 +721,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   const faqs = isTaxLanding ? TAX_FAQS : FAQS
   const isAuctionStep = isTaxLanding && step === 2
   const isTimelineStep = isTaxLanding ? step === 3 : step === 2
+  const isConditionStep = !isTaxLanding && step === 3
   const timelineNextStep: FormStep = isTaxLanding ? 4 : 3
   const stepLabel = step === finalStep
     ? '15 seconds to finish'
@@ -707,6 +729,8 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
       ? '10 seconds'
       : isTimelineStep
         ? '20 seconds'
+        : isConditionStep
+          ? '15 seconds'
         : '30 seconds'
 
   return (
@@ -721,15 +745,15 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
           <nav className="nav-links" aria-label="primary">
             {isTaxLanding ? (
               <>
-                <a href="#timeline" onClick={scrollToId('timeline')}>Your fresh start</a>
-                <a href="#stages" onClick={scrollToId('stages')}>Stage</a>
-                <a href="#team" onClick={scrollToId('team')}>Who we are</a>
+                <a href="#timeline" onClick={scrollToId('timeline')}>Steps</a>
+                <a href="#stages" onClick={scrollToId('stages')}>Issue</a>
+                <a href="#team" onClick={scrollToId('team')}>Team</a>
               </>
             ) : (
               <>
-                <a href="#how" onClick={scrollToId('how')}>How it works</a>
-                <a href="#problems" onClick={scrollToId('problems')}>What we buy</a>
-                <a href="#about" onClick={scrollToId('about')}>Who we are</a>
+                <a href="#how" onClick={scrollToId('how')}>Steps</a>
+                <a href="#problems" onClick={scrollToId('problems')}>Issue</a>
+                <a href="#about" onClick={scrollToId('about')}>Team</a>
               </>
             )}
             <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
@@ -769,15 +793,15 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
           <div className="mobile-menu-inner">
             {isTaxLanding ? (
               <>
-                <a href="#timeline" onClick={scrollToId('timeline')}>Your fresh start</a>
-                <a href="#stages" onClick={scrollToId('stages')}>Stage</a>
-                <a href="#team" onClick={scrollToId('team')}>Who we are</a>
+                <a href="#timeline" onClick={scrollToId('timeline')}>Steps</a>
+                <a href="#stages" onClick={scrollToId('stages')}>Issue</a>
+                <a href="#team" onClick={scrollToId('team')}>Team</a>
               </>
             ) : (
               <>
-                <a href="#how" onClick={scrollToId('how')}>How it works</a>
-                <a href="#problems" onClick={scrollToId('problems')}>What we buy</a>
-                <a href="#about" onClick={scrollToId('about')}>Who we are</a>
+                <a href="#how" onClick={scrollToId('how')}>Steps</a>
+                <a href="#problems" onClick={scrollToId('problems')}>Issue</a>
+                <a href="#about" onClick={scrollToId('about')}>Team</a>
               </>
             )}
             <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
@@ -987,8 +1011,34 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                       ))}
                     </div>
                   </div>
+                  {isTaxLanding && (
+                    <div className="form-field">
+                      <label>What shape is the property in?</label>
+                      <div className="radio-group">
+                        {CONDITION_TILES.map(({ value, icon, label }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`radio-tile ${state.condition === value ? 'selected' : ''}`}
+                            onClick={() => select('condition', value)}
+                          >
+                            <span className="material-symbols-outlined" aria-hidden>{icon}</span>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
+                  <button type="button" className="btn-continue" onClick={() => advance(timelineNextStep)}>
+                    {isTaxLanding ? 'See My Fresh-Start Number' : 'Continue'}
+                    <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+                  </button>
+                </div>
+              ) : isConditionStep ? (
+                <div style={{ marginTop: 18 }}>
                   <div className="form-field">
-                    <label>{isTaxLanding ? 'What shape is the property in?' : 'Condition of the property'}</label>
+                    <label>Condition of the property</label>
                     <div className="radio-group">
                       {CONDITION_TILES.map(({ value, icon, label }) => (
                         <button
@@ -1004,8 +1054,8 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                     </div>
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
-                  <button type="button" className="btn-continue" onClick={() => advance(timelineNextStep)}>
-                    {isTaxLanding ? 'See My Fresh-Start Number' : 'See My Offer Range'}
+                  <button type="button" className="btn-continue" onClick={() => advance(4)}>
+                    See My Offer Range
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                 </div>
@@ -1506,19 +1556,27 @@ function GeneralTeamSection() {
           </div>
           <div className="tax-team-cards" aria-label="Saving KC team">
             <article className="tax-team-card">
-              <div className="tax-team-photo">
-                <Image src="/ernest-profile.png" alt="Ernest Dodson" width={192} height={192} sizes="96px" />
+              <div className="tax-team-card-head">
+                <div className="tax-team-photo">
+                  <Image src="/ernest-profile.png" alt="Ernest Dodson" width={192} height={192} sizes="96px" />
+                </div>
+                <div>
+                  <h3>Ernest Dodson</h3>
+                  <p className="tax-team-title">Lead House Hunter</p>
+                </div>
               </div>
-              <h3>Ernest Dodson</h3>
-              <p className="tax-team-title">Lead House Hunter</p>
               <p>Helps you understand the offer, the title path, and the cleanest way out.</p>
             </article>
             <article className="tax-team-card">
-              <div className="tax-team-photo">
-                <Image src="/casey.jpg" alt="Casey Davis" width={192} height={192} sizes="96px" />
+              <div className="tax-team-card-head">
+                <div className="tax-team-photo">
+                  <Image src="/casey.jpg" alt="Casey Davis" width={192} height={192} sizes="96px" />
+                </div>
+                <div>
+                  <h3>Casey Davis</h3>
+                  <p className="tax-team-title">Junior House Hunter</p>
+                </div>
               </div>
-              <h3>Casey Davis</h3>
-              <p className="tax-team-title">Junior House Hunter</p>
               <p>Keeps follow-up simple, fast, and clear while your file moves to closing.</p>
             </article>
           </div>
@@ -1906,19 +1964,27 @@ function TaxTeamSection() {
           </div>
           <div className="tax-team-cards" aria-label="Saving KC team">
             <article className="tax-team-card">
-              <div className="tax-team-photo">
-                <Image src="/ernest-profile.png" alt="Ernest Dodson" width={192} height={192} sizes="96px" />
+              <div className="tax-team-card-head">
+                <div className="tax-team-photo">
+                  <Image src="/ernest-profile.png" alt="Ernest Dodson" width={192} height={192} sizes="96px" />
+                </div>
+                <div>
+                  <h3>Ernest Dodson</h3>
+                  <p className="tax-team-title">Lead House Hunter</p>
+                </div>
               </div>
-              <h3>Ernest Dodson</h3>
-              <p className="tax-team-title">Lead House Hunter</p>
               <p>Walks through the tax pressure, the title path, and the number so you know exactly where you stand.</p>
             </article>
             <article className="tax-team-card">
-              <div className="tax-team-photo">
-                <Image src="/casey.jpg" alt="Casey Davis" width={192} height={192} sizes="96px" />
+              <div className="tax-team-card-head">
+                <div className="tax-team-photo">
+                  <Image src="/casey.jpg" alt="Casey Davis" width={192} height={192} sizes="96px" />
+                </div>
+                <div>
+                  <h3>Casey Davis</h3>
+                  <p className="tax-team-title">Junior House Hunter</p>
+                </div>
               </div>
-              <h3>Casey Davis</h3>
-              <p className="tax-team-title">Junior House Hunter</p>
               <p>Fast follow-up, clear next steps, and steady communication while the file moves toward closing.</p>
             </article>
           </div>
