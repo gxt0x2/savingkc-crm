@@ -71,4 +71,19 @@ describe('ppc attribution persistence', () => {
       utm_campaign: 'Search 2026',
     })
   })
+
+  it('replaces stored attribution when a new paid click arrives', () => {
+    const sessionStorage = stubBrowser('?gclid=tax-click&utm_campaign=Search%20-%20Property%20Tax')
+    sessionStorage.setItem('skc.ppc.attribution.v1', JSON.stringify({
+      landingUrl: 'https://savingkc.com/ppc?gclid=old-click',
+      gclid: 'old-click',
+      utm_campaign: 'Search 2026',
+    }))
+
+    expect(captureAttribution()).toMatchObject({
+      gclid: 'tax-click',
+      utm_campaign: 'Search - Property Tax',
+      landingUrl: 'https://savingkc.com/ppc?gclid=tax-click&utm_campaign=Search%20-%20Property%20Tax',
+    })
+  })
 })

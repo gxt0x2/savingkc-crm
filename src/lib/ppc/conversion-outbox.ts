@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase-lazy'
 import type { CallQualityEventName } from '@/lib/call-quality-events'
 import { isGoogleAdsFactualPpcEvent } from '@/lib/ppc/exportable-events'
+import { ppcCampaignNameForContext } from '@/lib/ppc/campaigns'
 
 export type PpcConversionEventName =
   | 'lead_stage3_completed'
@@ -123,9 +124,16 @@ function normalizeEventTime(value: string | Date | undefined): string {
 
 export function buildPpcConversionOutboxRow(input: EnqueuePpcConversionInput): PpcConversionOutboxRow {
   const attribution = cleanJsonRecord(input.attribution)
+  const payload = cleanJsonRecord(input.payload)
   const { clickId, clickIdType } = pickBestClickId(attribution)
   const optimizationRole = input.optimizationRole ?? 'secondary'
   const approvedForGoogleAds = input.approvedForGoogleAds ?? isGoogleAdsFactualPpcEvent(input.eventName)
+  const campaign = ppcCampaignNameForContext({
+    campaign: payload.campaign,
+    attribution,
+    pagePath: payload.page_path,
+    pageLocation: payload.page_location,
+  })
 
   return {
     event_name: input.eventName,
@@ -145,9 +153,9 @@ export function buildPpcConversionOutboxRow(input: EnqueuePpcConversionInput): P
     attribution,
     payload: cleanJsonRecord({
       traffic_source: 'google_ads',
-      campaign: 'Search 2026',
+      campaign,
       optimization_role: optimizationRole,
-      ...(input.payload ?? {}),
+      ...payload,
     }),
   }
 }

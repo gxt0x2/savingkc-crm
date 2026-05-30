@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { safeSendSMS } from '@/lib/safe-communications'
-import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { BROADCAST_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
 // Round-robin counter for Twilio numbers (resets on restart, fine for this)
 let twilioRRIndex = 0

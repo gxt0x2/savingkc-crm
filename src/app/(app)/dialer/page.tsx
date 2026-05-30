@@ -9,7 +9,7 @@ import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { createClient } from '@/lib/supabase/client'
 import { calculateTemperature } from '@/lib/lead-temperature'
 import { toProperCase, formatPhone } from '@/lib/format'
-import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { CallerIdMode, DialerCallerPlan, normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 
 // URL contract:

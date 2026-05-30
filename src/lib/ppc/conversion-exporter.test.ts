@@ -264,6 +264,41 @@ describe('ppc conversion exporter', () => {
     })
   })
 
+  it('sends property tax campaign context to Stape', async () => {
+    const row = makeRow({
+      attribution: { landingUrl: 'https://savingkc.com/ppc-tax?gclid=tax-gclid' },
+      click_id: 'tax-gclid',
+      payload: { form_status: 'qualified' },
+    })
+    const fetchMock = vi.fn(async () => new Response('ok', { status: 200 }))
+
+    await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+        },
+      },
+      {
+        store: {
+          listRows: vi.fn(),
+          claimRows: vi.fn(async () => [row]),
+          markSent: vi.fn(),
+          markSkipped: vi.fn(),
+          markFailed: vi.fn(),
+        },
+        fetch: fetchMock as unknown as typeof fetch,
+      },
+    )
+
+    const [, init] = (fetchMock.mock.calls as unknown as Array<[string, RequestInit]>)[0]
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      campaign: 'Search - Property Tax',
+      page_path: '/ppc-tax',
+      page_location: 'https://savingkc.com/ppc-tax?gclid=tax-gclid',
+    })
+  })
+
   it('exports factual qualified leads without manual 1-3 approval', async () => {
     const row = makeRow({ approved_for_google_ads: false, conversion_value: null })
     const store = {

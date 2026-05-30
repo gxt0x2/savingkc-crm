@@ -6,6 +6,8 @@
  */
 
 import { sendPpcTrackingEvent } from '@/lib/ppc/tracking-client'
+import { getAttribution } from '@/lib/ppc/attribution'
+import { ppcCampaignNameForContext, ppcPageVariantForPath } from '@/lib/ppc/campaigns'
 
 export type ConversionEvent =
   | 'lead_quiz_started'
@@ -74,6 +76,14 @@ function isServerRecorded(event: PpcTrackingEvent): boolean {
   return event === 'lead_submitted' || event === 'appointment_booked'
 }
 
+function safeAttribution() {
+  try {
+    return getAttribution()
+  } catch {
+    return null
+  }
+}
+
 function currentPageContext(): Record<string, unknown> {
   if (typeof window === 'undefined') return {}
 
@@ -83,7 +93,7 @@ function currentPageContext(): Record<string, unknown> {
   return {
     page_path: pagePath,
     page_location: window.location?.href,
-    page_variant: pagePath.startsWith('/ppc-tax') ? 'ppc_tax' : pagePath.startsWith('/ppc') ? 'ppc' : undefined,
+    page_variant: ppcPageVariantForPath(pagePath),
   }
 }
 
@@ -93,13 +103,19 @@ export function firePpcTrackingEvent(
 ): Record<string, unknown> | null {
   if (typeof window === 'undefined') return null
 
+  const pageContext = currentPageContext()
+  const attribution = safeAttribution()
   const dataLayerEvent = cleanPayload({
     event,
     event_id: makeEventId(event),
     event_time: new Date().toISOString(),
     traffic_source: 'google_ads',
-    campaign: 'Search 2026',
-    ...currentPageContext(),
+    campaign: ppcCampaignNameForContext({
+      attribution: attribution ? { ...attribution } : null,
+      pagePath: pageContext.page_path,
+      pageLocation: pageContext.page_location,
+    }),
+    ...pageContext,
     ...payload,
   })
 

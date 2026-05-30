@@ -2,9 +2,11 @@ import type { Metadata } from 'next'
 import '../ppc/sell.css'
 import { SellLanding } from '../ppc/SellLanding'
 import { GoogleTagManager } from '../ppc/GoogleTagManager'
+import { PPC_CAMPAIGNS } from '@/lib/ppc/campaigns'
 
-const PPC_PHONE_DISPLAY = process.env.NEXT_PUBLIC_PPC_TAX_PHONE ?? '(816) 608-6648'
-const PPC_PHONE_TEL = (process.env.NEXT_PUBLIC_PPC_TAX_PHONE_TEL ?? '+18166086648').replace(/[^+\d]/g, '')
+const PROPERTY_TAX_CAMPAIGN = PPC_CAMPAIGNS.find((campaign) => campaign.key === 'property_tax')!
+const PPC_PHONE_DISPLAY = process.env.NEXT_PUBLIC_PPC_TAX_PHONE ?? PROPERTY_TAX_CAMPAIGN.phoneDisplay
+const PPC_PHONE_TEL = (process.env.NEXT_PUBLIC_PPC_TAX_PHONE_TEL ?? PROPERTY_TAX_CAMPAIGN.phoneTel).replace(/[^+\d]/g, '')
 const SHOW_BOOKING_CTA = false
 
 export const metadata: Metadata = {

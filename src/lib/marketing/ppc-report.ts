@@ -1,4 +1,5 @@
 import { isPpcTrackingNumber } from '@/lib/call-quality-events'
+import { isKnownPpcCampaignName, ppcCampaignNameForContext } from '@/lib/ppc/campaigns'
 import {
   conversionDeadline,
   defaultGoogleAdsQualityScore,
@@ -504,7 +505,7 @@ function isPpcActivity(activity: PpcActivityRow): boolean {
   const meta = metadata(activity)
   return (
     text(meta.traffic_source) === 'google_ads' ||
-    text(meta.campaign) === 'Search 2026' ||
+    isKnownPpcCampaignName(meta.campaign) ||
     isPpcNumber(meta.tracking_number) ||
     isPpcNumber(meta.calledNumber) ||
     isPpcNumber(meta.to)
@@ -633,7 +634,7 @@ function hasClickId(attribution: Record<string, unknown>): boolean {
 }
 
 function campaignName(attribution: Record<string, unknown>): string {
-  return text(attribution.utm_campaign) || text(attribution.campaign) || 'Search 2026'
+  return ppcCampaignNameForContext({ attribution })
 }
 
 function sourceName(attribution: Record<string, unknown>): string {

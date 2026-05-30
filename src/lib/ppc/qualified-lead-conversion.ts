@@ -1,5 +1,6 @@
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { supabase } from '@/lib/supabase-lazy'
+import { isKnownPpcCampaignName } from '@/lib/ppc/campaigns'
 
 const PPC_LEAD_SOURCES = new Set(['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'paid-search'])
 const QUALIFIED_OR_BETTER_STATIONS = new Set([
@@ -91,8 +92,8 @@ function hasPpcAttribution(attribution: Record<string, unknown>): boolean {
     text(attribution.gbraid) !== '' ||
     text(attribution.wbraid) !== '' ||
     text(attribution.click_id) !== '' ||
-    text(attribution.utm_campaign) === 'Search 2026' ||
-    text(attribution.campaign) === 'Search 2026' ||
+    isKnownPpcCampaignName(attribution.utm_campaign) ||
+    isKnownPpcCampaignName(attribution.campaign) ||
     text(attribution.traffic_source) === 'google_ads' ||
     text(attribution.channel) === 'google-ads'
   )

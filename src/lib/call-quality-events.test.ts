@@ -51,6 +51,7 @@ describe('call-quality-events', () => {
     expect(getGoogleAdsPhoneProfile('+18166086648')).toMatchObject({
       key: 'tax',
       source: 'google_ads_tax_phone',
+      campaign: 'Search - Property Tax',
       trackingDigits: '8166086648',
       landingPage: '/ppc-tax',
     })
