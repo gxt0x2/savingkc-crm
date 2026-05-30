@@ -103,13 +103,15 @@ describe('SellLanding', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Next/i }))
     expect(screen.getByLabelText('Step 2 of 4')).toBeInTheDocument()
-    expect(screen.getByText('How soon do you need to sell?')).toBeInTheDocument()
+    expect(screen.getByText('How soon do you need to sell?').closest('.form-field')).toHaveClass('form-field-prominent')
+    expect(screen.getByRole('button', { name: 'ASAP (under 30 days)' }).closest('.radio-group')).toHaveClass('prominent-choices')
     expect(screen.queryByText('Condition of the property')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'ASAP (under 30 days)' }))
     fireEvent.click(screen.getByRole('button', { name: /Next/i }))
     expect(screen.getByLabelText('Step 3 of 4')).toBeInTheDocument()
-    expect(screen.getByText('Condition of the property')).toBeInTheDocument()
+    expect(screen.getByText('Condition of the property').closest('.form-field')).toHaveClass('form-field-prominent')
+    expect(screen.getByRole('button', { name: /Needs work/i }).closest('.radio-group')).toHaveClass('prominent-choices')
     expect(screen.queryByText('How soon do you need to sell?')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Needs work/i }))
