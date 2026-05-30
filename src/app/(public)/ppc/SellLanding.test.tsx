@@ -3,7 +3,7 @@
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SellLanding } from './SellLanding'
 
 vi.mock('next/image', () => ({
@@ -20,10 +20,15 @@ function renderLanding(variant?: React.ComponentProps<typeof SellLanding>['varia
   )
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('SellLanding', () => {
   it('renders the general landing question without leaking HTML entities', () => {
     const html = renderLanding()
 
+    expect(html).toContain('Step 1 of 4')
     expect(html).toContain('Sell My House In <span class="accent">Kansas City</span> Today.')
     expect(html).toContain('Back taxes. An inherited headache. A tenant who won’t leave. Repairs that never end.')
     expect(html).toContain('Whatever stress you’re facing, you don’t have to fix it, clean it, or explain it. Just give us the address and we’ll bring you a fair cash offer in under an hour. You pick the closing date.')
@@ -70,6 +75,7 @@ describe('SellLanding', () => {
   it('keeps the tax landing free of escaped apostrophe entities', () => {
     const html = renderLanding('tax')
 
+    expect(html).toContain('Step 1 of 4')
     expect(html).toContain('Are you behind on property taxes?')
     expect(html).toContain('Get My Cash Offer In 1 hour.')
     expect(html).toContain('Hear from sellers who <span class="accent-green">got unstuck.</span>')
@@ -81,6 +87,35 @@ describe('SellLanding', () => {
     expect(html).not.toContain('autoplay=1')
     expect(html).not.toContain('video-card-duration')
     expect(html).not.toContain('&amp;apos;')
+  })
+
+  it('splits the general quiz timeline and condition into separate steps', () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) })))
+
+    render(
+      <SellLanding
+        phoneDisplay="(816) 608-8808"
+        phoneTel="+18166088808"
+      />,
+    )
+
+    expect(screen.getByLabelText('Step 1 of 4')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Continue/i }))
+    expect(screen.getByLabelText('Step 2 of 4')).toBeInTheDocument()
+    expect(screen.getByText('How soon do you need to sell?')).toBeInTheDocument()
+    expect(screen.queryByText('Condition of the property')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'ASAP (under 30 days)' }))
+    fireEvent.click(screen.getByRole('button', { name: /Continue/i }))
+    expect(screen.getByLabelText('Step 3 of 4')).toBeInTheDocument()
+    expect(screen.getByText('Condition of the property')).toBeInTheDocument()
+    expect(screen.queryByText('How soon do you need to sell?')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Needs work/i }))
+    fireEvent.click(screen.getByRole('button', { name: /See My Offer Range/i }))
+    expect(screen.getByLabelText('Step 4 of 4')).toBeInTheDocument()
+    expect(screen.getByLabelText('Property address')).toBeInTheDocument()
   })
 
   it('sends a YouTube play command on the first thumbnail press', () => {
