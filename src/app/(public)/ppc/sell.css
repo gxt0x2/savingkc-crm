@@ -1130,6 +1130,10 @@
 
 .skc-sell .radio-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .skc-sell .radio-group.three-col { grid-template-columns: 1fr 1fr 1fr; }
+.skc-sell .radio-group.prominent-choices .radio-tile {
+  min-height: 74px;
+  justify-content: center;
+}
 .skc-sell .radio-tile {
   padding: 14px 12px; border: 1px solid var(--border);
   border-radius: 10px; cursor: pointer; font-size: 13px;
@@ -1651,6 +1655,7 @@
   .skc-sell .sticky-phone-number { display: none; }
   .skc-sell .radio-group { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
   .skc-sell .radio-group.three-col { grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .skc-sell .radio-group.prominent-choices .radio-tile { min-height: 72px; }
   .skc-sell .radio-tile { padding: 8px 6px; font-size: 11.5px; gap: 3px; }
   .skc-sell .radio-tile .material-symbols-outlined { font-size: 17px; }
   .skc-sell .tool-card { padding: 16px; }

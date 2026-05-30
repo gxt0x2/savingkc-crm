@@ -996,9 +996,9 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 </div>
               ) : isTimelineStep ? (
                 <div style={{ marginTop: 18 }}>
-                  <div className="form-field">
+                  <div className={`form-field ${!isTaxLanding ? 'form-field-prominent' : ''}`}>
                     <label>{isTaxLanding ? 'How soon would you like this behind you?' : 'How soon do you need to sell?'}</label>
-                    <div className="radio-group">
+                    <div className={`radio-group ${!isTaxLanding ? 'prominent-choices' : ''}`}>
                       {TIMELINE_TILES.map(({ value, label }) => (
                         <button
                           key={value}
@@ -1037,9 +1037,9 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 </div>
               ) : isConditionStep ? (
                 <div style={{ marginTop: 18 }}>
-                  <div className="form-field">
+                  <div className="form-field form-field-prominent">
                     <label>Condition of the property</label>
-                    <div className="radio-group">
+                    <div className="radio-group prominent-choices">
                       {CONDITION_TILES.map(({ value, icon, label }) => (
                         <button
                           key={value}
