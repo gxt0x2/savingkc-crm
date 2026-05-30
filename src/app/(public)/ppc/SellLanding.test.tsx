@@ -101,13 +101,13 @@ describe('SellLanding', () => {
 
     expect(screen.getByLabelText('Step 1 of 4')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Continue/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }))
     expect(screen.getByLabelText('Step 2 of 4')).toBeInTheDocument()
     expect(screen.getByText('How soon do you need to sell?')).toBeInTheDocument()
     expect(screen.queryByText('Condition of the property')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'ASAP (under 30 days)' }))
-    fireEvent.click(screen.getByRole('button', { name: /Continue/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }))
     expect(screen.getByLabelText('Step 3 of 4')).toBeInTheDocument()
     expect(screen.getByText('Condition of the property')).toBeInTheDocument()
     expect(screen.queryByText('How soon do you need to sell?')).not.toBeInTheDocument()

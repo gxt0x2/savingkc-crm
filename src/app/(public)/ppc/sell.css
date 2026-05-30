@@ -98,7 +98,7 @@
 .skc-sell.tax-landing .nav-links a { font-size: 13.5px; }
 
 /* Sticky nav CTA — only visible when the form is scrolled out of view.
-   Same orange as the form's Continue button so users immediately know
+   Same orange as the form's primary button so users immediately know
    what it does. */
 .skc-sell .nav-jump {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1153,7 +1153,7 @@
 }
 .skc-sell .radio-tile input { display: none; }
 
-/* Continue button — brand red. The form action. Orange is reserved
+/* Next button — brand red. The form action. Orange is reserved
    for accent pills (Start Here, step indicator, nav-jump). */
 .skc-sell .btn-continue {
   width: 100%; padding: 16px 24px;
@@ -1169,10 +1169,14 @@
 .skc-sell .btn-continue:hover { background: var(--brand-hover); box-shadow: 0 10px 28px rgba(218, 37, 36, 0.45); }
 .skc-sell .btn-continue:active { transform: scale(0.99); }
 .skc-sell .btn-continue[disabled] { opacity: 0.7; cursor: not-allowed; animation: none; }
+.skc-sell .btn-continue .btn-label {
+  display: inline-block;
+  animation: skc-word-pulse 2.4s ease-in-out infinite;
+}
 .skc-sell .btn-continue .material-symbols-outlined { font-size: 22px; font-variation-settings: 'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 24; }
 
-/* The ONLY non-Continue button style on the page. Filled charcoal so it
-   reads as "secondary action" against the red Continue button. On dark
+/* The ONLY non-primary button style on the page. Filled charcoal so it
+   reads as "secondary action" against the red form button. On dark
    surfaces (mid-cta) it picks up a white border so it stays visible. */
 .skc-sell .btn-secondary {
   padding: 15px 26px; background: #0f0f12; color: #fff;
@@ -1202,8 +1206,13 @@
   0%, 100% { box-shadow: 0 8px 22px rgba(218, 37, 36, 0.35); }
   50% { box-shadow: 0 8px 22px rgba(218, 37, 36, 0.55), 0 0 0 6px rgba(218, 37, 36, 0.10); }
 }
+@keyframes skc-word-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.045); opacity: 0.92; }
+}
 @media (prefers-reduced-motion: reduce) {
   .skc-sell .btn-continue { animation: none; }
+  .skc-sell .btn-continue .btn-label { animation: none; }
 }
 
 .skc-sell .form-footer { margin-top: 14px; font-size: 12px; color: var(--text-dim); text-align: center; }
