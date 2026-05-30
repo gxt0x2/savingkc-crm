@@ -3,10 +3,10 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
+  getGoogleAdsPhoneProfile,
   getCallQualityMilestones,
   isPpcTrackingNumber,
   parseCallDurationSeconds,
-  PPC_TRACKING_PHONE_DIGITS,
 } from '@/lib/call-quality-events'
 import { phoneLookupVariants } from '@/lib/google-ads-phone'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
@@ -40,6 +40,7 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
 
   const dedupeKey = input.callSid || input.parentCallSid
   const isPpcCall = isPpcTrackingNumber(input.from)
+  const profile = getGoogleAdsPhoneProfile(input.from)
 
   for (const milestone of milestones) {
     try {
@@ -74,8 +75,11 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
         identity: input.identity,
         ...(isPpcCall && {
           traffic_source: 'google_ads',
-          campaign: 'Search 2026',
-          tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          campaign: profile.campaign,
+          tracking_number: profile.trackingDigits,
+          lead_source: profile.source,
+          landing_page: profile.landingPage,
+          phone_profile: profile.key,
         }),
       }
 
@@ -109,7 +113,7 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
             attribution: {
               utm_source: 'google',
               utm_medium: 'cpc',
-              utm_campaign: 'Search 2026',
+              utm_campaign: profile.campaign,
             },
             payload: metadata,
           },

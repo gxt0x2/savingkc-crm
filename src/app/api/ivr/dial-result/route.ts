@@ -9,12 +9,10 @@ import { formatPhone } from '@/lib/format'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import {
-  GOOGLE_ADS_CAMPAIGN,
-  GOOGLE_ADS_PHONE_SOURCE,
   getCallQualityMilestones,
+  getGoogleAdsPhoneProfile,
   isPpcTrackingNumber,
   parseCallDurationSeconds,
-  PPC_TRACKING_PHONE_DIGITS,
 } from '@/lib/call-quality-events'
 import {
   createGoogleAdsMissedEscalationTask,
@@ -114,6 +112,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
 
   const dedupeKey = input.dialCallSid || input.parentCallSid
   const isPpcCall = isPpcTrackingNumber(input.calledNumber)
+  const profile = getGoogleAdsPhoneProfile(input.calledNumber)
 
   for (const milestone of milestones) {
     try {
@@ -152,9 +151,11 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
         agentName: input.agentName,
         ...(isPpcCall && {
           traffic_source: 'google_ads',
-          campaign: GOOGLE_ADS_CAMPAIGN,
-          lead_source: GOOGLE_ADS_PHONE_SOURCE,
-          tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          campaign: profile.campaign,
+          lead_source: profile.source,
+          tracking_number: profile.trackingDigits,
+          landing_page: profile.landingPage,
+          phone_profile: profile.key,
         }),
       }
 
@@ -187,7 +188,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
           attribution: {
             utm_source: 'google',
             utm_medium: 'cpc',
-            utm_campaign: GOOGLE_ADS_CAMPAIGN,
+            utm_campaign: profile.campaign,
           },
           payload: metadata,
         })
@@ -220,13 +221,14 @@ export async function POST(req: Request) {
     const lead = await resolveLeadContext(leadId, from)
     const isPpcCall = isPpcTrackingNumber(calledNumber)
     const isGoogleAdsCall = isPpcCall || type === 'google_ads'
+    const googleAdsProfile = getGoogleAdsPhoneProfile(calledNumber)
     let resolvedLeadId = lead.id
     let callerLabel = lead.name || callerPhoneLabel(from)
 
     if (!resolvedLeadId && isGoogleAdsCall) {
-      const googleAdsLead = await resolveGoogleAdsLeadContext(from)
+      const googleAdsLead = await resolveGoogleAdsLeadContext(from, calledNumber)
       resolvedLeadId = googleAdsLead.leadId
-      callerLabel = googleAdsLead.leadName || (resolvedLeadId ? `Google Ads Caller ${callerPhoneLabel(from)}` : callerLabel)
+      callerLabel = googleAdsLead.leadName || (resolvedLeadId ? `${googleAdsProfile.label} Caller ${callerPhoneLabel(from)}` : callerLabel)
     }
 
     const shouldTrackConnectedCall = Boolean(resolvedLeadId || isDirect || isGoogleAdsCall)
@@ -240,7 +242,7 @@ export async function POST(req: Request) {
         description: isDirect
           ? `Direct inbound call from ${callerLabel} connected live with ${routing.primary.name}${dialCallDuration != null ? ` — ${dialCallDuration}s` : ''}`
           : isGoogleAdsCall
-            ? `Inbound Google Ads call from ${callerPhoneLabel(from)} connected live with agent${dialCallDuration != null ? ` — ${dialCallDuration}s` : ''}`
+            ? `Inbound ${googleAdsProfile.label} call from ${callerPhoneLabel(from)} connected live with agent${dialCallDuration != null ? ` — ${dialCallDuration}s` : ''}`
           : `Inbound ${type === 'seller' ? 'seller' : 'caller'} connected live with agent`,
         agent: 'System',
         metadata: {
@@ -254,10 +256,12 @@ export async function POST(req: Request) {
           dialCallDuration,
           type,
           ...(isGoogleAdsCall && {
-            source: GOOGLE_ADS_PHONE_SOURCE,
+            source: googleAdsProfile.source,
             traffic_source: 'google_ads',
-            campaign: GOOGLE_ADS_CAMPAIGN,
-            tracking_number: PPC_TRACKING_PHONE_DIGITS,
+            campaign: googleAdsProfile.campaign,
+            tracking_number: googleAdsProfile.trackingDigits,
+            landing_page: googleAdsProfile.landingPage,
+            phone_profile: googleAdsProfile.key,
           }),
         }
       })
@@ -318,7 +322,7 @@ export async function POST(req: Request) {
       await supabase.from('lead_activities').insert({
         lead_id: resolvedLeadId,
         activity_type: 'call',
-        description: `Both agents missed inbound Google Ads call from ${callerPhoneLabel(from)}`,
+        description: `Both agents missed inbound ${googleAdsProfile.label} call from ${callerPhoneLabel(from)}`,
         agent: 'System',
         metadata: {
           outcome: 'missed',
@@ -330,10 +334,12 @@ export async function POST(req: Request) {
           dialCallSid,
           dialCallDuration,
           type,
-          source: GOOGLE_ADS_PHONE_SOURCE,
+          source: googleAdsProfile.source,
           traffic_source: 'google_ads',
-          campaign: GOOGLE_ADS_CAMPAIGN,
-          tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          campaign: googleAdsProfile.campaign,
+          tracking_number: googleAdsProfile.trackingDigits,
+          landing_page: googleAdsProfile.landingPage,
+          phone_profile: googleAdsProfile.key,
         }
       })
 
@@ -388,7 +394,7 @@ export async function POST(req: Request) {
     if (!optedOut && phoneOk) {
       const isColdCallback = calledNumber && ['+18163100845','+18162538313','+18164761344','+18164761589','+18166404701','+18165788107','+18166408032','+18166536616'].includes(calledNumber)
       const autoText = isGoogleAdsCall
-        ? googleAdsMissedCallerMessage()
+        ? googleAdsMissedCallerMessage(calledNumber)
         : isColdCallback
         ? `Hey, sorry we missed you! We recently reached out about a property in your area. If you're thinking about selling, reply YES and we'll give you a call back.`
         : type === 'seller'
@@ -409,8 +415,12 @@ export async function POST(req: Request) {
               to: from,
               trigger: isGoogleAdsCall ? 'google_ads_missed_call_followup' : 'missed_call_followup',
               ...(isGoogleAdsCall && {
-                source: GOOGLE_ADS_PHONE_SOURCE,
+                source: googleAdsProfile.source,
                 traffic_source: 'google_ads',
+                campaign: googleAdsProfile.campaign,
+                tracking_number: googleAdsProfile.trackingDigits,
+                landing_page: googleAdsProfile.landingPage,
+                phone_profile: googleAdsProfile.key,
                 calledNumber,
               }),
             }

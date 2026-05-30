@@ -167,7 +167,7 @@ export async function processGoogleAdsMissedCallTask(
   }
 
   const routing = routeFromMetadata(metadata, input.deps.routingFor)
-  const reminder = googleAdsEscalationReminderMessage(sellerPhone, leadId)
+  const reminder = googleAdsEscalationReminderMessage(sellerPhone, leadId, calledNumber)
   const callbackInput = {
     leadId,
     leadPhone: sellerPhone,
@@ -191,6 +191,7 @@ export async function processGoogleAdsMissedCallTask(
     leadId,
     routing,
     trigger: 'google_ads_missed_call_escalation_reminder',
+    calledNumber,
     metadata: {
       task_id: row.id,
       processed_by: 'google_ads_missed_call_reconciliation',

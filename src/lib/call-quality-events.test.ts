@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getGoogleAdsPhoneProfile,
   getCallQualityMilestones,
   getHighestCallQualityMilestone,
   isPpcTrackingNumber,
@@ -41,6 +42,17 @@ describe('call-quality-events', () => {
   it('identifies the Search 2026 PPC tracking number', () => {
     expect(isPpcTrackingNumber('816-608-8808')).toBe(true)
     expect(isPpcTrackingNumber('+18166088808')).toBe(true)
+    expect(isPpcTrackingNumber('816-608-6648')).toBe(true)
+    expect(isPpcTrackingNumber('+18166086648')).toBe(true)
     expect(isPpcTrackingNumber('+18164292900')).toBe(false)
+  })
+
+  it('identifies the Google Ads Tax tracking profile', () => {
+    expect(getGoogleAdsPhoneProfile('+18166086648')).toMatchObject({
+      key: 'tax',
+      source: 'google_ads_tax_phone',
+      trackingDigits: '8166086648',
+      landingPage: '/ppc-tax',
+    })
   })
 })

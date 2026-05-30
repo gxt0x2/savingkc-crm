@@ -10,6 +10,8 @@ import { syncCoOwners } from '@/lib/co-owners'
 import {
   GOOGLE_ADS_CAMPAIGN,
   GOOGLE_ADS_PHONE_SOURCE,
+  GOOGLE_ADS_TAX_PHONE_SOURCE,
+  getGoogleAdsPhoneProfile,
   PPC_TRACKING_PHONE_DIGITS,
   isPpcTrackingNumber,
 } from '@/lib/call-quality-events'
@@ -34,6 +36,8 @@ type RecordingCallbackMeta = {
   campaign?: string
   lead_source?: string
   tracking_number?: string
+  landing_page?: string
+  phone_profile?: string
 }
 
 type RecordingContext = {
@@ -45,6 +49,40 @@ type RecordingContext = {
   campaign?: string
   lead_source?: string
   tracking_number?: string
+  landing_page?: string
+  phone_profile?: string
+}
+
+type JsonObject = Record<string, unknown>
+
+type MutableManifest = JsonObject & {
+  communications?: { transcripts: JsonObject[] }
+  ariIntelligence?: JsonObject & {
+    sellerProfile?: JsonObject
+    dealIntelligence?: JsonObject
+    recommendedActions?: JsonObject[]
+    briefingStale?: boolean
+  }
+  situation: JsonObject & {
+    objections?: string[]
+    type?: string[]
+    blockers?: string[]
+    motivation?: JsonObject & { signals?: string[] }
+    timeline?: JsonObject
+    priceExpectations?: JsonObject
+  }
+  owner: JsonObject & {
+    outOfState?: boolean
+    coOwners?: string[]
+  }
+  property: JsonObject & {
+    condition?: JsonObject
+    vacant?: boolean
+  }
+  pipeline: JsonObject & {
+    appointment?: JsonObject
+  }
+  auditTrail?: JsonObject[]
 }
 
 // WebRTC-initiated calls record against the parent leg whose To/From are
@@ -119,6 +157,8 @@ async function logPlayableRecordingActivity({
     ...(context?.campaign && { campaign: context.campaign }),
     ...(context?.lead_source && { lead_source: context.lead_source }),
     ...(context?.tracking_number && { tracking_number: context.tracking_number }),
+    ...(context?.landing_page && { landing_page: context.landing_page }),
+    ...(context?.phone_profile && { phone_profile: context.phone_profile }),
   }
 
   const { data: existing } = await supabase
@@ -166,7 +206,12 @@ export async function POST(req: Request) {
     const hintedLeadId = url.searchParams.get('leadId') || ''
     const sourceHint = url.searchParams.get('source') || ''
     const calledNumber = url.searchParams.get('calledNumber') || to || ''
-    const isGoogleAdsRecording = sourceHint === GOOGLE_ADS_PHONE_SOURCE || isPpcTrackingNumber(calledNumber)
+    const profile = getGoogleAdsPhoneProfile(sourceHint || calledNumber)
+    const isGoogleAdsRecording = (
+      sourceHint === GOOGLE_ADS_PHONE_SOURCE ||
+      sourceHint === GOOGLE_ADS_TAX_PHONE_SOURCE ||
+      isPpcTrackingNumber(calledNumber)
+    )
     const recordingContext: RecordingContext = {
       source: sourceHint || 'twilio_recording_callback',
       from,
@@ -174,9 +219,11 @@ export async function POST(req: Request) {
       calledNumber,
       ...(isGoogleAdsRecording && {
         traffic_source: 'google_ads',
-        campaign: GOOGLE_ADS_CAMPAIGN,
-        lead_source: GOOGLE_ADS_PHONE_SOURCE,
-        tracking_number: PPC_TRACKING_PHONE_DIGITS,
+        campaign: profile.campaign || GOOGLE_ADS_CAMPAIGN,
+        lead_source: profile.source,
+        tracking_number: profile.trackingDigits || PPC_TRACKING_PHONE_DIGITS,
+        landing_page: profile.landingPage,
+        phone_profile: profile.key,
       }),
     }
 
@@ -239,7 +286,7 @@ export async function POST(req: Request) {
     console.log(`[recording-callback] Processing recording for lead ${leadId}`)
 
     if (isGoogleAdsRecording && from) {
-      await markLeadAsGoogleAdsPhoneLead(leadId, from).catch((error) => {
+      await markLeadAsGoogleAdsPhoneLead(leadId, from, null, calledNumber || sourceHint).catch((error) => {
         console.error('[recording-callback] Google Ads attribution refresh failed:', error)
       })
     }
@@ -316,7 +363,7 @@ async function processRecording(
     })
 
     // 6. Update lead fields from analysis (+ denormalized last-call snapshot)
-    const leadUpdates: Record<string, any> = {
+    const leadUpdates: Record<string, unknown> = {
       transcript,
       call_duration_seconds: duration,
       updated_at: new Date().toISOString(),
@@ -370,7 +417,8 @@ async function processRecording(
   // 7. Update manifest with transcript + analysis
   try {
     const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-    await updateManifestAndCascade(leadId, (manifest: any) => {
+    await updateManifestAndCascade(leadId, (baseManifest) => {
+      const manifest = baseManifest as unknown as MutableManifest
       // Store transcript
       if (!manifest.communications) manifest.communications = { transcripts: [] }
       manifest.communications.transcripts.push({

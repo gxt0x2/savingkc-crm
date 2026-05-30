@@ -1,4 +1,4 @@
-import { PPC_TRACKING_PHONE_DIGITS } from '@/lib/call-quality-events'
+import { isPpcTrackingNumber } from '@/lib/call-quality-events'
 import {
   conversionDeadline,
   defaultGoogleAdsQualityScore,
@@ -497,8 +497,7 @@ function digits(value: unknown): string {
 }
 
 function isPpcNumber(value: unknown): boolean {
-  const valueDigits = digits(value)
-  return valueDigits === PPC_TRACKING_PHONE_DIGITS || valueDigits === `1${PPC_TRACKING_PHONE_DIGITS}`
+  return isPpcTrackingNumber(text(value))
 }
 
 function isPpcActivity(activity: PpcActivityRow): boolean {
@@ -969,6 +968,9 @@ function buildJourneySteps({
   const clickId = clickIdFromTracking(ordered[0]) || text(attribution.click_id)
   const visitAt = firstEventAt(ordered, (row) => eventName(row) === 'ppc_visit_started' || eventName(row) === 'page_view')
   const phoneAt = firstEventAt(ordered, isPhoneSignal)
+  const phoneLabel = ordered
+    .map((row) => payloadText(row, 'ppc_phone_display') || payloadText(row, 'phone_display') || text(row.phone_number))
+    .find(Boolean)
   const situation = latestRowText(ordered, 'situation_raw')
   const timeline = latestRowText(ordered, 'timeline_raw')
   const condition = latestRowText(ordered, 'condition_raw')
@@ -1004,7 +1006,7 @@ function buildJourneySteps({
       key: 'phone_signal',
       label: 'PPC Phone',
       status: phoneAt ? 'complete' : 'missing',
-      detail: phoneAt ? '816-608-8808 shown' : 'No phone signal',
+      detail: phoneAt ? `${phoneLabel || 'PPC phone'} shown` : 'No phone signal',
       at: phoneAt,
     },
     {
