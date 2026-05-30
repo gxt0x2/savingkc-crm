@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
-import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0

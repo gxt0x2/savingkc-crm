@@ -67,6 +67,7 @@ describe('ppc browser tracking', () => {
 
     expect(event).toMatchObject({
       event: 'ppc_visit_started',
+      campaign: 'Search - Property Tax',
       page_path: '/ppc-tax',
       page_location: 'https://crm.savingkc.com/ppc-tax?gclid=test-click',
       page_variant: 'ppc_tax',

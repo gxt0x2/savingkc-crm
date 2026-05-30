@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
-import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { formatPhone } from '@/lib/format'
 
 type ComposeMode = 'sms' | 'email' | 'call'
@@ -64,8 +64,8 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
 
       setMessage('')
       onSent?.()
-    } catch (err: any) {
-      setError(err.message || 'Failed to send')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to send')
     } finally {
       setSending(false)
     }

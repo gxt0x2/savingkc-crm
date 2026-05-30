@@ -109,6 +109,24 @@ describe('ppc conversion outbox', () => {
     })
   })
 
+  it('uses the property tax campaign fallback from attribution', () => {
+    const row = buildPpcConversionOutboxRow({
+      eventName: 'qualified_lead',
+      eventCategory: 'form',
+      dedupeKey: 'lead:tax:qualified_lead',
+      attribution: {
+        gclid: 'tax-click',
+        landingUrl: 'https://savingkc.com/ppc-tax?gclid=tax-click',
+      },
+      payload: { source: 'crm_qualified_stage' },
+    })
+
+    expect(row.payload).toMatchObject({
+      campaign: 'Search - Property Tax',
+      source: 'crm_qualified_stage',
+    })
+  })
+
   it('does not throw when the queue table is not deployed yet', async () => {
     const result = await enqueuePpcConversion(
       {

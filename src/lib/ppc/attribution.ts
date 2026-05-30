@@ -52,7 +52,14 @@ const UTM_KEYS = [
 export function captureAttribution(): AttributionPayload | null {
   if (typeof window === 'undefined') return null
 
-  // Prefer the first-visit snapshot — don't let downstream nav overwrite it
+  const currentPayload = attributionFromCurrentUrl()
+  if (hasAttributionSignal(currentPayload)) {
+    persistAttribution(currentPayload)
+    return currentPayload
+  }
+
+  // Prefer the first paid snapshot when the current URL has no paid params.
+  // A new ad click with fresh gclid/gbraid/wbraid/UTMs is allowed to replace it.
   const stored = readStored()
   if (stored) return stored
 
@@ -62,6 +69,10 @@ export function captureAttribution(): AttributionPayload | null {
     return cookie
   }
 
+  return currentPayload
+}
+
+function attributionFromCurrentUrl(): AttributionPayload {
   const params = new URLSearchParams(window.location.search)
   const payload: AttributionPayload = {
     landingUrl: window.location.href,
@@ -71,9 +82,6 @@ export function captureAttribution(): AttributionPayload | null {
     const val = params.get(key)
     if (val) (payload as unknown as Record<string, string>)[key] = val
   }
-  if (!hasAttributionSignal(payload)) return payload
-
-  persistAttribution(payload)
   return payload
 }
 

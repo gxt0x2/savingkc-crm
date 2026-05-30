@@ -16,6 +16,7 @@ import {
   isGoogleAdsFactualPpcEvent,
   nonExportablePpcEventReason,
 } from '@/lib/ppc/exportable-events'
+import { ppcCampaignNameForContext, ppcCampaignForPageLocation } from '@/lib/ppc/campaigns'
 
 const DEFAULT_BATCH_SIZE = 25
 const DEFAULT_MAX_ATTEMPTS = 8
@@ -274,6 +275,10 @@ function mergePayload(row: PpcConversionOutboxExportRow, summary: Record<string,
 function readEnv(env: Env, key: string): string | null {
   const value = env[key]
   return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function normalizeCustomerId(value: string | null): string | null {
@@ -632,6 +637,16 @@ function buildStapeEventData(row: PpcConversionOutboxExportRow): Record<string, 
     attribution.page_location ||
     payload.page_location ||
     'https://savingkc.com/ppc'
+  const pagePath = text(payload.page_path) ||
+    text(attribution.page_path) ||
+    ppcCampaignForPageLocation(pageLocation)?.pagePath ||
+    '/ppc'
+  const campaign = ppcCampaignNameForContext({
+    campaign: payload.campaign,
+    attribution,
+    pagePath,
+    pageLocation,
+  })
 
   return cleanJsonRecord({
     event_id: row.id,
@@ -643,9 +658,9 @@ function buildStapeEventData(row: PpcConversionOutboxExportRow): Record<string, 
     currency: row.currency || 'USD',
     page_location: pageLocation,
     page_hostname: 'savingkc.com',
-    page_path: '/ppc',
+    page_path: pagePath,
     traffic_source: 'google_ads',
-    campaign: 'Search 2026',
+    campaign,
     gclid: row.click_id_type === 'gclid' ? row.click_id : undefined,
     gbraid: row.click_id_type === 'gbraid' ? row.click_id : undefined,
     wbraid: row.click_id_type === 'wbraid' ? row.click_id : undefined,
