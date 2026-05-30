@@ -746,13 +746,13 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             {isTaxLanding ? (
               <>
                 <a href="#timeline" onClick={scrollToId('timeline')}>Steps</a>
-                <a href="#stages" onClick={scrollToId('stages')}>Issue</a>
+                <a href="#stages" onClick={scrollToId('stages')}>Issues</a>
                 <a href="#team" onClick={scrollToId('team')}>Team</a>
               </>
             ) : (
               <>
                 <a href="#how" onClick={scrollToId('how')}>Steps</a>
-                <a href="#problems" onClick={scrollToId('problems')}>Issue</a>
+                <a href="#problems" onClick={scrollToId('problems')}>Issues</a>
                 <a href="#about" onClick={scrollToId('about')}>Team</a>
               </>
             )}
@@ -794,13 +794,13 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             {isTaxLanding ? (
               <>
                 <a href="#timeline" onClick={scrollToId('timeline')}>Steps</a>
-                <a href="#stages" onClick={scrollToId('stages')}>Issue</a>
+                <a href="#stages" onClick={scrollToId('stages')}>Issues</a>
                 <a href="#team" onClick={scrollToId('team')}>Team</a>
               </>
             ) : (
               <>
                 <a href="#how" onClick={scrollToId('how')}>Steps</a>
-                <a href="#problems" onClick={scrollToId('problems')}>Issue</a>
+                <a href="#problems" onClick={scrollToId('problems')}>Issues</a>
                 <a href="#about" onClick={scrollToId('about')}>Team</a>
               </>
             )}
@@ -912,7 +912,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   </p>
                   {showBookingCta && (
                     <button type="button" className="btn-continue" onClick={openBooking}>
-                      Book a 15-min Call
+                      <span className="btn-label">Book a 15-min Call</span>
                       <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                     </button>
                   )}
@@ -960,7 +960,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
                   <button type="button" className="btn-continue" onClick={() => advance(2)}>
-                    Continue
+                    <span className="btn-label">Next</span>
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                   <p className="form-footer">
@@ -990,7 +990,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
                   <button type="button" className="btn-continue" onClick={() => advance(3)}>
-                    Continue
+                    <span className="btn-label">Next</span>
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                 </div>
@@ -1031,7 +1031,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   )}
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
                   <button type="button" className="btn-continue" onClick={() => advance(timelineNextStep)}>
-                    {isTaxLanding ? 'See My Fresh-Start Number' : 'Continue'}
+                    <span className="btn-label">{isTaxLanding ? 'See My Fresh-Start Number' : 'Next'}</span>
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                 </div>
@@ -1055,7 +1055,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
                   <button type="button" className="btn-continue" onClick={() => advance(4)}>
-                    See My Offer Range
+                    <span className="btn-label">See My Offer Range</span>
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                 </div>
@@ -1137,7 +1137,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
                   <button type="button" className="btn-continue" onClick={submit} disabled={submitting}>
-                    {submitting ? 'Sending…' : 'Get My Custom Offer'}
+                    <span className="btn-label">{submitting ? 'Sending…' : 'Get My Custom Offer'}</span>
                     {!submitting && (
                       <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                     )}
