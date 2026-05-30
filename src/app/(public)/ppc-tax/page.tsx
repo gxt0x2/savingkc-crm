@@ -3,8 +3,8 @@ import '../ppc/sell.css'
 import { SellLanding } from '../ppc/SellLanding'
 import { GoogleTagManager } from '../ppc/GoogleTagManager'
 
-const PPC_PHONE_DISPLAY = process.env.NEXT_PUBLIC_PPC_PHONE ?? '(816) 608-8808'
-const PPC_PHONE_TEL = (process.env.NEXT_PUBLIC_PPC_PHONE_TEL ?? '+18166088808').replace(/[^+\d]/g, '')
+const PPC_PHONE_DISPLAY = process.env.NEXT_PUBLIC_PPC_TAX_PHONE ?? '(816) 608-6648'
+const PPC_PHONE_TEL = (process.env.NEXT_PUBLIC_PPC_TAX_PHONE_TEL ?? '+18166086648').replace(/[^+\d]/g, '')
 const SHOW_BOOKING_CTA = false
 
 export const metadata: Metadata = {

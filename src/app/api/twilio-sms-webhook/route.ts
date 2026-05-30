@@ -187,9 +187,9 @@ export async function POST(req: Request) {
       let googleAdsLeadName = leadName
 
       if (googleAdsLeadId) {
-        await markLeadAsGoogleAdsPhoneLead(googleAdsLeadId, from, leadName)
+        await markLeadAsGoogleAdsPhoneLead(googleAdsLeadId, from, leadName, to)
       } else {
-        const googleAdsLead = await resolveGoogleAdsLeadContext(from)
+        const googleAdsLead = await resolveGoogleAdsLeadContext(from, to)
         googleAdsLeadId = googleAdsLead.leadId
         googleAdsLeadName = googleAdsLead.leadName || googleAdsLeadName
       }
@@ -204,10 +204,11 @@ export async function POST(req: Request) {
       }
 
       await notifyGoogleAdsTeam(
-        googleAdsNewTextTeamMessage(from, messageBody, googleAdsLeadId),
+        googleAdsNewTextTeamMessage(from, messageBody, googleAdsLeadId, to),
         {
           leadId: googleAdsLeadId,
           trigger: 'google_ads_inbound_sms',
+          calledNumber: to,
           metadata: {
             direction: 'outbound_alert',
             from,

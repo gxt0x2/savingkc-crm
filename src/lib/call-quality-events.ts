@@ -11,9 +11,47 @@ export type CallQualityMilestone = {
 }
 
 export const PPC_TRACKING_PHONE_DIGITS = '8166088808'
+export const PPC_TAX_TRACKING_PHONE_DIGITS = '8166086648'
 export const GOOGLE_ADS_PHONE_NUMBER = '+18166088808'
+export const GOOGLE_ADS_TAX_PHONE_NUMBER = '+18166086648'
 export const GOOGLE_ADS_PHONE_SOURCE = 'google_ads_phone'
+export const GOOGLE_ADS_TAX_PHONE_SOURCE = 'google_ads_tax_phone'
 export const GOOGLE_ADS_CAMPAIGN = 'Search 2026'
+
+export type GoogleAdsPhoneProfileKey = 'general' | 'tax'
+
+export type GoogleAdsPhoneProfile = {
+  key: GoogleAdsPhoneProfileKey
+  label: string
+  number: string
+  trackingDigits: string
+  source: string
+  campaign: string
+  landingPage: string
+}
+
+export const GOOGLE_ADS_PHONE_PROFILES: GoogleAdsPhoneProfile[] = [
+  {
+    key: 'general',
+    label: 'Google Ads',
+    number: GOOGLE_ADS_PHONE_NUMBER,
+    trackingDigits: PPC_TRACKING_PHONE_DIGITS,
+    source: GOOGLE_ADS_PHONE_SOURCE,
+    campaign: GOOGLE_ADS_CAMPAIGN,
+    landingPage: '/ppc',
+  },
+  {
+    key: 'tax',
+    label: 'Google Ads Tax',
+    number: GOOGLE_ADS_TAX_PHONE_NUMBER,
+    trackingDigits: PPC_TAX_TRACKING_PHONE_DIGITS,
+    source: GOOGLE_ADS_TAX_PHONE_SOURCE,
+    campaign: GOOGLE_ADS_CAMPAIGN,
+    landingPage: '/ppc-tax',
+  },
+]
+
+const DEFAULT_GOOGLE_ADS_PHONE_PROFILE = GOOGLE_ADS_PHONE_PROFILES[0]!
 
 export const CALL_QUALITY_MILESTONES: CallQualityMilestone[] = [
   {
@@ -49,11 +87,24 @@ export function parseCallDurationSeconds(value: unknown): number | null {
 
 export function isPpcTrackingNumber(raw: string): boolean {
   const digits = raw.replace(/\D/g, '')
-  return digits === PPC_TRACKING_PHONE_DIGITS || digits === `1${PPC_TRACKING_PHONE_DIGITS}`
+  return GOOGLE_ADS_PHONE_PROFILES.some((profile) => (
+    digits === profile.trackingDigits || digits === `1${profile.trackingDigits}`
+  ))
 }
 
 export function isGoogleAdsPhoneNumber(raw: string): boolean {
   return isPpcTrackingNumber(raw)
+}
+
+export function getGoogleAdsPhoneProfile(raw: string | null | undefined): GoogleAdsPhoneProfile {
+  const value = (raw || '').trim().toLowerCase()
+  const digits = value.replace(/\D/g, '')
+  return GOOGLE_ADS_PHONE_PROFILES.find((profile) => (
+    value === profile.source ||
+    value === profile.key ||
+    digits === profile.trackingDigits ||
+    digits === `1${profile.trackingDigits}`
+  )) || DEFAULT_GOOGLE_ADS_PHONE_PROFILE
 }
 
 export function getCallQualityMilestones(durationSeconds: number | null | undefined): CallQualityMilestone[] {

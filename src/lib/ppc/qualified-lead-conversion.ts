@@ -1,7 +1,7 @@
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { supabase } from '@/lib/supabase-lazy'
 
-const PPC_LEAD_SOURCES = new Set(['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'paid-search'])
+const PPC_LEAD_SOURCES = new Set(['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'paid-search'])
 const QUALIFIED_OR_BETTER_STATIONS = new Set([
   'qualified',
   'appointment',

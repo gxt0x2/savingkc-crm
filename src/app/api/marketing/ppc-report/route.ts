@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     db
       .from('leads')
       .select(LEAD_SELECT)
-      .in('source', ['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'paid-search'])
+      .in('source', ['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'paid-search'])
       .gte('created_at', sinceIso)
       .order('created_at', { ascending: false }),
     db

@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import {
-  GOOGLE_ADS_CAMPAIGN,
-  GOOGLE_ADS_PHONE_SOURCE,
-  PPC_TRACKING_PHONE_DIGITS,
+  getGoogleAdsPhoneProfile,
 } from '@/lib/call-quality-events'
 import { supabase } from '@/lib/supabase-lazy'
 
@@ -26,6 +24,7 @@ export async function POST(req: Request) {
     const calledNumber = url.searchParams.get('calledNumber') || ''
     const agentName = url.searchParams.get('agentName') || 'agent'
     const triggerCallSid = url.searchParams.get('triggerCallSid') || ''
+    const profile = getGoogleAdsPhoneProfile(calledNumber)
 
     const body = await req.formData()
     const dialStatus = body.get('DialCallStatus')?.toString() || ''
@@ -38,14 +37,16 @@ export async function POST(req: Request) {
         lead_id: leadId,
         activity_type: 'call',
         description: connected
-          ? `Google Ads agent-assisted callback connected with lead`
-          : `Google Ads lead did not answer agent-assisted callback`,
+          ? `${profile.label} agent-assisted callback connected with lead`
+          : `${profile.label} lead did not answer agent-assisted callback`,
         agent: 'System',
         metadata: {
-          source: GOOGLE_ADS_PHONE_SOURCE,
+          source: profile.source,
           traffic_source: 'google_ads',
-          campaign: GOOGLE_ADS_CAMPAIGN,
-          tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          campaign: profile.campaign,
+          tracking_number: profile.trackingDigits,
+          landing_page: profile.landingPage,
+          phone_profile: profile.key,
           outcome: connected ? 'connected' : 'missed',
           direction: 'outbound',
           to: leadPhone,

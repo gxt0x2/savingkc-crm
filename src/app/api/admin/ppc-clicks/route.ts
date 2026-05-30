@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const PPC_LEAD_SOURCES = ['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'paid-search']
+const PPC_LEAD_SOURCES = ['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'paid-search']
 
 type TrackingRow = {
   id: string
