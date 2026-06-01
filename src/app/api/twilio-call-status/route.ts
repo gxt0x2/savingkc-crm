@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
   getGoogleAdsPhoneProfile,
+  getGoogleAdsCallQualityMilestones,
   getCallQualityMilestones,
   isPpcTrackingNumber,
   parseCallDurationSeconds,
@@ -41,6 +42,7 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
   const dedupeKey = input.callSid || input.parentCallSid
   const isPpcCall = isPpcTrackingNumber(input.from)
   const profile = getGoogleAdsPhoneProfile(input.from)
+  const googleAdsEvents = new Set(getGoogleAdsCallQualityMilestones(input.duration).map((milestone) => milestone.event))
 
   for (const milestone of milestones) {
     try {
@@ -100,7 +102,7 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
         continue
       }
 
-      if (isPpcCall) {
+      if (isPpcCall && googleAdsEvents.has(milestone.event)) {
         await enqueuePpcConversion(
           {
             eventName: milestone.event,

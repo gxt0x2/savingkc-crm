@@ -128,3 +128,8 @@ export function getHighestCallQualityMilestone(durationSeconds: number | null | 
   const milestones = getCallQualityMilestones(durationSeconds)
   return milestones[milestones.length - 1] || null
 }
+
+export function getGoogleAdsCallQualityMilestones(durationSeconds: number | null | undefined): CallQualityMilestone[] {
+  const highest = getHighestCallQualityMilestone(durationSeconds)
+  return highest ? [highest] : []
+}

@@ -213,6 +213,57 @@ describe('ppc conversion exporter', () => {
     expect(plan.reason).toContain('website/GTM primary conversion')
   })
 
+  it('marks stale final form submit rows skipped instead of exporting them', async () => {
+    const row = makeRow({
+      event_name: 'lead_submitted',
+      event_category: 'form',
+      approved_for_google_ads: false,
+      optimization_role: 'primary',
+      dedupe_key: 'lead:123:lead_submitted',
+      payload: { form_status: 'submitted', google_ads_quality_score: 2 },
+    })
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi.fn()
+
+    const result = await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads,stape',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+          GOOGLE_ADS_CUSTOMER_ID: '646966429',
+          GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
+          GOOGLE_ADS_CLIENT_ID: 'client-id',
+          GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
+          GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
+          GOOGLE_ADS_CONVERSION_ACTIONS_JSON: JSON.stringify({
+            qualified_lead: 'customers/646966429/conversionActions/333',
+          }),
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result.skipped).toBe(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(store.markSkipped).toHaveBeenCalledWith(
+      row,
+      expect.stringContaining('website/GTM primary conversion'),
+      expect.objectContaining({
+        destinations: expect.arrayContaining([
+          expect.objectContaining({ destination: 'google_ads', status: 'skipped' }),
+          expect.objectContaining({ destination: 'stape', status: 'skipped' }),
+        ]),
+      }),
+      expect.any(Date),
+    )
+  })
+
   it('builds Google Ads call conversion payloads from call metadata', () => {
     const row = makeRow({
       event_name: 'call_connected_60s',
