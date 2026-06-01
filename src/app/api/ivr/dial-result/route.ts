@@ -10,6 +10,7 @@ import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import {
   getCallQualityMilestones,
+  getGoogleAdsCallQualityMilestones,
   getGoogleAdsPhoneProfile,
   isPpcTrackingNumber,
   parseCallDurationSeconds,
@@ -113,6 +114,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
   const dedupeKey = input.dialCallSid || input.parentCallSid
   const isPpcCall = isPpcTrackingNumber(input.calledNumber)
   const profile = getGoogleAdsPhoneProfile(input.calledNumber)
+  const googleAdsEvents = new Set(getGoogleAdsCallQualityMilestones(input.dialCallDuration).map((milestone) => milestone.event))
 
   for (const milestone of milestones) {
     try {
@@ -176,7 +178,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
         continue
       }
 
-      if (isPpcCall) {
+      if (isPpcCall && googleAdsEvents.has(milestone.event)) {
         await enqueuePpcConversion({
           eventName: milestone.event,
           eventCategory: 'call',

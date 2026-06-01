@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getGoogleAdsPhoneProfile,
+  getGoogleAdsCallQualityMilestones,
   getCallQualityMilestones,
   getHighestCallQualityMilestone,
   isPpcTrackingNumber,
@@ -37,6 +38,13 @@ describe('call-quality-events', () => {
     expect(getHighestCallQualityMilestone(119)?.event).toBe('call_connected_60s')
     expect(getHighestCallQualityMilestone(299)?.event).toBe('call_connected_2m')
     expect(getHighestCallQualityMilestone(300)?.event).toBe('call_connected_5m')
+  })
+
+  it('uses only the highest reached milestone for Google Ads call conversion uploads', () => {
+    expect(getGoogleAdsCallQualityMilestones(59).map((m) => m.event)).toEqual([])
+    expect(getGoogleAdsCallQualityMilestones(60).map((m) => m.event)).toEqual(['call_connected_60s'])
+    expect(getGoogleAdsCallQualityMilestones(120).map((m) => m.event)).toEqual(['call_connected_2m'])
+    expect(getGoogleAdsCallQualityMilestones(300).map((m) => m.event)).toEqual(['call_connected_5m'])
   })
 
   it('identifies the Search 2026 PPC tracking number', () => {

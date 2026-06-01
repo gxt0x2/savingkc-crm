@@ -16,6 +16,10 @@ export const GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES: PpcConversionEventName[] = [
   'call_connected_5m',
 ]
 
+export const GOOGLE_ADS_CLEANUP_ONLY_PPC_EVENT_NAMES: PpcConversionEventName[] = [
+  'lead_submitted',
+]
+
 const GOOGLE_ADS_EXPORTABLE_PPC_EVENTS = new Set<string>(GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES)
 const GOOGLE_ADS_FACTUAL_PPC_EVENTS = new Set<string>(GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES)
 

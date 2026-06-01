@@ -9,6 +9,7 @@ import {
 } from '@/lib/ppc/conversion-outbox'
 import { resolveGoogleAdsQualityScore } from '@/lib/ppc/conversion-approval'
 import {
+  GOOGLE_ADS_CLEANUP_ONLY_PPC_EVENT_NAMES,
   GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES,
   GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES,
   isGoogleAdsApprovalRequiredPpcEvent,
@@ -23,6 +24,10 @@ const DEFAULT_BATCH_SIZE = 25
 const DEFAULT_MAX_ATTEMPTS = 8
 const DEFAULT_GOOGLE_ADS_API_VERSION = 'v24'
 const DEFAULT_STAPE_REQUEST_PATH = '/data'
+const GOOGLE_ADS_WORKER_CANDIDATE_EVENT_NAMES = [
+  ...GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES,
+  ...GOOGLE_ADS_CLEANUP_ONLY_PPC_EVENT_NAMES,
+]
 
 type Env = Record<string, string | undefined>
 
@@ -241,7 +246,7 @@ class SupabaseOutboxStore implements OutboxStore {
     const { data, error } = await this.client
       .from('ppc_conversion_outbox')
       .select('*')
-      .or(`approved_for_google_ads.eq.true,event_name.in.(${GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES.join(',')})`)
+      .or(`approved_for_google_ads.eq.true,event_name.in.(${GOOGLE_ADS_WORKER_CANDIDATE_EVENT_NAMES.join(',')})`)
       .in('status', ['pending', 'failed'])
       .lt('attempts', this.maxAttempts)
       .order('event_time', { ascending: true })
