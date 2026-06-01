@@ -17,6 +17,7 @@ import {
   nonExportablePpcEventReason,
 } from '@/lib/ppc/exportable-events'
 import { ppcCampaignNameForContext, ppcCampaignForPageLocation } from '@/lib/ppc/campaigns'
+import { readUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
 
 const DEFAULT_BATCH_SIZE = 25
 const DEFAULT_MAX_ATTEMPTS = 8
@@ -607,10 +608,19 @@ export function buildGoogleAdsUploadPlan(
     }
   }
 
-  if (!row.click_id || !row.click_id_type) {
+  // Prefer identifiers stored on the event payload; fall back to attribution.
+  const payloadIds = readUserIdentifiers(eventPayload(row))
+  const userIdentifiers =
+    payloadIds.length > 0 ? payloadIds : readUserIdentifiers(row.attribution)
+
+  const hasClickId = Boolean(row.click_id && row.click_id_type)
+
+  // Enhanced Conversions for Leads: a click id is no longer required as long as
+  // we have hashed first-party identifiers. Only skip when BOTH are missing.
+  if (!hasClickId && userIdentifiers.length === 0) {
     return {
       kind: 'skip',
-      reason: `Missing click id for ${row.event_name}`,
+      reason: `No click id or user identifiers for ${row.event_name}`,
       hardFailure: row.optimization_role === 'primary',
     }
   }
@@ -619,8 +629,9 @@ export function buildGoogleAdsUploadPlan(
     kind: 'click',
     conversion: cleanJsonRecord({
       ...base,
-      [row.click_id_type]: row.click_id,
+      ...(hasClickId ? { [row.click_id_type as PpcClickIdType]: row.click_id } : {}),
       orderId: truncateOrderId(row.dedupe_key),
+      userIdentifiers: userIdentifiers.length ? userIdentifiers : undefined,
       consent: config.adUserDataConsent
         ? { adUserData: config.adUserDataConsent }
         : undefined,

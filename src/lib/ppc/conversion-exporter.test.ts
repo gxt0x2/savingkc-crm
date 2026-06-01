@@ -144,6 +144,58 @@ describe('ppc conversion exporter', () => {
     expect(plan.conversion).not.toHaveProperty('wbraid')
   })
 
+  it('builds Google Ads click conversion payloads from user identifiers when click id is missing', () => {
+    const identifiers = [
+      {
+        userIdentifierSource: 'FIRST_PARTY' as const,
+        hashedEmail: 'a'.repeat(64),
+      },
+      {
+        userIdentifierSource: 'FIRST_PARTY' as const,
+        hashedPhoneNumber: 'b'.repeat(64),
+      },
+    ]
+    const plan = buildGoogleAdsUploadPlan(
+      makeRow({
+        click_id: null,
+        click_id_type: null,
+        payload: {
+          form_status: 'qualified',
+          google_ads_value_basis: 'factual_stage_conversion',
+          user_identifiers: identifiers,
+        },
+      }),
+      googleConfig(),
+    )
+
+    expect(plan.kind).toBe('click')
+    if (plan.kind !== 'click') throw new Error('Expected click upload plan')
+    expect(plan.conversion).toMatchObject({
+      conversionAction: 'customers/646966429/conversionActions/333',
+      conversionValue: 1,
+      orderId: 'lead:123:qualified_lead',
+      userIdentifiers: identifiers,
+    })
+    expect(plan.conversion).not.toHaveProperty('gclid')
+    expect(plan.conversion).not.toHaveProperty('gbraid')
+    expect(plan.conversion).not.toHaveProperty('wbraid')
+  })
+
+  it('skips primary rows only when both click id and user identifiers are missing', () => {
+    const plan = buildGoogleAdsUploadPlan(
+      makeRow({
+        click_id: null,
+        click_id_type: null,
+      }),
+      googleConfig(),
+    )
+
+    expect(plan.kind).toBe('skip')
+    if (plan.kind !== 'skip') throw new Error('Expected skip upload plan')
+    expect(plan.hardFailure).toBe(true)
+    expect(plan.reason).toContain('No click id or user identifiers')
+  })
+
   it('keeps final form submits out of offline Google Ads API uploads', () => {
     const row = makeRow({
       event_name: 'lead_submitted',
