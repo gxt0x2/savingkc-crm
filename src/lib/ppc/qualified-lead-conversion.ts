@@ -1,6 +1,7 @@
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { supabase } from '@/lib/supabase-lazy'
 import { isKnownPpcCampaignName } from '@/lib/ppc/campaigns'
+import { readUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
 
 const PPC_LEAD_SOURCES = new Set(['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'paid-search'])
 const QUALIFIED_OR_BETTER_STATIONS = new Set([
@@ -139,7 +140,11 @@ export async function queuePpcQualifiedLeadConversion(input: {
   if (!lead) return { queued: false, reason: 'lead_not_found' }
 
   const manifestAttribution = attributionFromManifest((manifest as ManifestRow | null)?.manifest)
-  const outboxAttribution = attributionFromOutbox((outboxRows as OutboxAttributionRow[] | null | undefined)?.[0])
+  const priorOutboxRows = outboxRows as OutboxAttributionRow[] | null | undefined
+  const outboxAttribution = attributionFromOutbox(priorOutboxRows?.[0])
+  const priorUserIdentifiers = priorOutboxRows
+    ?.map((row) => readUserIdentifiers(row.payload))
+    .find((identifiers) => identifiers.length > 0) ?? []
   const attribution = cleanRecord({
     ...outboxAttribution,
     ...manifestAttribution,
@@ -173,6 +178,7 @@ export async function queuePpcQualifiedLeadConversion(input: {
       reason: input.reason ?? null,
       approval_required: false,
       google_ads_value_basis: 'factual_stage_conversion',
+      user_identifiers: priorUserIdentifiers.length ? priorUserIdentifiers : undefined,
     },
   })
 

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
+import { buildUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { getPpcRequestContext } from '@/lib/ppc/request-context'
 import {
@@ -788,6 +789,7 @@ export async function POST(req: NextRequest) {
         condition_raw: condition ?? null,
         auction_status: auctionStatus ?? null,
         sms_consent: smsConsent,
+        user_identifiers: buildUserIdentifiers({ email, phone: phoneE164 }),
       }),
     })
 
