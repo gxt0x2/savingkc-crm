@@ -19,6 +19,7 @@ import {
 } from '@/lib/ppc/exportable-events'
 import { ppcCampaignNameForContext, ppcCampaignForPageLocation } from '@/lib/ppc/campaigns'
 import { readUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
+import { safeSendSMS } from '@/lib/safe-communications'
 
 const DEFAULT_BATCH_SIZE = 25
 const DEFAULT_MAX_ATTEMPTS = 8
@@ -124,6 +125,26 @@ type OutboxStore = {
   markFailed(row: PpcConversionOutboxExportRow, reason: string, summary: Record<string, unknown>, now: Date): Promise<void>
 }
 
+type QualifiedLeadExportAlertResult = {
+  attempted: boolean
+  success: boolean
+  reason?: string
+  sid?: string
+  status?: string
+  toLast4?: string
+  hasUserIdentifiers?: boolean
+  sentAt?: string
+  error?: string
+}
+
+type PpcConversionExportNotifier = {
+  notifyQualifiedLeadExport(
+    row: PpcConversionOutboxExportRow,
+    destinations: DestinationResult[],
+    now: Date,
+  ): Promise<QualifiedLeadExportAlertResult | null>
+}
+
 export type PpcConversionExportOptions = {
   dryRun?: boolean
   batchSize?: number
@@ -136,6 +157,7 @@ export type PpcConversionExportOptions = {
 type PpcConversionExportDeps = {
   store?: OutboxStore
   fetch?: typeof fetch
+  notifier?: PpcConversionExportNotifier
 }
 
 export type GoogleAdsConfig = {
@@ -276,6 +298,126 @@ function mergePayload(row: PpcConversionOutboxExportRow, summary: Record<string,
     ...(row.payload ?? {}),
     export: summary,
   })
+}
+
+function last4(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  return digits ? digits.slice(-4) : ''
+}
+
+function appBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com').replace(/\/+$/, '')
+}
+
+function leadUrl(leadId: string | null): string {
+  return leadId ? `${appBaseUrl()}/leads/${leadId}` : appBaseUrl()
+}
+
+function rowHasUserIdentifiers(row: PpcConversionOutboxExportRow): boolean {
+  const payloadIds = readUserIdentifiers(eventPayload(row))
+  return payloadIds.length > 0 || readUserIdentifiers(row.attribution).length > 0
+}
+
+function googleAdsWasSent(destinations: DestinationResult[]): boolean {
+  return destinations.some((destination) => destination.destination === 'google_ads' && destination.status === 'sent')
+}
+
+function shouldNotifyQualifiedLeadExport(row: PpcConversionOutboxExportRow, destinations: DestinationResult[]): boolean {
+  return row.event_name === 'qualified_lead' && googleAdsWasSent(destinations)
+}
+
+function compactSmsBody(value: string, maxLength = 320): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`
+}
+
+function createDefaultNotifier(client: SupabaseClient): PpcConversionExportNotifier {
+  return {
+    async notifyQualifiedLeadExport(row, destinations, now) {
+      if (!shouldNotifyQualifiedLeadExport(row, destinations)) return null
+
+      const from = process.env.TWILIO_PHONE_NUMBER
+      const to = process.env.ERNEST_PHONE || '+18162262552'
+      const hasUserIdentifiers = rowHasUserIdentifiers(row)
+
+      if (!from) {
+        return {
+          attempted: false,
+          success: false,
+          reason: 'TWILIO_PHONE_NUMBER is not configured',
+          hasUserIdentifiers,
+        }
+      }
+
+      let leadName = text(eventPayload(row).lead_name) || 'Qualified PPC lead'
+      let address = text(eventPayload(row).property_address) || text(eventPayload(row).address)
+
+      if (row.lead_id) {
+        const { data, error } = await client
+          .from('leads')
+          .select('full_name, property_address')
+          .eq('id', row.lead_id)
+          .maybeSingle()
+
+        if (error) {
+          console.error('[ppc/conversion-exporter] lead lookup failed for qualified lead SMS', {
+            leadId: row.lead_id,
+            error,
+          })
+        }
+
+        const lead = data as { full_name?: string | null; property_address?: string | null } | null
+        leadName = text(lead?.full_name) || leadName
+        address = text(lead?.property_address) || address
+      }
+
+      const clickIdType = row.click_id_type ? row.click_id_type.toUpperCase() : 'ECL-only'
+      const identifierStatus = hasUserIdentifiers ? 'ECL IDs present' : 'ECL IDS MISSING'
+      const prefix = hasUserIdentifiers ? 'PPC ECL verified' : 'PPC ECL ISSUE'
+      const addressPart = address ? ` at ${address}` : ''
+      const body = compactSmsBody(
+        `${prefix}: ${leadName}${addressPart}. Qualified lead sent to Google Ads. ${identifierStatus}. Click: ${clickIdType}. ${leadUrl(row.lead_id)}`,
+      )
+
+      const result = await safeSendSMS({ body, from, to })
+
+      return cleanJsonRecord({
+        attempted: true,
+        success: result.success,
+        sid: result.sid,
+        status: result.status,
+        error: result.error,
+        toLast4: last4(to),
+        hasUserIdentifiers,
+        sentAt: now.toISOString(),
+      }) as QualifiedLeadExportAlertResult
+    },
+  }
+}
+
+async function maybeNotifyQualifiedLeadExport(
+  row: PpcConversionOutboxExportRow,
+  destinations: DestinationResult[],
+  now: Date,
+  deps: PpcConversionExportDeps,
+): Promise<QualifiedLeadExportAlertResult | null> {
+  if (!shouldNotifyQualifiedLeadExport(row, destinations)) return null
+
+  try {
+    const notifier = deps.notifier ?? createDefaultNotifier(supabaseAdmin())
+    return await notifier.notifyQualifiedLeadExport(row, destinations, now)
+  } catch (error) {
+    console.error('[ppc/conversion-exporter] qualified lead SMS alert failed', {
+      rowId: row.id,
+      leadId: row.lead_id,
+      error,
+    })
+    return {
+      attempted: true,
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      hasUserIdentifiers: rowHasUserIdentifiers(row),
+    }
+  }
 }
 
 function readEnv(env: Env, key: string): string | null {
@@ -1012,7 +1154,7 @@ export async function runPpcConversionExport(
 
     const failed = destinations.filter((destination) => destination.status === 'failed')
     const sent = destinations.filter((destination) => destination.status === 'sent')
-    const summary = rowSummary(row, destinations, now)
+    let summary = rowSummary(row, destinations, now)
 
     if (validateOnly) {
       results.push({ id: row.id, eventName: row.event_name, status: failed.length > 0 ? 'failed' : 'pending', destinations })
@@ -1027,6 +1169,13 @@ export async function runPpcConversionExport(
     }
 
     if (sent.length > 0) {
+      const qualifiedLeadSmsAlert = await maybeNotifyQualifiedLeadExport(row, destinations, now, deps)
+      if (qualifiedLeadSmsAlert) {
+        summary = cleanJsonRecord({
+          ...summary,
+          qualified_lead_sms_alert: qualifiedLeadSmsAlert,
+        })
+      }
       await store.markSent(row, summary, now)
       results.push({ id: row.id, eventName: row.event_name, status: 'sent', destinations })
       continue
