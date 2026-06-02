@@ -62,20 +62,23 @@ interface HeirsSectionProps {
   onAutoStartEmpty?: () => void
   /** When provided, a chat-bubble button appears next to each phone and calls this with (heirName, phone). */
   onSmsPhone?: (args: { heirName: string; relation: string; phone: string }) => void
+  /** Rings to allow before giving up; flows to the Twilio Dial timeout. */
+  ringCount?: number | null
 }
 
 function dispatchHeirQueue(
   queue: HeirDialerQueueItem[],
   callerId?: string | null,
   callerPlan?: Partial<DialerCallerPlan> | null,
-  options?: { autoDial?: boolean },
+  options?: { autoDial?: boolean; ringCount?: number | null },
 ) {
   if (queue.length === 0) return
-  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan; autoDial?: boolean } = { queue }
+  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan; autoDial?: boolean; ringCount?: number } = { queue }
   if (typeof callerId === 'string' && callerId.trim()) detail.callerId = callerId.trim()
   const normalizedPlan = normalizeDialerCallerPlan(callerPlan, typeof callerId === 'string' ? callerId.trim() : '')
   detail.callerPlan = normalizedPlan
   if (options?.autoDial) detail.autoDial = true
+  if (options?.ringCount && options.ringCount > 0) detail.ringCount = options.ringCount
   window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail }))
 }
 
@@ -125,6 +128,7 @@ export function HeirsSection({
   onAutoStartHandled,
   onAutoStartEmpty,
   onSmsPhone,
+  ringCount = null,
 }: HeirsSectionProps) {
   const [heirs, setHeirs] = useState<Heir[]>([])
   const [loading, setLoading] = useState(true)
@@ -256,7 +260,7 @@ export function HeirsSection({
 
   function queueAll() {
     const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir, true))
-    dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan)
+    dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { ringCount })
   }
 
   // EXPLICIT per-heir action — dials every number for this heir, attempted or
@@ -265,7 +269,7 @@ export function HeirsSection({
   function queueHeir(heir: Heir) {
     const fresh = heir.phones.filter((p) => !p.attempted)
     const tried = heir.phones.filter((p) => p.attempted)
-    dispatchHeirQueue(mapHeirPhones(heir, [...fresh, ...tried]), dialerCallerId, dialerCallerPlan)
+    dispatchHeirQueue(mapHeirPhones(heir, [...fresh, ...tried]), dialerCallerId, dialerCallerPlan, { ringCount })
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
@@ -275,7 +279,7 @@ export function HeirsSection({
     const remaining = heirs
       .flatMap((h) => buildQueueForHeir(h, true))
       .filter((item) => item.prospect_phone_id !== phone.id)
-    dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan)
+    dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan, { ringCount })
   }
 
   useEffect(() => {
@@ -299,12 +303,12 @@ export function HeirsSection({
     })
 
     if (queue.length > 0) {
-      dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true })
+      dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true, ringCount })
       onAutoStartHandled?.()
       return
     }
     onAutoStartEmpty?.()
-  }, [autoStart, deceasedOwnerName, dialerCallerId, dialerCallerPlan, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, propertyAddress])
+  }, [autoStart, deceasedOwnerName, dialerCallerId, dialerCallerPlan, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, propertyAddress, ringCount])
 
   return (
     <section className={`ck-card ${expanded ? 'p-6' : 'px-6 py-4'}`}>

@@ -538,6 +538,10 @@ function DialerPageInner() {
     : sessionCallHammerParam === '0'
     ? false
     : true
+  const sessionRingCountParam = params.get('ring_count')
+  const sessionRingCount = sessionRingCountParam && Number.isFinite(Number(sessionRingCountParam))
+    ? Number(sessionRingCountParam)
+    : null
   const sessionCallerPlan = useMemo(() => {
     const plan = normalizeDialerCallerPlan({
       mode: sessionCallerModeParam === 'rotation' ? 'rotation' : 'static',
@@ -1300,6 +1304,7 @@ function DialerPageInner() {
               dialerCallerId={sessionCallerId || null}
               dialerCallerPlan={sessionCallerPlan}
               callHammerEnabled={sessionUseCallHammer}
+              ringCount={sessionRingCount}
               autoStart={autoQueueLeadId === currentLeadId}
               onAutoStartHandled={() => setAutoQueueLeadId(null)}
               onAutoStartEmpty={handleAutoStartEmpty}
@@ -1705,6 +1710,7 @@ function DialerHome() {
     callerPlanInput?: Partial<DialerCallerPlan> | null,
     callHammerSettings?: { useCallHammer?: boolean; useVoicemailCallHammer?: boolean } | null,
     queueLabel?: string,
+    ringCountValue?: number | null,
   ) => {
     const query = new URLSearchParams()
     query.set('lead_ids', ids.join(','))
@@ -1720,6 +1726,7 @@ function DialerHome() {
     if (queueLabel) query.set('queue_label', queueLabel)
     query.set('call_hammer', callHammerSettings?.useCallHammer ? '1' : '0')
     query.set('voicemail_call_hammer', callHammerSettings?.useVoicemailCallHammer ? '1' : '0')
+    if (ringCountValue && ringCountValue > 0) query.set('ring_count', String(ringCountValue))
     return `/dialer?${query.toString()}`
   }, [])
 
@@ -1794,8 +1801,9 @@ function DialerHome() {
       callerPlan,
       { useCallHammer, useVoicemailCallHammer },
       selectedSavedQueue?.name || selectedPreset.label,
+      ringCount,
     ))
-  }, [activeSavedQueueId, buildSessionUrl, callerPlan, optionalFilters, queue, router, selectedPreset.label, selectedQueue, selectedSavedQueue, startBehavior, useCallHammer, useVoicemailCallHammer])
+  }, [activeSavedQueueId, buildSessionUrl, callerPlan, optionalFilters, queue, ringCount, router, selectedPreset.label, selectedQueue, selectedSavedQueue, startBehavior, useCallHammer, useVoicemailCallHammer])
 
   const resumeSavedQueue = useCallback(() => {
     if (!selectedSavedQueue) return
@@ -1832,8 +1840,9 @@ function DialerHome() {
         useVoicemailCallHammer: selectedSavedQueue.useVoicemailCallHammer ?? useVoicemailCallHammer,
       },
       selectedSavedQueue.name,
+      ringCount,
     ))
-  }, [buildSessionUrl, callerId, callerMode, redialCallerId, rotateEveryCalls, rotationCallerIds, router, selectedSavedQueue, useCallHammer, useVoicemailCallHammer])
+  }, [buildSessionUrl, callerId, callerMode, redialCallerId, rotateEveryCalls, rotationCallerIds, ringCount, router, selectedSavedQueue, useCallHammer, useVoicemailCallHammer])
 
   const currentLead = selectedQueue[0] ?? queue[0] ?? null
   const previewLeads = queue.slice(0, visibleLimit)
@@ -2297,6 +2306,8 @@ function DialerHome() {
                       callerPlan.staticCallerId,
                       callerPlan,
                       { useCallHammer, useVoicemailCallHammer },
+                      undefined,
+                      ringCount,
                     ))}
                     className="inline-flex items-center justify-center rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[#E32E2E]/50"
                   >
@@ -2569,6 +2580,8 @@ function DialerHome() {
                       callerPlan.staticCallerId,
                       callerPlan,
                       { useCallHammer, useVoicemailCallHammer },
+                      undefined,
+                      ringCount,
                     ))}
                     className="mt-3 w-full rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]"
                   >

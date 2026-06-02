@@ -75,6 +75,8 @@ interface DialerPanelProps {
   pendingQueueCallerId?: string | null
   pendingQueueCallerPlan?: DialerCallerPlan | null
   pendingQueueAutoDial?: boolean
+  /** How many rings to allow before giving up; maps to the Twilio Dial timeout. */
+  pendingQueueRingCount?: number | null
   presentation?: 'modal' | 'dock'
 }
 
@@ -237,6 +239,7 @@ export function DialerPanel({
   pendingQueueCallerId,
   pendingQueueCallerPlan,
   pendingQueueAutoDial = false,
+  pendingQueueRingCount = null,
   presentation = 'dock',
 }: DialerPanelProps) {
   const [status, setStatus] = useState<CallStatus>('offline')
@@ -247,6 +250,8 @@ export function DialerPanel({
   const callRef = useRef<TwilioDevice>(null)
   const callTimer = useCallTimer(status === 'on_call')
   const deviceInitialized = useRef(false)
+  // Ring count for the current heir-queue session → Twilio Dial timeout.
+  const ringCountRef = useRef<number | null>(null)
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -352,6 +357,7 @@ export function DialerPanel({
       setViewTab('dial')
       setQueue(pendingQueue)
       setQueueIndex(0)
+      ringCountRef.current = pendingQueueRingCount ?? null
       const planFromEvent = normalizeDialerCallerPlan(
         pendingQueueCallerPlan,
         typeof pendingQueueCallerId === 'string' ? pendingQueueCallerId.trim() : '',
@@ -379,7 +385,7 @@ export function DialerPanel({
       setSearchQuery('')
       setSearchResults([])
     }
-  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial])
+  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial, pendingQueueRingCount])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
@@ -564,6 +570,7 @@ export function DialerPanel({
         : (effectiveCallerId || '')
       const params: Record<string, string> = { To: number }
       if (callerIdForThisCall) params.CallerId = callerIdForThisCall
+      if (ringCountRef.current && ringCountRef.current > 0) params.RingCount = String(ringCountRef.current)
       // enableRingingState: true is required by the Twilio Voice SDK so the
       // parent (browser) call emits a 'ringing' event and plays the network
       // ringback tone while the destination phone rings. Without it the
