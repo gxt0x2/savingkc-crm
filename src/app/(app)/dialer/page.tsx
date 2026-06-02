@@ -8,6 +8,7 @@ import { HeirsSection } from '@/components/leads/heirs-section'
 import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
 import { CommsTimeline, CommsSummaryBar } from '@/components/leads/comms-timeline'
 import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
+import { BulkSmsModal } from '@/components/leads/bulk-sms-modal'
 import { createClient } from '@/lib/supabase/client'
 import { calculateTemperature } from '@/lib/lead-temperature'
 import { toProperCase, formatPhone } from '@/lib/format'
@@ -1439,6 +1440,7 @@ function DialerHome() {
   const [useVoicemailCallHammer, setUseVoicemailCallHammer] = useState(false)
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [pacing, setPacing] = useState(18)
+  const [showBulkSms, setShowBulkSms] = useState(false)
 
   useEffect(() => {
     if (!callerId && DEFAULT_DIALER_CALLER_ID) {
@@ -2031,6 +2033,13 @@ function DialerHome() {
 
   return (
     <div className="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
+      <BulkSmsModal
+        open={showBulkSms}
+        onClose={() => setShowBulkSms(false)}
+        leadIds={(selectedCount > 0 ? selectedQueue : queue).map((lead) => lead.id)}
+        agent={agent}
+        fromPhone={callerId}
+      />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black text-[var(--ck-text)] tracking-tight">Calling Command Center</h1>
@@ -2085,13 +2094,23 @@ function DialerHome() {
                   ))}
                 </select>
               </label>
-              <button
-                onClick={() => startQueue('power_dialer')}
-                disabled={queue.length === 0}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-4 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
-              >
-                <Icon name="play_arrow" size="text-sm" /> {selectedCount > 0 ? `Start ${selectedCount}` : 'Start Queue'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => startQueue('power_dialer')}
+                  disabled={queue.length === 0}
+                  className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-4 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  <Icon name="play_arrow" size="text-sm" /> {selectedCount > 0 ? `Start ${selectedCount}` : 'Start Queue'}
+                </button>
+                <button
+                  onClick={() => setShowBulkSms(true)}
+                  disabled={queue.length === 0}
+                  title={selectedCount > 0 ? `Text ${selectedCount} selected leads` : 'Text the leads in this queue'}
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E] hover:text-[#ff7777] disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  <Icon name="forum" size="text-lg" />
+                </button>
+              </div>
             </div>
 
             <div className="mt-3 flex flex-col gap-2 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">

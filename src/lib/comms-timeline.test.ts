@@ -54,6 +54,16 @@ describe('comms-timeline normalizer', () => {
     expect(e.contact).toBe('+18165550142')
   })
 
+  it('falls back to description for SMS/email text (where the canonical send stores it)', () => {
+    const sms = normalizeActivity(activity({ activity_type: 'sms', description: 'Hi Linda, following up', metadata: { direction: 'outbound', to: '+1816' } }))!
+    expect(sms.body).toBe('Hi Linda, following up')
+    const email = normalizeActivity(activity({ activity_type: 'email', description: 'Offer attached', metadata: { direction: 'outbound' } }))!
+    expect(email.body).toBe('Offer attached')
+    // calls keep description as a summary, not a "body"
+    const call = normalizeActivity(activity({ activity_type: 'call', description: 'Outbound call to Linda', metadata: {} }))!
+    expect(call.body).toBeNull()
+  })
+
   it('ignores non-communication activity rows', () => {
     expect(isCommActivity('status_change')).toBe(false)
     expect(isCommActivity('task')).toBe(false)

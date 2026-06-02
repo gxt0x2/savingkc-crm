@@ -96,7 +96,12 @@ export function normalizeActivity(activity: RawActivity): CommEvent | null {
     : null
 
   const contact = str(md.to) ?? str(md.from) ?? str(md.phone) ?? str(md.address) ?? null
-  const body = str(md.body) ?? str(md.message) ?? str(md.notes) ?? null
+  // SMS/email bodies are stored on the activity's `description`; calls/voicemail
+  // keep `description` as an auto-generated summary, so only fall back to notes.
+  const body = str(md.body)
+    ?? str(md.message)
+    ?? ((channel === 'sms' || channel === 'email') ? str(activity.description) : null)
+    ?? str(md.notes)
 
   const heir = str(md.heir_name)
   const channelLabel = channel === 'sms' ? 'SMS'
