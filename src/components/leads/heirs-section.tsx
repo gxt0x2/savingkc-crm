@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone, toProperCase } from '@/lib/format'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
+import { isReachedDisposition, dispositionLabel as canonicalDispositionLabel } from '@/lib/dialer-dispositions'
 
 // Dialer queue item — sent to DialerPanel so it can cycle through heirs while
 // the property stays pinned. `leadId` is the property's lead_id, never the
@@ -26,6 +27,9 @@ export interface HeirPhone {
   attempted: boolean
   last_disposition: string | null
   last_attempt_at: string | null
+  is_verified_contact?: boolean
+  verified_at?: string | null
+  verified_by?: string | null
 }
 
 export interface Heir {
@@ -82,27 +86,22 @@ function phoneIcon(type: string | null): string {
   return 'phone'
 }
 
-// Dispositions that confirm this IS the relative's number — i.e., you actually
-// reached the person. Left VM / no answer / disconnected don't count since
-// the right number could still be a different one. Once one phone on a heir
-// lands a confirmed disposition, the others are irrelevant.
-const CONFIRMED_DISPOSITIONS = new Set([
-  'spoke_with_owner',
-  'callback_requested',
-  'appointment_set',
-  'deal_potential',
-  'offer_made',
-  'not_interested',
-  'dnc',
-])
+// A phone is "verified" when we know it really belongs to this heir. That's
+// true when the agent explicitly verified it (is_verified_contact, persisted
+// server-side and manually toggleable) OR when the last disposition means they
+// actually reached the person (reached === true in the shared taxonomy). The
+// disposition fallback keeps historical calls — logged before the verified
+// column existed — showing the green signal.
+function isVerifiedPhone(p: HeirPhone): boolean {
+  return Boolean(p.is_verified_contact) || isReachedDisposition(p.last_disposition)
+}
 
-function confirmedPhoneOf(heir: Heir): HeirPhone | null {
-  return heir.phones.find((p) => p.last_disposition && CONFIRMED_DISPOSITIONS.has(p.last_disposition)) ?? null
+function verifiedPhoneOf(heir: Heir): HeirPhone | null {
+  return heir.phones.find(isVerifiedPhone) ?? null
 }
 
 function dispositionLabel(d: string | null): string {
-  if (!d) return ''
-  return d.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  return canonicalDispositionLabel(d)
 }
 
 function daysAgo(iso: string | null): string {
@@ -202,33 +201,57 @@ export function HeirsSection({
   // Only count unattempted phones that are actually worth calling — heirs
   // whose correct number is already confirmed are excluded from the queue.
   const unattemptedPhones = heirs.reduce(
-    (n, h) => n + (confirmedPhoneOf(h) ? 0 : h.unattempted_count),
+    (n, h) => n + (verifiedPhoneOf(h) ? 0 : h.unattempted_count),
     0,
   )
   const queuedPhones = heirs.reduce((count, heir) => {
-    if (confirmedPhoneOf(heir)) return count
+    if (verifiedPhoneOf(heir)) return count
     const available = heir.phones.filter((phone) => !phone.attempted).length
     if (available === 0) return count
     return count + available
   }, 0)
-  const confirmedHeirs = heirs.filter((h) => confirmedPhoneOf(h)).length
+  const verifiedHeirs = heirs.filter((h) => verifiedPhoneOf(h)).length
 
+  // Manual verify / unverify of a single number. Persists server-side and
+  // reloads so the green signal + queue eligibility stay in sync.
+  const toggleVerify = useCallback(async (phone: HeirPhone, nextVerified: boolean) => {
+    try {
+      const res = await fetch('/api/heirs/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prospect_phone_id: phone.id, verified: nextVerified, lead_id: leadId }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error || 'Could not update verification')
+      }
+      window.dispatchEvent(new CustomEvent('heir-attempt-logged', { detail: { leadId } }))
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update verification')
+    }
+  }, [leadId, load])
+
+  function mapHeirPhones(h: Heir, phones: HeirPhone[]): HeirDialerQueueItem[] {
+    return phones.map((p) => ({
+      prospect_phone_id: p.id,
+      phone: p.number,
+      heirName: toProperCase(h.contact_name),
+      relation: h.relationship,
+      leadId,
+      propertyAddress,
+      deceasedOwnerName,
+    }))
+  }
+
+  // AUTO / BULK path (Call heirs, auto-start). Skips heirs we've already
+  // verified — once you've reached the right person you don't keep hammering
+  // every number — and only queues numbers that haven't been tried yet.
   function buildQueueForHeir(h: Heir, forceAllPhones = false): HeirDialerQueueItem[] {
-    // Skip entirely if this heir is already confirmed — the remaining numbers
-    // are not worth dialing, the right one is known.
-    if (confirmedPhoneOf(h)) return []
+    if (verifiedPhoneOf(h)) return []
     const unattemptedPhones = h.phones.filter((p) => !p.attempted)
     const dialTargets = callHammerEnabled || forceAllPhones ? unattemptedPhones : unattemptedPhones.slice(0, 1)
-    return dialTargets
-      .map((p) => ({
-        prospect_phone_id: p.id,
-        phone: p.number,
-        heirName: toProperCase(h.contact_name),
-        relation: h.relationship,
-        leadId,
-        propertyAddress,
-        deceasedOwnerName,
-      }))
+    return mapHeirPhones(h, dialTargets)
   }
 
   function queueAll() {
@@ -236,20 +259,19 @@ export function HeirsSection({
     dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan)
   }
 
+  // EXPLICIT per-heir action — dials every number for this heir, attempted or
+  // not, freshest first. This is the "call them back" path: an agent can always
+  // re-queue a heir even after every number has been tried or verified.
   function queueHeir(heir: Heir) {
-    dispatchHeirQueue(buildQueueForHeir(heir, true), dialerCallerId, dialerCallerPlan)
+    const fresh = heir.phones.filter((p) => !p.attempted)
+    const tried = heir.phones.filter((p) => p.attempted)
+    dispatchHeirQueue(mapHeirPhones(heir, [...fresh, ...tried]), dialerCallerId, dialerCallerPlan)
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
-    const clicked: HeirDialerQueueItem = {
-      prospect_phone_id: phone.id,
-      phone: phone.number,
-      heirName: toProperCase(heir.contact_name),
-      relation: heir.relationship,
-      leadId,
-      propertyAddress,
-      deceasedOwnerName,
-    }
+    // Clicked number always dials (even if attempted/verified) — recall is
+    // never blocked. Remaining auto-queue follows the unattempted ordering.
+    const clicked = mapHeirPhones(heir, [phone])[0]
     const remaining = heirs
       .flatMap((h) => buildQueueForHeir(h, true))
       .filter((item) => item.prospect_phone_id !== phone.id)
@@ -262,7 +284,7 @@ export function HeirsSection({
     autoStartedLeadRef.current = leadId
 
     const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => {
-      if (confirmedPhoneOf(heir)) return []
+      if (verifiedPhoneOf(heir)) return []
       return heir.phones
         .filter((phone) => !phone.attempted)
         .map((phone) => ({
@@ -375,6 +397,7 @@ export function HeirsSection({
               isActive={Boolean(activePhoneId && heir.phones.some((p) => p.id === activePhoneId))}
               onCallPhone={(phone) => queueOne(heir, phone)}
               onCallHeir={() => queueHeir(heir)}
+              onToggleVerify={toggleVerify}
               onSmsPhone={onSmsPhone ? (phone) => onSmsPhone({
                 heirName: toProperCase(heir.contact_name),
                 relation: heir.relationship,
@@ -390,8 +413,8 @@ export function HeirsSection({
         <div className="mt-5 pt-4 border-t border-[var(--ck-border)] flex items-center justify-between">
           <p className="text-[10px] text-[var(--ck-text-dim)]">
             {unattemptedPhones === 0
-              ? confirmedHeirs > 0
-                ? `${confirmedHeirs} of ${totalHeirs} heir${totalHeirs === 1 ? '' : 's'} confirmed. Re-sync if new data is expected.`
+              ? verifiedHeirs > 0
+                ? `${verifiedHeirs} of ${totalHeirs} heir${totalHeirs === 1 ? '' : 's'} verified. Re-sync if new data is expected.`
                 : 'All heir phones attempted. Re-sync if new data is expected.'
               : `${unattemptedPhones} unattempted · auto-advances through queue.`}
           </p>
@@ -417,6 +440,7 @@ function HeirRow({
   isActive,
   onCallPhone,
   onCallHeir,
+  onToggleVerify,
   onSmsPhone,
 }: {
   heir: Heir
@@ -424,14 +448,17 @@ function HeirRow({
   isActive: boolean
   onCallPhone: (phone: HeirPhone) => void
   onCallHeir: () => void
+  onToggleVerify: (phone: HeirPhone, nextVerified: boolean) => void
   onSmsPhone?: (phone: HeirPhone) => void
 }) {
-  const confirmed = confirmedPhoneOf(heir)
+  const verified = verifiedPhoneOf(heir)
   const allAttempted = heir.unattempted_count === 0 && heir.phones.length > 0
 
-  // Once a phone is confirmed as the right one, the siblings are dead weight.
-  // Only render the confirmed phone in that case.
-  const visiblePhones = confirmed ? [confirmed] : heir.phones
+  // Show every number — recall is never hidden. The verified line (if any)
+  // floats to the top and is styled green; the rest stay callable underneath.
+  const visiblePhones = verified
+    ? [verified, ...heir.phones.filter((p) => p.id !== verified.id)]
+    : heir.phones
 
   // Auto-expand the heir currently being called. Otherwise collapse — Ernest
   // only wants one heir's details in view at a time. User can manually
@@ -446,7 +473,7 @@ function HeirRow({
 
   const statusDotColor = isActive
     ? 'bg-emerald-400 animate-pulse'
-    : confirmed
+    : verified
     ? 'bg-emerald-400'
     : heir.phones.length === 0
     ? 'bg-[var(--ck-text-dim)]'
@@ -461,7 +488,7 @@ function HeirRow({
       className={`${rowBg} border ${
         isActive
           ? 'border-emerald-500/60 ring-1 ring-emerald-500/20'
-          : confirmed
+          : verified
           ? 'border-emerald-500/40'
           : 'border-[var(--ck-border)]'
       } rounded-xl ${expanded ? 'p-4' : 'px-4 py-2.5'} hover:border-[var(--ck-border-strong)] transition-colors`}
@@ -481,27 +508,34 @@ function HeirRow({
           </span>
         </div>
 
-        {/* Corner action: confirmed badge takes priority; otherwise show
-            per-heir "Call" button when there's something left to call. */}
+        {/* Corner action: a Verified badge when we've confirmed the heir, plus a
+            Call button that is ALWAYS available — "Call (n)" while fresh numbers
+            remain, "Call again" once everything's been tried. Recall is never
+            blocked. */}
         <div className="flex items-center gap-2 shrink-0">
-          {confirmed ? (
+          {verified && (
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 whitespace-nowrap flex items-center gap-1">
-              <Icon name="check_circle" size="text-sm" /> Confirmed
+              <Icon name="verified" size="text-sm" filled /> Verified
             </span>
-          ) : heir.unattempted_count > 0 ? (
+          )}
+          {heir.phones.length > 0 && (
             <button
               onClick={(e) => { e.stopPropagation(); onCallHeir() }}
-              className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors"
-              title={`Queue ${heir.unattempted_count} ${heir.unattempted_count === 1 ? 'phone' : 'phones'} for this heir`}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors text-white ${
+                heir.unattempted_count > 0
+                  ? 'bg-[#E32E2E] hover:bg-[#C42626]'
+                  : 'bg-[var(--ck-surface-hi)] hover:bg-[var(--ck-border-strong)] text-[var(--ck-text)]'
+              }`}
+              title={
+                heir.unattempted_count > 0
+                  ? `Queue ${heir.unattempted_count} ${heir.unattempted_count === 1 ? 'phone' : 'phones'} for this heir`
+                  : 'Call this heir again (re-dials every number)'
+              }
             >
-              <Icon name="call" size="text-xs" />
-              Call ({heir.unattempted_count})
+              <Icon name={heir.unattempted_count > 0 ? 'call' : 'restart_alt'} size="text-xs" />
+              {heir.unattempted_count > 0 ? `Call (${heir.unattempted_count})` : 'Call again'}
             </button>
-          ) : allAttempted ? (
-            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 whitespace-nowrap flex items-center gap-1">
-              <Icon name="history" size="text-xs" /> All tried
-            </span>
-          ) : null}
+          )}
           <Icon
             name={expanded ? 'expand_less' : 'expand_more'}
             className="!text-lg text-[var(--ck-text-dim)]"
@@ -528,16 +562,12 @@ function HeirRow({
           <PhonePill
             key={phone.id}
             phone={phone}
-            confirmed={confirmed?.id === phone.id}
+            verified={isVerifiedPhone(phone)}
             onCall={() => onCallPhone(phone)}
+            onToggleVerify={(next) => onToggleVerify(phone, next)}
             onSms={onSmsPhone ? () => onSmsPhone(phone) : undefined}
           />
         ))}
-        {confirmed && heir.phones.length > 1 && (
-          <p className="text-[10px] text-[var(--ck-text-dim)] italic pl-2 pt-1">
-            {heir.phones.length - 1} other {heir.phones.length - 1 === 1 ? 'number' : 'numbers'} hidden — this is the confirmed line.
-          </p>
-        )}
       </div>
       </>}
     </div>
@@ -546,13 +576,15 @@ function HeirRow({
 
 function PhonePill({
   phone,
-  confirmed,
+  verified,
   onCall,
+  onToggleVerify,
   onSms,
 }: {
   phone: HeirPhone
-  confirmed: boolean
+  verified: boolean
   onCall: () => void
+  onToggleVerify: (nextVerified: boolean) => void
   onSms?: () => void
 }) {
   const icon = phoneIcon(phone.type)
@@ -561,11 +593,11 @@ function PhonePill({
   return (
     <div
       className={`flex items-center gap-3 py-1.5 pr-1.5 pl-2 rounded-lg transition-colors group ${
-        confirmed ? 'bg-emerald-500/10 ring-1 ring-emerald-500/30' : 'hover:bg-[var(--ck-surface-hi)]'
+        verified ? 'bg-emerald-500/10 ring-1 ring-emerald-500/30' : 'hover:bg-[var(--ck-surface-hi)]'
       }`}
     >
-      {confirmed ? (
-        <Icon name="check_circle" size="text-base" className="text-emerald-400" filled />
+      {verified ? (
+        <Icon name="verified" size="text-base" className="text-emerald-400" filled />
       ) : (
         <Icon
           name={icon}
@@ -575,7 +607,7 @@ function PhonePill({
       )}
       <span
         className={`font-mono text-sm tabular-nums ${
-          confirmed
+          verified
             ? 'text-emerald-300 font-bold'
             : phone.attempted
             ? 'text-[var(--ck-text-muted)]'
@@ -591,12 +623,12 @@ function PhonePill({
       {phone.attempted && (
         <span
           className={`text-[11px] truncate flex items-center gap-1.5 ml-1 ${
-            confirmed ? 'text-emerald-300 font-bold' : 'text-[var(--ck-text-muted)]'
+            verified ? 'text-emerald-300 font-bold' : 'text-[var(--ck-text-muted)]'
           }`}
         >
           {dispositionLabel(phone.last_disposition)}
           {phone.last_attempt_at && (
-            <span className={confirmed ? 'text-emerald-400/70' : 'text-[var(--ck-text-dim)]'}>
+            <span className={verified ? 'text-emerald-400/70' : 'text-[var(--ck-text-dim)]'}>
               · {daysAgo(phone.last_attempt_at)}
             </span>
           )}
@@ -604,6 +636,21 @@ function PhonePill({
       )}
 
       <div className="flex-1" />
+
+      {/* Verify / unverify toggle — manual override of the green signal. */}
+      <button
+        onClick={() => onToggleVerify(!verified)}
+        className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors border ${
+          verified
+            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+            : 'bg-[var(--ck-surface-elev)] border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+        }`}
+        title={verified ? 'Verified as this heir — click to unverify' : 'Mark this as the verified number for this heir'}
+        aria-label={verified ? 'Unverify this number' : 'Verify this number'}
+        aria-pressed={verified}
+      >
+        <Icon name={verified ? 'verified' : 'verified_user'} size="text-sm" filled={verified} />
+      </button>
 
       {onSms && (
         <button
@@ -615,24 +662,25 @@ function PhonePill({
           <Icon name="chat" size="text-sm" />
         </button>
       )}
+      {/* Call is ALWAYS enabled — an attempted or verified number can always be
+          recalled. This is the fix for "greys out after the first call". */}
       <button
         onClick={onCall}
-        disabled={phone.attempted && !confirmed}
         className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-white ${
-          confirmed
+          verified
             ? 'bg-emerald-500 hover:bg-emerald-600'
-            : 'bg-[#E32E2E] hover:bg-[#C42626] disabled:bg-[var(--ck-border-strong)] disabled:text-[var(--ck-text-dim)]'
+            : 'bg-[#E32E2E] hover:bg-[#C42626]'
         }`}
         title={
-          confirmed
-            ? 'Redial the confirmed number'
+          verified
+            ? 'Redial the verified number'
             : phone.attempted
-            ? 'Already attempted — redial from dialer if needed'
+            ? 'Call this number again'
             : 'Call this number'
         }
         aria-label="Call this number"
       >
-        <Icon name="call" size="text-sm" />
+        <Icon name={phone.attempted ? 'restart_alt' : 'call'} size="text-sm" />
       </button>
     </div>
   )

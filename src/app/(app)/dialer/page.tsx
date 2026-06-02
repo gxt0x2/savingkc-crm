@@ -11,6 +11,7 @@ import { calculateTemperature } from '@/lib/lead-temperature'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { CallerIdMode, DialerCallerPlan, normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
+import { DEAD_REASONS } from '@/lib/dialer-dispositions'
 
 // URL contract:
 //   /dialer?lead_ids=<uuid>,<uuid>,...
@@ -309,6 +310,7 @@ function patchSavedListMeta(id: string, patch: SavedListLocalMeta) {
 function mergeSavedQueueWithLocalMeta(queue: SavedDialerQueue): SavedDialerQueue {
   const local = readSavedListMeta()[queue.id]
   if (!local) return queue
+  const serverHasSession = (queue.sessionLeadIds?.length ?? 0) > 0
   const normalizedPlan = normalizeDialerCallerPlan(
     {
       mode: local.callerMode ?? queue.callerMode,
@@ -330,13 +332,29 @@ function mergeSavedQueueWithLocalMeta(queue: SavedDialerQueue): SavedDialerQueue
     optionalFilters: normalizeOptionalFilters(local.optionalFilters ?? queue.optionalFilters ?? DEFAULT_OPTIONAL_FILTERS),
     useCallHammer: local.useCallHammer ?? queue.useCallHammer ?? true,
     useVoicemailCallHammer: local.useVoicemailCallHammer ?? queue.useVoicemailCallHammer ?? false,
-    sessionLeadIds: local.sessionLeadIds && local.sessionLeadIds.length > 0
-      ? local.sessionLeadIds
-      : queue.sessionLeadIds,
-    resumeIndex: local.resumeIndex != null ? local.resumeIndex : queue.resumeIndex,
-    resumeLeadId: local.resumeLeadId !== undefined ? local.resumeLeadId : queue.resumeLeadId,
-    resumeUpdatedAt: local.resumeUpdatedAt || queue.resumeUpdatedAt,
-    sessionCompleted: typeof local.sessionCompleted === 'boolean' ? local.sessionCompleted : queue.sessionCompleted,
+    // Resume state: the SERVER is authoritative whenever it has a saved
+    // session. Local meta is only a fallback for environments where the resume
+    // columns hadn't persisted yet. Previously local always won, so a stale
+    // local resumeIndex (often 0, written on the first render of a session)
+    // clobbered the real server pointer — that's why "resume where I left off"
+    // jumped back to the top.
+    ...(serverHasSession
+      ? {
+          sessionLeadIds: queue.sessionLeadIds,
+          resumeIndex: queue.resumeIndex,
+          resumeLeadId: queue.resumeLeadId,
+          resumeUpdatedAt: queue.resumeUpdatedAt,
+          sessionCompleted: queue.sessionCompleted,
+        }
+      : {
+          sessionLeadIds: local.sessionLeadIds && local.sessionLeadIds.length > 0
+            ? local.sessionLeadIds
+            : queue.sessionLeadIds,
+          resumeIndex: local.resumeIndex != null ? local.resumeIndex : queue.resumeIndex,
+          resumeLeadId: local.resumeLeadId !== undefined ? local.resumeLeadId : queue.resumeLeadId,
+          resumeUpdatedAt: local.resumeUpdatedAt || queue.resumeUpdatedAt,
+          sessionCompleted: typeof local.sessionCompleted === 'boolean' ? local.sessionCompleted : queue.sessionCompleted,
+        }),
   }
 }
 
@@ -475,6 +493,10 @@ function DialerPageInner() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [resolveError, setResolveError] = useState<string | null>(null)
+  // Becomes true only once currentIndex has been set to the requested start
+  // index. We must NOT persist resume state before this, or the first render
+  // (currentIndex === 0) overwrites a real resume pointer with 0.
+  const [resumeHydrated, setResumeHydrated] = useState(false)
 
   // Activity feed for current lead
   const [activities, setActivities] = useState<Activity[]>([])
@@ -487,6 +509,14 @@ function DialerPageInner() {
 
   // SMS compose state
   const [smsTarget, setSmsTarget] = useState<{ heirName: string; relation: string; phone: string } | null>(null)
+
+  // Session tally (Mojo-style HUD) + mark-lead-dead dialog
+  const [sessionDials, setSessionDials] = useState(0)
+  const [sessionContacts, setSessionContacts] = useState(0)
+  const [showMarkDead, setShowMarkDead] = useState(false)
+  const [markDeadReason, setMarkDeadReason] = useState('')
+  const [markDeadBusy, setMarkDeadBusy] = useState(false)
+  const [markDeadError, setMarkDeadError] = useState<string | null>(null)
 
   const currentLeadId: string | null = leadIds[currentIndex] ?? null
   const currentLead: LeadSummary | null = currentLeadId ? leads[currentLeadId] ?? null : null
@@ -557,6 +587,8 @@ function DialerPageInner() {
     const safeIndex = Number.isFinite(requested) ? Math.max(0, Math.floor(requested)) : 0
     const timeout = window.setTimeout(() => {
       setCurrentIndex(Math.min(safeIndex, Math.max(leadIds.length - 1, 0)))
+      // Resume pointer is now applied — persistence may begin.
+      setResumeHydrated(true)
     }, 0)
     return () => window.clearTimeout(timeout)
   }, [leadIds.length, startIndexParam])
@@ -644,7 +676,7 @@ function DialerPageInner() {
   }, [])
 
   useEffect(() => {
-    if (!sessionSavedListId || leadIds.length === 0) return
+    if (!sessionSavedListId || leadIds.length === 0 || !resumeHydrated) return
     const resumeIndex = Math.min(Math.max(currentIndex, 0), Math.max(leadIds.length - 1, 0))
     const resumeUpdatedAt = new Date().toISOString()
     patchSavedListMeta(sessionSavedListId, {
@@ -672,7 +704,7 @@ function DialerPageInner() {
     }, 250)
 
     return () => window.clearTimeout(timeout)
-  }, [sessionSavedListId, leadIds, currentIndex, sessionCallerId])
+  }, [sessionSavedListId, leadIds, currentIndex, sessionCallerId, resumeHydrated])
 
   // Listen to queue-state events from the telephony bar
   useEffect(() => {
@@ -765,6 +797,58 @@ function DialerPageInner() {
     return () => window.removeEventListener('keydown', onKey)
   }, [advance, back])
 
+  // Tally dials / contacts for the session HUD. crm:disposition-logged fires
+  // once per saved call disposition and carries `reached` (the agent actually
+  // talked to someone). Header-driven "mark dead" is not a dial, so it does not
+  // dispatch this event.
+  useEffect(() => {
+    function onDispo(e: Event) {
+      const detail = (e as CustomEvent).detail as { reached?: boolean } | null
+      setSessionDials((n) => n + 1)
+      if (detail?.reached) setSessionContacts((n) => n + 1)
+    }
+    window.addEventListener('crm:disposition-logged', onDispo)
+    return () => window.removeEventListener('crm:disposition-logged', onDispo)
+  }, [])
+
+  const markLeadDead = useCallback(async () => {
+    if (!currentLeadId || !markDeadReason) return
+    setMarkDeadBusy(true)
+    setMarkDeadError(null)
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentLeadId,
+          station: 'dead',
+          dead_reason: markDeadReason,
+          dead_at: new Date().toISOString(),
+          dead_by: 'Ernest',
+          activity: {
+            type: 'status_change',
+            disposition: 'dead',
+            notes: `Marked dead from dialer — ${markDeadReason.replace(/_/g, ' ')}`,
+            agent: 'Ernest',
+            dead_reason: markDeadReason,
+          },
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error || 'Could not mark lead dead')
+      }
+      setShowMarkDead(false)
+      setMarkDeadReason('')
+      refreshActivities()
+      advance(true)
+    } catch (e) {
+      setMarkDeadError(e instanceof Error ? e.message : 'Could not mark lead dead')
+    } finally {
+      setMarkDeadBusy(false)
+    }
+  }, [currentLeadId, markDeadReason, advance, refreshActivities])
+
   const ownerName = useMemo(() => {
     const raw = currentProspect?.owner_1 || currentLead?.full_name || 'Unknown'
     return toProperCase(raw)
@@ -808,9 +892,6 @@ function DialerPageInner() {
       : delinquentYears
       ? `${delinquentYears} deceased tax list`
       : 'Dialer queue')
-  const activeCallSubject = queueState?.queueItem
-    ? `${queueState.queueItem.heirName} · ${formatPhone(queueState.queueItem.phone)}`
-    : ownerName
   const dialTimeLabel = queueState?.status === 'on_call'
     ? queueState.callDuration || '00:00'
     : queueState?.status === 'calling'
@@ -849,9 +930,9 @@ function DialerPageInner() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
-      {/* Session header */}
-      <div className="flex items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3 min-w-0">
+      {/* ── Session HUD (Mojo/CallTools-style command bar) ───────────────── */}
+      <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 mb-4 border-b border-[var(--ck-border)] bg-[var(--ck-surface)]/90 backdrop-blur supports-[backdrop-filter]:bg-[var(--ck-surface)]/75">
+        <div className="px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
           <button
             onClick={closeSession}
             className="shrink-0 w-10 h-10 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text-muted)] flex items-center justify-center transition-colors"
@@ -860,76 +941,106 @@ function DialerPageInner() {
           >
             <Icon name="close" size="text-xl" />
           </button>
+
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#E32E2E]">
-              Dialing session
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#E32E2E] leading-none">
+              {inferredQueueLabel}
             </p>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-[var(--ck-text)]">
-              <span>{currentIndex + 1} of {leadIds.length} leads</span>
-              <span className="hidden sm:inline text-[var(--ck-text-dim)]">·</span>
-              <span className="text-[#E32E2E]">{inferredQueueLabel}</span>
-              <span className="hidden sm:inline text-[var(--ck-text-dim)]">·</span>
-              <span className="max-w-[34rem] truncate">Calling: {activeCallSubject}</span>
-              <span className="hidden sm:inline text-[var(--ck-text-dim)]">·</span>
-              <span className="font-mono tabular-nums">{dialTimeLabel}</span>
-            </div>
-            {sessionCallerId && (
-              <p className="text-[11px] font-semibold text-[var(--ck-text-muted)]">
-                Calling from {formatPhone(sessionCallerId)}
-              </p>
-            )}
+            <p className="mt-1 text-sm font-black text-[var(--ck-text)] leading-none">
+              Lead {currentIndex + 1}<span className="text-[var(--ck-text-dim)] font-bold"> / {leadIds.length}</span>
+              {sessionCallerId && (
+                <span className="ml-2 text-[11px] font-semibold text-[var(--ck-text-muted)]">from {formatPhone(sessionCallerId)}</span>
+              )}
+            </p>
+          </div>
+
+          {/* Stat chips */}
+          <div className="hidden md:flex items-center gap-2 ml-1">
+            <HudStat icon="call" label="Dials" value={sessionDials} />
+            <HudStat icon="phone_in_talk" label="Contacts" value={sessionContacts} tone="emerald" />
+            {queueState?.queueLength ? (
+              <HudStat icon="diversity_3" label="Heir" value={`${queueState.queueIndex + 1}/${queueState.queueLength}`} />
+            ) : null}
+          </div>
+
+          <div className="flex-1" />
+
+          {/* Live dial state */}
+          <div className={`hidden sm:flex items-center gap-2 rounded-lg border px-3 py-1.5 ${
+            isCallingNow ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)]'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${isCallingNow ? 'bg-emerald-400 animate-pulse' : 'bg-[var(--ck-text-dim)]'}`} />
+            <span className={`text-[10px] font-black uppercase tracking-wider ${isCallingNow ? 'text-emerald-400' : 'text-[var(--ck-text-dim)]'}`}>
+              {queueState?.status === 'on_call' ? 'On call' : queueState?.status === 'calling' ? 'Dialing' : 'Idle'}
+            </span>
+            <span className="font-mono text-xs tabular-nums text-[var(--ck-text)]">{dialTimeLabel}</span>
+          </div>
+
+          {/* Mark lead dead */}
+          <button
+            onClick={() => { setMarkDeadReason(''); setMarkDeadError(null); setShowMarkDead(true) }}
+            disabled={!currentLeadId}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#E32E2E]/40 text-[#ff7777] hover:bg-[#E32E2E]/10 text-xs font-bold uppercase tracking-wider disabled:opacity-30 transition-colors"
+            title="Mark this lead dead (records why)"
+          >
+            <Icon name="cancel" size="text-sm" /> <span className="hidden lg:inline">Mark dead</span>
+          </button>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={back}
+              disabled={currentIndex === 0}
+              className="inline-flex items-center justify-center w-10 h-9 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Previous lead (K / ←)"
+              aria-label="Previous lead"
+            >
+              <Icon name="chevron_left" size="text-base" />
+            </button>
+            <button
+              onClick={() => advance()}
+              disabled={currentIndex >= leadIds.length - 1}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#E32E2E] hover:bg-[#C42626] text-white text-xs font-black uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Next lead (J / →)"
+            >
+              Next <Icon name="chevron_right" size="text-sm" />
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={back}
-            disabled={currentIndex === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] text-xs font-bold uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Previous lead (←)"
-          >
-            <Icon name="chevron_left" size="text-sm" /> Prev
-          </button>
-          <button
-            onClick={() => advance()}
-            disabled={currentIndex >= leadIds.length - 1}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] text-xs font-bold uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Next lead (→)"
-          >
-            Next <Icon name="chevron_right" size="text-sm" />
-          </button>
+        {/* Progress bar hugs the bottom of the HUD */}
+        <div className="h-1 bg-[var(--ck-surface-hi)]">
+          <div className="h-full bg-[#E32E2E] transition-all" style={{ width: `${Math.round(((currentIndex + 1) / Math.max(leadIds.length, 1)) * 100)}%` }} />
         </div>
       </div>
 
-      {/* Now Calling banner — sticks just below the session header */}
+      {/* ── Now Calling hero ─────────────────────────────────────────────── */}
       {queueState?.queueItem && (
         <div
-          className={`mb-4 rounded-xl border p-4 flex items-center justify-between gap-4 ${
-            isCallingNow ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-[#E32E2E]/10 border-[#E32E2E]/30'
+          className={`mb-5 rounded-2xl border p-5 sm:p-6 flex items-center justify-between gap-4 ${
+            isCallingNow ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-[#E32E2E]/10 border-[#E32E2E]/30'
           }`}
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <span
-              className={`shrink-0 w-2.5 h-2.5 rounded-full ${
-                isCallingNow ? 'bg-emerald-400 animate-pulse' : 'bg-[#E32E2E]'
-              }`}
-            />
+          <div className="flex items-center gap-4 min-w-0">
+            <span className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
+              isCallingNow ? 'bg-emerald-500/20 text-emerald-400' : 'bg-[#E32E2E]/20 text-[#ff7777]'
+            }`}>
+              <Icon name={queueState.status === 'on_call' ? 'phone_in_talk' : 'call'} size="text-2xl" className={isCallingNow ? 'animate-pulse' : ''} filled />
+            </span>
             <div className="min-w-0">
-              <p className={`text-[10px] font-black uppercase tracking-widest ${isCallingNow ? 'text-emerald-400' : 'text-[#E32E2E]'}`}>
-                {isCallingNow ? (queueState.status === 'on_call' ? 'On call now' : 'Dialing now') : 'Queued'}
+              <p className={`text-[10px] font-black uppercase tracking-widest ${isCallingNow ? 'text-emerald-400' : 'text-[#ff7777]'}`}>
+                {isCallingNow ? (queueState.status === 'on_call' ? 'On call now' : 'Dialing now') : 'Up next'}
               </p>
-              <p className="text-sm font-bold text-[var(--ck-text)] truncate">
+              <p className="text-xl font-black text-[var(--ck-text)] truncate leading-tight">
                 {queueState.queueItem.heirName}
-                <span className="text-[var(--ck-text-muted)] font-normal capitalize"> · {queueState.queueItem.relation}</span>
+                <span className="text-[var(--ck-text-muted)] font-semibold capitalize text-base"> · {queueState.queueItem.relation}</span>
               </p>
-              <p className="text-xs font-mono text-[var(--ck-text-muted)]">{formatPhone(queueState.queueItem.phone)}</p>
+              <p className="text-sm font-mono text-[var(--ck-text-muted)]">{formatPhone(queueState.queueItem.phone)}</p>
             </div>
           </div>
           <div className="shrink-0 text-right">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Heir</p>
-            <p className="text-sm font-bold text-[var(--ck-text)] tabular-nums">
-              {queueState.queueIndex + 1} / {queueState.queueLength}
-            </p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Talk time</p>
+            <p className="text-2xl font-black text-[var(--ck-text)] tabular-nums font-mono leading-tight">{dialTimeLabel}</p>
+            <p className="text-[11px] font-bold text-[var(--ck-text-muted)] mt-0.5">Heir {queueState.queueIndex + 1} of {queueState.queueLength}</p>
           </div>
         </div>
       )}
@@ -1244,6 +1355,71 @@ function DialerPageInner() {
           onClose={() => setSmsTarget(null)}
           onSent={() => { setSmsTarget(null); refreshActivities() }}
         />
+      )}
+
+      {/* Mark lead dead — captures the why, sets station=dead, advances. */}
+      {showMarkDead && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => !markDeadBusy && setShowMarkDead(false)}
+            className="absolute inset-0 bg-black/55 backdrop-blur-[6px]"
+          />
+          <div className="relative z-[1] w-full max-w-[440px] rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-[var(--ck-border)] px-5 py-4">
+              <span className="w-9 h-9 rounded-lg bg-[#E32E2E]/15 text-[#ff7777] flex items-center justify-center">
+                <Icon name="cancel" size="text-lg" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-black text-[var(--ck-text)] leading-tight">Mark lead dead</p>
+                <p className="text-xs text-[var(--ck-text-muted)] truncate">{ownerName} · {situsAddress || 'this property'}</p>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)] mb-2">
+                Why is it dead? <span className="text-[#ff7777]">Required</span>
+              </p>
+              <div className="grid grid-cols-1 gap-1.5 max-h-[280px] overflow-auto pr-1">
+                {DEAD_REASONS.map((reason) => {
+                  const picked = markDeadReason === reason.id
+                  return (
+                    <button
+                      key={reason.id}
+                      type="button"
+                      onClick={() => { setMarkDeadReason(reason.id); setMarkDeadError(null) }}
+                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-sm transition-colors border ${
+                        picked
+                          ? 'bg-[#E32E2E]/15 border-[#E32E2E]/45 text-[var(--ck-text)] font-semibold'
+                          : 'bg-[var(--ck-surface-elev)] border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] hover:border-[var(--ck-border-strong)]'
+                      }`}
+                    >
+                      <Icon name={picked ? 'radio_button_checked' : 'radio_button_unchecked'} size="text-base" className={picked ? 'text-[#E32E2E]' : 'text-[var(--ck-text-dim)]'} />
+                      {reason.label}
+                    </button>
+                  )
+                })}
+              </div>
+              {markDeadError && <p className="mt-3 text-xs font-bold text-[#ff7777]">{markDeadError}</p>}
+            </div>
+            <div className="grid grid-cols-2 gap-2 border-t border-[var(--ck-border)] px-5 py-4">
+              <button
+                onClick={() => setShowMarkDead(false)}
+                disabled={markDeadBusy}
+                className="rounded-lg border border-[var(--ck-border)] px-3 py-2.5 text-xs font-bold uppercase tracking-wider text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] hover:border-[var(--ck-border-strong)] transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={markLeadDead}
+                disabled={!markDeadReason || markDeadBusy}
+                className="rounded-lg bg-[#E32E2E] hover:bg-[#C42626] px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {markDeadBusy ? 'Saving…' : 'Mark dead & next'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -2620,6 +2796,18 @@ function SegmentedControl({ value, onChange }: { value: string; onChange: (value
             {option}
           </button>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function HudStat({ icon, label, value, tone = 'neutral' }: { icon: string; label: string; value: number | string; tone?: 'neutral' | 'emerald' }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2.5 py-1.5">
+      <Icon name={icon} size="text-sm" className={tone === 'emerald' ? 'text-emerald-400' : 'text-[var(--ck-text-dim)]'} />
+      <div className="leading-none">
+        <p className={`text-sm font-black tabular-nums ${tone === 'emerald' ? 'text-emerald-400' : 'text-[var(--ck-text)]'}`}>{value}</p>
+        <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)]">{label}</p>
       </div>
     </div>
   )

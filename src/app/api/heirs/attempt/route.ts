@@ -1,36 +1,72 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import {
+  normalizeDisposition,
+  isReachedDisposition,
+  isDeadDisposition,
+  isValidDeadReason,
+} from '@/lib/dialer-dispositions'
 
 // POST /api/heirs/attempt
-// body: { prospect_phone_id, disposition, notes?, lead_id?, agent?, duration? }
+// body: {
+//   prospect_phone_id, disposition, notes?, lead_id?, agent?, duration?,
+//   mark_as_lead?, verified?, dead_reason?
+// }
 //
 // Marks a single heir phone as attempted (denormalized fields on prospect_phones)
 // AND appends an immutable row to lead_activities for the call timeline.
+//
+// Two redesign behaviours live here:
+//   • Auto-verify — when the disposition means the agent actually reached the
+//     person, the number is flagged is_verified_contact (source 'auto'), unless
+//     a human previously set it manually (source 'manual' is never clobbered).
+//     `verified` (boolean) is an explicit manual override from the modal.
+//   • Dead lead — a 'dead' disposition rolls the WHOLE lead to station 'dead'
+//     and records dead_reason / dead_at / dead_by ("mark as dead + why").
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { prospect_phone_id, disposition, notes, lead_id, agent, duration, mark_as_lead } = body
+    const {
+      prospect_phone_id,
+      disposition: rawDisposition,
+      notes,
+      lead_id,
+      agent,
+      duration,
+      mark_as_lead,
+      verified,
+      dead_reason,
+    } = body
 
-    if (!prospect_phone_id || !disposition) {
+    if (!prospect_phone_id || !rawDisposition) {
       return NextResponse.json(
         { error: 'prospect_phone_id and disposition required' },
         { status: 400 },
       )
     }
 
-    // Pull phone + prospect context so the activity row has readable metadata.
+    const disposition = normalizeDisposition(rawDisposition) ?? String(rawDisposition)
+    const reached = isReachedDisposition(disposition)
+    const isDead = isDeadDisposition(disposition)
+    const deadReason = isValidDeadReason(dead_reason)
+      ? dead_reason
+      : (isDead && dead_reason ? String(dead_reason) : null)
+
+    // Pull phone + prospect context so the activity row has readable metadata,
+    // plus the current verification source so a manual choice is never undone.
     type PhoneWithProspect = {
       id: string
       phone: string
       contact_name: string | null
       relationship: string | null
       prospect_id: string
+      verified_source: string | null
       prospects: { lead_id: string | null; owner_1: string | null } | null
     }
 
     const { data: phoneRow, error: phErr } = await supabase
       .from('prospect_phones')
-      .select('id, phone, contact_name, relationship, prospect_id, prospects(lead_id, owner_1)')
+      .select('id, phone, contact_name, relationship, prospect_id, verified_source, prospects(lead_id, owner_1)')
       .eq('id', prospect_phone_id)
       .single<PhoneWithProspect>()
 
@@ -43,7 +79,32 @@ export async function POST(req: Request) {
 
     const now = new Date().toISOString()
 
-    // 1. Denormalized update — drives the ✓ in HeirsSection.
+    // Resolve the verification outcome for this phone.
+    // - explicit boolean `verified` → manual override (always wins)
+    // - otherwise auto-verify on a "reached" disposition, unless a human
+    //   previously set it ('manual').
+    let verificationPatch: Record<string, unknown> = {}
+    if (typeof verified === 'boolean') {
+      verificationPatch = {
+        is_verified_contact: verified,
+        verified_source: 'manual',
+        verified_at: verified ? now : null,
+        verified_by: verified ? (agent ?? null) : null,
+      }
+    } else if (reached && phoneRow.verified_source !== 'manual') {
+      verificationPatch = {
+        is_verified_contact: true,
+        verified_source: 'auto',
+        verified_at: now,
+        verified_by: agent ?? null,
+      }
+    }
+
+    const verificationResult = 'is_verified_contact' in verificationPatch
+      ? Boolean(verificationPatch.is_verified_contact)
+      : reached
+
+    // 1. Denormalized update — drives status + ✓ in HeirsSection.
     const { error: upErr } = await supabase
       .from('prospect_phones')
       .update({
@@ -51,6 +112,7 @@ export async function POST(req: Request) {
         last_disposition: disposition,
         last_attempt_at: now,
         last_attempt_by: agent ?? null,
+        ...verificationPatch,
       })
       .eq('id', prospect_phone_id)
 
@@ -77,8 +139,42 @@ export async function POST(req: Request) {
           heir_name: phoneRow.contact_name,
           heir_relation: phoneRow.relationship,
           mark_as_lead: Boolean(mark_as_lead),
+          verified: verificationResult,
+          dead_reason: deadReason,
         },
       })
+
+      // Dead lead — roll the whole property to station 'dead' with the why.
+      if (isDead) {
+        const { error: deadErr } = await supabase
+          .from('leads')
+          .update({
+            station: 'dead',
+            dead_reason: deadReason,
+            dead_at: now,
+            dead_by: agent ?? null,
+            updated_at: now,
+          })
+          .eq('id', resolvedLeadId)
+
+        if (deadErr) {
+          return NextResponse.json({ error: deadErr.message }, { status: 500 })
+        }
+
+        await supabase.from('lead_activities').insert({
+          lead_id: resolvedLeadId,
+          activity_type: 'status_change',
+          description: `Marked lead dead${deadReason ? ` — ${deadReason.replace(/_/g, ' ')}` : ''}`,
+          agent: agent ?? 'Ernest',
+          metadata: {
+            source: 'heir_dialer',
+            action: 'mark_dead',
+            station: 'dead',
+            dead_reason: deadReason,
+            notes: notes ?? null,
+          },
+        })
+      }
 
       if (mark_as_lead) {
         const contactName = phoneRow.contact_name || phoneRow.prospects?.owner_1 || 'Unknown seller'
@@ -112,7 +208,12 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      disposition,
+      verified: verificationResult,
+      dead: isDead,
+    })
   } catch (err) {
     console.error('[heirs/attempt] error', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
