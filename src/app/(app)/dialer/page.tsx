@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { HeirsSection } from '@/components/leads/heirs-section'
 import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
+import { CommsTimeline, CommsSummaryBar } from '@/components/leads/comms-timeline'
+import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
 import { createClient } from '@/lib/supabase/client'
 import { calculateTemperature } from '@/lib/lead-temperature'
 import { toProperCase, formatPhone } from '@/lib/format'
@@ -630,7 +632,7 @@ function DialerPageInner() {
       const [{ data: mRow }, { data: aRows }] = await Promise.all([
         supabase.from('manifests').select('manifest').eq('lead_id', currentLeadId).limit(1).maybeSingle(),
         supabase.from('lead_activities').select('id, activity_type, description, agent, metadata, created_at')
-          .eq('lead_id', currentLeadId).order('created_at', { ascending: false }).limit(20),
+          .eq('lead_id', currentLeadId).order('created_at', { ascending: false }).limit(50),
       ])
       setManifests((prev) => ({ ...prev, [currentLeadId!]: (mRow as { manifest: ManifestShape } | null)?.manifest ?? null }))
       setActivities((aRows as Activity[] | null) ?? [])
@@ -646,7 +648,7 @@ function DialerPageInner() {
       .select('id, activity_type, description, agent, metadata, created_at')
       .eq('lead_id', currentLeadId)
       .order('created_at', { ascending: false })
-      .limit(20)
+      .limit(50)
     setActivities((data as Activity[] | null) ?? [])
   }, [currentLeadId])
 
@@ -892,6 +894,9 @@ function DialerPageInner() {
       : delinquentYears
       ? `${delinquentYears} deceased tax list`
       : 'Dialer queue')
+  const commsEvents = useMemo(() => buildCommsTimeline(activities), [activities])
+  const commsSummary = useMemo(() => summarizeComms(commsEvents), [commsEvents])
+
   const dialTimeLabel = queueState?.status === 'on_call'
     ? queueState.callDuration || '00:00'
     : queueState?.status === 'calling'
@@ -1159,7 +1164,7 @@ function DialerPageInner() {
                       : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'
                   }`}
                 >
-                  Activity
+                  Communications
                 </button>
                 <button
                   type="button"
@@ -1174,48 +1179,16 @@ function DialerPageInner() {
                 </button>
               </div>
               <span className="text-[10px] text-[var(--ck-text-dim)]">
-                {leftTab === 'activity' ? `${activities.length} recent` : `${recentCalls.length} recent`}
+                {leftTab === 'activity' ? `${commsEvents.length} touches` : `${recentCalls.length} recent`}
               </span>
             </div>
-            {leftTab === 'activity' && activities.length === 0 ? (
-              <p className="text-xs text-[var(--ck-text-dim)] italic py-4 text-center">No activity yet on this lead.</p>
-            ) : null}
             {leftTab === 'activity' ? (
-              <ul className="space-y-2.5">
-                {activities.map((a) => {
-                  const md = (a.metadata ?? {}) as {
-                    heir_name?: string
-                    heir_relation?: string
-                    disposition?: string
-                    direction?: string
-                    duration?: number
-                  }
-                  return (
-                    <li key={a.id} className="flex items-start gap-2.5">
-                      <span className="shrink-0 w-6 h-6 rounded-md bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] flex items-center justify-center text-[var(--ck-text-muted)] mt-0.5">
-                        <Icon name={activityIcon(a.activity_type, a.metadata)} size="text-sm" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs text-[var(--ck-text)] leading-snug">
-                          {a.description || a.activity_type.replace(/_/g, ' ')}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-[var(--ck-text-dim)]">{formatActivityTime(a.created_at)}</span>
-                          {md.heir_relation && (
-                            <span className="text-[10px] uppercase tracking-wider text-[var(--ck-text-dim)]">· {md.heir_relation}</span>
-                          )}
-                          {md.disposition && (
-                            <span className="text-[10px] uppercase tracking-wider text-emerald-400">· {md.disposition.replace(/_/g, ' ')}</span>
-                          )}
-                          {typeof md.duration === 'number' && md.duration > 0 && (
-                            <span className="text-[10px] text-[var(--ck-text-dim)]">· {md.duration}s</span>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
+              <div className="space-y-3">
+                <CommsSummaryBar summary={commsSummary} />
+                <div className="border-t border-[var(--ck-border)] pt-3">
+                  <CommsTimeline events={commsEvents} emptyHint="No calls, texts, or emails logged for this lead yet." />
+                </div>
+              </div>
             ) : recentCalls.length === 0 ? (
               <p className="text-xs text-[var(--ck-text-dim)] italic py-4 text-center">No recent calls logged yet.</p>
             ) : (
