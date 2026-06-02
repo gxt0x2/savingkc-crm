@@ -339,6 +339,9 @@ describe('ppc conversion exporter', () => {
       markFailed: vi.fn(),
     }
     const fetchMock = vi.fn(async () => new Response('ok', { status: 200 }))
+    const notifier = {
+      notifyQualifiedLeadExport: vi.fn(),
+    }
 
     const result = await runPpcConversionExport(
       {
@@ -347,12 +350,13 @@ describe('ppc conversion exporter', () => {
           PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
         },
       },
-      { store, fetch: fetchMock as unknown as typeof fetch },
+      { store, fetch: fetchMock as unknown as typeof fetch, notifier },
     )
 
     expect(result.sent).toBe(1)
     expect(store.markSent).toHaveBeenCalledOnce()
     expect(fetchMock).toHaveBeenCalledOnce()
+    expect(notifier.notifyQualifiedLeadExport).not.toHaveBeenCalled()
     const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
     const [url, init] = calls[0]
     expect(String(url)).toContain('https://gtm.savingkc.com/data')
@@ -365,6 +369,80 @@ describe('ppc conversion exporter', () => {
       currency: 'USD',
       gclid: 'test-gclid',
     })
+  })
+
+  it('notifies Ernest after a real qualified lead is sent to Google Ads', async () => {
+    const identifiers = [
+      {
+        userIdentifierSource: 'FIRST_PARTY' as const,
+        hashedEmail: 'a'.repeat(64),
+      },
+    ]
+    const row = makeRow({
+      payload: {
+        form_status: 'qualified',
+        google_ads_value_basis: 'factual_stage_conversion',
+        user_identifiers: identifiers,
+      },
+    })
+    const now = new Date('2026-05-21T13:00:00.000Z')
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'access-token' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [{}] }), { status: 200 }))
+    const notifier = {
+      notifyQualifiedLeadExport: vi.fn(async () => ({
+        attempted: true,
+        success: true,
+        toLast4: '2552',
+        hasUserIdentifiers: true,
+        sentAt: now.toISOString(),
+      })),
+    }
+
+    const result = await runPpcConversionExport(
+      {
+        now,
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads',
+          GOOGLE_ADS_CUSTOMER_ID: '646966429',
+          GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
+          GOOGLE_ADS_CLIENT_ID: 'client-id',
+          GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
+          GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
+          GOOGLE_ADS_CONVERSION_ACTION_QUALIFIED_LEAD: '333',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch, notifier },
+    )
+
+    expect(result.sent).toBe(1)
+    expect(notifier.notifyQualifiedLeadExport).toHaveBeenCalledWith(
+      row,
+      expect.arrayContaining([
+        expect.objectContaining({ destination: 'google_ads', status: 'sent' }),
+      ]),
+      now,
+    )
+    expect(store.markSent).toHaveBeenCalledWith(
+      row,
+      expect.objectContaining({
+        qualified_lead_sms_alert: expect.objectContaining({
+          attempted: true,
+          success: true,
+          hasUserIdentifiers: true,
+          toLast4: '2552',
+        }),
+      }),
+      now,
+    )
   })
 
   it('sends property tax campaign context to Stape', async () => {
@@ -444,6 +522,9 @@ describe('ppc conversion exporter', () => {
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'access-token' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ results: [{}] }), { status: 200 }))
+    const notifier = {
+      notifyQualifiedLeadExport: vi.fn(),
+    }
 
     const result = await runPpcConversionExport(
       {
@@ -459,7 +540,7 @@ describe('ppc conversion exporter', () => {
           GOOGLE_ADS_CONVERSION_ACTION_QUALIFIED_LEAD: '333',
         },
       },
-      { store, fetch: fetchMock as unknown as typeof fetch },
+      { store, fetch: fetchMock as unknown as typeof fetch, notifier },
     )
 
     expect(result).toMatchObject({
@@ -475,6 +556,7 @@ describe('ppc conversion exporter', () => {
     expect(store.markSent).not.toHaveBeenCalled()
     expect(store.markSkipped).not.toHaveBeenCalled()
     expect(store.markFailed).not.toHaveBeenCalled()
+    expect(notifier.notifyQualifiedLeadExport).not.toHaveBeenCalled()
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const googleCall = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
