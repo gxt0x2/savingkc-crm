@@ -25,6 +25,7 @@ export type PpcMicroEvent =
   | 'condition_selected'
   | 'auction_status_selected'
   | 'address_selected'
+  | 'contact_field_started'
   | 'form_step_completed'
   | 'form_error'
   | 'step_3_field_completed'

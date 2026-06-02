@@ -142,6 +142,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   const stage3AutosavedKeyRef = useRef<string | null>(null)
   const addressCaptureKeyRef = useRef<string | null>(null)
   const potentialLeadKeyRef = useRef<string | null>(null)
+  const contactFieldTrackedRef = useRef<Set<string>>(new Set())
   const viewedSectionsRef = useRef<Set<string>>(new Set())
   const scrollDepthsRef = useRef<Set<number>>(new Set())
 
@@ -650,6 +651,34 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     }
   }, [bookingOpen])
 
+  const trackContactFieldStarted = <K extends keyof QuizState>(key: K, value: QuizState[K]) => {
+    if (key !== 'address' && key !== 'name' && key !== 'phone' && key !== 'email') return
+    if (contactFieldTrackedRef.current.has(key)) return
+
+    const cleaned = String(value || '').trim()
+    const enoughSignal = key === 'phone'
+      ? cleaned.replace(/\D/g, '').length >= 3
+      : key === 'email'
+        ? cleaned.length >= 3
+        : cleaned.length >= 2
+    if (!enoughSignal) return
+
+    contactFieldTrackedRef.current.add(key)
+    firePpcTrackingEvent('contact_field_started', {
+      form_step: finalStep,
+      field_name: key,
+      field_group: 'contact',
+      has_address: key === 'address' || Boolean(state.address.trim()),
+      has_name: key === 'name' || Boolean(state.name.trim()),
+      has_phone: key === 'phone' || state.phone.replace(/\D/g, '').length >= 3,
+      has_email: key === 'email' || Boolean(state.email.trim()),
+      situation: state.situation || undefined,
+      timeline: state.timeline || undefined,
+      condition: state.condition || undefined,
+      auctionStatus: state.auctionStatus || undefined,
+    })
+  }
+
   const select = <K extends keyof QuizState>(key: K, value: QuizState[K]) => {
     const previous = state[key]
     setState((s) => ({ ...s, [key]: value }))
@@ -683,6 +712,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         auctionStatus: value,
       })
     }
+    trackContactFieldStarted(key, value)
   }
 
   const trackCtaClick = (clickLocation: string, ctaLabel: string, ctaTarget = 'quiz') => {
