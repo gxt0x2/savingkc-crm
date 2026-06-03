@@ -163,7 +163,7 @@ interface OptionalDialingFilters {
   attemptsFrom: string
   attemptsTo: string
   notDialed: 'none' | 'never' | '7d' | '14d' | '30d'
-  notContactedDays: 'none' | '1' | '3' | '7' | '14' | '30'
+  notContactedDays: 'none' | 'never' | '1' | '3' | '7' | '14' | '30'
   createDateFrom: string
   createDateTo: string
   statusChangeFrom: string
@@ -260,7 +260,7 @@ function normalizeOptionalFilters(value: Partial<OptionalDialingFilters> | null 
     notDialed: value?.notDialed === 'never' || value?.notDialed === '7d' || value?.notDialed === '14d' || value?.notDialed === '30d'
       ? value.notDialed
       : 'none',
-    notContactedDays: value?.notContactedDays === '1' || value?.notContactedDays === '3' || value?.notContactedDays === '7' || value?.notContactedDays === '14' || value?.notContactedDays === '30'
+    notContactedDays: value?.notContactedDays === 'never' || value?.notContactedDays === '1' || value?.notContactedDays === '3' || value?.notContactedDays === '7' || value?.notContactedDays === '14' || value?.notContactedDays === '30'
       ? value.notContactedDays
       : 'none',
     createDateFrom: typeof value?.createDateFrom === 'string' ? value.createDateFrom : '',
@@ -1642,10 +1642,14 @@ function DialerHome() {
         }
 
         if (optionalFilters.notContactedDays !== 'none') {
-          const minDays = Number(optionalFilters.notContactedDays)
-          if (Number.isFinite(minDays)) {
-            const lastContact = lastContactByLeadId.get(lead.id)
-            if (lastContact) {
+          const lastContact = lastContactByLeadId.get(lead.id)
+          if (optionalFilters.notContactedDays === 'never') {
+            // Keep only leads with no contact activity of any kind (call, SMS,
+            // or voicemail) — true "never contacted".
+            if (lastContact) return false
+          } else {
+            const minDays = Number(optionalFilters.notContactedDays)
+            if (Number.isFinite(minDays) && lastContact) {
               const contactDays = daysSince(lastContact)
               if (contactDays != null && contactDays < minDays) return false
             }
@@ -2154,6 +2158,9 @@ function DialerHome() {
                       Clear filters
                     </button>
                   )}
+                  <button onClick={openOptionalFilterModal} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]">
+                    <Icon name="tune" size="text-base" /> More filters{optionalFilterCount > 0 ? ` (${optionalFilterCount})` : ''}
+                  </button>
                 </div>
               </div>
             )}
@@ -2426,7 +2433,7 @@ function DialerHome() {
                 aria-expanded={showWizardAdvanced}
                 className="mt-3 flex w-full items-center justify-between px-1 text-left text-[11px] font-semibold text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
               >
-                <span>Call settings{useCallHammer ? ' · hammer' : ''} · {ringCount} rings{optionalFilterCount > 0 ? ` · ${optionalFilterCount} filters` : ''}</span>
+                <span>Call settings{useCallHammer ? ' · hammer' : ''} · {ringCount} rings</span>
                 <Icon name={showWizardAdvanced ? 'expand_less' : 'expand_more'} size="text-base" />
               </button>
               {showWizardAdvanced && (
@@ -2464,20 +2471,12 @@ function DialerHome() {
                     <DarkSelect label="Voicemail Drop" value={voicemailDrop} onChange={setVoicemailDrop} options={['none', 'default']} />
                     <DarkSelect label="Callback Message" value={callbackDrop} onChange={setCallbackDrop} options={['none', 'default']} />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setAutoSendEmail((current) => !current)}
-                      className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${autoSendEmail ? 'bg-[#E32E2E] text-white' : 'border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
-                    >
-                      {autoSendEmail ? 'Auto Email On' : 'Auto Send Email'}
-                    </button>
-                    <button
-                      onClick={openOptionalFilterModal}
-                      className="rounded-xl border border-[var(--ck-border)] px-3 py-2 text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]"
-                    >
-                      Dialing Filters{optionalFilterCount > 0 ? ` (${optionalFilterCount})` : ''}
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setAutoSendEmail((current) => !current)}
+                    className={`w-full rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${autoSendEmail ? 'bg-[#E32E2E] text-white' : 'border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                  >
+                    {autoSendEmail ? 'Auto Email On' : 'Auto Send Email'}
+                  </button>
                 </div>
               )}
             </div>
@@ -2551,7 +2550,10 @@ function DialerHome() {
           />
           <div className="relative z-[1] w-full max-w-[640px] rounded-2xl border border-[#D4D4D8] bg-white shadow-[0_24px_64px_rgba(0,0,0,0.35)]">
             <div className="flex items-center justify-between gap-3 border-b border-[#E4E4E7] px-5 py-4">
-              <h3 className="text-2xl font-semibold tracking-[-0.02em] text-[#111111]">Optional Dialing Filters</h3>
+              <div>
+                <h3 className="text-2xl font-semibold tracking-[-0.02em] text-[#111111]">Advanced Filters</h3>
+                <p className="mt-0.5 text-xs text-[#71717A]">Refine who&apos;s in this list — applies to both calling and texting.</p>
+              </div>
               <button
                 onClick={() => setShowOptionalFilters(false)}
                 className="h-9 w-9 rounded-lg border border-[#E4E4E7] text-[#71717A] transition-colors hover:bg-[#F4F4F5] hover:text-[#27272A]"
@@ -2602,6 +2604,7 @@ function DialerHome() {
                 onChange={(value) => setOptionalFiltersDraft((current) => ({ ...current, notContactedDays: value as OptionalDialingFilters['notContactedDays'] }))}
                 options={[
                   { value: 'none', label: '-- None --' },
+                  { value: 'never', label: 'Never (any channel)' },
                   { value: '1', label: '1 Day' },
                   { value: '3', label: '3 Days' },
                   { value: '7', label: '7 Days' },

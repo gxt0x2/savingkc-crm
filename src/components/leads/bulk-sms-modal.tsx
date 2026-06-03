@@ -19,12 +19,30 @@ interface BulkSmsModalProps {
   fromPhone?: string
 }
 
+/** Combine per-batch summaries into one running total for the whole audience. */
+function mergeBulkSummary(a: BulkSmsSummary | null, b: BulkSmsSummary): BulkSmsSummary {
+  if (!a) return b
+  return {
+    total: a.total + b.total,
+    sent: a.sent + b.sent,
+    skipped: a.skipped + b.skipped,
+    failed: a.failed + b.failed,
+    breakdown: {
+      opted_out: a.breakdown.opted_out + b.breakdown.opted_out,
+      duplicate: a.breakdown.duplicate + b.breakdown.duplicate,
+      no_phone: a.breakdown.no_phone + b.breakdown.no_phone,
+      not_found: a.breakdown.not_found + b.breakdown.not_found,
+    },
+  }
+}
+
 export function BulkSmsModal({ open, onClose, leadIds, agent, fromPhone }: BulkSmsModalProps) {
   const [templates, setTemplates] = useState<SmsTemplate[]>([])
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [summary, setSummary] = useState<BulkSmsSummary | null>(null)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -38,29 +56,42 @@ export function BulkSmsModal({ open, onClose, leadIds, agent, fromPhone }: BulkS
 
   if (!open) return null
 
-  const targets = leadIds.slice(0, BULK_SMS_MAX)
-  const overflow = leadIds.length - targets.length
+  const ids = Array.from(new Set(leadIds))
+  const total = ids.length
+  const batches = Math.max(1, Math.ceil(total / BULK_SMS_MAX))
 
   async function send() {
-    if (!message.trim() || sending) return
+    if (!message.trim() || sending || total === 0) return
     setSending(true)
     setError(null)
+    setProgress({ done: 0, total })
+    // Send the whole audience in sequential batches of BULK_SMS_MAX — the API
+    // rejects more than that per request. Stop on the first hard error (e.g.
+    // outside texting hours) but keep whatever already went out.
+    let agg: BulkSmsSummary | null = null
     try {
-      const res = await fetch('/api/sms/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadIds: targets, body: message.trim(), agent, fromPhone }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error || 'Failed to send')
-      } else {
-        setSummary(data.summary as BulkSmsSummary)
+      for (let i = 0; i < total; i += BULK_SMS_MAX) {
+        const chunk = ids.slice(i, i + BULK_SMS_MAX)
+        const res = await fetch('/api/sms/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leadIds: chunk, body: message.trim(), agent, fromPhone }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          setError(data.error || 'Failed to send')
+          break
+        }
+        agg = mergeBulkSummary(agg, data.summary as BulkSmsSummary)
+        setProgress({ done: Math.min(i + BULK_SMS_MAX, total), total })
       }
+      if (agg) setSummary(agg)
     } catch {
       setError('Network error — could not send.')
+      if (agg) setSummary(agg)
     } finally {
       setSending(false)
+      setProgress(null)
     }
   }
 
@@ -73,7 +104,7 @@ export function BulkSmsModal({ open, onClose, leadIds, agent, fromPhone }: BulkS
             <div className="flex items-center gap-2">
               <Icon name="forum" size="text-lg" className="text-[#ff7777]" />
               <h2 className="text-sm font-black uppercase tracking-wider text-[var(--ck-text)]">
-                Text {targets.length.toLocaleString()} {targets.length === 1 ? 'lead' : 'leads'}
+                Text {total.toLocaleString()} {total === 1 ? 'lead' : 'leads'}
               </h2>
             </div>
             <button onClick={onClose} className="text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]"><Icon name="close" size="text-lg" /></button>
@@ -93,6 +124,7 @@ export function BulkSmsModal({ open, onClose, leadIds, agent, fromPhone }: BulkS
                 {summary.failed > 0 && <li className="text-[#ff7777]">· {summary.failed} failed to send</li>}
               </ul>
               <p className="text-[11px] text-[var(--ck-text-dim)]">Each message is logged to the recipient&apos;s Communication Hub.</p>
+              {error && <p className="text-xs font-bold text-[#ff7777]">Stopped early — {error}</p>}
               <button onClick={onClose} className="w-full rounded-lg bg-[#E32E2E] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white hover:bg-[#C42626]">Done</button>
             </div>
           ) : (
@@ -126,9 +158,9 @@ export function BulkSmsModal({ open, onClose, leadIds, agent, fromPhone }: BulkS
                 </div>
               </label>
 
-              {overflow > 0 && (
-                <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
-                  {leadIds.length.toLocaleString()} selected — only the first {BULK_SMS_MAX} will send in this batch.
+              {total > BULK_SMS_MAX && (
+                <p className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-[11px] text-[var(--ck-text-muted)]">
+                  {total.toLocaleString()} recipients — sends automatically in {batches} batches of up to {BULK_SMS_MAX}. Keep this window open until it finishes.
                 </p>
               )}
 
@@ -142,11 +174,11 @@ export function BulkSmsModal({ open, onClose, leadIds, agent, fromPhone }: BulkS
                 <button onClick={onClose} className="flex-1 rounded-lg border border-[var(--ck-border)] px-4 py-2.5 text-xs font-bold text-[var(--ck-text-muted)] hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">Cancel</button>
                 <button
                   onClick={send}
-                  disabled={!message.trim() || sending || targets.length === 0}
+                  disabled={!message.trim() || sending || total === 0}
                   className="flex-[2] inline-flex items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Icon name="send" size="text-sm" />
-                  {sending ? 'Sending…' : `Send to ${targets.length.toLocaleString()}`}
+                  {sending ? (progress ? `Sending… ${progress.done.toLocaleString()}/${progress.total.toLocaleString()}` : 'Sending…') : `Send to ${total.toLocaleString()}`}
                 </button>
               </div>
             </div>
