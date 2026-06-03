@@ -15,6 +15,8 @@ import {
 } from '@/lib/ppc/tracking-events'
 import { notifyNewLead } from '@/lib/ari-briefing'
 import { regenerateBriefing } from '@/lib/briefing-regen'
+import { isInternalTestPhone } from '@/lib/internal-test-phones'
+import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
@@ -160,7 +162,7 @@ function pagePathFromAttribution(attribution: z.infer<typeof AttributionSchema>)
 }
 
 function isFakePhone(value: string | null | undefined): boolean {
-  return Boolean(value && FAKE_PHONE_RE.test(value.replace(/\D/g, '')))
+  return Boolean(value && (FAKE_PHONE_RE.test(value.replace(/\D/g, '')) || isInternalTestPhone(value)))
 }
 
 function isSmokeMarkedSubmit(input: {
@@ -336,10 +338,7 @@ async function triggerPpcLeadSideEffects(params: {
   const publicLeadUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}${leadUrl}`
   const addressPart = params.address ? ` at ${params.address}` : ''
   const alertBody = `New PPC lead: ${params.fullName}${addressPart}. Phone: ${params.phone}. ${publicLeadUrl}`
-  const targets = [
-    { name: 'Casey', phone: process.env.CASEY_PHONE },
-    { name: 'Ernest', phone: process.env.ERNEST_PHONE },
-  ].filter((target): target is { name: string; phone: string } => Boolean(target.phone))
+  const targets = getLeadAlertRecipients()
 
   const smsResults = process.env.TWILIO_PHONE_NUMBER && targets.length > 0
     ? await Promise.allSettled(
@@ -372,6 +371,11 @@ async function triggerPpcLeadSideEffects(params: {
     metadata: {
       direction: 'outbound_alert',
       to_agents: targets.map((target) => target.name),
+      to_agent_phones: targets.map((target) => target.phone),
+      alert_schedule: targets.map((target) => ({
+        name: target.name,
+        schedule: target.schedule,
+      })),
       trigger: 'ppc_lead_alert',
       delivery_status: smsResults.map((entry) => {
         if (entry.status === 'rejected') {
@@ -467,7 +471,8 @@ export async function POST(req: NextRequest) {
   const hasPhone = Boolean(phoneE164)
   const hasEmail = Boolean(email)
   const hasSubmitFields = Boolean(address && fullName && phoneE164 && email)
-  const suppressLeadSideEffects = intent === 'submit' && isSmokeMarkedSubmit({
+  const isInternalTestContact = isInternalTestPhone(phoneE164)
+  const suppressSmokeLeadSideEffects = intent === 'submit' && isSmokeMarkedSubmit({
     fullName,
     email,
     phone: phoneE164,
@@ -476,6 +481,7 @@ export async function POST(req: NextRequest) {
     visitorId: parsed.visitorId,
     attribution,
   })
+  const isTestLead = requestContext.isInternal || isInternalTestContact || suppressSmokeLeadSideEffects
 
   if (intent === 'submit' && !hasSubmitFields) {
     return NextResponse.json({ ok: false, error: 'Missing required contact fields' }, { status: 400, headers: corsHeaders })
@@ -487,6 +493,51 @@ export async function POST(req: NextRequest) {
 
   if (intent === 'potential' && (!address || (!phoneE164 && !email))) {
     return NextResponse.json({ ok: true, deferred: true }, { headers: corsHeaders })
+  }
+
+  if (isInternalTestContact) {
+    const eventName = intent === 'autosave'
+      ? 'lead_stage3_completed'
+      : intent === 'submit'
+        ? 'lead_submitted'
+        : 'ppc_potential_lead_created'
+
+    await recordPpcTrackingEvent({
+      eventId: `server:internal_test_contact:${eventName}:${parsed.sessionId ?? parsed.visitorId ?? 'anon'}:${shortHash(`${phoneE164}|${address ?? ''}|${intent}`)}`,
+      eventName,
+      eventCategory: intent === 'submit' || intent === 'autosave' ? 'conversion' : 'form',
+      sessionId: parsed.sessionId,
+      visitorId: parsed.visitorId,
+      pagePath: landingPagePath,
+      formStep,
+      formStatus: intent === 'submit' ? 'internal_test_submit_suppressed' : 'internal_test_contact_suppressed',
+      situation,
+      timeline,
+      condition,
+      smsConsent,
+      isTest: true,
+      attribution,
+      payload: withRequestPayload({
+        form_submitted: intent === 'submit',
+        source: 'ppc_internal_test_contact',
+        suppressed_reason: 'internal_test_phone',
+        has_address: Boolean(address),
+        has_name: hasName,
+        has_phone: hasPhone,
+        has_email: hasEmail,
+        address_source: addressSource,
+        auction_status: auctionStatus ?? null,
+      }),
+    })
+
+    return NextResponse.json({
+      ok: true,
+      test: true,
+      notificationsSkipped: true,
+      conversionSuppressed: true,
+      manifestId: null,
+      leadId: null,
+    }, { headers: corsHeaders })
   }
 
   try {
@@ -666,7 +717,7 @@ export async function POST(req: NextRequest) {
         condition,
         phoneNumber: phoneE164 ?? undefined,
         smsConsent,
-        isTest: requestContext.isInternal,
+        isTest: isTestLead,
         attribution,
         payload: withRequestPayload({
           source: 'ppc_form_potential',
@@ -727,7 +778,7 @@ export async function POST(req: NextRequest) {
         timeline,
         condition,
         smsConsent,
-        isTest: requestContext.isInternal,
+        isTest: isTestLead,
         attribution,
         payload: withRequestPayload({
           form_submitted: false,
@@ -768,30 +819,32 @@ export async function POST(req: NextRequest) {
       requestPayload,
     })
 
-    await enqueuePpcConversion({
-      eventName: 'lead_submitted',
-      eventCategory: 'form',
-      leadId: resolvedLeadId,
-      manifestId,
-      activityId,
-      dedupeKey: `lead:${resolvedLeadId}:lead_submitted`,
-      optimizationRole: 'primary',
-      conversionValue: 25,
-      attribution,
-      payload: withRequestPayload({
-        form_status: 'submitted',
-        form_submitted: true,
-        step: formStep,
-        has_address: Boolean(address),
-        address_source: addressSource,
-        situation_raw: situation ?? null,
-        timeline_raw: timeline ?? null,
-        condition_raw: condition ?? null,
-        auction_status: auctionStatus ?? null,
-        sms_consent: smsConsent,
-        user_identifiers: buildUserIdentifiers({ email, phone: phoneE164 }),
-      }),
-    })
+    if (!isTestLead) {
+      await enqueuePpcConversion({
+        eventName: 'lead_submitted',
+        eventCategory: 'form',
+        leadId: resolvedLeadId,
+        manifestId,
+        activityId,
+        dedupeKey: `lead:${resolvedLeadId}:lead_submitted`,
+        optimizationRole: 'primary',
+        conversionValue: 25,
+        attribution,
+        payload: withRequestPayload({
+          form_status: 'submitted',
+          form_submitted: true,
+          step: formStep,
+          has_address: Boolean(address),
+          address_source: addressSource,
+          situation_raw: situation ?? null,
+          timeline_raw: timeline ?? null,
+          condition_raw: condition ?? null,
+          auction_status: auctionStatus ?? null,
+          sms_consent: smsConsent,
+          user_identifiers: buildUserIdentifiers({ email, phone: phoneE164 }),
+        }),
+      })
+    }
 
     await recordPpcTrackingEvent({
       eventId: `server:lead_submitted:${resolvedLeadId}`,
@@ -809,7 +862,7 @@ export async function POST(req: NextRequest) {
       timeline,
       condition,
       smsConsent,
-      isTest: requestContext.isInternal,
+      isTest: isTestLead,
       attribution,
       payload: withRequestPayload({
         form_submitted: true,
@@ -818,11 +871,13 @@ export async function POST(req: NextRequest) {
         address_source: addressSource,
         auction_status: auctionStatus ?? null,
         source: 'ppc_form_submit',
-        side_effects_suppressed: suppressLeadSideEffects,
+        side_effects_suppressed: isTestLead,
+        conversion_suppressed: isTestLead,
+        suppressed_reason: isTestLead ? 'internal_or_test_traffic' : null,
       }),
     })
 
-    if (!suppressLeadSideEffects) {
+    if (!isTestLead) {
       triggerPpcLeadSideEffects({
         leadId: resolvedLeadId,
         fullName: fullName ?? 'PPC Lead',
@@ -835,7 +890,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       manifestId,
       leadId: resolvedLeadId,
-      ...(suppressLeadSideEffects ? { notificationsSkipped: true } : {}),
+      ...(isTestLead ? { notificationsSkipped: true, conversionSuppressed: true } : {}),
     }, { headers: corsHeaders })
   } catch (err) {
     console.error('[ppc/lead] unexpected error — queuing offline', err)

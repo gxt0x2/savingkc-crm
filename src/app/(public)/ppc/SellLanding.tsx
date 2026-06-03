@@ -604,20 +604,22 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
       })
       const json = await r.json()
       if (!r.ok || !json?.ok) throw new Error(json?.error ?? 'Submit failed')
-      fireConversion('lead_submitted', {
-        form_step: finalStep,
-        form_status: 'submitted',
-        form_submitted: true,
-        stage3_autosaved: Boolean(manifestId || json.manifestId),
-        has_address: true,
-        has_name: true,
-        has_phone: true,
-        has_email: true,
-        situation: state.situation || undefined,
-        timeline: state.timeline || undefined,
-        condition: state.condition || undefined,
-        auctionStatus: state.auctionStatus || undefined,
-      })
+      if (!json.conversionSuppressed && !json.notificationsSkipped && !json.test) {
+        fireConversion('lead_submitted', {
+          form_step: finalStep,
+          form_status: 'submitted',
+          form_submitted: true,
+          stage3_autosaved: Boolean(manifestId || json.manifestId),
+          has_address: true,
+          has_name: true,
+          has_phone: true,
+          has_email: true,
+          situation: state.situation || undefined,
+          timeline: state.timeline || undefined,
+          condition: state.condition || undefined,
+          auctionStatus: state.auctionStatus || undefined,
+        })
+      }
       setLeadId(json.leadId ?? null)
       setManifestId(json.manifestId ?? null)
       setSubmitted(true)

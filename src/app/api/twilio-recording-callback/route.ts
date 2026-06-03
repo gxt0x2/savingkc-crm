@@ -4,6 +4,7 @@ import twilio from 'twilio'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
+import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { supabase } from '@/lib/supabase-lazy'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { syncCoOwners } from '@/lib/co-owners'
@@ -38,6 +39,7 @@ type RecordingCallbackMeta = {
   tracking_number?: string
   landing_page?: string
   phone_profile?: string
+  is_test?: boolean
 }
 
 type RecordingContext = {
@@ -51,6 +53,7 @@ type RecordingContext = {
   tracking_number?: string
   landing_page?: string
   phone_profile?: string
+  is_test?: boolean
 }
 
 type JsonObject = Record<string, unknown>
@@ -206,6 +209,8 @@ export async function POST(req: Request) {
     const hintedLeadId = url.searchParams.get('leadId') || ''
     const sourceHint = url.searchParams.get('source') || ''
     const calledNumber = url.searchParams.get('calledNumber') || to || ''
+    const externalPhone = from?.startsWith('client:') ? to : from
+    const isInternalTestRecording = isInternalTestPhone(externalPhone)
     const profile = getGoogleAdsPhoneProfile(sourceHint || calledNumber)
     const isGoogleAdsRecording = (
       sourceHint === GOOGLE_ADS_PHONE_SOURCE ||
@@ -217,6 +222,7 @@ export async function POST(req: Request) {
       from,
       to,
       calledNumber,
+      is_test: isInternalTestRecording,
       ...(isGoogleAdsRecording && {
         traffic_source: 'google_ads',
         campaign: profile.campaign || GOOGLE_ADS_CAMPAIGN,
@@ -238,6 +244,11 @@ export async function POST(req: Request) {
     if (recordingDuration < 5) {
       console.log(`[recording-callback] Skipping short recording (${recordingDuration}s)`)
       return NextResponse.json({ ok: true, skipped: 'too_short' })
+    }
+
+    if (isInternalTestRecording) {
+      console.log(`[recording-callback] Skipping internal test phone recording (${externalPhone || 'unknown'})`)
+      return NextResponse.json({ ok: true, skipped: 'internal_test_phone' })
     }
 
     // Match the recorded call back to a lead by the external phone number.
@@ -285,7 +296,7 @@ export async function POST(req: Request) {
 
     console.log(`[recording-callback] Processing recording for lead ${leadId}`)
 
-    if (isGoogleAdsRecording && from) {
+    if (isGoogleAdsRecording && from && !isInternalTestRecording) {
       await markLeadAsGoogleAdsPhoneLead(leadId, from, null, calledNumber || sourceHint).catch((error) => {
         console.error('[recording-callback] Google Ads attribution refresh failed:', error)
       })

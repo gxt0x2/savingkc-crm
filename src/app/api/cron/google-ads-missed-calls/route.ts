@@ -21,9 +21,10 @@ async function handle(req: NextRequest) {
   const url = new URL(req.url)
   const dryRun = parseBool(url.searchParams.get('dryRun'))
   const limit = parsePositiveInt(url.searchParams.get('limit'))
+  const twilioLookbackMinutes = parsePositiveInt(url.searchParams.get('twilioLookbackMinutes'))
 
   try {
-    const result = await runGoogleAdsMissedCallReconciliation({ dryRun, limit })
+    const result = await runGoogleAdsMissedCallReconciliation({ dryRun, limit, twilioLookbackMinutes })
     return NextResponse.json(result)
   } catch (error) {
     console.error('[google-ads-missed-calls] reconciliation failed', error)

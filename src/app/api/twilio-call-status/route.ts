@@ -10,6 +10,7 @@ import {
   parseCallDurationSeconds,
 } from '@/lib/call-quality-events'
 import { phoneLookupVariants } from '@/lib/google-ads-phone'
+import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 
 /**
@@ -41,6 +42,7 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
 
   const dedupeKey = input.callSid || input.parentCallSid
   const isPpcCall = isPpcTrackingNumber(input.from)
+  const isTestCall = isInternalTestPhone(input.to)
   const profile = getGoogleAdsPhoneProfile(input.from)
   const googleAdsEvents = new Set(getGoogleAdsCallQualityMilestones(input.duration).map((milestone) => milestone.event))
 
@@ -71,6 +73,7 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
         direction: 'outbound',
         from: input.from,
         to: input.to,
+        is_test: isTestCall,
         callSid: input.callSid,
         parentCallSid: input.parentCallSid,
         dedupeKey,
@@ -102,7 +105,7 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
         continue
       }
 
-      if (isPpcCall && googleAdsEvents.has(milestone.event)) {
+      if (isPpcCall && !isTestCall && googleAdsEvents.has(milestone.event)) {
         await enqueuePpcConversion(
           {
             eventName: milestone.event,
