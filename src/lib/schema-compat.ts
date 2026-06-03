@@ -11,11 +11,18 @@
 
 import type { PostgrestError } from '@supabase/supabase-js'
 
-/** True when an error is Postgres "undefined_column" (a not-yet-migrated column). */
+/** True when an error is a not-yet-migrated column (read or write path). */
 export function isMissingColumnError(error: PostgrestError | { code?: string; message?: string } | null | undefined): boolean {
   if (!error) return false
-  if (error.code === '42703') return true // undefined_column
-  return typeof error.message === 'string' && /column .* does not exist/i.test(error.message)
+  // SELECT / filter on a missing column → Postgres undefined_column.
+  if (error.code === '42703') return true
+  // INSERT / UPDATE referencing a column missing from PostgREST's schema cache
+  // → PGRST204. This is a DIFFERENT error than the read path, and missing it
+  // means write fallbacks never fire (e.g. logging a heir disposition 500s).
+  if (error.code === 'PGRST204') return true
+  const msg = typeof error.message === 'string' ? error.message : ''
+  return /column .* does not exist/i.test(msg)
+    || /could not find the .* column .* in the schema cache/i.test(msg)
 }
 
 /** Columns added by 20260602_dialer_redesign.sql — optional until applied. */
