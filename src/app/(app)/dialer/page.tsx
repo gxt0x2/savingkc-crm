@@ -737,12 +737,15 @@ function DialerPageInner() {
   }, [])
 
   const handleAutoStartEmpty = useCallback(() => {
-    if (currentIndex >= leadIds.length - 1) {
-      setAutoQueueLeadId(null)
-      return
-    }
-    window.setTimeout(() => advance(true), 200)
-  }, [advance, currentIndex, leadIds.length])
+    // A record with no callable heirs (never skip-traced, or already fully
+    // worked) used to auto-advance here — which cascaded through every such
+    // record in a burst and blew past deceased owners the agent still needs to
+    // skip-trace. Instead, stop the auto-queue and rest on this record so the
+    // agent stays in control (run skip trace, re-call, or press → to move on).
+    // Auto-advance to the next record only happens after a record's heirs have
+    // actually been called (the heir-queue-complete handler).
+    setAutoQueueLeadId(null)
+  }, [])
 
   const closeSession = useCallback(() => {
     if (sessionSavedListId && leadIds.length > 0) {
