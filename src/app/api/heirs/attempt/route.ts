@@ -6,6 +6,7 @@ import {
   isDeadDisposition,
   isValidDeadReason,
 } from '@/lib/dialer-dispositions'
+import { isMissingColumnError } from '@/lib/schema-compat'
 
 // POST /api/heirs/attempt
 // body: {
@@ -64,11 +65,20 @@ export async function POST(req: Request) {
       prospects: { lead_id: string | null; owner_1: string | null } | null
     }
 
-    const { data: phoneRow, error: phErr } = await supabase
-      .from('prospect_phones')
-      .select('id, phone, contact_name, relationship, prospect_id, verified_source, prospects(lead_id, owner_1)')
-      .eq('id', prospect_phone_id)
-      .single<PhoneWithProspect>()
+    const selectPhone = (cols: string) =>
+      supabase
+        .from('prospect_phones')
+        .select(cols)
+        .eq('id', prospect_phone_id)
+        .single<PhoneWithProspect>()
+
+    // verified_source comes from 20260602_dialer_redesign.sql; tolerate its
+    // absence so logging a call still works before that migration is applied.
+    let phoneRes = await selectPhone('id, phone, contact_name, relationship, prospect_id, verified_source, prospects(lead_id, owner_1)')
+    if (phoneRes.error && isMissingColumnError(phoneRes.error)) {
+      phoneRes = await selectPhone('id, phone, contact_name, relationship, prospect_id, prospects(lead_id, owner_1)')
+    }
+    const { data: phoneRow, error: phErr } = phoneRes
 
     if (phErr || !phoneRow) {
       return NextResponse.json(
@@ -105,16 +115,23 @@ export async function POST(req: Request) {
       : reached
 
     // 1. Denormalized update — drives status + ✓ in HeirsSection.
-    const { error: upErr } = await supabase
+    const baseAttemptPatch = {
+      attempted: true,
+      last_disposition: disposition,
+      last_attempt_at: now,
+      last_attempt_by: agent ?? null,
+    }
+    let upErr = (await supabase
       .from('prospect_phones')
-      .update({
-        attempted: true,
-        last_disposition: disposition,
-        last_attempt_at: now,
-        last_attempt_by: agent ?? null,
-        ...verificationPatch,
-      })
-      .eq('id', prospect_phone_id)
+      .update({ ...baseAttemptPatch, ...verificationPatch })
+      .eq('id', prospect_phone_id)).error
+    // If the verify columns aren't migrated yet, still record the attempt.
+    if (upErr && isMissingColumnError(upErr) && Object.keys(verificationPatch).length > 0) {
+      upErr = (await supabase
+        .from('prospect_phones')
+        .update(baseAttemptPatch)
+        .eq('id', prospect_phone_id)).error
+    }
 
     if (upErr) {
       return NextResponse.json({ error: upErr.message }, { status: 500 })
@@ -146,16 +163,18 @@ export async function POST(req: Request) {
 
       // Dead lead — roll the whole property to station 'dead' with the why.
       if (isDead) {
-        const { error: deadErr } = await supabase
+        const baseDeadPatch = { station: 'dead', updated_at: now }
+        let deadErr = (await supabase
           .from('leads')
-          .update({
-            station: 'dead',
-            dead_reason: deadReason,
-            dead_at: now,
-            dead_by: agent ?? null,
-            updated_at: now,
-          })
-          .eq('id', resolvedLeadId)
+          .update({ ...baseDeadPatch, dead_reason: deadReason, dead_at: now, dead_by: agent ?? null })
+          .eq('id', resolvedLeadId)).error
+        // dead_reason/at/by come from 20260602; still move the lead to 'dead'.
+        if (deadErr && isMissingColumnError(deadErr)) {
+          deadErr = (await supabase
+            .from('leads')
+            .update(baseDeadPatch)
+            .eq('id', resolvedLeadId)).error
+        }
 
         if (deadErr) {
           return NextResponse.json({ error: deadErr.message }, { status: 500 })
