@@ -1,13 +1,8 @@
 import { NextResponse } from 'next/server'
-import { isOptedOut } from '@/lib/sms-opt-out'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
-import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
-import { safeSendSMS } from '@/lib/safe-communications'
+import { sendLeadSms } from '@/lib/send-lead-sms'
 import { supabase } from '@/lib/supabase-lazy'
-
-const DEFAULT_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
-const TWILIO_MESSAGING_SERVICE = process.env.TWILIO_MESSAGING_SERVICE
 
 export async function POST(req: Request) {
   try {
@@ -23,79 +18,18 @@ export async function POST(req: Request) {
     }
 
     if (mode === 'sms') {
-      // Check opt-out before sending
-      if (await isOptedOut(phone)) {
-        return NextResponse.json({ error: 'This number has opted out of SMS messages' }, { status: 400 })
+      const result = await sendLeadSms({ leadId, phone, body, fromPhone, agent })
+
+      if (result.status === 'failed') {
+        return NextResponse.json({ error: result.error }, { status: 502 })
+      }
+      if (result.status === 'skipped') {
+        return result.reason === 'opted_out'
+          ? NextResponse.json({ error: 'This number has opted out of SMS messages' }, { status: 400 })
+          : NextResponse.json({ error: 'Duplicate SMS — same message sent to this number within 24 hours' }, { status: 409 })
       }
 
-      // Check 24hr dedup
-      if (await isDuplicateSms(phone, body)) {
-        return NextResponse.json({ error: 'Duplicate SMS — same message sent to this number within 24 hours' }, { status: 409 })
-      }
-
-      // Auto-detect the right "from" number: use the Twilio number this lead last contacted
-      let effectiveFrom = fromPhone || ''
-      if (!effectiveFrom && leadId) {
-        const { data: lastInbound } = await supabase
-          .from('lead_activities')
-          .select('metadata')
-          .eq('lead_id', leadId)
-          .eq('activity_type', 'sms')
-          .eq('metadata->>direction', 'received')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-        if (lastInbound?.metadata?.to) {
-          effectiveFrom = lastInbound.metadata.to as string
-        }
-      }
-      // Also try matching by phone if no leadId
-      if (!effectiveFrom && phone) {
-        const { data: lastInbound } = await supabase
-          .from('lead_activities')
-          .select('metadata')
-          .eq('activity_type', 'sms')
-          .eq('metadata->>direction', 'received')
-          .eq('metadata->>from', phone)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-        if (lastInbound?.metadata?.to) {
-          effectiveFrom = lastInbound.metadata.to as string
-        }
-      }
-      if (!effectiveFrom) effectiveFrom = DEFAULT_TWILIO_PHONE
-
-      const msg = await safeSendSMS({
-        body: body.trim(),
-        from: effectiveFrom,
-        to: phone,
-      })
-
-      // Log outbound SMS to Supabase
-      await supabase.from('lead_activities').insert({
-        lead_id: leadId || null,
-        activity_type: 'sms',
-        description: body.trim(),
-        agent: agent || 'System',
-        metadata: {
-          direction: 'outbound',
-          from: effectiveFrom,
-          to: phone,
-          message_sid: msg.sid,
-        },
-      })
-
-      // Log to dedup table
-      logSmsSend(phone, body.trim(), effectiveFrom, leadId || undefined).catch(err => console.error('[SMS-DEDUP] Failed:', err))
-
-      // Auto-advance pipeline on first outbound contact
-      if (leadId) {
-        checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
-        onCommunicationEvent(leadId, { type: 'outbound_sms', content: body.trim() }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
-      }
-
-      return NextResponse.json({ success: true, sid: msg.sid })
+      return NextResponse.json({ success: true, sid: result.sid })
     }
 
     if (mode === 'email') {
@@ -153,8 +87,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ error: 'Unknown mode' }, { status: 400 })
-  } catch (err: any) {
+  } catch (err) {
     console.error('conversations/send error:', err)
-    return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 })
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 })
   }
 }

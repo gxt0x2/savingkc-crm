@@ -1720,6 +1720,7 @@ export default function LeadDetailPage() {
             answered: 'Answered',
             no_answer: 'No Answer',
             left_vm: 'Left Voicemail',
+            left_voicemail: 'Left Voicemail',
             bad_number: 'Bad Number',
             busy: 'Busy',
             dnc: 'Do Not Call',

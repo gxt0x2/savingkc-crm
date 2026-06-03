@@ -39,7 +39,7 @@ export async function GET(req: Request) {
   // useful, but heir rows only include non-owner relationships.
   const { data: phones, error: phErr } = await supabase
     .from('prospect_phones')
-    .select('id, prospect_id, phone, phone_type, phone_connected, contact_name, relationship, contact_address, attempted, last_disposition, last_attempt_at, created_at')
+    .select('id, prospect_id, phone, phone_type, phone_connected, contact_name, relationship, contact_address, attempted, last_disposition, last_attempt_at, is_verified_contact, verified_at, verified_by, created_at')
     .in('prospect_id', prospectIds)
     .order('created_at', { ascending: true })
 
@@ -91,6 +91,9 @@ export async function GET(req: Request) {
         attempted: p.attempted ?? false,
         last_disposition: p.last_disposition,
         last_attempt_at: p.last_attempt_at,
+        is_verified_contact: (p as { is_verified_contact?: boolean }).is_verified_contact ?? false,
+        verified_at: (p as { verified_at?: string | null }).verified_at ?? null,
+        verified_by: (p as { verified_by?: string | null }).verified_by ?? null,
       })),
     }))
     .sort((a, b) => {
