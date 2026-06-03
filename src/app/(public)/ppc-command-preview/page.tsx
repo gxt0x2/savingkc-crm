@@ -1,5 +1,5 @@
 import { AdsCommandPage } from '@/components/marketing/ads-command-page'
 
-export default function MarketingPage() {
+export default function PpcCommandPreviewPage() {
   return <AdsCommandPage />
 }

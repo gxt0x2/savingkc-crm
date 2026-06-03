@@ -149,6 +149,7 @@ function categoryFor(eventName: string, fallback?: PpcTrackingEventCategory): Pp
   if (eventName === 'phone_click' || eventName === 'skc_phone_number_selected') return 'phone'
   if (eventName === 'form_error') return 'error'
   if (eventName.startsWith('lead_') || eventName === 'appointment_booked') return 'conversion'
+  if (eventName === 'contact_field_started') return 'form'
   if (eventName === 'address_typed' || eventName === 'ppc_potential_lead_created') return 'form'
   if (eventName.includes('form') || eventName.includes('step') || eventName.endsWith('_selected')) return 'form'
   return 'web'
