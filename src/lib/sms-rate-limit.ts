@@ -4,15 +4,19 @@
 // Carrier spam-filtering and A2P 10DLC throughput are per-brand, so pacing is
 // counted across EVERY sending number and agent, not per session. Two layers:
 //
-//   • HARD caps (constants below) — the firm ceiling no send path may exceed.
-//     These are intentionally only changeable in code; they are the guardrail
-//     that protects the company's number reputation.
+//   • HARD cap — the firm ceiling no send path may exceed. It is the REAL A2P
+//     carrier limit for our brand tier, read live from Twilio (see twilio-a2p /
+//     a2p-tier). The server resolves it per request and passes it to the clamp
+//     helpers; the constants below are only the conservative fallback used
+//     before/without detection.
 //   • SOFT presets (per-hour / per-day) — operator-adjustable pacing set in the
-//     bulk Text modal. Always clamped to the hard caps server-side.
+//     bulk Text modal. Always clamped to the resolved hard cap server-side.
 
-/** Firm ceilings. Adjustable presets are always clamped to these. */
-export const SMS_HARD_PER_HOUR = 300
-export const SMS_HARD_PER_DAY = 2000
+import { A2P_FALLBACK_HOURLY_CAP, A2P_FALLBACK_DAILY_CAP, type A2pTierInfo } from './a2p-tier'
+
+/** Fallback ceilings, used when the live A2P tier can't be determined. */
+export const SMS_HARD_PER_HOUR = A2P_FALLBACK_HOURLY_CAP
+export const SMS_HARD_PER_DAY = A2P_FALLBACK_DAILY_CAP
 
 /** Out-of-the-box pacing (operator can change in the Text modal). */
 export const SMS_DEFAULT_PER_HOUR = 150
@@ -32,18 +36,24 @@ export const SMS_PACE_PRESETS: SmsPacePreset[] = [
   { id: 'maximum', label: 'Maximum', perHour: SMS_HARD_PER_HOUR, perDay: SMS_HARD_PER_DAY },
 ]
 
-/** Clamp a requested per-hour pace to [1, HARD]. Falls back to the default. */
-export function clampPerHour(value: unknown): number {
+/**
+ * Clamp a requested per-hour pace to [1, ceiling]. Falls back to the default.
+ * `ceiling` defaults to the static fallback; the server passes the live A2P cap.
+ */
+export function clampPerHour(value: unknown, ceiling: number = SMS_HARD_PER_HOUR): number {
   const n = Math.floor(Number(value))
-  if (!Number.isFinite(n) || n <= 0) return SMS_DEFAULT_PER_HOUR
-  return Math.min(SMS_HARD_PER_HOUR, Math.max(1, n))
+  if (!Number.isFinite(n) || n <= 0) return Math.min(SMS_DEFAULT_PER_HOUR, ceiling)
+  return Math.min(ceiling, Math.max(1, n))
 }
 
-/** Clamp a requested per-day pace to [1, HARD]. Falls back to the default. */
-export function clampPerDay(value: unknown): number {
+/**
+ * Clamp a requested per-day pace to [1, ceiling]. Falls back to the default.
+ * `ceiling` defaults to the static fallback; the server passes the live A2P cap.
+ */
+export function clampPerDay(value: unknown, ceiling: number = SMS_HARD_PER_DAY): number {
   const n = Math.floor(Number(value))
-  if (!Number.isFinite(n) || n <= 0) return SMS_DEFAULT_PER_DAY
-  return Math.min(SMS_HARD_PER_DAY, Math.max(1, n))
+  if (!Number.isFinite(n) || n <= 0) return Math.min(SMS_DEFAULT_PER_DAY, ceiling)
+  return Math.min(ceiling, Math.max(1, n))
 }
 
 export interface SmsBudget {
@@ -60,6 +70,8 @@ export interface SmsBudget {
   hourResetsAt: string | null
   /** Next midnight Central — when the per-day count resets. */
   dayResetsAt: string
+  /** Detected A2P brand tier driving hardPerHour/hardPerDay (when available). */
+  tier?: A2pTierInfo
 }
 
 /** Midnight of the current America/Chicago day, as a UTC ISO instant. */

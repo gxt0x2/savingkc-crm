@@ -116,6 +116,17 @@ export function BulkSmsModal({ open, onClose, leadIds, agent, fromPhone }: BulkS
   const allowedNow = Math.min(remHour, remDay)
   const capReached = budget !== null && allowedNow === 0
 
+  // Hard ceiling follows the live A2P brand tier resolved server-side (the
+  // budget payload), falling back to the static cap before it loads.
+  const hardHour = budget?.hardPerHour ?? SMS_HARD_PER_HOUR
+  const hardDay = budget?.hardPerDay ?? SMS_HARD_PER_DAY
+  const tier = budget?.tier
+  // "Maximum" tracks the real ceiling; the gentler presets stay fixed.
+  const presets = [
+    ...SMS_PACE_PRESETS.filter((p) => p.id !== 'maximum'),
+    { id: 'maximum', label: 'Maximum', perHour: hardHour, perDay: hardDay },
+  ]
+
   async function send() {
     if (!message.trim() || sending || total === 0) return
     setSending(true)
@@ -241,7 +252,7 @@ export function BulkSmsModal({ open, onClose, leadIds, agent, fromPhone }: BulkS
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-1.5">
-                  {SMS_PACE_PRESETS.map((p) => {
+                  {presets.map((p) => {
                     const active = perHour === p.perHour && perDay === p.perDay
                     return (
                       <button
@@ -257,30 +268,36 @@ export function BulkSmsModal({ open, onClose, leadIds, agent, fromPhone }: BulkS
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block">
-                    <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Per hour · max {SMS_HARD_PER_HOUR}</span>
+                    <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Per hour · max {hardHour.toLocaleString()}</span>
                     <input
                       type="number"
                       min={1}
-                      max={SMS_HARD_PER_HOUR}
+                      max={hardHour}
                       value={perHour}
-                      onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setPerHour(Math.min(SMS_HARD_PER_HOUR, Math.floor(v))) }}
+                      onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setPerHour(Math.min(hardHour, Math.floor(v))) }}
                       className="mt-1 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
                     />
                   </label>
                   <label className="block">
-                    <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Per day · max {SMS_HARD_PER_DAY}</span>
+                    <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Per day · max {hardDay.toLocaleString()}</span>
                     <input
                       type="number"
                       min={1}
-                      max={SMS_HARD_PER_DAY}
+                      max={hardDay}
                       value={perDay}
-                      onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setPerDay(Math.min(SMS_HARD_PER_DAY, Math.floor(v))) }}
+                      onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setPerDay(Math.min(hardDay, Math.floor(v))) }}
                       className="mt-1 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
                     />
                   </label>
                 </div>
                 <p className="text-[10px] text-[var(--ck-text-dim)]">
-                  Hard cap {SMS_HARD_PER_HOUR}/hr · {SMS_HARD_PER_DAY}/day, enforced account-wide — protects the sending numbers and can&apos;t be exceeded.
+                  Hard cap {hardHour.toLocaleString()}/hr · {hardDay.toLocaleString()}/day, enforced account-wide — protects the sending numbers and can&apos;t be exceeded.
+                  {tier && tier.source === 'twilio' && (
+                    <> Set by your A2P brand: <span className="text-[var(--ck-text-muted)]">{tier.label}</span>.</>
+                  )}
+                  {tier && tier.source === 'fallback' && (
+                    <> Using the conservative default — brand tier not detected yet.</>
+                  )}
                 </p>
               </div>
 

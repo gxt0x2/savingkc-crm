@@ -25,14 +25,13 @@ import { sendLeadSms } from '@/lib/send-lead-sms'
 import { getTemplate, resolveTemplate, incrementUsage } from '@/lib/sms-templates'
 import { BULK_SMS_MAX, isWithinTextingHours, summarizeBulkSms, describeBulkResult, type BulkSmsItem, type BulkSmsSummary } from '@/lib/bulk-sms'
 import {
-  SMS_HARD_PER_HOUR,
-  SMS_HARD_PER_DAY,
   clampPerHour,
   clampPerDay,
   centralDayStartISO,
   nextCentralMidnightISO,
   type SmsBudget,
 } from '@/lib/sms-rate-limit'
+import { resolveSmsCaps } from '@/lib/twilio-a2p'
 
 export const maxDuration = 60
 
@@ -68,8 +67,11 @@ async function countSmsSince(iso: string): Promise<number> {
  * kill switch.
  */
 async function computeBudget(perHourReq?: unknown, perDayReq?: unknown): Promise<SmsBudget> {
-  const perHour = clampPerHour(perHourReq)
-  const perDay = clampPerDay(perDayReq)
+  // Hard ceiling = our real A2P carrier tier (read live from Twilio, cached),
+  // falling back to the conservative static cap if detection is unavailable.
+  const caps = await resolveSmsCaps()
+  const perHour = clampPerHour(perHourReq, caps.perHour)
+  const perDay = clampPerDay(perDayReq, caps.perDay)
   const now = Date.now()
   const hourStartISO = new Date(now - 60 * 60 * 1000).toISOString()
   const dayStartISO = centralDayStartISO(new Date(now))
@@ -103,8 +105,8 @@ async function computeBudget(perHourReq?: unknown, perDayReq?: unknown): Promise
   return {
     perHour,
     perDay,
-    hardPerHour: SMS_HARD_PER_HOUR,
-    hardPerDay: SMS_HARD_PER_DAY,
+    hardPerHour: caps.perHour,
+    hardPerDay: caps.perDay,
     usedHour,
     usedDay,
     remainingHour,
@@ -112,6 +114,7 @@ async function computeBudget(perHourReq?: unknown, perDayReq?: unknown): Promise
     allowedNow: Math.min(remainingHour, remainingDay),
     hourResetsAt,
     dayResetsAt: nextCentralMidnightISO(new Date(now)),
+    tier: caps.tier,
   }
 }
 
