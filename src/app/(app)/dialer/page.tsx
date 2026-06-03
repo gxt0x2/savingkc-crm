@@ -1426,6 +1426,8 @@ function DialerHome() {
   const [activeSavedQueueId, setActiveSavedQueueId] = useState('')
   const [savedQueueError, setSavedQueueError] = useState<string | null>(null)
   const [showQueueControls, setShowQueueControls] = useState(false)
+  const [showSavedLists, setShowSavedLists] = useState(false)
+  const [showAdvancedNumbers, setShowAdvancedNumbers] = useState(false)
   const [showOptionalFilters, setShowOptionalFilters] = useState(false)
   const [showWizardAdvanced, setShowWizardAdvanced] = useState(false)
   const [agent, setAgent] = useState('Casey')
@@ -1435,6 +1437,7 @@ function DialerHome() {
   const [rotateEveryCalls, setRotateEveryCalls] = useState(DEFAULT_ROTATION_EVERY_CALLS)
   const [redialCallerId, setRedialCallerId] = useState('')
   const [startBehavior, setStartBehavior] = useState<'resume' | 'top'>('resume')
+  const [dialMode, setDialMode] = useState<'click_to_call' | 'power_dialer'>('power_dialer')
   const [optionalFilters, setOptionalFilters] = useState<OptionalDialingFilters>(DEFAULT_OPTIONAL_FILTERS)
   const [optionalFiltersDraft, setOptionalFiltersDraft] = useState<OptionalDialingFilters>(DEFAULT_OPTIONAL_FILTERS)
   const [autoSendEmail, setAutoSendEmail] = useState(false)
@@ -2049,13 +2052,14 @@ function DialerHome() {
         agent={agent}
         fromPhone={callerId}
       />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-black text-[var(--ck-text)] tracking-tight">Calling Command Center</h1>
-          <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick a queue, confirm the session, start calling.</p>
+          <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">Calling Command Center</h1>
+          <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick who to call, the number to call from, and how — then start.</p>
         </div>
-        <div className="text-sm font-bold text-[var(--ck-text-muted)]">
-          {loading ? 'Loading queue...' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} ready`}
+        <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3.5 py-1.5 text-sm font-bold text-[var(--ck-text)] sm:self-auto">
+          <span className={`h-2 w-2 rounded-full ${loading ? 'bg-[var(--ck-text-dim)]' : queue.length ? 'bg-[#1E9E68]' : 'bg-[#E32E2E]'}`} />
+          {loading ? 'Loading queue…' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} ready`}
         </div>
       </div>
 
@@ -2065,10 +2069,15 @@ function DialerHome() {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_430px] lg:items-start">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
+        {/* ── WHO: pick the queue, refine, preview ── */}
         <main className="space-y-5">
           <section className="ck-card p-5">
-            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px] md:items-end">
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E32E2E]/15 text-[#ff7777]">1</span>
+              Who to call
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
               <label className="block">
                 <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Calling Queue</span>
                 <select
@@ -2084,134 +2093,39 @@ function DialerHome() {
                   ))}
                 </select>
               </label>
-              <label className="block">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Calling Number</span>
-                <select
-                  value={callerId}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    setCallerId(value)
-                    if (!rotationCallerIds.includes(value) && callerMode === 'rotation') {
-                      setRotationCallerIds((current) => Array.from(new Set([...current, value])))
-                    }
-                    if (activeSavedQueueId) patchSavedListMeta(activeSavedQueueId, { callerId: value })
-                  }}
-                  className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-3 text-sm font-bold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-                >
-                  {TWILIO_NUMBERS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => startQueue('power_dialer')}
-                  disabled={queue.length === 0}
-                  className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-4 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  <Icon name="play_arrow" size="text-sm" /> {selectedCount > 0 ? `Start ${selectedCount}` : 'Start Queue'}
-                </button>
-                <button
-                  onClick={() => setShowBulkSms(true)}
-                  disabled={queue.length === 0}
-                  title={selectedCount > 0 ? `Text ${selectedCount} selected leads` : 'Text the leads in this queue'}
-                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E] hover:text-[#ff7777] disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  <Icon name="forum" size="text-lg" />
-                </button>
-              </div>
+              <button
+                onClick={() => setShowBulkSms(true)}
+                disabled={queue.length === 0}
+                title={selectedCount > 0 ? `Text ${selectedCount} selected leads` : 'Text the leads in this queue'}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-4 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E] hover:text-[#ff7777] disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <Icon name="forum" size="text-lg" /> Text
+              </button>
             </div>
+            <p className="mt-3 text-sm text-[var(--ck-text-muted)]">{selectedPreset.description}</p>
 
-            <div className="mt-3 flex flex-col gap-2 text-sm text-[var(--ck-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-              <span>{selectedPreset.description} · from {formatPhone(callerId || DEFAULT_DIALER_CALLER_ID)}</span>
-              <span className="font-bold text-[var(--ck-text)]">{loading ? '...' : queue.length.toLocaleString()} leads</span>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setShowQueueControls((value) => !value)}
+                aria-expanded={showQueueControls}
+                className="flex items-center justify-between rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
+              >
+                <span>Refine{activeFilterCount > 0 && <span className="ml-1.5 text-[#ff7777]">{activeFilterCount}</span>}</span>
+                <Icon name={showQueueControls ? 'expand_less' : 'expand_more'} size="text-lg" />
+              </button>
+              <button
+                onClick={() => setShowSavedLists((value) => !value)}
+                aria-expanded={showSavedLists}
+                className="flex items-center justify-between rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
+              >
+                <span>Saved lists{selectedSavedQueue ? <span className="ml-1.5 text-[#ff7777]">●</span> : null}</span>
+                <Icon name={showSavedLists ? 'expand_less' : 'expand_more'} size="text-lg" />
+              </button>
             </div>
-
-            <button
-              onClick={() => setShowQueueControls((value) => !value)}
-              className="mt-5 flex w-full items-center justify-between rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
-              aria-expanded={showQueueControls}
-            >
-              <span>
-                Saved lists and filters
-                {activeFilterCount > 0 && <span className="ml-2 text-[#ff7777]">{activeFilterCount} active</span>}
-              </span>
-              <Icon name={showQueueControls ? 'expand_less' : 'expand_more'} size="text-lg" />
-            </button>
 
             {showQueueControls && (
-              <>
-                <div className="mt-3 border-t border-[var(--ck-border)] pt-4">
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_112px_88px] md:items-end">
-                    <label className="block">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Saved List</span>
-                      <select
-                        value={activeSavedQueueId}
-                        onChange={(event) => {
-                          const savedQueue = savedQueues.find((item) => item.id === event.target.value)
-                          if (savedQueue) applySavedQueue(savedQueue)
-                          else {
-                            setActiveSavedQueueId('')
-                            setSavedQueueName('')
-                          }
-                        }}
-                        className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-                      >
-                        <option value="">Select list</option>
-                        {savedQueues.map((savedQueue) => (
-                          <option key={savedQueue.id} value={savedQueue.id}>{savedQueue.name} ({savedQueue.agent})</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">List Name</span>
-                      <input
-                        value={savedQueueName}
-                        onChange={(event) => setSavedQueueName(event.target.value)}
-                        placeholder={selectedPreset.label}
-                        className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-                      />
-                    </label>
-                    <button
-                      onClick={saveCurrentQueue}
-                      className="rounded-lg border border-[#E32E2E]/45 bg-[#E32E2E]/10 px-3 py-2 text-xs font-black uppercase tracking-wider text-[#ff7777] transition-colors hover:border-[#E32E2E]"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={deleteSavedQueue}
-                      disabled={!activeSavedQueueId}
-                      className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-35"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  {savedQueueError && (
-                    <p className="mt-3 text-xs font-bold text-[#ff7777]">{savedQueueError}</p>
-                  )}
-                  {selectedSavedQueue && !savedQueueError && (
-                    <p className="mt-3 text-xs text-[var(--ck-text-muted)]">
-                      Loaded from database for {selectedSavedQueue.agent}. Updated {formatActivityTime(selectedSavedQueue.updatedAt)}.
-                      {selectedSavedQueue.callerId ? ` Calling from ${formatPhone(selectedSavedQueue.callerId)}.` : ''}
-                    </p>
-                  )}
-                  {selectedSavedQueue && hasResumePoint && !savedQueueError && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={resumeSavedQueue}
-                        className="rounded-lg border border-[#E32E2E]/45 bg-[#E32E2E]/10 px-3 py-2 text-xs font-black uppercase tracking-wider text-[#ff7777] transition-colors hover:border-[#E32E2E]"
-                      >
-                        Resume where left off
-                      </button>
-                      <span className="text-xs text-[var(--ck-text-muted)]">
-                        Lead {(selectedSavedQueue.resumeIndex || 0) + 1} of {resumeLeadIds.length} · {resumeRemaining} remaining
-                        {selectedSavedQueue.resumeUpdatedAt ? ` · updated ${formatActivityTime(selectedSavedQueue.resumeUpdatedAt)}` : ''}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div className="mt-3 border-t border-[var(--ck-border)] pt-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <DarkSelect label="Campaign" value={campaign} onChange={(value) => { setCampaign(value); setSelectedLeadIds(new Set()) }} options={sourceOptions} />
                   <DarkSelect label="Status" value={statusFilter} onChange={(value) => { setStatusFilter(value); setSelectedLeadIds(new Set()) }} options={statusOptions} />
                   <DarkSelect label="Priority" value={priorityFilter} onChange={(value) => { setPriorityFilter(value); setSelectedLeadIds(new Set()) }} options={['all', 'hot', 'high', 'normal']} />
@@ -2222,7 +2136,6 @@ function DialerHome() {
                     <input type="range" min="0" max="10" value={minMotivation} onChange={(e) => { setMinMotivation(Number(e.target.value)); setSelectedLeadIds(new Set()) }} className="mt-3 w-full accent-[#E32E2E]" />
                   </label>
                 </div>
-
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
                   <div className="relative flex-1">
                     <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
@@ -2241,16 +2154,66 @@ function DialerHome() {
                       Clear filters
                     </button>
                   )}
-                  <button onClick={selectVisibleLeads} disabled={previewLeads.length === 0} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:opacity-35">
-                    Select shown
-                  </button>
-                  {selectedCount > 0 && (
-                    <button onClick={clearSelectedLeads} className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">
-                      Clear selected
-                    </button>
-                  )}
                 </div>
-              </>
+              </div>
+            )}
+
+            {showSavedLists && (
+              <div className="mt-3 border-t border-[var(--ck-border)] pt-4">
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_88px_72px] md:items-end">
+                  <label className="block">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Saved List</span>
+                    <select
+                      value={activeSavedQueueId}
+                      onChange={(event) => {
+                        const savedQueue = savedQueues.find((item) => item.id === event.target.value)
+                        if (savedQueue) applySavedQueue(savedQueue)
+                        else {
+                          setActiveSavedQueueId('')
+                          setSavedQueueName('')
+                        }
+                      }}
+                      className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                    >
+                      <option value="">Select list</option>
+                      {savedQueues.map((savedQueue) => (
+                        <option key={savedQueue.id} value={savedQueue.id}>{savedQueue.name} ({savedQueue.agent})</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">List Name</span>
+                    <input
+                      value={savedQueueName}
+                      onChange={(event) => setSavedQueueName(event.target.value)}
+                      placeholder={selectedPreset.label}
+                      className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                    />
+                  </label>
+                  <button
+                    onClick={saveCurrentQueue}
+                    className="rounded-lg border border-[#E32E2E]/45 bg-[#E32E2E]/10 px-3 py-2 text-xs font-black uppercase tracking-wider text-[#ff7777] transition-colors hover:border-[#E32E2E]"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={deleteSavedQueue}
+                    disabled={!activeSavedQueueId}
+                    className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    Delete
+                  </button>
+                </div>
+                {savedQueueError && (
+                  <p className="mt-3 text-xs font-bold text-[#ff7777]">{savedQueueError}</p>
+                )}
+                {selectedSavedQueue && !savedQueueError && (
+                  <p className="mt-3 text-xs text-[var(--ck-text-muted)]">
+                    Loaded for {selectedSavedQueue.agent}. Updated {formatActivityTime(selectedSavedQueue.updatedAt)}.
+                    {selectedSavedQueue.callerId ? ` Calling from ${formatPhone(selectedSavedQueue.callerId)}.` : ''}
+                  </p>
+                )}
+              </div>
             )}
           </section>
 
@@ -2260,10 +2223,12 @@ function DialerHome() {
                 <p className="text-sm font-black text-[var(--ck-text)]">Queue Preview</p>
                 <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Showing {previewLeads.length} records. Check only the leads you want to call.</p>
               </div>
-              <div className="flex items-center gap-2 text-xs font-bold text-[var(--ck-text-muted)]">
-                <span>{selectedVisibleCount}/{previewLeads.length} shown selected</span>
-                <span className="hidden sm:inline">/</span>
-                <span>{selectedCount.toLocaleString()} total selected</span>
+              <div className="flex items-center gap-3 text-xs font-bold text-[var(--ck-text-muted)]">
+                <span>{selectedVisibleCount}/{previewLeads.length} shown · {selectedCount.toLocaleString()} selected</span>
+                <button onClick={selectVisibleLeads} disabled={previewLeads.length === 0} className="transition-colors hover:text-[var(--ck-text)] disabled:opacity-35">Select shown</button>
+                {selectedCount > 0 && (
+                  <button onClick={clearSelectedLeads} className="transition-colors hover:text-[var(--ck-text)]">Clear</button>
+                )}
               </div>
             </div>
             <div className="max-h-[620px] overflow-auto">
@@ -2320,258 +2285,238 @@ function DialerHome() {
           </section>
         </main>
 
-        <aside className="lg:sticky lg:top-24 space-y-4">
+        {/* ── FROM · HOW · GO ── */}
+        <aside className="lg:sticky lg:top-24">
           <section className="ck-card p-5">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-end justify-between gap-4 border-b border-[var(--ck-border)] pb-4">
               <div>
-                <p className="text-lg font-semibold tracking-[-0.02em] text-[var(--ck-text)]">Call Wizard</p>
-                <p className="mt-1 text-xs text-[var(--ck-text-muted)]">{selectedPreset.label}</p>
+                <p className="text-3xl font-black leading-none tracking-tight text-[var(--ck-text)]">{loading ? '…' : (selectedCount || queue.length).toLocaleString()}</p>
+                <p className="mt-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{selectedCount > 0 ? 'selected to call' : 'ready to call'}</p>
               </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold tracking-[-0.02em] text-[var(--ck-text)]">{loading ? '...' : (selectedCount || queue.length).toLocaleString()}</p>
-                <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">{selectedCount > 0 ? 'selected' : 'ready'}</p>
-              </div>
+              <p className="max-w-[150px] truncate text-right text-xs font-semibold text-[var(--ck-text-muted)]">{selectedPreset.label}</p>
             </div>
 
-            <div className="mt-5 space-y-5">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Caller ID Settings</p>
-                <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
-                  <button
-                    onClick={() => setCallerMode('static')}
-                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${callerMode === 'static' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
-                  >
-                    Static
-                  </button>
-                  <button
-                    onClick={() => setCallerMode('rotation')}
-                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${callerMode === 'rotation' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
-                  >
-                    Rotation
-                  </button>
-                </div>
-                <label className="mt-3 block">
-                  <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Default Caller ID</span>
-                  <select
-                    value={callerId}
-                    onChange={(event) => {
-                      const value = event.target.value
-                      setCallerId(value)
-                      if (!rotationCallerIds.includes(value)) setRotationCallerIds((current) => [value, ...current.filter((item) => item !== value)])
-                    }}
-                    className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-                  >
-                    {TWILIO_NUMBERS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
-                {hasRotation && (
-                  <div className="mt-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] text-[var(--ck-text-muted)]">Currently rotating every <strong className="text-[var(--ck-text)]">{rotateEveryCalls}</strong> calls</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={500}
-                        value={rotateEveryCalls}
-                        onChange={(event) => setRotateEveryCalls(Math.max(1, Number(event.target.value) || 1))}
-                        className="w-16 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2 py-1 text-right text-xs font-semibold text-[var(--ck-text)]"
-                      />
-                    </div>
-                    <div className="mt-2 max-h-28 overflow-auto space-y-1.5 pr-1">
-                      {TWILIO_NUMBERS.map((option) => {
-                        const checked = rotationCallerIds.includes(option.value)
-                        return (
-                          <label key={option.value} className="flex items-center gap-2 text-xs text-[var(--ck-text-muted)]">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleRotationCallerId(option.value)}
-                              className="h-3.5 w-3.5 accent-[#E32E2E]"
-                            />
-                            <span className={checked ? 'text-[var(--ck-text)]' : ''}>{option.label}</span>
-                          </label>
-                        )
-                      })}
-                    </div>
-                    <p className="mt-2 text-[10px] text-[var(--ck-text-dim)]">{rotationSummary || 'Select at least one number for rotation.'}</p>
+            <div className="mt-5">
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E32E2E]/15 text-[#ff7777]">2</span>
+                Call from
+              </div>
+              <select
+                value={callerId}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setCallerId(value)
+                  if (!rotationCallerIds.includes(value) && callerMode === 'rotation') {
+                    setRotationCallerIds((current) => Array.from(new Set([...current, value])))
+                  }
+                  if (activeSavedQueueId) patchSavedListMeta(activeSavedQueueId, { callerId: value })
+                }}
+                className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-sm font-bold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+              >
+                {TWILIO_NUMBERS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setShowAdvancedNumbers((value) => !value)}
+                aria-expanded={showAdvancedNumbers}
+                className="mt-2 flex w-full items-center justify-between px-1 text-left text-[11px] font-semibold text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
+              >
+                <span>Advanced numbers{callerMode === 'rotation' ? ' · rotation on' : ''}{redialCallerId ? ' · redial set' : ''}</span>
+                <Icon name={showAdvancedNumbers ? 'expand_less' : 'expand_more'} size="text-base" />
+              </button>
+              {showAdvancedNumbers && (
+                <div className="mt-2 space-y-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-1">
+                    <button
+                      onClick={() => setCallerMode('static')}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${callerMode === 'static' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                    >
+                      Static
+                    </button>
+                    <button
+                      onClick={() => setCallerMode('rotation')}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${callerMode === 'rotation' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                    >
+                      Rotation
+                    </button>
                   </div>
-                )}
-                <label className="mt-3 block">
-                  <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Redial Caller ID</span>
-                  <select
-                    value={redialCallerId}
-                    onChange={(event) => setRedialCallerId(event.target.value)}
-                    className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-                  >
-                    <option value="">Use current caller</option>
-                    {TWILIO_NUMBERS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  {hasRotation && (
+                    <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-[var(--ck-text-muted)]">Rotate every <strong className="text-[var(--ck-text)]">{rotateEveryCalls}</strong> calls</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={500}
+                          value={rotateEveryCalls}
+                          onChange={(event) => setRotateEveryCalls(Math.max(1, Number(event.target.value) || 1))}
+                          className="w-16 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2 py-1 text-right text-xs font-semibold text-[var(--ck-text)]"
+                        />
+                      </div>
+                      <div className="mt-2 max-h-28 space-y-1.5 overflow-auto pr-1">
+                        {TWILIO_NUMBERS.map((option) => {
+                          const checked = rotationCallerIds.includes(option.value)
+                          return (
+                            <label key={option.value} className="flex items-center gap-2 text-xs text-[var(--ck-text-muted)]">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleRotationCallerId(option.value)}
+                                className="h-3.5 w-3.5 accent-[#E32E2E]"
+                              />
+                              <span className={checked ? 'text-[var(--ck-text)]' : ''}>{option.label}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                      <p className="mt-2 text-[10px] text-[var(--ck-text-dim)]">{rotationSummary || 'Select at least one number for rotation.'}</p>
+                    </div>
+                  )}
+                  <label className="block">
+                    <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Redial Caller ID</span>
+                    <select
+                      value={redialCallerId}
+                      onChange={(event) => setRedialCallerId(event.target.value)}
+                      className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2.5 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                    >
+                      <option value="">Use current caller</option>
+                      {TWILIO_NUMBERS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5">
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E32E2E]/15 text-[#ff7777]">3</span>
+                How to call
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
+                <button
+                  onClick={() => setDialMode('power_dialer')}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${dialMode === 'power_dialer' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                >
+                  Power Dialer
+                </button>
+                <button
+                  onClick={() => setDialMode('click_to_call')}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${dialMode === 'click_to_call' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                >
+                  Click To Call
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-1.5 text-xs text-[var(--ck-text-muted)]">
+                <label className="flex items-start gap-2">
+                  <input type="radio" name="startBehavior" checked={startBehavior === 'resume'} onChange={() => setStartBehavior('resume')} className="mt-0.5 h-3.5 w-3.5 accent-[#E32E2E]" />
+                  <span>Resume where I left off (new leads first)</span>
+                </label>
+                <label className="flex items-start gap-2">
+                  <input type="radio" name="startBehavior" checked={startBehavior === 'top'} onChange={() => setStartBehavior('top')} className="mt-0.5 h-3.5 w-3.5 accent-[#E32E2E]" />
+                  <span>Call top to bottom</span>
                 </label>
               </div>
 
               <button
                 onClick={() => setShowWizardAdvanced((current) => !current)}
-                className="w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-left text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
+                aria-expanded={showWizardAdvanced}
+                className="mt-3 flex w-full items-center justify-between px-1 text-left text-[11px] font-semibold text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
               >
-                <span className="inline-flex items-center gap-1.5">
-                  <Icon name={showWizardAdvanced ? 'expand_less' : 'expand_more'} size="text-base" />
-                  {showWizardAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings'}
-                </span>
+                <span>Call settings{useCallHammer ? ' · hammer' : ''} · {ringCount} rings{optionalFilterCount > 0 ? ` · ${optionalFilterCount} filters` : ''}</span>
+                <Icon name={showWizardAdvanced ? 'expand_less' : 'expand_more'} size="text-base" />
               </button>
-
               {showWizardAdvanced && (
-                <div className="space-y-5 border-t border-[var(--ck-border)] pt-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Message Settings</p>
-                    <div className="mt-2 space-y-2">
-                      <DarkSelect label="Voicemail Drop" value={voicemailDrop} onChange={setVoicemailDrop} options={['none', 'default']} />
-                      <DarkSelect label="Callback Message" value={callbackDrop} onChange={setCallbackDrop} options={['none', 'default']} />
-                    </div>
+                <div className="mt-2 space-y-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+                  <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
+                    <label className="flex items-center justify-between gap-3 text-sm text-[var(--ck-text)]">
+                      <span className="font-semibold">Use Call Hammer</span>
+                      <input type="checkbox" checked={useCallHammer} onChange={(event) => setUseCallHammer(event.target.checked)} className="h-4 w-4 accent-[#E32E2E]" />
+                    </label>
+                    <p className="mt-1.5 text-[11px] text-[var(--ck-text-muted)]">On: call all numbers for each contact. Off: only the first listed number.</p>
+                    <label className="mt-3 flex items-center justify-between gap-3 text-sm text-[var(--ck-text)]">
+                      <span className="font-semibold">Voicemail Call Hammer</span>
+                      <input type="checkbox" checked={useVoicemailCallHammer} onChange={(event) => setUseVoicemailCallHammer(event.target.checked)} className="h-4 w-4 accent-[#E32E2E]" />
+                    </label>
                   </div>
-
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Line Settings</p>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <label className="block">
-                        <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Lines</span>
-                        <input
-                          value={lineDialCount}
-                          readOnly
-                          className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Rings</span>
-                        <select
-                          value={String(ringCount)}
-                          onChange={(event) => setRingCount(Math.max(1, Number(event.target.value) || 6))}
-                          className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]"
-                        >
-                          {['3', '4', '5', '6', '7', '8'].map((value) => (
-                            <option key={value} value={value}>{value} rings</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Lines</span>
+                      <input value={lineDialCount} readOnly className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]" />
+                    </label>
+                    <label className="block">
+                      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Rings</span>
+                      <select
+                        value={String(ringCount)}
+                        onChange={(event) => setRingCount(Math.max(1, Number(event.target.value) || 6))}
+                        className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]"
+                      >
+                        {['3', '4', '5', '6', '7', '8'].map((value) => (
+                          <option key={value} value={value}>{value} rings</option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
-
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Voicemail Call Hammer</p>
-                    <div className="mt-2 space-y-2 text-sm text-[var(--ck-text-muted)]">
-                      <label className="flex items-center gap-2">
-                        <input type="checkbox" checked={useVoicemailCallHammer} onChange={(event) => setUseVoicemailCallHammer(event.target.checked)} className="h-4 w-4 accent-[#E32E2E]" />
-                        <span>Enable voicemail call hammer mode</span>
-                      </label>
-                    </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <DarkSelect label="Voicemail Drop" value={voicemailDrop} onChange={setVoicemailDrop} options={['none', 'default']} />
+                    <DarkSelect label="Callback Message" value={callbackDrop} onChange={setCallbackDrop} options={['none', 'default']} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setAutoSendEmail((current) => !current)}
+                      className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${autoSendEmail ? 'bg-[#E32E2E] text-white' : 'border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                    >
+                      {autoSendEmail ? 'Auto Email On' : 'Auto Send Email'}
+                    </button>
+                    <button
+                      onClick={openOptionalFilterModal}
+                      className="rounded-xl border border-[var(--ck-border)] px-3 py-2 text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]"
+                    >
+                      Dialing Filters{optionalFilterCount > 0 ? ` (${optionalFilterCount})` : ''}
+                    </button>
                   </div>
                 </div>
               )}
             </div>
-          </section>
 
-          <section className="ck-card p-5">
-            <p className="text-lg font-semibold tracking-[-0.02em] text-[var(--ck-text)]">Easy Calling Mode</p>
-            <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Choose how you want to call this list.</p>
-
-            <div className="mt-4 space-y-2 text-sm text-[var(--ck-text-muted)]">
-              <label className="flex items-start gap-2">
-                <input type="radio" name="startBehavior" checked={startBehavior === 'resume'} onChange={() => setStartBehavior('resume')} className="mt-1 h-4 w-4 accent-[#E32E2E]" />
-                <span>Call this list from where I last left off, starting with new leads first.</span>
-              </label>
-              <label className="flex items-start gap-2">
-                <input type="radio" name="startBehavior" checked={startBehavior === 'top'} onChange={() => setStartBehavior('top')} className="mt-1 h-4 w-4 accent-[#E32E2E]" />
-                <span>Call this list top to bottom regardless of where I last left off.</span>
-              </label>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
-              <label className="flex items-center justify-between gap-3 text-sm text-[var(--ck-text)]">
-                <span className="font-semibold">Use Call Hammer</span>
-                <input
-                  type="checkbox"
-                  checked={useCallHammer}
-                  onChange={(event) => setUseCallHammer(event.target.checked)}
-                  className="h-4 w-4 accent-[#E32E2E]"
-                />
-              </label>
-              <p className="mt-2 text-[11px] text-[var(--ck-text-muted)]">
-                On: call all available numbers for each contact. Off: call only the first listed number.
-              </p>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-5 border-t border-[var(--ck-border)] pt-4">
               <button
-                onClick={() => setAutoSendEmail((current) => !current)}
-                className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${autoSendEmail ? 'bg-[#E32E2E] text-white' : 'border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
-              >
-                {autoSendEmail ? 'Auto Email On' : 'Auto Send Email'}
-              </button>
-              <button
-                onClick={openOptionalFilterModal}
-                className="rounded-xl border border-[var(--ck-border)] px-3 py-2 text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]"
-              >
-                Optional Dialing Filters
-                {optionalFilterCount > 0 ? ` (${optionalFilterCount})` : ''}
-              </button>
-            </div>
-
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <button
-                onClick={() => startQueue('click_to_call')}
+                onClick={() => startQueue(dialMode)}
                 disabled={!canStart}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1E9E68] px-3 py-2.5 text-xs font-black uppercase tracking-[0.06em] text-white transition-colors hover:bg-[#168056] disabled:opacity-35"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#E32E2E] px-4 py-3.5 text-sm font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
               >
-                <Icon name="call" size="text-sm" /> Start Click To Call
+                <Icon name={dialMode === 'power_dialer' ? 'auto_awesome_motion' : 'call'} size="text-base" />
+                Start {dialMode === 'power_dialer' ? 'Power Dialer' : 'Click To Call'}{selectedCount > 0 ? ` · ${selectedCount}` : ''}
               </button>
-              <button
-                onClick={() => startQueue('power_dialer')}
-                disabled={!canStart}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1E9E68] px-3 py-2.5 text-xs font-black uppercase tracking-[0.06em] text-white transition-colors hover:bg-[#168056] disabled:opacity-35"
-              >
-                <Icon name="auto_awesome_motion" size="text-sm" /> Start Power Dialer
-              </button>
-            </div>
 
-            <button
-              onClick={saveCurrentQueue}
-              className="mt-3 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]"
-            >
-              Save Calling Profile As
-            </button>
-
-            <div className="mt-3 flex items-center justify-between text-xs text-[var(--ck-text-muted)]">
-              <button onClick={selectVisibleLeads} disabled={previewLeads.length === 0} className="font-bold transition-colors hover:text-[var(--ck-text)] disabled:opacity-35">
-                Select shown
-              </button>
-              <button onClick={clearSelectedLeads} disabled={selectedCount === 0} className="font-bold transition-colors hover:text-[var(--ck-text)] disabled:opacity-35">
-                Clear
-              </button>
-            </div>
-
-            {hasResumePoint && (
-              <div className="mt-4 rounded-xl border border-[#E32E2E]/35 bg-[#E32E2E]/10 p-3">
-                <p className="text-xs font-semibold text-[#ff9f9f]">
-                  Resume available: lead {(selectedSavedQueue?.resumeIndex || 0) + 1} of {resumeLeadIds.length}
-                </p>
+              {hasResumePoint && (
                 <button
                   onClick={resumeSavedQueue}
-                  className="mt-2 rounded-lg bg-[#E32E2E] px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.06em] text-white"
+                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#E32E2E]/45 bg-[#E32E2E]/10 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[#ff7777] transition-colors hover:border-[#E32E2E]"
                 >
-                  Resume Where Left Off
+                  <Icon name="history" size="text-base" /> Resume {(selectedSavedQueue?.resumeIndex || 0) + 1}/{resumeLeadIds.length} · {resumeRemaining} left
                 </button>
-              </div>
-            )}
+              )}
+
+              <button
+                onClick={saveCurrentQueue}
+                className="mt-2 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]"
+              >
+                Save as list
+              </button>
+            </div>
 
             <div className="mt-4 border-t border-[var(--ck-border)] pt-4">
-              <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Next Up</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Next Up</p>
               {currentLead ? (
-                <div className="mt-2">
-                  <p className="text-sm font-semibold text-[var(--ck-text)] leading-tight">{toProperCase(currentLead.full_name) || 'Unknown Lead'}</p>
-                  <p className="mt-1 text-xs font-mono text-[#E32E2E]">{formatPhone(currentLead.phone || '')}</p>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold leading-tight text-[var(--ck-text)]">{toProperCase(currentLead.full_name) || 'Unknown Lead'}</p>
+                    <p className="mt-1 font-mono text-xs text-[#E32E2E]">{formatPhone(currentLead.phone || '')}</p>
+                  </div>
                   <button
                     onClick={() => router.push(buildSessionUrl(
                       [currentLead.id],
@@ -2583,9 +2528,9 @@ function DialerHome() {
                       undefined,
                       ringCount,
                     ))}
-                    className="mt-3 w-full rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]"
+                    className="shrink-0 rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-semibold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]"
                   >
-                    Open Lead
+                    Open
                   </button>
                 </div>
               ) : (
