@@ -1,5 +1,25 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { isMissingColumnError } from '@/lib/schema-compat'
+
+interface HeirPhoneRow {
+  id: string
+  prospect_id: string
+  phone: string | null
+  phone_type: string | null
+  phone_connected: boolean | null
+  contact_name: string | null
+  relationship: string | null
+  contact_address: string | null
+  attempted: boolean | null
+  last_disposition: string | null
+  last_attempt_at: string | null
+  created_at: string
+  // Added by 20260602_dialer_redesign.sql — optional until that migration runs.
+  is_verified_contact?: boolean | null
+  verified_at?: string | null
+  verified_by?: string | null
+}
 
 // GET /api/heirs?lead_id=<uuid>
 //
@@ -37,19 +57,29 @@ export async function GET(req: Request) {
   // Step 2: pull every phone for those prospects. Owner phones are kept
   // separately so the UI can still show the deceased owner's own number if
   // useful, but heir rows only include non-owner relationships.
-  const { data: phones, error: phErr } = await supabase
-    .from('prospect_phones')
-    .select('id, prospect_id, phone, phone_type, phone_connected, contact_name, relationship, contact_address, attempted, last_disposition, last_attempt_at, is_verified_contact, verified_at, verified_by, created_at')
-    .in('prospect_id', prospectIds)
-    .order('created_at', { ascending: true })
+  // The verify columns come from 20260602_dialer_redesign.sql. If that migration
+  // hasn't reached this environment yet, retry without them so the heirs list
+  // still renders (verified flags just default to false/null) instead of 500ing.
+  const BASE_PHONE_COLS = 'id, prospect_id, phone, phone_type, phone_connected, contact_name, relationship, contact_address, attempted, last_disposition, last_attempt_at, created_at'
+  const FULL_PHONE_COLS = `${BASE_PHONE_COLS}, is_verified_contact, verified_at, verified_by`
+  const queryPhones = (cols: string) =>
+    supabase
+      .from('prospect_phones')
+      .select(cols)
+      .in('prospect_id', prospectIds)
+      .order('created_at', { ascending: true })
 
-  if (phErr) {
-    return NextResponse.json({ error: phErr.message }, { status: 500 })
+  let phRes = await queryPhones(FULL_PHONE_COLS)
+  if (phRes.error && isMissingColumnError(phRes.error)) {
+    phRes = await queryPhones(BASE_PHONE_COLS)
   }
+  if (phRes.error) {
+    return NextResponse.json({ error: phRes.error.message }, { status: 500 })
+  }
+  const phones = (phRes.data ?? []) as unknown as HeirPhoneRow[]
 
-  type PhoneRow = NonNullable<typeof phones>[number]
-  const heirPhones = (phones ?? []).filter(
-    (p: PhoneRow) => (p.relationship ?? '').toLowerCase() !== 'owner',
+  const heirPhones = phones.filter(
+    (p) => (p.relationship ?? '').toLowerCase() !== 'owner',
   )
 
   // Step 3: group by (contact_name || unknown-N, relationship) so that
@@ -59,10 +89,10 @@ export async function GET(req: Request) {
     contact_name: string
     relationship: string
     address: string | null
-    phones: PhoneRow[]
+    phones: HeirPhoneRow[]
   }>()
 
-  heirPhones.forEach((p: PhoneRow, idx: number) => {
+  heirPhones.forEach((p, idx) => {
     const name = (p.contact_name ?? '').trim() || `Unknown ${idx + 1}`
     const relation = (p.relationship ?? '').trim() || 'relative'
     const key = `${name}::${relation}`
@@ -91,9 +121,9 @@ export async function GET(req: Request) {
         attempted: p.attempted ?? false,
         last_disposition: p.last_disposition,
         last_attempt_at: p.last_attempt_at,
-        is_verified_contact: (p as { is_verified_contact?: boolean }).is_verified_contact ?? false,
-        verified_at: (p as { verified_at?: string | null }).verified_at ?? null,
-        verified_by: (p as { verified_by?: string | null }).verified_by ?? null,
+        is_verified_contact: p.is_verified_contact ?? false,
+        verified_at: p.verified_at ?? null,
+        verified_by: p.verified_by ?? null,
       })),
     }))
     .sort((a, b) => {

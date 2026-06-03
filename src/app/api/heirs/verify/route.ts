@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { isMissingColumnError } from '@/lib/schema-compat'
 
 // POST /api/heirs/verify
 // body: { prospect_phone_id, verified: boolean, agent?, lead_id? }
@@ -39,6 +40,15 @@ export async function POST(req: Request) {
       }>()
 
     if (error) {
+      // The verify columns come from 20260602_dialer_redesign.sql. Until it's
+      // applied, surface a soft notice instead of a hard 500.
+      if (isMissingColumnError(error)) {
+        return NextResponse.json({
+          success: false,
+          pendingMigration: true,
+          message: 'Contact verification is unavailable until migration 20260602_dialer_redesign.sql is applied.',
+        })
+      }
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
