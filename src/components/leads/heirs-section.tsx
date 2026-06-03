@@ -284,6 +284,10 @@ export function HeirsSection({
 
   useEffect(() => {
     if (!autoStart || loading) return
+    // If the heirs failed to load, hold on this record — surface the error and
+    // let the agent retry rather than silently auto-advancing to the next
+    // deceased owner without calling anyone.
+    if (error) return
     if (autoStartedLeadRef.current === leadId) return
     autoStartedLeadRef.current = leadId
 
@@ -308,7 +312,7 @@ export function HeirsSection({
       return
     }
     onAutoStartEmpty?.()
-  }, [autoStart, deceasedOwnerName, dialerCallerId, dialerCallerPlan, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, propertyAddress, ringCount])
+  }, [autoStart, deceasedOwnerName, dialerCallerId, dialerCallerPlan, error, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, propertyAddress, ringCount])
 
   return (
     <section className={`ck-card ${expanded ? 'p-6' : 'px-6 py-4'}`}>
