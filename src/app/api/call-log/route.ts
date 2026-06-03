@@ -121,14 +121,20 @@ export async function POST(req: Request) {
       })
     }
 
-    // Auto-advance pipeline on outbound call + sync to manifest
+    // Log outbound attempt to the manifest immediately, but do not treat a
+    // browser-initiated dial as a true contact until a final connected outcome
+    // is known. The Twilio Voice SDK accept event only proves the browser leg
+    // opened; it does not prove the seller answered.
     if (leadId && event === 'started') {
-      checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
       onCommunicationEvent(leadId, { type: 'outbound_call' }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
     }
 
     // On call end: refresh denormalized last-call snapshot on the lead row
     if (leadId && event === 'ended') {
+      if (isConnectedOutbound(finalStatus, finalOutcome, finalDisposition)) {
+        checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+      }
+
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       if (isConnectedOutbound(finalStatus, finalOutcome, finalDisposition) && finalDuration > 0) {
         patch.call_duration_seconds = finalDuration
