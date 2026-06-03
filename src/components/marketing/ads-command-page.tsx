@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import {
   Area,
   Bar,
@@ -59,8 +59,42 @@ type PeriodState = {
   roster: MarketingPeriod
   outbox: MarketingPeriod
 }
+type DashboardSectionId =
+  | 'kpis'
+  | 'trend'
+  | 'campaigns'
+  | 'searchTerms'
+  | 'funnel'
+  | 'roster'
+  | 'outbox'
+  | 'paidJourneys'
+type DashboardSectionSize = 'full' | 'half'
+
 const SEARCH_TERM_PAGE_SIZE = 10
 const OUTBOX_PAGE_SIZE = 5
+const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
+const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
+const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'roster', 'outbox', 'paidJourneys']
+const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
+  kpis: false,
+  trend: false,
+  campaigns: false,
+  searchTerms: false,
+  funnel: false,
+  roster: false,
+  outbox: false,
+  paidJourneys: false,
+}
+const DASHBOARD_SECTIONS: Record<DashboardSectionId, { label: string; size: DashboardSectionSize }> = {
+  kpis: { label: 'KPI Row', size: 'full' },
+  trend: { label: 'Performance Trend', size: 'full' },
+  campaigns: { label: 'Conversions by Campaign', size: 'half' },
+  searchTerms: { label: 'Search Term Performance', size: 'half' },
+  funnel: { label: 'Marketing Funnel', size: 'full' },
+  roster: { label: 'Active Lead Roster', size: 'full' },
+  outbox: { label: 'Lead Conversion Outbox', size: 'full' },
+  paidJourneys: { label: 'Latest Paid Journeys', size: 'full' },
+}
 
 type MarketingBreakdown = {
   title: string
@@ -125,6 +159,47 @@ function clientHydrationSnapshot(): boolean {
 
 function serverHydrationSnapshot(): boolean {
   return false
+}
+
+function isDashboardSectionId(value: string): value is DashboardSectionId {
+  return value in DASHBOARD_SECTIONS
+}
+
+function normalizeSectionOrder(value: unknown): DashboardSectionId[] {
+  if (!Array.isArray(value)) return DEFAULT_SECTION_ORDER
+  const seen = new Set<DashboardSectionId>()
+  const saved = value.filter((item): item is DashboardSectionId => {
+    if (typeof item !== 'string' || !isDashboardSectionId(item) || seen.has(item)) return false
+    seen.add(item)
+    return true
+  })
+  return [...saved, ...DEFAULT_SECTION_ORDER.filter((item) => !seen.has(item))]
+}
+
+function collapsedSectionsFromStorage(value: unknown): Record<DashboardSectionId, boolean> {
+  if (!Array.isArray(value)) return DEFAULT_COLLAPSED_SECTIONS
+  const collapsed = { ...DEFAULT_COLLAPSED_SECTIONS }
+  for (const item of value) {
+    if (typeof item === 'string' && isDashboardSectionId(item)) collapsed[item] = true
+  }
+  return collapsed
+}
+
+function collapsedSectionIds(collapsed: Record<DashboardSectionId, boolean>): DashboardSectionId[] {
+  return DEFAULT_SECTION_ORDER.filter((item) => collapsed[item])
+}
+
+function moveSection(order: DashboardSectionId[], source: DashboardSectionId, target: DashboardSectionId, placeAfter: boolean): DashboardSectionId[] {
+  if (source === target) return order
+  const withoutSource = order.filter((item) => item !== source)
+  const targetIndex = withoutSource.indexOf(target)
+  if (targetIndex < 0) return order
+  const insertIndex = targetIndex + (placeAfter ? 1 : 0)
+  return [
+    ...withoutSource.slice(0, insertIndex),
+    source,
+    ...withoutSource.slice(insertIndex),
+  ]
 }
 
 const TREND_PERIOD_OPTIONS: Array<{ value: MarketingPeriod; label: string }> = [
@@ -1682,6 +1757,78 @@ function BreakdownOverlay({ breakdown, onClose }: { breakdown: MarketingBreakdow
   )
 }
 
+function LayoutSection({
+  id,
+  collapsed,
+  isDragging,
+  children,
+  onToggleCollapsed,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  onPointerStart,
+  onPointerMove,
+  onPointerEnd,
+}: {
+  id: DashboardSectionId
+  collapsed: boolean
+  isDragging: boolean
+  children: ReactNode
+  onToggleCollapsed: (id: DashboardSectionId) => void
+  onDragStart: (id: DashboardSectionId, event: DragEvent<HTMLElement>) => void
+  onDragEnd: () => void
+  onDragOver: (event: DragEvent<HTMLElement>) => void
+  onDrop: (id: DashboardSectionId, event: DragEvent<HTMLElement>) => void
+  onPointerStart: (id: DashboardSectionId, event: PointerEvent<HTMLButtonElement>) => void
+  onPointerMove: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerEnd: () => void
+}) {
+  const section = DASHBOARD_SECTIONS[id]
+
+  return (
+    <section
+      className={`layout-section ${section.size} ${collapsed ? 'is-collapsed' : ''} ${isDragging ? 'is-dragging' : ''}`}
+      aria-label={section.label}
+      data-section-id={id}
+      onDragOver={onDragOver}
+      onDrop={(event) => onDrop(id, event)}
+    >
+      <div className="layout-head">
+        <div className="layout-title">
+          <button
+            type="button"
+            className="layout-drag"
+            draggable
+            aria-label={`Move ${section.label}`}
+            title={`Move ${section.label}`}
+            onDragStart={(event) => onDragStart(id, event)}
+            onDragEnd={onDragEnd}
+            onPointerDown={(event) => onPointerStart(id, event)}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerEnd}
+            onPointerCancel={onPointerEnd}
+          >
+            ⇅
+          </button>
+          <span>{section.label}</span>
+        </div>
+        <button
+          type="button"
+          className="layout-toggle"
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${section.label}`}
+          title={`${collapsed ? 'Expand' : 'Collapse'} ${section.label}`}
+          onClick={() => onToggleCollapsed(id)}
+        >
+          {collapsed ? '+' : '−'}
+        </button>
+      </div>
+      {collapsed ? <div className="layout-collapsed">Collapsed</div> : <div className="layout-body">{children}</div>}
+    </section>
+  )
+}
+
 export function AdsCommandPage() {
   const [periodState, setPeriodState] = useState<PeriodState>({ trend: 'month', funnel: 'month', camp: 'month', kw: 'month', roster: 'month', outbox: 'month' })
   const hasHydrated = useSyncExternalStore(subscribeHydration, clientHydrationSnapshot, serverHydrationSnapshot)
@@ -1699,6 +1846,11 @@ export function AdsCommandPage() {
   const [selectedLead, setSelectedLead] = useState<LeadRow | null>(null)
   const [selectedSession, setSelectedSession] = useState<PaidSessionRow | null>(null)
   const [selectedBreakdown, setSelectedBreakdown] = useState<MarketingBreakdown | null>(null)
+  const [sectionOrder, setSectionOrder] = useState<DashboardSectionId[]>(DEFAULT_SECTION_ORDER)
+  const [collapsedSections, setCollapsedSections] = useState<Record<DashboardSectionId, boolean>>(DEFAULT_COLLAPSED_SECTIONS)
+  const [layoutPrefsLoaded, setLayoutPrefsLoaded] = useState(false)
+  const [draggingSection, setDraggingSection] = useState<DashboardSectionId | null>(null)
+  const draggingSectionRef = useRef<DashboardSectionId | null>(null)
   const kpi = adsData?.kpi ?? KPI
   const series = adsData?.series ?? SERIES
   const campaigns = adsData?.campaigns ?? CAMPAIGNS
@@ -1711,6 +1863,30 @@ export function AdsCommandPage() {
   const paidSessions = adsData?.paidSessions ?? PAID_SESSIONS
   const campaignOptions = useMemo(() => campaigns.map((campaign) => campaign.name), [campaigns])
   const reportingPeriod = periodState.trend
+
+  useEffect(() => {
+    try {
+      const savedOrder = window.localStorage.getItem(SECTION_ORDER_STORAGE_KEY)
+      if (savedOrder) setSectionOrder(normalizeSectionOrder(JSON.parse(savedOrder)))
+
+      const savedCollapsed = window.localStorage.getItem(SECTION_COLLAPSE_STORAGE_KEY)
+      if (savedCollapsed) setCollapsedSections(collapsedSectionsFromStorage(JSON.parse(savedCollapsed)))
+    } catch (error) {
+      console.warn('[ads-command] layout preferences could not be loaded', error)
+    } finally {
+      setLayoutPrefsLoaded(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!layoutPrefsLoaded) return
+    window.localStorage.setItem(SECTION_ORDER_STORAGE_KEY, JSON.stringify(sectionOrder))
+  }, [layoutPrefsLoaded, sectionOrder])
+
+  useEffect(() => {
+    if (!layoutPrefsLoaded) return
+    window.localStorage.setItem(SECTION_COLLAPSE_STORAGE_KEY, JSON.stringify(collapsedSectionIds(collapsedSections)))
+  }, [collapsedSections, layoutPrefsLoaded])
 
   useEffect(() => {
     let controller: AbortController | null = null
@@ -1791,6 +1967,176 @@ export function AdsCommandPage() {
     })
   }
 
+  function toggleSectionCollapsed(id: DashboardSectionId) {
+    setCollapsedSections((current) => ({ ...current, [id]: !current[id] }))
+  }
+
+  function handleSectionDragStart(id: DashboardSectionId, event: DragEvent<HTMLElement>) {
+    draggingSectionRef.current = id
+    setDraggingSection(id)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', id)
+  }
+
+  function handleSectionDragEnd() {
+    draggingSectionRef.current = null
+    setDraggingSection(null)
+  }
+
+  function handleSectionDragOver(event: DragEvent<HTMLElement>) {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  function handleSectionDrop(target: DashboardSectionId, event: DragEvent<HTMLElement>) {
+    event.preventDefault()
+    const source = event.dataTransfer.getData('text/plain') || draggingSection
+    if (!source || !isDashboardSectionId(source)) {
+      setDraggingSection(null)
+      return
+    }
+
+    const targetRect = event.currentTarget.getBoundingClientRect()
+    const placeAfter = event.clientY > targetRect.top + targetRect.height / 2
+    setSectionOrder((current) => moveSection(current, source, target, placeAfter))
+    draggingSectionRef.current = null
+    setDraggingSection(null)
+  }
+
+  function handleSectionPointerStart(id: DashboardSectionId, event: PointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    draggingSectionRef.current = id
+    setDraggingSection(id)
+  }
+
+  function handleSectionPointerMove(event: PointerEvent<HTMLButtonElement>) {
+    const source = draggingSectionRef.current
+    if (!source) return
+
+    const targetElement = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('.layout-section')
+    const target = targetElement?.dataset.sectionId
+    if (!target || !isDashboardSectionId(target) || target === source) return
+
+    const targetRect = targetElement.getBoundingClientRect()
+    const placeAfter = event.clientY > targetRect.top + targetRect.height / 2
+    setSectionOrder((current) => moveSection(current, source, target, placeAfter))
+  }
+
+  function handleSectionPointerEnd() {
+    draggingSectionRef.current = null
+    setDraggingSection(null)
+  }
+
+  function renderDashboardSection(id: DashboardSectionId): ReactNode {
+    if (id === 'kpis') {
+      return (
+        <div className="kpis">
+          {kpi.map((item, index) => <KpiCard item={item} index={index} key={item.lab} />)}
+        </div>
+      )
+    }
+
+    if (id === 'trend') {
+      return (
+        <PerformanceTrend
+          period={periodState.trend}
+          activeSeries={activeSeries}
+          series={series}
+          onPeriodChange={(period) => setPanelPeriod('trend', period)}
+          onToggleSeries={toggleSeries}
+        />
+      )
+    }
+
+    if (id === 'campaigns') {
+      return (
+        <CampaignChart
+          period={periodState.camp}
+          view={campView}
+          campaigns={campaigns}
+          onPeriodChange={(period) => setPanelPeriod('camp', period)}
+          onViewChange={setCampView}
+        />
+      )
+    }
+
+    if (id === 'searchTerms') {
+      return (
+        <SearchTerms
+          period={periodState.kw}
+          tab={kwTab}
+          campaignFilter={kwCampaign}
+          campaignOptions={campaignOptions}
+          keywords={keywords}
+          negatives={negatives}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onPeriodChange={(period) => setPanelPeriod('kw', period)}
+          onTabChange={(tab) => {
+            setKwTab(tab)
+            setSortKey(tab === 'neg' ? 'clicks' : 'leads')
+            setSortDir('desc')
+          }}
+          onCampaignFilterChange={(campaign) => {
+            setKwCampaign(campaign)
+            setSortKey(kwTab === 'neg' ? 'clicks' : 'leads')
+            setSortDir('desc')
+          }}
+          onSort={handleSort}
+        />
+      )
+    }
+
+    if (id === 'funnel') {
+      return (
+        <MarketingFunnel
+          period={periodState.funnel}
+          funnel={funnel}
+          callBreakdown={callBreakdown}
+          onPeriodChange={(period) => setPanelPeriod('funnel', period)}
+          onOpenBreakdown={setSelectedBreakdown}
+        />
+      )
+    }
+
+    if (id === 'roster') {
+      return (
+        <ActiveLeadRoster
+          leads={leads}
+          period={periodState.roster}
+          onPeriodChange={(period) => setPanelPeriod('roster', period)}
+          onOpenLead={setSelectedLead}
+        />
+      )
+    }
+
+    if (id === 'outbox') {
+      return (
+        <LeadOutboxPanel
+          rows={outbox}
+          period={periodState.outbox}
+          onPeriodChange={(period) => setPanelPeriod('outbox', period)}
+        />
+      )
+    }
+
+    return (
+      <LatestPaidJourneys
+        sessions={paidSessions}
+        filter={pjFilter}
+        range={pjRange}
+        limit={pjLimit}
+        page={pjPage}
+        onFilterChange={(filter) => { setPjFilter(filter); setPjPage(0) }}
+        onRangeChange={setPaidJourneyRange}
+        onLimitChange={(limit) => { setPjLimit(limit); setPjPage(0) }}
+        onPageChange={setPjPage}
+        onOpenSession={setSelectedSession}
+      />
+    )
+  }
+
   if (!hasHydrated) {
     return (
       <>
@@ -1819,83 +2165,26 @@ export function AdsCommandPage() {
             <span className="fresh-pill">Google Ads: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
           </header>
 
-          <div className="kpis">
-            {kpi.map((item, index) => <KpiCard item={item} index={index} key={item.lab} />)}
+          <div className="layout-grid">
+            {sectionOrder.map((sectionId) => (
+              <LayoutSection
+                id={sectionId}
+                key={sectionId}
+                collapsed={collapsedSections[sectionId]}
+                isDragging={draggingSection === sectionId}
+                onToggleCollapsed={toggleSectionCollapsed}
+                onDragStart={handleSectionDragStart}
+                onDragEnd={handleSectionDragEnd}
+                onDragOver={handleSectionDragOver}
+                onDrop={handleSectionDrop}
+                onPointerStart={handleSectionPointerStart}
+                onPointerMove={handleSectionPointerMove}
+                onPointerEnd={handleSectionPointerEnd}
+              >
+                {renderDashboardSection(sectionId)}
+              </LayoutSection>
+            ))}
           </div>
-
-          <PerformanceTrend
-            period={periodState.trend}
-            activeSeries={activeSeries}
-            series={series}
-            onPeriodChange={(period) => setPanelPeriod('trend', period)}
-            onToggleSeries={toggleSeries}
-          />
-
-          <div className="campaign-keyword-grid">
-            <CampaignChart
-              period={periodState.camp}
-              view={campView}
-              campaigns={campaigns}
-              onPeriodChange={(period) => setPanelPeriod('camp', period)}
-              onViewChange={setCampView}
-            />
-            <SearchTerms
-              period={periodState.kw}
-              tab={kwTab}
-              campaignFilter={kwCampaign}
-              campaignOptions={campaignOptions}
-              keywords={keywords}
-              negatives={negatives}
-              sortKey={sortKey}
-              sortDir={sortDir}
-              onPeriodChange={(period) => setPanelPeriod('kw', period)}
-              onTabChange={(tab) => {
-                setKwTab(tab)
-                setSortKey(tab === 'neg' ? 'clicks' : 'leads')
-                setSortDir('desc')
-              }}
-              onCampaignFilterChange={(campaign) => {
-                setKwCampaign(campaign)
-                setSortKey(kwTab === 'neg' ? 'clicks' : 'leads')
-                setSortDir('desc')
-              }}
-              onSort={handleSort}
-            />
-          </div>
-
-          <MarketingFunnel
-            period={periodState.funnel}
-            funnel={funnel}
-            callBreakdown={callBreakdown}
-            onPeriodChange={(period) => setPanelPeriod('funnel', period)}
-            onOpenBreakdown={setSelectedBreakdown}
-          />
-
-          <ActiveLeadRoster
-            leads={leads}
-            period={periodState.roster}
-            onPeriodChange={(period) => setPanelPeriod('roster', period)}
-            onOpenLead={setSelectedLead}
-          />
-
-          <LeadOutboxPanel
-            rows={outbox}
-            period={periodState.outbox}
-            onPeriodChange={(period) => setPanelPeriod('outbox', period)}
-          />
-
-          <LatestPaidJourneys
-            sessions={paidSessions}
-            filter={pjFilter}
-            range={pjRange}
-            limit={pjLimit}
-            page={pjPage}
-            onFilterChange={(filter) => { setPjFilter(filter); setPjPage(0) }}
-            onRangeChange={setPaidJourneyRange}
-            onLimitChange={(limit) => { setPjLimit(limit); setPjPage(0) }}
-            onPageChange={setPjPage}
-            onOpenSession={setSelectedSession}
-          />
 
           <div className="foot">
             SAVING KC • GOOGLE ADS COMMAND • {adsData ? 'Google Ads backfill + CRM PPC read model' : 'preview fallback data'}
@@ -1992,6 +2281,23 @@ const ADS_COMMAND_STYLES = `
 .ads-command .fresh-pill { display:inline-flex; align-items:center; min-height:28px; font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary); background:rgba(255,255,255,.03); border:1px solid var(--line); padding:6px 10px; border-radius:999px; }
 .ads-command .live-dot { width:7px; height:7px; background:var(--success); border-radius:50%; box-shadow:0 0 0 3px rgba(34,197,94,.2); animation:adsPulse 2s ease-in-out infinite; }
 @keyframes adsPulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+.ads-command .layout-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:18px 14px; align-items:start; }
+.ads-command .layout-section { min-width:0; grid-column:1/-1; border:1px solid transparent; border-radius:var(--radius-2xl); transition:border-color .14s ease, opacity .14s ease, transform .14s ease; }
+.ads-command .layout-section.is-dragging { opacity:.55; transform:scale(.997); }
+.ads-command .layout-head { min-height:34px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 2px; margin:0 0 8px; }
+.ads-command .layout-title { min-width:0; display:flex; align-items:center; gap:9px; color:var(--text-tertiary); font-size:10.5px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.ads-command .layout-title span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ads-command .layout-drag,
+.ads-command .layout-toggle { width:30px; height:30px; display:grid; place-items:center; border:1px solid var(--line); background:var(--surface-2); color:var(--text-secondary); border-radius:10px; cursor:pointer; font-family:var(--font-mono); font-size:15px; font-weight:900; line-height:1; transition:background .12s ease, border-color .12s ease, color .12s ease; }
+.ads-command .layout-drag { cursor:grab; touch-action:none; user-select:none; }
+.ads-command .layout-drag:active { cursor:grabbing; }
+.ads-command .layout-drag:hover,
+.ads-command .layout-toggle:hover { background:var(--surface-3); border-color:var(--line-2); color:var(--text); }
+.ads-command .layout-body > .kpis,
+.ads-command .layout-body > .panel,
+.ads-command .layout-body > .campaign-keyword-grid { margin-bottom:0; }
+.ads-command .layout-body > .outbox-panel { margin-top:0; }
+.ads-command .layout-collapsed { min-height:56px; display:flex; align-items:center; border:1px dashed var(--line); border-radius:var(--radius-xl); background:rgba(255,255,255,.025); padding:0 18px; color:var(--text-tertiary); font-size:12px; font-weight:700; }
 .ads-command .kpis { display:grid; grid-template-columns:repeat(7,1fr); gap:12px; margin-bottom:26px; }
 .ads-command .kpi { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-xl); padding:18px 20px 16px; box-shadow:var(--shadow-sm); transition:transform .15s cubic-bezier(.23,1,.32,1), box-shadow .15s; }
 .ads-command .kpi:hover { transform:translateY(-1px); box-shadow:var(--shadow-md); border-color:var(--line-2); }
@@ -2241,6 +2547,7 @@ const ADS_COMMAND_STYLES = `
 .ads-command .breakdown-bar { height:5px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:9px; }
 .ads-command .breakdown-bar span { display:block; height:100%; border-radius:999px; }
 .ads-command .breakdown-item p { margin:7px 0 0; color:var(--text-tertiary); font-size:12px; }
+@media (min-width:1101px) { .ads-command .layout-grid { grid-template-columns:minmax(0,1fr) minmax(0,1.28fr); } .ads-command .layout-section.full { grid-column:1/-1; } .ads-command .layout-section.half { grid-column:auto / span 1; } }
 @media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } }
 @media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } }
 @media (max-width:920px) { .ads-command .stage-top { grid-template-columns:1fr; align-items:flex-start; } .ads-command .qbadges { margin-left:0; } .ads-command .stage-body, .ads-command .micro-body { grid-template-columns:1fr; } .ads-command .statside, .ads-command .micro-side { display:none; } .ads-command .stage { inset:10px; width:auto; } }
