@@ -27,6 +27,7 @@ const PUBLIC_API_EXACT = new Set([
   '/api/twilio-sms-webhook',
   '/api/twilio-missed-call',
   '/api/twilio-recording-callback',
+  '/api/twilio-call-status',
 ])
 
 const PUBLIC_API_PREFIXES = [
