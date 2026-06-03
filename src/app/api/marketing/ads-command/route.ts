@@ -1315,7 +1315,7 @@ export async function GET(req: NextRequest) {
       kpi: buildKpis(rows.campaignRows, rows.previousCampaignRows, rows.leadRows, rows.previousLeadRows, rows.revenueRows, rows.trackingRows),
       series,
       campaigns: groupCampaigns(rows.campaignRows, rows.trackingRows, rows.outboxRows, leadRowsForResponse),
-      keywords: rows.searchRows.length ? buildKeywords(rows.searchRows, [], rows.campaignRows) : [],
+      keywords: buildKeywords(rows.searchRows, leadRowsForResponse, rows.campaignRows),
       negatives: rows.searchRows.length ? buildNegatives(rows.searchRows) : [],
       funnel: buildFunnel(rows.campaignRows, rows.trackingRows, rows.leadRows),
       callBreakdown: buildCallBreakdown(rows.trackingRows, rows.outboxRows),
