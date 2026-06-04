@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import {
   Area,
@@ -2147,6 +2148,7 @@ export function AdsCommandPage() {
               <span className="live-pill"><span className="live-dot" /> LIVE • loading</span>
               <span className="fresh-pill">Tracking: waiting</span>
               <span className="fresh-pill">Google Ads: waiting</span>
+              <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
             </header>
           </div>
         </div>
@@ -2163,6 +2165,7 @@ export function AdsCommandPage() {
             <span className="live-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'LIVE • preview data'}</span>
             <span className="fresh-pill">Tracking: {formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</span>
             <span className="fresh-pill">Google Ads: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
+            <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
           </header>
 
           <div className="layout-grid">
@@ -2279,6 +2282,8 @@ const ADS_COMMAND_STYLES = `
 .ads-command .bar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
 .ads-command .live-pill { display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--text-secondary); background:var(--surface-2); border:1px solid var(--line); padding:6px 14px 6px 12px; border-radius:999px; }
 .ads-command .fresh-pill { display:inline-flex; align-items:center; min-height:28px; font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary); background:rgba(255,255,255,.03); border:1px solid var(--line); padding:6px 10px; border-radius:999px; }
+.ads-command .call-review-link { color:#fecaca; text-decoration:none; font-weight:800; letter-spacing:.02em; }
+.ads-command .call-review-link:hover { color:#fff; border-color:rgba(227,46,46,.45); background:rgba(227,46,46,.12); }
 .ads-command .live-dot { width:7px; height:7px; background:var(--success); border-radius:50%; box-shadow:0 0 0 3px rgba(34,197,94,.2); animation:adsPulse 2s ease-in-out infinite; }
 @keyframes adsPulse { 0%,100%{opacity:1} 50%{opacity:.6} }
 .ads-command .layout-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:18px 14px; align-items:start; }
