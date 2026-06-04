@@ -4,7 +4,9 @@ import { createHash } from 'node:crypto'
 import { mkdir, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
+import { startPpcFormLeadAgentCallback } from '@/lib/lead-form-callback'
 import { buildUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
+import { DEFAULT_PPC_CAMPAIGN, ppcCampaignForPagePath } from '@/lib/ppc/campaigns'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { getPpcRequestContext } from '@/lib/ppc/request-context'
 import {
@@ -332,7 +334,9 @@ async function triggerPpcLeadSideEffects(params: {
   leadId: string
   fullName: string
   address?: string
+  city?: string
   phone: string
+  pagePath: string
 }) {
   const leadUrl = `/leads/${params.leadId}`
   const publicLeadUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}${leadUrl}`
@@ -363,6 +367,17 @@ async function triggerPpcLeadSideEffects(params: {
     regenerateBriefing(params.leadId, 'ppc_lead_submitted', true),
   ])
 
+  const campaign = ppcCampaignForPagePath(params.pagePath) ?? DEFAULT_PPC_CAMPAIGN
+  const callback = await startPpcFormLeadAgentCallback({
+    leadId: params.leadId,
+    leadPhone: params.phone,
+    callerId: campaign.phoneTel,
+    fullName: params.fullName,
+    address: params.address,
+    city: params.city,
+    trigger: 'ppc_form_submit',
+  })
+
   await supabase.from('lead_activities').insert({
     lead_id: params.leadId,
     activity_type: 'sms',
@@ -377,6 +392,7 @@ async function triggerPpcLeadSideEffects(params: {
         schedule: target.schedule,
       })),
       trigger: 'ppc_lead_alert',
+      form_agent_callback: callback,
       delivery_status: smsResults.map((entry) => {
         if (entry.status === 'rejected') {
           return {
@@ -882,7 +898,9 @@ export async function POST(req: NextRequest) {
         leadId: resolvedLeadId,
         fullName: fullName ?? 'PPC Lead',
         address,
+        city: cityState.city,
         phone: phoneE164 ?? '',
+        pagePath: landingPagePath,
       }).catch((err) => console.error('[ppc/lead] side effects failed', err))
     }
 

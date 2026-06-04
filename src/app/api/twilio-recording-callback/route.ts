@@ -212,7 +212,8 @@ export async function POST(req: Request) {
     const externalPhone = from?.startsWith('client:') ? to : from
     const isInternalTestRecording = isInternalTestPhone(externalPhone)
     const profile = getGoogleAdsPhoneProfile(sourceHint || calledNumber)
-    const isGoogleAdsRecording = (
+    const isFormLeadAgentCallback = sourceHint === 'ppc_form_agent_callback'
+    const isGoogleAdsRecording = !isFormLeadAgentCallback && (
       sourceHint === GOOGLE_ADS_PHONE_SOURCE ||
       sourceHint === GOOGLE_ADS_TAX_PHONE_SOURCE ||
       isPpcTrackingNumber(calledNumber)

@@ -1,6 +1,10 @@
 const DEFAULT_INTERNAL_TEST_PHONE_DIGITS = [
   '19137179617',
   '9137179617',
+  '19137179716',
+  '9137179716',
+  '18165537559',
+  '8165537559',
 ]
 
 function phoneDigits(value: string | null | undefined): string {

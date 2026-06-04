@@ -29,6 +29,7 @@ function task(overrides: Partial<GoogleAdsMissedCallTaskRow> = {}): GoogleAdsMis
 
 function deps(overrides: Partial<Parameters<typeof processGoogleAdsMissedCallTask>[1]['deps']> = {}) {
   return {
+    getLeadStation: vi.fn().mockResolvedValue('new'),
     hasRespondedSince: vi.fn().mockResolvedValue(false),
     notifyTeam: vi.fn().mockResolvedValue(undefined),
     startCallback: vi.fn().mockResolvedValue({ started: true, sid: 'CA-callback' }),
@@ -69,6 +70,55 @@ describe('Google Ads missed-call reconciliation', () => {
     expect(mockedDeps.updateTask).toHaveBeenCalledWith('task-1', expect.objectContaining({
       status: 'completed',
       skipped_reason: 'lead_responded_before_escalation',
+    }))
+  })
+
+  it('skips the escalation for internal test phones', async () => {
+    const mockedDeps = deps()
+
+    const result = await processGoogleAdsMissedCallTask(task({
+      metadata: {
+        ...(task().metadata ?? {}),
+        seller_phone: '+18165537559',
+      },
+    }), {
+      now: new Date('2026-05-26T14:06:00.000Z'),
+      dryRun: false,
+      deps: mockedDeps,
+    })
+
+    expect(result).toEqual(expect.objectContaining({
+      status: 'skipped',
+      reason: 'internal_test_phone',
+    }))
+    expect(mockedDeps.getLeadStation).not.toHaveBeenCalled()
+    expect(mockedDeps.notifyTeam).not.toHaveBeenCalled()
+    expect(mockedDeps.startCallback).not.toHaveBeenCalled()
+    expect(mockedDeps.updateTask).toHaveBeenCalledWith('task-1', expect.objectContaining({
+      status: 'skipped',
+      skipped_reason: 'internal_test_phone',
+    }))
+  })
+
+  it('skips the escalation when the lead is already dead', async () => {
+    const mockedDeps = deps({ getLeadStation: vi.fn().mockResolvedValue('dead') })
+
+    const result = await processGoogleAdsMissedCallTask(task(), {
+      now: new Date('2026-05-26T14:06:00.000Z'),
+      dryRun: false,
+      deps: mockedDeps,
+    })
+
+    expect(result).toEqual(expect.objectContaining({
+      status: 'skipped',
+      reason: 'lead_station_dead',
+    }))
+    expect(mockedDeps.hasRespondedSince).not.toHaveBeenCalled()
+    expect(mockedDeps.notifyTeam).not.toHaveBeenCalled()
+    expect(mockedDeps.startCallback).not.toHaveBeenCalled()
+    expect(mockedDeps.updateTask).toHaveBeenCalledWith('task-1', expect.objectContaining({
+      status: 'skipped',
+      skipped_reason: 'lead_station_dead',
     }))
   })
 
