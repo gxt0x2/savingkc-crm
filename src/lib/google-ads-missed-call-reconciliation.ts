@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase-lazy'
 const DEFAULT_LIMIT = 25
 const MAX_LIMIT = 100
 const TERMINAL_TWILIO_CALL_STATUSES = new Set(['completed', 'busy', 'no-answer', 'failed', 'canceled'])
+const ESCALATION_SKIP_STATIONS = new Set(['dead', 'closed_lost'])
 
 type ActivityMetadata = Record<string, unknown>
 
@@ -85,6 +86,7 @@ type TwilioReconciliationResult = {
 }
 
 type TaskProcessorDeps = {
+  getLeadStation: (leadId: string) => Promise<string | null>
   hasRespondedSince: (leadId: string, sinceIso: string) => Promise<boolean>
   notifyTeam: typeof notifyGoogleAdsTeam
   startCallback: typeof startGoogleAdsAgentCallback
@@ -189,6 +191,41 @@ export async function processGoogleAdsMissedCallTask(
     }
   }
 
+  if (isInternalTestPhone(sellerPhone)) {
+    const nextMetadata = {
+      ...metadata,
+      status: 'skipped',
+      skipped_at: input.now.toISOString(),
+      skipped_reason: 'internal_test_phone',
+      processed_by: 'google_ads_missed_call_reconciliation',
+    }
+    if (!input.dryRun) await input.deps.updateTask(row.id, nextMetadata)
+    return {
+      id: row.id,
+      leadId,
+      status: 'skipped',
+      reason: 'internal_test_phone',
+    }
+  }
+
+  const leadStation = await input.deps.getLeadStation(leadId)
+  if (leadStation && ESCALATION_SKIP_STATIONS.has(leadStation.toLowerCase())) {
+    const nextMetadata = {
+      ...metadata,
+      status: 'skipped',
+      skipped_at: input.now.toISOString(),
+      skipped_reason: `lead_station_${leadStation}`,
+      processed_by: 'google_ads_missed_call_reconciliation',
+    }
+    if (!input.dryRun) await input.deps.updateTask(row.id, nextMetadata)
+    return {
+      id: row.id,
+      leadId,
+      status: 'skipped',
+      reason: String(nextMetadata.skipped_reason),
+    }
+  }
+
   const responded = await input.deps.hasRespondedSince(leadId, missedAt)
   if (responded) {
     const nextMetadata = {
@@ -285,6 +322,18 @@ async function updateTask(id: string, metadata: ActivityMetadata): Promise<void>
     .eq('id', id)
 
   if (error) throw new Error(error.message)
+}
+
+async function getLeadStation(leadId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('leads')
+    .select('station')
+    .eq('id', leadId)
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  return text(data?.station)
 }
 
 async function fetchRecentTwilioInboundCalls(now: Date, lookbackMinutes: number): Promise<TwilioInboundCallRow[]> {
@@ -485,6 +534,7 @@ export async function runGoogleAdsMissedCallReconciliation(
         now,
         dryRun,
         deps: {
+          getLeadStation,
           hasRespondedSince: hasGoogleAdsLeadRespondedSince,
           notifyTeam: notifyGoogleAdsTeam,
           startCallback: startGoogleAdsAgentCallback,
