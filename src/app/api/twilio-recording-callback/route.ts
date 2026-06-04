@@ -19,6 +19,7 @@ import {
 import {
   markLeadAsGoogleAdsPhoneLead,
   phoneLookupVariants,
+  resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
 
 type RecordingCallbackMeta = {
@@ -279,6 +280,17 @@ export async function POST(req: Request) {
           .maybeSingle()
         leadId = lead?.id || null
         if (leadId) break
+      }
+    }
+
+    // Google Ads call recordings are seller-facing signals. If no seller lead
+    // exists yet, resolve/create it from the caller phone before falling back
+    // to child-leg lookup, which can match the internal agent leg instead.
+    if (!leadId && isGoogleAdsRecording && cleanPhone) {
+      const googleAdsLead = await resolveGoogleAdsLeadContext(cleanPhone, calledNumber || sourceHint)
+      leadId = googleAdsLead.leadId
+      if (leadId) {
+        console.log(`[recording-callback] Resolved Google Ads recording to seller lead ${leadId}`)
       }
     }
 
