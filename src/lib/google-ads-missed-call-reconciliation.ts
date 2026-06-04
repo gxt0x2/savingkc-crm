@@ -83,6 +83,7 @@ type TwilioReconciliationResult = {
   status: 'ok' | 'repaired' | 'skipped' | 'failed'
   reason?: string
   leadId?: string | null
+  attachedActivityCount?: number
 }
 
 type TaskProcessorDeps = {
@@ -366,21 +367,36 @@ async function fetchRecentTwilioInboundCalls(now: Date, lookbackMinutes: number)
   return rows
 }
 
+export function googleAdsCallSidActivityOrFilter(callSid: string): string {
+  return [
+    `metadata->>callSid.eq.${callSid}`,
+    `metadata->>CallSid.eq.${callSid}`,
+    `metadata->>parent_call_sid.eq.${callSid}`,
+    `metadata->>parentCallSid.eq.${callSid}`,
+    `metadata->>call_sid.eq.${callSid}`,
+  ].join(',')
+}
+
 async function hasActivityForCallSid(callSid: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('lead_activities')
     .select('id')
-    .or([
-      `metadata->>callSid.eq.${callSid}`,
-      `metadata->>CallSid.eq.${callSid}`,
-      `metadata->>parent_call_sid.eq.${callSid}`,
-      `metadata->>parentCallSid.eq.${callSid}`,
-      `metadata->>call_sid.eq.${callSid}`,
-    ].join(','))
+    .or(googleAdsCallSidActivityOrFilter(callSid))
     .limit(1)
 
   if (error) throw new Error(error.message)
   return Boolean(data?.length)
+}
+
+async function attachLeadActivitiesForCallSid(callSid: string, leadId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('lead_activities')
+    .update({ lead_id: leadId }, { count: 'exact' })
+    .is('lead_id', null)
+    .or(googleAdsCallSidActivityOrFilter(callSid))
+
+  if (error) throw new Error(error.message)
+  return count ?? 0
 }
 
 async function findLeadIdByPhone(phone: string): Promise<string | null> {
@@ -441,6 +457,7 @@ async function reconcileTwilioInboundCall(
 
   const lead = await resolveGoogleAdsLeadContext(call.from, call.to)
   const leadId = lead.leadId
+  let attachedActivityCount = 0
 
   if (leadId && !hasActivity) {
     const description = `Reconciled Google Ads call from ${callerPhoneLabel(call.from)} (${call.duration}s)`
@@ -466,6 +483,8 @@ async function reconcileTwilioInboundCall(
         repaired_at: input.now.toISOString(),
       },
     })
+  } else if (leadId && hasActivity && !existingLeadId) {
+    attachedActivityCount = await attachLeadActivitiesForCallSid(call.sid, leadId)
   }
 
   await notifyGoogleAdsTeam(
@@ -479,6 +498,7 @@ async function reconcileTwilioInboundCall(
         callSid: call.sid,
         source: 'google_ads_call_reconciliation',
         repaired_missing: existingLeadId ? 'activity' : 'lead',
+        attached_activity_count: attachedActivityCount,
       },
       now: input.now,
     },
@@ -491,6 +511,7 @@ async function reconcileTwilioInboundCall(
     status: 'repaired',
     reason: existingLeadId ? 'missing_activity' : 'missing_lead',
     leadId,
+    attachedActivityCount,
   }
 }
 
