@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  googleAdsCallSidActivityOrFilter,
   isGoogleAdsMissedCallTaskDue,
   processGoogleAdsMissedCallTask,
   type GoogleAdsMissedCallTaskRow,
@@ -43,6 +44,16 @@ function deps(overrides: Partial<Parameters<typeof processGoogleAdsMissedCallTas
 }
 
 describe('Google Ads missed-call reconciliation', () => {
+  it('uses one call SID filter for detected and repaired call activities', () => {
+    expect(googleAdsCallSidActivityOrFilter('CA123')).toBe([
+      'metadata->>callSid.eq.CA123',
+      'metadata->>CallSid.eq.CA123',
+      'metadata->>parent_call_sid.eq.CA123',
+      'metadata->>parentCallSid.eq.CA123',
+      'metadata->>call_sid.eq.CA123',
+    ].join(','))
+  })
+
   it('only treats pending due escalation tasks as due', () => {
     const now = new Date('2026-05-26T14:06:00.000Z')
 
