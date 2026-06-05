@@ -74,6 +74,7 @@ export type StageRow = {
 export type LeadRow = {
   id: string | number
   name: string
+  source?: string
   county: string
   prop: string
   campaign: string
@@ -95,6 +96,7 @@ export type OutboxRow = {
   id: string
   leadId: string | number | null
   leadName: string
+  source?: string
   event: string
   category: string
   status: string
@@ -127,6 +129,7 @@ export type PaidSessionRow = {
   time: string
   date: 'today' | 'yesterday' | string
   dateL: string
+  source?: string
   campaign: string
   gclid: string
   kw: string
