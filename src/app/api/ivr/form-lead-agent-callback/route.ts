@@ -38,11 +38,12 @@ async function claimCallbackBatch(input: {
   agentPhone: string
   trigger: string
   agentCallSid: string
+  source: string
 }): Promise<{ claimed: boolean; winnerAgent?: string }> {
   if (!input.leadId || !input.batchId) return { claimed: true }
 
   const claimMetadata = {
-    source: 'ppc_form_agent_callback',
+    source: input.source,
     batch_id: input.batchId,
     outcome: 'agent_claimed',
     trigger: input.trigger,
@@ -58,7 +59,7 @@ async function claimCallbackBatch(input: {
     .insert({
       lead_id: input.leadId,
       activity_type: 'call',
-      description: `PPC form callback claimed by ${input.agentName}`,
+      description: `${input.source === 'ppc_form_agent_callback' ? 'PPC' : 'Lead'} form callback claimed by ${input.agentName}`,
       agent: 'System',
       metadata: claimMetadata,
     })
@@ -78,7 +79,7 @@ async function claimCallbackBatch(input: {
     .eq('activity_type', 'call')
     .gte('created_at', claimWindow)
     .contains('metadata', {
-      source: 'ppc_form_agent_callback',
+      source: input.source,
       batch_id: input.batchId,
       outcome: 'agent_claimed',
     })
@@ -106,6 +107,7 @@ export async function POST(req: Request) {
   const address = url.searchParams.get('address') || ''
   const city = url.searchParams.get('city') || ''
   const trigger = url.searchParams.get('trigger') || 'ppc_form_submit'
+  const callbackSource = trigger.startsWith('ppc_') ? 'ppc_form_agent_callback' : 'lead_form_agent_callback'
   const batchId = url.searchParams.get('batchId') || ''
   const agentName = url.searchParams.get('agentName') || 'Agent'
   const agentPhone = url.searchParams.get('agentPhone') || ''
@@ -129,6 +131,7 @@ export async function POST(req: Request) {
     agentPhone,
     trigger,
     agentCallSid,
+    source: callbackSource,
   })
 
   if (!claim.claimed) {
@@ -142,7 +145,7 @@ export async function POST(req: Request) {
 
   const intro = buildFormLeadCallbackIntro({ fullName, address, city })
   const resultAction = `${BASE_URL}/api/ivr/form-lead-agent-callback-result?leadId=${escParam(leadId)}&amp;leadPhone=${escParam(leadPhone)}&amp;callerId=${escParam(callerId)}&amp;trigger=${escParam(trigger)}&amp;batchId=${escParam(batchId)}&amp;agentName=${escParam(agentName)}&amp;agentPhone=${escParam(agentPhone)}`
-  const recordingCallback = `${BASE_URL}/api/twilio-recording-callback?source=ppc_form_agent_callback&amp;from=${escParam(leadPhone)}&amp;leadId=${escParam(leadId)}&amp;calledNumber=${escParam(callerId)}`
+  const recordingCallback = `${BASE_URL}/api/twilio-recording-callback?source=${escParam(callbackSource)}&amp;from=${escParam(leadPhone)}&amp;leadId=${escParam(leadId)}&amp;calledNumber=${escParam(callerId)}`
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna">${escXml(intro)}</Say>

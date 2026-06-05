@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
-import { safeSendSMS } from '@/lib/safe-communications'
 import { regenerateBriefing, EAGER_REGEN_EVENTS } from '@/lib/briefing-regen'
 import { notifyNewLead } from '@/lib/ari-briefing'
-import { getAgentRouting } from '@/lib/agent-routing'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
-import { sendPushToAgents } from '@/lib/push-notifications'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
 
 const corsHeaders = {
@@ -219,55 +217,33 @@ async function triggerWebsiteLeadSideEffects(input: {
   const addressPart = input.address ? ` at ${input.address}` : ''
   const label = input.isGoogleAds ? 'Google Ads website lead' : 'Website lead'
   const alertBody = `New ${label}: ${input.fullName}${addressPart}. Phone: ${input.phone || 'not provided'}. ${publicLeadUrl}`
-  const routing = getAgentRouting(process.env.TWILIO_PHONE_NUMBER || '')
-  const targets = [
-    { name: routing.primary.name, phone: routing.primary.phone },
-    { name: routing.secondary.name, phone: routing.secondary.phone },
-  ].filter((target, index, all) => target.phone && all.findIndex((item) => item.phone === target.phone) === index)
-
-  const smsResults = process.env.TWILIO_PHONE_NUMBER
-    ? await Promise.allSettled(
-      targets.map((target) =>
-        safeSendSMS({
-          body: alertBody,
-          from: process.env.TWILIO_PHONE_NUMBER!,
-          to: target.phone,
-        }).then((result) => ({ target: target.name, result })),
-      ),
-    )
-    : []
 
   await Promise.allSettled([
     notifyNewLead(input.leadId, input.fullName, input.source),
-    sendPushToAgents({
+    regenerateBriefing(input.leadId, 'website_lead_submitted', true),
+  ])
+
+  await sendTeamLeadAlert({
+    leadId: input.leadId,
+    smsBody: alertBody,
+    trigger: 'website_lead_alert',
+    source: input.formSource,
+    trafficSource: input.isGoogleAds ? 'google_ads' : 'non_paid',
+    push: {
       title: label,
       body: `${input.fullName}${addressPart}`,
       url: leadUrl,
       tag: `website-lead-${input.leadId}`,
-    }),
-    regenerateBriefing(input.leadId, 'website_lead_submitted', true),
-  ])
-
-  await supabase.from('lead_activities').insert({
-    lead_id: input.leadId,
-    activity_type: 'sms',
-    description: alertBody,
-    agent: 'System',
+    },
+    callback: input.phone ? {
+      leadPhone: input.phone,
+      callerId: process.env.TWILIO_PHONE_NUMBER || '+18163077835',
+      fullName: input.fullName,
+      address: input.address,
+      trigger: 'website_form_submit',
+    } : false,
     metadata: {
-      direction: 'outbound_alert',
-      trigger: 'website_lead_alert',
-      source: input.formSource,
-      traffic_source: input.isGoogleAds ? 'google_ads' : 'non_paid',
-      to_agents: targets.map((target) => target.name),
-      delivery_status: smsResults.map((entry) => {
-        if (entry.status === 'rejected') return { success: false, error: entry.reason?.message || 'Unknown error' }
-        return {
-          target: entry.value.target,
-          success: entry.value.result.success,
-          sid: entry.value.result.sid,
-          error: entry.value.result.error,
-        }
-      }),
+      form_source: input.formSource,
     },
   })
 }

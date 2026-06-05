@@ -50,7 +50,7 @@ export function buildFormLeadCallbackIntro(input: {
     : `${firstName} is looking to sell their place on ${street}. Calling them now.`
 }
 
-export async function startPpcFormLeadAgentCallback(input: FormLeadCallbackInput): Promise<{
+export async function startLeadFormAgentCallback(input: FormLeadCallbackInput): Promise<{
   started: boolean
   sid?: string
   to?: string
@@ -129,3 +129,5 @@ export async function startPpcFormLeadAgentCallback(input: FormLeadCallbackInput
     calls: callResults,
   }
 }
+
+export const startPpcFormLeadAgentCallback = startLeadFormAgentCallback
