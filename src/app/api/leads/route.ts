@@ -499,15 +499,19 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    triggerWebsiteLeadSideEffects({
-      leadId: resolvedLeadId,
-      fullName: name,
-      address,
-      phone: normalizedPhone || phone,
-      source: leadSource,
-      formSource,
-      isGoogleAds,
-    }).catch((err) => console.error('[website-lead] side effects failed:', err))
+    try {
+      await triggerWebsiteLeadSideEffects({
+        leadId: resolvedLeadId,
+        fullName: name,
+        address,
+        phone: normalizedPhone || phone,
+        source: leadSource,
+        formSource,
+        isGoogleAds,
+      })
+    } catch (err) {
+      console.error('[website-lead] side effects failed:', err)
+    }
 
     return NextResponse.json({ success: true, leadId: resolvedLeadId, manifestId }, { headers: corsHeaders })
   } catch (err) {
