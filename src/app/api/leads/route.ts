@@ -5,6 +5,7 @@ import { notifyNewLead } from '@/lib/ari-briefing'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
+import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 
 const corsHeaders = {
@@ -110,13 +111,31 @@ async function findLeadIdByPhone(phoneVariants: string[]): Promise<string | null
 
 async function findLeadBySessionId(sessionId: string | null): Promise<{ id: string; form_status?: string | null } | null> {
   if (!sessionId) return null
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('leads')
     .select('id, form_status')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  if (error && isMissingColumnError(error)) {
+    const { data: fallback, error: fallbackError } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (fallbackError) console.error('[website-lead] session lookup fallback failed:', fallbackError)
+    return fallback ?? null
+  }
+
+  if (error) {
+    console.error('[website-lead] session lookup failed:', error)
+    return null
+  }
 
   return data ?? null
 }
@@ -156,6 +175,65 @@ async function removeMergedPartialLead(sessionLead: { id: string; form_status?: 
     .eq('form_status', 'partial')
 
   if (error) console.error('[website-lead] failed to remove merged partial lead:', error)
+}
+
+function withoutFormStatus<T extends Record<string, unknown>>(fields: T): Omit<T, 'form_status'> {
+  const { form_status: _formStatus, ...rest } = fields
+  return rest
+}
+
+async function insertWebsiteLead(fields: Record<string, unknown>, isGoogleAds: boolean): Promise<{ id: string } | null> {
+  const insertFields = {
+    ...fields,
+    station: 'new',
+    priority: isGoogleAds ? 'hot' : 'normal',
+  }
+
+  const { data, error } = await supabase
+    .from('leads')
+    .insert(insertFields)
+    .select('id')
+    .single()
+
+  if (!error) return data
+
+  if (isMissingColumnError(error) && 'form_status' in insertFields) {
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('leads')
+      .insert(withoutFormStatus(insertFields))
+      .select('id')
+      .single()
+
+    if (!fallbackError) return fallbackData
+    console.error('[website-lead] Supabase insert fallback error:', fallbackError)
+    return null
+  }
+
+  console.error('[website-lead] Supabase insert error:', error)
+  return null
+}
+
+async function updateWebsiteLead(leadId: string, fields: Record<string, unknown>): Promise<boolean> {
+  const { error } = await supabase
+    .from('leads')
+    .update(fields)
+    .eq('id', leadId)
+
+  if (!error) return true
+
+  if (isMissingColumnError(error) && 'form_status' in fields) {
+    const { error: fallbackError } = await supabase
+      .from('leads')
+      .update(withoutFormStatus(fields))
+      .eq('id', leadId)
+
+    if (!fallbackError) return true
+    console.error('[website-lead] Supabase update fallback error:', fallbackError)
+    return false
+  }
+
+  console.error('[website-lead] Supabase update error:', error)
+  return false
 }
 
 async function upsertWebsiteLeadActivity(input: {
@@ -333,35 +411,22 @@ export async function POST(req: NextRequest) {
 
     // If still no lead, create bare lead
     if (!leadId) {
-      const { data, error } = await supabase
-        .from('leads')
-        .insert({
-          ...baseLeadFields,
-          station: 'new',
-          priority: isGoogleAds ? 'hot' : 'normal',
-        })
-        .select('id')
-        .single()
+      const data = await insertWebsiteLead(baseLeadFields, isGoogleAds)
 
-      if (error) {
-        console.error('[website-lead] Supabase insert error:', error)
-        return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+      if (!data?.id) {
+        return NextResponse.json({ success: false, error: 'Lead insert failed' }, { status: 500, headers: corsHeaders })
       }
 
       leadId = data.id
     } else {
-      const { error } = await supabase
-        .from('leads')
-        .update({
-          ...baseLeadFields,
-          ...(sessionLead?.id === leadId ? { station: 'new' } : {}),
-          ...(isGoogleAds ? { priority: 'hot' } : {}),
-        })
-        .eq('id', leadId)
+      const updated = await updateWebsiteLead(leadId, {
+        ...baseLeadFields,
+        ...(sessionLead?.id === leadId ? { station: 'new' } : {}),
+        ...(isGoogleAds ? { priority: 'hot' } : {}),
+      })
 
-      if (error) {
-        console.error('[website-lead] Supabase update error:', error)
-        return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+      if (!updated) {
+        return NextResponse.json({ success: false, error: 'Lead update failed' }, { status: 500, headers: corsHeaders })
       }
     }
 
@@ -434,15 +499,19 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    triggerWebsiteLeadSideEffects({
-      leadId: resolvedLeadId,
-      fullName: name,
-      address,
-      phone: normalizedPhone || phone,
-      source: leadSource,
-      formSource,
-      isGoogleAds,
-    }).catch((err) => console.error('[website-lead] side effects failed:', err))
+    try {
+      await triggerWebsiteLeadSideEffects({
+        leadId: resolvedLeadId,
+        fullName: name,
+        address,
+        phone: normalizedPhone || phone,
+        source: leadSource,
+        formSource,
+        isGoogleAds,
+      })
+    } catch (err) {
+      console.error('[website-lead] side effects failed:', err)
+    }
 
     return NextResponse.json({ success: true, leadId: resolvedLeadId, manifestId }, { headers: corsHeaders })
   } catch (err) {

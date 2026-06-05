@@ -903,14 +903,18 @@ export async function POST(req: NextRequest) {
     })
 
     if (!isTestLead) {
-      triggerPpcLeadSideEffects({
-        leadId: resolvedLeadId,
-        fullName: fullName ?? 'PPC Lead',
-        address,
-        city: cityState.city,
-        phone: phoneE164 ?? '',
-        pagePath: landingPagePath,
-      }).catch((err) => console.error('[ppc/lead] side effects failed', err))
+      try {
+        await triggerPpcLeadSideEffects({
+          leadId: resolvedLeadId,
+          fullName: fullName ?? 'PPC Lead',
+          address,
+          city: cityState.city,
+          phone: phoneE164 ?? '',
+          pagePath: landingPagePath,
+        })
+      } catch (err) {
+        console.error('[ppc/lead] side effects failed', err)
+      }
     }
 
     return NextResponse.json({
