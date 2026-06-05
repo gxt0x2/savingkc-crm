@@ -1053,7 +1053,7 @@ function ActiveLeadRoster({
       <div className="panel-head">
         <div>
           <h2>Active Lead Roster</h2>
-          <div className="cap">Google Ads-sourced • tap any lead to explore full journey</div>
+          <div className="cap">Paid-source leads • Google Ads + OpenAI Ads • tap any lead to explore full journey</div>
         </div>
         <PeriodSelect value={period} onChange={onPeriodChange} label="Roster period" />
       </div>
@@ -1075,7 +1075,7 @@ function ActiveLeadRoster({
                 </span>
                 <span className="meta">{lead.county} · {lead.prop}</span>
                 <span className="kw">
-                  <SvgIcon name="cursor" size={11} /> {lead.kw}
+                  <SvgIcon name="cursor" size={11} /> <span className="source-tag">{lead.source ?? 'Google Ads'}</span> {lead.kw}
                 </span>
                 <span className="lead-metrics">
                   <span>
@@ -1215,7 +1215,7 @@ function LeadOutboxPanel({
       <div className="panel-head">
         <div>
           <h2>Lead Conversion Outbox</h2>
-          <div className="cap">Google Ads export queue • read-only lead linkage</div>
+          <div className="cap">Ads export queue • Google Ads + OpenAI Ads • read-only lead linkage</div>
         </div>
         <PeriodSelect value={period} onChange={handlePeriodChange} label="Outbox period" />
       </div>
@@ -1256,7 +1256,7 @@ function LeadOutboxPanel({
                         <span>{open ? '-' : '+'}</span>
                         <span>
                           <span className="outbox-lead">{group.leadName}</span>
-                          <span className="outbox-sub">{group.campaign} · {group.keyword}</span>
+                          <span className="outbox-sub">{group.latest.source ?? 'Google Ads'} · {group.campaign} · {group.keyword}</span>
                         </span>
                       </button>
                     </td>
@@ -1406,7 +1406,7 @@ function LatestPaidJourneys({
             <button className="paid-row" key={session.id} onClick={() => onOpenSession(session)} type="button">
               <span className="paid-time">{session.time}<small>{session.dateL}</small></span>
               <span>
-                <span className="paid-camp">{session.campaign} <span className="gclid">{session.gclid.slice(0, 10)}…</span></span>
+                <span className="paid-camp"><span className="source-tag">{session.source ?? 'Google Ads'}</span> {session.campaign} <span className="gclid">{session.gclid.slice(0, 10)}…</span></span>
                 <span className="paid-meta">
                   <span><b>{progress}/{MICRO_STEPS.length}</b> steps</span>
                   <span>{currentStep}</span>
@@ -1437,10 +1437,11 @@ function LatestPaidJourneys({
 }
 
 function buildJourney(lead: LeadRow) {
+  const source = lead.source ?? 'Google Ads'
   return [
-    { h: 'Ad Impression', d: `Served on "${lead.kw}" · ${lead.campaign}` },
+    { h: 'Ad Impression', d: `Served by ${source} on "${lead.kw}" · ${lead.campaign}` },
     { h: 'Keyword Click', d: `Clicked search ad → routed to ${lead.land}` },
-    { h: 'Landing Page', d: `Viewed savingkc.com${lead.land} · source=google_ads` },
+    { h: 'Landing Page', d: `Viewed savingkc.com${lead.land} · source=${source}` },
     { h: 'Conversion Fired', d: `${lead.land === '/guide' ? 'Guide download' : 'Call form submit'} · logged to conversion outbox` },
     { h: 'New Lead Created', d: `Entered pipeline · SmartSkip enrichment · ${lead.county}` },
     { h: 'Attempted Contact', d: `Casey: ${lead.dials} dial${lead.dials === 1 ? '' : 's'} via Twilio` },
@@ -1498,7 +1499,7 @@ function JourneyOverlay({ lead, onClose }: { lead: LeadRow; onClose: () => void 
           </div>
           <div className="statside">
             <div className="charcard">
-              <div className="campaign-label">{lead.campaign}</div>
+              <div className="campaign-label">{lead.source ?? 'Google Ads'} · {lead.campaign}</div>
               <div className="char-name">{lead.name}</div>
               <div className="char-meta">{lead.prop}<br />{lead.county}<br />{lead.days} days in pipeline</div>
               <div className="score-row">
@@ -1548,6 +1549,7 @@ function JourneyOverlay({ lead, onClose }: { lead: LeadRow; onClose: () => void 
 
 function buildMicroEvents(session: PaidSessionRow) {
   const sub = session.sub
+  const source = session.source ?? 'Google Ads'
   const timeline = session.timeline || 'Not captured'
   const condition = session.condition || 'Not captured'
   const fields = session.contactFields?.length ? session.contactFields.map(displayFieldName).join(', ') : 'not captured'
@@ -1557,7 +1559,7 @@ function buildMicroEvents(session: PaidSessionRow) {
     : 'Page engagement tracked'
 
   return [
-    { ts: '0:00', dur: 0, durLabel: 'instant', act: `Clicked Google ad · keyword <b>"${session.kw}"</b>` },
+    { ts: '0:00', dur: 0, durLabel: 'instant', act: `Clicked ${source} ad · keyword <b>"${session.kw}"</b>` },
     { ts: '0:00', dur: session.loadMs / 1000, durLabel: `${(session.loadMs / 1000).toFixed(1)}s LCP`, act: `Loaded savingkc.com${session.land} · ${session.device}` },
     { ts: '0:04', dur: 0, durLabel: 'tracked', act: engagement },
     { ts: '0:23', dur: 12, durLabel: '12s', act: `Opened situation dropdown · <b>${sub}</b>` },
@@ -1690,7 +1692,7 @@ function MicroReplayOverlay({
           </div>
           <div className="micro-side">
             <div className="side-label">CAMPAIGN</div>
-            <div className="side-copy">{session.campaign}<br />{session.sub}<br /><span className="mono">{session.kw}</span></div>
+            <div className="side-copy">{session.source ?? 'Google Ads'}<br />{session.campaign}<br />{session.sub}<br /><span className="mono">{session.kw}</span></div>
             <div className="side-label spaced">LANDING</div>
             <div className="side-copy mono">savingkc.com{session.land}<br />{(session.loadMs / 1000).toFixed(2)}s LCP</div>
             {session.converted ? (
@@ -2183,7 +2185,7 @@ export function AdsCommandPage() {
             <header className="bar live-only">
               <span className="live-pill"><span className="live-dot" /> LIVE • loading</span>
               <span className="fresh-pill">Tracking: waiting</span>
-              <span className="fresh-pill">Google Ads: waiting</span>
+              <span className="fresh-pill">Google Ads spend: waiting</span>
               <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
               <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
             </header>
@@ -2201,7 +2203,7 @@ export function AdsCommandPage() {
           <header className="bar live-only">
             <span className="live-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'LIVE • preview data'}</span>
             <span className="fresh-pill">Tracking: {formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</span>
-            <span className="fresh-pill">Google Ads: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
+            <span className="fresh-pill">Google Ads spend: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
             <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
             <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
           </header>
@@ -2228,7 +2230,7 @@ export function AdsCommandPage() {
           </div>
 
           <div className="foot">
-            SAVING KC • GOOGLE ADS COMMAND • {adsData ? 'Google Ads backfill + CRM PPC read model' : 'preview fallback data'}
+            SAVING KC • ADS COMMAND • {adsData ? 'Google Ads import + CRM paid-source read model' : 'preview fallback data'}
           </div>
         </div>
 
@@ -2445,6 +2447,7 @@ const ADS_COMMAND_STYLES = `
 .ads-command .lead-status { font-size:10px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; flex-shrink:0; margin-top:2px; }
 .ads-command .lead .meta { display:block; font-size:12px; color:var(--text-secondary); margin-top:4px; line-height:1.3; }
 .ads-command .lead .kw { font-size:11px; color:var(--text-tertiary); margin-top:8px; display:flex; align-items:center; gap:4px; opacity:.85; }
+.ads-command .source-tag { display:inline-flex; align-items:center; min-height:18px; border-radius:999px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:var(--text-secondary); padding:1px 7px; font-size:10px; font-weight:850; letter-spacing:.02em; white-space:nowrap; }
 .ads-command .lead-metrics { display:flex; justify-content:space-between; align-items:flex-end; margin-top:14px; }
 .ads-command .mini-label { display:block; font-size:9px; color:var(--text-tertiary); font-weight:600; letter-spacing:.5px; }
 .ads-command .lead .spread { display:block; font-weight:800; font-size:18px; letter-spacing:-.6px; line-height:1; }

@@ -9,6 +9,7 @@ import {
 } from '@/lib/ppc/conversion-approval'
 import { isGoogleAdsApprovalRequiredPpcEvent, isGoogleAdsExportablePpcEvent } from '@/lib/ppc/exportable-events'
 import type { PpcConversionExportConfigHealth } from '@/lib/ppc/conversion-exporter'
+import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceSlug } from './paid-source'
 
 export type PpcLeadRow = {
   id: string
@@ -588,8 +589,9 @@ function extractAttributionFromOutbox(row: PpcOutboxRow): Record<string, unknown
 
 function extractAttributionFromTracking(row: PpcTrackingEventRow): Record<string, unknown> {
   const payload = record(row.payload)
+  const payloadAttribution = record(payload.attribution)
   return cleanAttribution({
-    ...record(payload.attribution),
+    ...payloadAttribution,
     traffic_source: row.traffic_source,
     campaign: row.campaign,
     utm_source: row.utm_source,
@@ -605,6 +607,9 @@ function extractAttributionFromTracking(row: PpcTrackingEventRow): Record<string
     gad_source: row.gad_source,
     gad_campaignid: row.gad_campaignid,
     gad_adgroupid: row.gad_adgroupid,
+    oppref: payload.oppref ?? payloadAttribution.oppref,
+    landingUrl: row.page_location,
+    referrer: row.page_referrer,
   })
 }
 
@@ -630,7 +635,7 @@ function mergeAttribution(current: Record<string, unknown>, incoming: Record<str
 }
 
 function hasClickId(attribution: Record<string, unknown>): boolean {
-  return Boolean(text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id))
+  return Boolean(paidSourceIdentifier(attribution))
 }
 
 function campaignName(attribution: Record<string, unknown>): string {
@@ -638,7 +643,7 @@ function campaignName(attribution: Record<string, unknown>): string {
 }
 
 function sourceName(attribution: Record<string, unknown>): string {
-  return text(attribution.utm_source) || (text(attribution.traffic_source) === 'google_ads' ? 'google' : 'google')
+  return text(attribution.utm_source) || paidSourceSlug(attribution)
 }
 
 function mediumName(attribution: Record<string, unknown>): string {
@@ -728,7 +733,7 @@ function eventKey(row: PpcTrackingEventRow): string {
 
 function clickIdFromTracking(row: PpcTrackingEventRow): string {
   const attribution = extractAttributionFromTracking(row)
-  return text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id)
+  return paidSourceIdentifier(attribution)
 }
 
 function sessionKey(row: PpcTrackingEventRow): string {
@@ -905,12 +910,11 @@ function isTestOutboxRow(row: PpcOutboxRow): boolean {
 }
 
 function clickIdType(row: PpcOutboxRow, attribution: Record<string, unknown>): string {
-  return text(row.click_id_type) ||
-    (text(attribution.gclid) ? 'gclid' : text(attribution.gbraid) ? 'gbraid' : text(attribution.wbraid) ? 'wbraid' : '--')
+  return text(row.click_id_type) || paidSourceIdentifierType(attribution)
 }
 
 function clickIdForOutbox(row: PpcOutboxRow, attribution: Record<string, unknown>): string {
-  return compactClickId(text(row.click_id) || text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id))
+  return compactClickId(text(row.click_id) || paidSourceIdentifier(attribution))
 }
 
 function buildConversionApprovalRow(

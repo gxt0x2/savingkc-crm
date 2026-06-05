@@ -22,6 +22,7 @@ import {
   type PaidSessionRow,
   type SeriesRow,
 } from '@/lib/marketing/ads-command-seed'
+import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceKey, paidSourceLabel } from '@/lib/marketing/paid-source'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -185,7 +186,8 @@ const NO_STORE_HEADERS: HeadersInit = {
 
 const CAMPAIGN_COLORS = ['#14b8a6', '#60a5fa', '#22c55e', '#eab308', '#f87171', '#a855f7']
 const QUALIFIED_STAGES = new Set(['qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'contract_signed', 'closed'])
-const PPC_LEAD_SOURCES = ['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'paid-search']
+const PPC_LEAD_SOURCES = ['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'openai_ads', 'openai-ads', 'paid-search']
+const OPENAI_ADS_EXPORTABLE_EVENTS = new Set(['lead_submitted', 'qualified_lead', 'appointment_booked', 'call_connected_60s', 'call_connected_2m', 'call_connected_5m'])
 const TEST_MARKER_RE = /(^|[^a-z0-9])(codex|dummy|probe|smoke|test|internaltesting|internal-testing|internal_filter|internalfilter|filtercheck|hashcheck|finalhash)([^a-z0-9]|$)/i
 const CHICAGO_TIME_ZONE = 'America/Chicago'
 
@@ -815,6 +817,7 @@ function trackingAttribution(row: PpcTrackingSummaryRow): Record<string, unknown
   const attribution = record(payload.attribution)
   return {
     ...attribution,
+    traffic_source: row.traffic_source || attribution.traffic_source,
     source: row.utm_source || row.traffic_source || attribution.source,
     medium: row.utm_medium || attribution.medium,
     campaign: row.campaign || row.utm_campaign || attribution.campaign,
@@ -824,6 +827,7 @@ function trackingAttribution(row: PpcTrackingSummaryRow): Record<string, unknown
     gclid: row.gclid || attribution.gclid || payload.gclid,
     gbraid: row.gbraid || attribution.gbraid || payload.gbraid,
     wbraid: row.wbraid || attribution.wbraid || payload.wbraid,
+    oppref: attribution.oppref || payload.oppref,
     landingUrl: row.page_location || attribution.landingUrl || payload.landingUrl,
     referrer: row.page_referrer || attribution.referrer || payload.referrer,
   }
@@ -831,11 +835,13 @@ function trackingAttribution(row: PpcTrackingSummaryRow): Record<string, unknown
 
 function clickIdFromTracking(row: PpcTrackingSummaryRow): string {
   const attribution = trackingAttribution(row)
-  return text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid)
+  return paidSourceIdentifier(attribution)
 }
 
 function campaignFromAttribution(attribution: Record<string, unknown>): string {
-  return text(attribution.utm_campaign) || text(attribution.campaign) || 'Search 2026'
+  const campaign = text(attribution.utm_campaign) || text(attribution.campaign)
+  if (campaign) return campaign
+  return paidSourceKey(attribution) === 'openai_ads' ? 'OpenAI Ads' : 'Search 2026'
 }
 
 type KeywordResolution = {
@@ -1008,6 +1014,7 @@ function buildPaidSessions(rows: PpcTrackingSummaryRow[]): PaidSessionRow[] {
       return {
         id: key,
         ...labels,
+        source: paidSourceLabel(attribution),
         campaign: campaignFromAttribution(attribution),
         gclid: clickId,
         kw: keyword.keyword,
@@ -1095,6 +1102,7 @@ function buildLeadRows(
       return {
         id: lead.id,
         name: text(lead.full_name) || 'PPC Lead',
+        source: paidSourceLabel(attribution),
         county: [lead.county, lead.city].map(text).filter(Boolean).join(' / ') || 'KC metro',
         prop: text(lead.classification) || displayText(lead.property_address, 'Property details pending'),
         campaign: campaignFromAttribution(attribution),
@@ -1141,7 +1149,7 @@ function outboxStatus(row: PpcOutboxSummaryRow): string {
   const payload = record(row.payload)
   if (payload.dryRun === true || payload.dry_run === true || payload.validateOnly === true || payload.validate_only === true) return 'Dry run'
   const status = text(row.status).toLowerCase() || 'pending'
-  if (!isGoogleAdsExportablePpcEvent(row.event_name)) return 'Website/GTM only'
+  if (!isGoogleAdsExportablePpcEvent(row.event_name) && !OPENAI_ADS_EXPORTABLE_EVENTS.has(text(row.event_name))) return 'Website/GTM only'
   if (isGoogleAdsApprovalRequiredPpcEvent(row.event_name, payload) && row.approved_for_google_ads === false && ['pending', 'processing', 'failed'].includes(status)) {
     return 'Awaiting approval'
   }
@@ -1157,22 +1165,21 @@ function buildOutboxRows(outboxRows: PpcOutboxSummaryRow[], leadRows: PpcLeadSum
       const lead = row.lead_id ? leadsById.get(row.lead_id) : null
       const eventTime = row.event_time || row.created_at || new Date().toISOString()
       const ageDays = Math.max(0, Math.floor((Date.now() - new Date(eventTime).getTime()) / 86_400_000))
-      const exportable = isGoogleAdsExportablePpcEvent(row.event_name)
       const approvalRequired = isGoogleAdsApprovalRequiredPpcEvent(row.event_name, payload)
       const clickId = text(row.click_id)
-        || text(attribution.gclid)
-        || text(attribution.gbraid)
-        || text(attribution.wbraid)
-        || text(attribution.click_id)
+        || paidSourceIdentifier(attribution)
       const clickIdType = text(row.click_id_type)
-        || (text(attribution.gclid) ? 'gclid' : text(attribution.gbraid) ? 'gbraid' : text(attribution.wbraid) ? 'wbraid' : '--')
+        || paidSourceIdentifierType(attribution)
 
       const keyword = resolveKeyword(attribution)
+      const googleAdsExportable = isGoogleAdsExportablePpcEvent(row.event_name)
+      const openAIAdsExportable = OPENAI_ADS_EXPORTABLE_EVENTS.has(text(row.event_name))
 
       return {
         id: row.id,
         leadId: row.lead_id,
         leadName: text(lead?.full_name) || 'Unlinked conversion',
+        source: paidSourceLabel(attribution),
         event: eventLabel(row.event_name),
         category: displayText(row.event_category, 'Conversion'),
         status: outboxStatus(row),
@@ -1187,9 +1194,13 @@ function buildOutboxRows(outboxRows: PpcOutboxSummaryRow[], leadRows: PpcLeadSum
         attempts: integer(row.attempts),
         lastError: text(row.last_error) || null,
         dryRun: payload.dryRun === true || payload.dry_run === true || payload.validateOnly === true || payload.validate_only === true,
-        exportable,
+        exportable: googleAdsExportable || openAIAdsExportable,
         approvalRequired,
-        exportNote: exportable ? null : nonExportablePpcEventReason(row.event_name),
+        exportNote: googleAdsExportable
+          ? null
+          : openAIAdsExportable
+            ? 'OpenAI Ads Conversions API'
+            : nonExportablePpcEventReason(row.event_name),
         sentAt: row.sent_at,
         eventTime,
         ageDays,
@@ -1251,7 +1262,7 @@ async function fetchRows(period: MarketingPeriod) {
 }
 
 function latestImportLabel(rows: GoogleAdsCampaignDailyRow[]): string {
-  if (rows.length === 0) return 'LIVE • no Google Ads rows'
+  if (rows.length === 0) return 'LIVE • no Google Ads import rows'
   return 'LIVE • 60s dashboard / 10m Ads sync'
 }
 
