@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import {
   Area,
@@ -65,6 +66,7 @@ type DashboardSectionId =
   | 'campaigns'
   | 'searchTerms'
   | 'funnel'
+  | 'heatmaps'
   | 'roster'
   | 'outbox'
   | 'paidJourneys'
@@ -74,13 +76,14 @@ const SEARCH_TERM_PAGE_SIZE = 10
 const OUTBOX_PAGE_SIZE = 5
 const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
 const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
-const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'roster', 'outbox', 'paidJourneys']
+const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
 const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
   kpis: false,
   trend: false,
   campaigns: false,
   searchTerms: false,
   funnel: false,
+  heatmaps: false,
   roster: false,
   outbox: false,
   paidJourneys: false,
@@ -91,6 +94,7 @@ const DASHBOARD_SECTIONS: Record<DashboardSectionId, { label: string; size: Dash
   campaigns: { label: 'Conversions by Campaign', size: 'half' },
   searchTerms: { label: 'Search Term Performance', size: 'half' },
   funnel: { label: 'Marketing Funnel', size: 'full' },
+  heatmaps: { label: 'Landing Page Heatmaps', size: 'full' },
   roster: { label: 'Active Lead Roster', size: 'full' },
   outbox: { label: 'Lead Conversion Outbox', size: 'full' },
   paidJourneys: { label: 'Latest Paid Journeys', size: 'full' },
@@ -1757,6 +1761,35 @@ function BreakdownOverlay({ breakdown, onClose }: { breakdown: MarketingBreakdow
   )
 }
 
+function LandingHeatmapLauncher() {
+  const tracked = [
+    'FAQs opened',
+    'CTA clicks',
+    'Show Me clicks',
+    'Video watch depth',
+    'Section attention',
+    'Generic payload gaps',
+  ]
+
+  return (
+    <div className="heatmap-launch panel">
+      <div className="heatmap-copy">
+        <span className="mini-eyebrow">EVENT HEATMAP</span>
+        <h2>See what sellers and buyers actually touch.</h2>
+        <p>
+          Break down PPC, PPC Tax, and deal-page behavior by section, button, FAQ, video, session, and lead.
+        </p>
+        <div className="heatmap-track-list">
+          {tracked.map((item) => <span key={item}>{item}</span>)}
+        </div>
+      </div>
+      <Link className="heatmap-open" href="/marketing/heatmaps">
+        Open Heatmaps
+      </Link>
+    </div>
+  )
+}
+
 function LayoutSection({
   id,
   collapsed,
@@ -2100,6 +2133,10 @@ export function AdsCommandPage() {
       )
     }
 
+    if (id === 'heatmaps') {
+      return <LandingHeatmapLauncher />
+    }
+
     if (id === 'roster') {
       return (
         <ActiveLeadRoster
@@ -2147,6 +2184,8 @@ export function AdsCommandPage() {
               <span className="live-pill"><span className="live-dot" /> LIVE • loading</span>
               <span className="fresh-pill">Tracking: waiting</span>
               <span className="fresh-pill">Google Ads: waiting</span>
+              <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
+              <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
             </header>
           </div>
         </div>
@@ -2163,6 +2202,8 @@ export function AdsCommandPage() {
             <span className="live-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'LIVE • preview data'}</span>
             <span className="fresh-pill">Tracking: {formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</span>
             <span className="fresh-pill">Google Ads: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
+            <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
+            <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
           </header>
 
           <div className="layout-grid">
@@ -2279,6 +2320,8 @@ const ADS_COMMAND_STYLES = `
 .ads-command .bar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
 .ads-command .live-pill { display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--text-secondary); background:var(--surface-2); border:1px solid var(--line); padding:6px 14px 6px 12px; border-radius:999px; }
 .ads-command .fresh-pill { display:inline-flex; align-items:center; min-height:28px; font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary); background:rgba(255,255,255,.03); border:1px solid var(--line); padding:6px 10px; border-radius:999px; }
+.ads-command .call-review-link { color:#fecaca; text-decoration:none; font-weight:800; letter-spacing:.02em; }
+.ads-command .call-review-link:hover { color:#fff; border-color:rgba(227,46,46,.45); background:rgba(227,46,46,.12); }
 .ads-command .live-dot { width:7px; height:7px; background:var(--success); border-radius:50%; box-shadow:0 0 0 3px rgba(34,197,94,.2); animation:adsPulse 2s ease-in-out infinite; }
 @keyframes adsPulse { 0%,100%{opacity:1} 50%{opacity:.6} }
 .ads-command .layout-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:18px 14px; align-items:start; }
@@ -2307,6 +2350,15 @@ const ADS_COMMAND_STYLES = `
 .ads-command .delta.up { color:var(--success); }
 .ads-command .delta.down { color:var(--accent); }
 .ads-command .panel { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-2xl); padding:26px 28px; margin-bottom:18px; box-shadow:var(--shadow-md); min-width:0; }
+.ads-command .heatmap-launch { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:18px; margin-bottom:0; background:linear-gradient(135deg, rgba(239,68,68,.12), rgba(255,255,255,.045) 42%, rgba(59,130,246,.1)); }
+.ads-command .heatmap-copy { min-width:0; }
+.ads-command .mini-eyebrow { display:block; margin-bottom:8px; color:var(--accent-bright); font-family:var(--font-mono); font-size:10.5px; font-weight:900; letter-spacing:.12em; }
+.ads-command .heatmap-copy h2 { margin:0; font-size:22px; line-height:1.1; letter-spacing:-.02em; }
+.ads-command .heatmap-copy p { max-width:760px; margin:8px 0 0; color:var(--text-secondary); font-size:13px; line-height:1.5; }
+.ads-command .heatmap-track-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:14px; }
+.ads-command .heatmap-track-list span { display:inline-flex; min-height:26px; align-items:center; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.045); border-radius:999px; padding:0 10px; color:var(--text-secondary); font-size:12px; font-weight:750; }
+.ads-command .heatmap-open { min-height:42px; display:inline-flex; align-items:center; justify-content:center; border-radius:12px; padding:0 18px; color:#fff; background:var(--accent); text-decoration:none; font-size:13px; font-weight:900; box-shadow:0 18px 42px -24px var(--accent); white-space:nowrap; transition:transform .14s ease, filter .14s ease; }
+.ads-command .heatmap-open:hover { transform:translateY(-1px); filter:brightness(1.08); }
 .ads-command .panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
 .ads-command .panel h2 { font-size:18px; font-weight:700; letter-spacing:-.4px; margin:0 0 2px; }
 .ads-command .cap { font-size:12px; color:var(--text-tertiary); font-weight:500; }
@@ -2551,6 +2603,6 @@ const ADS_COMMAND_STYLES = `
 @media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } }
 @media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } }
 @media (max-width:920px) { .ads-command .stage-top { grid-template-columns:1fr; align-items:flex-start; } .ads-command .qbadges { margin-left:0; } .ads-command .stage-body, .ads-command .micro-body { grid-template-columns:1fr; } .ads-command .statside, .ads-command .micro-side { display:none; } .ads-command .stage { inset:10px; width:auto; } }
-@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .table-scroll table { min-width:680px; } .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
+@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
 @media (max-width:640px) { .ads-command .roster { grid-template-columns:1fr; } .ads-command .live-pill { font-size:11px; } }
 `

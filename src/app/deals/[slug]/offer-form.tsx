@@ -45,6 +45,8 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
     setError(null)
     setSubmitting(true)
     trackEvent(slug, 'offer_submit_started', {
+      section: 'offer_form',
+      form_id: 'offer_form',
       has_offer_amount: Boolean(form.offer_amount),
       has_earnest_money: Boolean(form.earnest_money),
       financing: form.financing_type,
@@ -71,6 +73,8 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
       }
 
       dispatchConversion('offer_submit', {
+        section: 'offer_form',
+        form_id: 'offer_form',
         offer_id: data.offer_id,
         amount: Number(form.offer_amount),
         financing: form.financing_type,
@@ -79,6 +83,8 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to submit offer'
       trackEvent(slug, 'offer_submit_error', {
+        section: 'offer_form',
+        form_id: 'offer_form',
         error_type: message === 'Validation failed' ? 'validation' : 'submit_failed',
         financing: form.financing_type,
       })
@@ -91,7 +97,17 @@ export default function OfferForm({ slug, askingPrice, arv, photo, propertyAddre
   if (!open) {
     return (
       <button
-        onClick={() => { setOpen(true); trackEvent(slug, 'offer_modal_open') }}
+        onClick={() => {
+          setOpen(true)
+          trackEvent(slug, 'offer_modal_open', {
+            section: 'pricing_sidebar',
+            cta_id: 'deal_make_offer',
+            cta_label: 'Make offer',
+            destination: 'offer_modal',
+            asking_price_visible: Boolean(askingPrice),
+            arv_visible: Boolean(arv),
+          })
+        }}
         className="w-full bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-xl px-4 py-3 text-[14px] font-semibold transition-colors"
       >
         Make offer

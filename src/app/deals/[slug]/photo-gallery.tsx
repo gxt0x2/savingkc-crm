@@ -172,6 +172,16 @@ export default function PhotoGallery({
     ? `https://www.google.com/maps?q=${encodedAddress}&z=18&output=embed`
     : null
 
+  const trackGalleryEvent = useCallback((eventType: string, metadata: Record<string, unknown>) => {
+    if (!slug) return
+    trackEvent(slug, eventType, {
+      section: 'gallery',
+      total_photos: photos.length,
+      has_address: hasAddress,
+      ...metadata,
+    })
+  }, [hasAddress, photos.length, slug])
+
   useEffect(() => {
     if (!hasAddress || typeof document === 'undefined') return
     // preconnect so the TLS + DNS handshake is done before <img> requests fire
@@ -193,14 +203,25 @@ export default function PhotoGallery({
     setCurrentIndex(index)
     setGridView(false)
     setLightboxOpen(true)
-    if (slug) trackEvent(slug, 'photo_open', { index })
-  }, [slug])
+    trackGalleryEvent('photo_open', {
+      item_id: `photo_${index + 1}`,
+      item_label: `Photo ${index + 1}`,
+      photo_index: index + 1,
+      position: index + 1,
+      view: 'lightbox',
+    })
+  }, [trackGalleryEvent])
 
   const openPhotoGrid = useCallback(() => {
     setGridView(true)
     setLightboxOpen(true)
-    if (slug) trackEvent(slug, 'photo_open', { index: 0, view: 'grid', total: photos.length })
-  }, [photos.length, slug])
+    trackGalleryEvent('photo_open', {
+      item_id: 'photo_grid',
+      item_label: 'Show all photos',
+      view: 'grid',
+      total_photos: photos.length,
+    })
+  }, [photos.length, trackGalleryEvent])
 
   const closeLightbox = useCallback(() => {
     setLightboxOpen(false)
@@ -268,7 +289,11 @@ export default function PhotoGallery({
      error JSON into an iframe. */
   async function openStreetView() {
     setStreetViewOpen(true)
-    if (slug) trackEvent(slug, 'street_view_open')
+    trackGalleryEvent('street_view_open', {
+      cta_id: 'deal_street_view',
+      cta_label: 'Street View',
+      destination: 'street_view_modal',
+    })
     if (streetViewEmbedUrl || streetViewError) return
     if (!hasGoogleMapsKey) {
       setStreetViewError('Street View requires a Google Maps API key.')
@@ -415,7 +440,14 @@ export default function PhotoGallery({
             {/* Map View — col 2, row 2 */}
             <div
               className="cursor-pointer relative group overflow-hidden bg-[#e8e4de]"
-              onClick={() => { setMapViewOpen(true); if (slug) trackEvent(slug, 'map_view_open') }}
+              onClick={() => {
+                setMapViewOpen(true)
+                trackGalleryEvent('map_view_open', {
+                  cta_id: 'deal_map_view',
+                  cta_label: 'Map View',
+                  destination: 'map_modal',
+                })
+              }}
             >
               {mapStaticUrl && !mapStaticBroken ? (
                 <>

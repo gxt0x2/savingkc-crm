@@ -105,6 +105,34 @@ describe('ppc browser tracking', () => {
     })
   })
 
+  it('allows specific landing-page heatmap events without conversion value', () => {
+    const showMe = firePpcTrackingEvent('show_me_clicked', {
+      item_id: 'ppc_general__problems__back_taxes',
+      item_label: 'Tax letters keep coming',
+      section: 'problems',
+      position: 1,
+    })
+    const video = firePpcTrackingEvent('video_progress_50', {
+      video_id: 'seller-story',
+      video_title: 'Seller story',
+      section: 'video-testimonials',
+      watch_percent: 54,
+    })
+
+    expect(showMe).toMatchObject({
+      event: 'show_me_clicked',
+      item_id: 'ppc_general__problems__back_taxes',
+      item_label: 'Tax letters keep coming',
+    })
+    expect(showMe).not.toHaveProperty('conversion_value')
+    expect(video).toMatchObject({
+      event: 'video_progress_50',
+      video_id: 'seller-story',
+      watch_percent: 54,
+    })
+    expect(video).not.toHaveProperty('optimization_role')
+  })
+
   it('does not throw during server-side rendering', () => {
     vi.unstubAllGlobals()
 
