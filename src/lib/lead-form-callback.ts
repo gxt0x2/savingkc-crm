@@ -13,6 +13,14 @@ type FormLeadCallbackInput = {
   trigger?: string
 }
 
+type AgentCallbackCall = {
+  agentName: string
+  to: string
+  started: boolean
+  sid?: string
+  error?: string
+}
+
 function cleanText(value: string | null | undefined): string {
   return (value ?? '').trim().replace(/\s+/g, ' ')
 }
@@ -46,6 +54,8 @@ export async function startPpcFormLeadAgentCallback(input: FormLeadCallbackInput
   started: boolean
   sid?: string
   to?: string
+  batchId?: string
+  calls?: AgentCallbackCall[]
   error?: string
 }> {
   const client = getTwilioClient()
@@ -53,32 +63,69 @@ export async function startPpcFormLeadAgentCallback(input: FormLeadCallbackInput
     return { started: false, error: 'Twilio client not initialized' }
   }
 
-  const recipient = getLeadAlertRecipients()[0]
-  if (!recipient?.phone) {
+  const recipients = getLeadAlertRecipients()
+  if (recipients.length === 0) {
     return { started: false, error: 'No lead alert recipient available' }
   }
 
-  const callbackUrl = new URL('/api/ivr/form-lead-agent-callback', BASE_URL)
-  callbackUrl.searchParams.set('leadId', input.leadId)
-  callbackUrl.searchParams.set('leadPhone', input.leadPhone)
-  callbackUrl.searchParams.set('callerId', input.callerId)
-  callbackUrl.searchParams.set('fullName', input.fullName)
-  if (input.address) callbackUrl.searchParams.set('address', input.address)
-  if (input.city) callbackUrl.searchParams.set('city', input.city)
-  if (input.trigger) callbackUrl.searchParams.set('trigger', input.trigger)
+  const batchId = `${input.leadId}-${Date.now()}`
 
-  try {
-    const call = await client.calls.create({
-      to: recipient.phone,
-      from: input.callerId,
-      url: callbackUrl.toString(),
-      method: 'POST',
-      timeout: 20,
-    })
+  const callResults = await Promise.all(
+    recipients.map(async (recipient): Promise<AgentCallbackCall> => {
+      const callbackUrl = new URL('/api/ivr/form-lead-agent-callback', BASE_URL)
+      callbackUrl.searchParams.set('leadId', input.leadId)
+      callbackUrl.searchParams.set('leadPhone', input.leadPhone)
+      callbackUrl.searchParams.set('callerId', input.callerId)
+      callbackUrl.searchParams.set('fullName', input.fullName)
+      callbackUrl.searchParams.set('batchId', batchId)
+      callbackUrl.searchParams.set('agentName', recipient.name)
+      callbackUrl.searchParams.set('agentPhone', recipient.phone)
+      if (input.address) callbackUrl.searchParams.set('address', input.address)
+      if (input.city) callbackUrl.searchParams.set('city', input.city)
+      if (input.trigger) callbackUrl.searchParams.set('trigger', input.trigger)
 
-    return { started: true, sid: call.sid, to: recipient.phone }
-  } catch (error) {
-    console.error('[lead-form-callback] Agent callback failed:', error)
-    return { started: false, error: error instanceof Error ? error.message : 'Unknown Twilio error' }
+      try {
+        const call = await client.calls.create({
+          to: recipient.phone,
+          from: input.callerId,
+          url: callbackUrl.toString(),
+          method: 'POST',
+          timeout: 20,
+        })
+
+        return {
+          agentName: recipient.name,
+          to: recipient.phone,
+          started: true,
+          sid: call.sid,
+        }
+      } catch (error) {
+        console.error(`[lead-form-callback] Agent callback failed for ${recipient.name}:`, error)
+        return {
+          agentName: recipient.name,
+          to: recipient.phone,
+          started: false,
+          error: error instanceof Error ? error.message : 'Unknown Twilio error',
+        }
+      }
+    }),
+  )
+
+  const firstStarted = callResults.find((call) => call.started)
+  if (!firstStarted) {
+    return {
+      started: false,
+      batchId,
+      calls: callResults,
+      error: callResults.map((call) => `${call.agentName}: ${call.error || 'not started'}`).join('; '),
+    }
+  }
+
+  return {
+    started: true,
+    sid: firstStarted.sid,
+    to: firstStarted.to,
+    batchId,
+    calls: callResults,
   }
 }

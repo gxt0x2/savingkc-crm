@@ -20,6 +20,9 @@ export async function POST(req: Request) {
     const leadPhone = url.searchParams.get('leadPhone') || ''
     const callerId = url.searchParams.get('callerId') || ''
     const trigger = url.searchParams.get('trigger') || 'ppc_form_submit'
+    const batchId = url.searchParams.get('batchId') || ''
+    const agentName = url.searchParams.get('agentName') || 'Agent'
+    const agentPhone = url.searchParams.get('agentPhone') || ''
 
     const body = await req.formData()
     const dialStatus = body.get('DialCallStatus')?.toString() || ''
@@ -42,6 +45,9 @@ export async function POST(req: Request) {
           direction: 'outbound',
           to: leadPhone,
           callerId,
+          batchId,
+          agentName,
+          agentPhone,
           dialStatus,
           dialCallSid,
           dialCallDuration,
