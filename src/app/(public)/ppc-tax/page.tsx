@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import '../ppc/sell.css'
 import { SellLanding } from '../ppc/SellLanding'
 import { GoogleTagManager } from '../ppc/GoogleTagManager'
+import { OpenAIAdsPixel } from '../ppc/OpenAIAdsPixel'
 import { PPC_CAMPAIGNS } from '@/lib/ppc/campaigns'
 
 const PROPERTY_TAX_CAMPAIGN = PPC_CAMPAIGNS.find((campaign) => campaign.key === 'property_tax')!
@@ -22,6 +23,7 @@ export default function TaxPpcPage() {
   return (
     <>
       <GoogleTagManager />
+      <OpenAIAdsPixel />
       <SellLanding
         phoneDisplay={PPC_PHONE_DISPLAY}
         phoneTel={PPC_PHONE_TEL}

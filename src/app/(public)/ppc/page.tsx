@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './sell.css'
 import { SellLanding } from './SellLanding'
 import { GoogleTagManager } from './GoogleTagManager'
+import { OpenAIAdsPixel } from './OpenAIAdsPixel'
 import { EditOverlay } from './EditOverlay'
 import { DEFAULT_PPC_CAMPAIGN } from '@/lib/ppc/campaigns'
 
@@ -25,6 +26,7 @@ export default function SellPage() {
   return (
     <>
       <GoogleTagManager />
+      <OpenAIAdsPixel />
       <SellLanding phoneDisplay={PPC_PHONE_DISPLAY} phoneTel={PPC_PHONE_TEL} showBookingCta={SHOW_BOOKING_CTA} />
       <EditOverlay />
     </>

@@ -8,6 +8,7 @@
 import { sendPpcTrackingEvent } from '@/lib/ppc/tracking-client'
 import { getAttribution } from '@/lib/ppc/attribution'
 import { ppcCampaignNameForContext, ppcPageVariantForPath } from '@/lib/ppc/campaigns'
+import { sendOpenAIAdsPixelEvent } from '@/lib/ppc/openai-ads-client'
 
 export type ConversionEvent =
   | 'lead_quiz_started'
@@ -130,6 +131,7 @@ export function firePpcTrackingEvent(
 
   window.dataLayer = window.dataLayer || []
   window.dataLayer.push(dataLayerEvent)
+  sendOpenAIAdsPixelEvent(dataLayerEvent)
   if (!isServerRecorded(event)) sendPpcTrackingEvent(dataLayerEvent)
 
   if (process.env.NODE_ENV !== 'production') {

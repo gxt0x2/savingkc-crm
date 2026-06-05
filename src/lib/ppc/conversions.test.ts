@@ -54,9 +54,29 @@ describe('ppc browser tracking', () => {
     })
   })
 
+  it('mirrors OpenAI Ads standard conversion events with stable dedupe ids', () => {
+    const oaiq = vi.fn()
+    vi.stubGlobal('window', { dataLayer: [], oaiq })
+
+    fireConversion('lead_submitted', {
+      event_id: 'lead:123:lead_submitted',
+      form_step: 4,
+      form_status: 'submitted',
+      form_submitted: true,
+    })
+
+    expect(oaiq).toHaveBeenCalledWith(
+      'measure',
+      'lead_created',
+      { type: 'customer_action' },
+      { event_id: 'lead:123:lead_submitted' },
+    )
+  })
+
   it('adds page context for the tax PPC landing page', () => {
     vi.stubGlobal('window', {
       dataLayer: [],
+      oaiq: vi.fn(),
       location: {
         pathname: '/ppc-tax',
         href: 'https://crm.savingkc.com/ppc-tax?gclid=test-click',
@@ -72,6 +92,12 @@ describe('ppc browser tracking', () => {
       page_location: 'https://crm.savingkc.com/ppc-tax?gclid=test-click',
       page_variant: 'ppc_tax',
     })
+    expect((globalThis.window as unknown as { oaiq: ReturnType<typeof vi.fn> }).oaiq).toHaveBeenCalledWith(
+      'measure',
+      'page_viewed',
+      expect.objectContaining({ type: 'contents' }),
+      { event_id: event?.event_id },
+    )
   })
 
   it('tracks stage 3 completion as a diagnostic field-completion signal', () => {

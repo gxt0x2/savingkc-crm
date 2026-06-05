@@ -1083,6 +1083,13 @@ function fallbackExportConfig(): PpcConversionExportConfigHealth {
       previewHeaderConfigured: false,
       missingConfig: [],
     },
+    openaiAds: {
+      enabled: false,
+      ready: false,
+      pixelIdConfigured: false,
+      apiKeyConfigured: false,
+      missingConfig: [],
+    },
     warnings: ['Export worker configuration was not included in this report response.'],
   }
 }

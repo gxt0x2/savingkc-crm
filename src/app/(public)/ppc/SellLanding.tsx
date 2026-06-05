@@ -671,6 +671,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
       if (!r.ok || !json?.ok) throw new Error(json?.error ?? 'Submit failed')
       if (!json.conversionSuppressed && !json.notificationsSkipped && !json.test) {
         fireConversion('lead_submitted', {
+          event_id: typeof json.conversionEventId === 'string' ? json.conversionEventId : undefined,
           form_step: finalStep,
           form_status: 'submitted',
           form_submitted: true,
