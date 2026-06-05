@@ -20,6 +20,10 @@ export async function POST(req: Request) {
     const leadPhone = url.searchParams.get('leadPhone') || ''
     const callerId = url.searchParams.get('callerId') || ''
     const trigger = url.searchParams.get('trigger') || 'ppc_form_submit'
+    const batchId = url.searchParams.get('batchId') || ''
+    const agentName = url.searchParams.get('agentName') || 'Agent'
+    const agentPhone = url.searchParams.get('agentPhone') || ''
+    const callbackSource = trigger.startsWith('ppc_') ? 'ppc_form_agent_callback' : 'lead_form_agent_callback'
 
     const body = await req.formData()
     const dialStatus = body.get('DialCallStatus')?.toString() || ''
@@ -32,16 +36,19 @@ export async function POST(req: Request) {
         lead_id: leadId,
         activity_type: 'call',
         description: connected
-          ? 'PPC form agent-assisted callback connected with seller'
-          : 'PPC form seller did not answer agent-assisted callback',
+          ? `${callbackSource === 'ppc_form_agent_callback' ? 'PPC' : 'Lead'} form agent-assisted callback connected with seller`
+          : `${callbackSource === 'ppc_form_agent_callback' ? 'PPC' : 'Lead'} form seller did not answer agent-assisted callback`,
         agent: 'System',
         metadata: {
-          source: 'ppc_form_agent_callback',
+          source: callbackSource,
           trigger,
           outcome: connected ? 'connected' : 'missed',
           direction: 'outbound',
           to: leadPhone,
           callerId,
+          batchId,
+          agentName,
+          agentPhone,
           dialStatus,
           dialCallSid,
           dialCallDuration,

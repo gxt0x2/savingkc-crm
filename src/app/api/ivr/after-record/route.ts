@@ -4,10 +4,9 @@ import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { ensureManifestExists } from '@/lib/manifest-sync'
-import { safeSendSMS } from '@/lib/safe-communications'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
 /**
@@ -87,12 +86,27 @@ export async function POST(req: Request) {
     })
   }
 
-  // Alert both agents
+  // Alert eligible agents.
   const urgentMsg = `[URGENT] Inbound seller voicemail from ${from}. Recording: ${recordingUrl}${leadId ? '\n' + BASE_URL + '/leads/' + leadId : ''}\nCall back NOW.`
-  await Promise.allSettled([
-    safeSendSMS({ body: urgentMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
-    safeSendSMS({ body: urgentMsg, from: TWILIO_PHONE, to: routing.secondary.phone }),
-  ])
+  await sendTeamLeadAlert({
+    leadId,
+    smsBody: urgentMsg,
+    trigger: 'inbound_seller_voicemail_alert',
+    source: 'inbound_ivr',
+    push: leadId ? {
+      title: 'Inbound Seller Voicemail',
+      body: `Voicemail from ${from}. Call back now.`,
+      url: `/leads/${leadId}`,
+      tag: 'inbound-seller-voicemail',
+    } : false,
+    metadata: {
+      from,
+      calledNumber,
+      callSid,
+      recordingUrl,
+      recordingSid,
+    },
+  })
 
   // Create callback task
   if (leadId) {

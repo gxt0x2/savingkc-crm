@@ -4,6 +4,7 @@ import { isOptedOut } from '@/lib/sms-opt-out'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
 import { formatPhone } from '@/lib/format'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
@@ -365,10 +366,29 @@ export async function POST(req: Request) {
     } else {
     // Alert both agents for IVR calls
     const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${from} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
-    await Promise.allSettled([
-      safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
-      safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.secondary.phone }),
-    ])
+    await sendTeamLeadAlert({
+      leadId: resolvedLeadId,
+      smsBody: missedMsg,
+      trigger: 'ivr_missed_call_alert',
+      source: 'inbound_ivr',
+      push: {
+        title: 'Missed Inbound Call',
+        body: `${type === 'seller' ? 'Seller' : 'Caller'} ${from} reached voicemail.`,
+        url: `/leads/${resolvedLeadId}`,
+        tag: 'ivr-missed-call',
+      },
+      metadata: {
+        outcome: 'missed',
+        direction: 'inbound',
+        from,
+        calledNumber,
+        callSid: parentCallSid,
+        dialStatus,
+        dialCallSid,
+        dialCallDuration,
+        type,
+      },
+    })
 
     // Log missed call
     await supabase.from('lead_activities').insert({

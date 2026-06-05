@@ -6,6 +6,7 @@ import type { ManifestV2, ManifestScoring, ManifestContact, TranscriptEntry, Man
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { phoneRateLimit } from '@/middleware/rate-limit'
@@ -214,15 +215,27 @@ function parseContactName(fullName: string): { firstName: string; lastName?: str
 }
 
 // Send SMS alert
-async function sendAlert(name: string, address: string, disposition: string, score?: number) {
+async function sendAlert(leadId: string, name: string, address: string, disposition: string, score?: number) {
   const scoreText = score ? ` Score: ${score}` : ''
   const smsText = `🔥 Hot lead from Casey: ${name} at ${address} — ${disposition}.${scoreText}`
 
   try {
-    await safeSendSMS({
-      body: smsText,
-      from: process.env.TWILIO_PHONE_NUMBER!,
-      to: process.env.ERNEST_PHONE!,
+    await sendTeamLeadAlert({
+      leadId,
+      smsBody: smsText,
+      trigger: 'mojo_hot_lead_alert',
+      source: 'mojo_call',
+      trafficSource: 'mojo',
+      push: {
+        title: 'Mojo hot lead',
+        body: `${name} at ${address}`,
+        url: `/leads/${leadId}`,
+        tag: `mojo-hot-lead-${leadId}`,
+      },
+      metadata: {
+        disposition,
+        opportunity_score: score ?? null,
+      },
     })
     return true
   } catch (err) {
@@ -1312,8 +1325,9 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
     }
 
     // J. Alert — only if score >= 75
-    if (shouldAlert) {
+    if (shouldAlert && leadId) {
       await sendAlert(
+        leadId,
         call.contact_name,
         call.property_address,
         call.disposition,

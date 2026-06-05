@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
-import { sendPushToAgents } from '@/lib/push-notifications'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { ensureManifestExists } from '@/lib/manifest-sync'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
@@ -370,23 +370,27 @@ export async function POST(req: NextRequest) {
       })
     }, 15, 30)
 
-    // Push notification (instant)
-    sendPushToAgents({
-      title: 'New Booking',
-      body: `${first_name.trim()} booked for ${formattedDate} at ${displayTime}`,
-      url: leadId ? `/leads/${leadId}` : '/',
-      tag: 'booking',
-    }).catch(() => {})
-
-    // Send alert SMS to Casey (delayed 30-60s)
+    // Alert eligible team members immediately.
     const alertBody = `📅 New call booked: ${first_name.trim()}${property_address?.trim() ? ` at ${property_address.trim()}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${normalizedPhone}`
-    sendDelayed(async () => {
-      await safeSendSMS({
-        body: alertBody,
-        from: process.env.TWILIO_PHONE_NUMBER!,
-        to: process.env.CASEY_PHONE || '+18167564943',
-      })
-    }, 30, 60)
+    await sendTeamLeadAlert({
+      leadId,
+      smsBody: alertBody,
+      trigger: 'booking_alert',
+      source: bookingSource,
+      trafficSource: isPpcBooking ? 'google_ads' : 'non_paid',
+      push: {
+        title: 'New Booking',
+        body: `${first_name.trim()} booked for ${formattedDate} at ${displayTime}`,
+        url: leadId ? `/leads/${leadId}` : '/',
+        tag: `booking-${booking.id}`,
+      },
+      metadata: {
+        booking_id: booking.id,
+        slot_date,
+        slot_time,
+        scheduled_at: slot_datetime,
+      },
+    })
 
     return NextResponse.json(
       {
