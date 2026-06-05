@@ -73,6 +73,35 @@ describe('ppc browser tracking', () => {
     )
   })
 
+  it('suppresses browser conversion tags on smoke-test URLs', () => {
+    const oaiq = vi.fn()
+    vi.stubGlobal('window', {
+      dataLayer: [],
+      oaiq,
+      location: {
+        pathname: '/ppc',
+        href: 'https://savingkc.com/ppc?utm_source=openai_ads&utm_medium=smoke_test&utm_campaign=openai_ads_smoke&skc_test=1',
+        search: '?utm_source=openai_ads&utm_medium=smoke_test&utm_campaign=openai_ads_smoke&skc_test=1',
+      },
+      navigator: {},
+    })
+
+    const event = fireConversion('lead_submitted', {
+      event_id: 'codex_smoke_lead:123:lead_submitted',
+      form_step: 4,
+      form_status: 'submitted',
+      form_submitted: true,
+    })
+
+    expect(event).toMatchObject({
+      event: 'lead_submitted',
+      conversion_value: 25,
+      optimization_role: 'primary',
+    })
+    expect(currentDataLayer()).toEqual([])
+    expect(oaiq).not.toHaveBeenCalled()
+  })
+
   it('adds page context for the tax PPC landing page', () => {
     vi.stubGlobal('window', {
       dataLayer: [],
