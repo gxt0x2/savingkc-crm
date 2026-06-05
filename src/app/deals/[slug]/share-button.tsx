@@ -13,7 +13,15 @@ export default function ShareButton({ slug }: { slug?: string }) {
     url.searchParams.set('s', shareCode)
     navigator.clipboard.writeText(url.toString()).catch(() => {})
 
-    if (slug) trackEvent(slug, 'share_click', { share_code: shareCode })
+    if (slug) {
+      trackEvent(slug, 'share_click', {
+        section: 'pricing_sidebar',
+        cta_id: 'deal_share',
+        cta_label: 'Share',
+        destination: 'share_link',
+        share_code: shareCode,
+      })
+    }
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

@@ -34,6 +34,14 @@ export type PpcMicroEvent =
   | 'cta_click'
   | 'nav_click'
   | 'faq_opened'
+  | 'show_me_clicked'
+  | 'video_started'
+  | 'video_play'
+  | 'video_progress_25'
+  | 'video_progress_50'
+  | 'video_progress_75'
+  | 'video_completed'
+  | 'video_paused'
 
 export type PpcTrackingEvent = ConversionEvent | PpcMicroEvent
 

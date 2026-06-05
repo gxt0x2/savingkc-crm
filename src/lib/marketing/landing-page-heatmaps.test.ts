@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildLandingPageHeatmapReport, type LandingHeatmapEventRow } from './landing-page-heatmaps'
+import {
+  buildLandingPageHeatmapReport,
+  dealPageEventsToHeatmapRows,
+  type DealPageHeatmapEventRow,
+  type LandingHeatmapEventRow,
+} from './landing-page-heatmaps'
 
 function row(overrides: Partial<LandingHeatmapEventRow>): LandingHeatmapEventRow {
   return {
@@ -16,6 +21,30 @@ function row(overrides: Partial<LandingHeatmapEventRow>): LandingHeatmapEventRow
     campaign: overrides.campaign ?? 'Search 2026',
     form_step: overrides.form_step ?? null,
     payload: overrides.payload ?? {},
+  }
+}
+
+function dealRow(overrides: Partial<DealPageHeatmapEventRow>): DealPageHeatmapEventRow {
+  return {
+    id: overrides.id ?? 'deal-event',
+    event_id: overrides.event_id ?? 'deal-event-id',
+    event_type: overrides.event_type ?? 'page_view',
+    created_at: overrides.created_at ?? '2026-06-04T12:00:00.000Z',
+    session_id: overrides.session_id ?? 'deal-session-1',
+    visitor_id: overrides.visitor_id ?? 'deal-visitor-1',
+    buyer_id: overrides.buyer_id ?? null,
+    page_path: overrides.page_path ?? '/deals/test-deal',
+    page_location: overrides.page_location ?? 'https://crm.savingkc.com/deals/test-deal',
+    utm_campaign: overrides.utm_campaign ?? 'Investor Blast',
+    metadata: overrides.metadata ?? {},
+    section: overrides.section ?? null,
+    element_text: overrides.element_text ?? null,
+    element_tag: overrides.element_tag ?? null,
+    x_pct: overrides.x_pct ?? null,
+    y_pct: overrides.y_pct ?? null,
+    scroll_pct: overrides.scroll_pct ?? null,
+    share_id: overrides.share_id ?? null,
+    ref_code: overrides.ref_code ?? null,
   }
 }
 
@@ -130,6 +159,54 @@ describe('landing page heatmap report', () => {
       progress75: 1,
       completes: 1,
       maxPercent: 100,
+    })
+  })
+
+  it('normalizes deal page component events into heatmap CTA, show-me, and video buckets', () => {
+    const rows = dealPageEventsToHeatmapRows([
+      dealRow({
+        event_id: 'photo',
+        event_type: 'photo_open',
+        metadata: { item_id: 'photo_2', item_label: 'Photo 2', section: 'gallery', position: 2 },
+      }),
+      dealRow({
+        event_id: 'offer-open',
+        event_type: 'offer_modal_open',
+        metadata: { cta_id: 'deal_make_offer', cta_label: 'Make offer', section: 'pricing_sidebar' },
+      }),
+      dealRow({
+        event_id: 'video-half',
+        event_type: 'video_progress_50',
+        metadata: { video_id: 'deal_video_1', video_title: 'Deal video 1', section: 'videos', watch_percent: 58 },
+      }),
+    ])
+
+    const report = buildLandingPageHeatmapReport({
+      rows,
+      days: 7,
+      since: '2026-06-01T00:00:00.000Z',
+      until: '2026-06-08T00:00:00.000Z',
+      pageFilter: 'deals',
+    })
+
+    expect(report.summary).toMatchObject({
+      events: 3,
+      pages: 1,
+      specificityRate: 100,
+    })
+    expect(report.pages[0]?.showMe[0]).toMatchObject({
+      label: 'Photo 2',
+      section: 'Gallery',
+    })
+    expect(report.pages[0]?.ctas[0]).toMatchObject({
+      label: 'Make offer',
+      section: 'Pricing Sidebar',
+    })
+    expect(report.pages[0]?.videos[0]).toMatchObject({
+      label: 'Deal video 1',
+      progress25: 1,
+      progress50: 1,
+      maxPercent: 58,
     })
   })
 })

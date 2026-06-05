@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserEmail } from '@/lib/auth/admin'
-import { buildLandingPageHeatmapReport, type LandingHeatmapEventRow } from '@/lib/marketing/landing-page-heatmaps'
+import {
+  buildLandingPageHeatmapReport,
+  dealPageEventsToHeatmapRows,
+  type DealPageHeatmapEventRow,
+  type LandingHeatmapEventRow,
+} from '@/lib/marketing/landing-page-heatmaps'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -38,22 +43,48 @@ export async function GET(req: NextRequest) {
   since.setUTCDate(until.getUTCDate() - days)
 
   const db = supabaseAdmin()
-  const { data, error } = await db
-    .from('ppc_tracking_events')
-    .select('id,event_id,event_name,event_category,event_time,session_id,visitor_id,lead_id,page_path,page_location,campaign,form_step,payload')
-    .eq('is_test', false)
-    .gte('event_time', since.toISOString())
-    .lte('event_time', until.toISOString())
-    .order('event_time', { ascending: false })
-    .limit(10000)
+  const includePpcEvents = filter !== 'deals'
+  const includeDealEvents = filter === 'all' || filter === 'deals'
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500, headers: NO_STORE_HEADERS })
+  const [ppcEventsRes, dealEventsRes] = await Promise.all([
+    includePpcEvents
+      ? db
+        .from('ppc_tracking_events')
+        .select('id,event_id,event_name,event_category,event_time,session_id,visitor_id,lead_id,page_path,page_location,campaign,form_step,payload')
+        .eq('is_test', false)
+        .gte('event_time', since.toISOString())
+        .lte('event_time', until.toISOString())
+        .order('event_time', { ascending: false })
+        .limit(10000)
+      : Promise.resolve({ data: [], error: null }),
+    includeDealEvents
+      ? db
+        .from('deal_page_events')
+        .select('id,event_id,event_type,created_at,session_id,visitor_id,buyer_id,page_path,page_location,utm_campaign,metadata,section,element_text,element_tag,x_pct,y_pct,scroll_pct,share_id,ref_code')
+        .eq('is_internal', false)
+        .gte('created_at', since.toISOString())
+        .lte('created_at', until.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(10000)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (ppcEventsRes.error) {
+    return NextResponse.json({ error: ppcEventsRes.error.message }, { status: 500, headers: NO_STORE_HEADERS })
   }
+
+  if (dealEventsRes.error) {
+    return NextResponse.json({ error: dealEventsRes.error.message }, { status: 500, headers: NO_STORE_HEADERS })
+  }
+
+  const rows = [
+    ...((ppcEventsRes.data ?? []) as LandingHeatmapEventRow[]),
+    ...dealPageEventsToHeatmapRows((dealEventsRes.data ?? []) as DealPageHeatmapEventRow[]),
+  ]
 
   return NextResponse.json(
     buildLandingPageHeatmapReport({
-      rows: (data ?? []) as LandingHeatmapEventRow[],
+      rows,
       days,
       since: since.toISOString(),
       until: until.toISOString(),

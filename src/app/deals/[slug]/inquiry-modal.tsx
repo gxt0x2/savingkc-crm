@@ -23,7 +23,13 @@ export default function InquiryModal({ propertyAddress, slug }: InquiryModalProp
 
   function handleOpen() {
     if (!open && slug) {
-      trackEvent(slug, 'inquiry_modal_open')
+      trackEvent(slug, 'inquiry_modal_open', {
+        section: 'wholesaler_card',
+        cta_id: 'deal_send_inquiry',
+        cta_label: 'Send Inquiry',
+        destination: 'inquiry_modal',
+        property_address_present: Boolean(propertyAddress),
+      })
     }
     setOpen(true)
   }
@@ -32,6 +38,8 @@ export default function InquiryModal({ propertyAddress, slug }: InquiryModalProp
     const body = form.message || `Hi, I'm interested in learning more about ${propertyAddress}.`
     if (slug) {
       trackEvent(slug, 'inquiry_submit', {
+        section: 'inquiry_form',
+        form_id: 'inquiry_form',
         has_name: Boolean(form.name.trim()),
         has_email: Boolean(form.email.trim()),
         has_message: Boolean(form.message.trim()),

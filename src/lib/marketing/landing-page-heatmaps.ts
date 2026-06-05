@@ -14,6 +14,28 @@ export type LandingHeatmapEventRow = {
   payload: Record<string, unknown> | null
 }
 
+export type DealPageHeatmapEventRow = {
+  id?: string | null
+  event_id?: string | null
+  event_type: string
+  created_at: string
+  session_id: string | null
+  visitor_id: string | null
+  buyer_id?: string | null
+  page_path: string | null
+  page_location: string | null
+  utm_campaign?: string | null
+  metadata: Record<string, unknown> | null
+  section: string | null
+  element_text: string | null
+  element_tag: string | null
+  x_pct: number | string | null
+  y_pct: number | string | null
+  scroll_pct: number | string | null
+  share_id?: string | null
+  ref_code?: string | null
+}
+
 export type LandingHeatmapItem = {
   key: string
   label: string
@@ -136,6 +158,10 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
+function cleanRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && entry !== ''))
+}
+
 function text(value: unknown): string {
   if (typeof value === 'string') return value.trim()
   if (typeof value === 'number' && Number.isFinite(value)) return String(value)
@@ -156,6 +182,10 @@ function titleize(value: string): string {
     .replace(/^\/+/, '')
     .replace(/[-_]/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function slug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'unknown'
 }
 
 function pathnameFrom(value: string | null): string {
@@ -245,6 +275,154 @@ function videoPercent(eventName: string, payload: Record<string, unknown>): numb
 
 function hasAny(payload: Record<string, unknown>, keys: string[]): boolean {
   return keys.some((key) => Boolean(text(payload[key])))
+}
+
+function categoryForDealEvent(eventName: string): string {
+  if (eventName.includes('video')) return 'video'
+  if (eventName === 'offer_submit' || eventName === 'inquiry_submit' || eventName === 'conversion') return 'conversion'
+  if (eventName === 'show_me_clicked') return 'media'
+  return 'web'
+}
+
+function normalizeDealEventName(eventType: string): string {
+  if (eventType === 'photo_open') return 'show_me_clicked'
+  if (
+    eventType === 'share_click' ||
+    eventType === 'offer_modal_open' ||
+    eventType === 'inquiry_modal_open' ||
+    eventType === 'street_view_open' ||
+    eventType === 'map_view_open' ||
+    eventType === 'deal_document_open'
+  ) {
+    return 'cta_click'
+  }
+  return eventType
+}
+
+function dealSpecificPayload(row: DealPageHeatmapEventRow): Record<string, unknown> {
+  const metadata = record(row.metadata)
+  const position = numberValue(metadata.position) ?? numberValue(metadata.photo_index) ?? numberValue(metadata.index)
+  const baseSection = text(row.section) || text(metadata.section)
+
+  if (row.event_type === 'photo_open') {
+    const photoPosition = position === null ? null : Math.max(1, Math.round(position))
+    return {
+      section: baseSection || 'gallery',
+      item_id: text(metadata.item_id) || (text(metadata.view) === 'grid' ? 'photo_grid' : `photo_${photoPosition ?? 1}`),
+      item_label: text(metadata.item_label) || (text(metadata.view) === 'grid' ? 'Show all photos' : `Photo ${photoPosition ?? 1}`),
+      position: photoPosition ?? undefined,
+      view: text(metadata.view) || 'lightbox',
+    }
+  }
+
+  if (row.event_type === 'street_view_open') {
+    return {
+      section: baseSection || 'gallery',
+      cta_id: text(metadata.cta_id) || 'deal_street_view',
+      cta_label: text(metadata.cta_label) || 'Street View',
+      destination: text(metadata.destination) || 'street_view_modal',
+    }
+  }
+
+  if (row.event_type === 'map_view_open') {
+    return {
+      section: baseSection || 'gallery',
+      cta_id: text(metadata.cta_id) || 'deal_map_view',
+      cta_label: text(metadata.cta_label) || 'Map View',
+      destination: text(metadata.destination) || 'map_modal',
+    }
+  }
+
+  if (row.event_type === 'offer_modal_open') {
+    return {
+      section: baseSection || 'pricing_sidebar',
+      cta_id: text(metadata.cta_id) || 'deal_make_offer',
+      cta_label: text(metadata.cta_label) || 'Make offer',
+      destination: text(metadata.destination) || 'offer_modal',
+    }
+  }
+
+  if (row.event_type === 'inquiry_modal_open') {
+    return {
+      section: baseSection || 'wholesaler_card',
+      cta_id: text(metadata.cta_id) || 'deal_send_inquiry',
+      cta_label: text(metadata.cta_label) || 'Send Inquiry',
+      destination: text(metadata.destination) || 'inquiry_modal',
+    }
+  }
+
+  if (row.event_type === 'deal_document_open') {
+    const label = text(metadata.document_name) || text(metadata.cta_label) || text(row.element_text) || 'Inspection report'
+    return {
+      section: baseSection || 'documents',
+      cta_id: text(metadata.cta_id) || `deal_document_${slug(label)}`,
+      cta_label: label,
+      destination: text(metadata.destination) || 'document',
+      position: position ?? undefined,
+    }
+  }
+
+  if (row.event_type === 'share_click') {
+    return {
+      section: baseSection || 'pricing_sidebar',
+      cta_id: text(metadata.cta_id) || 'deal_share',
+      cta_label: text(metadata.cta_label) || 'Share deal',
+      destination: text(metadata.destination) || 'share_modal',
+    }
+  }
+
+  if (row.event_type.includes('video')) {
+    const label = text(metadata.video_title) || text(metadata.title) || `Deal video ${position ? Math.round(position) : 1}`
+    return {
+      section: baseSection || 'videos',
+      video_id: text(metadata.video_id) || `deal_video_${position ? Math.round(position) : 1}`,
+      video_title: label,
+      title: label,
+      placement: text(metadata.placement) || 'deal_page_videos',
+      position: position ?? undefined,
+    }
+  }
+
+  return {
+    section: baseSection || undefined,
+  }
+}
+
+export function dealPageEventsToHeatmapRows(rows: DealPageHeatmapEventRow[]): LandingHeatmapEventRow[] {
+  return rows.map((row) => {
+    const metadata = record(row.metadata)
+    const eventName = normalizeDealEventName(row.event_type)
+    const payload = cleanRecord({
+      ...metadata,
+      ...dealSpecificPayload(row),
+      deal_event_type: row.event_type,
+      deal_event_id: row.event_id || row.id,
+      buyer_id_present: Boolean(row.buyer_id),
+      share_id_present: Boolean(row.share_id),
+      ref_code_present: Boolean(row.ref_code),
+      element_text: text(row.element_text) || undefined,
+      element_tag: text(row.element_tag) || undefined,
+      x_pct: numberValue(row.x_pct) ?? undefined,
+      y_pct: numberValue(row.y_pct) ?? undefined,
+      scroll_pct: numberValue(row.scroll_pct) ?? undefined,
+    })
+
+    return {
+      id: row.id ?? null,
+      event_id: text(row.event_id) || text(row.id) || `deal_${row.event_type}_${row.created_at}`,
+      event_name: eventName,
+      event_category: categoryForDealEvent(eventName),
+      event_time: row.created_at,
+      session_id: row.session_id,
+      visitor_id: row.visitor_id,
+      lead_id: null,
+      page_path: row.page_path || '/deals',
+      page_location: row.page_location,
+      campaign: row.utm_campaign || 'Deal Pages',
+      form_step: null,
+      payload,
+    }
+  })
 }
 
 function isSpecific(row: LandingHeatmapEventRow): boolean {

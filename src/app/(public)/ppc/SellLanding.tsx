@@ -81,16 +81,22 @@ type SellLandingProps = {
 type YouTubePlayer = {
   playVideo: () => void
   destroy: () => void
+  getCurrentTime?: () => number
+  getDuration?: () => number
 }
 
 type YouTubePlayerEvent = {
   target: YouTubePlayer
 }
 
+type YouTubeStateEvent = YouTubePlayerEvent & {
+  data: number
+}
+
 type YouTubeNamespace = {
   Player: new (
     element: string | HTMLIFrameElement,
-    options: { events?: { onReady?: (event: YouTubePlayerEvent) => void } },
+    options: { events?: { onReady?: (event: YouTubePlayerEvent) => void; onStateChange?: (event: YouTubeStateEvent) => void } },
   ) => YouTubePlayer
 }
 
@@ -118,12 +124,71 @@ const VIDEO_TESTIMONIALS = [
   },
 ]
 
+const YOUTUBE_STATE = {
+  ended: 0,
+  playing: 1,
+  paused: 2,
+} as const
+
+type DecisionRowClick = {
+  stage: string
+  title: string
+  cta: string
+  section: 'problems' | 'stages'
+  position: number
+}
+
+function slugifyId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'item'
+}
+
+function stableEventId(...parts: string[]): string {
+  return parts.map(slugifyId).filter(Boolean).join('__')
+}
+
+function pageVariantKey(variant: SellLandingProps['variant']): 'ppc_tax' | 'ppc_general' {
+  return variant === 'tax' ? 'ppc_tax' : 'ppc_general'
+}
+
+function sectionFromClickLocation(clickLocation: string): string {
+  if (clickLocation.includes('nav') || clickLocation.includes('topbar')) return 'navigation'
+  if (clickLocation.includes('hero')) return 'hero'
+  if (clickLocation.includes('mid')) return 'mid_cta'
+  if (clickLocation.includes('final') || clickLocation.includes('bottom')) return 'final_cta'
+  if (clickLocation.includes('footer')) return 'footer'
+  if (clickLocation.includes('problem')) return 'problems'
+  if (clickLocation.includes('tax_decision')) return 'stages'
+  return clickLocation.replace(/_/g, '-')
+}
+
+function navLabelForTarget(target: string, isTaxLanding: boolean): string {
+  const labels: Record<string, string> = isTaxLanding
+    ? {
+      quiz: 'Start',
+      timeline: 'Steps',
+      stages: 'Issues',
+      team: 'Team',
+      faq: 'FAQ',
+      'video-testimonials': 'Reviews',
+    }
+    : {
+      quiz: 'Start',
+      how: 'Steps',
+      problems: 'Issues',
+      about: 'Team',
+      faq: 'FAQ',
+      'video-testimonials': 'Reviews',
+    }
+  return labels[target] || target.replace(/-/g, ' ')
+}
+
 function initialQuizState(): QuizState {
   return { ...EMPTY_STATE, situation: 'tax-delinquent' }
 }
 
 export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, variant = 'general' }: SellLandingProps) {
   const isTaxLanding = variant === 'tax'
+  const variantKey = pageVariantKey(variant)
   const totalSteps = 4
   const finalStep = 4
   const [step, setStep] = useState<FormStep>(1)
@@ -718,23 +783,48 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   }
 
   const trackCtaClick = (clickLocation: string, ctaLabel: string, ctaTarget = 'quiz') => {
+    const destination = ctaTarget.startsWith('#') ? ctaTarget : `#${ctaTarget}`
     firePpcTrackingEvent('cta_click', {
       ...commonFunnelPayload(),
+      cta_id: stableEventId(variantKey, 'cta', clickLocation, ctaLabel || ctaTarget),
       click_location: clickLocation,
+      placement: clickLocation,
+      section: sectionFromClickLocation(clickLocation),
       cta_label: ctaLabel,
       cta_target: ctaTarget,
+      destination,
     })
   }
   const trackNavClick = (id: string, clickLocation: string) => {
+    const navLabel = navLabelForTarget(id, isTaxLanding)
     firePpcTrackingEvent('nav_click', {
       ...commonFunnelPayload(),
+      nav_id: stableEventId(variantKey, 'nav', clickLocation, id),
       nav_target: id,
+      nav_label: navLabel,
       click_location: clickLocation,
+      placement: clickLocation,
+      section: 'navigation',
+      destination: `#${id}`,
     })
   }
   const scrollToQuiz = () => document.getElementById('quiz')?.scrollIntoView({ behavior: 'smooth' })
   const handleQuizCta = (clickLocation: string, ctaLabel: string) => {
     trackCtaClick(clickLocation, ctaLabel)
+    scrollToQuiz()
+  }
+  const handleDecisionRowClick = (row: DecisionRowClick) => {
+    firePpcTrackingEvent('show_me_clicked', {
+      ...commonFunnelPayload(),
+      item_id: stableEventId(variantKey, row.section, row.stage, row.title),
+      item_label: row.title,
+      issue: row.stage,
+      cta_label: row.cta,
+      destination: '#quiz',
+      section: row.section,
+      placement: 'decision_row',
+      position: row.position,
+    })
     scrollToQuiz()
   }
   const scrollToId = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -747,7 +837,12 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     firePpcTrackingEvent('phone_click', {
       phone_number: phoneTel,
       phone_display: phoneDisplay,
+      cta_id: stableEventId(variantKey, 'phone', clickLocation),
+      cta_label: `Call ${phoneDisplay}`,
       click_location: clickLocation,
+      placement: clickLocation,
+      section: sectionFromClickLocation(clickLocation),
+      destination: `tel:${phoneTel}`,
     })
   }
   const faqs = isTaxLanding ? TAX_FAQS : FAQS
@@ -1191,14 +1286,14 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
       {isTaxLanding ? (
         <>
           <TaxFreshStartTimeline />
-          <TaxDecisionRows scrollToQuiz={() => handleQuizCta('tax_decision_row', 'Tax decision row')} />
+          <TaxDecisionRows onRowClick={handleDecisionRowClick} />
           <TaxGuarantee />
           <TaxTeamSection />
         </>
       ) : (
         <>
           <GeneralFreshStartTimeline />
-          <GeneralProblemRows scrollToQuiz={() => handleQuizCta('problem_row', 'Problem row')} />
+          <GeneralProblemRows onRowClick={handleDecisionRowClick} />
           <GeneralPromise />
           <GeneralTeamSection />
         </>
@@ -1304,8 +1399,12 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                     if (!willOpen) return
                     firePpcTrackingEvent('faq_opened', {
                       ...commonFunnelPayload(),
+                      faq_id: stableEventId(variantKey, 'faq', String(i + 1), faq.q),
                       faq_index: i + 1,
                       faq_question: faq.q,
+                      label: faq.q,
+                      section: 'faq',
+                      position: i + 1,
                     })
                   }}
                 >
@@ -1434,7 +1533,7 @@ function GeneralFreshStartTimeline() {
   )
 }
 
-function GeneralProblemRows({ scrollToQuiz }: { scrollToQuiz: () => void }) {
+function GeneralProblemRows({ onRowClick }: { onRowClick: (row: DecisionRowClick) => void }) {
   const rows = [
     {
       tone: 'brand',
@@ -1490,12 +1589,18 @@ function GeneralProblemRows({ scrollToQuiz }: { scrollToQuiz: () => void }) {
             You do not have to fix it first. <strong>We buy the hard houses.</strong>
           </div>
           <div className="decision-rows">
-            {rows.map((row) => (
+            {rows.map((row, index) => (
               <button
                 type="button"
                 className={`decision-row decision-card ${row.tone}`}
                 key={row.stage}
-                onClick={scrollToQuiz}
+                onClick={() => onRowClick({
+                  stage: row.stage,
+                  title: row.title,
+                  cta: row.cta,
+                  section: 'problems',
+                  position: index + 1,
+                })}
               >
                 <span className="decision-stage">{row.stage}</span>
                 <span className="if-block decision-card-head">
@@ -1628,6 +1733,34 @@ function GeneralVideoTestimonials() {
   const initializePlayersRef = useRef<() => void>(() => undefined)
   const pendingPlayVideoId = useRef<string | null>(null)
   const playRetryTimers = useRef<number[]>([])
+  const videoProgressTimers = useRef<Record<string, number>>({})
+  const videoProgressMilestones = useRef<Record<string, Set<number>>>({})
+  const startedVideoIds = useRef<Set<string>>(new Set())
+
+  const videoPayload = useCallback((video: typeof VIDEO_TESTIMONIALS[number], extras: Record<string, unknown> = {}) => {
+    const position = VIDEO_TESTIMONIALS.findIndex((item) => item.id === video.id) + 1
+    return {
+      video_id: video.id,
+      video_title: video.title,
+      title: video.title,
+      runtime: video.runtime,
+      section: 'video-testimonials',
+      placement: 'video-testimonials',
+      position,
+      destination: video.url,
+      ...extras,
+    }
+  }, [])
+
+  const trackVideoStartedOnce = useCallback((video: typeof VIDEO_TESTIMONIALS[number], trigger: string) => {
+    if (startedVideoIds.current.has(video.id)) return
+    startedVideoIds.current.add(video.id)
+    firePpcTrackingEvent('video_started', videoPayload(video, {
+      trigger,
+      percent: 0,
+      watch_percent: 0,
+    }))
+  }, [videoPayload])
 
   const clearPlayRetryTimers = useCallback(() => {
     playRetryTimers.current.forEach((timerId) => window.clearTimeout(timerId))
@@ -1638,6 +1771,16 @@ function GeneralVideoTestimonials() {
     playerInitRetryTimers.current.forEach((timerId) => window.clearTimeout(timerId))
     playerInitRetryTimers.current = []
   }, [])
+
+  const clearVideoProgressTimer = useCallback((videoId: string) => {
+    const timer = videoProgressTimers.current[videoId]
+    if (timer) window.clearInterval(timer)
+    delete videoProgressTimers.current[videoId]
+  }, [])
+
+  const clearAllVideoProgressTimers = useCallback(() => {
+    Object.keys(videoProgressTimers.current).forEach(clearVideoProgressTimer)
+  }, [clearVideoProgressTimer])
 
   const resetVideoPlayers = useCallback(() => {
     Object.values(videoPlayers.current).forEach((player) => player?.destroy())
@@ -1660,6 +1803,70 @@ function GeneralVideoTestimonials() {
     )
   }, [])
 
+  const videoPercent = useCallback((player: YouTubePlayer): number => {
+    const duration = player.getDuration?.() ?? 0
+    const current = player.getCurrentTime?.() ?? 0
+    if (!duration || duration <= 0 || !Number.isFinite(duration) || !Number.isFinite(current)) return 0
+    return Math.max(0, Math.min(100, Math.round((current / duration) * 100)))
+  }, [])
+
+  const trackVideoMilestones = useCallback((video: typeof VIDEO_TESTIMONIALS[number], player: YouTubePlayer): number => {
+    const percent = videoPercent(player)
+    const sent = videoProgressMilestones.current[video.id] ?? new Set<number>()
+    videoProgressMilestones.current[video.id] = sent
+
+    ;([25, 50, 75] as const).forEach((threshold) => {
+      if (percent < threshold || sent.has(threshold)) return
+      sent.add(threshold)
+      firePpcTrackingEvent(`video_progress_${threshold}` as const, videoPayload(video, {
+        percent: threshold,
+        watch_percent: percent,
+      }))
+    })
+
+    return percent
+  }, [videoPayload, videoPercent])
+
+  const startVideoProgressTimer = useCallback((video: typeof VIDEO_TESTIMONIALS[number], player: YouTubePlayer) => {
+    clearVideoProgressTimer(video.id)
+    videoProgressTimers.current[video.id] = window.setInterval(() => {
+      trackVideoMilestones(video, player)
+    }, 2000)
+  }, [clearVideoProgressTimer, trackVideoMilestones])
+
+  const handleVideoStateChange = useCallback((video: typeof VIDEO_TESTIMONIALS[number], event: YouTubeStateEvent) => {
+    const player = event.target
+    if (event.data === YOUTUBE_STATE.playing) {
+      trackVideoStartedOnce(video, 'youtube_state')
+      startVideoProgressTimer(video, player)
+      return
+    }
+
+    if (event.data === YOUTUBE_STATE.paused) {
+      const percent = trackVideoMilestones(video, player)
+      clearVideoProgressTimer(video.id)
+      firePpcTrackingEvent('video_paused', videoPayload(video, {
+        percent,
+        watch_percent: percent,
+      }))
+      return
+    }
+
+    if (event.data === YOUTUBE_STATE.ended) {
+      clearVideoProgressTimer(video.id)
+      firePpcTrackingEvent('video_completed', videoPayload(video, {
+        percent: 100,
+        watch_percent: 100,
+      }))
+    }
+  }, [
+    clearVideoProgressTimer,
+    startVideoProgressTimer,
+    trackVideoMilestones,
+    trackVideoStartedOnce,
+    videoPayload,
+  ])
+
   const initializePlayers = useCallback(() => {
     const YouTubePlayerConstructor = window.YT?.Player
     if (!YouTubePlayerConstructor) return
@@ -1679,6 +1886,7 @@ function GeneralVideoTestimonials() {
               sendPlayCommand(video.id)
             }
           },
+          onStateChange: (event) => handleVideoStateChange(video, event),
         },
       })
 
@@ -1691,7 +1899,7 @@ function GeneralVideoTestimonials() {
         playerInitRetryTimers.current.push(retryTimer)
       }
     })
-  }, [sendPlayCommand])
+  }, [handleVideoStateChange, sendPlayCommand])
 
   useEffect(() => {
     initializePlayersRef.current = initializePlayers
@@ -1701,9 +1909,10 @@ function GeneralVideoTestimonials() {
     return () => {
       clearPlayRetryTimers()
       clearPlayerInitRetryTimers()
+      clearAllVideoProgressTimers()
       resetVideoPlayers()
     }
-  }, [clearPlayerInitRetryTimers, clearPlayRetryTimers, resetVideoPlayers])
+  }, [clearAllVideoProgressTimers, clearPlayerInitRetryTimers, clearPlayRetryTimers, resetVideoPlayers])
 
   useEffect(() => {
     const previousReadyHandler = window.onYouTubeIframeAPIReady
@@ -1735,6 +1944,8 @@ function GeneralVideoTestimonials() {
 
   const startVideo = useCallback((videoId: string) => {
     clearPlayRetryTimers()
+    const video = VIDEO_TESTIMONIALS.find((item) => item.id === videoId)
+    if (video) trackVideoStartedOnce(video, 'thumbnail')
     setActiveVideoId(videoId)
     pendingPlayVideoId.current = videoId
 
@@ -1742,7 +1953,7 @@ function GeneralVideoTestimonials() {
     playRetryTimers.current = [120, 360, 700, 1100, 1700, 2500, 3600].map((delay) =>
       window.setTimeout(() => sendPlayCommand(videoId), delay),
     )
-  }, [clearPlayRetryTimers, sendPlayCommand])
+  }, [clearPlayRetryTimers, sendPlayCommand, trackVideoStartedOnce])
 
   return (
     <section id="video-testimonials" className="block video-testimonial-section" aria-labelledby="video-testimonials-title">
@@ -1872,7 +2083,7 @@ function TaxFreshStartTimeline() {
   )
 }
 
-function TaxDecisionRows({ scrollToQuiz }: { scrollToQuiz: () => void }) {
+function TaxDecisionRows({ onRowClick }: { onRowClick: (row: DecisionRowClick) => void }) {
   const rows = [
     {
       tone: 'brand',
@@ -1926,12 +2137,18 @@ function TaxDecisionRows({ scrollToQuiz }: { scrollToQuiz: () => void }) {
             Whatever stage you&apos;re in, <strong>there&apos;s money on the table.</strong>
           </div>
           <div className="decision-rows">
-            {rows.map((row) => (
+            {rows.map((row, index) => (
               <button
                 type="button"
                 className={`decision-row decision-card ${row.tone}`}
                 key={row.stage}
-                onClick={scrollToQuiz}
+                onClick={() => onRowClick({
+                  stage: row.stage,
+                  title: row.title,
+                  cta: row.cta,
+                  section: 'stages',
+                  position: index + 1,
+                })}
               >
                 <span className="decision-stage">{row.stage}</span>
                 <span className="if-block decision-card-head">
