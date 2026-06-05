@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { captureAttribution, getAttribution } from './attribution'
 
 function storageMock() {
@@ -84,6 +84,23 @@ describe('ppc attribution persistence', () => {
       gclid: 'tax-click',
       utm_campaign: 'Search - Property Tax',
       landingUrl: 'https://savingkc.com/ppc?gclid=tax-click&utm_campaign=Search%20-%20Property%20Tax',
+    })
+  })
+
+  it('captures OpenAI Ads oppref from the URL and cookie fallback', () => {
+    const direct = stubBrowser('?oppref=openai-click-123')
+
+    expect(captureAttribution()).toMatchObject({
+      oppref: 'openai-click-123',
+      landingUrl: 'https://savingkc.com/ppc?oppref=openai-click-123',
+    })
+    expect(direct.setItem).toHaveBeenCalledWith('skc.ppc.attribution.v1', expect.stringContaining('openai-click-123'))
+
+    vi.unstubAllGlobals()
+    stubBrowser('', '__oppref=openai-cookie-456; Path=/')
+
+    expect(captureAttribution()).toMatchObject({
+      oppref: 'openai-cookie-456',
     })
   })
 })

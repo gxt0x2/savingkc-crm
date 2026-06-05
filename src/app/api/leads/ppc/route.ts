@@ -73,6 +73,7 @@ const AttributionSchema = z
     gclid: z.string().max(180).optional(),
     gbraid: z.string().max(180).optional(),
     wbraid: z.string().max(180).optional(),
+    oppref: z.string().max(240).optional(),
     gad_source: z.string().max(120).optional(),
     gad_campaignid: z.string().max(180).optional(),
     gad_adgroupid: z.string().max(180).optional(),
@@ -836,17 +837,19 @@ export async function POST(req: NextRequest) {
     })
 
     if (!isTestLead) {
+      const conversionEventId = `lead:${resolvedLeadId}:lead_submitted`
       await enqueuePpcConversion({
         eventName: 'lead_submitted',
         eventCategory: 'form',
         leadId: resolvedLeadId,
         manifestId,
         activityId,
-        dedupeKey: `lead:${resolvedLeadId}:lead_submitted`,
+        dedupeKey: conversionEventId,
         optimizationRole: 'primary',
         conversionValue: 25,
         attribution,
         payload: withRequestPayload({
+          openai_ads_event_id: conversionEventId,
           form_status: 'submitted',
           form_submitted: true,
           step: formStep,
@@ -908,6 +911,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       manifestId,
       leadId: resolvedLeadId,
+      conversionEventId: `lead:${resolvedLeadId}:lead_submitted`,
       ...(isTestLead ? { notificationsSkipped: true, conversionSuppressed: true } : {}),
     }, { headers: corsHeaders })
   } catch (err) {

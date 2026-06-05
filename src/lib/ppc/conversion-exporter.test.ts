@@ -108,6 +108,28 @@ describe('ppc conversion exporter', () => {
     )
   })
 
+  it('summarizes OpenAI Ads export configuration without exposing secrets', () => {
+    const health = getPpcConversionExportConfigHealth({
+      PPC_CONVERSION_EXPORT_DESTINATIONS: 'openai_ads',
+      NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID: 'pixel-123',
+      OPENAI_ADS_CONVERSIONS_API_KEY: 'openai-secret',
+    })
+
+    expect(health).toMatchObject({
+      configured: true,
+      mode: 'openai_ads_only',
+      enabledDestinations: ['openai_ads'],
+      openaiAds: {
+        enabled: true,
+        ready: true,
+        pixelIdConfigured: true,
+        apiKeyConfigured: true,
+        missingConfig: [],
+      },
+    })
+    expect(JSON.stringify(health)).not.toContain('openai-secret')
+  })
+
   it('accepts a saved Google Ads OAuth token email as the refresh-token source', () => {
     const health = getPpcConversionExportConfigHealth({
       PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads',
@@ -261,6 +283,77 @@ describe('ppc conversion exporter', () => {
         ]),
       }),
       expect.any(Date),
+    )
+  })
+
+  it('sends final form submit rows to OpenAI Ads while keeping them out of Google/Stape exports', async () => {
+    const now = new Date('2026-05-21T13:00:00.000Z')
+    const row = makeRow({
+      event_name: 'lead_submitted',
+      event_category: 'form',
+      optimization_role: 'primary',
+      dedupe_key: 'lead:123:lead_submitted',
+      event_time: '2026-05-21T12:59:00.000Z',
+      attribution: {
+        landingUrl: 'https://savingkc.com/ppc?oppref=openai-click',
+        oppref: 'openai-click',
+      },
+      payload: {
+        form_status: 'submitted',
+        openai_ads_event_id: 'lead:123:lead_submitted',
+      },
+    })
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
+
+    const result = await runPpcConversionExport(
+      {
+        now,
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape,openai_ads',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+          NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID: 'pixel-123',
+          OPENAI_ADS_CONVERSIONS_API_KEY: 'openai-secret',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result.sent).toBe(1)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(String(url)).toBe('https://bzr.openai.com/v1/events?pid=pixel-123')
+    expect(init.headers).toMatchObject({
+      Authorization: 'Bearer openai-secret',
+      'Content-Type': 'application/json',
+    })
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      events: [
+        {
+          id: 'lead:123:lead_submitted',
+          type: 'lead_created',
+          oppref: 'openai-click',
+          source_url: 'https://savingkc.com/ppc?oppref=openai-click',
+          action_source: 'web',
+          data: { type: 'customer_action' },
+        },
+      ],
+    })
+    expect(store.markSent).toHaveBeenCalledWith(
+      row,
+      expect.objectContaining({
+        destinations: expect.arrayContaining([
+          expect.objectContaining({ destination: 'stape', status: 'skipped' }),
+          expect.objectContaining({ destination: 'openai_ads', status: 'sent' }),
+        ]),
+      }),
+      now,
     )
   })
 
