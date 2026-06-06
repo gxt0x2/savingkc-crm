@@ -1,4 +1,4 @@
-// Next Action — task-first, suggestion-fallback (Option C).
+// Next Action — appointment/task aware, suggestion-fallback.
 //
 // Resolution:
 //   1. /api/ari/next-action returns either:
@@ -6,8 +6,8 @@
 //        {type:'suggestion', ...action fields}
 //   2. Task mode: render the task with Edit / Complete / (CTA). The user is
 //      in control; no LLM call ever overrides it.
-//   3. Suggestion mode: render the AI suggestion with Accept / Edit & Schedule
-//      / Refresh buttons. Until the agent accepts, nothing is persisted.
+//   3. Suggestion mode: render the AI suggestion with direct actions. It never
+//      creates a task unless the user explicitly opens the New Task flow.
 
 'use client'
 
@@ -49,6 +49,7 @@ interface NextActionProps {
   onContract?: () => void
   onSmsCompose?: () => void
   onLogNote?: () => void
+  onScheduleAppointment?: () => void
   onAppointmentOutcome?: () => void
   onCall?: () => void
 }
@@ -59,7 +60,7 @@ const TONE: Record<Priority, { color: string; bg: string; label: string }> = {
   nominal:  { color: 'var(--ck-text-muted)',    bg: 'var(--ck-surface-elev)', label: 'Nominal' },
 }
 
-const CTA_OPTIONS = ['Start Call', 'Send SMS', 'Send Email', 'Log Outcome', 'Log Note', 'Open Task']
+const CTA_OPTIONS = ['Start Call', 'Send SMS', 'Send Email', 'Set Appointment', 'Log Outcome', 'Log Note', 'Open Task']
 
 // ─── Date helpers ──────────────────────────────────────────────────────────
 function parseSmart(iso: string): { date: Date; dateOnly: boolean } {
@@ -415,35 +416,13 @@ export function NextAction(props: NextActionProps) {
     const c = action.cta.toLowerCase()
     if (c.includes('call') || c === 'start call') return props.onCall || props.onNewTask
     if (c.includes('sms') || c.includes('text')) return props.onSmsCompose
+    if (c.includes('appointment') || c.includes('meet') || c.includes('walkthrough')) return props.onScheduleAppointment
     if (c.includes('outcome')) return props.onAppointmentOutcome
     if (c.includes('note')) return props.onLogNote
     if (c.includes('task')) return props.onNewTask
     if (c.includes('contract')) return props.onContract
     return props.onNewTask
   }, [action, props])
-
-  async function acceptSuggestion() {
-    if (!action || action.type !== 'suggestion') return
-    try {
-      const res = await fetch('/api/calendar/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          leadId,
-          title: action.title,
-          dueDate: action.dateTime,
-          taskType: 'follow_up',
-          assignedTo: 'Casey',
-          notes: action.detail,
-        }),
-      })
-      if (!res.ok) throw new Error(`accept failed: ${res.status}`)
-      window.dispatchEvent(new Event('crm:lead-refresh'))
-      await fetchAction(true)
-    } catch (e) {
-      console.error('[NextAction] accept failed', e)
-    }
-  }
 
   async function saveTaskEdit(next: { title: string; notes: string; dateIso: string | null; priority: Priority; cta: string }) {
     if (!action) return
@@ -501,6 +480,10 @@ export function NextAction(props: NextActionProps) {
   const tone = action ? TONE[action.priority] : TONE.nominal
   const isTask = action?.type === 'task'
   const isSuggestion = action?.type === 'suggestion'
+  const appointmentLike = action
+    ? /appointment|walkthrough|meet|visit/i.test(`${action.title} ${action.detail} ${action.cta}`)
+    : false
+  const ctaIsAppointment = action ? /appointment|walkthrough|meet|visit/i.test(action.cta) : false
 
   return (
     <section
@@ -681,6 +664,21 @@ export function NextAction(props: NextActionProps) {
                       {action.cta}
                     </button>
                   )}
+                  {appointmentLike && !ctaIsAppointment && props.onScheduleAppointment && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); props.onScheduleAppointment?.() }}
+                      className="h-9 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+                      style={{
+                        background: 'var(--ck-surface-elev)',
+                        color: 'var(--ck-text)',
+                        border: '1px solid var(--ck-border)',
+                      }}
+                    >
+                      <Icon name="event" className="!text-sm" />
+                      Set Appointment
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); completeTask() }}
@@ -700,33 +698,51 @@ export function NextAction(props: NextActionProps) {
 
               {isSuggestion && (
                 <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); acceptSuggestion() }}
-                    className="h-9 px-3 rounded-lg text-xs font-bold text-white inline-flex items-center gap-1.5 transition-opacity hover:opacity-90"
-                    style={{
-                      background: 'var(--ck-accent)',
-                      boxShadow: '0 4px 12px rgba(239,68,68,0.22)',
-                    }}
-                    title="Save Ari's suggestion as your committed task"
-                  >
-                    <Icon name="check" className="!text-sm" filled />
-                    Accept
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setEditOpen(true) }}
-                    className="h-9 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
-                    style={{
-                      background: 'var(--ck-surface-elev)',
-                      color: 'var(--ck-text)',
-                      border: '1px solid var(--ck-border)',
-                    }}
-                    title="Adjust details before saving as a task"
-                  >
-                    <Icon name="edit" className="!text-sm" />
-                    Edit & Schedule
-                  </button>
+                  {ctaHandler && action.cta !== 'Open Task' && !ctaIsAppointment && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); ctaHandler() }}
+                      className="h-9 px-3 rounded-lg text-xs font-bold text-white inline-flex items-center gap-1.5 transition-opacity hover:opacity-90"
+                      style={{
+                        background: 'var(--ck-accent)',
+                        boxShadow: '0 4px 12px rgba(239,68,68,0.22)',
+                      }}
+                    >
+                      {action.cta}
+                    </button>
+                  )}
+                  {props.onScheduleAppointment && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); props.onScheduleAppointment?.() }}
+                      className="h-9 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+                      style={{
+                        background: appointmentLike ? 'var(--ck-accent)' : 'var(--ck-surface-elev)',
+                        color: appointmentLike ? 'white' : 'var(--ck-text)',
+                        border: appointmentLike ? '1px solid var(--ck-accent)' : '1px solid var(--ck-border)',
+                      }}
+                      title="Schedule a real appointment, not a task"
+                    >
+                      <Icon name="event" className="!text-sm" />
+                      Set Appointment
+                    </button>
+                  )}
+                  {props.onNewTask && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); props.onNewTask?.() }}
+                      className="h-9 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+                      style={{
+                        background: 'var(--ck-surface-elev)',
+                        color: 'var(--ck-text)',
+                        border: '1px solid var(--ck-border)',
+                      }}
+                      title="Create a task manually"
+                    >
+                      <Icon name="add_task" className="!text-sm" />
+                      New Task
+                    </button>
+                  )}
                 </div>
               )}
 

@@ -116,6 +116,8 @@ export interface ManifestProperty {
 }
 
 export interface ManifestBooking {
+  bookingId?: string
+  scheduledAt?: string
   scheduledDate?: string
   scheduledTime?: string
   type?: 'discovery' | 'walkthrough' | 'closing'

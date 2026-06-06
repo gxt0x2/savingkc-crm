@@ -22,6 +22,9 @@ import {
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
 
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
 type RecordingCallbackMeta = {
   callSid?: string
   direction?: 'inbound' | 'outbound'
@@ -327,12 +330,9 @@ export async function POST(req: Request) {
       context: recordingContext,
     })
 
-    // Fire-and-forget: download, transcribe, analyze, store
-    processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext).catch(err =>
-      console.error('[recording-callback] Processing failed:', err)
-    )
+    await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
 
-    return NextResponse.json({ ok: true, leadId, processing: true })
+    return NextResponse.json({ ok: true, leadId, processed: true })
   } catch (err) {
     console.error('[recording-callback] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { createClient } from '@/lib/supabase/client'
 import { toProperCase } from '@/lib/format'
 
 interface AppointmentModalProps {
@@ -12,17 +11,42 @@ interface AppointmentModalProps {
     phone: string | null
     property_address: string | null
   }
+  initialAppointment?: {
+    type?: string | null
+    scheduledAt?: string | null
+    assignedTo?: string | null
+    notes?: string | null
+  } | null
   onClose: () => void
   onSuccess: () => void
 }
 
-export function AppointmentModal({ lead, onClose, onSuccess }: AppointmentModalProps) {
+function appointmentToInputs(initialAppointment: AppointmentModalProps['initialAppointment']) {
+  if (!initialAppointment?.scheduledAt) return { date: '', time: '10:00' }
+  const d = new Date(initialAppointment.scheduledAt)
+  if (isNaN(d.getTime())) return { date: '', time: '10:00' }
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${mi}` }
+}
+
+function agentLabel(value: string | null | undefined) {
+  const normalized = (value || '').toLowerCase()
+  if (normalized.includes('casey')) return 'Casey Davis'
+  return 'Ernest Dodson'
+}
+
+export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess }: AppointmentModalProps) {
+  const initialInputs = appointmentToInputs(initialAppointment)
   const [form, setForm] = useState({
-    type: 'in_person',
-    date: '',
-    time: '10:00',
-    agent: 'Ernest Dodson',
-    notes: '',
+    type: initialAppointment?.type || 'in_person',
+    date: initialInputs.date,
+    time: initialInputs.time,
+    agent: agentLabel(initialAppointment?.assignedTo),
+    notes: initialAppointment?.notes || '',
     sendReminder: true,
   })
   const [saving, setSaving] = useState(false)
@@ -80,7 +104,7 @@ export function AppointmentModal({ lead, onClose, onSuccess }: AppointmentModalP
           <div className="flex items-center justify-between px-6 py-4 border-b border-[color:var(--ck-border)]">
             <div className="flex items-center gap-2">
               <Icon name="calendar_month" className="text-primary" />
-              <h2 className="text-lg font-bold text-white">Schedule Appointment</h2>
+              <h2 className="text-lg font-bold text-white">{initialAppointment?.scheduledAt ? 'Edit Appointment' : 'Schedule Appointment'}</h2>
             </div>
             <button onClick={onClose} className="text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text-muted)] transition-colors">
               <Icon name="close" />
@@ -181,7 +205,7 @@ export function AppointmentModal({ lead, onClose, onSuccess }: AppointmentModalP
               disabled={saving || !form.date}
               className="flex-1 bg-primary text-white rounded-lg py-2.5 text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
             >
-              {saving ? 'Scheduling...' : 'Schedule'}
+              {saving ? 'Saving...' : initialAppointment?.scheduledAt ? 'Save Appointment' : 'Schedule'}
             </button>
           </div>
         </div>
