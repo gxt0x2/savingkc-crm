@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { updateManifestAndCascade } from '@/lib/manifest-sync'
-import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
+import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { supabase } from '@/lib/supabase-lazy'
 
 export const runtime = 'nodejs'
@@ -90,7 +90,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'No manifest or lead identifier' }, { status: 400 })
   }
 
-  let attribution: Record<string, unknown> = {}
   try {
     await updateManifestAndCascade(
       leadId,
@@ -102,10 +101,6 @@ export async function POST(req: NextRequest) {
           scheduledDate: parsed.scheduledAt?.slice(0, 10),
           scheduledTime: parsed.scheduledTime ?? parsed.scheduledAt?.slice(11, 16),
         }
-        const manifestAttribution = m.acquisition?.attribution
-        if (manifestAttribution && typeof manifestAttribution === 'object' && !Array.isArray(manifestAttribution)) {
-          attribution = manifestAttribution as Record<string, unknown>
-        }
       },
       'ppc-landing-book',
     )
@@ -114,45 +109,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Cascade failed' }, { status: 500 })
   }
 
-  const conversion = await queueAppointmentBookedConversion({
+  const conversion = await queuePpcAppointmentBookedConversion({
     leadId,
-    manifestId: manifestId ?? null,
-    bookingId: parsed.bookingId,
+    appointmentId: parsed.bookingId ?? null,
+    bookingId: parsed.bookingId ?? null,
     scheduledAt: parsed.scheduledAt,
     scheduledTime: parsed.scheduledTime,
-    attendeeEmail: parsed.attendeeEmail,
-    attendeePhone: parsed.attendeePhone,
-    attribution,
+    source: 'ppc-landing-book',
   })
 
   return NextResponse.json({ ok: true, leadId, manifestId: manifestId ?? null, conversion })
-}
-
-async function queueAppointmentBookedConversion(params: {
-  leadId: string
-  manifestId: string | null
-  bookingId?: string
-  scheduledAt?: string
-  scheduledTime?: string
-  attendeeEmail?: string
-  attendeePhone?: string
-  attribution: Record<string, unknown>
-}) {
-  return enqueuePpcConversion({
-    eventName: 'appointment_booked',
-    eventCategory: 'appointment',
-    leadId: params.leadId,
-    manifestId: params.manifestId,
-    dedupeKey: `lead:${params.leadId}:appointment_booked:${params.bookingId ?? params.manifestId ?? 'unknown'}`,
-    optimizationRole: 'primary',
-    conversionValue: 100,
-    attribution: params.attribution,
-    payload: {
-      booking_id: params.bookingId ?? null,
-      scheduled_at: params.scheduledAt ?? null,
-      scheduled_time: params.scheduledTime ?? null,
-      attendee_email: params.attendeeEmail ?? null,
-      attendee_phone: params.attendeePhone ?? null,
-    },
-  })
 }
