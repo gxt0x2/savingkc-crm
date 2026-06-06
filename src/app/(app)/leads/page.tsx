@@ -108,7 +108,7 @@ export default function LeadsPage() {
 
   // Filter + sort
   const processed = useMemo(() => {
-    let result = leads.filter((l) => {
+    const result = leads.filter((l) => {
       // Search
       if (search) {
         const q = search.toLowerCase()
@@ -246,6 +246,10 @@ export default function LeadsPage() {
 
   async function handleBulkStation(station: string) {
     setStationDropdownOpen(false)
+    if (station === 'appointment_set') {
+      showFeedback('Open each lead and use Schedule for Appointment Set')
+      return
+    }
     setBulkLoading(true)
     try {
       const supabase = createClient()
@@ -300,7 +304,7 @@ export default function LeadsPage() {
       })
       // Parse body even on non-2xx so we can surface server error text.
       const text = await res.text()
-      let data: any = {}
+      let data: { success?: boolean; error?: string; raw?: string } = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { raw: text } }
 
       if (res.status === 401) {
