@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
-import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { ensureManifestExists } from '@/lib/manifest-sync'
-import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
+import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { supabase } from '@/lib/supabase-lazy'
 
 // Random delay to make auto-texts feel human
@@ -171,7 +169,7 @@ export async function POST(req: NextRequest) {
     }
 
     let resolvedManifestId: string | null = bodyManifestId
-    let ppcConversion: Awaited<ReturnType<typeof enqueuePpcConversion>> | null = null
+    let ppcConversion: Awaited<ReturnType<typeof queuePpcAppointmentBookedConversion>> | null = null
 
     // Log lead activity
     if (leadId) {
@@ -202,7 +200,6 @@ export async function POST(req: NextRequest) {
         }
 
         const manifestData = manifestId ? { id: manifestId } : null
-        let ppcAttribution: Record<string, unknown> = {}
         if (manifestId) {
           await supabase.from('manifests').update({ booking_id: booking.id }).eq('id', manifestId)
         }
@@ -256,12 +253,6 @@ export async function POST(req: NextRequest) {
                 capturedAt: new Date().toISOString(),
                 landingUrl: 'https://savingkc.com/ppc',
               },
-            }
-          }
-          if (isPpcBooking) {
-            const attribution = manifest.acquisition?.attribution
-            if (attribution && typeof attribution === 'object' && !Array.isArray(attribution)) {
-              ppcAttribution = attribution as Record<string, unknown>
             }
           }
           manifest.pipeline.appointment = {
@@ -320,23 +311,16 @@ export async function POST(req: NextRequest) {
         }).select('id').maybeSingle()
 
         if (isPpcBooking) {
-          ppcConversion = await enqueuePpcConversion({
-            eventName: 'appointment_booked',
-            eventCategory: 'appointment',
+          ppcConversion = await queuePpcAppointmentBookedConversion({
             leadId,
-            manifestId: resolvedManifestId,
+            appointmentId: booking.id,
+            bookingId: booking.id,
             activityId: appointmentActivity?.id ?? null,
-            dedupeKey: `lead:${leadId}:appointment_booked:${booking.id}`,
-            optimizationRole: 'primary',
-            conversionValue: 100,
-            eventTime: slot_datetime,
-            attribution: ppcAttribution,
-            payload: {
-              booking_id: booking.id,
-              scheduled_at: slot_datetime,
-              scheduled_time: slot_time,
-              source: bookingSource,
-            },
+            scheduledAt: slot_datetime,
+            scheduledTime: slot_time,
+            appointmentType: 'phone_call',
+            assignedTo: 'casey',
+            source: bookingSource,
           })
         }
       } catch (manifestErr) {

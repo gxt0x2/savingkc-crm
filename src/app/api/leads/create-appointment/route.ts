@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase-lazy'
 import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
 import { normalizeDealStage } from '@/types/pipeline'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
+import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 
 // Stations that should auto-advance to appointment_set when an appointment
 // is scheduled. We never demote a more-advanced station (offer_made,
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
       hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago'
     })
 
-    await supabase.from('lead_activities').insert({
+    const { data: appointmentActivity } = await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'appointment',
       description: `Appointment scheduled: ${typeLabel} on ${dateDisplay} at ${timeDisplay} with ${assignedTo}${notes ? `. Notes: ${notes}` : ''}`,
@@ -123,7 +124,17 @@ export async function POST(req: NextRequest) {
         notes,
         status: 'scheduled',
       },
-    })
+    }).select('id').maybeSingle()
+
+    await queuePpcAppointmentBookedConversion({
+      leadId,
+      appointmentId,
+      activityId: appointmentActivity?.id ?? null,
+      scheduledAt,
+      appointmentType: type || 'phone_call',
+      assignedTo: assignedTo || 'casey',
+      source: 'appointment_modal',
+    }).catch((error) => console.error('[create-appointment] PPC appointment conversion queue failed:', error))
 
     // 4. Create SMS reminder task if requested
     if (sendReminder && phone) {

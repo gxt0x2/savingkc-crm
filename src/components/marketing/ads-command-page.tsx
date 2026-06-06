@@ -2186,6 +2186,7 @@ export function AdsCommandPage() {
               <span className="live-pill"><span className="live-dot" /> LIVE • loading</span>
               <span className="fresh-pill">Tracking: waiting</span>
               <span className="fresh-pill">Google Ads spend: waiting</span>
+              <Link className="fresh-pill call-review-link" href="/marketing/alerts">Lead Alerts</Link>
               <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
               <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
             </header>
@@ -2204,6 +2205,7 @@ export function AdsCommandPage() {
             <span className="live-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'LIVE • preview data'}</span>
             <span className="fresh-pill">Tracking: {formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</span>
             <span className="fresh-pill">Google Ads spend: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
+            <Link className="fresh-pill call-review-link" href="/marketing/alerts">Lead Alerts</Link>
             <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
             <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
           </header>
