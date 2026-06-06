@@ -14,6 +14,7 @@ import { PropertyDetailsCard } from '@/components/leads/property-details-card'
 import { TemperatureBadge } from '@/components/leads/temperature-badge'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
 import { StageSelector } from '@/components/leads/stage-selector'
+import { AdsSignalReceipt } from '@/components/leads/ads-signal-receipt'
 import { AddNote } from '@/components/leads/add-note'
 import { EditNoteModal } from '@/components/leads/edit-note-modal'
 import { ContractModal } from '@/components/leads/contract-modal'
@@ -1778,6 +1779,8 @@ export default function LeadDetailPage() {
     { label: 'Price', done: hasPrice, icon: 'payments', hint: 'Asking, floor, back taxes, mortgage' },
   ]
   const showLeadTriage = (lead.station || '').toLowerCase() === 'new'
+  const appointmentStageNeedsDetails = ['appointment', 'appt_set', 'appointment_set'].includes((lead.station || '').toLowerCase())
+    && !manifestAppointment?.scheduledAt
 
   // Build Zillow and county links
   const zillowUrl = addressLine
@@ -1806,6 +1809,36 @@ export default function LeadDetailPage() {
           }}
         />
       )}
+
+      {appointmentStageNeedsDetails && (
+        <section
+          className="mb-4 rounded-2xl border px-4 py-3"
+          style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.35)' }}
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2">
+              <Icon name="event_busy" className="mt-0.5 !text-[18px] !text-[color:var(--ck-warn)]" />
+              <div>
+                <p className="text-sm font-black text-[color:var(--ck-text)]">Appointment details missing</p>
+                <p className="mt-0.5 text-xs font-semibold text-[color:var(--ck-text-muted)]">
+                  This lead is in Appointment Set, but no date and time are stored.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAppointmentModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider text-white"
+              style={{ background: 'var(--ck-accent)' }}
+            >
+              <Icon name="calendar_month" className="!text-[15px]" />
+              Schedule
+            </button>
+          </div>
+        </section>
+      )}
+
+      <AdsSignalReceipt leadId={lead.id} />
 
       {/* ── Cockpit Header ───────────────────────────────────────────────── */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -1876,6 +1909,7 @@ export default function LeadDetailPage() {
                 leadId={lead.id}
                 station={lead.station}
                 size="sm"
+                onAppointmentRequired={() => setAppointmentModalOpen(true)}
                 onChange={(next) =>
                   setLead((prev) => prev ? { ...prev, station: next } : prev)
                 }

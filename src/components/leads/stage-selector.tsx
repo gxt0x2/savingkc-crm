@@ -13,10 +13,13 @@ const STAGE_OPTIONS: { value: DealStage; label: string }[] = [
   { value: 'dead', label: 'Dead' },
 ]
 
+const APPOINTMENT_STAGES = new Set(['appointment_set'])
+
 interface StageSelectorProps {
   leadId: string
   station: string | null
   onChange?: (next: DealStage) => void
+  onAppointmentRequired?: () => void
   size?: 'sm' | 'md'
 }
 
@@ -25,7 +28,7 @@ interface StageSelectorProps {
  * (admin/session auth) and cascades through updateManifestAndCascade so
  * scoring + audit stay in sync.
  */
-export function StageSelector({ leadId, station, onChange, size = 'md' }: StageSelectorProps) {
+export function StageSelector({ leadId, station, onChange, onAppointmentRequired, size = 'md' }: StageSelectorProps) {
   const [value, setValue] = useState<string>(station || 'new')
   const [pending, setPending] = useState(false)
 
@@ -33,6 +36,11 @@ export function StageSelector({ leadId, station, onChange, size = 'md' }: StageS
     e.stopPropagation()
     const next = e.target.value as DealStage
     const prev = value
+    if (APPOINTMENT_STAGES.has(next) && onAppointmentRequired) {
+      setValue(prev)
+      onAppointmentRequired()
+      return
+    }
     setValue(next)
     setPending(true)
     try {

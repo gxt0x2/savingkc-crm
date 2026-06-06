@@ -21,6 +21,64 @@ const ALLOWED_STATIONS = new Set([
 
 const APPOINTMENT_STATIONS = new Set(['appointment', 'appt_set', 'appointment_set'])
 
+type StationRequestBody = {
+  station?: string
+  reason?: string
+  allowMissingAppointmentDetails?: boolean
+}
+
+function hasUsableDate(value: unknown): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false
+  const parsed = new Date(value)
+  return !Number.isNaN(parsed.getTime())
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+async function leadHasAppointmentDetails(db: ReturnType<typeof supabaseAdmin>, leadId: string): Promise<boolean> {
+  const [{ data: appointments }, { data: manifestRow }, { data: activityRows }] = await Promise.all([
+    db
+      .from('appointments')
+      .select('id, scheduled_at, status')
+      .eq('lead_id', leadId)
+      .not('scheduled_at', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(5),
+    db
+      .from('manifests')
+      .select('manifest')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from('lead_activities')
+      .select('id, metadata')
+      .eq('lead_id', leadId)
+      .eq('activity_type', 'appointment')
+      .order('created_at', { ascending: false })
+      .limit(5),
+  ])
+
+  if ((appointments ?? []).some((row) => {
+    const status = typeof row.status === 'string' ? row.status.toLowerCase() : ''
+    return !['cancelled', 'no_show'].includes(status) && hasUsableDate(row.scheduled_at)
+  })) return true
+
+  const manifest = readRecord(manifestRow?.manifest)
+  const appointment = readRecord(readRecord(manifest.pipeline).appointment)
+  if (hasUsableDate(appointment.scheduledAt)) return true
+
+  return (activityRows ?? []).some((row) => {
+    const metadata = readRecord(row.metadata)
+    return hasUsableDate(metadata.scheduled_at) || hasUsableDate(metadata.due_date)
+  })
+}
+
 /**
  * POST /api/admin/leads/[id]/station
  * Body: { station: string, reason?: string }
@@ -39,7 +97,7 @@ export async function POST(
   const { id } = await params
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
-  const body = (await req.json().catch(() => ({}))) as { station?: string; reason?: string }
+  const body = (await req.json().catch(() => ({}))) as StationRequestBody
   if (!body.station) return NextResponse.json({ error: 'body.station required' }, { status: 400 })
   if (!ALLOWED_STATIONS.has(body.station)) {
     return NextResponse.json(
@@ -58,6 +116,21 @@ export async function POST(
 
   const prevStation = lead.station
   const changedAt = new Date().toISOString()
+  const movingToAppointment = APPOINTMENT_STATIONS.has(body.station)
+  const hasAppointmentDetails = movingToAppointment
+    ? await leadHasAppointmentDetails(db, id)
+    : false
+
+  if (movingToAppointment && !hasAppointmentDetails && !body.allowMissingAppointmentDetails) {
+    return NextResponse.json(
+      {
+        error: 'Appointment details required before moving this lead to Appointment Set.',
+        requiresAppointmentDetails: true,
+        nextAction: 'schedule_appointment',
+      },
+      { status: 409 },
+    )
+  }
 
   const { error: updErr } = await db
     .from('leads')
@@ -86,7 +159,7 @@ export async function POST(
     reason: error instanceof Error ? error.message : String(error),
   }))
 
-  const ppcAppointmentConversion = APPOINTMENT_STATIONS.has(body.station)
+  const ppcAppointmentConversion = movingToAppointment
     ? await queuePpcAppointmentBookedConversion({
       leadId: id,
       bookedAt: changedAt,
