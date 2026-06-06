@@ -30,6 +30,11 @@ import { detectCounty, parseAddressForCounty } from '@/lib/county-enrichment'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
+import {
+  applyPpcLeadIntelligenceToManifest,
+  ppcLeadIntelligenceFromActivityMetadata,
+  type PpcLeadIntelligenceInput,
+} from '@/lib/ppc/lead-intelligence'
 
 export interface ReprocessOptions {
   suppressNotifications?: boolean
@@ -73,6 +78,20 @@ interface QueueRow {
   opportunity_score: number | null
   completed_at: string | null
   created_at: string
+}
+
+type LeadForPpcIntelligence = {
+  property_address?: string | null
+  full_name?: string | null
+  city?: string | null
+  state?: string | null
+  zip?: string | null
+  county?: string | null
+}
+
+type PpcActivityMetadataRow = {
+  metadata: Record<string, unknown> | null
+  created_at: string | null
 }
 
 /**
@@ -155,6 +174,17 @@ export async function reprocessLead(
   // the county scrapers often fail to return. Match by phone, fill gaps.
   const hydrated = await hydrateFromProspect(leadId, lead, manifest, errors)
   if (hydrated.length > 0) changed.push(`prospect_hydrated=${hydrated.join(',')}`)
+
+  // 5e. Promote paid-form answers into the canonical manifest fields used by
+  // lead-page cards. PPC tracking rows were already healthy; this repairs the
+  // intelligence lane so pain points, goals, ARI, and discovery questions see it.
+  const ppcInput = await loadLatestPpcFormIntelligence(leadId, lead)
+  if (ppcInput) {
+    const promoted = applyPpcLeadIntelligenceToManifest(manifest, ppcInput)
+    if (promoted.changed.length > 0) {
+      changed.push(`ppc_intelligence=${promoted.changed.join(',')}`)
+    }
+  }
 
   // 6. County enrichment if address present and dwelling data missing (or forced)
   const needsEnrich = forceReEnrich || healed.length > 0 || !manifest.property?.dwelling?.bedrooms
@@ -287,6 +317,49 @@ export async function reprocessLead(
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────
+
+async function loadLatestPpcFormIntelligence(
+  leadId: string,
+  lead: LeadForPpcIntelligence,
+): Promise<PpcLeadIntelligenceInput | null> {
+  const { data } = await supabase
+    .from('lead_activities')
+    .select('metadata, created_at')
+    .eq('lead_id', leadId)
+    .eq('activity_type', 'status_change')
+    .order('created_at', { ascending: false })
+    .limit(25)
+
+  const rows = (data ?? []) as PpcActivityMetadataRow[]
+  const rank = (source: string | null | undefined): number => {
+    if (source === 'ppc_form_submit') return 0
+    if (source === 'ppc_form_autosave') return 1
+    if (source === 'ppc_form_potential') return 2
+    return 99
+  }
+
+  const ppcRows = rows
+    .map((row) => ({
+      metadata: row.metadata,
+      createdAt: row.created_at,
+      source: typeof row.metadata?.source === 'string' ? row.metadata.source : null,
+    }))
+    .filter((row) => row.source?.startsWith('ppc_form_'))
+    .sort((a, b) => rank(a.source) - rank(b.source) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+
+  const row = ppcRows[0]
+  if (!row) return null
+
+  return ppcLeadIntelligenceFromActivityMetadata(row.metadata, {
+    address: lead.property_address ?? null,
+    fullName: lead.full_name ?? null,
+    city: lead.city ?? null,
+    state: lead.state ?? null,
+    zip: lead.zip ?? null,
+    county: lead.county ?? null,
+    capturedAt: row.createdAt ?? null,
+  })
+}
 
 function ensureManifestArrays(manifest: ManifestV2): ManifestV2 {
   if (!Array.isArray(manifest.contacts)) manifest.contacts = []
@@ -594,6 +667,13 @@ async function cascadeManifestToLead(
   if (manifest.scoring?.classification && manifest.scoring.classification !== currentLead.classification) {
     updates.classification = manifest.scoring.classification
     changed.push('classification')
+  }
+  if (
+    manifest.situation?.summary &&
+    (!currentLead.seller_situation || String(currentLead.seller_situation).startsWith('PPC intake:'))
+  ) {
+    updates.seller_situation = manifest.situation.summary
+    changed.push('seller_situation')
   }
   if (manifest.situation?.motivation?.score != null && manifest.situation.motivation.score !== currentLead.motivation_score) {
     updates.motivation_score = manifest.situation.motivation.score
