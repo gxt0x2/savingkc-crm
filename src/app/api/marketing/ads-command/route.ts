@@ -23,6 +23,7 @@ import {
   type SeriesRow,
 } from '@/lib/marketing/ads-command-seed'
 import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceKey, paidSourceLabel } from '@/lib/marketing/paid-source'
+import { buildTrafficQualityReport, type TrafficQualityReport } from '@/lib/marketing/traffic-quality'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -175,6 +176,7 @@ type AdsCommandResponse = {
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
+  trafficQuality: TrafficQualityReport
 }
 
 const NO_STORE_HEADERS: HeadersInit = {
@@ -967,7 +969,7 @@ function sessionProgress(rows: PpcTrackingSummaryRow[], converted: boolean): num
   if (maxStep >= 2 || latestRowValue(rows, 'timeline_raw') || names.has('timeline_selected') || names.has('auction_status_selected')) return 5
   if (latestRowValue(rows, 'situation_raw') || names.has('situation_selected')) return 4
   if (names.has('scroll_depth_reached') || names.has('cta_click') || names.has('nav_click')) return 3
-  if (names.has('ppc_visit_started')) return 2
+  if (names.has('ppc_landing_request') || names.has('ppc_visit_started')) return 2
   return 1
 }
 
@@ -1333,6 +1335,7 @@ export async function GET(req: NextRequest) {
       leads: leadRowsForResponse,
       outbox: buildOutboxRows(rows.outboxRows, rows.leadRows),
       paidSessions: buildPaidSessions(rows.trackingRows),
+      trafficQuality: buildTrafficQualityReport(rows.trackingRows, { now: generatedAt }),
     }
 
     return NextResponse.json(response, { headers: NO_STORE_HEADERS })
