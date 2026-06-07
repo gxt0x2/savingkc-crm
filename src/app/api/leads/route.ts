@@ -5,6 +5,7 @@ import { notifyNewLead } from '@/lib/ari-briefing'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
+import { DEAD_REASONS, cleanDeadReason, deadReasonLabel } from '@/lib/lead-outcomes'
 import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 
@@ -561,6 +562,31 @@ export async function PATCH(req: NextRequest) {
         : triage.score
     }
 
+    const requestedStation = typeof fields.station === 'string' ? fields.station : null
+    const markingDead = requestedStation === 'dead' || triageClassification === 'dead'
+    const deadReason = markingDead
+      ? cleanDeadReason(fields.dead_reason ?? fields.deadReason ?? activity?.deadReason ?? activity?.dead_reason)
+      : null
+
+    if (markingDead && !deadReason) {
+      return NextResponse.json({
+        success: false,
+        error: 'Dead reason required before marking this lead dead.',
+        requiresDeadReason: true,
+        allowedDeadReasons: DEAD_REASONS,
+      }, { status: 400, headers: corsHeaders })
+    }
+
+    delete fields.deadReason
+    if (markingDead) {
+      fields.dead_reason = deadReason
+      fields.dead_at ??= new Date().toISOString()
+      fields.dead_by ??= activityAgent
+      fields.priority ??= 'cold'
+      fields.classification ??= 'dead'
+      fields.opportunity_score = typeof fields.opportunity_score === 'number' ? fields.opportunity_score : 0
+    }
+
     // CRITICAL: Handle appointment_set disposition → manifest write
     if (activity?.disposition === 'appointment_set') {
       const { updateManifestAndCascade, ensureManifestExists } = await import('@/lib/manifest-sync')
@@ -831,6 +857,36 @@ export async function PATCH(req: NextRequest) {
           manifest.scoring.opportunity_score = manifestFields.opportunity_score
           manifest.scoring.scored_at = new Date().toISOString()
         }
+        if (markingDead && deadReason) {
+          manifest.priority = 'cold'
+          if (!manifest.scoring) {
+            manifest.scoring = {
+              opportunity_score: 0,
+              classification: 'dead',
+              reasoning: `Marked dead: ${deadReasonLabel(deadReason)}.`,
+              worth_enriching: false,
+              scored_at: new Date().toISOString(),
+              scored_by: 'disposition',
+            }
+          } else {
+            manifest.scoring.classification = 'dead'
+            manifest.scoring.opportunity_score = 0
+            manifest.scoring.reasoning = `Marked dead: ${deadReasonLabel(deadReason)}.`
+            manifest.scoring.worth_enriching = false
+            manifest.scoring.scored_at = new Date().toISOString()
+            manifest.scoring.scored_by = 'disposition'
+          }
+          if (!manifest.auditTrail) manifest.auditTrail = []
+          manifest.auditTrail.push({
+            timestamp: new Date().toISOString(),
+            agent: activityAgent,
+            action: 'marked_dead',
+            details: {
+              dead_reason: deadReason,
+              dead_reason_label: deadReasonLabel(deadReason),
+            },
+          })
+        }
       }, 'api:leads_patch')
 
       // Fallback to direct write if no manifest exists
@@ -878,8 +934,10 @@ export async function PATCH(req: NextRequest) {
       const triage = LEAD_TRIAGE[triageClassification]
       const { error: triageActivityError } = await supabase.from('lead_activities').insert({
         lead_id: id,
-        activity_type: 'status_change',
-        description: `Manual triage: ${triage.label}`,
+        activity_type: markingDead ? 'outcome' : 'status_change',
+        description: markingDead && deadReason
+          ? `Manual triage: ${triage.label} - ${deadReasonLabel(deadReason)}`
+          : `Manual triage: ${triage.label}`,
         agent: activityAgent,
         metadata: {
           source: 'lead_detail_triage',
@@ -889,6 +947,8 @@ export async function PATCH(req: NextRequest) {
           new_station: data.station ?? fields.station ?? null,
           old_priority: previousTriageData?.priority ?? null,
           new_priority: data.priority ?? fields.priority ?? null,
+          dead_reason: deadReason,
+          dead_reason_label: deadReason ? deadReasonLabel(deadReason) : null,
         },
       })
       if (triageActivityError) {

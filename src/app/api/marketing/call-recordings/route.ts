@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserEmail } from '@/lib/auth/admin'
 import { formatPhone } from '@/lib/format'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
+import { cleanDeadReason } from '@/lib/lead-outcomes'
 import {
   buildRecordingSummary,
   compactTranscript,
@@ -360,9 +361,19 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (typedOutcome === 'spam' || typedOutcome === 'wrong_number') {
+      const deadReason = cleanDeadReason(typedOutcome) ?? 'other'
       const { error: leadUpdateError } = await db
         .from('leads')
-        .update({ station: 'dead', priority: 'cold', updated_at: now })
+        .update({
+          station: 'dead',
+          priority: 'cold',
+          classification: 'dead',
+          opportunity_score: 0,
+          dead_reason: deadReason,
+          dead_at: now,
+          dead_by: email,
+          updated_at: now,
+        })
         .eq('id', activityRow.lead_id)
       if (leadUpdateError) {
         return NextResponse.json({ error: leadUpdateError.message }, { status: 500, headers: NO_STORE_HEADERS })

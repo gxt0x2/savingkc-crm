@@ -35,6 +35,7 @@ import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { formatDurationBetween, isOutboundAttempt } from '@/lib/contact-display'
+import { DEAD_REASONS } from '@/lib/lead-outcomes'
 
 type LeadTriageValue = 'opportunity' | 'lead' | 'dead'
 
@@ -85,6 +86,9 @@ interface Lead {
   seller_situation: string | null
   classification: LeadTriageValue | null
   opportunity_score: number | null
+  dead_reason?: string | null
+  dead_at?: string | null
+  dead_by?: string | null
 }
 
 interface ActivityRow {
@@ -234,9 +238,12 @@ function LeadTriageStrip({
 }) {
   const [saving, setSaving] = useState<LeadTriageValue | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [deadDialogOpen, setDeadDialogOpen] = useState(false)
+  const [deadReason, setDeadReason] = useState('')
+  const [pendingDeadOption, setPendingDeadOption] = useState<(typeof LEAD_TRIAGE_OPTIONS)[number] | null>(null)
   const current = lead.classification
 
-  async function selectTriage(option: (typeof LEAD_TRIAGE_OPTIONS)[number]) {
+  async function submitTriage(option: (typeof LEAD_TRIAGE_OPTIONS)[number], selectedDeadReason?: string) {
     if (saving) return
     setSaving(option.value)
     setError(null)
@@ -250,6 +257,7 @@ function LeadTriageStrip({
           station: option.station,
           priority: option.priority,
           opportunity_score: option.score,
+          ...(option.value === 'dead' ? { deadReason: selectedDeadReason } : {}),
         }),
       })
       const data = await res.json()
@@ -262,12 +270,23 @@ function LeadTriageStrip({
         station: option.station,
         priority: option.priority,
         opportunity_score: option.score,
+        ...(option.value === 'dead' ? { dead_reason: selectedDeadReason ?? null } : {}),
       }) as Lead)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save triage')
     } finally {
       setSaving(null)
     }
+  }
+
+  function selectTriage(option: (typeof LEAD_TRIAGE_OPTIONS)[number]) {
+    if (saving) return
+    if (option.value === 'dead') {
+      setPendingDeadOption(option)
+      setDeadDialogOpen(true)
+      return
+    }
+    void submitTriage(option)
   }
 
   return (
@@ -322,6 +341,61 @@ function LeadTriageStrip({
         <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ck-accent-bright)' }}>
           {error}
         </p>
+      )}
+      {deadDialogOpen && pendingDeadOption && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl border p-5 shadow-2xl" style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}>
+            <div className="mb-4">
+              <p className="text-sm font-black uppercase tracking-wider text-[color:var(--ck-accent-bright)]">Dead Lead</p>
+              <h3 className="mt-1 text-xl font-black text-[color:var(--ck-text)]">Why is this lead dead?</h3>
+              <p className="mt-1 text-sm font-semibold text-[color:var(--ck-text-muted)]">
+                This reason rolls into source and outcome reporting for every channel.
+              </p>
+            </div>
+            <select
+              value={deadReason}
+              onChange={(e) => setDeadReason(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm font-semibold focus:outline-none"
+              style={{ background: 'var(--ck-surface-elev)', borderColor: 'var(--ck-border)', color: 'var(--ck-text)' }}
+              aria-label="Dead reason"
+            >
+              <option value="">Select reason...</option>
+              {DEAD_REASONS.map((reason) => (
+                <option key={reason.id} value={reason.id}>{reason.label}</option>
+              ))}
+            </select>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeadDialogOpen(false)
+                  setPendingDeadOption(null)
+                  setDeadReason('')
+                }}
+                className="rounded-lg border px-3 py-2 text-sm font-black"
+                style={{ borderColor: 'var(--ck-border)', color: 'var(--ck-text)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!deadReason || !!saving}
+                onClick={async () => {
+                  const option = pendingDeadOption
+                  const selected = deadReason
+                  setDeadDialogOpen(false)
+                  setPendingDeadOption(null)
+                  setDeadReason('')
+                  await submitTriage(option, selected)
+                }}
+                className="rounded-lg px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ background: 'var(--ck-accent)' }}
+              >
+                Save Reason
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   )

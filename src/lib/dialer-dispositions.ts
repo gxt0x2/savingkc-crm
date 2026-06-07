@@ -157,36 +157,10 @@ export function dispositionLabel(raw: string | null | undefined): string {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-// ---- Dead reasons (the "why" behind a dead lead) ----
-
-export interface DeadReasonDef {
-  id: string
-  label: string
-}
-
-export const DEAD_REASONS: DeadReasonDef[] = [
-  { id: 'no_living_heirs', label: 'No living heirs found' },
-  { id: 'wrong_family', label: 'Not the right family / no relation' },
-  { id: 'already_sold', label: 'Property already sold' },
-  { id: 'no_phones', label: 'No good phone numbers' },
-  { id: 'not_pursuing', label: 'Not worth pursuing' },
-  { id: 'refused', label: 'Refused / hostile' },
-  { id: 'bankruptcy_legal', label: 'Bankruptcy / legal hold' },
-  { id: 'duplicate', label: 'Duplicate record' },
-  { id: 'other', label: 'Other (see notes)' },
-]
-
-const DEAD_REASON_BY_ID = new Map(DEAD_REASONS.map((r) => [r.id, r]))
-
-export function deadReasonLabel(id: string | null | undefined): string {
-  if (!id) return ''
-  const def = DEAD_REASON_BY_ID.get(id)
-  if (def) return def.label
-  return String(id)
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-export function isValidDeadReason(id: string | null | undefined): boolean {
-  return Boolean(id && DEAD_REASON_BY_ID.has(id))
-}
+export {
+  DEAD_REASONS,
+  cleanDeadReason,
+  deadReasonLabel,
+  isValidDeadReason,
+  type DeadReasonDef,
+} from './lead-outcomes'
