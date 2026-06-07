@@ -15,10 +15,10 @@ type OutcomeType = 'completed' | 'no_show' | 'cancelled' | 'rescheduled'
 interface AppointmentOutcomeModalProps {
   lead: { id: string; full_name: string | null }
   appointment: {
-    appointmentId: string
-    type: string
+    appointmentId: string | null
+    type: string | null
     scheduledAt: string
-    assignedTo: string
+    assignedTo: string | null
   }
   onClose: () => void
   onSuccess: () => void
@@ -92,8 +92,8 @@ export function AppointmentOutcomeModal({
 
       onSuccess()
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
       setSubmitting(false)
     }

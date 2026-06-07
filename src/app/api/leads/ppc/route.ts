@@ -10,6 +10,11 @@ import { DEFAULT_PPC_CAMPAIGN, ppcCampaignForPagePath } from '@/lib/ppc/campaign
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { getPpcRequestContext } from '@/lib/ppc/request-context'
 import {
+  applyPpcLeadIntelligenceToManifest,
+  buildPpcLeadCacheUpdates,
+  type PpcLeadIntelligenceInput,
+} from '@/lib/ppc/lead-intelligence'
+import {
   CONDITION_TO_OVERALL,
   recordPpcTrackingEvent,
   SITUATION_TO_TAG,
@@ -647,41 +652,32 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const ppcLeadIntelligence: PpcLeadIntelligenceInput = {
+      source: `ppc_form_${intent}`,
+      formStatus: intent === 'submit'
+        ? 'submitted'
+        : intent === 'autosave'
+          ? 'stage_3_complete_no_submit'
+          : 'potential_no_submit',
+      situation,
+      timeline,
+      condition,
+      auctionStatus,
+      address,
+      addressSource,
+      fullName,
+      city: cityState.city,
+      state: cityState.state,
+      zip: cityState.zip,
+      county: cityState.county,
+      attribution,
+    }
+    let leadCacheUpdates: Record<string, unknown> = {}
+
     await updateManifestAndCascade(
       resolvedLeadId,
       (m) => {
-        m.source = PPC_SOURCE
-        m.leadSource = PPC_SOURCE
         m.priority = timeline ? TIMELINE_TO_PRIORITY[timeline] : 'warm'
-        if (situation) {
-          const tag = SITUATION_TO_TAG[situation]
-          if (!m.situation.type) m.situation.type = []
-          if (!m.situation.type.includes(tag)) m.situation.type.push(tag)
-        }
-        if (timeline) {
-          m.situation.timeline = {
-            ...(m.situation.timeline ?? {}),
-            urgency: TIMELINE_TO_URGENCY[timeline],
-            flexibility: timeline === 'flexible' || timeline === 'exploring' ? 'flexible' : 'somewhat_flexible',
-          }
-        }
-        if (condition) {
-          m.property.condition = {
-            ...(m.property.condition ?? {}),
-            overall: CONDITION_TO_OVERALL[condition],
-          }
-        }
-        if (auctionStatus) {
-          const auctionFlag = `auction_status_${auctionStatus.replace('-', '_')}`
-          m.flags.opportunityFlags = (m.flags.opportunityFlags ?? []).filter(
-            (flag) => !flag.startsWith('auction_status_'),
-          )
-          m.flags.opportunityFlags.push(auctionFlag)
-          m.flags.redFlags = (m.flags.redFlags ?? []).filter((flag) => flag !== 'home_sold_at_auction')
-          if (auctionStatus === 'yes') {
-            m.flags.redFlags.push('home_sold_at_auction')
-          }
-        }
         if (address && !m.property.address) m.property.address = address
         if (phoneE164 && !m.owner.phones?.includes(phoneE164)) {
           m.owner.phones = [phoneE164, ...(m.owner.phones ?? [])]
@@ -690,17 +686,23 @@ export async function POST(req: NextRequest) {
           m.owner.emails = [email, ...(m.owner.emails ?? [])]
         }
         if (fullName) m.owner.fullName = fullName
-        m.acquisition = {
-          source: PPC_SOURCE,
-          channel: 'google-ads',
-          attribution: {
-            ...(attribution ?? {}),
-            capturedAt: new Date().toISOString(),
-          },
-        }
+        const result = applyPpcLeadIntelligenceToManifest(m, ppcLeadIntelligence)
+        leadCacheUpdates = buildPpcLeadCacheUpdates(result)
       },
       PPC_SOURCE,
     )
+
+    if (Object.keys(leadCacheUpdates).length > 0) {
+      const { data: currentLeadCache } = await supabase
+        .from('leads')
+        .select('seller_situation')
+        .eq('id', resolvedLeadId)
+        .maybeSingle()
+      const currentSellerSituation = cleanText((currentLeadCache as { seller_situation?: string | null } | null)?.seller_situation)
+      if (!currentSellerSituation || currentSellerSituation.startsWith('PPC intake:')) {
+        await supabase.from('leads').update(leadCacheUpdates).eq('id', resolvedLeadId)
+      }
+    }
 
     if (intent === 'potential') {
       const activityId = await upsertPpcFormActivity({

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { CockpitModal } from '@/components/ui/cockpit-modal'
 
 type SignalDestination = {
   destination: string
@@ -32,6 +33,11 @@ type AdsSignalReceiptData = {
   hasIdentifier: boolean
   signals: SignalRow[]
   warnings: string[]
+}
+
+type AdsSignalReceiptProps = {
+  leadId: string
+  variant?: 'inline' | 'sidebar'
 }
 
 function formatTime(value: string | null): string {
@@ -67,6 +73,14 @@ function statusStyle(status: string): { icon: string; color: string; background:
     return { icon: 'block', color: 'var(--ck-text-muted)', background: 'var(--ck-surface-elev)', label: 'Skipped' }
   }
   return { icon: 'radio_button_unchecked', color: 'var(--ck-text-dim)', background: 'var(--ck-surface-elev)', label: 'Not queued' }
+}
+
+function receiptSubtitle(data: AdsSignalReceiptData): string {
+  return [data.sourceLabel, data.campaign].filter(Boolean).join(' · ') || 'Paid-source tracking'
+}
+
+function sentCount(data: AdsSignalReceiptData): number {
+  return data.signals.filter((signal) => signal.status === 'sent').length
 }
 
 function SignalItem({ signal }: { signal: SignalRow }) {
@@ -124,30 +138,11 @@ function SignalItem({ signal }: { signal: SignalRow }) {
   )
 }
 
-export function AdsSignalReceipt({ leadId }: { leadId: string }) {
-  const [data, setData] = useState<AdsSignalReceiptData | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch(`/api/leads/${leadId}/ppc-signals`, { cache: 'no-store' })
-      .then((res) => res.ok ? res.json() : null)
-      .then((next) => {
-        if (!cancelled) setData(next)
-      })
-      .catch(() => {
-        if (!cancelled) setData(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [leadId])
-
-  if (!data || (!data.isPaidLead && data.warnings.length === 0)) return null
-
+function ReceiptPanel({ data, framed = true }: { data: AdsSignalReceiptData; framed?: boolean }) {
   return (
     <section
-      className="mb-4 rounded-2xl border p-4"
-      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+      className={framed ? 'rounded-2xl border p-4' : ''}
+      style={framed ? { background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' } : undefined}
     >
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -156,7 +151,7 @@ export function AdsSignalReceipt({ leadId }: { leadId: string }) {
             <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Ads Receipt</h2>
           </div>
           <p className="mt-1 text-sm font-semibold text-[color:var(--ck-text-muted)]">
-            {[data.sourceLabel, data.campaign].filter(Boolean).join(' · ') || 'Paid-source tracking'}
+            {receiptSubtitle(data)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -184,5 +179,111 @@ export function AdsSignalReceipt({ leadId }: { leadId: string }) {
         {data.signals.map((signal) => <SignalItem key={signal.eventName} signal={signal} />)}
       </div>
     </section>
+  )
+}
+
+function SidebarLauncher({
+  data,
+  onOpen,
+}: {
+  data: AdsSignalReceiptData
+  onOpen: () => void
+}) {
+  const sent = sentCount(data)
+  const total = data.signals.length
+  const statusText = total > 0 ? `${sent}/${total} sent` : 'No signals'
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full rounded-2xl border p-4 text-left transition-all hover:translate-y-[-1px]"
+      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+      title="View ads receipt"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span
+            className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border"
+            style={{ background: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.28)', color: 'var(--ck-accent-bright)' }}
+          >
+            <Icon name="verified" className="!text-[18px]" />
+          </span>
+          <div className="min-w-0">
+            <p className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Ads Receipt</p>
+            <p className="mt-1 truncate text-sm font-bold text-[color:var(--ck-text-muted)]">
+              {receiptSubtitle(data)}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <span
+                className="rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider"
+                style={{ borderColor: 'rgba(16,185,129,0.35)', color: 'var(--ck-success)' }}
+              >
+                {statusText}
+              </span>
+              {data.identifierType && (
+                <span
+                  className="rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider"
+                  style={{ borderColor: 'var(--ck-border)', color: data.hasIdentifier ? 'var(--ck-success)' : 'var(--ck-text-dim)' }}
+                >
+                  {data.identifierType}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <Icon name="open_in_new" className="!text-base !text-[color:var(--ck-text-dim)]" />
+      </div>
+      {data.warnings.length > 0 && (
+        <p className="mt-3 line-clamp-2 text-xs font-bold text-[color:var(--ck-warn)]">
+          {data.warnings[0]}
+        </p>
+      )}
+    </button>
+  )
+}
+
+export function AdsSignalReceipt({ leadId, variant = 'inline' }: AdsSignalReceiptProps) {
+  const [data, setData] = useState<AdsSignalReceiptData | null>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/leads/${leadId}/ppc-signals`, { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : null)
+      .then((next) => {
+        if (!cancelled) setData(next)
+      })
+      .catch(() => {
+        if (!cancelled) setData(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [leadId])
+
+  if (!data || (!data.isPaidLead && data.warnings.length === 0)) return null
+
+  if (variant === 'sidebar') {
+    return (
+      <>
+        <SidebarLauncher data={data} onOpen={() => setOpen(true)} />
+        <CockpitModal
+          open={open}
+          onClose={() => setOpen(false)}
+          title="Ads Receipt"
+          icon="verified"
+          size="xl"
+        >
+          <ReceiptPanel data={data} framed={false} />
+        </CockpitModal>
+      </>
+    )
+  }
+
+  return (
+    <div className="mb-4">
+      <ReceiptPanel data={data} />
+    </div>
   )
 }

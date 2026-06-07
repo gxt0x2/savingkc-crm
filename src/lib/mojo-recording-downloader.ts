@@ -129,8 +129,11 @@ export async function downloadRecording(url: string, recordId?: string): Promise
     headers['cookie'] = `sessionid=${sessionId}`
     headers['referer'] = `${MOJO_BASE}/`
     headers['accept'] = 'audio/mpeg, audio/*, */*'
-  } else if (url.includes('twilio.com') && !url.endsWith('.mp3')) {
-    downloadUrl = url + '.mp3'
+  } else if (url.includes('twilio.com')) {
+    if (!url.endsWith('.mp3')) downloadUrl = url + '.mp3'
+    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+      headers.Authorization = `Basic ${Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')}`
+    }
   }
 
   const response = await fetch(downloadUrl, {

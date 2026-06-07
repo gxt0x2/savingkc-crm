@@ -116,6 +116,8 @@ export interface ManifestProperty {
 }
 
 export interface ManifestBooking {
+  bookingId?: string
+  scheduledAt?: string
   scheduledDate?: string
   scheduledTime?: string
   type?: 'discovery' | 'walkthrough' | 'closing'
@@ -251,6 +253,9 @@ export interface TranscriptEntry {
     verbatimQuotes?: string[]
     objectionResponses?: string[]
     concessionSignals?: string[]
+    painPoints?: string[]
+    emotionalDrivers?: string[]
+    nextSteps?: string[]
     agentCoaching?: {
       strengths?: string[]
       improvements?: string[]
