@@ -52,7 +52,7 @@ async function prepareAudioForGroq(filePath: string): Promise<string> {
   if (original.size <= GROQ_AUDIO_UPLOAD_LIMIT_BYTES) return filePath
 
   const compressedPath = compressedAudioPath(filePath)
-  const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg'
+  const ffmpeg = await resolveFfmpegPath()
 
   try {
     const { execFile } = await import('node:child_process')
@@ -88,4 +88,18 @@ async function prepareAudioForGroq(filePath: string): Promise<string> {
 
 function compressedAudioPath(filePath: string): string {
   return filePath.replace(/(\.[a-z0-9]+)?$/i, '.groq-compressed.mp3')
+}
+
+async function resolveFfmpegPath(): Promise<string> {
+  if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH
+
+  try {
+    const mod = await import('ffmpeg-static')
+    const bundledPath = typeof mod.default === 'string' ? mod.default : null
+    if (bundledPath) return bundledPath
+  } catch {
+    // Fall back to PATH for local machines or custom runtimes.
+  }
+
+  return 'ffmpeg'
 }
