@@ -120,11 +120,10 @@ export async function autoEnrichLead(leadId: string): Promise<void> {
         }
       }
 
-      // Determine correct state — Kansas counties need 'KS', not default 'MO'
-      const kansasCounties = ['johnson', 'wyandotte', 'leavenworth', 'miami', 'douglas']
-      const inferredState = state
-        || (county && kansasCounties.includes(county.toLowerCase()) ? 'KS' : null)
-        || 'MO'
+      // Determine correct state. County-specific state wins over stale lead
+      // state, e.g. Johnson County must route to KS even if the lead row says MO.
+      const expectedState = expectedStateForCounty(county)
+      const inferredState = expectedState || state || 'MO'
 
       const countyObj = county
         ? { county, state: inferredState }
@@ -159,6 +158,14 @@ export async function autoEnrichLead(leadId: string): Promise<void> {
   } catch (err) {
     console.error('[auto-enrich] Failed for lead', leadId, err)
   }
+}
+
+function expectedStateForCounty(county?: string | null): 'KS' | 'MO' | null {
+  const normalized = county?.toLowerCase().trim()
+  if (!normalized) return null
+  if (['johnson', 'wyandotte', 'leavenworth', 'miami', 'douglas'].includes(normalized)) return 'KS'
+  if (['jackson', 'clay', 'platte'].includes(normalized)) return 'MO'
+  return null
 }
 
 /**

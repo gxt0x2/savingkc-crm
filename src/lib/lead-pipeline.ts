@@ -1255,7 +1255,8 @@ async function hydrateFromProspect(
 
   const updates: Record<string, any> = {}
 
-  // Only fill missing lead fields (never overwrite)
+  // Only fill missing lead fields by default. Exception: county/state
+  // compatibility wins over stale row data, e.g. Johnson County must be KS.
   if (!lead.county && prospect.county) updates.county = prospect.county
   if (!lead.parcel_id && prospect.parcel_id) updates.parcel_id = prospect.parcel_id
   if (!lead.zip && prospect.situs_zip) updates.zip = String(prospect.situs_zip)
@@ -1267,7 +1268,11 @@ async function hydrateFromProspect(
   }
   if (!lead.property_address && prospect.situs_street) updates.property_address = prospect.situs_street
   if (!lead.city && prospect.situs_city) updates.city = prospect.situs_city
-  if (!lead.state && prospect.situs_state) updates.state = prospect.situs_state
+  const expectedState = expectedStateForCounty(prospect.county || lead.county)
+  const prospectState = normalizeState(prospect.situs_state)
+  const leadState = normalizeState(lead.state)
+  if (expectedState && leadState !== expectedState) updates.state = expectedState
+  else if (!leadState && prospectState) updates.state = prospectState
 
   if (Object.keys(updates).length > 0) {
     const { error } = await supabase.from('leads').update(updates).eq('id', leadId)
@@ -1310,6 +1315,18 @@ async function hydrateFromProspect(
   }
 
   return changed
+}
+
+function normalizeState(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().toUpperCase() : null
+}
+
+function expectedStateForCounty(county?: string | null): 'KS' | 'MO' | null {
+  const normalized = county?.toLowerCase().trim()
+  if (!normalized) return null
+  if (['johnson', 'wyandotte', 'leavenworth', 'miami', 'douglas'].includes(normalized)) return 'KS'
+  if (['jackson', 'clay', 'platte'].includes(normalized)) return 'MO'
+  return null
 }
 
 /**
