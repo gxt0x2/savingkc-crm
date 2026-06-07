@@ -826,11 +826,20 @@ function mergeUniqueStrings(current: string[] | undefined, incoming: unknown[]):
   return out
 }
 
-function mergeText(current: string | undefined, incoming: string): string {
+function mergeText(current: unknown, incoming: string): string {
   const next = incoming.trim()
-  if (!current) return next
-  if (!next || current.toLowerCase().includes(next.toLowerCase())) return current
-  return `${current}; ${next}`
+  const existing = typeof current === 'string' ? current.trim() : ''
+  if (!existing) return next
+  if (!next || existing.toLowerCase().includes(next.toLowerCase())) return existing
+  return `${existing}; ${next}`
+}
+
+function normalizeLeadMotivationScore(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const rounded = Math.round(value)
+  if (rounded < 1) return null
+  if (rounded > 10) return 10
+  return rounded
 }
 
 /**
@@ -972,8 +981,9 @@ async function cascadeManifestToLead(
     updates.seller_situation = manifest.situation.summary
     changed.push('seller_situation')
   }
-  if (manifest.situation?.motivation?.score != null && manifest.situation.motivation.score !== currentLead.motivation_score) {
-    updates.motivation_score = manifest.situation.motivation.score
+  const leadMotivationScore = normalizeLeadMotivationScore(manifest.situation?.motivation?.score)
+  if (leadMotivationScore !== currentLead.motivation_score) {
+    updates.motivation_score = leadMotivationScore
     changed.push('motivation_score')
   }
   if (manifest.currentStation && manifest.currentStation !== currentLead.station) {
@@ -989,12 +999,15 @@ async function cascadeManifestToLead(
   const latestTranscript = (manifest.communications?.transcripts || [])
     .filter(t => !!t.fullTranscript)
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
+  const latestDurationTranscript = (manifest.communications?.transcripts || [])
+    .filter(t => !!t.fullTranscript && Number(t.duration) > 0)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
   if (latestTranscript?.fullTranscript && latestTranscript.fullTranscript !== currentLead.transcript) {
     updates.transcript = latestTranscript.fullTranscript
     changed.push('transcript')
   }
-  if (latestTranscript?.duration != null && latestTranscript.duration !== currentLead.call_duration_seconds) {
-    updates.call_duration_seconds = latestTranscript.duration
+  if (latestDurationTranscript?.duration != null && latestDurationTranscript.duration !== currentLead.call_duration_seconds) {
+    updates.call_duration_seconds = latestDurationTranscript.duration
     changed.push('call_duration_seconds')
   }
 
