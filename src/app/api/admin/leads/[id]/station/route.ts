@@ -6,6 +6,7 @@ import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { updateManifestAndCascade } from '@/lib/manifest-sync'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
+import { DEAD_REASONS, cleanDeadReason, deadReasonLabel } from '@/lib/lead-outcomes'
 
 const ALLOWED_STATIONS = new Set([
   'intake', 'not_contacted', 'new',
@@ -24,6 +25,8 @@ const APPOINTMENT_STATIONS = new Set(['appointment', 'appt_set', 'appointment_se
 type StationRequestBody = {
   station?: string
   reason?: string
+  deadReason?: string
+  dead_reason?: string
   allowMissingAppointmentDetails?: boolean
 }
 
@@ -117,9 +120,24 @@ export async function POST(
   const prevStation = lead.station
   const changedAt = new Date().toISOString()
   const movingToAppointment = APPOINTMENT_STATIONS.has(body.station)
+  const movingToDead = body.station === 'dead'
+  const deadReason = movingToDead
+    ? cleanDeadReason(body.deadReason ?? body.dead_reason ?? body.reason)
+    : null
   const hasAppointmentDetails = movingToAppointment
     ? await leadHasAppointmentDetails(db, id)
     : false
+
+  if (movingToDead && !deadReason) {
+    return NextResponse.json(
+      {
+        error: 'Dead reason required before marking this lead dead.',
+        requiresDeadReason: true,
+        allowedDeadReasons: DEAD_REASONS,
+      },
+      { status: 400 },
+    )
+  }
 
   if (movingToAppointment && !hasAppointmentDetails && !body.allowMissingAppointmentDetails) {
     return NextResponse.json(
@@ -134,7 +152,20 @@ export async function POST(
 
   const { error: updErr } = await db
     .from('leads')
-    .update({ station: body.station, updated_at: changedAt })
+    .update({
+      station: body.station,
+      updated_at: changedAt,
+      ...(movingToDead
+        ? {
+          priority: 'cold',
+          classification: 'dead',
+          opportunity_score: 0,
+          dead_reason: deadReason,
+          dead_at: changedAt,
+          dead_by: 'system:admin_set_station',
+        }
+        : {}),
+    })
     .eq('id', id)
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
@@ -144,7 +175,13 @@ export async function POST(
       timestamp: changedAt,
       agent: 'system:admin_set_station',
       action: 'station_changed_admin',
-      details: { from: prevStation, to: body.station, reason: body.reason ?? null },
+      details: {
+        from: prevStation,
+        to: body.station,
+        reason: body.reason ?? null,
+        dead_reason: deadReason,
+        dead_reason_label: deadReason ? deadReasonLabel(deadReason) : null,
+      },
     })
   }, 'admin_set_station').catch(() => false)
 
@@ -178,6 +215,7 @@ export async function POST(
     fullName: lead.full_name,
     from: prevStation,
     to: body.station,
+    deadReason,
     cascaded: cascadeOk,
     ppcQualifiedConversion,
     ppcAppointmentConversion,

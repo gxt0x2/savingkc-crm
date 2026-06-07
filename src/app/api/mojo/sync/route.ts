@@ -72,6 +72,7 @@ interface DispositionMapping {
   incrementAttempts?: boolean
   flag?: string
   isDead?: boolean
+  deadReason?: string
 }
 
 type LeadPriority = 'hot' | 'warm' | 'cold'
@@ -118,13 +119,13 @@ function mapDisposition(disposition: string): DispositionMapping {
     return { outcome: 'appointment_set', priority: 'hot', alertErnest: true, createAppointment: true }
   }
   if (d === 'not interested' || d.includes('not interested')) {
-    return { outcome: 'not_interested', isDead: true }
+    return { outcome: 'not_interested', isDead: true, deadReason: 'not_selling' }
   }
   if (d === 'wrong number') {
-    return { outcome: 'wrong_number', isDead: true, flag: 're_skip_trace' }
+    return { outcome: 'wrong_number', isDead: true, deadReason: 'wrong_number', flag: 're_skip_trace' }
   }
   if (d === 'disconnected') {
-    return { outcome: 'disconnected', isDead: true, flag: 're_skip_trace' }
+    return { outcome: 'disconnected', isDead: true, deadReason: 'disconnected', flag: 're_skip_trace' }
   }
   if (d === 'no answer') {
     return { outcome: 'no_answer', incrementAttempts: true }
@@ -133,10 +134,10 @@ function mapDisposition(disposition: string): DispositionMapping {
     return { outcome: 'voicemail_left', incrementAttempts: true }
   }
   if (d === 'dnc request' || d.includes('do not call')) {
-    return { outcome: 'dnc', isDead: true }
+    return { outcome: 'dnc', isDead: true, deadReason: 'dnc' }
   }
   if (d === 'already sold' || d.includes('sold')) {
-    return { outcome: 'already_sold', isDead: true }
+    return { outcome: 'already_sold', isDead: true, deadReason: 'already_sold' }
   }
   if (d.includes('listed') || d.includes('agent')) {
     return { outcome: 'listed', priority: 'cold' }
@@ -832,6 +833,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       manifest.priority = dispositionMap.priority
     } else if (dispositionMap.isDead) {
       manifest.priority = 'cold'
+      manifest.currentStation = 'dead'
     }
 
     const contact: ManifestContact = {
@@ -870,6 +872,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         campaign: call.campaign_name,
         callDuration: call.call_duration,
         callDate: call.call_date,
+        deadReason: dispositionMap.deadReason ?? null,
       },
     })
 
@@ -1195,6 +1198,15 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       }
       if (manifest.currentStation && manifest.currentStation !== ld?.station) {
         leadBackfill.station = manifest.currentStation
+      }
+      if (dispositionMap.isDead) {
+        leadBackfill.station = 'dead'
+        leadBackfill.priority = 'cold'
+        leadBackfill.classification = 'dead'
+        leadBackfill.opportunity_score = 0
+        leadBackfill.dead_reason = dispositionMap.deadReason ?? 'other'
+        leadBackfill.dead_at = now
+        leadBackfill.dead_by = 'system:mojo-sync'
       }
 
       // Cascade this call's metadata (always update — this IS the latest call)
