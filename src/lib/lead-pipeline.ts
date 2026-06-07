@@ -80,6 +80,15 @@ interface QueueRow {
   created_at: string
 }
 
+interface RecordingActivityRow {
+  id: string
+  activity_type: string
+  description: string | null
+  agent: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+
 type LeadForPpcIntelligence = {
   property_address?: string | null
   full_name?: string | null
@@ -142,6 +151,13 @@ export async function reprocessLead(
   // 3. Ensure every queue row has a transcript entry in the manifest
   const addedTranscripts = ensureTranscriptsFromQueue(manifest, queueRows)
   if (addedTranscripts > 0) changed.push(`transcripts_added=${addedTranscripts}`)
+
+  // 3b. Ensure Twilio recording activities also become transcript entries.
+  // PPC form callbacks and inbound calls are written to lead_activities, not
+  // mojo_call_queue, so the old reprocess path skipped them entirely.
+  const recordingRows = await loadTwilioRecordingActivities(leadId)
+  const addedRecordingTranscripts = ensureTranscriptsFromRecordingActivities(manifest, recordingRows)
+  if (addedRecordingTranscripts > 0) changed.push(`twilio_transcripts_added=${addedRecordingTranscripts}`)
 
   // 4. Merge queue payload notes into manifest.agentNotes (dedup by callRecordId)
   const addedNotes = mergeAgentNotesFromQueue(manifest, queueRows)
@@ -407,6 +423,103 @@ function ensureTranscriptsFromQueue(manifest: ManifestV2, queueRows: QueueRow[])
     transcripts.push(entry)
     added++
   }
+  return added
+}
+
+async function loadTwilioRecordingActivities(leadId: string): Promise<RecordingActivityRow[]> {
+  const { data } = await supabase
+    .from('lead_activities')
+    .select('id, activity_type, description, agent, metadata, created_at')
+    .eq('lead_id', leadId)
+    .eq('activity_type', 'call')
+    .order('created_at', { ascending: true })
+    .limit(100)
+
+  return ((data ?? []) as RecordingActivityRow[]).filter((row) => {
+    const meta = row.metadata ?? {}
+    return Boolean(
+      readText(meta.recordingSid) ||
+      readText(meta.recordingUrl) ||
+      readText(meta.recordingSourceUrl) ||
+      readText(meta.RecordingSid) ||
+      readText(meta.RecordingUrl),
+    )
+  })
+}
+
+function readText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function readNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function transcriptIdForRecordingActivity(row: RecordingActivityRow): string {
+  const meta = row.metadata ?? {}
+  return `twilio-${readText(meta.recordingSid) || readText(meta.RecordingSid) || row.id}`
+}
+
+function transcriptMatchesRecordingActivity(t: TranscriptEntry, row: RecordingActivityRow): boolean {
+  const meta = row.metadata ?? {}
+  const sid = readText(meta.recordingSid) || readText(meta.RecordingSid)
+  if (t.id === transcriptIdForRecordingActivity(row)) return true
+  if (sid && (t.id === `call-${sid}` || t.id === `twilio-${sid}`)) return true
+  if (sid && t.recordingUrl?.includes(sid)) return true
+  return false
+}
+
+function recordingDownloadUrlForActivity(row: RecordingActivityRow): string | null {
+  const meta = row.metadata ?? {}
+  const sourceUrl = readText(meta.recordingSourceUrl)
+  if (sourceUrl) return sourceUrl
+
+  const directUrl = readText(meta.recordingUrl) || readText(meta.RecordingUrl)
+  if (directUrl && !directUrl.startsWith('/')) return directUrl
+
+  const sid = readText(meta.recordingSid) || readText(meta.RecordingSid)
+  if (sid && process.env.TWILIO_ACCOUNT_SID) {
+    return `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Recordings/${sid}`
+  }
+
+  return null
+}
+
+function ensureTranscriptsFromRecordingActivities(
+  manifest: ManifestV2,
+  rows: RecordingActivityRow[],
+): number {
+  let added = 0
+  const transcripts = manifest.communications!.transcripts
+
+  for (const row of rows) {
+    if (transcripts.some((t) => transcriptMatchesRecordingActivity(t, row))) continue
+
+    const recordingUrl = recordingDownloadUrlForActivity(row)
+    if (!recordingUrl) continue
+
+    const meta = row.metadata ?? {}
+    transcripts.push({
+      id: transcriptIdForRecordingActivity(row),
+      date: row.created_at,
+      duration: readNumber(meta.duration) || readNumber(meta.recordingDuration) || readNumber(meta.call_duration),
+      agent: row.agent || 'unknown',
+      recordingUrl,
+      fullTranscript: null,
+      transcriptionPending: true,
+      analysisPending: true,
+      aiSummary: null,
+      extractedData: null,
+      agentNotes: row.description ?? undefined,
+    })
+    added++
+  }
+
   return added
 }
 
@@ -722,8 +835,10 @@ async function cascadeManifestToLead(
   if (dwell?.bathrooms && !currentLead.baths_full) { updates.baths_full = Math.round(Number(dwell.bathrooms)); changed.push('baths_full') }
   if (dwell?.sqft && !currentLead.sqft) { updates.sqft = Math.round(Number(dwell.sqft)); changed.push('sqft') }
   if (dwell?.yearBuilt && !currentLead.year_built) { updates.year_built = Math.round(Number(dwell.yearBuilt)); changed.push('year_built') }
-  if (assess?.appraisedTotal && !currentLead.arv) { updates.arv = Math.round(Number(assess.appraisedTotal)); changed.push('arv') }
-  if (assess?.assessedTotal && !currentLead.assessed_value) { updates.assessed_value = Math.round(Number(assess.assessedTotal)); changed.push('assessed_value') }
+  const appraisedTotal = assess?.appraisedTotal ?? assess?.totalValue
+  const assessedTotal = assess?.assessedTotal ?? assess?.totalValue
+  if (appraisedTotal && !currentLead.arv) { updates.arv = Math.round(Number(appraisedTotal)); changed.push('arv') }
+  if (assessedTotal && !currentLead.assessed_value) { updates.assessed_value = Math.round(Number(assessedTotal)); changed.push('assessed_value') }
 
   if (Object.keys(updates).length > 0) {
     const { error } = await supabase.from('leads').update(updates).eq('id', leadId)
