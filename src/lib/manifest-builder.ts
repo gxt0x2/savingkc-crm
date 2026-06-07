@@ -253,6 +253,9 @@ export interface TranscriptEntry {
     verbatimQuotes?: string[]
     objectionResponses?: string[]
     concessionSignals?: string[]
+    painPoints?: string[]
+    emotionalDrivers?: string[]
+    nextSteps?: string[]
     agentCoaching?: {
       strengths?: string[]
       improvements?: string[]

@@ -202,6 +202,12 @@ export async function reprocessLead(
     }
   }
 
+  // 5f. Call transcript intelligence is richer than the PPC intake snapshot.
+  // Re-apply it after PPC promotion so backfilled leads do not stay stuck on
+  // shallow "PPC intake" copy once a real call has been transcribed/analyzed.
+  const transcriptPromoted = promoteLatestAnalyzedTranscriptToManifest(manifest)
+  if (transcriptPromoted.length > 0) changed.push(`transcript_intelligence=${transcriptPromoted.join(',')}`)
+
   // 6. County enrichment if address present and dwelling data missing (or forced)
   const needsEnrich = forceReEnrich || healed.length > 0 || !manifest.property?.dwelling?.bedrooms
   const hasAddress = !!(
@@ -594,6 +600,12 @@ async function refreshPendingTranscripts(
 }
 
 function applyAnalysisToTranscript(t: TranscriptEntry, a: CallAnalysisResult): void {
+  const painPoints = compactStrings([
+    ...(a.keyLeverage || []),
+    ...(a.emotionalDrivers || []),
+    ...(a.objectionsRaised || []),
+  ])
+
   t.aiSummary = a.aiSummary || null
   t.extractedData = {
     motivationScore: a.motivationScore,
@@ -603,6 +615,9 @@ function applyAnalysisToTranscript(t: TranscriptEntry, a: CallAnalysisResult): v
     verbatimQuotes: a.verbatimQuotes,
     objectionResponses: a.objectionsRaised,
     concessionSignals: a.keyLeverage,
+    painPoints,
+    emotionalDrivers: a.emotionalDrivers,
+    nextSteps: a.nextSteps,
     agentCoaching: {
       strengths: a.agentStrengths,
       improvements: a.agentImprovements,
@@ -611,9 +626,18 @@ function applyAnalysisToTranscript(t: TranscriptEntry, a: CallAnalysisResult): v
 }
 
 function applyAnalysisToManifest(manifest: ManifestV2, a: CallAnalysisResult): void {
+  const summary = readText(a.aiSummary) || readText(a.summary)
+  if (summary) manifest.situation.summary = summary
+
   if (a.personalityType && !manifest.owner.personalityType) {
     manifest.owner.personalityType = a.personalityType as ManifestOwner['personalityType']
   }
+  if (a.bestTimeToContact) manifest.owner.bestTimeToContact = a.bestTimeToContact
+  if (a.coOwners?.length) {
+    manifest.owner.coOwners = mergeUniqueStrings(manifest.owner.coOwners, a.coOwners)
+  }
+  if (a.outOfState != null) manifest.owner.outOfState = a.outOfState
+
   if (a.communicationStyle) {
     if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
     if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
@@ -622,31 +646,191 @@ function applyAnalysisToManifest(manifest: ManifestV2, a: CallAnalysisResult): v
     if (a.decisionStyle) manifest.ariIntelligence.sellerProfile.decisionStyle = a.decisionStyle
     if (a.emotionalDrivers) manifest.ariIntelligence.sellerProfile.emotionalDrivers = a.emotionalDrivers
   }
-  if (a.dealConfidenceScore) {
+  if (a.dealConfidenceScore || a.keyLeverage?.length || a.estimatedARV || a.estimatedRepairsNotes) {
     if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
     if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
-    manifest.ariIntelligence.dealIntelligence.confidenceScore = a.dealConfidenceScore
-    if (a.keyLeverage) manifest.ariIntelligence.dealIntelligence.keyLeverage = a.keyLeverage
+    if (a.dealConfidenceScore) manifest.ariIntelligence.dealIntelligence.confidenceScore = a.dealConfidenceScore
+    if (a.keyLeverage) {
+      manifest.ariIntelligence.dealIntelligence.keyLeverage = mergeUniqueStrings(
+        manifest.ariIntelligence.dealIntelligence.keyLeverage,
+        a.keyLeverage,
+      )
+    }
+    if (a.estimatedARV) manifest.ariIntelligence.dealIntelligence.estimatedARV = a.estimatedARV
+    if (a.estimatedRepairsNotes) manifest.ariIntelligence.dealIntelligence.estimatedRepairs = a.estimatedRepairsNotes
   }
-  if (a.motivationScore && manifest.situation?.motivation) {
-    manifest.situation.motivation.score = a.motivationScore
+  if (a.motivationScore || a.motivationSignals?.length || a.keyLeverage?.length || a.emotionalDrivers?.length) {
+    if (!manifest.situation.motivation) manifest.situation.motivation = {}
+    if (a.motivationScore) manifest.situation.motivation.score = a.motivationScore
+    const signals = compactStrings([
+      ...(a.motivationSignals || []),
+      ...(a.keyLeverage || []),
+      ...(a.emotionalDrivers || []),
+    ])
+    if (signals.length) {
+      manifest.situation.motivation.signals = mergeUniqueStrings(manifest.situation.motivation.signals, signals)
+      if (!manifest.situation.motivation.primary) manifest.situation.motivation.primary = signals[0]
+    }
   }
-  if (a.urgency && manifest.situation?.timeline) {
+  if (!manifest.situation.timeline) manifest.situation.timeline = {}
+  if (a.urgency) {
     manifest.situation.timeline.urgency = a.urgency as any
+    manifest.situation.motivation = manifest.situation.motivation || {}
+    manifest.situation.motivation.urgencyLevel = a.urgency as any
+  }
+  if (a.targetCloseDate) manifest.situation.timeline.targetCloseDate = a.targetCloseDate
+  if (a.hardDeadline != null) manifest.situation.timeline.hardDeadline = a.hardDeadline
+  if (a.deadlineReason) manifest.situation.timeline.deadlineReason = a.deadlineReason
+
+  if (a.sellerAsking || a.sellerFloor || a.priceFlexibility || a.priceAnchor) {
+    if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
+    if (a.sellerAsking) manifest.situation.priceExpectations.sellerAsking = a.sellerAsking
+    if (a.sellerFloor) manifest.situation.priceExpectations.sellerFloor = a.sellerFloor
+    if (a.priceFlexibility) manifest.situation.priceExpectations.priceFlexibility = a.priceFlexibility as any
+    if (a.priceAnchor) manifest.situation.priceExpectations.priceAnchor = a.priceAnchor
   }
   if (a.situationType?.length) {
     for (const tag of a.situationType) {
       if (!manifest.situation.type.includes(tag)) manifest.situation.type.push(tag)
     }
   }
+  if (a.objectionsRaised?.length) {
+    manifest.situation.objections = mergeUniqueStrings(manifest.situation.objections, a.objectionsRaised)
+  }
+  if (a.blockers?.length) {
+    manifest.situation.blockers = mergeUniqueStrings(manifest.situation.blockers, a.blockers)
+  }
   if (a.conditionOverall && !manifest.property.condition?.overall) {
     if (!manifest.property.condition) manifest.property.condition = {}
     manifest.property.condition.overall = a.conditionOverall as any
+  }
+  if (a.repairsNotes) {
+    if (!manifest.property.condition) manifest.property.condition = {}
+    manifest.property.condition.notes = mergeText(manifest.property.condition.notes, a.repairsNotes)
   }
   if (a.vacant !== undefined && a.vacant !== null) manifest.property.vacant = a.vacant
   if (a.occupancy && !manifest.property.occupancy) {
     manifest.property.occupancy = a.occupancy as ManifestProperty['occupancy']
   }
+
+  if (a.followUpAction || a.nextSteps?.length) {
+    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+    if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
+    const actions = compactStrings([a.followUpAction, ...(a.nextSteps || [])])
+    for (const action of actions.reverse()) {
+      if (manifest.ariIntelligence.recommendedActions.some((existing) => existing.action === action)) continue
+      manifest.ariIntelligence.recommendedActions.unshift({
+        action,
+        dateTime: action === a.followUpAction ? a.followUpDateTime : undefined,
+        reason: 'transcript_analysis',
+      })
+    }
+  }
+
+  if (a.keyLeverage?.length) {
+    manifest.flags.opportunityFlags = mergeUniqueStrings(manifest.flags.opportunityFlags, a.keyLeverage)
+  }
+}
+
+export function promoteLatestAnalyzedTranscriptToManifest(manifest: ManifestV2): string[] {
+  const changed: string[] = []
+  const latest = (manifest.communications?.transcripts || [])
+    .filter((t) => t.fullTranscript && (t.aiSummary || t.extractedData))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
+
+  if (!latest) return changed
+
+  const summary = readText(latest.aiSummary)
+  if (summary && manifest.situation.summary !== summary) {
+    manifest.situation.summary = summary
+    changed.push('seller_situation')
+  }
+
+  const ex = latest.extractedData
+  if (!ex) return changed
+
+  if (ex.motivationScore != null) {
+    if (!manifest.situation.motivation) manifest.situation.motivation = {}
+    if (manifest.situation.motivation.score !== ex.motivationScore) {
+      manifest.situation.motivation.score = ex.motivationScore
+      changed.push('motivation_score')
+    }
+  }
+
+  const signals = compactStrings([
+    ...(ex.concessionSignals || []),
+    ...(ex.emotionalDrivers || []),
+    ...(ex.painPoints || []),
+  ])
+  if (signals.length) {
+    if (!manifest.situation.motivation) manifest.situation.motivation = {}
+    const nextSignals = mergeUniqueStrings(manifest.situation.motivation.signals, signals)
+    if (nextSignals.length !== (manifest.situation.motivation.signals || []).length) {
+      manifest.situation.motivation.signals = nextSignals
+      changed.push('motivation_signals')
+    }
+    if (!manifest.situation.motivation.primary) {
+      manifest.situation.motivation.primary = signals[0]
+      changed.push('motivation_primary')
+    }
+
+    manifest.flags.opportunityFlags = mergeUniqueStrings(manifest.flags.opportunityFlags, signals)
+    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+    if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
+    manifest.ariIntelligence.dealIntelligence.keyLeverage = mergeUniqueStrings(
+      manifest.ariIntelligence.dealIntelligence.keyLeverage,
+      signals,
+    )
+  }
+
+  if (ex.objectionResponses?.length) {
+    const nextObjections = mergeUniqueStrings(manifest.situation.objections, ex.objectionResponses)
+    if (nextObjections.length !== (manifest.situation.objections || []).length) {
+      manifest.situation.objections = nextObjections
+      changed.push('objections')
+    }
+  }
+
+  if (ex.nextSteps?.length) {
+    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+    if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
+    for (const action of [...ex.nextSteps].reverse()) {
+      if (manifest.ariIntelligence.recommendedActions.some((existing) => existing.action === action)) continue
+      manifest.ariIntelligence.recommendedActions.unshift({
+        action,
+        reason: 'transcript_analysis',
+      })
+      if (!changed.includes('recommended_actions')) changed.push('recommended_actions')
+    }
+  }
+
+  return changed
+}
+
+function compactStrings(values: unknown[]): string[] {
+  return values
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter(Boolean)
+}
+
+function mergeUniqueStrings(current: string[] | undefined, incoming: unknown[]): string[] {
+  const out = compactStrings(current || [])
+  const seen = new Set(out.map((value) => value.toLowerCase()))
+  for (const value of compactStrings(incoming)) {
+    const key = value.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+  }
+  return out
+}
+
+function mergeText(current: string | undefined, incoming: string): string {
+  const next = incoming.trim()
+  if (!current) return next
+  if (!next || current.toLowerCase().includes(next.toLowerCase())) return current
+  return `${current}; ${next}`
 }
 
 /**
