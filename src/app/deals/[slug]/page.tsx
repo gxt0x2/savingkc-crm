@@ -83,6 +83,22 @@ function IconWarningTriangle({ className = '' }: { className?: string }) {
 /* ── Card wrapper — consistent styling ── */
 const card = 'bg-white border border-[#eaeaea] rounded-2xl'
 const TEST_DEAL_SLUG = '28_iezio'
+type DealStatus = 'active' | 'pending' | 'closed'
+
+const DEAL_STATUS_META: Record<DealStatus, { label: string; className: string }> = {
+  active: {
+    label: 'Active',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  pending: {
+    label: 'Pending',
+    className: 'border-orange-200 bg-orange-50 text-orange-700',
+  },
+  closed: {
+    label: 'Closed',
+    className: 'border-slate-300 bg-slate-100 text-slate-700',
+  },
+}
 
 function testInspectionReport(slug: string) {
   return {
@@ -90,6 +106,49 @@ function testInspectionReport(slug: string) {
     url: `/api/deals/${slug}/test-inspection-report`,
     uploaded_at: '2026-05-25T00:00:00.000Z',
   }
+}
+
+function buildLocationLine(
+  lead: { property_address: string | null; city: string | null; state: string | null; zip: string | null; county: string | null } | null,
+  showAddress: boolean
+): string {
+  if (!lead) return 'Kansas City area'
+  if (showAddress && lead.property_address) {
+    const cityState = [lead.city, lead.state].filter(Boolean).join(', ')
+    return `${lead.property_address}${cityState ? `, ${cityState}` : ''}${lead.zip ? ` ${lead.zip}` : ''}`
+  }
+  return `${[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}` || 'Kansas City area'
+}
+
+function deriveDealStatus({
+  dispoStage,
+  acceptedOfferId,
+  tcStatus,
+  leadStation,
+}: {
+  dispoStage?: string | null
+  acceptedOfferId?: string | null
+  tcStatus?: string | null
+  leadStation?: string | null
+}): DealStatus {
+  const stage = (dispoStage || '').toLowerCase()
+  const tc = (tcStatus || '').toLowerCase()
+  const station = (leadStation || '').toLowerCase()
+
+  if (stage === 'closed' || stage === 'dead' || tc === 'closed' || station === 'closed_won' || station === 'closed') {
+    return 'closed'
+  }
+
+  if (
+    stage === 'under_contract' ||
+    Boolean(acceptedOfferId) ||
+    ['opened', 'opening_package_needed', 'emd_pending', 'title_work', 'clear_to_close', 'scheduled'].includes(tc) ||
+    ['under_contract', 'contract', 'contract_signed', 'in_closing', 'closing'].includes(station)
+  ) {
+    return 'pending'
+  }
+
+  return 'active'
 }
 
 export default async function DealPage({
@@ -112,10 +171,39 @@ export default async function DealPage({
   const { data: lead } = await db
     .from('leads')
     .select(
-      'property_address, city, state, zip, county, property_type, beds, baths_full, baths_half, sqft, arv, offer_amount, lot_size, year_built'
+      'property_address, city, state, zip, county, property_type, beds, baths_full, baths_half, sqft, arv, offer_amount, lot_size, year_built, station'
     )
     .eq('id', dealPage.lead_id)
     .single()
+
+  let dispoStage: string | null = null
+  let acceptedOfferId: string | null = null
+  let tcStatus: string | null = null
+
+  const { data: workflowDeal } = await db
+    .from('dispo_deals')
+    .select('id, stage, accepted_offer_id')
+    .eq('lead_id', dealPage.lead_id)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (workflowDeal) {
+    dispoStage = typeof workflowDeal.stage === 'string' ? workflowDeal.stage : null
+    acceptedOfferId = typeof workflowDeal.accepted_offer_id === 'string' ? workflowDeal.accepted_offer_id : null
+  }
+
+  if (workflowDeal?.id) {
+    const { data: workflowTcFile } = await db
+      .from('tc_files')
+      .select('status')
+      .eq('dispo_deal_id', workflowDeal.id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    tcStatus = typeof workflowTcFile?.status === 'string' ? workflowTcFile.status : null
+  }
 
   // Increment view count (fire-and-forget)
   db.from('deal_pages')
@@ -137,6 +225,14 @@ export default async function DealPage({
   const arv = lead?.arv
   const grossMargin = askingPrice && arv ? arv - askingPrice : null
   const overviewText = displayDescription(dealPage.description)
+  const locationLine = buildLocationLine(lead, dealPage.show_address !== false)
+  const dealStatus = deriveDealStatus({
+    dispoStage,
+    acceptedOfferId,
+    tcStatus,
+    leadStation: lead?.station,
+  })
+  const statusMeta = DEAL_STATUS_META[dealStatus]
 
   // Stats
   const statItems = [
@@ -173,14 +269,20 @@ export default async function DealPage({
         videos={videos}
         inspectionReports={inspectionReports}
         askingPrice={askingPrice}
+        dealStatus={dealStatus}
       />
 
       <div className="hidden md:block">
         {/* Header */}
         <header className="border-b border-[#eaeaea]">
-          <div className="max-w-[1120px] mx-auto px-6 py-3.5 flex items-center gap-3">
+          <div className="max-w-[1120px] mx-auto px-6 py-3.5 flex items-center gap-4">
             <img src="/logo.png" alt="Saving KC Homebuyers" className="h-8 w-auto" />
-            <span className="text-[11px] font-medium text-teal-600 bg-teal-50 px-2.5 py-0.5 rounded-full tracking-wide">Deal Page</span>
+            <h1 className="min-w-0 flex-1 truncate text-[22px] font-extrabold tracking-[-0.02em] text-[#111827]">
+              {locationLine}
+            </h1>
+            <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] ${statusMeta.className}`}>
+              {statusMeta.label}
+            </span>
           </div>
         </header>
 
@@ -203,10 +305,7 @@ export default async function DealPage({
             <div className="flex items-center gap-1.5 text-[14px] text-[#444]">
               <IconPin className="w-[18px] h-[18px] text-[#999]" />
               <span>
-                {dealPage.show_address !== false && lead.property_address
-                  ? `${lead.property_address}, ${[lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}`
-                  : `${[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}`
-                }
+                {locationLine}
               </span>
             </div>
           )}

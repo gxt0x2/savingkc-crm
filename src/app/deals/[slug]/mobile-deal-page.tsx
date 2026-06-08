@@ -50,6 +50,8 @@ type InspectionReport = {
   uploaded_at: string
 }
 
+type DealStatus = 'active' | 'pending' | 'closed'
+
 type MobileDealPageProps = {
   slug: string
   title: string
@@ -59,10 +61,16 @@ type MobileDealPageProps = {
   videos: string[]
   inspectionReports: InspectionReport[]
   askingPrice: number | null
+  dealStatus: DealStatus
 }
 
 const ACCENT_RED = '#ef4444'
 const ACTIVE_GREEN = '#16a34a'
+const DEAL_STATUS_META: Record<DealStatus, { label: string; bg: string; shadow: string }> = {
+  active: { label: 'Active', bg: ACTIVE_GREEN, shadow: 'rgba(22,163,74,0.28)' },
+  pending: { label: 'Pending', bg: '#f97316', shadow: 'rgba(249,115,22,0.30)' },
+  closed: { label: 'Closed', bg: '#111827', shadow: 'rgba(17,24,39,0.24)' },
+}
 const SHEET_COLLAPSED = 32.3
 const SHEET_SCROLL_LIFT = 42.5
 const SHEET_MID = 56
@@ -176,6 +184,7 @@ export default function MobileDealPage({
   videos,
   inspectionReports,
   askingPrice,
+  dealStatus,
 }: MobileDealPageProps) {
   const showAddress = dealPage.show_address !== false
   const location = addressLine(lead, showAddress)
@@ -200,6 +209,7 @@ export default function MobileDealPage({
   const overviewText = displayDescription(dealPage.description)
   const primaryInspectionReport = inspectionReports[0] ?? null
   const saveStorageKey = `skc_saved_deal_${slug}`
+  const statusMeta = DEAL_STATUS_META[dealStatus]
 
   useEffect(() => {
     if (photos.length <= INITIAL_PHOTO_RENDER_COUNT || renderedPhotoCount >= photos.length) return
@@ -421,7 +431,7 @@ export default function MobileDealPage({
         ) : (
           <div className="flex h-[42svh] items-end bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)] p-6 text-white">
             <div>
-              <p className="mb-2 inline-flex rounded-[14px] px-3 py-1.5 text-[13px] font-bold tracking-wide" style={{ backgroundColor: ACTIVE_GREEN }}>ACTIVE</p>
+              <p className="mb-2 inline-flex rounded-[14px] px-3 py-1.5 text-[13px] font-bold uppercase tracking-wide" style={{ backgroundColor: statusMeta.bg }}>{statusMeta.label}</p>
               <h1 className="max-w-[18rem] text-[30px] font-bold leading-tight">{title}</h1>
             </div>
           </div>
@@ -432,9 +442,12 @@ export default function MobileDealPage({
       <div className="pointer-events-none fixed inset-x-0 top-0 z-20 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top)+14px)]">
         <span
           className="pointer-events-auto inline-flex h-10 items-center rounded-[15px] px-3.5 text-[12px] font-extrabold uppercase tracking-[0.12em] text-white shadow-[0_8px_18px_rgba(22,163,74,0.28)]"
-          style={{ backgroundColor: ACTIVE_GREEN }}
+          style={{
+            backgroundColor: statusMeta.bg,
+            boxShadow: `0 8px 18px ${statusMeta.shadow}`,
+          }}
         >
-          Active
+          {statusMeta.label}
         </span>
         <div className="flex items-center gap-2.5">
           <button
