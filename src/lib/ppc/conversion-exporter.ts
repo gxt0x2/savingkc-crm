@@ -26,6 +26,7 @@ const DEFAULT_MAX_ATTEMPTS = 8
 const DEFAULT_GOOGLE_ADS_API_VERSION = 'v24'
 const DEFAULT_STAPE_REQUEST_PATH = '/data'
 const GOOGLE_ADS_CALL_CONVERSION_MIN_AGE_MS = 6 * 60 * 60 * 1000
+const PPC_CONVERSION_PROCESSING_LOCK_TTL_MS = 10 * 60 * 1000
 const OPENAI_ADS_CONVERSIONS_ENDPOINT = 'https://bzr.openai.com/v1/events'
 const OPENAI_ADS_MAX_EVENT_AGE_MS = 7 * 24 * 60 * 60 * 1000
 const OPENAI_ADS_MAX_FUTURE_SKEW_MS = 10 * 60 * 1000
@@ -226,6 +227,7 @@ class SupabaseOutboxStore implements OutboxStore {
   async claimRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]> {
     const candidates = await this.queryCandidateRows(limit, now)
     const claimed: PpcConversionOutboxExportRow[] = []
+    const claimableStatusFilter = ppcConversionClaimableStatusFilter(now)
 
     for (const row of candidates) {
       const { data, error } = await this.client
@@ -237,7 +239,7 @@ class SupabaseOutboxStore implements OutboxStore {
           attempts: Number(row.attempts ?? 0) + 1,
         })
         .eq('id', row.id)
-        .in('status', ['pending', 'failed'])
+        .or(claimableStatusFilter)
         .select('*')
         .maybeSingle()
 
@@ -298,13 +300,14 @@ class SupabaseOutboxStore implements OutboxStore {
       .from('ppc_conversion_outbox')
       .select('*')
       .or(`approved_for_google_ads.eq.true,event_name.in.(${GOOGLE_ADS_WORKER_CANDIDATE_EVENT_NAMES.join(',')})`)
-      .in('status', ['pending', 'failed'])
+      .or(ppcConversionClaimableStatusFilter(now))
       .lt('attempts', this.maxAttempts)
       .order('event_time', { ascending: true })
       .limit(Math.min(100, limit * 3))
 
     if (error) throw new Error(error.message)
     return ((data ?? []) as PpcConversionOutboxExportRow[])
+      .filter((row) => isPpcConversionOutboxClaimable(row, now))
       .filter((row) => isPpcConversionExportReady(row, now))
       .filter((row) => row.approved_for_google_ads || !approvalRequired(row))
       .slice(0, limit)
@@ -776,6 +779,30 @@ export function isPpcConversionExportReady(row: PpcConversionOutboxExportRow, no
   if (Number.isNaN(callStartDate.getTime())) return true
 
   return now.getTime() - callStartDate.getTime() >= GOOGLE_ADS_CALL_CONVERSION_MIN_AGE_MS
+}
+
+function ppcConversionProcessingStaleCutoff(now: Date): string {
+  return new Date(now.getTime() - PPC_CONVERSION_PROCESSING_LOCK_TTL_MS).toISOString()
+}
+
+export function isPpcConversionOutboxClaimable(row: PpcConversionOutboxExportRow, now = new Date()): boolean {
+  if (row.status === 'pending' || row.status === 'failed') return true
+  if (row.status !== 'processing') return false
+  if (!row.locked_at) return true
+
+  const lockedAt = Date.parse(row.locked_at)
+  if (!Number.isFinite(lockedAt)) return true
+
+  return lockedAt <= now.getTime() - PPC_CONVERSION_PROCESSING_LOCK_TTL_MS
+}
+
+export function ppcConversionClaimableStatusFilter(now = new Date()): string {
+  const staleCutoff = ppcConversionProcessingStaleCutoff(now)
+  return [
+    'status.in.(pending,failed)',
+    `and(status.eq.processing,locked_at.lt.${staleCutoff})`,
+    'and(status.eq.processing,locked_at.is.null)',
+  ].join(',')
 }
 
 export function buildGoogleAdsUploadPlan(
