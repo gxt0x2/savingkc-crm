@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   buildGoogleAdsUploadPlan,
   getPpcConversionExportConfigHealth,
+  isPpcConversionOutboxClaimable,
   isPpcConversionExportReady,
+  ppcConversionClaimableStatusFilter,
   runPpcConversionExport,
   type PpcConversionOutboxExportRow,
 } from './conversion-exporter'
@@ -401,6 +403,21 @@ describe('ppc conversion exporter', () => {
     expect(isPpcConversionExportReady(callRow, new Date('2026-06-08T18:13:47.740Z'))).toBe(false)
     expect(isPpcConversionExportReady(callRow, new Date('2026-06-08T18:13:48.740Z'))).toBe(true)
     expect(isPpcConversionExportReady(makeRow(), new Date('2026-06-08T12:19:00.000Z'))).toBe(true)
+  })
+
+  it('reclaims stale processing rows while leaving fresh locks alone', () => {
+    const now = new Date('2026-06-08T18:20:00.000Z')
+
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'pending' }), now)).toBe(true)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'failed' }), now)).toBe(true)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'sent' }), now)).toBe(false)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'processing', locked_at: '2026-06-08T18:15:00.000Z' }), now)).toBe(false)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'processing', locked_at: '2026-06-08T18:10:00.000Z' }), now)).toBe(true)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'processing', locked_at: null }), now)).toBe(true)
+
+    expect(ppcConversionClaimableStatusFilter(now)).toBe(
+      'status.in.(pending,failed),and(status.eq.processing,locked_at.lt.2026-06-08T18:10:00.000Z),and(status.eq.processing,locked_at.is.null)',
+    )
   })
 
   it('does not mutate rows in dry-run mode', async () => {
