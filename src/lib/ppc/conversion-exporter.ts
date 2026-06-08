@@ -227,10 +227,9 @@ class SupabaseOutboxStore implements OutboxStore {
   async claimRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]> {
     const candidates = await this.queryCandidateRows(limit, now)
     const claimed: PpcConversionOutboxExportRow[] = []
-    const claimableStatusFilter = ppcConversionClaimableStatusFilter(now)
 
     for (const row of candidates) {
-      const { data, error } = await this.client
+      let query = this.client
         .from('ppc_conversion_outbox')
         .update({
           status: 'processing',
@@ -239,9 +238,15 @@ class SupabaseOutboxStore implements OutboxStore {
           attempts: Number(row.attempts ?? 0) + 1,
         })
         .eq('id', row.id)
-        .or(claimableStatusFilter)
-        .select('*')
-        .maybeSingle()
+
+      if (row.status === 'processing') {
+        query = query.eq('status', 'processing')
+        query = row.locked_at ? query.eq('locked_at', row.locked_at) : query.is('locked_at', null)
+      } else {
+        query = query.in('status', ['pending', 'failed'])
+      }
+
+      const { data, error } = await query.select('*').maybeSingle()
 
       if (error) {
         console.error('[ppc/conversion-exporter] claim failed', error)
