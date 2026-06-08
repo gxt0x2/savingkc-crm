@@ -400,8 +400,8 @@ describe('ppc conversion exporter', () => {
       },
     })
 
-    expect(isPpcConversionExportReady(callRow, new Date('2026-06-08T18:13:47.740Z'))).toBe(false)
-    expect(isPpcConversionExportReady(callRow, new Date('2026-06-08T18:13:48.740Z'))).toBe(true)
+    expect(isPpcConversionExportReady(callRow, new Date('2026-06-09T00:13:47.740Z'))).toBe(false)
+    expect(isPpcConversionExportReady(callRow, new Date('2026-06-09T00:13:48.740Z'))).toBe(true)
     expect(isPpcConversionExportReady(makeRow(), new Date('2026-06-08T12:19:00.000Z'))).toBe(true)
   })
 
