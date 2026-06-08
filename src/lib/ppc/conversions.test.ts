@@ -54,6 +54,28 @@ describe('ppc browser tracking', () => {
     })
   })
 
+  it('keeps GTM enhanced-conversion identifiers pre-hashed on final submit', () => {
+    const event = fireConversion('lead_submitted', {
+      form_step: 4,
+      form_status: 'submitted',
+      form_submitted: true,
+      leadsUserData: {
+        sha256_email_address: 'a'.repeat(64),
+        sha256_phone_number: 'b'.repeat(64),
+      },
+    })
+
+    expect(event).toMatchObject({
+      event: 'lead_submitted',
+      leadsUserData: {
+        sha256_email_address: 'a'.repeat(64),
+        sha256_phone_number: 'b'.repeat(64),
+      },
+    })
+    expect(event).not.toHaveProperty('email')
+    expect(event).not.toHaveProperty('phone')
+  })
+
   it('mirrors OpenAI Ads standard conversion events with stable dedupe ids', () => {
     const oaiq = vi.fn()
     vi.stubGlobal('window', { dataLayer: [], oaiq })
