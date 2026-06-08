@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -16,6 +17,10 @@ vi.mock('@/lib/supabase-lazy', () => ({
 }))
 
 import { queuePpcAppointmentBookedConversion } from './appointment-booked-conversion'
+
+function sha256Hex(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
 
 function mockPpcLeadContext() {
   const userIdentifiers = [
@@ -148,6 +153,104 @@ describe('queuePpcAppointmentBookedConversion', () => {
         assigned_to: 'casey',
         approval_required: false,
         user_identifiers: userIdentifiers,
+      }),
+    }))
+  })
+
+  it('uses lead email/phone identifiers for appointment exports when prior submit identifiers are missing', async () => {
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'leads') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  id: 'lead-call-1',
+                  source: 'google_ads_phone',
+                  station: 'appointment_set',
+                  phone: '+18165551212',
+                  email: 'SELLER@EXAMPLE.COM',
+                },
+                error: null,
+              }),
+            }),
+          }),
+        }
+      }
+
+      if (table === 'manifests') {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: () => ({
+                limit: () => ({
+                  maybeSingle: async () => ({
+                    data: {
+                      id: 'manifest-call-1',
+                      manifest: {
+                        acquisition: {
+                          source: 'google_ads_phone',
+                          channel: 'google-ads',
+                          attribution: {
+                            traffic_source: 'google_ads',
+                            campaign: 'Search 2026',
+                          },
+                        },
+                      },
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }
+      }
+
+      if (table === 'ppc_conversion_outbox') {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: () => ({
+                limit: async () => ({
+                  data: [],
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        }
+      }
+
+      throw new Error(`Unexpected table ${table}`)
+    })
+
+    mocks.enqueuePpcConversion.mockResolvedValue({ queued: true, row: {} })
+
+    const result = await queuePpcAppointmentBookedConversion({
+      leadId: 'lead-call-1',
+      appointmentId: 'appointment-call-1',
+      source: 'manual_appointment',
+    })
+
+    expect(result).toEqual({ queued: true, reason: 'queued' })
+    expect(mocks.enqueuePpcConversion).toHaveBeenCalledWith(expect.objectContaining({
+      eventName: 'appointment_booked',
+      attribution: expect.objectContaining({
+        traffic_source: 'google_ads',
+        campaign: 'Search 2026',
+      }),
+      payload: expect.objectContaining({
+        user_identifiers: [
+          {
+            userIdentifierSource: 'FIRST_PARTY',
+            hashedEmail: sha256Hex('seller@example.com'),
+          },
+          {
+            userIdentifierSource: 'FIRST_PARTY',
+            hashedPhoneNumber: sha256Hex('+18165551212'),
+          },
+        ],
       }),
     }))
   })

@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase-lazy'
 import { isKnownPpcCampaignName } from '@/lib/ppc/campaigns'
-import { readUserIdentifiers, type GoogleAdsUserIdentifier } from '@/lib/ppc/enhanced-conversions'
+import { buildUserIdentifiers, readUserIdentifiers, type GoogleAdsUserIdentifier } from '@/lib/ppc/enhanced-conversions'
 
 const PPC_LEAD_SOURCES = new Set(['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'paid-search'])
 
@@ -8,6 +8,8 @@ type LeadRow = {
   id: string
   source: string | null
   station: string | null
+  phone: string | null
+  email: string | null
 }
 
 type ManifestRow = {
@@ -90,7 +92,7 @@ export async function loadPpcLeadConversionContext(leadId: string): Promise<PpcL
   const [{ data: lead, error: leadError }, { data: manifest }, { data: outboxRows }] = await Promise.all([
     supabase
       .from('leads')
-      .select('id, source, station')
+      .select('id, source, station, phone, email')
       .eq('id', leadId)
       .maybeSingle(),
     supabase
@@ -117,6 +119,12 @@ export async function loadPpcLeadConversionContext(leadId: string): Promise<PpcL
   const priorUserIdentifiers = priorOutboxRows
     ?.map((row) => readUserIdentifiers(row.payload))
     .find((identifiers) => identifiers.length > 0) ?? []
+  const leadUserIdentifiers = priorUserIdentifiers.length > 0
+    ? priorUserIdentifiers
+    : buildUserIdentifiers({
+      email: text((lead as LeadRow).email),
+      phone: text((lead as LeadRow).phone),
+    })
   const attribution = cleanRecord({
     ...outboxAttribution,
     ...manifestAttribution,
@@ -136,6 +144,6 @@ export async function loadPpcLeadConversionContext(leadId: string): Promise<PpcL
     lead: lead as LeadRow,
     manifestId: (manifest as ManifestRow | null)?.id ?? null,
     attribution,
-    userIdentifiers: priorUserIdentifiers,
+    userIdentifiers: leadUserIdentifiers,
   }
 }
