@@ -25,6 +25,7 @@ const DEFAULT_BATCH_SIZE = 25
 const DEFAULT_MAX_ATTEMPTS = 8
 const DEFAULT_GOOGLE_ADS_API_VERSION = 'v24'
 const DEFAULT_STAPE_REQUEST_PATH = '/data'
+const GOOGLE_ADS_CALL_CONVERSION_MIN_AGE_MS = 6 * 60 * 60 * 1000
 const OPENAI_ADS_CONVERSIONS_ENDPOINT = 'https://bzr.openai.com/v1/events'
 const OPENAI_ADS_MAX_EVENT_AGE_MS = 7 * 24 * 60 * 60 * 1000
 const OPENAI_ADS_MAX_FUTURE_SKEW_MS = 10 * 60 * 1000
@@ -218,12 +219,12 @@ class SupabaseOutboxStore implements OutboxStore {
     private readonly maxAttempts: number,
   ) {}
 
-  async listRows(limit: number): Promise<PpcConversionOutboxExportRow[]> {
-    return this.queryCandidateRows(limit)
+  async listRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]> {
+    return this.queryCandidateRows(limit, now)
   }
 
   async claimRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]> {
-    const candidates = await this.queryCandidateRows(limit)
+    const candidates = await this.queryCandidateRows(limit, now)
     const claimed: PpcConversionOutboxExportRow[] = []
 
     for (const row of candidates) {
@@ -292,7 +293,7 @@ class SupabaseOutboxStore implements OutboxStore {
     })
   }
 
-  private async queryCandidateRows(limit: number): Promise<PpcConversionOutboxExportRow[]> {
+  private async queryCandidateRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]> {
     const { data, error } = await this.client
       .from('ppc_conversion_outbox')
       .select('*')
@@ -304,6 +305,7 @@ class SupabaseOutboxStore implements OutboxStore {
 
     if (error) throw new Error(error.message)
     return ((data ?? []) as PpcConversionOutboxExportRow[])
+      .filter((row) => isPpcConversionExportReady(row, now))
       .filter((row) => row.approved_for_google_ads || !approvalRequired(row))
       .slice(0, limit)
   }
@@ -765,6 +767,15 @@ function inferCallStartDate(row: PpcConversionOutboxExportRow): Date {
   const eventDate = new Date(row.event_time)
   if (!Number.isFinite(duration) || duration <= 0 || Number.isNaN(eventDate.getTime())) return eventDate
   return new Date(eventDate.getTime() - duration * 1000)
+}
+
+export function isPpcConversionExportReady(row: PpcConversionOutboxExportRow, now = new Date()): boolean {
+  if (row.event_category !== 'call') return true
+
+  const callStartDate = inferCallStartDate(row)
+  if (Number.isNaN(callStartDate.getTime())) return true
+
+  return now.getTime() - callStartDate.getTime() >= GOOGLE_ADS_CALL_CONVERSION_MIN_AGE_MS
 }
 
 export function buildGoogleAdsUploadPlan(

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   buildGoogleAdsUploadPlan,
   getPpcConversionExportConfigHealth,
+  isPpcConversionExportReady,
   runPpcConversionExport,
   type PpcConversionOutboxExportRow,
 } from './conversion-exporter'
@@ -383,6 +384,23 @@ describe('ppc conversion exporter', () => {
       conversionValue: 1,
       currencyCode: 'USD',
     })
+  })
+
+  it('defers call conversion exports until Google Ads can accept them', () => {
+    const callRow = makeRow({
+      event_name: 'call_connected_5m',
+      event_category: 'call',
+      event_time: '2026-06-08T12:18:48.740Z',
+      payload: {
+        call_start_date_time: '2026-06-08T12:13:48.740Z',
+        from: '(816) 555-1212',
+        duration: 300,
+      },
+    })
+
+    expect(isPpcConversionExportReady(callRow, new Date('2026-06-08T18:13:47.740Z'))).toBe(false)
+    expect(isPpcConversionExportReady(callRow, new Date('2026-06-08T18:13:48.740Z'))).toBe(true)
+    expect(isPpcConversionExportReady(makeRow(), new Date('2026-06-08T12:19:00.000Z'))).toBe(true)
   })
 
   it('does not mutate rows in dry-run mode', async () => {
