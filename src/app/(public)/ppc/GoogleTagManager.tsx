@@ -1,7 +1,7 @@
 import Script from 'next/script'
 
-const GTM_ID = process.env.NEXT_PUBLIC_GTM_ID ?? 'GTM-MM68JH2'
-const GTM_ORIGIN = (process.env.NEXT_PUBLIC_GTM_ORIGIN ?? 'https://gtm.savingkc.com').replace(/\/+$/, '')
+const GTM_ID = process.env.NEXT_PUBLIC_GTM_ID ?? 'GTM-KNLVZFX2'
+const GTM_ORIGIN = (process.env.NEXT_PUBLIC_GTM_ORIGIN ?? 'https://www.googletagmanager.com').replace(/\/+$/, '')
 
 export function GoogleTagManager() {
   if (!GTM_ID) return null
