@@ -205,7 +205,6 @@ export default function OfferForm({
             cta_label: triggerLabel,
             destination: 'offer_modal',
             asking_price_visible: Boolean(askingPrice),
-            arv_visible: Boolean(arv),
           })
         }}
         className={triggerClassName ?? defaultTriggerClassName}
