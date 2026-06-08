@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { captureAttribution, getAttribution } from '@/lib/ppc/attribution'
 import { fireConversion, fireFormError, firePpcTrackingEvent } from '@/lib/ppc/conversions'
 import { getPpcSessionContext } from '@/lib/ppc/tracking-client'
+import { buildGoogleAdsLeadsUserData } from '@/lib/ppc/browser-enhanced-conversions'
 import { AddressAutocomplete } from './AddressAutocomplete'
 
 type Situation =
@@ -670,6 +671,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
       const json = await r.json()
       if (!r.ok || !json?.ok) throw new Error(json?.error ?? 'Submit failed')
       if (!json.conversionSuppressed && !json.notificationsSkipped && !json.test) {
+        const leadsUserData = await buildGoogleAdsLeadsUserData({
+          email: state.email,
+          phone: state.phone,
+        })
+
         fireConversion('lead_submitted', {
           event_id: typeof json.conversionEventId === 'string' ? json.conversionEventId : undefined,
           form_step: finalStep,
@@ -684,6 +690,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
           timeline: state.timeline || undefined,
           condition: state.condition || undefined,
           auctionStatus: state.auctionStatus || undefined,
+          leadsUserData: leadsUserData ?? undefined,
         })
       }
       setLeadId(json.leadId ?? null)
