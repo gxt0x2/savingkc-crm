@@ -103,7 +103,7 @@ export async function GET(
           baths_half: lead.baths_half,
           sqft: lead.sqft,
           arv: lead.arv,
-          asking_price: lead.offer_amount,
+          asking_price: dealPage.asking_price ?? null,
           lot_size: lead.lot_size,
           year_built: lead.year_built,
         }

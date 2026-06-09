@@ -23,6 +23,7 @@ const VALID_EVENTS = [
   'page_view',
   'share_click',
   'share_visit',
+  'save_toggle',
   'offer_modal_open',
   'offer_submit_started',
   'offer_submit',

@@ -96,6 +96,10 @@ function isPublicDealApi(request: NextRequest): boolean {
 
   if (parts.length === 4) {
     const action = parts[3]
+    if (action === 'test-inspection-report') {
+      return request.method === 'GET' || request.method === 'OPTIONS'
+    }
+
     return action === 'events' || action === 'offer' || action === 'session'
   }
 

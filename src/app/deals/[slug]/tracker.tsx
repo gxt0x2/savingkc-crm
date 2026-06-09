@@ -105,12 +105,12 @@ export function DealTracker({ slug }: { slug: string }) {
 
   useEffect(() => {
     const startedAt = Date.now()
-    startedAtRef.current = startedAt
-    lastActivityRef.current = startedAt
     const session_id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
     const visitor_id = getOrCreateId('skc_visitor_id', localStorage)
     sessionIdRef.current = session_id
     visitorIdRef.current = visitor_id
+    startedAtRef.current = startedAt
+    lastActivityRef.current = startedAt
 
     const params = new URLSearchParams(window.location.search)
     const device = detectDevice()
@@ -216,15 +216,27 @@ export function DealTracker({ slug }: { slug: string }) {
     window.addEventListener('keydown', markActive, { passive: true })
 
     // ── Scroll tracking + heat map prep ──
-    const handleScroll = () => {
+    const windowScrollPct = () => {
       const doc = document.documentElement
       const scrollTop = doc.scrollTop || document.body.scrollTop
       const scrollHeight = doc.scrollHeight - doc.clientHeight
-      const pct = scrollHeight > 0 ? Math.round((scrollTop / scrollHeight) * 100) : 0
+      return scrollHeight > 0 ? Math.round((scrollTop / scrollHeight) * 100) : 0
+    }
+    const elementScrollPct = (element: HTMLElement) => {
+      const scrollHeight = element.scrollHeight - element.clientHeight
+      return scrollHeight > 0 ? Math.round((element.scrollTop / scrollHeight) * 100) : 0
+    }
+    const recordScrollPct = (pct: number) => {
       if (pct > maxScrollRef.current) maxScrollRef.current = pct
       markActive()
     }
+    const handleScroll = () => recordScrollPct(windowScrollPct())
+    const handleTrackedContainerScroll = (event: Event) => {
+      recordScrollPct(elementScrollPct(event.currentTarget as HTMLElement))
+    }
     window.addEventListener('scroll', handleScroll, { passive: true })
+    const trackedScrollContainers = Array.from(document.querySelectorAll<HTMLElement>('[data-track-scroll-container]'))
+    trackedScrollContainers.forEach((element) => element.addEventListener('scroll', handleTrackedContainerScroll, { passive: true }))
 
     // ── Click tracking with heat map coords ──
     const handleClick = (e: MouseEvent) => {
@@ -235,8 +247,8 @@ export function DealTracker({ slug }: { slug: string }) {
       const text = (target?.textContent || '').slice(0, 80).trim()
       const x_pct = (e.clientX / window.innerWidth) * 100
       const y_pct = (e.clientY / window.innerHeight) * 100
-      const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight
-      const scroll_pct = scrollHeight > 0 ? Math.round((window.scrollY / scrollHeight) * 100) : 0
+      const scrollContainer = target?.closest?.('[data-track-scroll-container]') as HTMLElement | null
+      const scroll_pct = scrollContainer ? elementScrollPct(scrollContainer) : windowScrollPct()
 
       trackEventV2(slug, session_id, 'click', {
         metadata: {
@@ -315,6 +327,7 @@ export function DealTracker({ slug }: { slug: string }) {
       window.removeEventListener('touchstart', markActive)
       window.removeEventListener('keydown', markActive)
       window.removeEventListener('scroll', handleScroll)
+      trackedScrollContainers.forEach((element) => element.removeEventListener('scroll', handleTrackedContainerScroll))
       document.removeEventListener('click', handleClick)
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('pagehide', endSession)

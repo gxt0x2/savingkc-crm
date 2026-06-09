@@ -109,7 +109,6 @@ interface FullLead {
   year_built: number | null
   arv: number | null
   offer_amount: number | null
-  asking_price: number | null
   repair_estimate: number | null
   assignment_fee: number | null
   garage_spaces: number | null
@@ -130,7 +129,7 @@ function buildAutoTitle(d: FullLead): string {
 
   // Calculate discount off ARV for headline
   const arv = d.arv || d.manifest?.financials?.estimated_arv
-  const sellPrice = d.asking_price || (arv ? Math.round(arv * 0.75) : null)
+  const sellPrice = arv ? Math.round(arv * 0.75) : null
   let discount = ''
   if (arv && sellPrice && sellPrice < arv) {
     const pct = Math.round(((arv - sellPrice) / arv) * 100)
@@ -367,8 +366,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
       }
 
       // Step 3: Deal Price
-      if (data.asking_price) setAskingPrice(String(data.asking_price))
-      else if (arv) setAskingPrice(String(Math.round(arv * 0.75)))
+      if (arv) setAskingPrice(String(Math.round(arv * 0.75)))
       if (data.offer_amount) setPurchasePrice(String(data.offer_amount))
       else if (m?.financials?.our_max_offer) setPurchasePrice(String(m.financials.our_max_offer))
       const pp = data.offer_amount || m?.financials?.our_max_offer
@@ -452,7 +450,6 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           lead_updates: {
             arv: arvEstimate ? Number(arvEstimate) : undefined,
             offer_amount: purchasePrice ? Number(purchasePrice) : undefined,
-            asking_price: askingPrice ? Number(askingPrice) : undefined,
             repair_estimate: repairEstimateHigh ? Number(repairEstimateHigh) : undefined,
             beds: bedrooms ? Number(bedrooms) : undefined,
             baths_full: fullBathrooms ? Number(fullBathrooms) : undefined,
