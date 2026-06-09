@@ -365,7 +365,15 @@ export default async function DealPage({
 
       <div className="hidden md:block">
       <main className="max-w-[1120px] mx-auto px-6 py-8">
-        <div className="mb-4 flex justify-end">
+        <div className="mb-4 flex items-start justify-between gap-5">
+          <div className="min-w-0">
+            <div className="flex items-start gap-2.5">
+              <IconPin className="mt-1.5 h-5 w-5 shrink-0 text-[#666]" />
+              <h1 className="text-[28px] font-black leading-tight tracking-normal text-[#111]">
+                {locationLine}
+              </h1>
+            </div>
+          </div>
           <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] ${statusMeta.className}`}>
             {statusMeta.label}
           </span>
