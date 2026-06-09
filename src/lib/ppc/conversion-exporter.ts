@@ -1160,6 +1160,36 @@ async function uploadGoogleAdsConversion(
   }
 }
 
+function isUnmatchedGoogleAdsCallUpload(row: PpcConversionOutboxExportRow, detail: string | undefined): boolean {
+  if (row.event_category !== 'call') return false
+
+  const normalized = (detail ?? '').toLowerCase()
+  if (!normalized) return false
+
+  return (
+    normalized.includes('caller_id') &&
+    (
+      normalized.includes("can't be found") ||
+      normalized.includes('cannot be found') ||
+      normalized.includes("couldn't be found") ||
+      normalized.includes('could not be found')
+    )
+  )
+}
+
+export function normalizeGoogleAdsDestinationResult(
+  row: PpcConversionOutboxExportRow,
+  result: DestinationResult,
+): DestinationResult {
+  if (result.status !== 'failed' || !isUnmatchedGoogleAdsCallUpload(row, result.detail)) return result
+
+  return {
+    ...result,
+    status: 'skipped',
+    detail: 'Google Ads call upload skipped: caller_id was not matchable to a Google Ads call record. Keep CRM/Stape/OpenAI call attribution; use Google forwarding/DNI for Google call-only optimization.',
+  }
+}
+
 async function sendStapeEvent(
   row: PpcConversionOutboxExportRow,
   config: StapeConfig,
@@ -1456,13 +1486,16 @@ export async function runPpcConversionExport(
           tokenPromise = tokenPromise ?? getGoogleAdsAccessToken(google.config, fetchFn)
           const accessToken = await tokenPromise
           destinations.push(
-            await uploadGoogleAdsConversion(
+            normalizeGoogleAdsDestinationResult(
               row,
-              plan,
-              google.config,
-              accessToken,
-              fetchFn,
-              validateOnly,
+              await uploadGoogleAdsConversion(
+                row,
+                plan,
+                google.config,
+                accessToken,
+                fetchFn,
+                validateOnly,
+              ),
             ),
           )
         }
