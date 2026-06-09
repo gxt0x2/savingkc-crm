@@ -49,7 +49,7 @@ const US_STATES = [
   'Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia',
   'Wisconsin','Wyoming',
 ]
-const STEP_LABELS = ['Lead', 'Description', 'Value', 'Price', 'Info', 'Address', 'Terms', 'Photos']
+const STEP_LABELS = ['Lead', 'Description', 'Value', 'Price', 'Info', 'Address', 'Terms', 'Media']
 const TOTAL_STEPS = STEP_LABELS.length
 
 // Shared input class
@@ -278,15 +278,17 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [contractNotes, setContractNotes] = useState('')
   const [assignmentFee, setAssignmentFee] = useState('')
 
-  // Step 7: Photos
+  // Step 7: Media
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
+  const [pendingReports, setPendingReports] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [photoUrls, setPhotoUrls] = useState('')
   const [pendingPhotoUrls, setPendingPhotoUrls] = useState<string[]>([])
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
+  const reportInputRef = useRef<HTMLInputElement | null>(null)
 
   // Computed profit potential
   const profitPotential = (askingPrice && purchasePrice)
@@ -307,6 +309,16 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   function removePhoto(idx: number) {
     setPendingPhotos(prev => prev.filter((_, i) => i !== idx))
     setPhotoPreviews(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  function handleReportFiles(files: FileList | null) {
+    if (!files) return
+    const reports = Array.from(files).filter(f => f.type === 'application/pdf')
+    setPendingReports(prev => [...prev, ...reports])
+  }
+
+  function removeReport(idx: number) {
+    setPendingReports(prev => prev.filter((_, i) => i !== idx))
   }
 
   function debouncedSearchLeads(q: string) {
@@ -482,6 +494,21 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           if (!uploadRes.ok) {
             const uploadErr = await uploadRes.json().catch(() => ({}))
             throw new Error(uploadErr.error || `Failed to upload ${photo.name}`)
+          }
+        }
+      }
+
+      // Upload inspection report PDFs
+      if (deal?.id && pendingReports.length > 0) {
+        for (const report of pendingReports) {
+          const fd = new FormData()
+          fd.append('file', report)
+          fd.append('deal_page_id', deal.id)
+          fd.append('type', 'inspection_report')
+          const uploadRes = await fetch('/api/deals/upload', { method: 'POST', body: fd })
+          if (!uploadRes.ok) {
+            const uploadErr = await uploadRes.json().catch(() => ({}))
+            throw new Error(uploadErr.error || `Failed to upload ${report.name}`)
           }
         }
       }
@@ -905,12 +932,12 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     setPendingPhotoUrls(prev => prev.filter((_, i) => i !== idx))
   }
 
-  function renderStep7Photos() {
+  function renderStep7Media() {
     const totalPhotos = pendingPhotos.length + pendingPhotoUrls.length
     return (
       <>
-        <h3 className="text-xl font-bold text-slate-900 text-center">Photos</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">Add property photos to attract buyers.</p>
+        <h3 className="text-xl font-bold text-slate-900 text-center">Photos & Inspection Report</h3>
+        <p className="text-sm text-slate-500 text-center mb-2">Add the media buyers need before the deal page goes live.</p>
 
         {/* File upload */}
         <div
@@ -934,6 +961,43 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
             className="hidden"
             onChange={e => handlePhotoFiles(e.target.files)}
           />
+        </div>
+
+        {/* Inspection report upload */}
+        <div className="border border-orange-200 bg-orange-50 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <Icon name="warning" size="text-xl" className="text-orange-500 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-slate-900">Inspection Report</p>
+              <p className="text-xs text-slate-600 mt-0.5">Upload a PDF so buyers can view it from the public deal page.</p>
+              {pendingReports.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {pendingReports.map((report, i) => (
+                    <div key={`${report.name}-${i}`} className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-xs">
+                      <Icon name="picture_as_pdf" size="text-sm" className="text-orange-500 flex-shrink-0" />
+                      <span className="flex-1 truncate text-slate-700">{report.name}</span>
+                      <button type="button" onClick={() => removeReport(i)} className="text-slate-400 hover:text-red-500 flex-shrink-0">&times;</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => reportInputRef.current?.click()}
+                className="mt-3 text-xs font-bold text-orange-700 hover:text-orange-800"
+              >
+                + Add Inspection Report
+              </button>
+              <input
+                ref={reportInputRef}
+                type="file"
+                multiple
+                accept="application/pdf"
+                className="hidden"
+                onChange={e => handleReportFiles(e.target.files)}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Local file previews */}
@@ -997,6 +1061,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
 
         <p className="text-xs text-slate-400 text-center">
           {totalPhotos} photo{totalPhotos !== 1 ? 's' : ''} ready
+          {pendingReports.length > 0 && <span> · {pendingReports.length} report{pendingReports.length !== 1 ? 's' : ''} ready</span>}
           {pendingPhotoUrls.length > 0 && <span> ({pendingPhotoUrls.length} will be imported & converted on create)</span>}
         </p>
       </>
@@ -1006,7 +1071,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-  const stepRenderers = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4, renderStep5, renderStep6Terms, renderStep7Photos]
+  const stepRenderers = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4, renderStep5, renderStep6Terms, renderStep7Media]
   const isLastStep = step === TOTAL_STEPS - 1
 
   return (
