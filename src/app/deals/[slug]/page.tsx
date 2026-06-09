@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
@@ -130,6 +131,87 @@ function buildLocationLine(
     return `${lead.property_address}${cityState ? `, ${cityState}` : ''}${lead.zip ? ` ${lead.zip}` : ''}`
   }
   return `${[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}` || 'Kansas City area'
+}
+
+function buildShareTitle(
+  lead: { property_address: string | null } | null,
+  fallbackTitle: string | null,
+  showAddress: boolean
+): string {
+  const label = showAddress && lead?.property_address ? lead.property_address : fallbackTitle || 'Property'
+  return `${label} | Saving KC Homebuyers`
+}
+
+function buildShareDescription(
+  lead: { property_address: string | null; city: string | null; state: string | null; zip: string | null; county: string | null } | null,
+  showAddress: boolean,
+  askingPrice: number | null | undefined
+): string {
+  const location = buildLocationLine(lead, showAddress)
+  return askingPrice != null ? `${fmt(askingPrice)} | ${location}` : location
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}): Promise<Metadata> {
+  const { slug } = await params
+  const db = supabaseAdmin()
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+
+  const { data: dealPage } = await db
+    .from('deal_pages')
+    .select('lead_id, title, photos, asking_price, show_address, is_active')
+    .eq('slug', slug)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (!dealPage) {
+    return {
+      title: 'Property | Saving KC Homebuyers',
+      description: 'Property opportunity from Saving KC Homebuyers',
+    }
+  }
+
+  const { data: lead } = await db
+    .from('leads')
+    .select('property_address, city, state, zip, county')
+    .eq('id', dealPage.lead_id)
+    .maybeSingle()
+
+  const showAddress = dealPage.show_address !== false
+  const title = buildShareTitle(lead, dealPage.title, showAddress)
+  const description = buildShareDescription(lead, showAddress, dealPage.asking_price)
+  const image = Array.isArray(dealPage.photos) ? dealPage.photos[0] : null
+  const url = `${appUrl.replace(/\/$/, '')}/deals/${slug}`
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description,
+      url,
+      siteName: 'Saving KC Homebuyers',
+      type: 'website',
+      images: image
+        ? [
+            {
+              url: image,
+              alt: title,
+            },
+          ]
+        : undefined,
+    },
+    twitter: {
+      card: image ? 'summary_large_image' : 'summary',
+      title,
+      description,
+      images: image ? [image] : undefined,
+    },
+  }
 }
 
 function deriveDealStatus({

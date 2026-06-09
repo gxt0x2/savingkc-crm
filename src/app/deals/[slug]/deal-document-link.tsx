@@ -15,6 +15,8 @@ function documentId(name: string, index: number): string {
 }
 
 export function DealDocumentLink({ slug, name, url, index }: DealDocumentLinkProps) {
+  const displayName = 'Inspection Report'
+
   return (
     <a
       href={url}
@@ -25,9 +27,10 @@ export function DealDocumentLink({ slug, name, url, index }: DealDocumentLinkPro
         trackEvent(slug, 'deal_document_open', {
           section: 'documents',
           cta_id: documentId(name, index),
-          cta_label: name,
+          cta_label: displayName,
           document_id: documentId(name, index),
           document_name: name,
+          document_label: displayName,
           destination: 'document',
           position: index + 1,
         })
@@ -38,7 +41,7 @@ export function DealDocumentLink({ slug, name, url, index }: DealDocumentLinkPro
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4.25M12 16.25h.01" />
       </svg>
       <div className="flex-1 min-w-0">
-        <p className="text-[14px] font-semibold text-[#1a1a1a] truncate">{name}</p>
+        <p className="text-[14px] font-semibold text-[#1a1a1a] truncate">{displayName}</p>
       </div>
       <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.08em] text-[#ea580c]">View Report</span>
     </a>
