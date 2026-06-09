@@ -45,10 +45,26 @@ export async function GET(
     const { data: lead } = await db
       .from('leads')
       .select(
-        'property_address, city, state, zip, county, property_type, beds, baths_full, baths_half, sqft, arv, offer_amount, lot_size, year_built'
+        'property_address, city, state, zip, county, property_type, beds, baths_full, baths_half, sqft, offer_amount, lot_size, year_built'
       )
       .eq('id', dealPage.lead_id)
       .single()
+
+    const { data: leadPhotoDocs } = await db
+      .from('documents')
+      .select('id, mime_type')
+      .eq('entity_type', 'lead')
+      .eq('entity_id', dealPage.lead_id)
+      .eq('doc_type', 'photos')
+      .order('uploaded_at', { ascending: false })
+
+    const fallbackPhotos = (leadPhotoDocs || [])
+      .filter((doc) => typeof doc.id === 'string' && String(doc.mime_type || '').startsWith('image/'))
+      .map((doc) => `/api/documents/${doc.id}/download?preview=1`)
+
+    const photos = Array.isArray(dealPage.photos) && dealPage.photos.length > 0
+      ? dealPage.photos
+      : fallbackPhotos
 
     // Increment view count (fire-and-forget)
     db.from('deal_pages')
@@ -64,12 +80,12 @@ export async function GET(
       slug: dealPage.slug,
       title: dealPage.title,
       description: dealPage.description,
-      photos: dealPage.photos,
+      photos,
       videos: dealPage.videos || [],
       inspection_reports: dealPage.inspection_reports || [],
       is_active: dealPage.is_active,
       show_address: dealPage.show_address,
-      show_arv: dealPage.show_arv,
+      show_arv: false,
       show_asking_price: dealPage.show_asking_price,
       show_assignment_fee: dealPage.show_assignment_fee,
       accept_offers: dealPage.accept_offers,
@@ -102,7 +118,6 @@ export async function GET(
           baths_full: lead.baths_full,
           baths_half: lead.baths_half,
           sqft: lead.sqft,
-          arv: lead.arv,
           asking_price: dealPage.asking_price ?? null,
           lot_size: lead.lot_size,
           year_built: lead.year_built,
