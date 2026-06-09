@@ -3,6 +3,7 @@ export type TwilioNumberPurpose =
   | 'business'
   | 'company'
   | 'cold_call'
+  | 'dispositions'
   | 'google_ads'
   | 'general'
 
@@ -18,11 +19,12 @@ export interface TwilioNumberConfig {
 
 export const GOOGLE_ADS_TWILIO_NUMBER = '+18166088808'
 export const GOOGLE_ADS_PROPERTY_TAX_TWILIO_NUMBER = '+18166086648'
+export const DISPOSITIONS_TWILIO_NUMBER = '+18166088858'
 
 export const TWILIO_NUMBERS = [
   { label: '(816) 307-7835 - Main', value: '+18163077835', purpose: 'main', conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 429-2900 - SKC Business', value: '+18164292900', purpose: 'business', conversationEligible: true, broadcastEligible: true, dialerEligible: true },
-  { label: '(816) 608-8858', value: '+18166088858', purpose: 'general', conversationEligible: true, broadcastEligible: true, dialerEligible: true },
+  { label: '(816) 608-8858 - Dispositions', value: DISPOSITIONS_TWILIO_NUMBER, purpose: 'dispositions', conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 608-8770', value: '+18166088770', purpose: 'general', conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 608-8808 - Google Ads: Search 2026', value: GOOGLE_ADS_TWILIO_NUMBER, purpose: 'google_ads', conversationEligible: false, broadcastEligible: false, dialerEligible: false, reservedFor: 'google_ads' },
   { label: '(816) 608-8552', value: '+18166088552', purpose: 'general', conversationEligible: true, broadcastEligible: true, dialerEligible: true },

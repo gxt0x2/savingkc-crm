@@ -13,6 +13,10 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function lotSizeSqftToAcres(sizeSqft: number): string {
+  return (Math.round((sizeSqft / 43560) * 100) / 100).toString()
+}
+
 function getDealPageUrl(slug: string): string {
   return `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://crm.savingkc.com'}/deals/${slug}`
 }
@@ -386,6 +390,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
 
       // Step 4: Deal Info
       if (data.property_type) setPropertyType(data.property_type)
+      else if (m?.property?.property_type) setPropertyType(m.property.property_type)
       if (data.beds) setBedrooms(String(data.beds))
       else if (m?.property?.bedrooms) setBedrooms(String(m.property.bedrooms))
       if (data.baths_full) setFullBathrooms(String(data.baths_full))
@@ -396,6 +401,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
       if (data.year_built) setYearBuilt(String(data.year_built))
       else if (m?.property?.year_built) setYearBuilt(String(m.property.year_built))
       if (data.lot_size) setLotSize(String(data.lot_size))
+      else if (m?.property?.lot_size_sqft) setLotSize(lotSizeSqftToAcres(m.property.lot_size_sqft))
       if (data.garage_spaces) setGarageSpaces(String(data.garage_spaces))
       if (data.basement_type) setBasementType(data.basement_type)
       if (data.stories) setStories(String(data.stories))
@@ -467,6 +473,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
             baths_full: fullBathrooms ? Number(fullBathrooms) : undefined,
             baths_half: halfBathrooms ? Number(halfBathrooms) : undefined,
             sqft: squareFootage ? Number(squareFootage) : undefined,
+            lot_size: lotSize ? Number(lotSize) : undefined,
             year_built: yearBuilt ? Number(yearBuilt) : undefined,
             property_type: propertyType || undefined,
             property_address: streetAddress || undefined,

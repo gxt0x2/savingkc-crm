@@ -94,6 +94,16 @@ function fmtNum(n: number | null | undefined): string {
   return n.toLocaleString('en-US')
 }
 
+function fmtLotSize(n: number | null | undefined): string {
+  if (n == null) return '-'
+  if (n >= 1000) {
+    const acres = n / 43560
+    return `${acres.toLocaleString('en-US', { maximumFractionDigits: 2 })} acres`
+  }
+  const formatted = n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return `${formatted} acre${n === 1 ? '' : 's'}`
+}
+
 function fmtDate(dateValue: string): string {
   const [year, month, day] = dateValue.split('T')[0].split('-').map(Number)
   if (year && month && day) {
@@ -542,7 +552,7 @@ export default function MobileDealPage({
             {lead?.property_type && <Info label="Type" value={lead.property_type} />}
             {dealPage.parking && <Info label="Parking" value={dealPage.parking} />}
             {lead?.year_built && <Info label="Built in" value={String(lead.year_built)} />}
-            {lead?.lot_size && <Info label="Lot size" value={String(lead.lot_size)} />}
+            {lead?.lot_size && <Info label="Lot size" value={fmtLotSize(lead.lot_size)} />}
             {dealPage.property_condition && <Info label="Condition" value={dealPage.property_condition} />}
             {repairEstimate !== '-' && <Info label="Repairs" value={repairEstimate} />}
           </section>

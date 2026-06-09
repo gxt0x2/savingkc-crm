@@ -22,6 +22,16 @@ function fmtNum(n: number | null | undefined): string {
   return n.toLocaleString('en-US')
 }
 
+function fmtLotSize(n: number | null | undefined): string {
+  if (n == null) return '—'
+  if (n >= 1000) {
+    const acres = n / 43560
+    return `${acres.toLocaleString('en-US', { maximumFractionDigits: 2 })} acres`
+  }
+  const formatted = n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return `${formatted} acre${n === 1 ? '' : 's'}`
+}
+
 function fmtDate(dateValue: string): string {
   const [year, month, day] = dateValue.split('T')[0].split('-').map(Number)
   if (year && month && day) {
@@ -338,7 +348,7 @@ export default async function DealPage({
     { label: 'Type', value: lead?.property_type || '—', icon: <IconHome className="w-[18px] h-[18px]" /> },
     { label: 'Parking', value: dealPage.parking || '—', icon: <IconCar className="w-[18px] h-[18px]" /> },
     { label: 'Built in', value: lead?.year_built ? String(lead.year_built) : '—', icon: <IconCalendar className="w-[18px] h-[18px]" /> },
-    { label: 'Lot size', value: lead?.lot_size ? String(lead.lot_size) : '—', icon: <IconExpand className="w-[18px] h-[18px]" /> },
+    { label: 'Lot size', value: fmtLotSize(lead?.lot_size), icon: <IconExpand className="w-[18px] h-[18px]" /> },
   ]
 
   const hasContractTerms = dealPage.contract_close_date || dealPage.earnest_money != null ||
@@ -616,6 +626,13 @@ export default async function DealPage({
                 <img src="/ernest-profile.png" alt="Ernest Dodson" className="w-14 h-14 rounded-full object-cover mb-3" />
                 <p className="text-[15px] font-semibold text-[#1a1a1a]">Ernest Dodson</p>
                 <p className="text-[13px] text-[#888] mt-0.5">Saving KC Homebuyers</p>
+                <p className="mt-1 text-[12px] font-bold uppercase tracking-[0.14em] text-[#16a34a]">Dispositions</p>
+                <a
+                  href="tel:+18166088858"
+                  className="mt-1 text-[15px] font-semibold text-[#1a1a1a] transition-colors hover:text-[#e32e2e]"
+                >
+                  816-608-8858
+                </a>
               </div>
               <InquiryModal propertyAddress={lead?.property_address || title} slug={slug} />
             </div>
