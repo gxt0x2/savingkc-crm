@@ -11,6 +11,7 @@ import {
   FUNNEL,
   type CallBreakdownRow,
   type CampaignRow,
+  type ExportHealth,
   type FunnelBreakdownRow,
   type FunnelRow,
   type KeywordRow,
@@ -172,6 +173,7 @@ type AdsCommandResponse = {
   negatives: NegativeKeywordRow[]
   funnel: FunnelRow[]
   callBreakdown: CallBreakdownRow[]
+  exportHealth: ExportHealth
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
@@ -1210,6 +1212,76 @@ function buildOutboxRows(outboxRows: PpcOutboxSummaryRow[], leadRows: PpcLeadSum
     .slice(0, 50)
 }
 
+function outboxExportPayload(row: PpcOutboxSummaryRow): Record<string, unknown> {
+  return record(record(row.payload).export)
+}
+
+function outboxRowTime(row: PpcOutboxSummaryRow): string | null {
+  return row.event_time || row.created_at || null
+}
+
+function outboxExportTime(row: PpcOutboxSummaryRow): string | null {
+  const exportPayload = outboxExportPayload(row)
+  return row.sent_at || text(exportPayload.exported_at) || outboxRowTime(row)
+}
+
+function newerOutboxRow(a: PpcOutboxSummaryRow, b: PpcOutboxSummaryRow, timeForRow: (row: PpcOutboxSummaryRow) => string | null): PpcOutboxSummaryRow {
+  const aTime = Date.parse(timeForRow(a) ?? '')
+  const bTime = Date.parse(timeForRow(b) ?? '')
+  if (Number.isNaN(aTime)) return b
+  if (Number.isNaN(bTime)) return a
+  return aTime >= bTime ? a : b
+}
+
+function isRepairedKnownSkip(row: PpcOutboxSummaryRow): boolean {
+  return Boolean(text(outboxExportPayload(row).repaired_dead_letter_at))
+}
+
+function buildExportHealth(outboxRows: PpcOutboxSummaryRow[], leadRows: PpcLeadSummaryRow[]): ExportHealth {
+  const leadsById = new Map(leadRows.map((lead) => [lead.id, lead]))
+  let pending = 0
+  let sent = 0
+  let skipped = 0
+  let failed = 0
+  let repairedKnownSkips = 0
+  let lastSuccess: PpcOutboxSummaryRow | null = null
+  let lastFailure: PpcOutboxSummaryRow | null = null
+
+  for (const row of outboxRows) {
+    const status = text(row.status).toLowerCase() || 'pending'
+    if (status === 'sent') {
+      sent += 1
+      lastSuccess = lastSuccess ? newerOutboxRow(lastSuccess, row, outboxExportTime) : row
+    } else if (status === 'skipped') {
+      skipped += 1
+    } else if (status === 'failed' || status === 'dead_letter') {
+      failed += 1
+      lastFailure = lastFailure ? newerOutboxRow(lastFailure, row, outboxRowTime) : row
+    } else if (status === 'pending' || status === 'processing') {
+      pending += 1
+    }
+
+    if (isRepairedKnownSkip(row)) repairedKnownSkips += 1
+  }
+
+  const lastSuccessLead = lastSuccess?.lead_id ? leadsById.get(lastSuccess.lead_id) : null
+  return {
+    total: outboxRows.length,
+    pending,
+    sent,
+    skipped,
+    failed,
+    repairedKnownSkips,
+    lastSuccessfulExport: lastSuccess ? outboxExportTime(lastSuccess) : null,
+    lastSuccessfulEvent: lastSuccess ? eventLabel(lastSuccess.event_name) : null,
+    lastSuccessfulLead: lastSuccess ? text(lastSuccessLead?.full_name) || 'Unlinked conversion' : null,
+    lastFailureReason: lastFailure ? text(lastFailure.last_error) || 'Unknown export failure' : null,
+    lastFailureAt: lastFailure ? outboxRowTime(lastFailure) : null,
+    lastFailureEvent: lastFailure ? eventLabel(lastFailure.event_name) : null,
+    status: failed > 0 ? 'attention' : pending > 0 ? 'watch' : 'clean',
+  }
+}
+
 async function fetchRows(period: MarketingPeriod) {
   const range = rangeForPeriod(period)
   const previousRange = previousRangeForPeriod(period, range)
@@ -1330,6 +1402,7 @@ export async function GET(req: NextRequest) {
       negatives: rows.searchRows.length ? buildNegatives(rows.searchRows) : [],
       funnel: buildFunnel(rows.campaignRows, rows.trackingRows, rows.leadRows),
       callBreakdown: buildCallBreakdown(rows.trackingRows, rows.outboxRows),
+      exportHealth: buildExportHealth(rows.outboxRows, rows.leadRows),
       leads: leadRowsForResponse,
       outbox: buildOutboxRows(rows.outboxRows, rows.leadRows),
       paidSessions: buildPaidSessions(rows.trackingRows),
