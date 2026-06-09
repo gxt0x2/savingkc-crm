@@ -19,6 +19,7 @@ import {
   CALL_BREAKDOWN,
   CAMPAIGNS,
   DROP_LABEL,
+  EXPORT_HEALTH,
   FUNNEL,
   KEYWORDS,
   KPI,
@@ -31,6 +32,7 @@ import {
   STAGES,
   hourlySeries,
   type CampaignRow,
+  type ExportHealth,
   type IconName,
   type KpiItem,
   type CallBreakdownRow,
@@ -66,6 +68,7 @@ type DashboardSectionId =
   | 'campaigns'
   | 'searchTerms'
   | 'funnel'
+  | 'exportHealth'
   | 'heatmaps'
   | 'roster'
   | 'outbox'
@@ -76,13 +79,14 @@ const SEARCH_TERM_PAGE_SIZE = 10
 const OUTBOX_PAGE_SIZE = 5
 const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
 const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
-const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
+const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
 const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
   kpis: false,
   trend: false,
   campaigns: false,
   searchTerms: false,
   funnel: false,
+  exportHealth: false,
   heatmaps: false,
   roster: false,
   outbox: false,
@@ -94,6 +98,7 @@ const DASHBOARD_SECTIONS: Record<DashboardSectionId, { label: string; size: Dash
   campaigns: { label: 'Conversions by Campaign', size: 'half' },
   searchTerms: { label: 'Search Term Performance', size: 'half' },
   funnel: { label: 'Marketing Funnel', size: 'full' },
+  exportHealth: { label: 'Export Health', size: 'full' },
   heatmaps: { label: 'Landing Page Heatmaps', size: 'full' },
   roster: { label: 'Active Lead Roster', size: 'full' },
   outbox: { label: 'Lead Conversion Outbox', size: 'full' },
@@ -128,6 +133,7 @@ type AdsCommandData = {
   negatives: NegativeKeywordRow[]
   funnel: FunnelRow[]
   callBreakdown: CallBreakdownRow[]
+  exportHealth: ExportHealth
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
@@ -1118,6 +1124,59 @@ function outboxTime(row: OutboxRow): string {
   return date.toLocaleString('en-US', { timeZone: DASHBOARD_TIME_ZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
+function exportHealthTone(status: ExportHealth['status']): string {
+  if (status === 'attention') return '#f87171'
+  if (status === 'watch') return '#eab308'
+  return '#22c55e'
+}
+
+function exportHealthLabel(status: ExportHealth['status']): string {
+  if (status === 'attention') return 'Needs attention'
+  if (status === 'watch') return 'Watch queue'
+  return 'Clean'
+}
+
+function ExportHealthCard({ health }: { health: ExportHealth }) {
+  const tone = exportHealthTone(health.status)
+  return (
+    <div className="panel export-health-panel">
+      <div className="panel-head">
+        <div>
+          <h2>Ads Export Health</h2>
+          <div className="cap">Google Ads, Stape, and OpenAI Ads conversion export status</div>
+        </div>
+        <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
+          {exportHealthLabel(health.status)}
+        </span>
+      </div>
+      <div className="export-health-grid">
+        <div className="export-health-metric"><span>PENDING</span><b className="mono blue">{health.pending}</b></div>
+        <div className="export-health-metric"><span>SENT</span><b className="mono green">{health.sent}</b></div>
+        <div className="export-health-metric"><span>SKIPPED</span><b className="mono">{health.skipped}</b></div>
+        <div className="export-health-metric"><span>FAILED</span><b className="mono red">{health.failed}</b></div>
+        <div className="export-health-metric"><span>REPAIRED SKIPS</span><b className="mono gold">{health.repairedKnownSkips}</b></div>
+        <div className="export-health-metric"><span>TOTAL</span><b className="mono">{health.total}</b></div>
+      </div>
+      <div className="export-health-foot">
+        <div className="export-health-note">
+          <span>LAST SUCCESSFUL EXPORT</span>
+          <b>{health.lastSuccessfulExport ? formatFreshness(health.lastSuccessfulExport) : 'None in this period'}</b>
+          {(health.lastSuccessfulEvent || health.lastSuccessfulLead) ? (
+            <small>{health.lastSuccessfulEvent ?? 'Conversion'}{health.lastSuccessfulLead ? ` · ${health.lastSuccessfulLead}` : ''}</small>
+          ) : null}
+        </div>
+        <div className="export-health-note">
+          <span>LAST FAILURE REASON</span>
+          <b>{health.lastFailureReason ?? 'No failed exports in this period'}</b>
+          {health.lastFailureAt ? (
+            <small>{formatFreshness(health.lastFailureAt)}{health.lastFailureEvent ? ` · ${health.lastFailureEvent}` : ''}</small>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 type OutboxLeadGroup = {
   key: string
   leadName: string
@@ -1893,6 +1952,7 @@ export function AdsCommandPage() {
   const negatives = adsData?.negatives ?? NEGATIVES
   const funnel = adsData?.funnel ?? FUNNEL
   const callBreakdown = adsData?.callBreakdown ?? CALL_BREAKDOWN
+  const exportHealth = adsData?.exportHealth ?? EXPORT_HEALTH
   const leads = adsData?.leads ?? LEADS
   const outbox = adsData?.outbox ?? OUTBOX
   const paidSessions = adsData?.paidSessions ?? PAID_SESSIONS
@@ -2133,6 +2193,10 @@ export function AdsCommandPage() {
           onOpenBreakdown={setSelectedBreakdown}
         />
       )
+    }
+
+    if (id === 'exportHealth') {
+      return <ExportHealthCard health={exportHealth} />
     }
 
     if (id === 'heatmaps') {
@@ -2458,6 +2522,17 @@ const ADS_COMMAND_STYLES = `
 .ads-command .score-label { display:block; font-size:9px; color:var(--text-tertiary); font-weight:600; letter-spacing:.5px; }
 .ads-command .miniprog { display:block; height:3px; background:var(--surface-3); border-radius:999px; margin-top:10px; overflow:hidden; }
 .ads-command .miniprog > span { display:block; height:100%; background:linear-gradient(to right,var(--accent),var(--accent-bright)); border-radius:999px; }
+.ads-command .export-health-panel { overflow:hidden; }
+.ads-command .export-health-state { display:inline-flex; align-items:center; justify-content:center; min-height:28px; border:1px solid; border-radius:999px; padding:4px 12px; font-size:11px; font-weight:900; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; }
+.ads-command .export-health-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; margin-top:4px; }
+.ads-command .export-health-metric { min-width:0; border-top:1px solid var(--line); padding-top:12px; }
+.ads-command .export-health-metric span,
+.ads-command .export-health-note span { display:block; font-size:10px; font-weight:850; color:var(--text-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+.ads-command .export-health-metric b { display:block; font-size:24px; line-height:1; margin-top:7px; color:var(--text); }
+.ads-command .export-health-foot { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.35fr); gap:18px; margin-top:18px; padding-top:16px; border-top:1px solid var(--line); }
+.ads-command .export-health-note { min-width:0; }
+.ads-command .export-health-note b { display:block; margin-top:6px; color:var(--text); font-size:14px; line-height:1.35; overflow-wrap:anywhere; }
+.ads-command .export-health-note small { display:block; color:var(--text-tertiary); font-size:12px; line-height:1.35; margin-top:4px; overflow-wrap:anywhere; }
 .ads-command .outbox-panel { margin-top:14px; }
 .ads-command .outbox-summary { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
 .ads-command .outbox-summary > div { background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-lg); padding:11px 12px; }
@@ -2608,6 +2683,6 @@ const ADS_COMMAND_STYLES = `
 @media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } }
 @media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } }
 @media (max-width:920px) { .ads-command .stage-top { grid-template-columns:1fr; align-items:flex-start; } .ads-command .qbadges { margin-left:0; } .ads-command .stage-body, .ads-command .micro-body { grid-template-columns:1fr; } .ads-command .statside, .ads-command .micro-side { display:none; } .ads-command .stage { inset:10px; width:auto; } }
-@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
+@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
 @media (max-width:640px) { .ads-command .roster { grid-template-columns:1fr; } .ads-command .live-pill { font-size:11px; } }
 `

@@ -118,6 +118,22 @@ export type OutboxRow = {
   ageDays: number
 }
 
+export type ExportHealth = {
+  total: number
+  pending: number
+  sent: number
+  skipped: number
+  failed: number
+  repairedKnownSkips: number
+  lastSuccessfulExport: string | null
+  lastSuccessfulEvent: string | null
+  lastSuccessfulLead: string | null
+  lastFailureReason: string | null
+  lastFailureAt: string | null
+  lastFailureEvent: string | null
+  status: 'clean' | 'watch' | 'attention'
+}
+
 export type MicroStepRow = {
   key: string
   name: string
@@ -449,6 +465,22 @@ export const OUTBOX: OutboxRow[] = [
   { id: 'ob01', leadId: 2, leadName: 'Estate of D. Reyes', event: 'Qualified Lead', category: 'form', status: 'Awaiting approval', approved: false, role: 'primary', clickId: 'CjwKCAjw8u_q9zABwE', clickIdType: 'gclid', campaign: 'Search 2026', keyword: 'we buy houses kc', value: 25000, attempts: 0, lastError: null, dryRun: false, exportable: true, approvalRequired: true, exportNote: null, sentAt: null, eventTime: new Date().toISOString(), ageDays: 0 },
   { id: 'ob02', leadId: 3, leadName: 'Janelle Cooper', event: 'Lead Submitted', category: 'form', status: 'Website/GTM only', approved: false, role: 'secondary', clickId: 'Cj0KCQjwz9_tiredwcB', clickIdType: 'gclid', campaign: 'Search 2026', keyword: 'sell rental property kc', value: 0, attempts: 1, lastError: null, dryRun: false, exportable: false, approvalRequired: false, exportNote: 'Tracked by website/GTM primary conversion', sentAt: new Date().toISOString(), eventTime: new Date(Date.now() - 86_400_000).toISOString(), ageDays: 1 },
 ]
+
+export const EXPORT_HEALTH: ExportHealth = {
+  total: OUTBOX.length,
+  pending: 1,
+  sent: 0,
+  skipped: 1,
+  failed: 0,
+  repairedKnownSkips: 0,
+  lastSuccessfulExport: null,
+  lastSuccessfulEvent: null,
+  lastSuccessfulLead: null,
+  lastFailureReason: null,
+  lastFailureAt: null,
+  lastFailureEvent: null,
+  status: 'watch',
+}
 
 export const MICRO_STEPS: MicroStepRow[] = [
   { key: 'click', name: 'Ad Click', icon: 'cursor' },
