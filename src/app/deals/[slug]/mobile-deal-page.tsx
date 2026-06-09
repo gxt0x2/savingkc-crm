@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type UIEvent as ReactUIEvent } from 'react'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
@@ -77,7 +76,9 @@ const SHEET_MID = 56
 const SHEET_EXPANDED = 76
 const SHEET_SNAPS = [SHEET_COLLAPSED, SHEET_MID, SHEET_EXPANDED]
 const SHEET_SNAP_TRANSITION = 'height 130ms cubic-bezier(0.2, 0, 0, 1)'
-const INITIAL_PHOTO_RENDER_COUNT = 2
+const INITIAL_PHOTO_RENDER_COUNT = 6
+const DEAL_ASSET_HOST = 'fprrknfyzlthbxewnwmi.supabase.co'
+const DEAL_ASSET_PREFIX = '/storage/v1/object/public/deal-assets/'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -128,6 +129,24 @@ function displayDescription(description: string | null): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
   return cleaned || 'No description provided.'
+}
+
+function inspectionReportLabel(): string {
+  return 'Inspection Report'
+}
+
+function isDealAssetUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.hostname === DEAL_ASSET_HOST && parsed.pathname.startsWith(DEAL_ASSET_PREFIX)
+  } catch {
+    return false
+  }
+}
+
+function mobilePhotoUrl(url: string, width: number, quality: number): string {
+  if (!url || !isDealAssetUrl(url)) return url
+  return `/api/deals/image?src=${encodeURIComponent(url)}&w=${width}&q=${quality}`
 }
 
 function IconHeart({ className = '', filled = false }: { className?: string; filled?: boolean }) {
@@ -197,7 +216,6 @@ export default function MobileDealPage({
   const [sheetHeight, setSheetHeight] = useState(SHEET_COLLAPSED)
   const [saved, setSaved] = useState(false)
   const [renderedPhotoCount, setRenderedPhotoCount] = useState(() => Math.min(INITIAL_PHOTO_RENDER_COUNT, photos.length))
-  const [priorityPhotoLoadCount, setPriorityPhotoLoadCount] = useState(0)
   const sheetRef = useRef<HTMLDivElement | null>(null)
   const currentSheetHeightRef = useRef(SHEET_COLLAPSED)
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
@@ -205,23 +223,21 @@ export default function MobileDealPage({
   const lastSheetDragYRef = useRef<number | null>(null)
   const sheetDragPointerIdRef = useRef<number | null>(null)
   const snapTransitionTimeoutRef = useRef<number | null>(null)
-  const loadedPriorityPhotoIndexesRef = useRef<Set<number>>(new Set())
   const overviewText = displayDescription(dealPage.description)
   const primaryInspectionReport = inspectionReports[0] ?? null
   const saveStorageKey = `skc_saved_deal_${slug}`
   const statusMeta = DEAL_STATUS_META[dealStatus]
 
   useEffect(() => {
-    if (photos.length <= INITIAL_PHOTO_RENDER_COUNT || renderedPhotoCount >= photos.length) return
+    const initialCount = Math.min(INITIAL_PHOTO_RENDER_COUNT, photos.length)
+    if (photos.length <= initialCount) return
 
-    const priorityTarget = Math.min(INITIAL_PHOTO_RENDER_COUNT, photos.length)
-    const priorityPhotosLoaded = priorityPhotoLoadCount >= priorityTarget
-    const timeoutId = globalThis.setTimeout(
-      () => setRenderedPhotoCount(photos.length),
-      priorityPhotosLoaded ? 300 : 2500
-    )
-    return () => globalThis.clearTimeout(timeoutId)
-  }, [photos.length, priorityPhotoLoadCount, renderedPhotoCount])
+    const timeoutId = window.setTimeout(() => {
+      setRenderedPhotoCount(photos.length)
+    }, 900)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [photos.length])
 
   useEffect(() => {
     let cancelled = false
@@ -237,12 +253,6 @@ export default function MobileDealPage({
       cancelled = true
     }
   }, [saveStorageKey])
-
-  const markPriorityPhotoLoaded = useCallback((index: number) => {
-    if (index >= INITIAL_PHOTO_RENDER_COUNT || loadedPriorityPhotoIndexesRef.current.has(index)) return
-    loadedPriorityPhotoIndexesRef.current.add(index)
-    setPriorityPhotoLoadCount(loadedPriorityPhotoIndexesRef.current.size)
-  }, [])
 
   const toggleSaved = useCallback(() => {
     const next = !saved
@@ -389,15 +399,15 @@ export default function MobileDealPage({
   return (
     <section className="fixed inset-0 z-40 block overflow-hidden bg-black text-[#0a0a0b] md:hidden">
       <div
-        className="absolute inset-0 overflow-y-auto overscroll-contain bg-black pb-[42svh]"
+        className="absolute inset-0 overflow-y-auto overscroll-contain bg-black"
         data-track-scroll-container
         data-track-section="mobile_photos"
         aria-label="Property photos"
       >
         {photos.length > 0 ? (
-          photos.map((src, index) => {
-            const isPriorityPhoto = index < 2
-            const shouldRenderImage = index < renderedPhotoCount
+          photos.slice(0, renderedPhotoCount).map((src, index) => {
+            const isPriorityPhoto = index < 3
+            const photoQuality = isPriorityPhoto ? 78 : 68
 
             return (
               <button
@@ -407,23 +417,21 @@ export default function MobileDealPage({
                 aria-label={`Open photo ${index + 1} of ${photos.length}`}
                 className={`relative block w-full border-b border-white bg-black text-left ${index === 0 ? 'h-[38svh]' : 'h-[30svh]'}`}
               >
-                {shouldRenderImage ? (
-                  <Image
-                    src={src}
-                    alt={`${title} photo ${index + 1}`}
-                    fill
-                    className="object-cover"
-                    sizes="100vw"
-                    quality={isPriorityPhoto ? 78 : 68}
-                  preload={isPriorityPhoto}
-                  loading={isPriorityPhoto ? undefined : 'lazy'}
+                {/* eslint-disable-next-line @next/next/no-img-element -- Direct SSR image requests keep the initial mobile photo stack from flashing black. */}
+                <img
+                  src={mobilePhotoUrl(src, 900, photoQuality)}
+                  alt={`${title} photo ${index + 1}`}
+                  className="absolute inset-0 h-full w-full object-cover"
+                  loading={isPriorityPhoto ? 'eager' : 'lazy'}
                   fetchPriority={isPriorityPhoto ? 'high' : 'low'}
                   decoding="async"
-                  onLoad={() => markPriorityPhotoLoaded(index)}
+                  onError={(event) => {
+                    const image = event.currentTarget
+                    if (image.dataset.original === '1') return
+                    image.dataset.original = '1'
+                    image.src = src
+                  }}
                 />
-                ) : (
-                  <span className="absolute inset-0 bg-black" aria-hidden="true" />
-                )}
                 {index === 0 && <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/10" />}
               </button>
             )
@@ -431,7 +439,6 @@ export default function MobileDealPage({
         ) : (
           <div className="h-[42svh] bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)]" aria-hidden="true" />
         )}
-        <div className="h-[34svh]" aria-hidden="true" />
       </div>
 
       <div className="pointer-events-none fixed inset-x-0 top-0 z-20 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top)+14px)]">
@@ -523,7 +530,7 @@ export default function MobileDealPage({
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <IconWarningTriangle className="h-[18px] w-[18px] shrink-0" />
-                  <span className="truncate">Inspection Report</span>
+                  <span className="truncate">{inspectionReportLabel()}</span>
                 </span>
                 <span className="ml-3 shrink-0 text-[11px] uppercase tracking-[0.08em] text-[#ea580c]">View Report</span>
               </a>
@@ -588,7 +595,7 @@ export default function MobileDealPage({
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <IconWarningTriangle className="h-[18px] w-[18px] shrink-0 text-[#ea580c]" />
-                    <span className="truncate">{report.name}</span>
+                    <span className="truncate">{inspectionReportLabel()}</span>
                   </span>
                   <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.08em] text-[#ea580c]">View Report</span>
                 </a>
@@ -602,7 +609,7 @@ export default function MobileDealPage({
         </div>
 
         {dealPage.accept_offers !== false && (
-          <div className="sticky bottom-0 -mx-5 border-t border-[#e5e5ea] bg-white/96 px-5 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 backdrop-blur">
+          <div className="sticky bottom-0 -mx-5 flex justify-center border-t border-[#e5e5ea] bg-white/96 px-5 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 backdrop-blur">
             <OfferForm
               slug={slug}
               askingPrice={askingPrice}
@@ -610,7 +617,7 @@ export default function MobileDealPage({
               photo={photos[0]}
               propertyAddress={lead?.property_address || title}
               location={lead ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ') : ''}
-              triggerClassName="w-full rounded-[16px] bg-[#ef4444] px-4 py-3 text-[15px] font-extrabold text-white shadow-[0_8px_22px_rgba(239,68,68,0.26)] transition-colors hover:bg-[#dc2626]"
+              triggerClassName="mx-auto w-full max-w-[320px] rounded-[16px] bg-[#ef4444] px-4 py-3 text-[15px] font-extrabold text-white shadow-[0_8px_22px_rgba(239,68,68,0.26)] transition-colors hover:bg-[#dc2626]"
               triggerLabel="Make offer"
             />
           </div>
