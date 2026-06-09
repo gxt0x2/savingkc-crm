@@ -408,6 +408,7 @@ export default function MobileDealPage({
           photos.slice(0, renderedPhotoCount).map((src, index) => {
             const isPriorityPhoto = index < 3
             const photoQuality = isPriorityPhoto ? 78 : 68
+            const photoSrc = isPriorityPhoto ? src : mobilePhotoUrl(src, 900, photoQuality)
 
             return (
               <button
@@ -419,7 +420,7 @@ export default function MobileDealPage({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element -- Direct SSR image requests keep the initial mobile photo stack from flashing black. */}
                 <img
-                  src={mobilePhotoUrl(src, 900, photoQuality)}
+                  src={photoSrc}
                   alt={`${title} photo ${index + 1}`}
                   className="absolute inset-0 h-full w-full object-cover"
                   loading={isPriorityPhoto ? 'eager' : 'lazy'}
