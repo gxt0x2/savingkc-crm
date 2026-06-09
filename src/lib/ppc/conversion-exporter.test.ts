@@ -6,6 +6,7 @@ import {
   isPpcConversionExportReady,
   ppcConversionClaimableStatusFilter,
   runPpcConversionExport,
+  normalizeGoogleAdsDestinationResult,
   type PpcConversionOutboxExportRow,
 } from './conversion-exporter'
 
@@ -385,6 +386,80 @@ describe('ppc conversion exporter', () => {
       conversionDateTime: '2026-05-20 23:49:40+00:00',
       conversionValue: 1,
       currencyCode: 'USD',
+    })
+  })
+
+  it('downgrades unmatched Google Ads call uploads to skips', async () => {
+    const row = makeRow({
+      event_name: 'call_connected_60s',
+      event_category: 'call',
+      optimization_role: 'secondary',
+      click_id: null,
+      click_id_type: null,
+      conversion_value: 1,
+      payload: {
+        from: '(816) 555-1212',
+        duration: 70,
+      },
+    })
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'access-token' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        partialFailureError: {
+          message: "The call or click leading to the imported event can't be found. Make sure your data source is set up to include correct identifiers., at conversions[0].caller_id",
+        },
+      }), { status: 200 }))
+
+    const result = await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads',
+          GOOGLE_ADS_CUSTOMER_ID: '646966429',
+          GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
+          GOOGLE_ADS_CLIENT_ID: 'client-id',
+          GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
+          GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
+          GOOGLE_ADS_CONVERSION_ACTION_CALL_CONNECTED_60S: '222',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result).toMatchObject({
+      skipped: 1,
+      failed: 0,
+    })
+    expect(result.results[0]?.destinations).toEqual([
+      expect.objectContaining({
+        destination: 'google_ads',
+        status: 'skipped',
+        detail: expect.stringContaining('caller_id was not matchable'),
+      }),
+    ])
+    expect(store.markSkipped).toHaveBeenCalledOnce()
+    expect(store.markFailed).not.toHaveBeenCalled()
+  })
+
+  it('leaves unrelated Google Ads failures as failures', () => {
+    const row = makeRow({
+      event_name: 'qualified_lead',
+      event_category: 'form',
+    })
+
+    expect(normalizeGoogleAdsDestinationResult(row, {
+      destination: 'google_ads',
+      status: 'failed',
+      detail: 'Google Ads rejected this click conversion',
+    })).toMatchObject({
+      status: 'failed',
     })
   })
 
