@@ -429,12 +429,7 @@ export default function MobileDealPage({
             )
           })
         ) : (
-          <div className="flex h-[42svh] items-end bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)] p-6 text-white">
-            <div>
-              <p className="mb-2 inline-flex rounded-[14px] px-3 py-1.5 text-[13px] font-bold uppercase tracking-wide" style={{ backgroundColor: statusMeta.bg }}>{statusMeta.label}</p>
-              <h1 className="max-w-[18rem] text-[30px] font-bold leading-tight">{title}</h1>
-            </div>
-          </div>
+          <div className="h-[42svh] bg-[linear-gradient(145deg,#334155,#111827_62%,#020617)]" aria-hidden="true" />
         )}
         <div className="h-[34svh]" aria-hidden="true" />
       </div>
