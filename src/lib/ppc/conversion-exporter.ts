@@ -100,6 +100,7 @@ export type PpcConversionExportResult = {
   configured: boolean
   scanned: number
   claimed: number
+  repairedKnownSkips: number
   sent: number
   skipped: number
   failed: number
@@ -141,6 +142,7 @@ export type PpcConversionExportConfigHealth = {
 type OutboxStore = {
   listRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]>
   claimRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]>
+  repairKnownSkippedRows?(now: Date): Promise<number>
   markSent(row: PpcConversionOutboxExportRow, summary: Record<string, unknown>, now: Date): Promise<void>
   markSkipped(row: PpcConversionOutboxExportRow, reason: string, summary: Record<string, unknown>, now: Date): Promise<void>
   markFailed(row: PpcConversionOutboxExportRow, reason: string, summary: Record<string, unknown>, now: Date): Promise<void>
@@ -298,6 +300,39 @@ class SupabaseOutboxStore implements OutboxStore {
       updated_at: now.toISOString(),
       payload: mergePayload(row, summary),
     })
+  }
+
+  async repairKnownSkippedRows(now: Date): Promise<number> {
+    const { data, error } = await this.client
+      .from('ppc_conversion_outbox')
+      .select('*')
+      .eq('status', 'dead_letter')
+      .eq('event_category', 'call')
+      .ilike('last_error', '%caller_id%')
+      .order('event_time', { ascending: true })
+      .limit(25)
+
+    if (error) throw new Error(error.message)
+
+    let repaired = 0
+    for (const row of (data ?? []) as PpcConversionOutboxExportRow[]) {
+      if (!isUnmatchedGoogleAdsCallUpload(row, row.last_error ?? undefined)) continue
+
+      const detail = googleAdsUnmatchedCallSkipReason()
+      await this.updateRow(row, {
+        status: 'skipped',
+        locked_at: null,
+        last_error: detail,
+        updated_at: now.toISOString(),
+        payload: mergePayload(row, cleanJsonRecord({
+          ...rowSummary(row, [{ destination: 'google_ads', status: 'skipped', detail }], now),
+          repaired_dead_letter_at: now.toISOString(),
+        })),
+      })
+      repaired += 1
+    }
+
+    return repaired
   }
 
   private async queryCandidateRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]> {
@@ -1177,6 +1212,10 @@ function isUnmatchedGoogleAdsCallUpload(row: PpcConversionOutboxExportRow, detai
   )
 }
 
+function googleAdsUnmatchedCallSkipReason(): string {
+  return 'Google Ads call upload skipped: caller_id was not matchable to a Google Ads call record. Keep CRM/Stape/OpenAI call attribution; use Google forwarding/DNI for Google call-only optimization.'
+}
+
 export function normalizeGoogleAdsDestinationResult(
   row: PpcConversionOutboxExportRow,
   result: DestinationResult,
@@ -1186,7 +1225,7 @@ export function normalizeGoogleAdsDestinationResult(
   return {
     ...result,
     status: 'skipped',
-    detail: 'Google Ads call upload skipped: caller_id was not matchable to a Google Ads call record. Keep CRM/Stape/OpenAI call attribution; use Google forwarding/DNI for Google call-only optimization.',
+    detail: googleAdsUnmatchedCallSkipReason(),
   }
 }
 
@@ -1393,6 +1432,7 @@ export async function runPpcConversionExport(
   }
 
   const store = deps.store ?? new SupabaseOutboxStore(supabaseAdmin(), maxAttempts)
+  const repairedKnownSkips = readOnly ? 0 : await (store.repairKnownSkippedRows?.(now) ?? Promise.resolve(0))
   const rows = readOnly
     ? await store.listRows(batchSize, now)
     : await store.claimRows(batchSize, now)
@@ -1550,8 +1590,9 @@ export async function runPpcConversionExport(
     configured: true,
     scanned: rows.length,
     claimed: readOnly ? 0 : rows.length,
+    repairedKnownSkips,
     sent: results.filter((result) => result.status === 'sent').length,
-    skipped: results.filter((result) => result.status === 'skipped').length,
+    skipped: repairedKnownSkips + results.filter((result) => result.status === 'skipped').length,
     failed: results.filter((result) => result.status === 'failed').length,
     pending: results.filter((result) => result.status === 'pending').length,
     missingConfig,
@@ -1566,6 +1607,7 @@ function emptyExportResult(input: { dryRun: boolean; configured: boolean; missin
     configured: input.configured,
     scanned: 0,
     claimed: 0,
+    repairedKnownSkips: 0,
     sent: 0,
     skipped: 0,
     failed: 0,

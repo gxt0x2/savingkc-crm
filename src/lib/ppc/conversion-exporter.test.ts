@@ -463,6 +463,37 @@ describe('ppc conversion exporter', () => {
     })
   })
 
+  it('repairs known unmatched Google Ads call dead letters before claiming rows', async () => {
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => []),
+      repairKnownSkippedRows: vi.fn(async () => 1),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+
+    const result = await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+        },
+      },
+      { store },
+    )
+
+    expect(store.repairKnownSkippedRows).toHaveBeenCalledOnce()
+    expect(store.claimRows).toHaveBeenCalledOnce()
+    expect(result).toMatchObject({
+      scanned: 0,
+      claimed: 0,
+      repairedKnownSkips: 1,
+      skipped: 1,
+      failed: 0,
+    })
+  })
+
   it('defers call conversion exports until Google Ads can accept them', () => {
     const callRow = makeRow({
       event_name: 'call_connected_5m',
