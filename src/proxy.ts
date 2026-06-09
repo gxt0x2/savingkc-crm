@@ -49,6 +49,11 @@ const TRUSTED_BEARER_API_PREFIXES = [
   '/api/hot-opportunities/cron',
 ]
 
+const TRUSTED_BEARER_API_EXACT = new Set([
+  '/api/deals/import-photos',
+  '/api/deals/upload',
+])
+
 const HEALTH_CHECK_PATHS = new Set([
   '/dialer',
   '/api/twilio-token',
@@ -123,6 +128,7 @@ function isTrustedBearerRoute(request: NextRequest): boolean {
 
   return (
     HEALTH_CHECK_PATHS.has(pathname) ||
+    TRUSTED_BEARER_API_EXACT.has(pathname) ||
     TRUSTED_BEARER_API_PREFIXES.some(prefix => pathname.startsWith(prefix))
   )
 }
