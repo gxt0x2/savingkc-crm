@@ -1300,6 +1300,8 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
   const [form, setForm] = useState({
     title: deal.title || '',
     description: deal.description || '',
+    asking_price: deal.asking_price != null ? String(deal.asking_price) : '',
+    purchase_price: deal.purchase_price != null ? String(deal.purchase_price) : '',
     contract_close_date: deal.contract_close_date || '',
     earnest_money: deal.earnest_money != null ? String(deal.earnest_money) : '',
     inspection_period_days: deal.inspection_period_days != null ? String(deal.inspection_period_days) : '',
@@ -1393,6 +1395,8 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
         body: JSON.stringify({
           title: form.title || null,
           description: form.description || null,
+          asking_price: form.asking_price ? Number(form.asking_price) : null,
+          purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
           contract_close_date: form.contract_close_date || null,
           earnest_money: form.earnest_money ? Number(form.earnest_money) : null,
           inspection_period_days: form.inspection_period_days ? Number(form.inspection_period_days) : null,
@@ -1445,6 +1449,34 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
             <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
             <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)}
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none" />
+          </div>
+
+          {/* Pricing */}
+          <div>
+            <p className="text-xs font-bold text-slate-600 mb-2">Pricing</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] text-slate-500 mb-0.5">Public Offer Price ($)</label>
+                <input
+                  type="number"
+                  value={form.asking_price}
+                  onChange={e => set('asking_price', e.target.value)}
+                  placeholder="e.g. 169000"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-500 mb-0.5">Purchase Price ($)</label>
+                <input
+                  type="number"
+                  value={form.purchase_price}
+                  onChange={e => set('purchase_price', e.target.value)}
+                  placeholder="Internal only"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                />
+              </div>
+            </div>
+            <p className="mt-1 text-[10px] text-slate-500">Purchase price stays internal; the public offer price is what buyers see on the deal page.</p>
           </div>
 
           {/* Photos — import via URL, drag to reorder */}
