@@ -15,17 +15,13 @@ import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 // Casey's company number - used as FROM for thank-you SMS
 const CASEY_COMPANY_NUMBER = '+18167277667'
+const CONNECTED_CONVERSATION_SECONDS = 60
 
-// Disposition outcomes that trigger a thank-you SMS
-const THANK_YOU_DISPOSITIONS: Record<string, string> = {
-  'appointment_set': 'appointment_set',
-  'meaningful_conversation': 'interested',
-  'callback_scheduled': 'callback',
-  'voicemail_left': 'voicemail',
-}
+type ThankYouTemplateKey = 'appointment_set' | 'interested' | 'callback' | 'voicemail'
+type ManifestThankYouSms = NonNullable<NonNullable<ManifestV2['communications']>['thankYouSms']>
 
 // SMS templates keyed by templateKey
-const THANK_YOU_TEMPLATES: Record<string, (firstName: string, address: string, date?: string) => string> = {
+const THANK_YOU_TEMPLATES: Record<ThankYouTemplateKey, (firstName: string, address: string, date?: string) => string> = {
   'appointment_set': (firstName, _address, date) =>
     `Hey ${firstName}! It's Casey from Saving KC. Really enjoyed chatting with you today. Looking forward to coming by on ${date || 'soon'} to check out the property. If anything comes up before then, just shoot me a text. Talk soon!`,
 
@@ -37,12 +33,6 @@ const THANK_YOU_TEMPLATES: Record<string, (firstName: string, address: string, d
 
   'voicemail': (firstName, address) =>
     `Hey ${firstName}, it's Casey from Saving KC! I just left you a voicemail about your property on ${address}. No rush. Give me a call back whenever works, or just reply to this text. Hope you're having a good day!`,
-}
-
-// Fire fn after a random delay between minSec and maxSec seconds (non-blocking)
-function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
-  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
-  setTimeout(() => fn().catch(e => console.error('[mojo/sync] Delayed send failed:', e)), delay)
 }
 
 export interface MojoCallRecord {
@@ -63,6 +53,30 @@ export interface MojoCallRecord {
   recording_url?: string
   follow_up_date?: string
   email?: string
+}
+
+function hasConnectedConversation(call: MojoCallRecord): boolean {
+  const duration = Number(call.call_duration || 0)
+  const hasLongCall = Number.isFinite(duration) && duration >= CONNECTED_CONVERSATION_SECONDS
+  const hasAgentNotes = typeof call.notes === 'string' && call.notes.trim().length > 0
+  const hasRecording = typeof call.recording_url === 'string' && call.recording_url.trim().length > 0
+
+  return hasLongCall || hasAgentNotes || hasRecording
+}
+
+function selectThankYouTemplateKey(call: MojoCallRecord, outcome: string): ThankYouTemplateKey | null {
+  switch (outcome) {
+    case 'appointment_set':
+      return 'appointment_set'
+    case 'meaningful_conversation':
+      return 'interested'
+    case 'callback_scheduled':
+      return hasConnectedConversation(call) ? 'interested' : 'callback'
+    case 'voicemail_left':
+      return 'voicemail'
+    default:
+      return null
+  }
 }
 
 interface DispositionMapping {
@@ -1348,8 +1362,8 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       )
     }
 
-    // K. Thank-you SMS — fire once per meaningful disposition
-    const thankYouKey = THANK_YOU_DISPOSITIONS[dispositionMap.outcome]
+    // K. Thank-you SMS — send once per meaningful disposition
+    const thankYouKey = selectThankYouTemplateKey(call, dispositionMap.outcome)
     const alreadySent = manifest.communications?.thankYouSms?.sent === true
 
     if (thankYouKey && !alreadySent && hasPhone && normalizedPhone) {
@@ -1366,39 +1380,112 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         const templateFn = THANK_YOU_TEMPLATES[thankYouKey]
         const body = templateFn(firstName, address, followUpDate)
 
-        // Mark sent before firing to prevent duplicate sends on retry
         if (!manifest.communications) manifest.communications = { transcripts: [] }
+        const attemptedAt = new Date().toISOString()
+        const dispositionDetails = {
+          template: thankYouKey,
+          to: normalizedPhone,
+          disposition: dispositionMap.outcome,
+          mojoDisposition: call.disposition,
+          callDuration: call.call_duration,
+        }
+
+        const { data: priorSms } = await supabase
+          .from('sms_delivery_log')
+          .select('twilio_sid, twilio_status, created_at')
+          .eq('to_phone', normalizedPhone)
+          .eq('message_body', body.slice(0, 1000))
+          .eq('success', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        if (priorSms && priorSms.length > 0) {
+          const previous = priorSms[0]
+          const thankYouSms: ManifestThankYouSms = {
+            sent: true,
+            sentAt: previous.created_at || attemptedAt,
+            attemptedAt,
+            template: thankYouKey,
+            to: normalizedPhone,
+          }
+          if (previous.twilio_sid) thankYouSms.sid = previous.twilio_sid
+          if (previous.twilio_status) thankYouSms.status = previous.twilio_status
+          manifest.communications.thankYouSms = thankYouSms
+          manifest.auditTrail.push({
+            timestamp: attemptedAt,
+            agent: 'system:mojo-sync-thankyou',
+            action: 'thank_you_sms_already_sent',
+            details: dispositionDetails,
+          })
+          await supabase
+            .from('manifests')
+            .update({ manifest })
+            .eq('id', manifestId)
+          console.log(`[queue] Thank-you SMS already sent to ${normalizedPhone} template=${thankYouKey}`)
+          return { leadId, manifestId, opportunityScore }
+        }
+
         manifest.communications.thankYouSms = {
-          sent: true,
-          sentAt: new Date().toISOString(),
+          sent: false,
+          attemptedAt,
           template: thankYouKey,
           to: normalizedPhone,
         }
 
         manifest.auditTrail.push({
-          timestamp: new Date().toISOString(),
+          timestamp: attemptedAt,
           agent: 'system:mojo-sync-thankyou',
-          action: 'thank_you_sms_queued',
-          details: { template: thankYouKey, to: normalizedPhone, disposition: dispositionMap.outcome },
+          action: 'thank_you_sms_attempted',
+          details: dispositionDetails,
         })
 
-        // Persist the thankYouSms flag before the delayed send fires
         await supabase
           .from('manifests')
           .update({ manifest })
           .eq('id', manifestId)
 
-        // Fire SMS after a natural 60-180 second delay
-        sendDelayed(async () => {
-          const result = await safeSendSMS({
-            body,
-            from: CASEY_COMPANY_NUMBER,
-            to: normalizedPhone,
-          })
-          console.log(`[queue] Thank-you SMS sent to ${normalizedPhone} template=${thankYouKey} sid=${result.sid || 'n/a'}`)
-        }, 60, 180)
+        const result = await safeSendSMS({
+          body,
+          from: CASEY_COMPANY_NUMBER,
+          to: normalizedPhone,
+        })
 
-        console.log(`[queue] Thank-you SMS queued for ${call.contact_name} (${normalizedPhone}) template=${thankYouKey}`)
+        const completedAt = new Date().toISOString()
+        const thankYouSms: ManifestThankYouSms = {
+          sent: result.success === true,
+          attemptedAt,
+          template: thankYouKey,
+          to: normalizedPhone,
+        }
+        if (result.success === true) {
+          thankYouSms.sentAt = completedAt
+        } else {
+          thankYouSms.error = result.error || 'safeSendSMS returned success=false'
+        }
+        if (result.sid) thankYouSms.sid = result.sid
+        if (result.status) thankYouSms.status = result.status
+        manifest.communications.thankYouSms = thankYouSms
+        manifest.auditTrail.push({
+          timestamp: completedAt,
+          agent: 'system:mojo-sync-thankyou',
+          action: result.success === true ? 'thank_you_sms_sent' : 'thank_you_sms_failed',
+          details: {
+            ...dispositionDetails,
+            sid: result.sid,
+            status: result.status,
+            error: result.success === true ? undefined : result.error || 'safeSendSMS returned success=false',
+          },
+        })
+        await supabase
+          .from('manifests')
+          .update({ manifest })
+          .eq('id', manifestId)
+
+        if (result.success === true) {
+          console.log(`[queue] Thank-you SMS sent to ${normalizedPhone} template=${thankYouKey} sid=${result.sid || 'n/a'}`)
+        } else {
+          console.error(`[queue] Thank-you SMS failed for ${normalizedPhone} template=${thankYouKey}: ${result.error || 'safeSendSMS returned success=false'}`)
+        }
       } else {
         console.log(`[queue] Thank-you SMS skipped for ${normalizedPhone}: optedOut=${optedOut} rateLimitAllowed=${rl.allowed}`)
       }
