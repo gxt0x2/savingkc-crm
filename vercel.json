@@ -25,6 +25,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/cron/openai-ads-reporting-sync",
+      "schedule": "*/10 * * * *"
+    },
+    {
       "path": "/api/cron/google-ads-missed-calls",
       "schedule": "*/5 * * * *"
     },
