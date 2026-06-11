@@ -125,6 +125,7 @@ describe('runOpenAIAdsReportingSync', () => {
     expect(insightsUrl).toContain('/ad_account/insights')
     expect(insightsUrl).toContain('aggregation_level=campaign')
     expect(insightsUrl).toContain('time_granularity=daily')
+    expect(insightsUrl).toContain('limit=2000')
 
     expect(db.upserts).toHaveLength(1)
     expect(db.upserts[0]).toMatchObject({

@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 const DEFAULT_API_BASE = 'https://api.ads.openai.com/v1'
 const DEFAULT_SINCE = '2026-06-01'
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const OPENAI_ADS_INSIGHTS_LIMIT = 2000
 
 type OpenAIAdsReportingConfig = {
   apiBase: string
@@ -119,7 +120,7 @@ async function fetchCampaignInsights(
     const params = new URLSearchParams()
     params.set('time_granularity', 'daily')
     params.set('aggregation_level', 'campaign')
-    params.set('limit', '10000')
+    params.set('limit', String(OPENAI_ADS_INSIGHTS_LIMIT))
     params.append('time_ranges[]', JSON.stringify({ type: 'date_range', since: sinceDate, until: untilDate }))
     for (const field of fields) params.append('fields[]', field)
     if (after) params.set('after', after)
