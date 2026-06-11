@@ -27,6 +27,14 @@
     {
       "path": "/api/cron/google-ads-missed-calls",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/process-mojo-queue",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-mojo-emails",
+      "schedule": "*/15 13-22 * * 1-5"
     }
   ],
   "rewrites": [

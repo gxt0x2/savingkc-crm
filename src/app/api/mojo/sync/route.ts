@@ -11,6 +11,7 @@ import { safeSendSMS } from '@/lib/safe-communications'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { phoneRateLimit } from '@/middleware/rate-limit'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 // Casey's company number - used as FROM for thank-you SMS
 const CASEY_COMPANY_NUMBER = '+18167277667'
@@ -1418,6 +1419,9 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
  * /api/cron/process-mojo-queue.
  */
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   try {
     const { calls } = await req.json() as { calls: MojoCallRecord[] }
 

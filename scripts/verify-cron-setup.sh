@@ -1,15 +1,24 @@
 #!/bin/bash
 # Verification script for cron-job.org setup
 
-CRON_SECRET=$(grep '^CRON_SECRET=' .env.local | cut -d= -f2)
+ENV_FILE="${ENV_FILE:-.env.local}"
+if [ ! -f "$ENV_FILE" ] && [ -f ".env.live" ]; then
+    ENV_FILE=".env.live"
+fi
+
+CRON_SECRET=$(grep '^CRON_SECRET=' "$ENV_FILE" | cut -d= -f2- | sed -E 's/^["'\'']|["'\'']$//g')
 LOCAL_ENDPOINT="http://localhost:3002/api/cron/process-mojo-queue"
 PUBLIC_ENDPOINT="https://crm.savingkc.com/api/cron/process-mojo-queue"
-CLOUDFLARE_IP="172.67.200.129"
 
 echo "=================================="
 echo "CRM Queue Worker Verification"
 echo "=================================="
 echo ""
+
+if [ -z "$CRON_SECRET" ]; then
+    echo "❌ CRON_SECRET missing in $ENV_FILE"
+    exit 1
+fi
 
 # Test 1: Local endpoint accessibility
 echo "Test 1: Checking local endpoint..."
@@ -25,19 +34,18 @@ else
     exit 1
 fi
 
-# Test 2: Cloudflare tunnel (public access)
+# Test 2: Production endpoint
 echo ""
-echo "Test 2: Checking Cloudflare tunnel (public access)..."
-HTTP_CODE=$(curl -s --max-time 10 --resolve "crm.savingkc.com:443:$CLOUDFLARE_IP" \
+echo "Test 2: Checking production endpoint..."
+HTTP_CODE=$(curl -s --max-time 10 \
     -o /tmp/response_public.json -w "%{http_code}" \
     -H "Authorization: Bearer $CRON_SECRET" "$PUBLIC_ENDPOINT")
 
 if [ "$HTTP_CODE" = "200" ]; then
-    echo "✅ Public endpoint accessible via Cloudflare tunnel"
+    echo "✅ Production endpoint accessible"
     echo "Response: $(cat /tmp/response_public.json)"
 else
     echo "⚠️  Warning: Public endpoint returned HTTP $HTTP_CODE"
-    echo "This is OK if tunnel needs restart"
 fi
 
 # Test 3: Authentication
@@ -51,15 +59,13 @@ else
     echo "⚠️  Warning: Endpoint doesn't require authentication (got HTTP $UNAUTH_CODE)"
 fi
 
-# Test 4: Cloudflare tunnel process
+# Test 4: Vercel cron configuration
 echo ""
-echo "Test 4: Verifying Cloudflare tunnel..."
-TUNNEL_PROCESSES=$(ps aux | grep -i "cloudflared.*savingkc-crm" | grep -v grep | wc -l | tr -d ' ')
-if [ "$TUNNEL_PROCESSES" -gt 0 ]; then
-    echo "✅ Cloudflare tunnel running ($TUNNEL_PROCESSES processes)"
+echo "Test 4: Verifying vercel.json cron..."
+if grep -q '"/api/cron/process-mojo-queue"' vercel.json; then
+    echo "✅ Vercel cron configured for process-mojo-queue"
 else
-    echo "❌ Cloudflare tunnel not running"
-    echo "Start with: cloudflared tunnel --config ~/.cloudflared/savingkc-crm-config.yml run"
+    echo "❌ Vercel cron missing for process-mojo-queue"
     exit 1
 fi
 
@@ -79,13 +85,7 @@ echo "=================================="
 echo "All checks passed! ✅"
 echo "=================================="
 echo ""
-echo "Next steps:"
-echo "1. Go to https://cron-job.org/en/members/jobs/add/"
-echo "2. URL: $PUBLIC_ENDPOINT"
-echo "3. Schedule: Every 1 minute"
-echo "4. Add header: Authorization: Bearer $CRON_SECRET"
-echo "5. Save and enable the job"
-echo ""
-echo "Monitor executions at: https://cron-job.org/en/members/jobs/"
+echo "Next step:"
+echo "Deploy the current vercel.json so Vercel owns the queue processor cron."
 echo ""
 rm -f /tmp/response.json /tmp/response_public.json

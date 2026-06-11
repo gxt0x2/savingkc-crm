@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
-interface StoredToken {
+export interface StoredToken {
   id: string
   user_email: string
   access_token: string | null
