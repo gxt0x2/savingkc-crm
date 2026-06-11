@@ -25,6 +25,7 @@ import {
   KPI,
   LEADS,
   MICRO_STEPS,
+  MOJO_HEALTH,
   NEGATIVES,
   OUTBOX,
   PAID_SESSIONS,
@@ -35,6 +36,7 @@ import {
   type ExportHealth,
   type IconName,
   type KpiItem,
+  type MojoHealth,
   type CallBreakdownRow,
   type FunnelBreakdownRow,
   type FunnelRow,
@@ -69,6 +71,7 @@ type DashboardSectionId =
   | 'searchTerms'
   | 'funnel'
   | 'exportHealth'
+  | 'mojoHealth'
   | 'heatmaps'
   | 'roster'
   | 'outbox'
@@ -79,7 +82,7 @@ const SEARCH_TERM_PAGE_SIZE = 10
 const OUTBOX_PAGE_SIZE = 5
 const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
 const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
-const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
+const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
 const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
   kpis: false,
   trend: false,
@@ -87,6 +90,7 @@ const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
   searchTerms: false,
   funnel: false,
   exportHealth: false,
+  mojoHealth: false,
   heatmaps: false,
   roster: false,
   outbox: false,
@@ -99,6 +103,7 @@ const DASHBOARD_SECTIONS: Record<DashboardSectionId, { label: string; size: Dash
   searchTerms: { label: 'Search Term Performance', size: 'half' },
   funnel: { label: 'Marketing Funnel', size: 'full' },
   exportHealth: { label: 'Export Health', size: 'full' },
+  mojoHealth: { label: 'Mojo Health', size: 'full' },
   heatmaps: { label: 'Landing Page Heatmaps', size: 'full' },
   roster: { label: 'Active Lead Roster', size: 'full' },
   outbox: { label: 'Lead Conversion Outbox', size: 'full' },
@@ -134,6 +139,7 @@ type AdsCommandData = {
   funnel: FunnelRow[]
   callBreakdown: CallBreakdownRow[]
   exportHealth: ExportHealth
+  mojoHealth: MojoHealth
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
@@ -1177,6 +1183,66 @@ function ExportHealthCard({ health }: { health: ExportHealth }) {
   )
 }
 
+function mojoHealthTone(status: MojoHealth['status']): string {
+  if (status === 'attention') return '#f87171'
+  if (status === 'watch') return '#eab308'
+  return '#22c55e'
+}
+
+function mojoHealthLabel(status: MojoHealth['status']): string {
+  if (status === 'attention') return 'Needs attention'
+  if (status === 'watch') return 'Watch sync'
+  return 'Clean'
+}
+
+function formatAgeMinutes(minutes: number | null): string {
+  if (minutes == null) return '--'
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+}
+
+function MojoHealthCard({ health }: { health: MojoHealth }) {
+  const tone = mojoHealthTone(health.status)
+  return (
+    <div className="panel export-health-panel mojo-health-panel">
+      <div className="panel-head">
+        <div>
+          <h2>Mojo Health</h2>
+          <div className="cap">Session cookie, call queue, and CRM lead intake</div>
+        </div>
+        <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
+          {mojoHealthLabel(health.status)}
+        </span>
+      </div>
+      <div className="export-health-grid">
+        <div className="export-health-metric"><span>24H QUEUED</span><b className="mono blue">{health.queue.queued24h}</b></div>
+        <div className="export-health-metric"><span>24H DONE</span><b className="mono green">{health.queue.completed24h}</b></div>
+        <div className="export-health-metric"><span>ACTIVE</span><b className="mono gold">{health.queue.pending + health.queue.processing}</b></div>
+        <div className="export-health-metric"><span>FAILED</span><b className="mono red">{health.queue.failed24h + health.queue.deadLetter}</b></div>
+        <div className="export-health-metric"><span>24H LEADS</span><b className="mono green">{health.leads.last24h}</b></div>
+        <div className="export-health-metric"><span>PERIOD LEADS</span><b className="mono">{health.leads.period}</b></div>
+      </div>
+      <div className="export-health-foot">
+        <div className="export-health-note">
+          <span>LAST MOJO SYNC</span>
+          <b>{health.lastSyncAt ? formatFreshness(health.lastSyncAt) : 'No sync timestamp'}</b>
+          <small>{health.businessHours ? 'Business hours' : 'Outside business hours'} · age {formatAgeMinutes(health.lastSyncAgeMinutes)}</small>
+        </div>
+        <div className="export-health-note">
+          <span>SESSION / QUEUE STATUS</span>
+          <b>{health.message}</b>
+          <small>
+            Session {health.sessionStatus || 'unknown'} · Sync {health.syncHealth || 'unknown'}
+            {health.latestCompletedAt ? ` · Last completed ${formatFreshness(health.latestCompletedAt)}` : ''}
+          </small>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 type OutboxLeadGroup = {
   key: string
   leadName: string
@@ -1953,6 +2019,7 @@ export function AdsCommandPage() {
   const funnel = adsData?.funnel ?? FUNNEL
   const callBreakdown = adsData?.callBreakdown ?? CALL_BREAKDOWN
   const exportHealth = adsData?.exportHealth ?? EXPORT_HEALTH
+  const mojoHealth = adsData?.mojoHealth ?? MOJO_HEALTH
   const leads = adsData?.leads ?? LEADS
   const outbox = adsData?.outbox ?? OUTBOX
   const paidSessions = adsData?.paidSessions ?? PAID_SESSIONS
@@ -2199,6 +2266,10 @@ export function AdsCommandPage() {
       return <ExportHealthCard health={exportHealth} />
     }
 
+    if (id === 'mojoHealth') {
+      return <MojoHealthCard health={mojoHealth} />
+    }
+
     if (id === 'heatmaps') {
       return <LandingHeatmapLauncher />
     }
@@ -2269,6 +2340,7 @@ export function AdsCommandPage() {
             <span className="live-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'LIVE • preview data'}</span>
             <span className="fresh-pill">Tracking: {formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</span>
             <span className="fresh-pill">Google Ads spend: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
+            <span className="fresh-pill">Mojo: {mojoHealthLabel(mojoHealth.status)}</span>
             <Link className="fresh-pill call-review-link" href="/marketing/alerts">Lead Alerts</Link>
             <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
             <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>

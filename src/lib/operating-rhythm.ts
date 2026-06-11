@@ -98,22 +98,32 @@ async function getMojoSessionSystemAlert(supabase: any): Promise<SystemAlert | n
       'mojo_session_last_error',
       'mojo_session_last_error_at',
       'mojo_sync_health',
+      'mojo_health_status',
+      'mojo_health_message',
     ])
 
   const rows = (data || []) as SystemConfigRow[]
   const byKey = new Map<string, SystemConfigRow>(rows.map((row) => [row.key, row]))
   const status = configValue(byKey.get('mojo_session_status')).toLowerCase()
   const syncHealth = configValue(byKey.get('mojo_sync_health')).toLowerCase()
+  const healthStatus = configValue(byKey.get('mojo_health_status')).toLowerCase()
 
-  if (status !== 'expired' && syncHealth !== 'down') return null
+  if (status !== 'expired' && syncHealth !== 'down' && healthStatus !== 'attention') return null
 
   const lastError = configValue(byKey.get('mojo_session_last_error'))
+  const healthMessage = configValue(byKey.get('mojo_health_message'))
+  const sessionExpired = status === 'expired' || syncHealth === 'down'
   return {
     system: 'mojo_session',
     priority: 'critical',
-    title: 'Mojo session expired',
-    description: lastError || 'Mojo session expired - manual refresh required. Casey calls are not syncing to CRM.',
+    title: sessionExpired ? 'Mojo session expired' : 'Mojo sync needs attention',
+    description:
+      healthMessage ||
+      lastError ||
+      'Mojo session expired - manual refresh required. Casey calls are not syncing to CRM.',
     updated_at:
+      byKey.get('mojo_health_message')?.updated_at ||
+      byKey.get('mojo_health_status')?.updated_at ||
       configValue(byKey.get('mojo_session_last_error_at')) ||
       byKey.get('mojo_session_status')?.updated_at ||
       null,
