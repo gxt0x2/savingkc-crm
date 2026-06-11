@@ -282,8 +282,12 @@ export interface ManifestCommunications {
   thankYouSms?: {
     sent: boolean
     sentAt?: string
+    attemptedAt?: string
     template?: string
     to?: string
+    sid?: string
+    status?: string
+    error?: string
   }
 }
 
