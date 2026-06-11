@@ -11,16 +11,24 @@
  *   node scripts/mojo-cron-runner.mjs sync
  *   node scripts/mojo-cron-runner.mjs eod
  *   node scripts/mojo-cron-runner.mjs eod --date 2026-05-21
+ *   node scripts/mojo-cron-runner.mjs refresh
  */
 
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  loadMojoEnv,
+  mojoSessionFile,
+  recordMojoSessionIssue,
+} from './mojo-session-health.mjs'
+
+loadMojoEnv()
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, '..')
-const SESSION_FILE = process.env.MOJO_SESSION_FILE || '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
+const SESSION_FILE = mojoSessionFile()
 const EXTRACT_TIMEOUT_MS = Number(process.env.MOJO_EXTRACT_TIMEOUT_MS || 90_000)
 const RUN_TIMEOUT_MS = Number(process.env.MOJO_RUN_TIMEOUT_MS || 180_000)
 const MAX_SESSION_AGE_HOURS = Number(process.env.MOJO_SESSION_MAX_AGE_HOURS || 0)
@@ -30,10 +38,11 @@ const passthroughArgs = process.argv.slice(3)
 const targetScript = {
   sync: 'mojo-sync.mjs',
   eod: 'mojo-eod-sweep.mjs',
+  refresh: 'mojo-extract-session.mjs',
 }[mode]
 
 if (!targetScript) {
-  console.error(`Unknown Mojo cron mode "${mode}". Use "sync" or "eod".`)
+  console.error(`Unknown Mojo cron mode "${mode}". Use "sync", "eod", or "refresh".`)
   process.exit(2)
 }
 
@@ -94,6 +103,11 @@ async function refreshSession(reason) {
   const result = await runNodeScript('mojo-extract-session.mjs', [], EXTRACT_TIMEOUT_MS)
   if (result.code !== 0) {
     log(`Mojo session refresh failed with exit code ${result.code}${result.timedOut ? ' (timeout)' : ''}`)
+    await recordMojoSessionIssue({
+      source: 'mojo-cron-runner',
+      reason,
+      message: 'Mojo session expired - manual refresh required',
+    })
     return false
   }
 
@@ -114,6 +128,10 @@ async function ensureSession() {
 }
 
 async function main() {
+  if (mode === 'refresh') {
+    process.exit((await refreshSession('scheduled_refresh')) ? 0 : 1)
+  }
+
   if (!(await ensureSession())) {
     process.exit(1)
   }

@@ -18,6 +18,16 @@
 
 import fs from 'fs'
 import path from 'path'
+import {
+  clearMojoSessionIssue,
+  isMojoSessionError,
+  loadMojoEnv,
+  markLocalSessionExpired,
+  mojoSessionFile,
+  recordMojoSessionIssue,
+} from './mojo-session-health.mjs'
+
+loadMojoEnv()
 
 const MOJO_BASE_URL = 'https://app71.mojosells.com'
 const CRM_BASE_URL = (process.env.CRM_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com').replace(/\/$/, '')
@@ -25,7 +35,7 @@ const CRM_API_URL = process.env.CRM_API_URL || `${CRM_BASE_URL}/api/mojo/sync`
 const CRM_CONFIG_URL = process.env.CRM_CONFIG_URL || `${CRM_BASE_URL}/api/admin/system-config`
 const CRM_QUEUE_URL = process.env.CRM_QUEUE_URL || `${CRM_BASE_URL}/api/cron/process-mojo-queue`
 const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
-const SESSION_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json'
+const SESSION_FILE = mojoSessionFile()
 const LOG_DIR = '/Users/ernestdodson/.openclaw/workspace/memory/logs'
 const LOG_FILE = path.join(LOG_DIR, 'mojo-eod-sweep.log')
 
@@ -107,11 +117,7 @@ function readSession() {
 }
 
 function markSessionExpired() {
-  try {
-    fs.writeFileSync(SESSION_FILE, JSON.stringify({ expired: true, updatedAt: new Date().toISOString() }, null, 2))
-  } catch (err) {
-    logError('Failed to mark session as expired', err)
-  }
+  markLocalSessionExpired()
 }
 
 // --- CRM config ---
@@ -164,6 +170,38 @@ function mojoHeaders(sessionId) {
   }
 }
 
+function looksLikeLoginResponse(resp, bodyText = '') {
+  const responseUrl = resp.url || ''
+  const lowerBody = bodyText.toLowerCase()
+  return (
+    resp.redirected ||
+    responseUrl.includes('/login') ||
+    responseUrl.includes('/accounts/login') ||
+    lowerBody.includes('<form') && lowerBody.includes('password') && lowerBody.includes('login')
+  )
+}
+
+async function readMojoJson(resp, label) {
+  if (resp.status === 401 || resp.status === 403 || (resp.status >= 300 && resp.status < 400)) {
+    markSessionExpired()
+    throw new Error(`session_expired: Mojo ${label} returned ${resp.status}`)
+  }
+
+  const contentType = resp.headers.get('content-type') || ''
+  const bodyText = await resp.text()
+
+  if (looksLikeLoginResponse(resp, bodyText)) {
+    markSessionExpired()
+    throw new Error(`session_expired: Mojo ${label} returned login page`)
+  }
+
+  if (!contentType.includes('json')) {
+    throw new Error(`Mojo ${label} returned non-JSON (${contentType || 'unknown content type'})`)
+  }
+
+  return JSON.parse(bodyText)
+}
+
 async function fetchActivityStream(sessionId, page = 1) {
   const url = `${MOJO_BASE_URL}/v2/rest/home/activity-stream/?page=${page}`
   const resp = await fetch(url, {
@@ -172,14 +210,14 @@ async function fetchActivityStream(sessionId, page = 1) {
   })
 
   if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) {
+    if (resp.status === 401 || resp.status === 403 || (resp.status >= 300 && resp.status < 400)) {
       markSessionExpired()
-      throw new Error('session_expired')
+      throw new Error(`session_expired: Mojo activity-stream returned ${resp.status}`)
     }
     throw new Error(`Mojo activity-stream returned ${resp.status}`)
   }
 
-  const data = await resp.json()
+  const data = await readMojoJson(resp, 'activity-stream')
   return data.activities || []
 }
 
@@ -453,7 +491,13 @@ async function eodSweep() {
   try {
     const session = readSession()
     if (!session?.sessionId) {
-      log('No valid session found. Run session extraction first.')
+      const message = 'Mojo session expired - manual refresh required'
+      log(message)
+      await recordMojoSessionIssue({
+        source: 'mojo-eod-sweep',
+        reason: 'no_session',
+        message,
+      })
       return { ok: false, error: 'no_session' }
     }
 
@@ -499,6 +543,7 @@ async function eodSweep() {
         // Still update the timestamp so next delta sync starts from now.
         await writeLastSyncTimestamp(new Date().toISOString())
         await processMojoQueue('no_eod_calls')
+        await clearMojoSessionIssue('mojo-eod-sweep')
       } else {
         log('Skipped last_mojo_sync_timestamp update for historical/dry run sweep')
       }
@@ -539,9 +584,17 @@ async function eodSweep() {
       log('Skipped last_mojo_sync_timestamp update for historical sweep')
     }
 
+    await clearMojoSessionIssue('mojo-eod-sweep')
     return { ok: true, ...crmResult }
   } catch (err) {
     logError('EOD sweep failed', err)
+    if (isMojoSessionError(err)) {
+      await recordMojoSessionIssue({
+        source: 'mojo-eod-sweep',
+        reason: 'session_expired',
+        message: 'Mojo session expired - manual refresh required',
+      })
+    }
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 }

@@ -16,12 +16,21 @@ import { getMissingPillars } from './pillar-warnings'
 
 export interface MorningBriefingData {
   date: string
+  system_alerts: SystemAlert[]
   callbacks_today: CallbackItem[]
   overdue_followups: FollowUpItem[]
   leads_needing_attention: LeadAttentionItem[]
   mail_arriving_today: MailItem[]
   pipeline_summary: PipelineSummary
   yesterday_stats: AgentDailyStats | null
+}
+
+interface SystemAlert {
+  system: string
+  priority: 'critical' | 'high' | 'medium'
+  title: string
+  description: string
+  updated_at: string | null
 }
 
 interface CallbackItem {
@@ -65,6 +74,43 @@ interface PipelineSummary {
   disposition: number
   closed: number
   total: number
+}
+
+function configValue(row: { value?: unknown } | undefined): string {
+  const value = row?.value
+  if (typeof value === 'string') return value
+  if (value === null || value === undefined) return ''
+  return JSON.stringify(value)
+}
+
+async function getMojoSessionSystemAlert(supabase: any): Promise<SystemAlert | null> {
+  const { data } = await supabase
+    .from('system_config')
+    .select('key, value, updated_at')
+    .in('key', [
+      'mojo_session_status',
+      'mojo_session_last_error',
+      'mojo_session_last_error_at',
+      'mojo_sync_health',
+    ])
+
+  const byKey = new Map((data || []).map((row: any) => [row.key, row]))
+  const status = configValue(byKey.get('mojo_session_status')).toLowerCase()
+  const syncHealth = configValue(byKey.get('mojo_sync_health')).toLowerCase()
+
+  if (status !== 'expired' && syncHealth !== 'down') return null
+
+  const lastError = configValue(byKey.get('mojo_session_last_error'))
+  return {
+    system: 'mojo_session',
+    priority: 'critical',
+    title: 'Mojo session expired',
+    description: lastError || 'Mojo session expired - manual refresh required. Casey calls are not syncing to CRM.',
+    updated_at:
+      configValue(byKey.get('mojo_session_last_error_at')) ||
+      byKey.get('mojo_session_status')?.updated_at ||
+      null,
+  }
 }
 
 /**
@@ -206,9 +252,11 @@ export async function getMorningBriefing(
 
   // Yesterday's stats
   const yesterdayStats = await getTodayStats(agentId)
+  const mojoSessionAlert = await getMojoSessionSystemAlert(supabase)
 
   return {
     date: today,
+    system_alerts: mojoSessionAlert ? [mojoSessionAlert] : [],
     callbacks_today: callbacks,
     overdue_followups: overdueFollowups,
     leads_needing_attention: leadsNeedingAttention,
@@ -451,6 +499,7 @@ export async function getWeeklyReview(
 
   // Top priorities (auto-generated)
   const priorities: string[] = []
+  const mojoSessionAlert = await getMojoSessionSystemAlert(supabase)
 
   // Priority 1: Stagnant high-value leads
   const { data: stagnantLeads } = await supabase
@@ -516,7 +565,7 @@ export async function getWeeklyReview(
     system_health: {
       error_count: 0, // TODO: Track from error logs
       worker_status: {
-        mojo_sync: 'healthy',
+        mojo_sync: mojoSessionAlert ? 'down' : 'healthy',
         email_delivery: 'healthy',
         sms_delivery: 'healthy',
       },
