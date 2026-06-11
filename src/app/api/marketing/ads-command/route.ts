@@ -42,6 +42,19 @@ type GoogleAdsCampaignDailyRow = {
   imported_at?: string | null
 }
 
+type OpenAIAdsCampaignDailyRow = {
+  date: string
+  account_id: string
+  campaign_id: string
+  campaign_name: string
+  impressions: number | string | null
+  clicks: number | string | null
+  cost_micros: number | string | null
+  conversions: number | string | null
+  all_conversions: number | string | null
+  imported_at?: string | null
+}
+
 type GoogleAdsSearchTermDailyRow = {
   date: string
   campaign_id: string
@@ -150,12 +163,22 @@ type GoogleAdsSyncRunRow = {
   error: string | null
 }
 
+type OpenAIAdsSyncRunRow = {
+  status: string | null
+  started_at: string | null
+  finished_at: string | null
+  error: string | null
+}
+
 type AdsCommandFreshness = {
   dashboardGeneratedAt: string
   liveTrackingUpdatedAt: string | null
   googleAdsImportedAt: string | null
   googleAdsSyncStatus: string | null
   googleAdsSyncFinishedAt: string | null
+  openAIAdsImportedAt: string | null
+  openAIAdsSyncStatus: string | null
+  openAIAdsSyncFinishedAt: string | null
 }
 
 type AdsCommandResponse = {
@@ -272,6 +295,12 @@ function isExternalLeadRow(row: PpcLeadSummaryRow, activities: PpcActivitySummar
     && !leadActivities.some((activity) => isInternalPayload(activity.metadata) || hasTestMarker(activity.metadata, activity.description))
 }
 
+function isMissingRelationError(error: unknown): boolean {
+  if (!error) return false
+  const body = record(error)
+  return text(body.code) === '42P01' || /relation .* does not exist/i.test(text(body.message))
+}
+
 function readPeriod(value: string | null): MarketingPeriod {
   if (value === 'today' || value === 'yesterday' || value === 'week' || value === 'month' || value === 'qtr' || value === 'ytd') {
     return value
@@ -347,6 +376,20 @@ function integer(value: unknown): number {
 
 function spend(row: { cost_micros: number | string | null }): number {
   return numberValue(row.cost_micros) / 1_000_000
+}
+
+function openAIAdsCampaignRowsForDashboard(rows: OpenAIAdsCampaignDailyRow[]): GoogleAdsCampaignDailyRow[] {
+  return rows.map((row) => ({
+    date: row.date,
+    campaign_id: row.campaign_id,
+    campaign_name: row.campaign_name || 'OpenAI Ads',
+    impressions: row.impressions,
+    clicks: row.clicks,
+    cost_micros: row.cost_micros,
+    conversions: row.conversions,
+    all_conversions: row.all_conversions,
+    imported_at: row.imported_at,
+  }))
 }
 
 function pctDelta(current: number, previous: number): number {
@@ -1293,6 +1336,8 @@ async function fetchRows(period: MarketingPeriod) {
   const [
     { data: campaignRows, error: campaignError },
     { data: previousCampaignRows, error: previousCampaignError },
+    { data: openAIAdsCampaignRows, error: openAIAdsCampaignError },
+    { data: previousOpenAIAdsCampaignRows, error: previousOpenAIAdsCampaignError },
     { data: searchRows, error: searchError },
     { data: trackingRows, error: trackingError },
     { data: leadRows, error: leadError },
@@ -1301,9 +1346,12 @@ async function fetchRows(period: MarketingPeriod) {
     { data: activityRows, error: activityError },
     { data: revenueRows, error: revenueError },
     { data: syncRunRows, error: syncRunError },
+    { data: openAIAdsSyncRunRows, error: openAIAdsSyncRunError },
   ] = await Promise.all([
     db.from('google_ads_campaign_daily').select('date,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', range.since).lte('date', range.until).order('date', { ascending: true }),
     db.from('google_ads_campaign_daily').select('date,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', previousRange.since).lte('date', previousRange.until),
+    db.from('openai_ads_campaign_daily').select('date,account_id,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', range.since).lte('date', range.until).order('date', { ascending: true }),
+    db.from('openai_ads_campaign_daily').select('date,account_id,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', previousRange.since).lte('date', previousRange.until),
     db.from('google_ads_search_term_daily').select('date,campaign_id,campaign_name,ad_group_id,ad_group_name,search_term,keyword_text,keyword_match_type,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', range.since).lte('date', range.until).order('clicks', { ascending: false }).limit(500),
     db.from('ppc_tracking_events').select('id,event_id,event_name,event_category,event_time,session_id,visitor_id,lead_id,page_path,page_location,page_referrer,traffic_source,campaign,utm_source,utm_medium,utm_campaign,utm_term,utm_content,gclid,gbraid,wbraid,gad_source,gad_campaignid,gad_adgroupid,form_step,form_status,situation_raw,timeline_raw,condition_raw,phone_number,is_test,payload,created_at').gte('event_time', isoStart(range.since)).lt('event_time', isoAfter(range.until)).order('event_time', { ascending: true }).limit(5000),
     db.from('leads').select('id,full_name,source,station,priority,property_address,city,county,classification,opportunity_score,created_at').in('source', PPC_LEAD_SOURCES).gte('created_at', isoStart(range.since)).lt('created_at', isoAfter(range.until)).limit(2000),
@@ -1312,19 +1360,37 @@ async function fetchRows(period: MarketingPeriod) {
     db.from('lead_activities').select('lead_id,activity_type,description,metadata,created_at').gte('created_at', isoStart(range.since)).lt('created_at', isoAfter(range.until)).limit(5000),
     db.from('revenue_transactions').select('deal_id,amount').gte('date', range.since).lte('date', range.until).limit(2000),
     db.from('google_ads_reporting_sync_runs').select('status,started_at,finished_at,error').order('started_at', { ascending: false }).limit(1),
+    db.from('openai_ads_reporting_sync_runs').select('status,started_at,finished_at,error').order('started_at', { ascending: false }).limit(1),
   ])
 
-  const firstError = campaignError || previousCampaignError || searchError || trackingError || leadError || previousLeadError || outboxError || activityError || revenueError || syncRunError
+  const openAIAdsOptionalError = [
+    openAIAdsCampaignError,
+    previousOpenAIAdsCampaignError,
+    openAIAdsSyncRunError,
+  ].find((error) => error && !isMissingRelationError(error))
+  const firstError = campaignError || previousCampaignError || openAIAdsOptionalError || searchError || trackingError || leadError || previousLeadError || outboxError || activityError || revenueError || syncRunError
   if (firstError) throw new Error(firstError.message)
 
   const cleanTrackingRows = ((trackingRows ?? []) as PpcTrackingSummaryRow[]).filter(isExternalTrackingRow)
   const cleanOutboxRows = ((outboxRows ?? []) as PpcOutboxSummaryRow[]).filter(isExternalOutboxRow)
   const cleanActivityRows = (activityRows ?? []) as PpcActivitySummaryRow[]
+  const googleCampaignRows = (campaignRows ?? []) as GoogleAdsCampaignDailyRow[]
+  const googlePreviousCampaignRows = (previousCampaignRows ?? []) as GoogleAdsCampaignDailyRow[]
+  const normalizedOpenAIAdsCampaignRows = openAIAdsCampaignError
+    ? []
+    : openAIAdsCampaignRowsForDashboard((openAIAdsCampaignRows ?? []) as OpenAIAdsCampaignDailyRow[])
+  const normalizedPreviousOpenAIAdsCampaignRows = previousOpenAIAdsCampaignError
+    ? []
+    : openAIAdsCampaignRowsForDashboard((previousOpenAIAdsCampaignRows ?? []) as OpenAIAdsCampaignDailyRow[])
 
   return {
     range,
-    campaignRows: (campaignRows ?? []) as GoogleAdsCampaignDailyRow[],
-    previousCampaignRows: (previousCampaignRows ?? []) as GoogleAdsCampaignDailyRow[],
+    googleCampaignRows,
+    googlePreviousCampaignRows,
+    openAIAdsCampaignRows: normalizedOpenAIAdsCampaignRows,
+    previousOpenAIAdsCampaignRows: normalizedPreviousOpenAIAdsCampaignRows,
+    campaignRows: [...googleCampaignRows, ...normalizedOpenAIAdsCampaignRows],
+    previousCampaignRows: [...googlePreviousCampaignRows, ...normalizedPreviousOpenAIAdsCampaignRows],
     searchRows: (searchRows ?? []) as GoogleAdsSearchTermDailyRow[],
     trackingRows: cleanTrackingRows,
     leadRows: ((leadRows ?? []) as PpcLeadSummaryRow[]).filter((lead) => isExternalLeadRow(lead, cleanActivityRows)),
@@ -1333,12 +1399,15 @@ async function fetchRows(period: MarketingPeriod) {
     activityRows: cleanActivityRows,
     revenueRows: (revenueRows ?? []) as RevenueSummaryRow[],
     latestSyncRun: ((syncRunRows ?? []) as GoogleAdsSyncRunRow[])[0] ?? null,
+    latestOpenAIAdsSyncRun: openAIAdsSyncRunError ? null : ((openAIAdsSyncRunRows ?? []) as OpenAIAdsSyncRunRow[])[0] ?? null,
   }
 }
 
-function latestImportLabel(rows: GoogleAdsCampaignDailyRow[]): string {
-  if (rows.length === 0) return 'LIVE • no Google Ads import rows'
-  return 'LIVE • 60s dashboard / 10m Ads sync'
+function latestImportLabel(googleRows: GoogleAdsCampaignDailyRow[], openAIAdsRows: GoogleAdsCampaignDailyRow[]): string {
+  if (googleRows.length === 0 && openAIAdsRows.length === 0) return 'LIVE • no paid ads import rows'
+  if (googleRows.length > 0 && openAIAdsRows.length > 0) return 'LIVE • Google + OpenAI Ads sync'
+  if (openAIAdsRows.length > 0) return 'LIVE • OpenAI Ads sync'
+  return 'LIVE • Google Ads sync'
 }
 
 function latestIso(values: Array<string | null | undefined>): string | null {
@@ -1355,9 +1424,11 @@ function latestIso(values: Array<string | null | undefined>): string | null {
 function buildFreshness(
   generatedAt: string,
   campaignRows: GoogleAdsCampaignDailyRow[],
+  openAIAdsCampaignRows: GoogleAdsCampaignDailyRow[],
   searchRows: GoogleAdsSearchTermDailyRow[],
   trackingRows: PpcTrackingSummaryRow[],
   latestSyncRun: GoogleAdsSyncRunRow | null,
+  latestOpenAIAdsSyncRun: OpenAIAdsSyncRunRow | null,
 ): AdsCommandFreshness {
   return {
     dashboardGeneratedAt: generatedAt,
@@ -1369,6 +1440,12 @@ function buildFreshness(
     ]),
     googleAdsSyncStatus: latestSyncRun?.status ?? null,
     googleAdsSyncFinishedAt: latestSyncRun?.finished_at ?? null,
+    openAIAdsImportedAt: latestIso([
+      ...openAIAdsCampaignRows.map((row) => row.imported_at),
+      latestOpenAIAdsSyncRun?.finished_at,
+    ]),
+    openAIAdsSyncStatus: latestOpenAIAdsSyncRun?.status ?? null,
+    openAIAdsSyncFinishedAt: latestOpenAIAdsSyncRun?.finished_at ?? null,
   }
 }
 
@@ -1398,8 +1475,16 @@ export async function GET(req: NextRequest) {
     const response: AdsCommandResponse = {
       source: 'live',
       generatedAt,
-      syncedLabel: latestImportLabel(rows.campaignRows),
-      freshness: buildFreshness(generatedAt, rows.campaignRows, rows.searchRows, rows.trackingRows, rows.latestSyncRun),
+      syncedLabel: latestImportLabel(rows.googleCampaignRows, rows.openAIAdsCampaignRows),
+      freshness: buildFreshness(
+        generatedAt,
+        rows.googleCampaignRows,
+        rows.openAIAdsCampaignRows,
+        rows.searchRows,
+        rows.trackingRows,
+        rows.latestSyncRun,
+        rows.latestOpenAIAdsSyncRun,
+      ),
       period,
       range: rows.range,
       kpi: buildKpis(rows.campaignRows, rows.previousCampaignRows, rows.leadRows, rows.previousLeadRows, rows.revenueRows, rows.trackingRows),

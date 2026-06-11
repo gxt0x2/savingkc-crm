@@ -130,6 +130,9 @@ type AdsCommandData = {
     googleAdsImportedAt: string | null
     googleAdsSyncStatus: string | null
     googleAdsSyncFinishedAt: string | null
+    openAIAdsImportedAt: string | null
+    openAIAdsSyncStatus: string | null
+    openAIAdsSyncFinishedAt: string | null
   }
   kpi: KpiItem[]
   series: SeriesRow[]
@@ -2321,6 +2324,7 @@ export function AdsCommandPage() {
               <span className="live-pill"><span className="live-dot" /> LIVE • loading</span>
               <span className="fresh-pill">Tracking: waiting</span>
               <span className="fresh-pill">Google Ads spend: waiting</span>
+              <span className="fresh-pill">OpenAI Ads spend: waiting</span>
               <Link className="fresh-pill call-review-link" href="/marketing/alerts">Lead Alerts</Link>
               <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
               <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
@@ -2340,6 +2344,7 @@ export function AdsCommandPage() {
             <span className="live-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'LIVE • preview data'}</span>
             <span className="fresh-pill">Tracking: {formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</span>
             <span className="fresh-pill">Google Ads spend: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
+            <span className="fresh-pill">OpenAI Ads spend: {formatFreshness(adsData?.freshness.openAIAdsImportedAt)}</span>
             <span className="fresh-pill">Mojo: {mojoHealthLabel(mojoHealth.status)}</span>
             <Link className="fresh-pill call-review-link" href="/marketing/alerts">Lead Alerts</Link>
             <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
@@ -2368,7 +2373,7 @@ export function AdsCommandPage() {
           </div>
 
           <div className="foot">
-            SAVING KC • ADS COMMAND • {adsData ? 'Google Ads import + CRM paid-source read model' : 'preview fallback data'}
+            SAVING KC • ADS COMMAND • {adsData ? 'Paid ads import + CRM paid-source read model' : 'preview fallback data'}
           </div>
         </div>
 
