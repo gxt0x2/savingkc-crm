@@ -16,6 +16,12 @@ import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 // Casey's company number - used as FROM for thank-you SMS
 const CASEY_COMPANY_NUMBER = '+18167277667'
 const CONNECTED_CONVERSATION_SECONDS = 60
+const STREET_SUFFIXES = new Set([
+  'ALY', 'ALLEY', 'AVE', 'AVENUE', 'BLVD', 'BOULEVARD', 'CIR', 'CIRCLE', 'CT', 'COURT',
+  'DR', 'DRIVE', 'HWY', 'HIGHWAY', 'LN', 'LANE', 'LOOP', 'PKWY', 'PARKWAY', 'PL', 'PLACE',
+  'RD', 'ROAD', 'ST', 'STREET', 'TER', 'TERRACE', 'TRL', 'TRAIL', 'WAY',
+])
+const STREET_DIRECTIONS = new Set(['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'])
 
 type ThankYouTemplateKey = 'appointment_set' | 'interested' | 'callback' | 'voicemail'
 type ManifestThankYouSms = NonNullable<NonNullable<ManifestV2['communications']>['thankYouSms']>
@@ -26,7 +32,7 @@ const THANK_YOU_TEMPLATES: Record<ThankYouTemplateKey, (firstName: string, addre
     `Hey ${firstName}! It's Casey from Saving KC. Really enjoyed chatting with you today. Looking forward to coming by on ${date || 'soon'} to check out the property. If anything comes up before then, just shoot me a text. Talk soon!`,
 
   'interested': (firstName, address) =>
-    `Hey ${firstName}, it's Casey with Saving KC! Thanks for talking with me today about ${address}. I think we can definitely help. I'll be in touch soon, but if you think of anything, just text me back here anytime.`,
+    `Hey ${firstName}, it's Casey with Saving KC Homebuyers!\n\nThanks for talking with me today about ${formatPlaceReference(address)}.\n\nIf you have any questions, just text me back here anytime. -Casey`,
 
   'callback': (firstName) =>
     `Hey ${firstName}! It's Casey from Saving KC. I tried giving you a call today. Would love to connect when you get a chance. What time works best for you? Just text me back and I'll call you then.`,
@@ -62,6 +68,32 @@ function hasConnectedConversation(call: MojoCallRecord): boolean {
   const hasRecording = typeof call.recording_url === 'string' && call.recording_url.trim().length > 0
 
   return hasLongCall || hasAgentNotes || hasRecording
+}
+
+function titleCaseStreet(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b[a-z]/g, char => char.toUpperCase())
+}
+
+function formatPlaceReference(address: string): string {
+  const cleaned = address.trim()
+  if (!cleaned || cleaned === 'your property') return 'your property'
+
+  const streetPart = cleaned.split(',')[0]?.trim()
+  if (!streetPart) return 'your property'
+
+  const tokens = streetPart
+    .replace(/[^A-Za-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+
+  const withoutNumber = tokens.filter((token, index) => !(index === 0 && /^\d+[A-Za-z]?$/.test(token)))
+  const withoutDirection = withoutNumber.filter((token, index) => !(index === 0 && STREET_DIRECTIONS.has(token.toUpperCase())))
+  const withoutSuffix = withoutDirection.filter((token, index, arr) => !(index === arr.length - 1 && STREET_SUFFIXES.has(token.toUpperCase())))
+  const streetName = withoutSuffix.join(' ')
+
+  return streetName ? `your place on ${titleCaseStreet(streetName)}` : `your property at ${titleCaseStreet(streetPart)}`
 }
 
 function selectThankYouTemplateKey(call: MojoCallRecord, outcome: string): ThankYouTemplateKey | null {
