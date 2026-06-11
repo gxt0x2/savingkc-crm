@@ -46,6 +46,16 @@ function todayIsoDate() {
   }).format(new Date())
 }
 
+function addDays(date: string, days: number): string {
+  const next = new Date(`${date}T12:00:00Z`)
+  next.setUTCDate(next.getUTCDate() + days)
+  return next.toISOString().slice(0, 10)
+}
+
+function latestCompletedIsoDate() {
+  return addDays(todayIsoDate(), -1)
+}
+
 function assertDate(label: string, value: string) {
   if (!DATE_RE.test(value)) throw new Error(`${label} must be YYYY-MM-DD`)
 }
@@ -293,7 +303,7 @@ export async function runOpenAIAdsReportingSync(
   options: OpenAIAdsReportingSyncOptions = {},
 ): Promise<OpenAIAdsReportingSyncResult> {
   const since = options.since || process.env.OPENAI_ADS_BACKFILL_SINCE || DEFAULT_SINCE
-  const until = options.until || process.env.OPENAI_ADS_BACKFILL_UNTIL || todayIsoDate()
+  const until = options.until || process.env.OPENAI_ADS_BACKFILL_UNTIL || latestCompletedIsoDate()
   const write = options.write === true
   const dryRun = !write
 
