@@ -83,6 +83,12 @@ function configValue(row: { value?: unknown } | undefined): string {
   return JSON.stringify(value)
 }
 
+type SystemConfigRow = {
+  key: string
+  value?: unknown
+  updated_at?: string | null
+}
+
 async function getMojoSessionSystemAlert(supabase: any): Promise<SystemAlert | null> {
   const { data } = await supabase
     .from('system_config')
@@ -94,7 +100,8 @@ async function getMojoSessionSystemAlert(supabase: any): Promise<SystemAlert | n
       'mojo_sync_health',
     ])
 
-  const byKey = new Map((data || []).map((row: any) => [row.key, row]))
+  const rows = (data || []) as SystemConfigRow[]
+  const byKey = new Map<string, SystemConfigRow>(rows.map((row) => [row.key, row]))
   const status = configValue(byKey.get('mojo_session_status')).toLowerCase()
   const syncHealth = configValue(byKey.get('mojo_sync_health')).toLowerCase()
 
