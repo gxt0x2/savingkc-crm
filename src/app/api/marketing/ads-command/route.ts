@@ -18,11 +18,13 @@ import {
   type KpiItem,
   type LeadRow,
   type MarketingPeriod,
+  type MojoHealth,
   type NegativeKeywordRow,
   type OutboxRow,
   type PaidSessionRow,
   type SeriesRow,
 } from '@/lib/marketing/ads-command-seed'
+import { getMojoHealth } from '@/lib/marketing/mojo-health'
 import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceKey, paidSourceLabel } from '@/lib/marketing/paid-source'
 
 export const dynamic = 'force-dynamic'
@@ -174,6 +176,7 @@ type AdsCommandResponse = {
   funnel: FunnelRow[]
   callBreakdown: CallBreakdownRow[]
   exportHealth: ExportHealth
+  mojoHealth: MojoHealth
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
@@ -1385,6 +1388,10 @@ export async function GET(req: NextRequest) {
   try {
     const period = readPeriod(url.searchParams.get('period'))
     const rows = await fetchRows(period)
+    const mojoHealth = await getMojoHealth(supabaseAdmin(), {
+      periodSinceIso: isoStart(rows.range.since),
+      periodUntilIso: isoAfter(rows.range.until),
+    })
     const series = buildSeries(rows.campaignRows, rows.leadRows, rows.trackingRows, rows.range)
     const leadRowsForResponse = buildLeadRows(rows.leadRows, rows.trackingRows, rows.outboxRows, rows.activityRows, rows.revenueRows)
     const generatedAt = new Date().toISOString()
@@ -1403,6 +1410,7 @@ export async function GET(req: NextRequest) {
       funnel: buildFunnel(rows.campaignRows, rows.trackingRows, rows.leadRows),
       callBreakdown: buildCallBreakdown(rows.trackingRows, rows.outboxRows),
       exportHealth: buildExportHealth(rows.outboxRows, rows.leadRows),
+      mojoHealth,
       leads: leadRowsForResponse,
       outbox: buildOutboxRows(rows.outboxRows, rows.leadRows),
       paidSessions: buildPaidSessions(rows.trackingRows),

@@ -134,6 +134,42 @@ export type ExportHealth = {
   status: 'clean' | 'watch' | 'attention'
 }
 
+export type MojoHealth = {
+  status: 'clean' | 'watch' | 'attention'
+  message: string
+  sessionStatus: string
+  syncHealth: string
+  businessHours: boolean
+  lastSyncAt: string | null
+  lastSyncAgeMinutes: number | null
+  lastSessionOkAt: string | null
+  lastError: string | null
+  lastErrorAt: string | null
+  latestQueuedAt: string | null
+  latestCompletedAt: string | null
+  latestQueueError: string | null
+  queue: {
+    pending: number
+    processing: number
+    completed24h: number
+    failed24h: number
+    deadLetter: number
+    queued24h: number
+    total7d: number
+  }
+  leads: {
+    last24h: number
+    period: number
+    qualifiedPeriod: number
+    appointmentPeriod: number
+  }
+  monitor: {
+    path: string
+    schedule: string
+    manualRefreshCommand: string
+  }
+}
+
 export type MicroStepRow = {
   key: string
   name: string
@@ -480,6 +516,42 @@ export const EXPORT_HEALTH: ExportHealth = {
   lastFailureAt: null,
   lastFailureEvent: null,
   status: 'watch',
+}
+
+export const MOJO_HEALTH: MojoHealth = {
+  status: 'watch',
+  message: 'Waiting for live Mojo health data',
+  sessionStatus: 'unknown',
+  syncHealth: 'unknown',
+  businessHours: false,
+  lastSyncAt: null,
+  lastSyncAgeMinutes: null,
+  lastSessionOkAt: null,
+  lastError: null,
+  lastErrorAt: null,
+  latestQueuedAt: null,
+  latestCompletedAt: null,
+  latestQueueError: null,
+  queue: {
+    pending: 0,
+    processing: 0,
+    completed24h: 0,
+    failed24h: 0,
+    deadLetter: 0,
+    queued24h: 0,
+    total7d: 0,
+  },
+  leads: {
+    last24h: 0,
+    period: 0,
+    qualifiedPeriod: 0,
+    appointmentPeriod: 0,
+  },
+  monitor: {
+    path: '/api/admin/mojo-health',
+    schedule: 'Every 15 minutes during Mojo business hours',
+    manualRefreshCommand: 'npm run mojo:session:manual',
+  },
 }
 
 export const MICRO_STEPS: MicroStepRow[] = [
