@@ -52,6 +52,7 @@ describe('runOpenAIAdsReportingSync', () => {
     delete process.env.OPENAI_ADS_API_BASE
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   it('is a configured=false no-op when the advertiser reporting key is missing', async () => {
@@ -74,6 +75,24 @@ describe('runOpenAIAdsReportingSync', () => {
       runId: null,
     })
     expect(fetchMock).not.toHaveBeenCalled()
+    expect(db.client.from).not.toHaveBeenCalled()
+  })
+
+  it('defaults the reporting window through the latest completed Chicago day', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-11T21:00:00.000Z'))
+    const db = supabaseMock()
+    mocks.supabase = db.client
+    vi.stubGlobal('fetch', vi.fn())
+
+    const result = await runOpenAIAdsReportingSync({ write: true })
+
+    expect(result).toMatchObject({
+      since: '2026-06-01',
+      until: '2026-06-10',
+      configured: false,
+      campaignRows: 0,
+    })
     expect(db.client.from).not.toHaveBeenCalled()
   })
 

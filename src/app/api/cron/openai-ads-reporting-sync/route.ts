@@ -43,10 +43,11 @@ async function handle(req: NextRequest) {
 
   const url = new URL(req.url)
   const dryRun = parseBool(url.searchParams.get('dryRun'))
-  const today = chicagoDate()
+  const latestCompletedDate = addDays(chicagoDate(), -1)
   const lookbackDays = readLookbackDays(url.searchParams.get('lookbackDays'))
-  const since = parseDate(url.searchParams.get('since')) || addDays(today, -(lookbackDays - 1))
-  const until = parseDate(url.searchParams.get('until')) || today
+  const requestedUntil = parseDate(url.searchParams.get('until')) || latestCompletedDate
+  const until = requestedUntil > latestCompletedDate ? latestCompletedDate : requestedUntil
+  const since = parseDate(url.searchParams.get('since')) || addDays(until, -(lookbackDays - 1))
 
   try {
     const result = await runOpenAIAdsReportingSync({
