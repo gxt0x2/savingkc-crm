@@ -25,7 +25,7 @@ import {
   type SeriesRow,
 } from '@/lib/marketing/ads-command-seed'
 import { getMojoHealth } from '@/lib/marketing/mojo-health'
-import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceKey, paidSourceLabel } from '@/lib/marketing/paid-source'
+import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceKey, paidSourceLabel, type PaidSourceKey } from '@/lib/marketing/paid-source'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -40,6 +40,7 @@ type GoogleAdsCampaignDailyRow = {
   conversions: number | string | null
   all_conversions: number | string | null
   imported_at?: string | null
+  paid_source?: PaidSourceKey
 }
 
 type OpenAIAdsCampaignDailyRow = {
@@ -181,8 +182,11 @@ type AdsCommandFreshness = {
   openAIAdsSyncFinishedAt: string | null
 }
 
+type PaidSourceFilter = PaidSourceKey | 'all'
+
 type AdsCommandResponse = {
   source: 'live'
+  paidSourceFilter: PaidSourceFilter
   generatedAt: string
   syncedLabel: string
   freshness: AdsCommandFreshness
@@ -308,6 +312,15 @@ function readPeriod(value: string | null): MarketingPeriod {
   return 'month'
 }
 
+function readPaidSourceFilter(value: string | null): PaidSourceFilter {
+  if (value === 'google_ads' || value === 'openai_ads') return value
+  return 'all'
+}
+
+function paidSourceMatches(filter: PaidSourceFilter, source: PaidSourceKey): boolean {
+  return filter === 'all' || filter === source
+}
+
 function chicagoDate(date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Chicago',
@@ -378,6 +391,10 @@ function spend(row: { cost_micros: number | string | null }): number {
   return numberValue(row.cost_micros) / 1_000_000
 }
 
+function googleAdsCampaignRowsForDashboard(rows: GoogleAdsCampaignDailyRow[]): GoogleAdsCampaignDailyRow[] {
+  return rows.map((row) => ({ ...row, paid_source: 'google_ads' }))
+}
+
 function openAIAdsCampaignRowsForDashboard(rows: OpenAIAdsCampaignDailyRow[]): GoogleAdsCampaignDailyRow[] {
   return rows.map((row) => ({
     date: row.date,
@@ -389,6 +406,7 @@ function openAIAdsCampaignRowsForDashboard(rows: OpenAIAdsCampaignDailyRow[]): G
     conversions: row.conversions,
     all_conversions: row.all_conversions,
     imported_at: row.imported_at,
+    paid_source: 'openai_ads',
   }))
 }
 
@@ -886,6 +904,34 @@ function clickIdFromTracking(row: PpcTrackingSummaryRow): string {
   return paidSourceIdentifier(attribution)
 }
 
+function trackingPaidSource(row: PpcTrackingSummaryRow): PaidSourceKey {
+  return paidSourceKey(trackingAttribution(row))
+}
+
+function outboxPaidSource(row: PpcOutboxSummaryRow): PaidSourceKey {
+  return paidSourceKey(record(row.attribution))
+}
+
+function leadSourceFallback(row: PpcLeadSummaryRow): PaidSourceKey {
+  const source = text(row.source).toLowerCase()
+  return source.includes('openai') ? 'openai_ads' : 'google_ads'
+}
+
+function leadMatchesPaidSource(
+  lead: PpcLeadSummaryRow,
+  filter: PaidSourceFilter,
+  trackingRows: PpcTrackingSummaryRow[],
+  outboxRows: PpcOutboxSummaryRow[],
+): boolean {
+  if (filter === 'all') return true
+  const leadId = String(lead.id)
+  const trackingMatch = trackingRows.some((row) => row.lead_id === leadId && trackingPaidSource(row) === filter)
+  if (trackingMatch) return true
+  const outboxMatch = outboxRows.some((row) => row.lead_id === leadId && outboxPaidSource(row) === filter)
+  if (outboxMatch) return true
+  return leadSourceFallback(lead) === filter
+}
+
 function campaignFromAttribution(attribution: Record<string, unknown>): string {
   const campaign = text(attribution.utm_campaign) || text(attribution.campaign)
   if (campaign) return campaign
@@ -1328,7 +1374,7 @@ function buildExportHealth(outboxRows: PpcOutboxSummaryRow[], leadRows: PpcLeadS
   }
 }
 
-async function fetchRows(period: MarketingPeriod) {
+async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter) {
   const range = rangeForPeriod(period)
   const previousRange = previousRangeForPeriod(period, range)
   const db = supabaseAdmin()
@@ -1374,14 +1420,28 @@ async function fetchRows(period: MarketingPeriod) {
   const cleanTrackingRows = ((trackingRows ?? []) as PpcTrackingSummaryRow[]).filter(isExternalTrackingRow)
   const cleanOutboxRows = ((outboxRows ?? []) as PpcOutboxSummaryRow[]).filter(isExternalOutboxRow)
   const cleanActivityRows = (activityRows ?? []) as PpcActivitySummaryRow[]
-  const googleCampaignRows = (campaignRows ?? []) as GoogleAdsCampaignDailyRow[]
-  const googlePreviousCampaignRows = (previousCampaignRows ?? []) as GoogleAdsCampaignDailyRow[]
+  const cleanLeadRows = ((leadRows ?? []) as PpcLeadSummaryRow[]).filter((lead) => isExternalLeadRow(lead, cleanActivityRows))
+  const cleanPreviousLeadRows = ((previousLeadRows ?? []) as PpcLeadSummaryRow[]).filter((lead) => isExternalLeadRow(lead, cleanActivityRows))
+  const googleCampaignRows = googleAdsCampaignRowsForDashboard((campaignRows ?? []) as GoogleAdsCampaignDailyRow[])
+  const googlePreviousCampaignRows = googleAdsCampaignRowsForDashboard((previousCampaignRows ?? []) as GoogleAdsCampaignDailyRow[])
   const normalizedOpenAIAdsCampaignRows = openAIAdsCampaignError
     ? []
     : openAIAdsCampaignRowsForDashboard((openAIAdsCampaignRows ?? []) as OpenAIAdsCampaignDailyRow[])
   const normalizedPreviousOpenAIAdsCampaignRows = previousOpenAIAdsCampaignError
     ? []
     : openAIAdsCampaignRowsForDashboard((previousOpenAIAdsCampaignRows ?? []) as OpenAIAdsCampaignDailyRow[])
+  const sourceCampaignRows = [
+    ...googleCampaignRows.filter((row) => paidSourceMatches(sourceFilter, row.paid_source ?? 'google_ads')),
+    ...normalizedOpenAIAdsCampaignRows.filter((row) => paidSourceMatches(sourceFilter, row.paid_source ?? 'openai_ads')),
+  ]
+  const sourcePreviousCampaignRows = [
+    ...googlePreviousCampaignRows.filter((row) => paidSourceMatches(sourceFilter, row.paid_source ?? 'google_ads')),
+    ...normalizedPreviousOpenAIAdsCampaignRows.filter((row) => paidSourceMatches(sourceFilter, row.paid_source ?? 'openai_ads')),
+  ]
+  const sourceTrackingRows = cleanTrackingRows.filter((row) => paidSourceMatches(sourceFilter, trackingPaidSource(row)))
+  const sourceOutboxRows = cleanOutboxRows.filter((row) => paidSourceMatches(sourceFilter, outboxPaidSource(row)))
+  const sourceLeadRows = cleanLeadRows.filter((lead) => leadMatchesPaidSource(lead, sourceFilter, cleanTrackingRows, cleanOutboxRows))
+  const sourcePreviousLeadRows = cleanPreviousLeadRows.filter((lead) => sourceFilter === 'all' || leadSourceFallback(lead) === sourceFilter)
 
   return {
     range,
@@ -1389,13 +1449,13 @@ async function fetchRows(period: MarketingPeriod) {
     googlePreviousCampaignRows,
     openAIAdsCampaignRows: normalizedOpenAIAdsCampaignRows,
     previousOpenAIAdsCampaignRows: normalizedPreviousOpenAIAdsCampaignRows,
-    campaignRows: [...googleCampaignRows, ...normalizedOpenAIAdsCampaignRows],
-    previousCampaignRows: [...googlePreviousCampaignRows, ...normalizedPreviousOpenAIAdsCampaignRows],
-    searchRows: (searchRows ?? []) as GoogleAdsSearchTermDailyRow[],
-    trackingRows: cleanTrackingRows,
-    leadRows: ((leadRows ?? []) as PpcLeadSummaryRow[]).filter((lead) => isExternalLeadRow(lead, cleanActivityRows)),
-    previousLeadRows: ((previousLeadRows ?? []) as PpcLeadSummaryRow[]).filter((lead) => isExternalLeadRow(lead, cleanActivityRows)),
-    outboxRows: cleanOutboxRows,
+    campaignRows: sourceCampaignRows,
+    previousCampaignRows: sourcePreviousCampaignRows,
+    searchRows: sourceFilter === 'openai_ads' ? [] : (searchRows ?? []) as GoogleAdsSearchTermDailyRow[],
+    trackingRows: sourceTrackingRows,
+    leadRows: sourceLeadRows,
+    previousLeadRows: sourcePreviousLeadRows,
+    outboxRows: sourceOutboxRows,
     activityRows: cleanActivityRows,
     revenueRows: (revenueRows ?? []) as RevenueSummaryRow[],
     latestSyncRun: ((syncRunRows ?? []) as GoogleAdsSyncRunRow[])[0] ?? null,
@@ -1464,7 +1524,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const period = readPeriod(url.searchParams.get('period'))
-    const rows = await fetchRows(period)
+    const paidSourceFilter = readPaidSourceFilter(url.searchParams.get('source'))
+    const rows = await fetchRows(period, paidSourceFilter)
     const mojoHealth = await getMojoHealth(supabaseAdmin(), {
       periodSinceIso: isoStart(rows.range.since),
       periodUntilIso: isoAfter(rows.range.until),
@@ -1474,6 +1535,7 @@ export async function GET(req: NextRequest) {
     const generatedAt = new Date().toISOString()
     const response: AdsCommandResponse = {
       source: 'live',
+      paidSourceFilter,
       generatedAt,
       syncedLabel: latestImportLabel(rows.googleCampaignRows, rows.openAIAdsCampaignRows),
       freshness: buildFreshness(
