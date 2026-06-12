@@ -120,6 +120,26 @@ const PAID_SOURCE_FILTERS: Array<{ value: PaidSourceFilter; label: string; hint:
   { value: 'google_ads', label: 'Google Ads', hint: 'Search + tax' },
   { value: 'openai_ads', label: 'OpenAI Ads', hint: 'ChatGPT' },
 ]
+const SOURCE_DRILLDOWN_COPY: Record<PaidSourceFilter, { label: string; eyebrow: string; description: string; accent: string }> = {
+  all: {
+    label: 'All Paid',
+    eyebrow: 'Google + OpenAI',
+    description: 'Combined paid view across campaigns, journeys, leads, export queue, and source health.',
+    accent: '#f87171',
+  },
+  google_ads: {
+    label: 'Google Ads',
+    eyebrow: 'Search + tax',
+    description: 'Google-only view of campaigns, PPC journeys, CRM leads, and offline conversion exports.',
+    accent: '#60a5fa',
+  },
+  openai_ads: {
+    label: 'OpenAI Ads',
+    eyebrow: 'ChatGPT',
+    description: 'OpenAI-only view of campaign import status, CRM attribution, journeys, leads, and export health.',
+    accent: '#a78bfa',
+  },
+}
 
 type MarketingBreakdown = {
   title: string
@@ -306,6 +326,46 @@ function formatKpi(value: number, fmt: KpiItem['fmt']): string {
   if (fmt === 'usd') return formatUsd(value)
   if (fmt === 'k') return formatK(value)
   return formatNum(value)
+}
+
+function kpiValue(rows: KpiItem[], label: string): number {
+  return rows.find((row) => row.lab.toLowerCase() === label.toLowerCase())?.val ?? 0
+}
+
+function latestLead(rows: LeadRow[]): LeadRow | null {
+  if (rows.length === 0) return null
+  return [...rows].sort((a, b) => Date.parse(b.ts0) - Date.parse(a.ts0))[0] ?? null
+}
+
+function topCampaign(rows: CampaignRow[]): CampaignRow | null {
+  if (rows.length === 0) return null
+  return [...rows].sort((a, b) => (b.leads - a.leads) || (b.spend - a.spend))[0] ?? null
+}
+
+function sourceExportCounts(rows: OutboxRow[]) {
+  return {
+    pending: rows.filter((row) => ['pending', 'processing'].some((status) => row.status.toLowerCase().includes(status))).length,
+    sent: rows.filter((row) => row.status.toLowerCase().includes('sent')).length,
+    failed: rows.filter((row) => /failed|dead/i.test(row.status)).length,
+  }
+}
+
+function sourceHealthSummary(source: PaidSourceFilter, exportHealth: ExportHealth, openAIAdsHealth: OpenAIAdsHealth) {
+  if (source === 'openai_ads') {
+    return {
+      status: openAIAdsHealth.status,
+      label: exportHealthLabel(openAIAdsHealth.status),
+      note: openAIAdsHealth.message,
+      target: 'openAIAdsHealth' as DashboardSectionId,
+    }
+  }
+
+  return {
+    status: exportHealth.status,
+    label: exportHealthLabel(exportHealth.status),
+    note: exportHealth.lastFailureReason || 'Google Ads, Stape, and OpenAI export queue summary.',
+    target: 'exportHealth' as DashboardSectionId,
+  }
 }
 
 function scaleN(value: number, period: MarketingPeriod): number {
@@ -1258,6 +1318,99 @@ function OpenAIAdsHealthCard({ health }: { health: OpenAIAdsHealth }) {
   )
 }
 
+function SourceDrilldownPanel({
+  source,
+  kpi,
+  campaigns,
+  leads,
+  outbox,
+  paidSessions,
+  exportHealth,
+  openAIAdsHealth,
+  onJump,
+}: {
+  source: PaidSourceFilter
+  kpi: KpiItem[]
+  campaigns: CampaignRow[]
+  leads: LeadRow[]
+  outbox: OutboxRow[]
+  paidSessions: PaidSessionRow[]
+  exportHealth: ExportHealth
+  openAIAdsHealth: OpenAIAdsHealth
+  onJump: (section: DashboardSectionId) => void
+}) {
+  const copy = SOURCE_DRILLDOWN_COPY[source]
+  const lead = latestLead(leads)
+  const campaign = topCampaign(campaigns)
+  const latestJourney = paidSessions[0] ?? null
+  const exports = sourceExportCounts(outbox)
+  const spend = campaigns.reduce((sum, row) => sum + row.spend, 0)
+  const health = sourceHealthSummary(source, exportHealth, openAIAdsHealth)
+  const healthTone = exportHealthTone(health.status)
+  const actions: Array<{ label: string; detail: string; target: DashboardSectionId }> = [
+    { label: 'Campaigns', detail: `${campaigns.length} rows`, target: 'campaigns' },
+    { label: 'Journeys', detail: `${paidSessions.length} sessions`, target: 'paidJourneys' },
+    { label: 'Leads', detail: `${leads.length} CRM records`, target: 'roster' },
+    { label: 'Outbox', detail: `${outbox.length} events`, target: 'outbox' },
+    { label: 'Health', detail: health.label, target: health.target },
+  ]
+
+  return (
+    <section className="source-drilldown panel" aria-label={`${copy.label} drilldown`} style={{ borderColor: `${copy.accent}55` }}>
+      <div className="source-drilldown-head">
+        <div>
+          <span className="source-drilldown-eyebrow" style={{ color: copy.accent }}>{copy.eyebrow}</span>
+          <h2>{copy.label} Drilldown</h2>
+          <p>{copy.description}</p>
+        </div>
+        <span className="source-drilldown-health" style={{ color: healthTone, borderColor: `${healthTone}55`, background: `${healthTone}16` }}>
+          {health.label}
+        </span>
+      </div>
+
+      <div className="source-drilldown-metrics">
+        <div><span>SPEND</span><b className="mono">{formatUsd(spend)}</b></div>
+        <div><span>CLICKS</span><b className="mono">{formatNum(kpiValue(kpi, 'Clicks'))}</b></div>
+        <div><span>LEADS</span><b className="mono">{formatNum(leads.length)}</b></div>
+        <div><span>QUALIFIED</span><b className="mono">{formatNum(kpiValue(kpi, 'Qualified'))}</b></div>
+        <div><span>OUTBOX</span><b className="mono">{outbox.length}</b></div>
+      </div>
+
+      <div className="source-drilldown-context">
+        <div>
+          <span>Top campaign</span>
+          <b>{campaign ? campaign.name : 'No campaign rows yet'}</b>
+          <small>{campaign ? `${campaign.leads} leads · ${formatUsd(campaign.spend)}` : 'Campaign reporting will appear after the next import.'}</small>
+        </div>
+        <div>
+          <span>Latest lead</span>
+          <b>{lead ? lead.name : 'No CRM lead yet'}</b>
+          <small>{lead ? `${lead.county} · ${lead.kw}` : 'Lead cards will appear here as this source creates CRM records.'}</small>
+        </div>
+        <div>
+          <span>Latest journey</span>
+          <b>{latestJourney ? latestJourney.campaign : 'No session yet'}</b>
+          <small>{latestJourney ? `${latestJourney.time} · ${latestJourney.sub}` : 'Visitor journeys will appear when paid traffic hits the site.'}</small>
+        </div>
+        <div>
+          <span>Export queue</span>
+          <b>{exports.pending} pending · {exports.sent} sent · {exports.failed} failed</b>
+          <small>{health.note}</small>
+        </div>
+      </div>
+
+      <div className="source-drilldown-actions">
+        {actions.map((action) => (
+          <button key={action.label} type="button" onClick={() => onJump(action.target)}>
+            <b>{action.label}</b>
+            <small>{action.detail}</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function mojoHealthTone(status: MojoHealth['status']): string {
   if (status === 'attention') return '#f87171'
   if (status === 'watch') return '#eab308'
@@ -2194,6 +2347,13 @@ export function AdsCommandPage() {
     setPjPage(0)
   }
 
+  function jumpToDashboardSection(id: DashboardSectionId) {
+    setCollapsedSections((current) => current[id] ? { ...current, [id]: false } : current)
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(`[data-section-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+  }
+
   function setPaidJourneyRange(range: PaidRange) {
     if (range === 'all') return
     setPanelPeriod('trend', range)
@@ -2469,6 +2629,18 @@ export function AdsCommandPage() {
             <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
           </header>
 
+          <SourceDrilldownPanel
+            source={paidSourceFilter}
+            kpi={kpi}
+            campaigns={campaigns}
+            leads={leads}
+            outbox={outbox}
+            paidSessions={paidSessions}
+            exportHealth={exportHealth}
+            openAIAdsHealth={openAIAdsHealth}
+            onJump={jumpToDashboardSection}
+          />
+
           <div className="layout-grid">
             {sectionOrder.map((sectionId) => (
               <LayoutSection
@@ -2591,6 +2763,25 @@ const ADS_COMMAND_STYLES = `
 .ads-command .source-filter button:disabled { cursor:wait; opacity:.7; }
 .ads-command .source-filter b { font-size:11.5px; line-height:1; }
 .ads-command .source-filter small { color:var(--text-tertiary); font-size:9.5px; font-weight:700; }
+.ads-command .source-drilldown { margin:0 0 18px; background:linear-gradient(135deg,rgba(248,113,113,.08),rgba(96,165,250,.05) 46%,rgba(167,139,250,.07)); }
+.ads-command .source-drilldown-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:18px; }
+.ads-command .source-drilldown-eyebrow { display:block; margin-bottom:6px; font-size:10px; font-weight:950; letter-spacing:.18em; text-transform:uppercase; }
+.ads-command .source-drilldown h2 { font-size:24px; letter-spacing:-.6px; margin:0 0 6px; }
+.ads-command .source-drilldown p { margin:0; max-width:760px; color:var(--text-secondary); line-height:1.45; font-size:13px; }
+.ads-command .source-drilldown-health { flex:0 0 auto; display:inline-flex; align-items:center; min-height:32px; border:1px solid; border-radius:999px; padding:6px 12px; font-size:11px; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
+.ads-command .source-drilldown-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:14px; }
+.ads-command .source-drilldown-metrics > div { min-width:0; border:1px solid var(--line); border-radius:16px; padding:14px; background:rgba(0,0,0,.12); }
+.ads-command .source-drilldown-metrics span, .ads-command .source-drilldown-context span { display:block; color:var(--text-tertiary); font-size:10px; font-weight:900; letter-spacing:.1em; text-transform:uppercase; }
+.ads-command .source-drilldown-metrics b { display:block; margin-top:8px; color:var(--text); font-size:24px; line-height:1; }
+.ads-command .source-drilldown-context { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.ads-command .source-drilldown-context > div { min-width:0; border-top:1px solid var(--line); padding-top:13px; }
+.ads-command .source-drilldown-context b { display:block; min-height:18px; margin-top:7px; color:var(--text); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ads-command .source-drilldown-context small { display:block; margin-top:4px; color:var(--text-tertiary); line-height:1.35; font-size:11.5px; overflow-wrap:anywhere; }
+.ads-command .source-drilldown-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+.ads-command .source-drilldown-actions button { min-height:38px; display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:7px 12px; color:var(--text); background:var(--surface-2); cursor:pointer; }
+.ads-command .source-drilldown-actions button:hover { border-color:rgba(248,113,113,.45); background:var(--surface-3); }
+.ads-command .source-drilldown-actions b { font-size:12px; }
+.ads-command .source-drilldown-actions small { color:var(--text-tertiary); font-size:10.5px; font-weight:750; }
 .ads-command .call-review-link { color:#fecaca; text-decoration:none; font-weight:800; letter-spacing:.02em; }
 .ads-command .call-review-link:hover { color:#fff; border-color:rgba(227,46,46,.45); background:rgba(227,46,46,.12); }
 .ads-command .live-dot { width:7px; height:7px; background:var(--success); border-radius:50%; box-shadow:0 0 0 3px rgba(34,197,94,.2); animation:adsPulse 2s ease-in-out infinite; }
@@ -2903,9 +3094,9 @@ const ADS_COMMAND_STYLES = `
 .ads-command .breakdown-bar span { display:block; height:100%; border-radius:999px; }
 .ads-command .breakdown-item p { margin:7px 0 0; color:var(--text-tertiary); font-size:12px; }
 @media (min-width:1101px) { .ads-command .layout-grid { grid-template-columns:minmax(0,1fr) minmax(0,1.28fr); } .ads-command .layout-section.full { grid-column:1/-1; } .ads-command .layout-section.half { grid-column:auto / span 1; } }
-@media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } }
-@media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } }
+@media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } .ads-command .source-drilldown-context { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } .ads-command .source-drilldown-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:920px) { .ads-command .stage-top { grid-template-columns:1fr; align-items:flex-start; } .ads-command .qbadges { margin-left:0; } .ads-command .stage-body, .ads-command .micro-body { grid-template-columns:1fr; } .ads-command .statside, .ads-command .micro-side { display:none; } .ads-command .stage { inset:10px; width:auto; } }
-@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .source-filter { width:100%; border-radius:14px; align-items:flex-start; } .ads-command .source-filter-buttons { flex-wrap:wrap; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .openai-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .campaign-source-row { align-items:flex-start; flex-direction:column; gap:4px; } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
+@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .source-filter { width:100%; border-radius:14px; align-items:flex-start; } .ads-command .source-filter-buttons { flex-wrap:wrap; } .ads-command .source-drilldown-head { flex-direction:column; } .ads-command .source-drilldown-metrics, .ads-command .source-drilldown-context { grid-template-columns:1fr; } .ads-command .source-drilldown-actions button { width:100%; justify-content:space-between; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .openai-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .campaign-source-row { align-items:flex-start; flex-direction:column; gap:4px; } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
 @media (max-width:640px) { .ads-command .roster { grid-template-columns:1fr; } .ads-command .live-pill { font-size:11px; } }
 `
