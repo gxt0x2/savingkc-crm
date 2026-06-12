@@ -56,6 +56,7 @@ type SortKey = 'kw' | 'campaign' | 'clicks' | 'leads' | 'cpl' | 'qual' | 'status
 type SortDir = 'asc' | 'desc'
 type PaidFilter = 'all' | 'lead' | 'nolead'
 type PaidRange = MarketingPeriod | 'all'
+type PaidSourceFilter = 'all' | 'google_ads' | 'openai_ads'
 type PeriodState = {
   trend: MarketingPeriod
   funnel: MarketingPeriod
@@ -109,6 +110,11 @@ const DASHBOARD_SECTIONS: Record<DashboardSectionId, { label: string; size: Dash
   outbox: { label: 'Lead Conversion Outbox', size: 'full' },
   paidJourneys: { label: 'Latest Paid Journeys', size: 'full' },
 }
+const PAID_SOURCE_FILTERS: Array<{ value: PaidSourceFilter; label: string; hint: string }> = [
+  { value: 'all', label: 'All Paid', hint: 'Google + OpenAI' },
+  { value: 'google_ads', label: 'Google Ads', hint: 'Search + tax' },
+  { value: 'openai_ads', label: 'OpenAI Ads', hint: 'ChatGPT' },
+]
 
 type MarketingBreakdown = {
   title: string
@@ -122,6 +128,7 @@ type CallDisplayRow = CallBreakdownRow & {
 }
 type AdsCommandData = {
   source: 'live'
+  paidSourceFilter: PaidSourceFilter
   generatedAt: string
   syncedLabel: string
   freshness: {
@@ -2002,6 +2009,7 @@ export function AdsCommandPage() {
   const [kwCampaign, setKwCampaign] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('leads')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [paidSourceFilter, setPaidSourceFilter] = useState<PaidSourceFilter>('all')
   const [pjFilter, setPjFilter] = useState<PaidFilter>('all')
   const [pjRange, setPjRange] = useState<PaidRange>('month')
   const [pjLimit, setPjLimit] = useState(10)
@@ -2060,7 +2068,7 @@ export function AdsCommandPage() {
     async function loadAdsData() {
       controller?.abort()
       controller = new AbortController()
-      const params = new URLSearchParams({ period: reportingPeriod })
+      const params = new URLSearchParams({ period: reportingPeriod, source: paidSourceFilter })
       const previewToken = new URLSearchParams(window.location.search).get('adsPreviewToken')
       if (previewToken) params.set('previewToken', previewToken)
 
@@ -2083,7 +2091,7 @@ export function AdsCommandPage() {
       window.clearInterval(refreshId)
       controller?.abort()
     }
-  }, [reportingPeriod])
+  }, [paidSourceFilter, reportingPeriod])
 
   useEffect(() => {
     const hasOverlay = Boolean(selectedLead || selectedSession || selectedBreakdown)
@@ -2105,6 +2113,12 @@ export function AdsCommandPage() {
   function setPanelPeriod(_key: keyof PeriodState, period: MarketingPeriod) {
     setPeriodState({ trend: period, funnel: period, camp: period, kw: period, roster: period, outbox: period })
     setPjRange(period)
+    setPjPage(0)
+  }
+
+  function handlePaidSourceFilter(next: PaidSourceFilter) {
+    setPaidSourceFilter(next)
+    setKwCampaign('all')
     setPjPage(0)
   }
 
@@ -2325,6 +2339,17 @@ export function AdsCommandPage() {
               <span className="fresh-pill">Tracking: waiting</span>
               <span className="fresh-pill">Google Ads spend: waiting</span>
               <span className="fresh-pill">OpenAI Ads spend: waiting</span>
+              <div className="source-filter is-loading" aria-label="Ad source filter">
+                <span>Ad source</span>
+                <div className="source-filter-buttons">
+                  {PAID_SOURCE_FILTERS.map((option) => (
+                    <button key={option.value} className={option.value === 'all' ? 'on' : ''} type="button" disabled>
+                      <b>{option.label}</b>
+                      <small>{option.hint}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <Link className="fresh-pill call-review-link" href="/marketing/alerts">Lead Alerts</Link>
               <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
               <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
@@ -2345,6 +2370,23 @@ export function AdsCommandPage() {
             <span className="fresh-pill">Tracking: {formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</span>
             <span className="fresh-pill">Google Ads spend: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
             <span className="fresh-pill">OpenAI Ads spend: {formatFreshness(adsData?.freshness.openAIAdsImportedAt)}</span>
+            <div className="source-filter" aria-label="Ad source filter">
+              <span>Ad source</span>
+              <div className="source-filter-buttons">
+                {PAID_SOURCE_FILTERS.map((option) => (
+                  <button
+                    key={option.value}
+                    className={paidSourceFilter === option.value ? 'on' : ''}
+                    type="button"
+                    aria-pressed={paidSourceFilter === option.value}
+                    onClick={() => handlePaidSourceFilter(option.value)}
+                  >
+                    <b>{option.label}</b>
+                    <small>{option.hint}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
             <span className="fresh-pill">Mojo: {mojoHealthLabel(mojoHealth.status)}</span>
             <Link className="fresh-pill call-review-link" href="/marketing/alerts">Lead Alerts</Link>
             <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
@@ -2465,6 +2507,14 @@ const ADS_COMMAND_STYLES = `
 .ads-command .bar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
 .ads-command .live-pill { display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--text-secondary); background:var(--surface-2); border:1px solid var(--line); padding:6px 14px 6px 12px; border-radius:999px; }
 .ads-command .fresh-pill { display:inline-flex; align-items:center; min-height:28px; font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary); background:rgba(255,255,255,.03); border:1px solid var(--line); padding:6px 10px; border-radius:999px; }
+.ads-command .source-filter { display:inline-flex; align-items:center; gap:8px; min-height:32px; border:1px solid var(--line); border-radius:999px; padding:3px 4px 3px 10px; background:rgba(255,255,255,.035); }
+.ads-command .source-filter > span { color:var(--text-tertiary); font-size:10px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }
+.ads-command .source-filter-buttons { display:inline-flex; gap:3px; }
+.ads-command .source-filter button { min-height:28px; display:flex; align-items:center; gap:6px; border:0; border-radius:999px; background:transparent; color:var(--text-secondary); padding:4px 10px; cursor:pointer; }
+.ads-command .source-filter button.on { background:var(--surface); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.4); }
+.ads-command .source-filter button:disabled { cursor:wait; opacity:.7; }
+.ads-command .source-filter b { font-size:11.5px; line-height:1; }
+.ads-command .source-filter small { color:var(--text-tertiary); font-size:9.5px; font-weight:700; }
 .ads-command .call-review-link { color:#fecaca; text-decoration:none; font-weight:800; letter-spacing:.02em; }
 .ads-command .call-review-link:hover { color:#fff; border-color:rgba(227,46,46,.45); background:rgba(227,46,46,.12); }
 .ads-command .live-dot { width:7px; height:7px; background:var(--success); border-radius:50%; box-shadow:0 0 0 3px rgba(34,197,94,.2); animation:adsPulse 2s ease-in-out infinite; }
@@ -2760,6 +2810,6 @@ const ADS_COMMAND_STYLES = `
 @media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } }
 @media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } }
 @media (max-width:920px) { .ads-command .stage-top { grid-template-columns:1fr; align-items:flex-start; } .ads-command .qbadges { margin-left:0; } .ads-command .stage-body, .ads-command .micro-body { grid-template-columns:1fr; } .ads-command .statside, .ads-command .micro-side { display:none; } .ads-command .stage { inset:10px; width:auto; } }
-@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
+@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .source-filter { width:100%; border-radius:14px; align-items:flex-start; } .ads-command .source-filter-buttons { flex-wrap:wrap; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
 @media (max-width:640px) { .ads-command .roster { grid-template-columns:1fr; } .ads-command .live-pill { font-size:11px; } }
 `
