@@ -20,6 +20,7 @@ import {
   type MarketingPeriod,
   type MojoHealth,
   type NegativeKeywordRow,
+  type OpenAIAdsHealth,
   type OutboxRow,
   type PaidSessionRow,
   type SeriesRow,
@@ -203,6 +204,7 @@ type AdsCommandResponse = {
   funnel: FunnelRow[]
   callBreakdown: CallBreakdownRow[]
   exportHealth: ExportHealth
+  openAIAdsHealth: OpenAIAdsHealth
   mojoHealth: MojoHealth
   leads: LeadRow[]
   outbox: OutboxRow[]
@@ -319,6 +321,10 @@ function readPaidSourceFilter(value: string | null): PaidSourceFilter {
 
 function paidSourceMatches(filter: PaidSourceFilter, source: PaidSourceKey): boolean {
   return filter === 'all' || filter === source
+}
+
+function isEnvConfigured(...keys: string[]): boolean {
+  return keys.some((key) => Boolean(text(process.env[key])))
 }
 
 function chicagoDate(date = new Date()): string {
@@ -444,6 +450,23 @@ function colorForCampaign(name: string, index: number): string {
 function groupCampaigns(rows: GoogleAdsCampaignDailyRow[], trackingRows: PpcTrackingSummaryRow[], outboxRows: PpcOutboxSummaryRow[], crmLeads: LeadRow[]): CampaignRow[] {
   const byName = new Map<string, CampaignRow>()
   const conversionByCampaign = conversionCountsByCampaign(trackingRows, outboxRows)
+  const sourceByCampaign = new Map<string, Set<PaidSourceKey>>()
+  function addCampaignSource(campaign: string, source: PaidSourceKey) {
+    const key = campaign || 'Search 2026'
+    const current = sourceByCampaign.get(key) ?? new Set<PaidSourceKey>()
+    current.add(source)
+    sourceByCampaign.set(key, current)
+  }
+
+  for (const row of rows) addCampaignSource(row.campaign_name || 'Unmapped campaign', row.paid_source ?? 'google_ads')
+  for (const row of trackingRows) addCampaignSource(row.campaign || row.utm_campaign || 'Search 2026', trackingPaidSource(row))
+  for (const row of outboxRows) {
+    const attribution = record(row.attribution)
+    const payload = record(row.payload)
+    addCampaignSource(String(attribution.utm_campaign || attribution.campaign || payload.campaign || 'Search 2026'), outboxPaidSource(row))
+  }
+  for (const lead of crmLeads) addCampaignSource(lead.campaign || 'Search 2026', paidSourceKeyFromLabel(lead.source))
+
   const names = Array.from(new Set([
     ...rows.map((row) => row.campaign_name || 'Unmapped campaign'),
     ...Array.from(conversionByCampaign.keys()),
@@ -457,6 +480,7 @@ function groupCampaigns(rows: GoogleAdsCampaignDailyRow[], trackingRows: PpcTrac
     const crmLeadCount = crmLeads.filter((lead) => lead.campaign === name).length
     byName.set(name, {
       name,
+      source: paidSourceLabelFromKeys(sourceByCampaign.get(name) ?? ['google_ads']),
       leads: crmLeadCount,
       spend: Math.round(adTotals.spend),
       call: conversions.call,
@@ -915,6 +939,17 @@ function outboxPaidSource(row: PpcOutboxSummaryRow): PaidSourceKey {
 function leadSourceFallback(row: PpcLeadSummaryRow): PaidSourceKey {
   const source = text(row.source).toLowerCase()
   return source.includes('openai') ? 'openai_ads' : 'google_ads'
+}
+
+function paidSourceKeyFromLabel(value: unknown): PaidSourceKey {
+  return text(value).toLowerCase().includes('openai') ? 'openai_ads' : 'google_ads'
+}
+
+function paidSourceLabelFromKeys(keys: Iterable<PaidSourceKey>): string {
+  const values = new Set(keys)
+  if (values.has('openai_ads') && values.has('google_ads')) return 'Mixed Paid'
+  if (values.has('openai_ads')) return 'OpenAI Ads'
+  return 'Google Ads'
 }
 
 function leadMatchesPaidSource(
@@ -1442,6 +1477,7 @@ async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter
   const sourceOutboxRows = cleanOutboxRows.filter((row) => paidSourceMatches(sourceFilter, outboxPaidSource(row)))
   const sourceLeadRows = cleanLeadRows.filter((lead) => leadMatchesPaidSource(lead, sourceFilter, cleanTrackingRows, cleanOutboxRows))
   const sourcePreviousLeadRows = cleanPreviousLeadRows.filter((lead) => sourceFilter === 'all' || leadSourceFallback(lead) === sourceFilter)
+  const latestOpenAIAdsSyncRun = openAIAdsSyncRunError ? null : ((openAIAdsSyncRunRows ?? []) as OpenAIAdsSyncRunRow[])[0] ?? null
 
   return {
     range,
@@ -1459,7 +1495,8 @@ async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter
     activityRows: cleanActivityRows,
     revenueRows: (revenueRows ?? []) as RevenueSummaryRow[],
     latestSyncRun: ((syncRunRows ?? []) as GoogleAdsSyncRunRow[])[0] ?? null,
-    latestOpenAIAdsSyncRun: openAIAdsSyncRunError ? null : ((openAIAdsSyncRunRows ?? []) as OpenAIAdsSyncRunRow[])[0] ?? null,
+    latestOpenAIAdsSyncRun,
+    openAIAdsHealth: buildOpenAIAdsHealth(normalizedOpenAIAdsCampaignRows, cleanTrackingRows, cleanOutboxRows, cleanLeadRows, latestOpenAIAdsSyncRun),
   }
 }
 
@@ -1506,6 +1543,58 @@ function buildFreshness(
     ]),
     openAIAdsSyncStatus: latestOpenAIAdsSyncRun?.status ?? null,
     openAIAdsSyncFinishedAt: latestOpenAIAdsSyncRun?.finished_at ?? null,
+  }
+}
+
+function buildOpenAIAdsHealth(
+  campaignRows: GoogleAdsCampaignDailyRow[],
+  trackingRows: PpcTrackingSummaryRow[],
+  outboxRows: PpcOutboxSummaryRow[],
+  leadRows: PpcLeadSummaryRow[],
+  latestSyncRun: OpenAIAdsSyncRunRow | null,
+): OpenAIAdsHealth {
+  const openAITrackingRows = trackingRows.filter((row) => trackingPaidSource(row) === 'openai_ads')
+  const openAIOutboxRows = outboxRows.filter((row) => outboxPaidSource(row) === 'openai_ads')
+  const openAILeadRows = leadRows.filter((lead) => leadMatchesPaidSource(lead, 'openai_ads', trackingRows, outboxRows))
+  const pendingExports = openAIOutboxRows.filter((row) => ['pending', 'processing'].includes(text(row.status).toLowerCase())).length
+  const sentExports = openAIOutboxRows.filter((row) => text(row.status).toLowerCase() === 'sent').length
+  const failedExports = openAIOutboxRows.filter((row) => /failed|dead/i.test(text(row.status))).length
+  const pixelConfigured = isEnvConfigured('NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID', 'OPENAI_ADS_PIXEL_ID')
+  const serverApiConfigured = isEnvConfigured('OPENAI_ADS_CONVERSIONS_API_KEY')
+  const reportingApiConfigured = isEnvConfigured('OPENAI_ADS_API_KEY')
+  const syncStatus = text(latestSyncRun?.status) || null
+  const syncFailed = Boolean(syncStatus && /fail|error/i.test(syncStatus))
+  const hasOpenAIData = campaignRows.length > 0 || openAITrackingRows.length > 0 || openAILeadRows.length > 0
+  let status: OpenAIAdsHealth['status'] = 'clean'
+  let message = 'OpenAI Ads reporting and CRM attribution are active.'
+
+  if (!pixelConfigured || !serverApiConfigured || !reportingApiConfigured || syncFailed || failedExports > 0) {
+    status = 'attention'
+    message = latestSyncRun?.error || 'OpenAI Ads needs configuration or export attention.'
+  } else if (!hasOpenAIData) {
+    status = 'watch'
+    message = 'Tracking is wired, but no OpenAI campaign rows or leads are in this period yet.'
+  } else if (pendingExports > 0) {
+    status = 'watch'
+    message = 'OpenAI Ads has pending conversion exports in this period.'
+  }
+
+  return {
+    status,
+    message,
+    pixelConfigured,
+    serverApiConfigured,
+    reportingApiConfigured,
+    syncStatus,
+    lastSyncAt: latestSyncRun?.finished_at || latestSyncRun?.started_at || null,
+    lastError: latestSyncRun?.error || null,
+    latestCampaignImportAt: latestIso(campaignRows.map((row) => row.imported_at)),
+    campaignRows: campaignRows.length,
+    trackingEvents: openAITrackingRows.length,
+    leads: openAILeadRows.length,
+    pendingExports,
+    sentExports,
+    failedExports,
   }
 }
 
@@ -1557,6 +1646,7 @@ export async function GET(req: NextRequest) {
       funnel: buildFunnel(rows.campaignRows, rows.trackingRows, rows.leadRows),
       callBreakdown: buildCallBreakdown(rows.trackingRows, rows.outboxRows),
       exportHealth: buildExportHealth(rows.outboxRows, rows.leadRows),
+      openAIAdsHealth: rows.openAIAdsHealth,
       mojoHealth,
       leads: leadRowsForResponse,
       outbox: buildOutboxRows(rows.outboxRows, rows.leadRows),

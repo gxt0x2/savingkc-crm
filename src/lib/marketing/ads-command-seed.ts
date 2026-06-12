@@ -22,6 +22,7 @@ export type SeriesRow = {
 
 export type CampaignRow = {
   name: string
+  source?: string
   leads: number
   spend: number
   call: number
@@ -132,6 +133,24 @@ export type ExportHealth = {
   lastFailureAt: string | null
   lastFailureEvent: string | null
   status: 'clean' | 'watch' | 'attention'
+}
+
+export type OpenAIAdsHealth = {
+  status: 'clean' | 'watch' | 'attention'
+  message: string
+  pixelConfigured: boolean
+  serverApiConfigured: boolean
+  reportingApiConfigured: boolean
+  syncStatus: string | null
+  lastSyncAt: string | null
+  lastError: string | null
+  latestCampaignImportAt: string | null
+  campaignRows: number
+  trackingEvents: number
+  leads: number
+  pendingExports: number
+  sentExports: number
+  failedExports: number
 }
 
 export type MojoHealth = {
@@ -295,11 +314,11 @@ export function hourlySeries(dayOffset = 0): SeriesRow[] {
 }
 
 export const CAMPAIGNS: CampaignRow[] = [
-  { name: 'Tax Delinquent — KC Metro', leads: 16, spend: 1480, call: 7, form: 8, sms: 1, color: '#f87171' },
-  { name: 'Inherited / Probate', leads: 11, spend: 1010, call: 5, form: 5, sms: 1, color: '#22c55e' },
-  { name: 'Tired Landlords', leads: 9, spend: 760, call: 4, form: 4, sms: 1, color: '#eab308' },
-  { name: 'Cash Offer — Sell Fast', leads: 7, spend: 640, call: 2, form: 4, sms: 1, color: '#60a5fa' },
-  { name: 'Vacant / Distressed', leads: 4, spend: 328, call: 1, form: 3, sms: 0, color: '#c02626' },
+  { name: 'Tax Delinquent — KC Metro', source: 'Google Ads', leads: 16, spend: 1480, call: 7, form: 8, sms: 1, color: '#f87171' },
+  { name: 'Inherited / Probate', source: 'Google Ads', leads: 11, spend: 1010, call: 5, form: 5, sms: 1, color: '#22c55e' },
+  { name: 'Tired Landlords', source: 'Google Ads', leads: 9, spend: 760, call: 4, form: 4, sms: 1, color: '#eab308' },
+  { name: 'Cash Offer — Sell Fast', source: 'Google Ads', leads: 7, spend: 640, call: 2, form: 4, sms: 1, color: '#60a5fa' },
+  { name: 'Vacant / Distressed', source: 'Google Ads', leads: 4, spend: 328, call: 1, form: 3, sms: 0, color: '#c02626' },
 ]
 
 export const KEYWORDS: KeywordRow[] = [
@@ -516,6 +535,24 @@ export const EXPORT_HEALTH: ExportHealth = {
   lastFailureAt: null,
   lastFailureEvent: null,
   status: 'watch',
+}
+
+export const OPENAI_ADS_HEALTH: OpenAIAdsHealth = {
+  status: 'watch',
+  message: 'Waiting for live OpenAI Ads reporting data.',
+  pixelConfigured: true,
+  serverApiConfigured: true,
+  reportingApiConfigured: true,
+  syncStatus: 'waiting',
+  lastSyncAt: null,
+  lastError: null,
+  latestCampaignImportAt: null,
+  campaignRows: 0,
+  trackingEvents: 0,
+  leads: 0,
+  pendingExports: 0,
+  sentExports: 0,
+  failedExports: 0,
 }
 
 export const MOJO_HEALTH: MojoHealth = {
