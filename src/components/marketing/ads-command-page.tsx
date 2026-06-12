@@ -27,6 +27,7 @@ import {
   MICRO_STEPS,
   MOJO_HEALTH,
   NEGATIVES,
+  OPENAI_ADS_HEALTH,
   OUTBOX,
   PAID_SESSIONS,
   SERIES,
@@ -44,6 +45,7 @@ import {
   type LeadRow,
   type MarketingPeriod,
   type NegativeKeywordRow,
+  type OpenAIAdsHealth,
   type OutboxRow,
   type PaidSessionRow,
   type SeriesRow,
@@ -72,6 +74,7 @@ type DashboardSectionId =
   | 'searchTerms'
   | 'funnel'
   | 'exportHealth'
+  | 'openAIAdsHealth'
   | 'mojoHealth'
   | 'heatmaps'
   | 'roster'
@@ -83,7 +86,7 @@ const SEARCH_TERM_PAGE_SIZE = 10
 const OUTBOX_PAGE_SIZE = 5
 const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
 const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
-const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
+const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'openAIAdsHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
 const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
   kpis: false,
   trend: false,
@@ -91,6 +94,7 @@ const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
   searchTerms: false,
   funnel: false,
   exportHealth: false,
+  openAIAdsHealth: false,
   mojoHealth: false,
   heatmaps: false,
   roster: false,
@@ -104,6 +108,7 @@ const DASHBOARD_SECTIONS: Record<DashboardSectionId, { label: string; size: Dash
   searchTerms: { label: 'Search Term Performance', size: 'half' },
   funnel: { label: 'Marketing Funnel', size: 'full' },
   exportHealth: { label: 'Export Health', size: 'full' },
+  openAIAdsHealth: { label: 'OpenAI Ads Health', size: 'full' },
   mojoHealth: { label: 'Mojo Health', size: 'full' },
   heatmaps: { label: 'Landing Page Heatmaps', size: 'full' },
   roster: { label: 'Active Lead Roster', size: 'full' },
@@ -149,6 +154,7 @@ type AdsCommandData = {
   funnel: FunnelRow[]
   callBreakdown: CallBreakdownRow[]
   exportHealth: ExportHealth
+  openAIAdsHealth: OpenAIAdsHealth
   mojoHealth: MojoHealth
   leads: LeadRow[]
   outbox: OutboxRow[]
@@ -751,6 +757,18 @@ function CampaignChart({
           </BarChart>
         </ResponsiveContainer>
       </div>
+      {rows.length ? (
+        <div className="campaign-source-list">
+          {rows.slice(0, 6).map((row) => (
+            <div className="campaign-source-row" key={`${row.source ?? 'Paid'}-${row.name}`}>
+              <span><i style={{ background: row.color }} /><span className="source-tag">{row.source ?? 'Google Ads'}</span>{row.name}</span>
+              <b className="mono">{row.leadsScaled} leads · {formatUsd(row.spendScaled)}</b>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state campaign-empty">No campaign rows for this source and period.</div>
+      )}
     </div>
   )
 }
@@ -1193,6 +1211,53 @@ function ExportHealthCard({ health }: { health: ExportHealth }) {
   )
 }
 
+function OpenAIAdsHealthCard({ health }: { health: OpenAIAdsHealth }) {
+  const tone = exportHealthTone(health.status)
+  const configRows = [
+    ['Pixel', health.pixelConfigured],
+    ['Server API', health.serverApiConfigured],
+    ['Reporting API', health.reportingApiConfigured],
+  ] as const
+
+  return (
+    <div className="panel openai-health-panel">
+      <div className="panel-head">
+        <div>
+          <h2>OpenAI Ads Health</h2>
+          <div className="cap">Pixel, Conversions API, reporting sync, and CRM attribution</div>
+        </div>
+        <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
+          {exportHealthLabel(health.status)}
+        </span>
+      </div>
+      <div className="openai-health-banner" style={{ borderColor: `${tone}44`, background: `${tone}12` }}>
+        <b>{health.message}</b>
+        <small>
+          Sync: {health.syncStatus ?? 'not run'} · Last sync: {health.lastSyncAt ? formatFreshness(health.lastSyncAt) : 'none'}
+          {health.latestCampaignImportAt ? ` · Campaign import: ${formatFreshness(health.latestCampaignImportAt)}` : ''}
+        </small>
+      </div>
+      <div className="openai-health-grid">
+        {configRows.map(([label, configured]) => (
+          <div className="openai-health-metric" key={label}>
+            <span>{label}</span>
+            <b className={configured ? 'green' : 'red'}>{configured ? 'Configured' : 'Missing'}</b>
+          </div>
+        ))}
+        <div className="openai-health-metric"><span>Campaign rows</span><b className="mono">{health.campaignRows}</b></div>
+        <div className="openai-health-metric"><span>Tracked events</span><b className="mono">{health.trackingEvents}</b></div>
+        <div className="openai-health-metric"><span>Leads</span><b className="mono">{health.leads}</b></div>
+      </div>
+      <div className="openai-export-strip">
+        <span><b className="mono blue">{health.pendingExports}</b> pending exports</span>
+        <span><b className="mono green">{health.sentExports}</b> sent exports</span>
+        <span><b className="mono red">{health.failedExports}</b> failed exports</span>
+        {health.lastError ? <span className="openai-health-error">{health.lastError}</span> : null}
+      </div>
+    </div>
+  )
+}
+
 function mojoHealthTone(status: MojoHealth['status']): string {
   if (status === 'attention') return '#f87171'
   if (status === 'watch') return '#eab308'
@@ -1391,7 +1456,10 @@ function LeadOutboxPanel({
                         <span>{open ? '-' : '+'}</span>
                         <span>
                           <span className="outbox-lead">{group.leadName}</span>
-                          <span className="outbox-sub">{group.latest.source ?? 'Google Ads'} · {group.campaign} · {group.keyword}</span>
+                          <span className="outbox-sub outbox-source-line">
+                            <span className="source-tag">{group.latest.source ?? 'Google Ads'}</span>
+                            <span>{group.campaign} · {group.keyword}</span>
+                          </span>
                         </span>
                       </button>
                     </td>
@@ -1416,7 +1484,10 @@ function LeadOutboxPanel({
                               <div className="outbox-event-line" key={row.id}>
                                 <div>
                                   <span className="outbox-event">{row.event}</span>
-                                  <span className="outbox-sub">{row.exportNote || `${row.category} · ${row.role}`}</span>
+                                  <span className="outbox-sub outbox-source-line">
+                                    <span className="source-tag">{row.source ?? 'Google Ads'}</span>
+                                    <span>{row.exportNote || `${row.category} · ${row.role}`}</span>
+                                  </span>
                                 </div>
                                 <span className="outbox-status" style={{ color: eventColor, borderColor: `${eventColor}55`, background: `${eventColor}16` }}>
                                   {row.dryRun ? 'Dry run' : row.status}
@@ -2030,6 +2101,7 @@ export function AdsCommandPage() {
   const funnel = adsData?.funnel ?? FUNNEL
   const callBreakdown = adsData?.callBreakdown ?? CALL_BREAKDOWN
   const exportHealth = adsData?.exportHealth ?? EXPORT_HEALTH
+  const openAIAdsHealth = adsData?.openAIAdsHealth ?? OPENAI_ADS_HEALTH
   const mojoHealth = adsData?.mojoHealth ?? MOJO_HEALTH
   const leads = adsData?.leads ?? LEADS
   const outbox = adsData?.outbox ?? OUTBOX
@@ -2281,6 +2353,10 @@ export function AdsCommandPage() {
 
     if (id === 'exportHealth') {
       return <ExportHealthCard health={exportHealth} />
+    }
+
+    if (id === 'openAIAdsHealth') {
+      return <OpenAIAdsHealthCard health={openAIAdsHealth} />
     }
 
     if (id === 'mojoHealth') {
@@ -2571,6 +2647,12 @@ const ADS_COMMAND_STYLES = `
 .ads-command .schip.disabled { opacity:.5; cursor:not-allowed; }
 .ads-command .chartbox { position:relative; height:260px; }
 .ads-command .chartbox.sm { height:238px; }
+.ads-command .campaign-source-list { display:flex; flex-direction:column; gap:7px; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+.ads-command .campaign-source-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:30px; color:var(--text-secondary); font-size:12px; }
+.ads-command .campaign-source-row > span { min-width:0; display:flex; align-items:center; gap:8px; font-weight:750; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ads-command .campaign-source-row i { width:9px; height:9px; border-radius:999px; flex:0 0 auto; }
+.ads-command .campaign-source-row b { color:var(--text-tertiary); font-size:11px; white-space:nowrap; }
+.ads-command .campaign-empty { min-height:70px; padding:18px; }
 .ads-command .campaign-keyword-grid { display:grid; grid-template-columns:1fr 1.28fr; gap:14px; margin-bottom:18px; }
 .ads-command .table-scroll { width:100%; overflow-x:auto; overscroll-behavior-x:contain; }
 .ads-command table { width:100%; border-collapse:collapse; font-size:13.5px; }
@@ -2660,6 +2742,18 @@ const ADS_COMMAND_STYLES = `
 .ads-command .export-health-note { min-width:0; }
 .ads-command .export-health-note b { display:block; margin-top:6px; color:var(--text); font-size:14px; line-height:1.35; overflow-wrap:anywhere; }
 .ads-command .export-health-note small { display:block; color:var(--text-tertiary); font-size:12px; line-height:1.35; margin-top:4px; overflow-wrap:anywhere; }
+.ads-command .openai-health-panel { overflow:hidden; }
+.ads-command .openai-health-banner { border:1px solid; border-radius:14px; padding:13px 15px; margin-bottom:14px; }
+.ads-command .openai-health-banner b { display:block; color:var(--text); font-size:14px; line-height:1.35; }
+.ads-command .openai-health-banner small { display:block; color:var(--text-tertiary); font-size:12px; line-height:1.4; margin-top:4px; }
+.ads-command .openai-health-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; }
+.ads-command .openai-health-metric { min-width:0; border-top:1px solid var(--line); padding-top:12px; }
+.ads-command .openai-health-metric span { display:block; font-size:10px; font-weight:850; color:var(--text-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+.ads-command .openai-health-metric b { display:block; margin-top:7px; color:var(--text); font-size:14px; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ads-command .openai-health-metric b.mono { font-size:24px; line-height:1; }
+.ads-command .openai-export-strip { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; padding-top:14px; border-top:1px solid var(--line); }
+.ads-command .openai-export-strip > span { display:inline-flex; align-items:center; gap:6px; min-height:28px; border:1px solid var(--line); border-radius:999px; padding:5px 10px; color:var(--text-secondary); background:var(--surface-2); font-size:12px; font-weight:750; }
+.ads-command .openai-health-error { color:var(--danger) !important; border-color:rgba(248,113,113,.35) !important; background:rgba(248,113,113,.08) !important; max-width:100%; overflow-wrap:anywhere; }
 .ads-command .outbox-panel { margin-top:14px; }
 .ads-command .outbox-summary { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
 .ads-command .outbox-summary > div { background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-lg); padding:11px 12px; }
@@ -2673,6 +2767,8 @@ const ADS_COMMAND_STYLES = `
 .ads-command .outbox-event,
 .ads-command .outbox-lead { display:block; font-weight:800; color:var(--text); line-height:1.25; }
 .ads-command .outbox-sub { display:block; color:var(--text-tertiary); font-size:11px; line-height:1.35; margin-top:3px; max-width:290px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ads-command .outbox-source-line { display:flex; align-items:center; gap:7px; max-width:360px; }
+.ads-command .outbox-source-line > span:last-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ads-command .outbox-status { display:inline-flex; align-items:center; justify-content:center; min-height:24px; border:1px solid; border-radius:999px; padding:3px 9px; font-size:11px; font-weight:850; white-space:nowrap; }
 .ads-command .outbox-error { display:block; color:var(--danger); font-size:11px; line-height:1.25; margin-top:3px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ads-command .outbox-expand { display:flex; align-items:flex-start; gap:10px; width:100%; background:none; border:0; color:var(--text); padding:0; text-align:left; cursor:pointer; font:inherit; }
@@ -2810,6 +2906,6 @@ const ADS_COMMAND_STYLES = `
 @media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } }
 @media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } }
 @media (max-width:920px) { .ads-command .stage-top { grid-template-columns:1fr; align-items:flex-start; } .ads-command .qbadges { margin-left:0; } .ads-command .stage-body, .ads-command .micro-body { grid-template-columns:1fr; } .ads-command .statside, .ads-command .micro-side { display:none; } .ads-command .stage { inset:10px; width:auto; } }
-@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .source-filter { width:100%; border-radius:14px; align-items:flex-start; } .ads-command .source-filter-buttons { flex-wrap:wrap; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
+@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .source-filter { width:100%; border-radius:14px; align-items:flex-start; } .ads-command .source-filter-buttons { flex-wrap:wrap; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .openai-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .campaign-source-row { align-items:flex-start; flex-direction:column; gap:4px; } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
 @media (max-width:640px) { .ads-command .roster { grid-template-columns:1fr; } .ads-command .live-pill { font-size:11px; } }
 `
