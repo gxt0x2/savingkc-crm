@@ -54,8 +54,105 @@ describe('ppc browser tracking', () => {
     })
   })
 
-  it('marks stage 3 completion as secondary and separate from final submit', () => {
-    const event = fireConversion('lead_stage3_completed', {
+  it('keeps GTM enhanced-conversion identifiers pre-hashed on final submit', () => {
+    const event = fireConversion('lead_submitted', {
+      form_step: 4,
+      form_status: 'submitted',
+      form_submitted: true,
+      leadsUserData: {
+        sha256_email_address: 'a'.repeat(64),
+        sha256_phone_number: 'b'.repeat(64),
+      },
+    })
+
+    expect(event).toMatchObject({
+      event: 'lead_submitted',
+      leadsUserData: {
+        sha256_email_address: 'a'.repeat(64),
+        sha256_phone_number: 'b'.repeat(64),
+      },
+    })
+    expect(event).not.toHaveProperty('email')
+    expect(event).not.toHaveProperty('phone')
+  })
+
+  it('mirrors OpenAI Ads standard conversion events with stable dedupe ids', () => {
+    const oaiq = vi.fn()
+    vi.stubGlobal('window', { dataLayer: [], oaiq })
+
+    fireConversion('lead_submitted', {
+      event_id: 'lead:123:lead_submitted',
+      form_step: 4,
+      form_status: 'submitted',
+      form_submitted: true,
+    })
+
+    expect(oaiq).toHaveBeenCalledWith(
+      'measure',
+      'lead_created',
+      { type: 'customer_action' },
+      { event_id: 'lead:123:lead_submitted' },
+    )
+  })
+
+  it('suppresses browser conversion tags on smoke-test URLs', () => {
+    const oaiq = vi.fn()
+    vi.stubGlobal('window', {
+      dataLayer: [],
+      oaiq,
+      location: {
+        pathname: '/ppc',
+        href: 'https://savingkc.com/ppc?utm_source=openai_ads&utm_medium=smoke_test&utm_campaign=openai_ads_smoke&skc_test=1',
+        search: '?utm_source=openai_ads&utm_medium=smoke_test&utm_campaign=openai_ads_smoke&skc_test=1',
+      },
+      navigator: {},
+    })
+
+    const event = fireConversion('lead_submitted', {
+      event_id: 'codex_smoke_lead:123:lead_submitted',
+      form_step: 4,
+      form_status: 'submitted',
+      form_submitted: true,
+    })
+
+    expect(event).toMatchObject({
+      event: 'lead_submitted',
+      conversion_value: 25,
+      optimization_role: 'primary',
+    })
+    expect(currentDataLayer()).toEqual([])
+    expect(oaiq).not.toHaveBeenCalled()
+  })
+
+  it('adds page context for the tax PPC landing page', () => {
+    vi.stubGlobal('window', {
+      dataLayer: [],
+      oaiq: vi.fn(),
+      location: {
+        pathname: '/ppc-tax',
+        href: 'https://crm.savingkc.com/ppc-tax?gclid=test-click',
+      },
+    })
+
+    const event = firePpcTrackingEvent('ppc_visit_started')
+
+    expect(event).toMatchObject({
+      event: 'ppc_visit_started',
+      campaign: 'Search - Property Tax',
+      page_path: '/ppc-tax',
+      page_location: 'https://crm.savingkc.com/ppc-tax?gclid=test-click',
+      page_variant: 'ppc_tax',
+    })
+    expect((globalThis.window as unknown as { oaiq: ReturnType<typeof vi.fn> }).oaiq).toHaveBeenCalledWith(
+      'measure',
+      'page_viewed',
+      expect.objectContaining({ type: 'contents' }),
+      { event_id: event?.event_id },
+    )
+  })
+
+  it('tracks stage 3 completion as a diagnostic field-completion signal', () => {
+    const event = firePpcTrackingEvent('step_3_field_completed', {
       form_step: 3,
       form_status: 'stage_3_complete_no_submit',
       form_submitted: false,
@@ -63,14 +160,12 @@ describe('ppc browser tracking', () => {
     })
 
     expect(event).toMatchObject({
-      event: 'lead_stage3_completed',
-      conversion_value: 10,
-      value: 10,
-      currency: 'USD',
-      optimization_role: 'secondary',
+      event: 'step_3_field_completed',
       form_status: 'stage_3_complete_no_submit',
       form_submitted: false,
     })
+    expect(event).not.toHaveProperty('conversion_value')
+    expect(event).not.toHaveProperty('optimization_role')
   })
 
   it('tracks validation errors as diagnostic form_error events', () => {
@@ -85,6 +180,34 @@ describe('ppc browser tracking', () => {
       form_step: 1,
       field: 'situation',
     })
+  })
+
+  it('allows specific landing-page heatmap events without conversion value', () => {
+    const showMe = firePpcTrackingEvent('show_me_clicked', {
+      item_id: 'ppc_general__problems__back_taxes',
+      item_label: 'Tax letters keep coming',
+      section: 'problems',
+      position: 1,
+    })
+    const video = firePpcTrackingEvent('video_progress_50', {
+      video_id: 'seller-story',
+      video_title: 'Seller story',
+      section: 'video-testimonials',
+      watch_percent: 54,
+    })
+
+    expect(showMe).toMatchObject({
+      event: 'show_me_clicked',
+      item_id: 'ppc_general__problems__back_taxes',
+      item_label: 'Tax letters keep coming',
+    })
+    expect(showMe).not.toHaveProperty('conversion_value')
+    expect(video).toMatchObject({
+      event: 'video_progress_50',
+      video_id: 'seller-story',
+      watch_percent: 54,
+    })
+    expect(video).not.toHaveProperty('optimization_role')
   })
 
   it('does not throw during server-side rendering', () => {

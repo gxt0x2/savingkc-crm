@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 interface EventRow {
@@ -61,9 +62,12 @@ function percentile(nums: number[], p: number): number {
 
 // GET /api/deals/:slug/stats — full analytics breakdown
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const unauthorized = await requireUserOrSecret(req)
+  if (unauthorized) return unauthorized
+
   const { slug } = await params
   const db = supabaseAdmin()
 
@@ -78,11 +82,13 @@ export async function GET(
     db.from('deal_page_events')
       .select('event_type, visitor_id, session_id, referrer, ref_code, metadata, x_pct, y_pct, scroll_pct, section, element_tag, element_text, created_at')
       .eq('deal_page_id', dealPage.id)
+      .eq('is_internal', false)
       .order('created_at', { ascending: false })
       .limit(10000),
     db.from('deal_page_sessions')
       .select('*')
       .eq('deal_page_id', dealPage.id)
+      .eq('is_internal', false)
       .order('started_at', { ascending: false })
       .limit(1000),
     db.from('buyer_offers')
@@ -102,6 +108,9 @@ export async function GET(
     countsByType[e.event_type] = (countsByType[e.event_type] || 0) + 1
     if (e.event_type === 'page_view' && e.visitor_id) visitorsSet.add(e.visitor_id)
   }
+  const saveEvents = events.filter(e => e.event_type === 'save_toggle')
+  const saveCount = saveEvents.filter(e => e.metadata?.saved === true).length
+  const unsaveCount = saveEvents.filter(e => e.metadata?.saved === false).length
 
   // Session metrics
   const durations = sessions.map(s => s.total_duration_ms || 0).filter(n => n > 0)
@@ -205,6 +214,32 @@ export async function GET(
     ))
     return { ...s, attention_score: score }
   }).sort((a, b) => b.attention_score - a.attention_score)
+  const topSessions = attentionScored.slice(0, 20).map((s) => ({
+    session_id: s.session_id,
+    visitor_id: s.visitor_id,
+    referrer: s.referrer,
+    ref_code: s.ref_code,
+    utm_source: s.utm_source,
+    utm_medium: s.utm_medium,
+    utm_campaign: s.utm_campaign,
+    country: s.country,
+    region: s.region,
+    city: s.city,
+    device_type: s.device_type,
+    browser: s.browser,
+    os: s.os,
+    started_at: s.started_at,
+    ended_at: s.ended_at,
+    total_duration_ms: s.total_duration_ms,
+    active_duration_ms: s.active_duration_ms,
+    max_scroll_pct: s.max_scroll_pct,
+    sections_viewed: s.sections_viewed,
+    interactions: s.interactions,
+    is_bounced: s.is_bounced,
+    converted: s.converted,
+    conversion_type: s.conversion_type,
+    attention_score: s.attention_score,
+  }))
 
   // Funnel (events + sessions)
   const funnel = {
@@ -227,6 +262,9 @@ export async function GET(
       conversion_rate_pct: conversionRate,
       shares: countsByType.share_click || 0,
       share_visits: countsByType.share_visit || 0,
+      save_taps: saveEvents.length,
+      saves: saveCount,
+      unsaves: unsaveCount,
       photo_opens: countsByType.photo_open || 0,
       street_view_opens: countsByType.street_view_open || 0,
       map_view_opens: countsByType.map_view_open || 0,
@@ -259,7 +297,7 @@ export async function GET(
     views_by_day: viewsByDaySorted,
     funnel,
     offers,
-    top_sessions: attentionScored.slice(0, 20),
+    top_sessions: topSessions,
     recent_events: events.slice(0, 50),
   })
 }

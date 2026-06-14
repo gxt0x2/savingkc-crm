@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
@@ -47,9 +47,17 @@ interface Activity {
   activity_type: string
   description: string | null
   agent: string | null
-  metadata: Record<string, any> | null
+  metadata: Record<string, unknown> | null
   created_at: string
 }
+
+type ManifestPropertySnapshot = {
+  property?: {
+    parcel?: string | null
+    legalDescription?: string | null
+    legal_description?: string | null
+  }
+} | null
 
 interface SmsTemplate {
   id: string
@@ -138,7 +146,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
         .eq('lead_id', lead.id)
         .limit(1)
         .maybeSingle()
-      const m = data?.manifest as any
+      const m = data?.manifest as ManifestPropertySnapshot
       if (m?.property) {
         setPropertyMeta({
           parcelId: m.property.parcel || undefined,
@@ -161,7 +169,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
           table: 'lead_activities',
           filter: `lead_id=eq.${lead.id}`,
         },
-        (payload: any) => {
+        (payload: { new?: { activity_type?: string } }) => {
           const type = payload.new?.activity_type
           if (type === 'sms_sent' || type === 'sms_received' || type === 'sms_inbound') {
             fetchHistory()
@@ -228,8 +236,8 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
       setSent(true)
       setTimeout(() => setSent(false), 2000)
       onSent?.()
-    } catch (err: any) {
-      setError(err.message || 'Failed to send')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to send')
     } finally {
       setSending(false)
     }
@@ -264,8 +272,8 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
       setSent(true)
       setTimeout(() => setSent(false), 2000)
       onSent?.()
-    } catch (err: any) {
-      setError(err.message || 'Failed to send email')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to send email')
     } finally {
       setSending(false)
     }

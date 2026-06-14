@@ -6,41 +6,39 @@ import type { ManifestV2, ManifestScoring, ManifestContact, TranscriptEntry, Man
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { phoneRateLimit } from '@/middleware/rate-limit'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 // Casey's company number - used as FROM for thank-you SMS
 const CASEY_COMPANY_NUMBER = '+18167277667'
+const CONNECTED_CONVERSATION_SECONDS = 60
+const STREET_SUFFIXES = new Set([
+  'ALY', 'ALLEY', 'AVE', 'AVENUE', 'BLVD', 'BOULEVARD', 'CIR', 'CIRCLE', 'CT', 'COURT',
+  'DR', 'DRIVE', 'HWY', 'HIGHWAY', 'LN', 'LANE', 'LOOP', 'PKWY', 'PARKWAY', 'PL', 'PLACE',
+  'RD', 'ROAD', 'ST', 'STREET', 'TER', 'TERRACE', 'TRL', 'TRAIL', 'WAY',
+])
+const STREET_DIRECTIONS = new Set(['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'])
 
-// Disposition outcomes that trigger a thank-you SMS
-const THANK_YOU_DISPOSITIONS: Record<string, string> = {
-  'appointment_set': 'appointment_set',
-  'meaningful_conversation': 'interested',
-  'callback_scheduled': 'callback',
-  'voicemail_left': 'voicemail',
-}
+type ThankYouTemplateKey = 'appointment_set' | 'interested' | 'callback' | 'voicemail'
+type ManifestThankYouSms = NonNullable<NonNullable<ManifestV2['communications']>['thankYouSms']>
 
 // SMS templates keyed by templateKey
-const THANK_YOU_TEMPLATES: Record<string, (firstName: string, address: string, date?: string) => string> = {
+const THANK_YOU_TEMPLATES: Record<ThankYouTemplateKey, (firstName: string, address: string, date?: string) => string> = {
   'appointment_set': (firstName, _address, date) =>
     `Hey ${firstName}! It's Casey from Saving KC. Really enjoyed chatting with you today. Looking forward to coming by on ${date || 'soon'} to check out the property. If anything comes up before then, just shoot me a text. Talk soon!`,
 
   'interested': (firstName, address) =>
-    `Hey ${firstName}, it's Casey with Saving KC! Thanks for talking with me today about ${address}. I think we can definitely help. I'll be in touch soon, but if you think of anything, just text me back here anytime.`,
+    `Hey ${firstName}, it's Casey with Saving KC Homebuyers!\n\nThanks for talking with me today about ${formatPlaceReference(address)}.\n\nIf you have any questions, just text me back here anytime. -Casey`,
 
   'callback': (firstName) =>
     `Hey ${firstName}! It's Casey from Saving KC. I tried giving you a call today. Would love to connect when you get a chance. What time works best for you? Just text me back and I'll call you then.`,
 
   'voicemail': (firstName, address) =>
     `Hey ${firstName}, it's Casey from Saving KC! I just left you a voicemail about your property on ${address}. No rush. Give me a call back whenever works, or just reply to this text. Hope you're having a good day!`,
-}
-
-// Fire fn after a random delay between minSec and maxSec seconds (non-blocking)
-function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
-  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
-  setTimeout(() => fn().catch(e => console.error('[mojo/sync] Delayed send failed:', e)), delay)
 }
 
 export interface MojoCallRecord {
@@ -63,6 +61,56 @@ export interface MojoCallRecord {
   email?: string
 }
 
+function hasConnectedConversation(call: MojoCallRecord): boolean {
+  const duration = Number(call.call_duration || 0)
+  const hasLongCall = Number.isFinite(duration) && duration >= CONNECTED_CONVERSATION_SECONDS
+  const hasAgentNotes = typeof call.notes === 'string' && call.notes.trim().length > 0
+  const hasRecording = typeof call.recording_url === 'string' && call.recording_url.trim().length > 0
+
+  return hasLongCall || hasAgentNotes || hasRecording
+}
+
+function titleCaseStreet(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b[a-z]/g, char => char.toUpperCase())
+}
+
+function formatPlaceReference(address: string): string {
+  const cleaned = address.trim()
+  if (!cleaned || cleaned === 'your property') return 'your property'
+
+  const streetPart = cleaned.split(',')[0]?.trim()
+  if (!streetPart) return 'your property'
+
+  const tokens = streetPart
+    .replace(/[^A-Za-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+
+  const withoutNumber = tokens.filter((token, index) => !(index === 0 && /^\d+[A-Za-z]?$/.test(token)))
+  const withoutDirection = withoutNumber.filter((token, index) => !(index === 0 && STREET_DIRECTIONS.has(token.toUpperCase())))
+  const withoutSuffix = withoutDirection.filter((token, index, arr) => !(index === arr.length - 1 && STREET_SUFFIXES.has(token.toUpperCase())))
+  const streetName = withoutSuffix.join(' ')
+
+  return streetName ? `your place on ${titleCaseStreet(streetName)}` : `your property at ${titleCaseStreet(streetPart)}`
+}
+
+function selectThankYouTemplateKey(call: MojoCallRecord, outcome: string): ThankYouTemplateKey | null {
+  switch (outcome) {
+    case 'appointment_set':
+      return 'appointment_set'
+    case 'meaningful_conversation':
+      return 'interested'
+    case 'callback_scheduled':
+      return hasConnectedConversation(call) ? 'interested' : 'callback'
+    case 'voicemail_left':
+      return 'voicemail'
+    default:
+      return null
+  }
+}
+
 interface DispositionMapping {
   outcome: string
   priority?: 'hot' | 'warm' | 'cold'
@@ -71,6 +119,7 @@ interface DispositionMapping {
   incrementAttempts?: boolean
   flag?: string
   isDead?: boolean
+  deadReason?: string
 }
 
 type LeadPriority = 'hot' | 'warm' | 'cold'
@@ -117,13 +166,13 @@ function mapDisposition(disposition: string): DispositionMapping {
     return { outcome: 'appointment_set', priority: 'hot', alertErnest: true, createAppointment: true }
   }
   if (d === 'not interested' || d.includes('not interested')) {
-    return { outcome: 'not_interested', isDead: true }
+    return { outcome: 'not_interested', isDead: true, deadReason: 'not_selling' }
   }
   if (d === 'wrong number') {
-    return { outcome: 'wrong_number', isDead: true, flag: 're_skip_trace' }
+    return { outcome: 'wrong_number', isDead: true, deadReason: 'wrong_number', flag: 're_skip_trace' }
   }
   if (d === 'disconnected') {
-    return { outcome: 'disconnected', isDead: true, flag: 're_skip_trace' }
+    return { outcome: 'disconnected', isDead: true, deadReason: 'disconnected', flag: 're_skip_trace' }
   }
   if (d === 'no answer') {
     return { outcome: 'no_answer', incrementAttempts: true }
@@ -132,10 +181,10 @@ function mapDisposition(disposition: string): DispositionMapping {
     return { outcome: 'voicemail_left', incrementAttempts: true }
   }
   if (d === 'dnc request' || d.includes('do not call')) {
-    return { outcome: 'dnc', isDead: true }
+    return { outcome: 'dnc', isDead: true, deadReason: 'dnc' }
   }
   if (d === 'already sold' || d.includes('sold')) {
-    return { outcome: 'already_sold', isDead: true }
+    return { outcome: 'already_sold', isDead: true, deadReason: 'already_sold' }
   }
   if (d.includes('listed') || d.includes('agent')) {
     return { outcome: 'listed', priority: 'cold' }
@@ -214,15 +263,27 @@ function parseContactName(fullName: string): { firstName: string; lastName?: str
 }
 
 // Send SMS alert
-async function sendAlert(name: string, address: string, disposition: string, score?: number) {
+async function sendAlert(leadId: string, name: string, address: string, disposition: string, score?: number) {
   const scoreText = score ? ` Score: ${score}` : ''
   const smsText = `🔥 Hot lead from Casey: ${name} at ${address} — ${disposition}.${scoreText}`
 
   try {
-    await safeSendSMS({
-      body: smsText,
-      from: process.env.TWILIO_PHONE_NUMBER!,
-      to: process.env.ERNEST_PHONE!,
+    await sendTeamLeadAlert({
+      leadId,
+      smsBody: smsText,
+      trigger: 'mojo_hot_lead_alert',
+      source: 'mojo_call',
+      trafficSource: 'mojo',
+      push: {
+        title: 'Mojo hot lead',
+        body: `${name} at ${address}`,
+        url: `/leads/${leadId}`,
+        tag: `mojo-hot-lead-${leadId}`,
+      },
+      metadata: {
+        disposition,
+        opportunity_score: score ?? null,
+      },
     })
     return true
   } catch (err) {
@@ -819,6 +880,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       manifest.priority = dispositionMap.priority
     } else if (dispositionMap.isDead) {
       manifest.priority = 'cold'
+      manifest.currentStation = 'dead'
     }
 
     const contact: ManifestContact = {
@@ -857,6 +919,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         campaign: call.campaign_name,
         callDuration: call.call_duration,
         callDate: call.call_date,
+        deadReason: dispositionMap.deadReason ?? null,
       },
     })
 
@@ -1183,6 +1246,15 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       if (manifest.currentStation && manifest.currentStation !== ld?.station) {
         leadBackfill.station = manifest.currentStation
       }
+      if (dispositionMap.isDead) {
+        leadBackfill.station = 'dead'
+        leadBackfill.priority = 'cold'
+        leadBackfill.classification = 'dead'
+        leadBackfill.opportunity_score = 0
+        leadBackfill.dead_reason = dispositionMap.deadReason ?? 'other'
+        leadBackfill.dead_at = now
+        leadBackfill.dead_by = 'system:mojo-sync'
+      }
 
       // Cascade this call's metadata (always update — this IS the latest call)
       if (call.record_id && call.record_id !== ld?.mojo_record_id) {
@@ -1312,8 +1384,9 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
     }
 
     // J. Alert — only if score >= 75
-    if (shouldAlert) {
+    if (shouldAlert && leadId) {
       await sendAlert(
+        leadId,
         call.contact_name,
         call.property_address,
         call.disposition,
@@ -1321,8 +1394,8 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       )
     }
 
-    // K. Thank-you SMS — fire once per meaningful disposition
-    const thankYouKey = THANK_YOU_DISPOSITIONS[dispositionMap.outcome]
+    // K. Thank-you SMS — send once per meaningful disposition
+    const thankYouKey = selectThankYouTemplateKey(call, dispositionMap.outcome)
     const alreadySent = manifest.communications?.thankYouSms?.sent === true
 
     if (thankYouKey && !alreadySent && hasPhone && normalizedPhone) {
@@ -1339,39 +1412,112 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         const templateFn = THANK_YOU_TEMPLATES[thankYouKey]
         const body = templateFn(firstName, address, followUpDate)
 
-        // Mark sent before firing to prevent duplicate sends on retry
         if (!manifest.communications) manifest.communications = { transcripts: [] }
+        const attemptedAt = new Date().toISOString()
+        const dispositionDetails = {
+          template: thankYouKey,
+          to: normalizedPhone,
+          disposition: dispositionMap.outcome,
+          mojoDisposition: call.disposition,
+          callDuration: call.call_duration,
+        }
+
+        const { data: priorSms } = await supabase
+          .from('sms_delivery_log')
+          .select('twilio_sid, twilio_status, created_at')
+          .eq('to_phone', normalizedPhone)
+          .eq('message_body', body.slice(0, 1000))
+          .eq('success', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        if (priorSms && priorSms.length > 0) {
+          const previous = priorSms[0]
+          const thankYouSms: ManifestThankYouSms = {
+            sent: true,
+            sentAt: previous.created_at || attemptedAt,
+            attemptedAt,
+            template: thankYouKey,
+            to: normalizedPhone,
+          }
+          if (previous.twilio_sid) thankYouSms.sid = previous.twilio_sid
+          if (previous.twilio_status) thankYouSms.status = previous.twilio_status
+          manifest.communications.thankYouSms = thankYouSms
+          manifest.auditTrail.push({
+            timestamp: attemptedAt,
+            agent: 'system:mojo-sync-thankyou',
+            action: 'thank_you_sms_already_sent',
+            details: dispositionDetails,
+          })
+          await supabase
+            .from('manifests')
+            .update({ manifest })
+            .eq('id', manifestId)
+          console.log(`[queue] Thank-you SMS already sent to ${normalizedPhone} template=${thankYouKey}`)
+          return { leadId, manifestId, opportunityScore }
+        }
+
         manifest.communications.thankYouSms = {
-          sent: true,
-          sentAt: new Date().toISOString(),
+          sent: false,
+          attemptedAt,
           template: thankYouKey,
           to: normalizedPhone,
         }
 
         manifest.auditTrail.push({
-          timestamp: new Date().toISOString(),
+          timestamp: attemptedAt,
           agent: 'system:mojo-sync-thankyou',
-          action: 'thank_you_sms_queued',
-          details: { template: thankYouKey, to: normalizedPhone, disposition: dispositionMap.outcome },
+          action: 'thank_you_sms_attempted',
+          details: dispositionDetails,
         })
 
-        // Persist the thankYouSms flag before the delayed send fires
         await supabase
           .from('manifests')
           .update({ manifest })
           .eq('id', manifestId)
 
-        // Fire SMS after a natural 60-180 second delay
-        sendDelayed(async () => {
-          const result = await safeSendSMS({
-            body,
-            from: CASEY_COMPANY_NUMBER,
-            to: normalizedPhone,
-          })
-          console.log(`[queue] Thank-you SMS sent to ${normalizedPhone} template=${thankYouKey} sid=${result.sid || 'n/a'}`)
-        }, 60, 180)
+        const result = await safeSendSMS({
+          body,
+          from: CASEY_COMPANY_NUMBER,
+          to: normalizedPhone,
+        })
 
-        console.log(`[queue] Thank-you SMS queued for ${call.contact_name} (${normalizedPhone}) template=${thankYouKey}`)
+        const completedAt = new Date().toISOString()
+        const thankYouSms: ManifestThankYouSms = {
+          sent: result.success === true,
+          attemptedAt,
+          template: thankYouKey,
+          to: normalizedPhone,
+        }
+        if (result.success === true) {
+          thankYouSms.sentAt = completedAt
+        } else {
+          thankYouSms.error = result.error || 'safeSendSMS returned success=false'
+        }
+        if (result.sid) thankYouSms.sid = result.sid
+        if (result.status) thankYouSms.status = result.status
+        manifest.communications.thankYouSms = thankYouSms
+        manifest.auditTrail.push({
+          timestamp: completedAt,
+          agent: 'system:mojo-sync-thankyou',
+          action: result.success === true ? 'thank_you_sms_sent' : 'thank_you_sms_failed',
+          details: {
+            ...dispositionDetails,
+            sid: result.sid,
+            status: result.status,
+            error: result.success === true ? undefined : result.error || 'safeSendSMS returned success=false',
+          },
+        })
+        await supabase
+          .from('manifests')
+          .update({ manifest })
+          .eq('id', manifestId)
+
+        if (result.success === true) {
+          console.log(`[queue] Thank-you SMS sent to ${normalizedPhone} template=${thankYouKey} sid=${result.sid || 'n/a'}`)
+        } else {
+          console.error(`[queue] Thank-you SMS failed for ${normalizedPhone} template=${thankYouKey}: ${result.error || 'safeSendSMS returned success=false'}`)
+        }
       } else {
         console.log(`[queue] Thank-you SMS skipped for ${normalizedPhone}: optedOut=${optedOut} rateLimitAllowed=${rl.allowed}`)
       }
@@ -1392,6 +1538,9 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
  * /api/cron/process-mojo-queue.
  */
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   try {
     const { calls } = await req.json() as { calls: MojoCallRecord[] }
 

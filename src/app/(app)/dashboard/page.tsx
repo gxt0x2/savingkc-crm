@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
 import { useFinancials } from '@/hooks/use-financials'
+import { BottleneckCalculator } from './components/BottleneckCalculator'
 
 // ─── Types ───────────────────────────────────────────────────────
 interface LeadCounts {
@@ -46,7 +47,14 @@ function AnimatedNumber({ value, duration = 1200 }: { value: number; duration?: 
   const ref = useRef<number>(0)
 
   useEffect(() => {
-    if (value === 0) { setDisplay(0); return }
+    let frame = 0
+    if (value === 0) {
+      frame = requestAnimationFrame(() => {
+        setDisplay(0)
+        ref.current = 0
+      })
+      return () => cancelAnimationFrame(frame)
+    }
     const start = ref.current
     const diff = value - start
     const startTime = performance.now()
@@ -56,10 +64,11 @@ function AnimatedNumber({ value, duration = 1200 }: { value: number; duration?: 
       const progress = Math.min(elapsed / duration, 1)
       const eased = 1 - Math.pow(1 - progress, 3)
       setDisplay(Math.round(start + diff * eased))
-      if (progress < 1) requestAnimationFrame(tick)
+      if (progress < 1) frame = requestAnimationFrame(tick)
       else ref.current = value
     }
-    requestAnimationFrame(tick)
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
   }, [value, duration])
 
   return <>{display}</>
@@ -127,8 +136,8 @@ export default function KpiPage() {
   const oRate = qualified > 0 ? Math.round((offered / qualified) * 100) : 0
   const cRate = offered > 0 ? Math.round((closed / offered) * 100) : 0
 
-  const revenue = financials?.total.revenue ?? 0
-  const expenses = financials?.total.expenses ?? 0
+  const revenue = financials?.total?.revenue ?? 0
+  const expenses = financials?.total?.expenses ?? 0
   const net = revenue - expenses
 
   return (
@@ -142,6 +151,8 @@ export default function KpiPage() {
           {ytd?.agent ? `${ytd.agent} — Year to Date` : 'Year to Date'}
         </h2>
       </div>
+
+      <BottleneckCalculator />
 
       {/* ═══ Hero row — Dials / Appointments / Revenue ═══ */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

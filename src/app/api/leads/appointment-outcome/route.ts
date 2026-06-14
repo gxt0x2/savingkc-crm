@@ -99,6 +99,18 @@ export async function POST(req: NextRequest) {
 
     // 2. Log to lead_activities
     const supabase = getSupabase()
+    if (appointmentId) {
+      await supabase
+        .from('appointments')
+        .update({
+          status: outcome,
+          ...(notes ? { notes } : {}),
+          updated_at: now,
+        })
+        .eq('id', appointmentId)
+        .eq('lead_id', leadId)
+    }
+
     const outcomeLabels: Record<Outcome, string> = {
       completed: 'Appointment completed',
       no_show: 'Appointment no-show',

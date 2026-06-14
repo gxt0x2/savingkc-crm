@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { updateManifestAndCascade } from '@/lib/manifest-sync'
+import { deadReasonLabel } from '@/lib/lead-outcomes'
 import { normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
@@ -254,6 +255,15 @@ function classifyStuck(lead: LeadRow, manifest: any): StuckFinding | null {
   return null
 }
 
+function deadReasonForFinding(finding: StuckFinding): string {
+  const evidence = finding.reasons.join(' ').toLowerCase()
+  if (evidence.includes('spam') || evidence.includes('test')) return 'spam'
+  if (evidence.includes('wrong_number') || evidence.includes('bad_number')) return 'wrong_number'
+  if (evidence.includes('dnc') || evidence.includes('do_not_call')) return 'dnc'
+  if (evidence.includes('not_interested')) return 'not_selling'
+  return 'system_triage'
+}
+
 export async function POST(req: NextRequest) {
   const unauthorized = await requireAdminOrSecret(req)
   if (unauthorized) return unauthorized
@@ -321,9 +331,24 @@ export async function POST(req: NextRequest) {
   if (apply) {
     for (const finding of stuck) {
       try {
+        const now = new Date().toISOString()
+        const deadReason = finding.proposedStation === 'dead' ? deadReasonForFinding(finding) : null
         const { error: updErr } = await db
           .from('leads')
-          .update({ station: finding.proposedStation, updated_at: new Date().toISOString() })
+          .update({
+            station: finding.proposedStation,
+            updated_at: now,
+            ...(deadReason
+              ? {
+                priority: 'cold',
+                classification: 'dead',
+                opportunity_score: 0,
+                dead_reason: deadReason,
+                dead_at: now,
+                dead_by: 'system:stuck_stations_detector',
+              }
+              : {}),
+          })
           .eq('id', finding.leadId)
         if (updErr) {
           finding.applied = false
@@ -334,7 +359,7 @@ export async function POST(req: NextRequest) {
           manifest.currentStation = finding.proposedStation
           manifest.auditTrail = manifest.auditTrail ?? []
           manifest.auditTrail.push({
-            timestamp: new Date().toISOString(),
+            timestamp: now,
             agent: 'system:stuck_stations_detector',
             action: 'station_changed_admin',
             details: {
@@ -342,6 +367,8 @@ export async function POST(req: NextRequest) {
               to: finding.proposedStation,
               reason: 'stuck-station detector',
               evidence: finding.reasons,
+              dead_reason: deadReason,
+              dead_reason_label: deadReason ? deadReasonLabel(deadReason) : null,
             },
           })
         }, 'stuck_stations_detector').catch(() => false)

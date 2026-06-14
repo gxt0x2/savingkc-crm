@@ -4,26 +4,23 @@ import { isOptedOut } from '@/lib/sms-opt-out'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
 import { formatPhone } from '@/lib/format'
+import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import {
-  GOOGLE_ADS_CAMPAIGN,
-  GOOGLE_ADS_PHONE_SOURCE,
   getCallQualityMilestones,
+  getGoogleAdsCallQualityMilestones,
+  getGoogleAdsPhoneProfile,
   isPpcTrackingNumber,
   parseCallDurationSeconds,
-  PPC_TRACKING_PHONE_DIGITS,
 } from '@/lib/call-quality-events'
 import {
   createGoogleAdsMissedEscalationTask,
-  googleAdsEscalationReminderMessage,
   googleAdsMissedCallerMessage,
-  hasGoogleAdsLeadRespondedSince,
-  notifyGoogleAdsTeam,
   resolveGoogleAdsLeadContext,
-  startGoogleAdsAgentCallback,
 } from '@/lib/google-ads-phone'
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
@@ -118,6 +115,9 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
 
   const dedupeKey = input.dialCallSid || input.parentCallSid
   const isPpcCall = isPpcTrackingNumber(input.calledNumber)
+  const isTestCall = isInternalTestPhone(input.from)
+  const profile = getGoogleAdsPhoneProfile(input.calledNumber)
+  const googleAdsEvents = new Set(getGoogleAdsCallQualityMilestones(input.dialCallDuration).map((milestone) => milestone.event))
 
   for (const milestone of milestones) {
     try {
@@ -146,6 +146,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
         direction: 'inbound',
         from: input.from,
         to: input.calledNumber,
+        is_test: isTestCall,
         calledNumber: input.calledNumber,
         callSid: input.parentCallSid,
         dialStatus: input.dialStatus,
@@ -156,9 +157,11 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
         agentName: input.agentName,
         ...(isPpcCall && {
           traffic_source: 'google_ads',
-          campaign: GOOGLE_ADS_CAMPAIGN,
-          lead_source: GOOGLE_ADS_PHONE_SOURCE,
-          tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          campaign: profile.campaign,
+          lead_source: profile.source,
+          tracking_number: profile.trackingDigits,
+          landing_page: profile.landingPage,
+          phone_profile: profile.key,
         }),
       }
 
@@ -179,7 +182,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
         continue
       }
 
-      if (isPpcCall) {
+      if (isPpcCall && !isTestCall && googleAdsEvents.has(milestone.event)) {
         await enqueuePpcConversion({
           eventName: milestone.event,
           eventCategory: 'call',
@@ -191,7 +194,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
           attribution: {
             utm_source: 'google',
             utm_medium: 'cpc',
-            utm_campaign: GOOGLE_ADS_CAMPAIGN,
+            utm_campaign: profile.campaign,
           },
           payload: metadata,
         })
@@ -224,13 +227,15 @@ export async function POST(req: Request) {
     const lead = await resolveLeadContext(leadId, from)
     const isPpcCall = isPpcTrackingNumber(calledNumber)
     const isGoogleAdsCall = isPpcCall || type === 'google_ads'
-    let resolvedLeadId = lead.id
+    const isInternalTestCaller = isInternalTestPhone(from)
+    const googleAdsProfile = getGoogleAdsPhoneProfile(calledNumber)
+    let resolvedLeadId = isGoogleAdsCall && isInternalTestCaller ? null : lead.id
     let callerLabel = lead.name || callerPhoneLabel(from)
 
-    if (!resolvedLeadId && isGoogleAdsCall) {
-      const googleAdsLead = await resolveGoogleAdsLeadContext(from)
+    if (!resolvedLeadId && isGoogleAdsCall && !isInternalTestCaller) {
+      const googleAdsLead = await resolveGoogleAdsLeadContext(from, calledNumber)
       resolvedLeadId = googleAdsLead.leadId
-      callerLabel = googleAdsLead.leadName || (resolvedLeadId ? `Google Ads Caller ${callerPhoneLabel(from)}` : callerLabel)
+      callerLabel = googleAdsLead.leadName || (resolvedLeadId ? `${googleAdsProfile.label} Caller ${callerPhoneLabel(from)}` : callerLabel)
     }
 
     const shouldTrackConnectedCall = Boolean(resolvedLeadId || isDirect || isGoogleAdsCall)
@@ -244,7 +249,7 @@ export async function POST(req: Request) {
         description: isDirect
           ? `Direct inbound call from ${callerLabel} connected live with ${routing.primary.name}${dialCallDuration != null ? ` — ${dialCallDuration}s` : ''}`
           : isGoogleAdsCall
-            ? `Inbound Google Ads call from ${callerPhoneLabel(from)} connected live with agent${dialCallDuration != null ? ` — ${dialCallDuration}s` : ''}`
+            ? `Inbound ${googleAdsProfile.label} call from ${callerPhoneLabel(from)} connected live with agent${dialCallDuration != null ? ` — ${dialCallDuration}s` : ''}`
           : `Inbound ${type === 'seller' ? 'seller' : 'caller'} connected live with agent`,
         agent: 'System',
         metadata: {
@@ -257,11 +262,14 @@ export async function POST(req: Request) {
           dialCallSid,
           dialCallDuration,
           type,
+          is_test: isInternalTestCaller,
           ...(isGoogleAdsCall && {
-            source: GOOGLE_ADS_PHONE_SOURCE,
+            source: googleAdsProfile.source,
             traffic_source: 'google_ads',
-            campaign: GOOGLE_ADS_CAMPAIGN,
-            tracking_number: PPC_TRACKING_PHONE_DIGITS,
+            campaign: googleAdsProfile.campaign,
+            tracking_number: googleAdsProfile.trackingDigits,
+            landing_page: googleAdsProfile.landingPage,
+            phone_profile: googleAdsProfile.key,
           }),
         }
       })
@@ -322,7 +330,7 @@ export async function POST(req: Request) {
       await supabase.from('lead_activities').insert({
         lead_id: resolvedLeadId,
         activity_type: 'call',
-        description: `Both agents missed inbound Google Ads call from ${callerPhoneLabel(from)}`,
+        description: `Both agents missed inbound ${googleAdsProfile.label} call from ${callerPhoneLabel(from)}`,
         agent: 'System',
         metadata: {
           outcome: 'missed',
@@ -334,84 +342,53 @@ export async function POST(req: Request) {
           dialCallSid,
           dialCallDuration,
           type,
-          source: GOOGLE_ADS_PHONE_SOURCE,
+          is_test: isInternalTestCaller,
+          source: googleAdsProfile.source,
           traffic_source: 'google_ads',
-          campaign: GOOGLE_ADS_CAMPAIGN,
-          tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          campaign: googleAdsProfile.campaign,
+          tracking_number: googleAdsProfile.trackingDigits,
+          landing_page: googleAdsProfile.landingPage,
+          phone_profile: googleAdsProfile.key,
         }
       })
 
-      const escalationTask = await createGoogleAdsMissedEscalationTask({
-        leadId: resolvedLeadId,
-        from,
-        calledNumber,
-        callSid: parentCallSid,
-        dialCallSid,
-        dialCallDuration,
-        routing,
-      })
-
-      const googleAdsLeadId = resolvedLeadId
-      sendDelayed(async () => {
-        const responded = await hasGoogleAdsLeadRespondedSince(googleAdsLeadId, escalationTask.missedAt)
-        if (responded) {
-          if (escalationTask.taskId) {
-            await supabase.from('lead_activities')
-              .update({
-                metadata: {
-                  ...escalationTask.metadata,
-                  status: 'completed',
-                  completed_at: new Date().toISOString(),
-                  skipped_reason: 'lead_responded_before_escalation',
-                }
-              })
-              .eq('id', escalationTask.taskId)
-          }
-          return
-        }
-
-        const reminder = googleAdsEscalationReminderMessage(from, googleAdsLeadId)
-        await notifyGoogleAdsTeam(reminder, {
-          leadId: googleAdsLeadId,
-          routing,
-          trigger: 'google_ads_missed_call_escalation_reminder',
-          metadata: {
-            task_id: escalationTask.taskId,
-          },
-        })
-
-        const callback = await startGoogleAdsAgentCallback({
-          leadId: googleAdsLeadId,
-          leadPhone: from,
+      if (!isInternalTestCaller) {
+        await createGoogleAdsMissedEscalationTask({
+          leadId: resolvedLeadId,
+          from,
           calledNumber,
-          agentName: routing.primary.name,
-          agentPhone: routing.primary.phone,
-          triggerCallSid: parentCallSid,
+          callSid: parentCallSid,
+          dialCallSid,
+          dialCallDuration,
+          routing,
         })
-
-        if (escalationTask.taskId) {
-          await supabase.from('lead_activities')
-            .update({
-              metadata: {
-                ...escalationTask.metadata,
-                status: 'completed',
-                completed_at: new Date().toISOString(),
-                reminder_sent_at: new Date().toISOString(),
-                callback_started: callback.started,
-                callback_sid: callback.sid,
-                callback_error: callback.error,
-              }
-            })
-            .eq('id', escalationTask.taskId)
-        }
-      }, 300, 300)
+      }
     } else {
     // Alert both agents for IVR calls
     const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${from} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
-    await Promise.allSettled([
-      safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
-      safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.secondary.phone }),
-    ])
+    await sendTeamLeadAlert({
+      leadId: resolvedLeadId,
+      smsBody: missedMsg,
+      trigger: 'ivr_missed_call_alert',
+      source: 'inbound_ivr',
+      push: {
+        title: 'Missed Inbound Call',
+        body: `${type === 'seller' ? 'Seller' : 'Caller'} ${from} reached voicemail.`,
+        url: `/leads/${resolvedLeadId}`,
+        tag: 'ivr-missed-call',
+      },
+      metadata: {
+        outcome: 'missed',
+        direction: 'inbound',
+        from,
+        calledNumber,
+        callSid: parentCallSid,
+        dialStatus,
+        dialCallSid,
+        dialCallDuration,
+        type,
+      },
+    })
 
     // Log missed call
     await supabase.from('lead_activities').insert({
@@ -441,13 +418,13 @@ export async function POST(req: Request) {
   }
 
   // Auto-text ONLY when both agents miss IVR calls (not direct calls)
-  if (from && resolvedLeadId && !isDirect) {
+  if (from && resolvedLeadId && !isDirect && !isInternalTestCaller) {
     const optedOut = await isOptedOut(from)
     const { allowed: phoneOk } = phoneRateLimit(from)
     if (!optedOut && phoneOk) {
       const isColdCallback = calledNumber && ['+18163100845','+18162538313','+18164761344','+18164761589','+18166404701','+18165788107','+18166408032','+18166536616'].includes(calledNumber)
       const autoText = isGoogleAdsCall
-        ? googleAdsMissedCallerMessage()
+        ? googleAdsMissedCallerMessage(calledNumber)
         : isColdCallback
         ? `Hey, sorry we missed you! We recently reached out about a property in your area. If you're thinking about selling, reply YES and we'll give you a call back.`
         : type === 'seller'
@@ -468,8 +445,12 @@ export async function POST(req: Request) {
               to: from,
               trigger: isGoogleAdsCall ? 'google_ads_missed_call_followup' : 'missed_call_followup',
               ...(isGoogleAdsCall && {
-                source: GOOGLE_ADS_PHONE_SOURCE,
+                source: googleAdsProfile.source,
                 traffic_source: 'google_ads',
+                campaign: googleAdsProfile.campaign,
+                tracking_number: googleAdsProfile.trackingDigits,
+                landing_page: googleAdsProfile.landingPage,
+                phone_profile: googleAdsProfile.key,
                 calledNumber,
               }),
             }

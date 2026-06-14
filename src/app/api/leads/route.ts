@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
-import { safeSendSMS } from '@/lib/safe-communications'
 import { regenerateBriefing, EAGER_REGEN_EVENTS } from '@/lib/briefing-regen'
 import { notifyNewLead } from '@/lib/ari-briefing'
-import { getAgentRouting } from '@/lib/agent-routing'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
-import { sendPushToAgents } from '@/lib/push-notifications'
+import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
+import { DEAD_REASONS, cleanDeadReason, deadReasonLabel } from '@/lib/lead-outcomes'
+import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 
 const corsHeaders = {
@@ -111,13 +112,31 @@ async function findLeadIdByPhone(phoneVariants: string[]): Promise<string | null
 
 async function findLeadBySessionId(sessionId: string | null): Promise<{ id: string; form_status?: string | null } | null> {
   if (!sessionId) return null
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('leads')
     .select('id, form_status')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  if (error && isMissingColumnError(error)) {
+    const { data: fallback, error: fallbackError } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (fallbackError) console.error('[website-lead] session lookup fallback failed:', fallbackError)
+    return fallback ?? null
+  }
+
+  if (error) {
+    console.error('[website-lead] session lookup failed:', error)
+    return null
+  }
 
   return data ?? null
 }
@@ -157,6 +176,65 @@ async function removeMergedPartialLead(sessionLead: { id: string; form_status?: 
     .eq('form_status', 'partial')
 
   if (error) console.error('[website-lead] failed to remove merged partial lead:', error)
+}
+
+function withoutFormStatus<T extends Record<string, unknown>>(fields: T): Omit<T, 'form_status'> {
+  const { form_status: _formStatus, ...rest } = fields
+  return rest
+}
+
+async function insertWebsiteLead(fields: Record<string, unknown>, isGoogleAds: boolean): Promise<{ id: string } | null> {
+  const insertFields = {
+    ...fields,
+    station: 'new',
+    priority: isGoogleAds ? 'hot' : 'normal',
+  }
+
+  const { data, error } = await supabase
+    .from('leads')
+    .insert(insertFields)
+    .select('id')
+    .single()
+
+  if (!error) return data
+
+  if (isMissingColumnError(error) && 'form_status' in insertFields) {
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('leads')
+      .insert(withoutFormStatus(insertFields))
+      .select('id')
+      .single()
+
+    if (!fallbackError) return fallbackData
+    console.error('[website-lead] Supabase insert fallback error:', fallbackError)
+    return null
+  }
+
+  console.error('[website-lead] Supabase insert error:', error)
+  return null
+}
+
+async function updateWebsiteLead(leadId: string, fields: Record<string, unknown>): Promise<boolean> {
+  const { error } = await supabase
+    .from('leads')
+    .update(fields)
+    .eq('id', leadId)
+
+  if (!error) return true
+
+  if (isMissingColumnError(error) && 'form_status' in fields) {
+    const { error: fallbackError } = await supabase
+      .from('leads')
+      .update(withoutFormStatus(fields))
+      .eq('id', leadId)
+
+    if (!fallbackError) return true
+    console.error('[website-lead] Supabase update fallback error:', fallbackError)
+    return false
+  }
+
+  console.error('[website-lead] Supabase update error:', error)
+  return false
 }
 
 async function upsertWebsiteLeadActivity(input: {
@@ -218,55 +296,33 @@ async function triggerWebsiteLeadSideEffects(input: {
   const addressPart = input.address ? ` at ${input.address}` : ''
   const label = input.isGoogleAds ? 'Google Ads website lead' : 'Website lead'
   const alertBody = `New ${label}: ${input.fullName}${addressPart}. Phone: ${input.phone || 'not provided'}. ${publicLeadUrl}`
-  const routing = getAgentRouting(process.env.TWILIO_PHONE_NUMBER || '')
-  const targets = [
-    { name: routing.primary.name, phone: routing.primary.phone },
-    { name: routing.secondary.name, phone: routing.secondary.phone },
-  ].filter((target, index, all) => target.phone && all.findIndex((item) => item.phone === target.phone) === index)
-
-  const smsResults = process.env.TWILIO_PHONE_NUMBER
-    ? await Promise.allSettled(
-      targets.map((target) =>
-        safeSendSMS({
-          body: alertBody,
-          from: process.env.TWILIO_PHONE_NUMBER!,
-          to: target.phone,
-        }).then((result) => ({ target: target.name, result })),
-      ),
-    )
-    : []
 
   await Promise.allSettled([
     notifyNewLead(input.leadId, input.fullName, input.source),
-    sendPushToAgents({
+    regenerateBriefing(input.leadId, 'website_lead_submitted', true),
+  ])
+
+  await sendTeamLeadAlert({
+    leadId: input.leadId,
+    smsBody: alertBody,
+    trigger: 'website_lead_alert',
+    source: input.formSource,
+    trafficSource: input.isGoogleAds ? 'google_ads' : 'non_paid',
+    push: {
       title: label,
       body: `${input.fullName}${addressPart}`,
       url: leadUrl,
       tag: `website-lead-${input.leadId}`,
-    }),
-    regenerateBriefing(input.leadId, 'website_lead_submitted', true),
-  ])
-
-  await supabase.from('lead_activities').insert({
-    lead_id: input.leadId,
-    activity_type: 'sms',
-    description: alertBody,
-    agent: 'System',
+    },
+    callback: input.phone ? {
+      leadPhone: input.phone,
+      callerId: process.env.TWILIO_PHONE_NUMBER || '+18163077835',
+      fullName: input.fullName,
+      address: input.address,
+      trigger: 'website_form_submit',
+    } : false,
     metadata: {
-      direction: 'outbound_alert',
-      trigger: 'website_lead_alert',
-      source: input.formSource,
-      traffic_source: input.isGoogleAds ? 'google_ads' : 'non_paid',
-      to_agents: targets.map((target) => target.name),
-      delivery_status: smsResults.map((entry) => {
-        if (entry.status === 'rejected') return { success: false, error: entry.reason?.message || 'Unknown error' }
-        return {
-          target: entry.value.target,
-          success: entry.value.result.success,
-          sid: entry.value.result.sid,
-          error: entry.value.result.error,
-        }
-      }),
+      form_source: input.formSource,
     },
   })
 }
@@ -356,35 +412,22 @@ export async function POST(req: NextRequest) {
 
     // If still no lead, create bare lead
     if (!leadId) {
-      const { data, error } = await supabase
-        .from('leads')
-        .insert({
-          ...baseLeadFields,
-          station: 'new',
-          priority: isGoogleAds ? 'hot' : 'normal',
-        })
-        .select('id')
-        .single()
+      const data = await insertWebsiteLead(baseLeadFields, isGoogleAds)
 
-      if (error) {
-        console.error('[website-lead] Supabase insert error:', error)
-        return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+      if (!data?.id) {
+        return NextResponse.json({ success: false, error: 'Lead insert failed' }, { status: 500, headers: corsHeaders })
       }
 
       leadId = data.id
     } else {
-      const { error } = await supabase
-        .from('leads')
-        .update({
-          ...baseLeadFields,
-          ...(sessionLead?.id === leadId ? { station: 'new' } : {}),
-          ...(isGoogleAds ? { priority: 'hot' } : {}),
-        })
-        .eq('id', leadId)
+      const updated = await updateWebsiteLead(leadId, {
+        ...baseLeadFields,
+        ...(sessionLead?.id === leadId ? { station: 'new' } : {}),
+        ...(isGoogleAds ? { priority: 'hot' } : {}),
+      })
 
-      if (error) {
-        console.error('[website-lead] Supabase update error:', error)
-        return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+      if (!updated) {
+        return NextResponse.json({ success: false, error: 'Lead update failed' }, { status: 500, headers: corsHeaders })
       }
     }
 
@@ -457,15 +500,19 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    triggerWebsiteLeadSideEffects({
-      leadId: resolvedLeadId,
-      fullName: name,
-      address,
-      phone: normalizedPhone || phone,
-      source: leadSource,
-      formSource,
-      isGoogleAds,
-    }).catch((err) => console.error('[website-lead] side effects failed:', err))
+    try {
+      await triggerWebsiteLeadSideEffects({
+        leadId: resolvedLeadId,
+        fullName: name,
+        address,
+        phone: normalizedPhone || phone,
+        source: leadSource,
+        formSource,
+        isGoogleAds,
+      })
+    } catch (err) {
+      console.error('[website-lead] side effects failed:', err)
+    }
 
     return NextResponse.json({ success: true, leadId: resolvedLeadId, manifestId }, { headers: corsHeaders })
   } catch (err) {
@@ -513,6 +560,31 @@ export async function PATCH(req: NextRequest) {
       fields.opportunity_score = typeof fields.opportunity_score === 'number'
         ? fields.opportunity_score
         : triage.score
+    }
+
+    const requestedStation = typeof fields.station === 'string' ? fields.station : null
+    const markingDead = requestedStation === 'dead' || triageClassification === 'dead'
+    const deadReason = markingDead
+      ? cleanDeadReason(fields.dead_reason ?? fields.deadReason ?? activity?.deadReason ?? activity?.dead_reason)
+      : null
+
+    if (markingDead && !deadReason) {
+      return NextResponse.json({
+        success: false,
+        error: 'Dead reason required before marking this lead dead.',
+        requiresDeadReason: true,
+        allowedDeadReasons: DEAD_REASONS,
+      }, { status: 400, headers: corsHeaders })
+    }
+
+    delete fields.deadReason
+    if (markingDead) {
+      fields.dead_reason = deadReason
+      fields.dead_at ??= new Date().toISOString()
+      fields.dead_by ??= activityAgent
+      fields.priority ??= 'cold'
+      fields.classification ??= 'dead'
+      fields.opportunity_score = typeof fields.opportunity_score === 'number' ? fields.opportunity_score : 0
     }
 
     // CRITICAL: Handle appointment_set disposition → manifest write
@@ -785,6 +857,36 @@ export async function PATCH(req: NextRequest) {
           manifest.scoring.opportunity_score = manifestFields.opportunity_score
           manifest.scoring.scored_at = new Date().toISOString()
         }
+        if (markingDead && deadReason) {
+          manifest.priority = 'cold'
+          if (!manifest.scoring) {
+            manifest.scoring = {
+              opportunity_score: 0,
+              classification: 'dead',
+              reasoning: `Marked dead: ${deadReasonLabel(deadReason)}.`,
+              worth_enriching: false,
+              scored_at: new Date().toISOString(),
+              scored_by: 'disposition',
+            }
+          } else {
+            manifest.scoring.classification = 'dead'
+            manifest.scoring.opportunity_score = 0
+            manifest.scoring.reasoning = `Marked dead: ${deadReasonLabel(deadReason)}.`
+            manifest.scoring.worth_enriching = false
+            manifest.scoring.scored_at = new Date().toISOString()
+            manifest.scoring.scored_by = 'disposition'
+          }
+          if (!manifest.auditTrail) manifest.auditTrail = []
+          manifest.auditTrail.push({
+            timestamp: new Date().toISOString(),
+            agent: activityAgent,
+            action: 'marked_dead',
+            details: {
+              dead_reason: deadReason,
+              dead_reason_label: deadReasonLabel(deadReason),
+            },
+          })
+        }
       }, 'api:leads_patch')
 
       // Fallback to direct write if no manifest exists
@@ -818,12 +920,24 @@ export async function PATCH(req: NextRequest) {
     }
 
     const previousTriageData = previousTriageLead?.data ?? null
+    if (typeof fields.station === 'string') {
+      await queuePpcQualifiedLeadConversion({
+        leadId: id,
+        fromStation: previousTriageData?.station ?? null,
+        toStation: fields.station,
+        changedBy: activityAgent,
+        reason: triageClassification ? `manual triage: ${triageClassification}` : 'lead patch station update',
+      }).catch((error) => console.error('[leads PATCH] PPC qualified conversion queue failed:', error))
+    }
+
     if (triageClassification && previousTriageData?.classification !== triageClassification) {
       const triage = LEAD_TRIAGE[triageClassification]
       const { error: triageActivityError } = await supabase.from('lead_activities').insert({
         lead_id: id,
-        activity_type: 'status_change',
-        description: `Manual triage: ${triage.label}`,
+        activity_type: markingDead ? 'outcome' : 'status_change',
+        description: markingDead && deadReason
+          ? `Manual triage: ${triage.label} - ${deadReasonLabel(deadReason)}`
+          : `Manual triage: ${triage.label}`,
         agent: activityAgent,
         metadata: {
           source: 'lead_detail_triage',
@@ -833,6 +947,8 @@ export async function PATCH(req: NextRequest) {
           new_station: data.station ?? fields.station ?? null,
           old_priority: previousTriageData?.priority ?? null,
           new_priority: data.priority ?? fields.priority ?? null,
+          dead_reason: deadReason,
+          dead_reason_label: deadReason ? deadReasonLabel(deadReason) : null,
         },
       })
       if (triageActivityError) {

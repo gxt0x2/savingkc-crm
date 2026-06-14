@@ -1,4 +1,29 @@
-# cron-job.org Setup Guide
+# Mojo Queue Cron Setup Guide
+
+The preferred queue processor is the Vercel cron in `vercel.json`:
+
+```json
+{
+  "path": "/api/cron/process-mojo-queue",
+  "schedule": "*/15 * * * *"
+}
+```
+
+Mojo email fallback sync is also scheduled in `vercel.json`:
+
+```json
+{
+  "path": "/api/cron/sync-mojo-emails",
+  "schedule": "*/15 13-22 * * 1-5"
+}
+```
+
+That route uses connected Gmail OAuth tokens to parse actionable Mojo
+notification emails and queue them into `mojo_call_queue`. It does not replace
+the full Mojo web-session sync because notification emails may not include call
+recordings or complete activity history.
+
+Use cron-job.org only as a fallback if Vercel cron is unavailable.
 
 ## Account Setup
 1. Go to: https://cron-job.org/en/signup/
@@ -25,7 +50,7 @@ Click "Advanced" tab:
 
 **Custom Headers:**
 - Header name: `Authorization`
-- Header value: `Bearer 817bea9cc62e9f72b19676ae58d38bc197928e3de8955eac7b774d47bb08aedd`
+- Header value: `Bearer $CRON_SECRET`
 
 **Expected Response:**
 - Status code: `200`
@@ -45,7 +70,7 @@ Click "Advanced" tab:
 ### Test Manually
 ```bash
 curl -X GET "https://savingkc-crm-gxt0x2s-projects.vercel.app/api/cron/process-mojo-queue" \
-  -H "Authorization: Bearer 817bea9cc62e9f72b19676ae58d38bc197928e3de8955eac7b774d47bb08aedd"
+  -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 Expected response:
@@ -77,6 +102,7 @@ In cron-job.org dashboard:
 
 ### No items processing
 - Check that Mojo sync endpoint is adding items to queue
+- Check `/api/cron/sync-mojo-emails` if the Mojo session-cookie sync is down
 - Verify queue table has pending items
 - Check cron-job.org execution history for failures
 

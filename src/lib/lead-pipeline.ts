@@ -30,6 +30,11 @@ import { detectCounty, parseAddressForCounty } from '@/lib/county-enrichment'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
+import {
+  applyPpcLeadIntelligenceToManifest,
+  ppcLeadIntelligenceFromActivityMetadata,
+  type PpcLeadIntelligenceInput,
+} from '@/lib/ppc/lead-intelligence'
 
 export interface ReprocessOptions {
   suppressNotifications?: boolean
@@ -73,6 +78,29 @@ interface QueueRow {
   opportunity_score: number | null
   completed_at: string | null
   created_at: string
+}
+
+interface RecordingActivityRow {
+  id: string
+  activity_type: string
+  description: string | null
+  agent: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+
+type LeadForPpcIntelligence = {
+  property_address?: string | null
+  full_name?: string | null
+  city?: string | null
+  state?: string | null
+  zip?: string | null
+  county?: string | null
+}
+
+type PpcActivityMetadataRow = {
+  metadata: Record<string, unknown> | null
+  created_at: string | null
 }
 
 /**
@@ -124,6 +152,13 @@ export async function reprocessLead(
   const addedTranscripts = ensureTranscriptsFromQueue(manifest, queueRows)
   if (addedTranscripts > 0) changed.push(`transcripts_added=${addedTranscripts}`)
 
+  // 3b. Ensure Twilio recording activities also become transcript entries.
+  // PPC form callbacks and inbound calls are written to lead_activities, not
+  // mojo_call_queue, so the old reprocess path skipped them entirely.
+  const recordingRows = await loadTwilioRecordingActivities(leadId)
+  const addedRecordingTranscripts = ensureTranscriptsFromRecordingActivities(manifest, recordingRows)
+  if (addedRecordingTranscripts > 0) changed.push(`twilio_transcripts_added=${addedRecordingTranscripts}`)
+
   // 4. Merge queue payload notes into manifest.agentNotes (dedup by callRecordId)
   const addedNotes = mergeAgentNotesFromQueue(manifest, queueRows)
   if (addedNotes > 0) changed.push(`agent_notes_added=${addedNotes}`)
@@ -155,6 +190,23 @@ export async function reprocessLead(
   // the county scrapers often fail to return. Match by phone, fill gaps.
   const hydrated = await hydrateFromProspect(leadId, lead, manifest, errors)
   if (hydrated.length > 0) changed.push(`prospect_hydrated=${hydrated.join(',')}`)
+
+  // 5e. Promote paid-form answers into the canonical manifest fields used by
+  // lead-page cards. PPC tracking rows were already healthy; this repairs the
+  // intelligence lane so pain points, goals, ARI, and discovery questions see it.
+  const ppcInput = await loadLatestPpcFormIntelligence(leadId, lead)
+  if (ppcInput) {
+    const promoted = applyPpcLeadIntelligenceToManifest(manifest, ppcInput)
+    if (promoted.changed.length > 0) {
+      changed.push(`ppc_intelligence=${promoted.changed.join(',')}`)
+    }
+  }
+
+  // 5f. Call transcript intelligence is richer than the PPC intake snapshot.
+  // Re-apply it after PPC promotion so backfilled leads do not stay stuck on
+  // shallow "PPC intake" copy once a real call has been transcribed/analyzed.
+  const transcriptPromoted = promoteLatestAnalyzedTranscriptToManifest(manifest)
+  if (transcriptPromoted.length > 0) changed.push(`transcript_intelligence=${transcriptPromoted.join(',')}`)
 
   // 6. County enrichment if address present and dwelling data missing (or forced)
   const needsEnrich = forceReEnrich || healed.length > 0 || !manifest.property?.dwelling?.bedrooms
@@ -288,6 +340,49 @@ export async function reprocessLead(
 
 // ─── helpers ─────────────────────────────────────────────────────────────
 
+async function loadLatestPpcFormIntelligence(
+  leadId: string,
+  lead: LeadForPpcIntelligence,
+): Promise<PpcLeadIntelligenceInput | null> {
+  const { data } = await supabase
+    .from('lead_activities')
+    .select('metadata, created_at')
+    .eq('lead_id', leadId)
+    .eq('activity_type', 'status_change')
+    .order('created_at', { ascending: false })
+    .limit(25)
+
+  const rows = (data ?? []) as PpcActivityMetadataRow[]
+  const rank = (source: string | null | undefined): number => {
+    if (source === 'ppc_form_submit') return 0
+    if (source === 'ppc_form_autosave') return 1
+    if (source === 'ppc_form_potential') return 2
+    return 99
+  }
+
+  const ppcRows = rows
+    .map((row) => ({
+      metadata: row.metadata,
+      createdAt: row.created_at,
+      source: typeof row.metadata?.source === 'string' ? row.metadata.source : null,
+    }))
+    .filter((row) => row.source?.startsWith('ppc_form_'))
+    .sort((a, b) => rank(a.source) - rank(b.source) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+
+  const row = ppcRows[0]
+  if (!row) return null
+
+  return ppcLeadIntelligenceFromActivityMetadata(row.metadata, {
+    address: lead.property_address ?? null,
+    fullName: lead.full_name ?? null,
+    city: lead.city ?? null,
+    state: lead.state ?? null,
+    zip: lead.zip ?? null,
+    county: lead.county ?? null,
+    capturedAt: row.createdAt ?? null,
+  })
+}
+
 function ensureManifestArrays(manifest: ManifestV2): ManifestV2 {
   if (!Array.isArray(manifest.contacts)) manifest.contacts = []
   if (!Array.isArray(manifest.notes)) manifest.notes = []
@@ -334,6 +429,103 @@ function ensureTranscriptsFromQueue(manifest: ManifestV2, queueRows: QueueRow[])
     transcripts.push(entry)
     added++
   }
+  return added
+}
+
+async function loadTwilioRecordingActivities(leadId: string): Promise<RecordingActivityRow[]> {
+  const { data } = await supabase
+    .from('lead_activities')
+    .select('id, activity_type, description, agent, metadata, created_at')
+    .eq('lead_id', leadId)
+    .eq('activity_type', 'call')
+    .order('created_at', { ascending: true })
+    .limit(100)
+
+  return ((data ?? []) as RecordingActivityRow[]).filter((row) => {
+    const meta = row.metadata ?? {}
+    return Boolean(
+      readText(meta.recordingSid) ||
+      readText(meta.recordingUrl) ||
+      readText(meta.recordingSourceUrl) ||
+      readText(meta.RecordingSid) ||
+      readText(meta.RecordingUrl),
+    )
+  })
+}
+
+function readText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function readNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function transcriptIdForRecordingActivity(row: RecordingActivityRow): string {
+  const meta = row.metadata ?? {}
+  return `twilio-${readText(meta.recordingSid) || readText(meta.RecordingSid) || row.id}`
+}
+
+function transcriptMatchesRecordingActivity(t: TranscriptEntry, row: RecordingActivityRow): boolean {
+  const meta = row.metadata ?? {}
+  const sid = readText(meta.recordingSid) || readText(meta.RecordingSid)
+  if (t.id === transcriptIdForRecordingActivity(row)) return true
+  if (sid && (t.id === `call-${sid}` || t.id === `twilio-${sid}`)) return true
+  if (sid && t.recordingUrl?.includes(sid)) return true
+  return false
+}
+
+function recordingDownloadUrlForActivity(row: RecordingActivityRow): string | null {
+  const meta = row.metadata ?? {}
+  const sourceUrl = readText(meta.recordingSourceUrl)
+  if (sourceUrl) return sourceUrl
+
+  const directUrl = readText(meta.recordingUrl) || readText(meta.RecordingUrl)
+  if (directUrl && !directUrl.startsWith('/')) return directUrl
+
+  const sid = readText(meta.recordingSid) || readText(meta.RecordingSid)
+  if (sid && process.env.TWILIO_ACCOUNT_SID) {
+    return `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Recordings/${sid}`
+  }
+
+  return null
+}
+
+function ensureTranscriptsFromRecordingActivities(
+  manifest: ManifestV2,
+  rows: RecordingActivityRow[],
+): number {
+  let added = 0
+  const transcripts = manifest.communications!.transcripts
+
+  for (const row of rows) {
+    if (transcripts.some((t) => transcriptMatchesRecordingActivity(t, row))) continue
+
+    const recordingUrl = recordingDownloadUrlForActivity(row)
+    if (!recordingUrl) continue
+
+    const meta = row.metadata ?? {}
+    transcripts.push({
+      id: transcriptIdForRecordingActivity(row),
+      date: row.created_at,
+      duration: readNumber(meta.duration) || readNumber(meta.recordingDuration) || readNumber(meta.call_duration),
+      agent: row.agent || 'unknown',
+      recordingUrl,
+      fullTranscript: null,
+      transcriptionPending: true,
+      analysisPending: true,
+      aiSummary: null,
+      extractedData: null,
+      agentNotes: row.description ?? undefined,
+    })
+    added++
+  }
+
   return added
 }
 
@@ -408,6 +600,12 @@ async function refreshPendingTranscripts(
 }
 
 function applyAnalysisToTranscript(t: TranscriptEntry, a: CallAnalysisResult): void {
+  const painPoints = compactStrings([
+    ...(a.keyLeverage || []),
+    ...(a.emotionalDrivers || []),
+    ...(a.objectionsRaised || []),
+  ])
+
   t.aiSummary = a.aiSummary || null
   t.extractedData = {
     motivationScore: a.motivationScore,
@@ -417,6 +615,9 @@ function applyAnalysisToTranscript(t: TranscriptEntry, a: CallAnalysisResult): v
     verbatimQuotes: a.verbatimQuotes,
     objectionResponses: a.objectionsRaised,
     concessionSignals: a.keyLeverage,
+    painPoints,
+    emotionalDrivers: a.emotionalDrivers,
+    nextSteps: a.nextSteps,
     agentCoaching: {
       strengths: a.agentStrengths,
       improvements: a.agentImprovements,
@@ -425,9 +626,18 @@ function applyAnalysisToTranscript(t: TranscriptEntry, a: CallAnalysisResult): v
 }
 
 function applyAnalysisToManifest(manifest: ManifestV2, a: CallAnalysisResult): void {
+  const summary = readText(a.aiSummary) || readText(a.summary)
+  if (summary) manifest.situation.summary = summary
+
   if (a.personalityType && !manifest.owner.personalityType) {
     manifest.owner.personalityType = a.personalityType as ManifestOwner['personalityType']
   }
+  if (a.bestTimeToContact) manifest.owner.bestTimeToContact = a.bestTimeToContact
+  if (a.coOwners?.length) {
+    manifest.owner.coOwners = mergeUniqueStrings(manifest.owner.coOwners, a.coOwners)
+  }
+  if (a.outOfState != null) manifest.owner.outOfState = a.outOfState
+
   if (a.communicationStyle) {
     if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
     if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
@@ -436,31 +646,200 @@ function applyAnalysisToManifest(manifest: ManifestV2, a: CallAnalysisResult): v
     if (a.decisionStyle) manifest.ariIntelligence.sellerProfile.decisionStyle = a.decisionStyle
     if (a.emotionalDrivers) manifest.ariIntelligence.sellerProfile.emotionalDrivers = a.emotionalDrivers
   }
-  if (a.dealConfidenceScore) {
+  if (a.dealConfidenceScore || a.keyLeverage?.length || a.estimatedARV || a.estimatedRepairsNotes) {
     if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
     if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
-    manifest.ariIntelligence.dealIntelligence.confidenceScore = a.dealConfidenceScore
-    if (a.keyLeverage) manifest.ariIntelligence.dealIntelligence.keyLeverage = a.keyLeverage
+    if (a.dealConfidenceScore) manifest.ariIntelligence.dealIntelligence.confidenceScore = a.dealConfidenceScore
+    if (a.keyLeverage) {
+      manifest.ariIntelligence.dealIntelligence.keyLeverage = mergeUniqueStrings(
+        manifest.ariIntelligence.dealIntelligence.keyLeverage,
+        a.keyLeverage,
+      )
+    }
+    if (a.estimatedARV) manifest.ariIntelligence.dealIntelligence.estimatedARV = a.estimatedARV
+    if (a.estimatedRepairsNotes) manifest.ariIntelligence.dealIntelligence.estimatedRepairs = a.estimatedRepairsNotes
   }
-  if (a.motivationScore && manifest.situation?.motivation) {
-    manifest.situation.motivation.score = a.motivationScore
+  if (a.motivationScore || a.motivationSignals?.length || a.keyLeverage?.length || a.emotionalDrivers?.length) {
+    if (!manifest.situation.motivation) manifest.situation.motivation = {}
+    if (a.motivationScore) manifest.situation.motivation.score = a.motivationScore
+    const signals = compactStrings([
+      ...(a.motivationSignals || []),
+      ...(a.keyLeverage || []),
+      ...(a.emotionalDrivers || []),
+    ])
+    if (signals.length) {
+      manifest.situation.motivation.signals = mergeUniqueStrings(manifest.situation.motivation.signals, signals)
+      if (!manifest.situation.motivation.primary) manifest.situation.motivation.primary = signals[0]
+    }
   }
-  if (a.urgency && manifest.situation?.timeline) {
+  if (!manifest.situation.timeline) manifest.situation.timeline = {}
+  if (a.urgency) {
     manifest.situation.timeline.urgency = a.urgency as any
+    manifest.situation.motivation = manifest.situation.motivation || {}
+    manifest.situation.motivation.urgencyLevel = a.urgency as any
+  }
+  if (a.targetCloseDate) manifest.situation.timeline.targetCloseDate = a.targetCloseDate
+  if (a.hardDeadline != null) manifest.situation.timeline.hardDeadline = a.hardDeadline
+  if (a.deadlineReason) manifest.situation.timeline.deadlineReason = a.deadlineReason
+
+  if (a.sellerAsking || a.sellerFloor || a.priceFlexibility || a.priceAnchor) {
+    if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
+    if (a.sellerAsking) manifest.situation.priceExpectations.sellerAsking = a.sellerAsking
+    if (a.sellerFloor) manifest.situation.priceExpectations.sellerFloor = a.sellerFloor
+    if (a.priceFlexibility) manifest.situation.priceExpectations.priceFlexibility = a.priceFlexibility as any
+    if (a.priceAnchor) manifest.situation.priceExpectations.priceAnchor = a.priceAnchor
   }
   if (a.situationType?.length) {
     for (const tag of a.situationType) {
       if (!manifest.situation.type.includes(tag)) manifest.situation.type.push(tag)
     }
   }
+  if (a.objectionsRaised?.length) {
+    manifest.situation.objections = mergeUniqueStrings(manifest.situation.objections, a.objectionsRaised)
+  }
+  if (a.blockers?.length) {
+    manifest.situation.blockers = mergeUniqueStrings(manifest.situation.blockers, a.blockers)
+  }
   if (a.conditionOverall && !manifest.property.condition?.overall) {
     if (!manifest.property.condition) manifest.property.condition = {}
     manifest.property.condition.overall = a.conditionOverall as any
+  }
+  if (a.repairsNotes) {
+    if (!manifest.property.condition) manifest.property.condition = {}
+    manifest.property.condition.notes = mergeText(manifest.property.condition.notes, a.repairsNotes)
   }
   if (a.vacant !== undefined && a.vacant !== null) manifest.property.vacant = a.vacant
   if (a.occupancy && !manifest.property.occupancy) {
     manifest.property.occupancy = a.occupancy as ManifestProperty['occupancy']
   }
+
+  if (a.followUpAction || a.nextSteps?.length) {
+    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+    if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
+    const actions = compactStrings([a.followUpAction, ...(a.nextSteps || [])])
+    for (const action of actions.reverse()) {
+      if (manifest.ariIntelligence.recommendedActions.some((existing) => existing.action === action)) continue
+      manifest.ariIntelligence.recommendedActions.unshift({
+        action,
+        dateTime: action === a.followUpAction ? a.followUpDateTime : undefined,
+        reason: 'transcript_analysis',
+      })
+    }
+  }
+
+  if (a.keyLeverage?.length) {
+    manifest.flags.opportunityFlags = mergeUniqueStrings(manifest.flags.opportunityFlags, a.keyLeverage)
+  }
+}
+
+export function promoteLatestAnalyzedTranscriptToManifest(manifest: ManifestV2): string[] {
+  const changed: string[] = []
+  const latest = (manifest.communications?.transcripts || [])
+    .filter((t) => t.fullTranscript && (t.aiSummary || t.extractedData))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
+
+  if (!latest) return changed
+
+  const summary = readText(latest.aiSummary)
+  if (summary && manifest.situation.summary !== summary) {
+    manifest.situation.summary = summary
+    changed.push('seller_situation')
+  }
+
+  const ex = latest.extractedData
+  if (!ex) return changed
+
+  if (ex.motivationScore != null) {
+    if (!manifest.situation.motivation) manifest.situation.motivation = {}
+    if (manifest.situation.motivation.score !== ex.motivationScore) {
+      manifest.situation.motivation.score = ex.motivationScore
+      changed.push('motivation_score')
+    }
+  }
+
+  const signals = compactStrings([
+    ...(ex.concessionSignals || []),
+    ...(ex.emotionalDrivers || []),
+    ...(ex.painPoints || []),
+  ])
+  if (signals.length) {
+    if (!manifest.situation.motivation) manifest.situation.motivation = {}
+    const nextSignals = mergeUniqueStrings(manifest.situation.motivation.signals, signals)
+    if (nextSignals.length !== (manifest.situation.motivation.signals || []).length) {
+      manifest.situation.motivation.signals = nextSignals
+      changed.push('motivation_signals')
+    }
+    if (!manifest.situation.motivation.primary) {
+      manifest.situation.motivation.primary = signals[0]
+      changed.push('motivation_primary')
+    }
+
+    manifest.flags.opportunityFlags = mergeUniqueStrings(manifest.flags.opportunityFlags, signals)
+    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+    if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
+    manifest.ariIntelligence.dealIntelligence.keyLeverage = mergeUniqueStrings(
+      manifest.ariIntelligence.dealIntelligence.keyLeverage,
+      signals,
+    )
+  }
+
+  if (ex.objectionResponses?.length) {
+    const nextObjections = mergeUniqueStrings(manifest.situation.objections, ex.objectionResponses)
+    if (nextObjections.length !== (manifest.situation.objections || []).length) {
+      manifest.situation.objections = nextObjections
+      changed.push('objections')
+    }
+  }
+
+  if (ex.nextSteps?.length) {
+    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
+    if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
+    for (const action of [...ex.nextSteps].reverse()) {
+      if (manifest.ariIntelligence.recommendedActions.some((existing) => existing.action === action)) continue
+      manifest.ariIntelligence.recommendedActions.unshift({
+        action,
+        reason: 'transcript_analysis',
+      })
+      if (!changed.includes('recommended_actions')) changed.push('recommended_actions')
+    }
+  }
+
+  return changed
+}
+
+function compactStrings(values: unknown[]): string[] {
+  return values
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter(Boolean)
+}
+
+function mergeUniqueStrings(current: string[] | undefined, incoming: unknown[]): string[] {
+  const out = compactStrings(current || [])
+  const seen = new Set(out.map((value) => value.toLowerCase()))
+  for (const value of compactStrings(incoming)) {
+    const key = value.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+  }
+  return out
+}
+
+function mergeText(current: unknown, incoming: string): string {
+  const next = incoming.trim()
+  const existing = typeof current === 'string' ? current.trim() : ''
+  if (!existing) return next
+  if (!next || existing.toLowerCase().includes(next.toLowerCase())) return existing
+  return `${existing}; ${next}`
+}
+
+function normalizeLeadMotivationScore(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const rounded = Math.round(value)
+  if (rounded < 1) return null
+  if (rounded > 10) return 10
+  return rounded
 }
 
 /**
@@ -595,8 +974,16 @@ async function cascadeManifestToLead(
     updates.classification = manifest.scoring.classification
     changed.push('classification')
   }
-  if (manifest.situation?.motivation?.score != null && manifest.situation.motivation.score !== currentLead.motivation_score) {
-    updates.motivation_score = manifest.situation.motivation.score
+  if (
+    manifest.situation?.summary &&
+    (!currentLead.seller_situation || String(currentLead.seller_situation).startsWith('PPC intake:'))
+  ) {
+    updates.seller_situation = manifest.situation.summary
+    changed.push('seller_situation')
+  }
+  const leadMotivationScore = normalizeLeadMotivationScore(manifest.situation?.motivation?.score)
+  if (leadMotivationScore !== currentLead.motivation_score) {
+    updates.motivation_score = leadMotivationScore
     changed.push('motivation_score')
   }
   if (manifest.currentStation && manifest.currentStation !== currentLead.station) {
@@ -612,12 +999,15 @@ async function cascadeManifestToLead(
   const latestTranscript = (manifest.communications?.transcripts || [])
     .filter(t => !!t.fullTranscript)
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
+  const latestDurationTranscript = (manifest.communications?.transcripts || [])
+    .filter(t => !!t.fullTranscript && Number(t.duration) > 0)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
   if (latestTranscript?.fullTranscript && latestTranscript.fullTranscript !== currentLead.transcript) {
     updates.transcript = latestTranscript.fullTranscript
     changed.push('transcript')
   }
-  if (latestTranscript?.duration != null && latestTranscript.duration !== currentLead.call_duration_seconds) {
-    updates.call_duration_seconds = latestTranscript.duration
+  if (latestDurationTranscript?.duration != null && latestDurationTranscript.duration !== currentLead.call_duration_seconds) {
+    updates.call_duration_seconds = latestDurationTranscript.duration
     changed.push('call_duration_seconds')
   }
 
@@ -642,8 +1032,10 @@ async function cascadeManifestToLead(
   if (dwell?.bathrooms && !currentLead.baths_full) { updates.baths_full = Math.round(Number(dwell.bathrooms)); changed.push('baths_full') }
   if (dwell?.sqft && !currentLead.sqft) { updates.sqft = Math.round(Number(dwell.sqft)); changed.push('sqft') }
   if (dwell?.yearBuilt && !currentLead.year_built) { updates.year_built = Math.round(Number(dwell.yearBuilt)); changed.push('year_built') }
-  if (assess?.appraisedTotal && !currentLead.arv) { updates.arv = Math.round(Number(assess.appraisedTotal)); changed.push('arv') }
-  if (assess?.assessedTotal && !currentLead.assessed_value) { updates.assessed_value = Math.round(Number(assess.assessedTotal)); changed.push('assessed_value') }
+  const appraisedTotal = assess?.appraisedTotal ?? assess?.totalValue
+  const assessedTotal = assess?.assessedTotal ?? assess?.totalValue
+  if (appraisedTotal && !currentLead.arv) { updates.arv = Math.round(Number(appraisedTotal)); changed.push('arv') }
+  if (assessedTotal && !currentLead.assessed_value) { updates.assessed_value = Math.round(Number(assessedTotal)); changed.push('assessed_value') }
 
   if (Object.keys(updates).length > 0) {
     const { error } = await supabase.from('leads').update(updates).eq('id', leadId)
@@ -863,7 +1255,8 @@ async function hydrateFromProspect(
 
   const updates: Record<string, any> = {}
 
-  // Only fill missing lead fields (never overwrite)
+  // Only fill missing lead fields by default. Exception: county/state
+  // compatibility wins over stale row data, e.g. Johnson County must be KS.
   if (!lead.county && prospect.county) updates.county = prospect.county
   if (!lead.parcel_id && prospect.parcel_id) updates.parcel_id = prospect.parcel_id
   if (!lead.zip && prospect.situs_zip) updates.zip = String(prospect.situs_zip)
@@ -875,7 +1268,11 @@ async function hydrateFromProspect(
   }
   if (!lead.property_address && prospect.situs_street) updates.property_address = prospect.situs_street
   if (!lead.city && prospect.situs_city) updates.city = prospect.situs_city
-  if (!lead.state && prospect.situs_state) updates.state = prospect.situs_state
+  const expectedState = expectedStateForCounty(prospect.county || lead.county)
+  const prospectState = normalizeState(prospect.situs_state)
+  const leadState = normalizeState(lead.state)
+  if (expectedState && leadState !== expectedState) updates.state = expectedState
+  else if (!leadState && prospectState) updates.state = prospectState
 
   if (Object.keys(updates).length > 0) {
     const { error } = await supabase.from('leads').update(updates).eq('id', leadId)
@@ -918,6 +1315,18 @@ async function hydrateFromProspect(
   }
 
   return changed
+}
+
+function normalizeState(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().toUpperCase() : null
+}
+
+function expectedStateForCounty(county?: string | null): 'KS' | 'MO' | null {
+  const normalized = county?.toLowerCase().trim()
+  if (!normalized) return null
+  if (['johnson', 'wyandotte', 'leavenworth', 'miami', 'douglas'].includes(normalized)) return 'KS'
+  if (['jackson', 'clay', 'platte'].includes(normalized)) return 'MO'
+  return null
 }
 
 /**

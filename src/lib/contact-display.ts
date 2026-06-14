@@ -82,6 +82,7 @@ export function getAvatarLabel(name: string | null | undefined, phone: string | 
 
 export function formatLeadSource(source: string | null | undefined): string {
   if (!source) return '--'
+  if (normalized(source).replace(/[\s_]+/g, '-') === 'google-ads-tax-phone') return 'Google Ads Tax'
   if (isGoogleAdsSource(source)) return 'Google Ads'
 
   const value = normalized(source)

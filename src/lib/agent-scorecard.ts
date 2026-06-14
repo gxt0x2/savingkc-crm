@@ -457,6 +457,10 @@ function getExpectedTasksForSequence(
       { day: 2, action: 'Follow-up call' },
       { day: 4, action: 'Email' },
     ],
+    left_voicemail: [
+      { day: 2, action: 'Follow-up call' },
+      { day: 4, action: 'Email' },
+    ],
     callback_requested: [{ day: 0, action: 'Callback at requested time' }],
     deal_potential: [
       { day: 1, action: 'Follow-up call' },

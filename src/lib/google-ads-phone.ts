@@ -1,11 +1,11 @@
-import { getAgentRouting, type AgentRouting } from '@/lib/agent-routing'
+import type { AgentRouting } from '@/lib/agent-routing'
 import {
-  GOOGLE_ADS_CAMPAIGN,
   GOOGLE_ADS_PHONE_NUMBER,
-  GOOGLE_ADS_PHONE_SOURCE,
-  PPC_TRACKING_PHONE_DIGITS,
+  getGoogleAdsPhoneProfile,
 } from '@/lib/call-quality-events'
 import { formatPhone } from '@/lib/format'
+import { isInternalTestPhone } from '@/lib/internal-test-phones'
+import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
@@ -21,11 +21,15 @@ export type GoogleAdsLeadContext = {
   leadId: string | null
   leadName: string | null
   created: boolean
+  test?: boolean
 }
 
-export function googleAdsTeamPhones(routing?: AgentRouting): string[] {
-  const selectedRouting = routing || getAgentRouting(GOOGLE_ADS_PHONE_NUMBER)
-  return Array.from(new Set([selectedRouting.primary.phone, selectedRouting.secondary.phone].filter(Boolean)))
+function profileFor(calledNumber?: string | null) {
+  return getGoogleAdsPhoneProfile(calledNumber || GOOGLE_ADS_PHONE_NUMBER)
+}
+
+export function googleAdsTeamPhones(_routing?: AgentRouting, now = new Date()): string[] {
+  return getLeadAlertRecipients(now).map((recipient) => recipient.phone)
 }
 
 export function phoneLookupVariants(raw: string): string[] {
@@ -51,32 +55,41 @@ export function googleAdsLeadUrl(leadId: string | null | undefined): string {
   return leadId ? `${BASE_URL}/leads/${leadId}` : ''
 }
 
-export function googleAdsNewCallTeamMessage(from: string, leadId?: string | null): string {
+export function googleAdsNewCallTeamMessage(from: string, leadId?: string | null, calledNumber?: string | null): string {
+  const profile = profileFor(calledNumber)
   const leadUrl = googleAdsLeadUrl(leadId)
-  return `NEW GOOGLE ADS CALL from ${callerPhoneLabel(from)}${leadUrl ? `\n${leadUrl}` : ''}`
+  return `NEW ${profile.label.toUpperCase()} CALL from ${callerPhoneLabel(from)}${leadUrl ? `\n${leadUrl}` : ''}`
 }
 
-export function googleAdsNewTextTeamMessage(from: string, body: string, leadId?: string | null): string {
+export function googleAdsNewTextTeamMessage(from: string, body: string, leadId?: string | null, calledNumber?: string | null): string {
+  const profile = profileFor(calledNumber)
   const leadUrl = googleAdsLeadUrl(leadId)
-  return `NEW GOOGLE ADS TEXT from ${callerPhoneLabel(from)}: "${body.slice(0, 120)}"${leadUrl ? `\n${leadUrl}` : ''}`
+  return `NEW ${profile.label.toUpperCase()} TEXT from ${callerPhoneLabel(from)}: "${body.slice(0, 120)}"${leadUrl ? `\n${leadUrl}` : ''}`
 }
 
-export function googleAdsMissedCallerMessage(): string {
+export function googleAdsMissedCallerMessage(calledNumber?: string | null): string {
+  if (profileFor(calledNumber).key === 'tax') {
+    return "Hey, this is Saving KC Homebuyers. Sorry we missed your call about property taxes. Are you looking to sell the property? Reply here and we'll help."
+  }
   return "Hey, this is Saving KC Homebuyers. Sorry we missed your call. Are you looking to sell a property? Reply here and we'll help."
 }
 
-export function googleAdsEscalationReminderMessage(from: string, leadId?: string | null): string {
+export function googleAdsEscalationReminderMessage(from: string, leadId?: string | null, calledNumber?: string | null): string {
+  const profile = profileFor(calledNumber)
   const leadUrl = googleAdsLeadUrl(leadId)
-  return `REMINDER: Google Ads call from ${callerPhoneLabel(from)} still needs a callback. Starting agent callback now.${leadUrl ? `\n${leadUrl}` : ''}`
+  return `REMINDER: ${profile.label} call from ${callerPhoneLabel(from)} still needs a callback. Starting agent callback now.${leadUrl ? `\n${leadUrl}` : ''}`
 }
 
-export function googleAdsAttribution(capturedAt = new Date().toISOString()): Record<string, unknown> {
+export function googleAdsAttribution(capturedAt = new Date().toISOString(), calledNumber?: string | null): Record<string, unknown> {
+  const profile = profileFor(calledNumber)
   return {
     utm_source: 'google',
     utm_medium: 'cpc',
-    utm_campaign: GOOGLE_ADS_CAMPAIGN,
-    tracking_number: PPC_TRACKING_PHONE_DIGITS,
-    source: GOOGLE_ADS_PHONE_SOURCE,
+    utm_campaign: profile.campaign,
+    tracking_number: profile.trackingDigits,
+    source: profile.source,
+    landing_page: profile.landingPage,
+    phone_profile: profile.key,
     capturedAt,
   }
 }
@@ -90,19 +103,23 @@ function canCreateLeadFromCallerPhone(raw: string): boolean {
   return Boolean(normalized && !normalized.includes('anonymous') && !normalized.includes('blocked'))
 }
 
-async function updateLeadSource(leadId: string): Promise<void> {
+async function updateLeadSource(leadId: string, calledNumber?: string | null): Promise<void> {
+  const profile = profileFor(calledNumber)
   const { error } = await supabase
     .from('leads')
-    .update({ source: GOOGLE_ADS_PHONE_SOURCE, priority: 'hot' })
+    .update({ source: profile.source, priority: 'hot' })
     .eq('id', leadId)
 
   if (error) {
-    console.error('[GOOGLE-ADS-PHONE] Failed to set google_ads_phone source:', error)
+    console.error(`[GOOGLE-ADS-PHONE] Failed to set ${profile.source} source:`, error)
   }
 }
 
-export async function markLeadAsGoogleAdsPhoneLead(leadId: string, from: string, name?: string | null): Promise<void> {
-  await updateLeadSource(leadId)
+export async function markLeadAsGoogleAdsPhoneLead(leadId: string, from: string, name?: string | null, calledNumber?: string | null): Promise<void> {
+  if (isInternalTestPhone(from)) return
+
+  const profile = profileFor(calledNumber)
+  await updateLeadSource(leadId, calledNumber)
 
   try {
     const manifestId = await ensureManifestExists(leadId)
@@ -115,26 +132,26 @@ export async function markLeadAsGoogleAdsPhoneLead(leadId: string, from: string,
         const owner = isRecord(mutable.owner) ? mutable.owner : {}
         const existingPhones = Array.isArray(owner.phones) ? owner.phones.filter((phone): phone is string => typeof phone === 'string') : []
 
-        mutable.source = GOOGLE_ADS_PHONE_SOURCE
-        mutable.leadSource = GOOGLE_ADS_PHONE_SOURCE
+        mutable.source = profile.source
+        mutable.leadSource = profile.source
         mutable.priority = 'hot'
         mutable.owner = {
           ...owner,
           phones: existingPhones.includes(from) ? existingPhones : [from, ...existingPhones],
           fullName: typeof owner.fullName === 'string' && owner.fullName.trim()
             ? owner.fullName
-            : name || `Google Ads Caller ${callerPhoneLabel(from)}`,
+            : name || `${profile.label} Caller ${callerPhoneLabel(from)}`,
         }
 
         const acquisition = isRecord(mutable.acquisition) ? mutable.acquisition : {}
         const priorAttribution = isRecord(acquisition.attribution) ? acquisition.attribution : {}
         mutable.acquisition = {
           ...acquisition,
-          source: GOOGLE_ADS_PHONE_SOURCE,
+          source: profile.source,
           channel: 'google-ads',
           attribution: {
             ...priorAttribution,
-            ...googleAdsAttribution(),
+            ...googleAdsAttribution(new Date().toISOString(), calledNumber),
           },
         }
       },
@@ -161,7 +178,8 @@ async function findExistingLeadByPhone(phone: string): Promise<{ id: string; ful
   return null
 }
 
-async function createGoogleAdsLeadFromProspect(phone: string): Promise<GoogleAdsLeadContext | null> {
+async function createGoogleAdsLeadFromProspect(phone: string, calledNumber?: string | null): Promise<GoogleAdsLeadContext | null> {
+  const profile = profileFor(calledNumber)
   for (const variant of phoneLookupVariants(phone)) {
     const prospectMatches = await lookupProspectByPhone(variant)
     const prospectMatch = prospectMatches[0]
@@ -170,35 +188,40 @@ async function createGoogleAdsLeadFromProspect(phone: string): Promise<GoogleAds
     const leadId = await createEnrichedLeadFromProspect(prospectMatch, phone, 'inbound_call', 'hot')
     if (!leadId) continue
 
-    const leadName = prospectMatch.owner_1 || `Google Ads Caller ${callerPhoneLabel(phone)}`
-    await markLeadAsGoogleAdsPhoneLead(leadId, phone, leadName)
+    const leadName = prospectMatch.owner_1 || `${profile.label} Caller ${callerPhoneLabel(phone)}`
+    await markLeadAsGoogleAdsPhoneLead(leadId, phone, leadName, calledNumber)
     return { leadId, leadName, created: !prospectMatch.lead_id }
   }
 
   return null
 }
 
-export async function resolveGoogleAdsLeadContext(phone: string): Promise<GoogleAdsLeadContext> {
+export async function resolveGoogleAdsLeadContext(phone: string, calledNumber?: string | null): Promise<GoogleAdsLeadContext> {
+  if (isInternalTestPhone(phone)) {
+    return { leadId: null, leadName: 'Internal Google Voice Test', created: false, test: true }
+  }
+
+  const profile = profileFor(calledNumber)
   const existingLead = await findExistingLeadByPhone(phone)
   if (existingLead?.id) {
-    await markLeadAsGoogleAdsPhoneLead(existingLead.id, phone, existingLead.full_name)
+    await markLeadAsGoogleAdsPhoneLead(existingLead.id, phone, existingLead.full_name, calledNumber)
     return { leadId: existingLead.id, leadName: existingLead.full_name, created: false }
   }
 
-  const prospectLead = await createGoogleAdsLeadFromProspect(phone)
+  const prospectLead = await createGoogleAdsLeadFromProspect(phone, calledNumber)
   if (prospectLead) return prospectLead
 
   if (!canCreateLeadFromCallerPhone(phone)) {
     return { leadId: null, leadName: null, created: false }
   }
 
-  const fullName = `Google Ads Caller ${callerPhoneLabel(phone)}`
+  const fullName = `${profile.label} Caller ${callerPhoneLabel(phone)}`
   const { data, error } = await supabase
     .from('leads')
     .insert({
       full_name: fullName,
       phone,
-      source: GOOGLE_ADS_PHONE_SOURCE,
+      source: profile.source,
       station: 'new',
       priority: 'hot',
     })
@@ -210,7 +233,7 @@ export async function resolveGoogleAdsLeadContext(phone: string): Promise<Google
     return { leadId: null, leadName: null, created: false }
   }
 
-  await markLeadAsGoogleAdsPhoneLead(data.id, phone, fullName)
+  await markLeadAsGoogleAdsPhoneLead(data.id, phone, fullName, calledNumber)
   return { leadId: data.id, leadName: fullName, created: true }
 }
 
@@ -220,10 +243,22 @@ export async function notifyGoogleAdsTeam(
     leadId?: string | null
     routing?: AgentRouting
     trigger: string
+    calledNumber?: string | null
+    now?: Date
     metadata?: ActivityMetadata
   },
 ): Promise<void> {
-  const teamPhones = googleAdsTeamPhones(options.routing)
+  const from = typeof options.metadata?.from === 'string' ? options.metadata.from : ''
+  if (isInternalTestPhone(from)) return
+
+  const metadataCalledNumber = typeof options.metadata?.calledNumber === 'string'
+    ? options.metadata.calledNumber
+    : typeof options.metadata?.to === 'string'
+      ? options.metadata.to
+      : null
+  const profile = profileFor(options.calledNumber || metadataCalledNumber)
+  const recipients = getLeadAlertRecipients(options.now)
+  const teamPhones = recipients.map((recipient) => recipient.phone)
   const results = await Promise.allSettled(
     teamPhones.map((to) => safeSendSMS({ body, from: TWILIO_PHONE, to })),
   )
@@ -237,9 +272,18 @@ export async function notifyGoogleAdsTeam(
       metadata: {
         direction: 'outbound_alert',
         trigger: options.trigger,
-        source: GOOGLE_ADS_PHONE_SOURCE,
+        source: profile.source,
         traffic_source: 'google_ads',
-        to_agents: teamPhones,
+        campaign: profile.campaign,
+        tracking_number: profile.trackingDigits,
+        landing_page: profile.landingPage,
+        phone_profile: profile.key,
+        to_agents: recipients.map((recipient) => recipient.name),
+        to_agent_phones: teamPhones,
+        alert_schedule: recipients.map((recipient) => ({
+          name: recipient.name,
+          schedule: recipient.schedule,
+        })),
         delivery_status: results.map((result, index) => ({
           to: teamPhones[index],
           status: result.status,
@@ -261,18 +305,26 @@ export async function createGoogleAdsMissedEscalationTask(input: {
   dialCallDuration: number | null
   routing: AgentRouting
 }): Promise<{ taskId: string | null; dueDate: string; missedAt: string; metadata: Record<string, unknown> }> {
+  const profile = profileFor(input.calledNumber)
   const dueDate = new Date(Date.now() + 5 * 60 * 1000).toISOString()
   const missedAt = new Date().toISOString()
+  const isTest = isInternalTestPhone(input.from)
   const metadata = {
     task_type: 'google_ads_missed_call_escalation',
-    source: GOOGLE_ADS_PHONE_SOURCE,
+    source: profile.source,
     traffic_source: 'google_ads',
+    campaign: profile.campaign,
+    tracking_number: profile.trackingDigits,
+    landing_page: profile.landingPage,
+    phone_profile: profile.key,
     due_date: dueDate,
     missed_at: missedAt,
-    status: 'pending',
+    status: isTest ? 'skipped' : 'pending',
     priority: 'critical',
+    is_test: isTest,
+    skipped_reason: isTest ? 'internal_test_phone' : undefined,
     seller_phone: input.from,
-    called_number: input.calledNumber || GOOGLE_ADS_PHONE_NUMBER,
+    called_number: input.calledNumber || profile.number,
     callSid: input.callSid,
     dialCallSid: input.dialCallSid,
     dialCallDuration: input.dialCallDuration,
@@ -283,10 +335,14 @@ export async function createGoogleAdsMissedEscalationTask(input: {
     secondary_agent_phone: input.routing.secondary.phone,
   }
 
+  if (isTest) {
+    return { taskId: null, dueDate, missedAt, metadata }
+  }
+
   const { data, error } = await supabase.from('lead_activities').insert({
     lead_id: input.leadId,
     activity_type: 'task',
-    description: `Google Ads missed call escalation for ${callerPhoneLabel(input.from)}`,
+    description: `${profile.label} missed call escalation for ${callerPhoneLabel(input.from)}`,
     agent: 'Ari',
     metadata,
   }).select('id').single()

@@ -21,6 +21,7 @@ interface FeedItem {
   linkLabel?: string
   recordingUrl?: string
   recordingSid?: string
+  recordingDuration?: number
   rawType?: string
   agentName?: string
   metadata?: Record<string, unknown>
@@ -98,16 +99,26 @@ function relTime(ts: string): string {
   }
 }
 
+function validSeconds(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 // ─── Recording Player (themed with ck-* tokens) ────────────────────────────
-function CallRecordingPlayer({ url }: { url: string }) {
+function CallRecordingPlayer({ url, durationSeconds }: { url: string; durationSeconds?: number }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
+  const [duration, setDuration] = useState(durationSeconds || 0)
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+
+  useEffect(() => {
+    const fallbackDuration = validSeconds(durationSeconds)
+    if (fallbackDuration) setDuration(fallbackDuration)
+  }, [durationSeconds])
 
   useEffect(() => {
     const resolve = async () => {
@@ -151,6 +162,8 @@ function CallRecordingPlayer({ url }: { url: string }) {
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
+  const knownDuration = validSeconds(duration) || validSeconds(durationSeconds)
+
   if (loading) {
     return (
       <div
@@ -188,17 +201,20 @@ function CallRecordingPlayer({ url }: { url: string }) {
           const a = audioRef.current
           if (!a) return
           setCurrentTime(a.currentTime)
-          if (Number.isFinite(a.duration) && a.duration > 0 && Math.abs(a.duration - duration) > 0.5) {
-            setDuration(a.duration)
+          const loadedDuration = validSeconds(a.duration)
+          if (loadedDuration && Math.abs(loadedDuration - duration) > 0.5) {
+            setDuration(loadedDuration)
           }
         }}
         onLoadedMetadata={() => {
           const a = audioRef.current
-          if (a && Number.isFinite(a.duration) && a.duration > 0) setDuration(a.duration)
+          const loadedDuration = validSeconds(a?.duration)
+          if (loadedDuration) setDuration(loadedDuration)
         }}
         onDurationChange={() => {
           const a = audioRef.current
-          if (a && Number.isFinite(a.duration) && a.duration > 0) setDuration(a.duration)
+          const loadedDuration = validSeconds(a?.duration)
+          if (loadedDuration) setDuration(loadedDuration)
         }}
       />
       <button
@@ -220,16 +236,16 @@ function CallRecordingPlayer({ url }: { url: string }) {
           style={{ background: 'var(--ck-border)' }}
           onClick={(e) => {
             const a = audioRef.current
-            if (!a || !Number.isFinite(a.duration) || a.duration <= 0) return
+            if (!a || !knownDuration) return
             const rect = e.currentTarget.getBoundingClientRect()
             const pct = (e.clientX - rect.left) / rect.width
-            a.currentTime = pct * a.duration
+            a.currentTime = pct * knownDuration
           }}
         >
           <div
             className="h-full rounded-full transition-all"
             style={{
-              width: duration > 0 ? `${Math.min(100, (currentTime / duration) * 100)}%` : '0%',
+              width: knownDuration ? `${Math.min(100, (currentTime / knownDuration) * 100)}%` : '0%',
               background: '#E32E2E',
             }}
           />
@@ -239,7 +255,7 @@ function CallRecordingPlayer({ url }: { url: string }) {
           style={{ color: 'var(--ck-text-muted)' }}
         >
           <span>{fmt(currentTime)}</span>
-          <span>{duration > 0 ? fmt(duration) : '—:—'}</span>
+          <span title="Total recording duration">{knownDuration ? fmt(knownDuration) : 'duration unknown'}</span>
         </div>
       </div>
       <button
@@ -251,6 +267,7 @@ function CallRecordingPlayer({ url }: { url: string }) {
           color: 'var(--ck-text)',
           border: '1px solid var(--ck-border)',
         }}
+        title="Playback speed"
       >
         {speed}×
       </button>
@@ -509,7 +526,10 @@ function ActivityRow({
         </div>
 
         {hasRecording && expanded && activity.recordingUrl && (
-          <CallRecordingPlayer url={activity.recordingUrl} />
+          <CallRecordingPlayer
+            url={activity.recordingUrl}
+            durationSeconds={activity.recordingDuration}
+          />
         )}
 
         {activity.link && (

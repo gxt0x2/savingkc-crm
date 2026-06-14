@@ -2,27 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import {
+  DIALER_DISPOSITIONS,
+  DEAD_REASONS,
+  dispositionRequiresReason,
+  isReachedDisposition,
+  type DispositionId,
+  type DispositionTone,
+} from '@/lib/dialer-dispositions'
 
-export type DispositionType =
-  | 'answered'
-  | 'no_answer'
-  | 'left_vm'
-  | 'bad_number'
-  | 'busy'
-  | 'dnc'
-  | 'dnc_contact'
-  | 'dnc_number'
-  | 'spoke_with_owner'
-  | 'callback_requested'
-  | 'not_interested'
-  | 'wrong_number'
-  | 'disconnected'
-  | 'deal_potential'
-  | 'appointment_set'
-  | 'offer_made'
-  | 'dead'
-
-type DispositionTone = 'success' | 'warning' | 'info' | 'neutral' | 'danger' | 'critical'
+// Canonical disposition ids live in src/lib/dialer-dispositions.ts so the modal,
+// the heir panel, and the lead PATCH route all speak the same language.
+export type DispositionType = DispositionId
 
 interface DispositionOption {
   id: DispositionType
@@ -53,12 +44,15 @@ interface DispositionModalProps {
   onDisposition: (
     disposition: DispositionType,
     notes?: string,
-    options?: { markAsLead?: boolean; autoDialNext?: boolean },
+    options?: { markAsLead?: boolean; autoDialNext?: boolean; verified?: boolean; deadReason?: string | null },
   ) => void | boolean | Promise<void | boolean>
   phoneNumber?: string
   leadName?: string
   markAsLeadAvailable?: boolean
   markAsLeadLabel?: string
+  /** Show the manual "verified this is the right number" toggle (heir queue). */
+  showVerifyToggle?: boolean
+  verifyLabel?: string
 
   onSkip?: () => void
   callDuration?: string
@@ -87,14 +81,15 @@ interface DispositionModalProps {
   secondaryActionLabel?: string
 }
 
-const DEFAULT_DISPOSITIONS: DispositionOption[] = [
-  { id: 'answered', label: 'Contact', tone: 'success', icon: 'check_circle' },
-  { id: 'no_answer', label: 'Not Contacted', tone: 'neutral', icon: 'no_answer_badge' },
-  { id: 'bad_number', label: 'Bad Number', tone: 'danger', icon: 'error' },
-  { id: 'left_vm', label: 'Left Voicemail', tone: 'info', icon: 'voicemail' },
-  { id: 'dnc_contact', label: 'DNC Contact', tone: 'critical', icon: 'person_remove' },
-  { id: 'dnc_number', label: 'DNC Number', tone: 'critical', icon: 'block' },
-]
+// Built from the single source of truth so the outcome grid always matches the
+// taxonomy the rest of the dialer reads.
+const DEFAULT_DISPOSITIONS: DispositionOption[] = DIALER_DISPOSITIONS.map((d) => ({
+  id: d.id,
+  label: d.label,
+  tone: d.tone,
+  icon: d.icon,
+  hasSubreason: d.requiresReason,
+}))
 
 const TONE_TILE_CLASS: Record<DispositionTone, string> = {
   success: 'bg-[#30D1582E] text-[#30D158]',
@@ -169,6 +164,8 @@ export function DispositionModal({
   leadName,
   markAsLeadAvailable = false,
   markAsLeadLabel,
+  showVerifyToggle = false,
+  verifyLabel,
   onSkip,
   callDuration,
   callEndedAtLabel = 'Just ended',
@@ -194,6 +191,13 @@ export function DispositionModal({
   const [internalDisposition, setInternalDisposition] = useState<DispositionType | null>(null)
   const [internalNotes, setInternalNotes] = useState('')
   const [markAsLead, setMarkAsLead] = useState(false)
+  const [deadReason, setDeadReason] = useState('')
+  const [verified, setVerified] = useState(false)
+  // Whether the agent explicitly touched the verify toggle. If untouched we
+  // send `undefined` so the server auto-verifies on a reached outcome and
+  // leaves the flag alone otherwise (a later "No Answer" must not un-verify a
+  // number we already confirmed). A touch makes it an explicit manual override.
+  const [verifiedTouched, setVerifiedTouched] = useState(false)
   const [localSaving, setLocalSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
@@ -208,13 +212,18 @@ export function DispositionModal({
     if (!isControlledDisposition) setInternalDisposition(null)
     if (!isControlledNotes) setInternalNotes('')
     setMarkAsLead(false)
+    setDeadReason('')
+    setVerified(false)
+    setVerifiedTouched(false)
     setSaveError(null)
     setSaveNotice(null)
   }, [open, isControlledDisposition, selectedDisposition, isControlledNotes, notes])
 
   const activeDisposition = isControlledDisposition ? (selectedDisposition ?? null) : internalDisposition
   const activeNotes = isControlledNotes ? (notes ?? '') : internalNotes
-  const canSave = Boolean(activeDisposition) && !isSaving && !localSaving
+  const needsReason = dispositionRequiresReason(activeDisposition)
+  const reasonSatisfied = !needsReason || deadReason.trim().length > 0
+  const canSave = Boolean(activeDisposition) && reasonSatisfied && !isSaving && !localSaving
 
   const resolvedContact = useMemo(() => {
     const name = contact?.name || leadName || 'Unknown'
@@ -232,6 +241,12 @@ export function DispositionModal({
   function pickDisposition(id: DispositionType) {
     if (!isControlledDisposition) setInternalDisposition(id)
     onDispositionChange?.(id)
+    // Default the verified signal to match the outcome (reached → verified);
+    // the agent can still override it with the toggle below. Re-picking resets
+    // the "touched" flag so an untouched toggle stays auto.
+    setVerified(isReachedDisposition(id))
+    setVerifiedTouched(false)
+    if (!dispositionRequiresReason(id)) setDeadReason('')
     setSaveError(null)
     setSaveNotice(null)
   }
@@ -244,6 +259,10 @@ export function DispositionModal({
 
   async function submit({ closeAfter, advance }: { closeAfter: boolean; advance: boolean }) {
     if (!activeDisposition || isSaving || localSaving) return
+    if (needsReason && !deadReason.trim()) {
+      setSaveError('Choose a reason before marking this lead dead.')
+      return
+    }
     setSaveError(null)
     setSaveNotice(null)
     setLocalSaving(true)
@@ -251,6 +270,8 @@ export function DispositionModal({
       const result = await onDisposition(activeDisposition, activeNotes.trim() || undefined, {
         markAsLead: markAsLeadAvailable && markAsLead,
         autoDialNext: advance,
+        verified: showVerifyToggle && verifiedTouched ? verified : undefined,
+        deadReason: needsReason ? deadReason : undefined,
       })
       if (result === false) {
         setSaveError('Disposition was not saved. Try again before moving on.')
@@ -386,6 +407,70 @@ export function DispositionModal({
                 </span>
                 {markAsLead ? <CheckActive /> : <span className="w-[22px]" />}
               </button>
+            </div>
+          )}
+
+          {showVerifyToggle && (
+            <div className="px-4 pt-4">
+              <button
+                type="button"
+                className={`w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-[var(--skc-radius-card)] border transition-colors ${
+                  verified
+                    ? 'bg-[#30D1581F] border-[#30D15873]'
+                    : 'bg-[var(--skc-surface-2)] border-transparent hover:bg-[var(--skc-surface-soft)]'
+                }`}
+                onClick={() => { setVerified((value) => !value); setVerifiedTouched(true) }}
+              >
+                <span className={`w-8 h-8 rounded-[var(--skc-radius-tile)] flex items-center justify-center ${
+                  verified ? 'bg-[#30D1582E] text-[#30D158]' : 'bg-[#98989E38] text-[var(--skc-text-secondary)]'
+                }`}>
+                  <Icon name={verified ? 'verified' : 'verified_user'} size="text-[18px]" filled={verified} />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-white text-[16px] tracking-[-0.01em]">
+                    {verifyLabel || 'Verified number'}
+                  </span>
+                  <span className="block text-[12px] text-[var(--skc-text-tertiary)] mt-0.5">
+                    Confirm this number really belongs to this heir.
+                  </span>
+                </span>
+                {verified ? <CheckActive /> : <span className="w-[22px]" />}
+              </button>
+            </div>
+          )}
+
+          {needsReason && (
+            <div className="px-4 pt-4">
+              <div className="rounded-[var(--skc-radius-card)] border border-[#FF453A66] bg-[#FF453A14] p-3">
+                <div className="flex items-center justify-between pb-2">
+                  <span className="text-[12px] font-medium uppercase tracking-[0.06em] text-[#FF8A80]">Why is it dead?</span>
+                  <span className="text-[12px] font-medium text-[#FF453A]">Required</span>
+                </div>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {DEAD_REASONS.map((reason) => {
+                    const isPicked = deadReason === reason.id
+                    return (
+                      <button
+                        key={reason.id}
+                        type="button"
+                        onClick={() => { setDeadReason(reason.id); setSaveError(null) }}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-[var(--skc-radius-control)] text-left text-[15px] tracking-[-0.01em] transition-colors ${
+                          isPicked
+                            ? 'bg-[#FF453A2E] text-white'
+                            : 'bg-[var(--skc-surface-2)] text-[var(--skc-text-secondary)] hover:bg-[var(--skc-surface-soft)]'
+                        }`}
+                      >
+                        <Icon
+                          name={isPicked ? 'radio_button_checked' : 'radio_button_unchecked'}
+                          size="text-[16px]"
+                          className={isPicked ? 'text-[#FF453A]' : 'text-[var(--skc-text-quaternary)]'}
+                        />
+                        {reason.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
@@ -566,8 +651,8 @@ export function DispositionModal({
                             {d.label}
                           </span>
                           {d.hasSubreason && (
-                            <span className="mt-1 block text-[11px] text-[var(--skc-text-tertiary)]">
-                              voicemail logged
+                            <span className="mt-1 block text-[11px] text-[#FF9F0A]">
+                              reason required
                             </span>
                           )}
                         </span>
@@ -608,6 +693,70 @@ export function DispositionModal({
                   </span>
                   {markAsLead ? <CheckActive /> : <span className="w-[22px]" />}
                 </button>
+              )}
+
+              {showVerifyToggle && (
+                <button
+                  type="button"
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-[var(--skc-radius-card)] border transition-colors ${
+                    verified
+                      ? 'bg-[#30D1581F] border-[#30D15873]'
+                      : 'bg-[var(--skc-surface-2)] border-[#2F2F38] hover:bg-[var(--skc-surface-soft)]'
+                  }`}
+                  onClick={() => {
+                    setVerified((value) => !value)
+                    setVerifiedTouched(true)
+                    setSaveNotice(null)
+                  }}
+                >
+                  <span className={`w-8 h-8 rounded-[var(--skc-radius-tile)] flex items-center justify-center ${
+                    verified ? 'bg-[#30D1582E] text-[#30D158]' : 'bg-[#98989E38] text-[var(--skc-text-secondary)]'
+                  }`}>
+                    <Icon name={verified ? 'verified' : 'verified_user'} size="text-[18px]" filled={verified} />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-white text-[14px] font-semibold tracking-[-0.01em]">
+                      {verifyLabel || 'Verified number'}
+                    </span>
+                    <span className="block text-[11px] text-[var(--skc-text-tertiary)] mt-0.5">
+                      Confirm this number really belongs to this heir.
+                    </span>
+                  </span>
+                  {verified ? <CheckActive /> : <span className="w-[22px]" />}
+                </button>
+              )}
+
+              {needsReason && (
+                <div className="rounded-[var(--skc-radius-card)] border border-[#FF453A66] bg-[#FF453A14] p-3">
+                  <div className="flex items-center justify-between pb-2">
+                    <span className="text-[12px] font-medium uppercase tracking-[0.06em] text-[#FF8A80]">Why is it dead?</span>
+                    <span className="text-[12px] font-medium text-[#FF453A]">Required</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {DEAD_REASONS.map((reason) => {
+                      const isPicked = deadReason === reason.id
+                      return (
+                        <button
+                          key={reason.id}
+                          type="button"
+                          onClick={() => { setDeadReason(reason.id); setSaveError(null) }}
+                          className={`flex items-center gap-2.5 px-3 py-2 rounded-[var(--skc-radius-control)] text-left text-[14px] tracking-[-0.01em] transition-colors ${
+                            isPicked
+                              ? 'bg-[#FF453A2E] text-white'
+                              : 'bg-[var(--skc-surface-2)] text-[var(--skc-text-secondary)] hover:bg-[var(--skc-surface-soft)]'
+                          }`}
+                        >
+                          <Icon
+                            name={isPicked ? 'radio_button_checked' : 'radio_button_unchecked'}
+                            size="text-[16px]"
+                            className={isPicked ? 'text-[#FF453A]' : 'text-[var(--skc-text-quaternary)]'}
+                          />
+                          {reason.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               )}
 
               {nextActions.length > 0 && (

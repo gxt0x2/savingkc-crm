@@ -4,9 +4,93 @@ import twilio from 'twilio'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
+import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { supabase } from '@/lib/supabase-lazy'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { syncCoOwners } from '@/lib/co-owners'
+import {
+  GOOGLE_ADS_CAMPAIGN,
+  GOOGLE_ADS_PHONE_SOURCE,
+  GOOGLE_ADS_TAX_PHONE_SOURCE,
+  getGoogleAdsPhoneProfile,
+  PPC_TRACKING_PHONE_DIGITS,
+  isPpcTrackingNumber,
+} from '@/lib/call-quality-events'
+import {
+  markLeadAsGoogleAdsPhoneLead,
+  phoneLookupVariants,
+  resolveGoogleAdsLeadContext,
+} from '@/lib/google-ads-phone'
+
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
+type RecordingCallbackMeta = {
+  callSid?: string
+  direction?: 'inbound' | 'outbound'
+  duration: number
+  from?: string
+  recordingSid: string
+  recordingSourceUrl: string
+  recordingStatus: string
+  recordingUrl: string
+  source: 'twilio_recording_callback'
+  to?: string
+  context_source?: string
+  traffic_source?: string
+  campaign?: string
+  lead_source?: string
+  tracking_number?: string
+  landing_page?: string
+  phone_profile?: string
+  is_test?: boolean
+}
+
+type RecordingContext = {
+  source?: string
+  from?: string
+  to?: string
+  calledNumber?: string
+  traffic_source?: string
+  campaign?: string
+  lead_source?: string
+  tracking_number?: string
+  landing_page?: string
+  phone_profile?: string
+  is_test?: boolean
+}
+
+type JsonObject = Record<string, unknown>
+
+type MutableManifest = JsonObject & {
+  communications?: { transcripts: JsonObject[] }
+  ariIntelligence?: JsonObject & {
+    sellerProfile?: JsonObject
+    dealIntelligence?: JsonObject
+    recommendedActions?: JsonObject[]
+    briefingStale?: boolean
+  }
+  situation: JsonObject & {
+    objections?: string[]
+    type?: string[]
+    blockers?: string[]
+    motivation?: JsonObject & { signals?: string[] }
+    timeline?: JsonObject
+    priceExpectations?: JsonObject
+  }
+  owner: JsonObject & {
+    outOfState?: boolean
+    coOwners?: string[]
+  }
+  property: JsonObject & {
+    condition?: JsonObject
+    vacant?: boolean
+  }
+  pipeline: JsonObject & {
+    appointment?: JsonObject
+  }
+  auditTrail?: JsonObject[]
+}
 
 // WebRTC-initiated calls record against the parent leg whose To/From are
 // client identifiers rather than the dialed number. When the lookup-by-phone
@@ -30,13 +114,84 @@ async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | nul
       if (!child.to) continue
       const phone = child.to.replace(/[^\d+]/g, '')
       if (!phone) continue
-      const { data } = await supabase.from('leads').select('id').eq('phone', phone).limit(1).maybeSingle()
-      if (data?.id) return data.id
+      for (const variant of phoneLookupVariants(phone)) {
+        const { data } = await supabase.from('leads').select('id').eq('phone', variant).limit(1).maybeSingle()
+        if (data?.id) return data.id
+      }
     }
   } catch (err) {
     console.error('[recording-callback] child-leg lookup failed', (err as Error).message)
   }
   return null
+}
+
+async function logPlayableRecordingActivity({
+  leadId,
+  recordingSid,
+  recordingUrl,
+  callSid,
+  duration,
+  recordingStatus,
+  from,
+  to,
+  context,
+}: {
+  leadId: string
+  recordingSid: string
+  recordingUrl: string
+  callSid: string
+  duration: number
+  recordingStatus: string
+  from: string
+  to: string
+  context?: RecordingContext
+}) {
+  const playableUrl = `/api/recordings/${recordingSid}`
+  const direction = from?.startsWith('client:') ? 'outbound' : 'inbound'
+  const metadata: RecordingCallbackMeta = {
+    callSid,
+    direction,
+    duration,
+    from,
+    recordingSid,
+    recordingSourceUrl: recordingUrl,
+    recordingStatus,
+    recordingUrl: playableUrl,
+    source: 'twilio_recording_callback',
+    to,
+    ...(context?.source && { context_source: context.source }),
+    ...(context?.traffic_source && { traffic_source: context.traffic_source }),
+    ...(context?.campaign && { campaign: context.campaign }),
+    ...(context?.lead_source && { lead_source: context.lead_source }),
+    ...(context?.tracking_number && { tracking_number: context.tracking_number }),
+    ...(context?.landing_page && { landing_page: context.landing_page }),
+    ...(context?.phone_profile && { phone_profile: context.phone_profile }),
+  }
+
+  const { data: existing } = await supabase
+    .from('lead_activities')
+    .select('id, metadata')
+    .eq('lead_id', leadId)
+    .eq('activity_type', 'call')
+    .contains('metadata', { recordingSid })
+    .limit(1)
+    .maybeSingle()
+
+  if (existing?.id) {
+    await supabase
+      .from('lead_activities')
+      .update({ metadata: { ...(existing.metadata || {}), ...metadata } })
+      .eq('id', existing.id)
+    return
+  }
+
+  await supabase.from('lead_activities').insert({
+    lead_id: leadId,
+    activity_type: 'call',
+    description: 'Call recording available',
+    agent: 'System',
+    metadata,
+  })
 }
 
 /**
@@ -46,12 +201,42 @@ async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | nul
  */
 export async function POST(req: Request) {
   try {
+    const url = new URL(req.url)
     const body = await req.formData()
     const recordingUrl = body.get('RecordingUrl') as string
     const recordingSid = body.get('RecordingSid') as string
-    const callSid = body.get('CallSid') as string
+    const callSid = (url.searchParams.get('callSid') || body.get('CallSid')) as string
     const recordingDuration = parseInt(body.get('RecordingDuration') as string || '0')
     const recordingStatus = body.get('RecordingStatus') as string
+    const to = (url.searchParams.get('calledNumber') || url.searchParams.get('to') || body.get('To') || '') as string
+    const from = (url.searchParams.get('from') || body.get('From') || '') as string
+    const hintedLeadId = url.searchParams.get('leadId') || ''
+    const sourceHint = url.searchParams.get('source') || ''
+    const calledNumber = url.searchParams.get('calledNumber') || to || ''
+    const externalPhone = from?.startsWith('client:') ? to : from
+    const isInternalTestRecording = isInternalTestPhone(externalPhone)
+    const profile = getGoogleAdsPhoneProfile(sourceHint || calledNumber)
+    const isFormLeadAgentCallback = sourceHint === 'ppc_form_agent_callback'
+    const isGoogleAdsRecording = !isFormLeadAgentCallback && (
+      sourceHint === GOOGLE_ADS_PHONE_SOURCE ||
+      sourceHint === GOOGLE_ADS_TAX_PHONE_SOURCE ||
+      isPpcTrackingNumber(calledNumber)
+    )
+    const recordingContext: RecordingContext = {
+      source: sourceHint || 'twilio_recording_callback',
+      from,
+      to,
+      calledNumber,
+      is_test: isInternalTestRecording,
+      ...(isGoogleAdsRecording && {
+        traffic_source: 'google_ads',
+        campaign: profile.campaign || GOOGLE_ADS_CAMPAIGN,
+        lead_source: profile.source,
+        tracking_number: profile.trackingDigits || PPC_TRACKING_PHONE_DIGITS,
+        landing_page: profile.landingPage,
+        phone_profile: profile.key,
+      }),
+    }
 
     console.log(`[recording-callback] Recording ${recordingSid}: status=${recordingStatus} duration=${recordingDuration}s`)
 
@@ -66,32 +251,50 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, skipped: 'too_short' })
     }
 
-    // Find the lead associated with this call via recent call activities
-    const { data: recentActivity } = await supabase
-      .from('lead_activities')
-      .select('lead_id, metadata')
-      .eq('activity_type', 'call')
-      .order('created_at', { ascending: false })
-      .limit(20)
+    if (isInternalTestRecording) {
+      console.log(`[recording-callback] Skipping internal test phone recording (${externalPhone || 'unknown'})`)
+      return NextResponse.json({ ok: true, skipped: 'internal_test_phone' })
+    }
 
-    // Match by looking for the phone number in recent call activities
-    // Twilio sends the call's To/From in separate params
-    const to = body.get('To') as string
-    const from = body.get('From') as string
+    // Match the recorded call back to a lead by the external phone number.
     const callerPhone = from?.startsWith('client:') ? to : from
     const cleanPhone = callerPhone?.replace(/[^\d+]/g, '') || ''
 
     let leadId: string | null = null
 
-    // Try to match via phone number in leads table
-    if (cleanPhone) {
-      const { data: lead } = await supabase
+    if (hintedLeadId) {
+      const { data: hintedLead } = await supabase
         .from('leads')
         .select('id')
-        .eq('phone', cleanPhone)
+        .eq('id', hintedLeadId)
         .limit(1)
         .maybeSingle()
-      leadId = lead?.id || null
+      leadId = hintedLead?.id || null
+    }
+
+    // Try to match via phone number in leads table
+    if (!leadId && cleanPhone) {
+      for (const variant of phoneLookupVariants(cleanPhone)) {
+        const { data: lead } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('phone', variant)
+          .limit(1)
+          .maybeSingle()
+        leadId = lead?.id || null
+        if (leadId) break
+      }
+    }
+
+    // Google Ads call recordings are seller-facing signals. If no seller lead
+    // exists yet, resolve/create it from the caller phone before falling back
+    // to child-leg lookup, which can match the internal agent leg instead.
+    if (!leadId && isGoogleAdsRecording && cleanPhone) {
+      const googleAdsLead = await resolveGoogleAdsLeadContext(cleanPhone, calledNumber || sourceHint)
+      leadId = googleAdsLead.leadId
+      if (leadId) {
+        console.log(`[recording-callback] Resolved Google Ads recording to seller lead ${leadId}`)
+      }
     }
 
     // Fallback: WebRTC parent legs have empty To — look at child legs via Twilio
@@ -109,12 +312,27 @@ export async function POST(req: Request) {
 
     console.log(`[recording-callback] Processing recording for lead ${leadId}`)
 
-    // Fire-and-forget: download, transcribe, analyze, store
-    processRecording(recordingUrl, recordingSid, leadId, recordingDuration).catch(err =>
-      console.error('[recording-callback] Processing failed:', err)
-    )
+    if (isGoogleAdsRecording && from && !isInternalTestRecording) {
+      await markLeadAsGoogleAdsPhoneLead(leadId, from, null, calledNumber || sourceHint).catch((error) => {
+        console.error('[recording-callback] Google Ads attribution refresh failed:', error)
+      })
+    }
 
-    return NextResponse.json({ ok: true, leadId, processing: true })
+    await logPlayableRecordingActivity({
+      leadId,
+      recordingSid,
+      recordingUrl,
+      callSid,
+      duration: recordingDuration,
+      recordingStatus,
+      from,
+      to,
+      context: recordingContext,
+    })
+
+    await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
+
+    return NextResponse.json({ ok: true, leadId, processed: true })
   } catch (err) {
     console.error('[recording-callback] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
@@ -125,7 +343,8 @@ async function processRecording(
   recordingUrl: string,
   recordingSid: string,
   leadId: string,
-  duration: number
+  duration: number,
+  context: RecordingContext = {},
 ) {
   // 1. Download recording
   const filePath = await downloadRecording(recordingUrl, recordingSid)
@@ -168,7 +387,7 @@ async function processRecording(
     })
 
     // 6. Update lead fields from analysis (+ denormalized last-call snapshot)
-    const leadUpdates: Record<string, any> = {
+    const leadUpdates: Record<string, unknown> = {
       transcript,
       call_duration_seconds: duration,
       updated_at: new Date().toISOString(),
@@ -222,7 +441,8 @@ async function processRecording(
   // 7. Update manifest with transcript + analysis
   try {
     const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-    await updateManifestAndCascade(leadId, (manifest: any) => {
+    await updateManifestAndCascade(leadId, (baseManifest) => {
+      const manifest = baseManifest as unknown as MutableManifest
       // Store transcript
       if (!manifest.communications) manifest.communications = { transcripts: [] }
       manifest.communications.transcripts.push({
@@ -231,6 +451,11 @@ async function processRecording(
         duration,
         agent: 'Casey',
         recordingUrl: recordingUrl + '.mp3',
+        source: context.source || 'twilio_recording_callback',
+        trafficSource: context.traffic_source || null,
+        campaign: context.campaign || null,
+        calledNumber: context.calledNumber || context.to || null,
+        callerPhone: context.from || null,
         fullTranscript: transcript,
         aiSummary: analysis?.summary || analysis?.aiSummary || null,
         extractedData: analysis ? {
@@ -394,6 +619,10 @@ async function processRecording(
           duration,
           transcriptLength: transcript.length,
           hasAnalysis: !!analysis,
+          source: context.source || 'twilio_recording_callback',
+          traffic_source: context.traffic_source || null,
+          campaign: context.campaign || null,
+          calledNumber: context.calledNumber || context.to || null,
         },
       })
     }, 'system:recording_callback')

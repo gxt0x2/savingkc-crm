@@ -81,15 +81,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'lead not found' }, { status: 404 })
     }
 
-    // ── Task-first: if there's an open task, surface it as the next action ──
-    // The user is in control. We only fall through to the LLM when there is
-    // no pending work, so refreshing the page can never silently override
-    // what the agent already committed to.
-    const openTask = pickOpenTask(activities ?? [])
-    if (openTask) {
-      return NextResponse.json(taskToResponse(openTask, lead.full_name))
-    }
-
     const manifest = manifestRow?.manifest
     const firstName = String(lead.full_name || '').trim().split(/\s+/)[0] || 'the seller'
     // Prefer appointments table (canonical) — fall back to lead.appointment_date
@@ -99,6 +90,21 @@ export async function POST(request: Request) {
       : lead.appointment_date
         ? { scheduledAt: lead.appointment_date, type: 'phone_call', address: null, notes: lead.appointment_notes ?? null }
         : null
+
+    const appointmentAction = appointmentToResponse(canonicalAppointment, firstName)
+    if (appointmentAction) {
+      return NextResponse.json(appointmentAction)
+    }
+
+    // ── Task fallback: if there's an open task, surface it after confirmed appointments ──
+    // The user is in control. We only fall through to the LLM when there is
+    // no pending work, so refreshing the page can never silently override
+    // what the agent already committed to.
+    const openTask = pickOpenTask(activities ?? [])
+    if (openTask) {
+      return NextResponse.json(taskToResponse(openTask, lead.full_name))
+    }
+
     const context = buildContext(lead, manifest, activities ?? [], canonicalAppointment)
     const calendarContext = buildCalendarContext(agentTasks ?? [], agentAppointments ?? [])
 
@@ -840,6 +846,48 @@ type ActivityRow = {
   metadata: Record<string, unknown> | null
   created_at: string
   agent: string | null
+}
+
+function appointmentToResponse(appointment: { scheduledAt: string; type?: string | null; address?: string | null; notes?: string | null } | null, firstName: string) {
+  if (!appointment?.scheduledAt) return null
+  const scheduled = new Date(appointment.scheduledAt)
+  if (!Number.isFinite(scheduled.getTime())) return null
+
+  const isPast = scheduled.getTime() < Date.now()
+  const localDate = scheduled.toLocaleString('en-US', {
+    timeZone: 'America/Chicago',
+    weekday: 'short',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  const appointmentType = appointment.type === 'in_person' || appointment.type === 'onsite'
+    ? 'walkthrough'
+    : appointment.type === 'google_meet' || appointment.type === 'virtual'
+      ? 'video appointment'
+      : 'appointment'
+
+  return {
+    type: 'suggestion' as const,
+    title: isPast
+      ? `Log ${firstName}'s appointment outcome`
+      : `${appointmentType === 'walkthrough' ? 'Meet' : 'Confirm'} ${firstName}'s ${appointmentType}`,
+    detail: [
+      `${firstName} has a ${appointmentType} scheduled for ${localDate} CT.`,
+      appointment.address ? `Location: ${appointment.address}.` : null,
+      appointment.notes ? `Notes: ${appointment.notes}` : null,
+      isPast ? 'Record the outcome so the pipeline and follow-up stay accurate.' : 'Use the appointment record as the source of truth, not a task.',
+    ].filter(Boolean).join(' '),
+    dateTime: appointment.scheduledAt,
+    dateOnly: false,
+    priority: isPast ? 'critical' as const : 'high' as const,
+    cta: isPast ? 'Log Outcome' : 'Send SMS',
+    prep_actions: isPast
+      ? ['Log completed, no-show, cancelled, or rescheduled']
+      : ['Confirm the appointment details with the seller'],
+    source: 'Canonical appointment',
+  }
 }
 
 function pickOpenTask(activities: ActivityRow[]) {

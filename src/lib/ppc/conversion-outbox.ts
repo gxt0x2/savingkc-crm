@@ -1,9 +1,12 @@
 import { supabase } from '@/lib/supabase-lazy'
 import type { CallQualityEventName } from '@/lib/call-quality-events'
+import { isGoogleAdsFactualPpcEvent } from '@/lib/ppc/exportable-events'
+import { ppcCampaignNameForContext } from '@/lib/ppc/campaigns'
 
 export type PpcConversionEventName =
   | 'lead_stage3_completed'
   | 'lead_submitted'
+  | 'qualified_lead'
   | 'appointment_booked'
   | CallQualityEventName
 
@@ -22,6 +25,7 @@ export type EnqueuePpcConversionInput = {
   activityId?: string | null
   destination?: 'google_ads'
   optimizationRole?: PpcOptimizationRole
+  approvedForGoogleAds?: boolean
   conversionValue?: number | null
   currency?: string
   eventTime?: string | Date
@@ -34,6 +38,7 @@ export type PpcConversionOutboxRow = {
   event_category: PpcConversionCategory
   destination: 'google_ads'
   dedupe_key: string
+  approved_for_google_ads: boolean
   optimization_role: PpcOptimizationRole
   lead_id: string | null
   manifest_id: string | null
@@ -119,14 +124,23 @@ function normalizeEventTime(value: string | Date | undefined): string {
 
 export function buildPpcConversionOutboxRow(input: EnqueuePpcConversionInput): PpcConversionOutboxRow {
   const attribution = cleanJsonRecord(input.attribution)
+  const payload = cleanJsonRecord(input.payload)
   const { clickId, clickIdType } = pickBestClickId(attribution)
   const optimizationRole = input.optimizationRole ?? 'secondary'
+  const approvedForGoogleAds = input.approvedForGoogleAds ?? isGoogleAdsFactualPpcEvent(input.eventName)
+  const campaign = ppcCampaignNameForContext({
+    campaign: payload.campaign,
+    attribution,
+    pagePath: payload.page_path,
+    pageLocation: payload.page_location,
+  })
 
   return {
     event_name: input.eventName,
     event_category: input.eventCategory,
     destination: input.destination ?? 'google_ads',
     dedupe_key: input.dedupeKey,
+    approved_for_google_ads: approvedForGoogleAds,
     optimization_role: optimizationRole,
     lead_id: input.leadId ?? null,
     manifest_id: input.manifestId ?? null,
@@ -139,9 +153,9 @@ export function buildPpcConversionOutboxRow(input: EnqueuePpcConversionInput): P
     attribution,
     payload: cleanJsonRecord({
       traffic_source: 'google_ads',
-      campaign: 'Search 2026',
+      campaign,
       optimization_role: optimizationRole,
-      ...(input.payload ?? {}),
+      ...payload,
     }),
   }
 }

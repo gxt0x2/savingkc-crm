@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - codex/**
       - codex/stabilization-checkpoint-20260503
       - codex/dialer-v2-current-crm
   workflow_dispatch:
@@ -15,6 +16,7 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,6 +55,9 @@ jobs:
 
       - name: Visual smoke gate (dark shell)
         run: npm run test:smoke:theme
+
+      - name: KPI dashboard smoke gate
+        run: npx playwright test tests/e2e/kpi-page.spec.ts
 
       - name: Upload smoke screenshots
         if: always()

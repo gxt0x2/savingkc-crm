@@ -3,6 +3,8 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
+import { fetchA2pDiagnostic } from '@/lib/twilio-a2p'
+import { hourlyCapForDaily } from '@/lib/a2p-tier'
 
 /**
  * GET /api/admin/dialer-health
@@ -46,11 +48,12 @@ export async function GET(req: NextRequest) {
     return res.json()
   }
 
-  const [account, balance, callerIds, calls] = await Promise.all([
+  const [account, balance, callerIds, calls, a2p] = await Promise.all([
     fetchJson('.json'),
     fetchJson('Balance.json'),
     fetchJson('OutgoingCallerIds.json?PageSize=50'),
     fetchJson('Calls.json?PageSize=20'),
+    fetchA2pDiagnostic(),
   ])
 
   type TwilioCall = {
@@ -106,6 +109,17 @@ export async function GET(req: NextRequest) {
         endTime: c.end_time,
       }
     }),
+    // A2P 10DLC brand tier — drives the account-wide SMS sending cap.
+    a2p: {
+      brandType: a2p.tier.brandType,
+      trustScore: a2p.tier.trustScore,
+      vetted: a2p.tier.vetted,
+      label: a2p.tier.label,
+      carrierDailyCap: a2p.tier.carrierDailyCap,
+      recommendedPerHour: hourlyCapForDaily(a2p.tier.carrierDailyCap),
+      source: a2p.tier.source,
+      detail: a2p.detail,
+    },
     issues: [] as string[],
   }
 
@@ -130,6 +144,9 @@ export async function GET(req: NextRequest) {
   )
   if (failedRecent.length >= 3) {
     summary.issues.push(`${failedRecent.length} of the last ${summary.recentBrowserCalls.length} browser calls failed — check ErrorCode in recentBrowserCalls.`)
+  }
+  if (summary.a2p.source === 'fallback') {
+    summary.issues.push(`A2P brand tier could not be read from Twilio — SMS cap is using the conservative ${summary.a2p.carrierDailyCap.toLocaleString()}/day fallback. Verify the brand registration and TWILIO_API_KEY/SECRET.`)
   }
 
   return NextResponse.json(summary, {

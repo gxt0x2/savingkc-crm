@@ -212,7 +212,7 @@ describe('validateInputs', () => {
     ['undefined inputs', undefined],
     ['null inputs', null],
   ])('throws for %s', (_label, inputs) => {
-    expect(() => validateInputs(inputs as ScenarioInputs)).toThrow()
+    expect(() => validateInputs(inputs as unknown as ScenarioInputs)).toThrow()
   })
 
   it.each([
@@ -265,7 +265,7 @@ describe('validateInputs', () => {
       validateInputs({
         ...cloneInputs(LEFT_MAIN_FIXTURE.current.inputs),
         rates,
-      } as ScenarioInputs),
+      } as unknown as ScenarioInputs),
     ).toThrow()
   })
 
