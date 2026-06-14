@@ -14,6 +14,7 @@ import { PropertyDetailsCard } from '@/components/leads/property-details-card'
 import { TemperatureBadge } from '@/components/leads/temperature-badge'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
 import { StageSelector } from '@/components/leads/stage-selector'
+import { AdsSignalReceipt } from '@/components/leads/ads-signal-receipt'
 import { AddNote } from '@/components/leads/add-note'
 import { EditNoteModal } from '@/components/leads/edit-note-modal'
 import { ContractModal } from '@/components/leads/contract-modal'
@@ -34,6 +35,7 @@ import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { formatDurationBetween, isOutboundAttempt } from '@/lib/contact-display'
+import { DEAD_REASONS } from '@/lib/lead-outcomes'
 
 type LeadTriageValue = 'opportunity' | 'lead' | 'dead'
 
@@ -84,6 +86,9 @@ interface Lead {
   seller_situation: string | null
   classification: LeadTriageValue | null
   opportunity_score: number | null
+  dead_reason?: string | null
+  dead_at?: string | null
+  dead_by?: string | null
 }
 
 interface ActivityRow {
@@ -93,6 +98,17 @@ interface ActivityRow {
   agent: string | null
   metadata: Record<string, unknown> | null
   created_at: string
+}
+
+interface AppointmentState {
+  appointmentId: string | null
+  type: string | null
+  scheduledAt: string
+  status: string
+  assignedTo: string | null
+  address: string | null
+  notes: string | null
+  source?: string | null
 }
 
 interface LeadGroupContext {
@@ -138,6 +154,24 @@ function activityTypeToFeedType(type: string): 'sms' | 'call' | 'email' | 'statu
   if (type === 'call') return 'call'
   if (type === 'email') return 'email'
   return 'status_change'
+}
+
+function formatAppointmentChip(appointment: AppointmentState | null): string | null {
+  if (!appointment?.scheduledAt) return null
+  const date = new Date(appointment.scheduledAt)
+  if (isNaN(date.getTime())) return null
+  const day = date.toLocaleDateString('en-US', {
+    timeZone: 'America/Chicago',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+  const time = date.toLocaleTimeString('en-US', {
+    timeZone: 'America/Chicago',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  return `${day} · ${time}`
 }
 
 const CALLER_ID_BY_AGENT: Record<string, string> = {
@@ -204,9 +238,12 @@ function LeadTriageStrip({
 }) {
   const [saving, setSaving] = useState<LeadTriageValue | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [deadDialogOpen, setDeadDialogOpen] = useState(false)
+  const [deadReason, setDeadReason] = useState('')
+  const [pendingDeadOption, setPendingDeadOption] = useState<(typeof LEAD_TRIAGE_OPTIONS)[number] | null>(null)
   const current = lead.classification
 
-  async function selectTriage(option: (typeof LEAD_TRIAGE_OPTIONS)[number]) {
+  async function submitTriage(option: (typeof LEAD_TRIAGE_OPTIONS)[number], selectedDeadReason?: string) {
     if (saving) return
     setSaving(option.value)
     setError(null)
@@ -220,6 +257,7 @@ function LeadTriageStrip({
           station: option.station,
           priority: option.priority,
           opportunity_score: option.score,
+          ...(option.value === 'dead' ? { deadReason: selectedDeadReason } : {}),
         }),
       })
       const data = await res.json()
@@ -232,12 +270,23 @@ function LeadTriageStrip({
         station: option.station,
         priority: option.priority,
         opportunity_score: option.score,
+        ...(option.value === 'dead' ? { dead_reason: selectedDeadReason ?? null } : {}),
       }) as Lead)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save triage')
     } finally {
       setSaving(null)
     }
+  }
+
+  function selectTriage(option: (typeof LEAD_TRIAGE_OPTIONS)[number]) {
+    if (saving) return
+    if (option.value === 'dead') {
+      setPendingDeadOption(option)
+      setDeadDialogOpen(true)
+      return
+    }
+    void submitTriage(option)
   }
 
   return (
@@ -292,6 +341,61 @@ function LeadTriageStrip({
         <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ck-accent-bright)' }}>
           {error}
         </p>
+      )}
+      {deadDialogOpen && pendingDeadOption && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl border p-5 shadow-2xl" style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}>
+            <div className="mb-4">
+              <p className="text-sm font-black uppercase tracking-wider text-[color:var(--ck-accent-bright)]">Dead Lead</p>
+              <h3 className="mt-1 text-xl font-black text-[color:var(--ck-text)]">Why is this lead dead?</h3>
+              <p className="mt-1 text-sm font-semibold text-[color:var(--ck-text-muted)]">
+                This reason rolls into source and outcome reporting for every channel.
+              </p>
+            </div>
+            <select
+              value={deadReason}
+              onChange={(e) => setDeadReason(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm font-semibold focus:outline-none"
+              style={{ background: 'var(--ck-surface-elev)', borderColor: 'var(--ck-border)', color: 'var(--ck-text)' }}
+              aria-label="Dead reason"
+            >
+              <option value="">Select reason...</option>
+              {DEAD_REASONS.map((reason) => (
+                <option key={reason.id} value={reason.id}>{reason.label}</option>
+              ))}
+            </select>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeadDialogOpen(false)
+                  setPendingDeadOption(null)
+                  setDeadReason('')
+                }}
+                className="rounded-lg border px-3 py-2 text-sm font-black"
+                style={{ borderColor: 'var(--ck-border)', color: 'var(--ck-text)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!deadReason || !!saving}
+                onClick={async () => {
+                  const option = pendingDeadOption
+                  const selected = deadReason
+                  setDeadDialogOpen(false)
+                  setPendingDeadOption(null)
+                  setDeadReason('')
+                  await submitTriage(option, selected)
+                }}
+                className="rounded-lg px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ background: 'var(--ck-accent)' }}
+              >
+                Save Reason
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   )
@@ -1072,6 +1176,7 @@ export default function LeadDetailPage() {
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false)
   const [outcomeModalDismissed, setOutcomeModalDismissed] = useState(false)
   const [manifestAppointment, setManifestAppointment] = useState<any>(null)
+  const [nextAppointment, setNextAppointment] = useState<AppointmentState | null>(null)
   const [manifestScore, setManifestScore] = useState<number | null>(null)
   const [manifestTranscripts, setManifestTranscripts] = useState<Array<{ date: string; recordingUrl?: string }>>([])
   const [emailModalOpen, setEmailModalOpen] = useState(false)
@@ -1086,6 +1191,8 @@ export default function LeadDetailPage() {
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
+  const activeAppointment = nextAppointment ?? manifestAppointment
+  const appointmentChip = formatAppointmentChip(activeAppointment)
 
   useEffect(() => {
     if (!id || typeof window === 'undefined') return
@@ -1128,13 +1235,13 @@ export default function LeadDetailPage() {
   // ── Auto-show appointment outcome modal when appointment time has passed ──
   useEffect(() => {
     if (outcomeModalDismissed || outcomeModalOpen) return
-    if (!manifestAppointment?.scheduledAt) return
+    if (!activeAppointment?.scheduledAt) return
     const activeStatuses = ['scheduled', 'confirmed', 'reconfirmed']
-    if (!activeStatuses.includes(manifestAppointment.status)) return
-    if (new Date(manifestAppointment.scheduledAt).getTime() < Date.now()) {
+    if (!activeStatuses.includes(activeAppointment.status)) return
+    if (new Date(activeAppointment.scheduledAt).getTime() < Date.now()) {
       setOutcomeModalOpen(true)
     }
-  }, [manifestAppointment, outcomeModalDismissed, outcomeModalOpen])
+  }, [activeAppointment, outcomeModalDismissed, outcomeModalOpen])
 
   // ── Data fetching (runs on mount + after user actions) ──
   const [refreshTick, setRefreshTick] = useState(0)
@@ -1169,10 +1276,12 @@ export default function LeadDetailPage() {
         }
         const data = await res.json()
         setLead(data as Lead)
+        setNextAppointment((data.nextAppointment as AppointmentState | null) ?? null)
         loadedLeadIdRef.current = id
       } catch (err) {
         console.error('[lead-detail] Failed to fetch lead:', err)
         setLead(null)
+        setNextAppointment(null)
       } finally {
         setLoading(false)
       }
@@ -1778,6 +1887,8 @@ export default function LeadDetailPage() {
     { label: 'Price', done: hasPrice, icon: 'payments', hint: 'Asking, floor, back taxes, mortgage' },
   ]
   const showLeadTriage = (lead.station || '').toLowerCase() === 'new'
+  const appointmentStageNeedsDetails = ['appointment', 'appt_set', 'appointment_set'].includes((lead.station || '').toLowerCase())
+    && !activeAppointment?.scheduledAt
 
   // Build Zillow and county links
   const zillowUrl = addressLine
@@ -1805,6 +1916,34 @@ export default function LeadDetailPage() {
             refreshAll()
           }}
         />
+      )}
+
+      {appointmentStageNeedsDetails && (
+        <section
+          className="mb-4 rounded-2xl border px-4 py-3"
+          style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.35)' }}
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2">
+              <Icon name="event_busy" className="mt-0.5 !text-[18px] !text-[color:var(--ck-warn)]" />
+              <div>
+                <p className="text-sm font-black text-[color:var(--ck-text)]">Appointment details missing</p>
+                <p className="mt-0.5 text-xs font-semibold text-[color:var(--ck-text-muted)]">
+                  This lead is in Appointment Set, but no date and time are stored.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAppointmentModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider text-white"
+              style={{ background: 'var(--ck-accent)' }}
+            >
+              <Icon name="calendar_month" className="!text-[15px]" />
+              Schedule
+            </button>
+          </div>
+        </section>
       )}
 
       {/* ── Cockpit Header ───────────────────────────────────────────────── */}
@@ -1876,6 +2015,7 @@ export default function LeadDetailPage() {
                 leadId={lead.id}
                 station={lead.station}
                 size="sm"
+                onAppointmentRequired={() => setAppointmentModalOpen(true)}
                 onChange={(next) =>
                   setLead((prev) => prev ? { ...prev, station: next } : prev)
                 }
@@ -1885,6 +2025,22 @@ export default function LeadDetailPage() {
               <p className="mt-1.5 text-base sm:text-lg font-semibold text-[color:var(--ck-text)] break-words text-left">
                 {addressLine}
               </p>
+            )}
+            {appointmentChip && (
+              <button
+                type="button"
+                onClick={() => setAppointmentModalOpen(true)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-black uppercase tracking-wider"
+                style={{
+                  background: 'rgba(239,68,68,0.12)',
+                  borderColor: 'rgba(239,68,68,0.35)',
+                  color: 'var(--ck-accent-bright)',
+                }}
+                title="Edit appointment"
+              >
+                <Icon name="event" className="!text-[14px]" />
+                Appointment {appointmentChip}
+              </button>
             )}
             {groupPositionLabel && (
               <p className="mt-1 text-xs font-bold uppercase tracking-wider text-[color:var(--ck-text-dim)]">
@@ -1943,6 +2099,14 @@ export default function LeadDetailPage() {
           >
             <Icon name="add_task" size="text-sm" />
             <span className="hidden sm:inline">New Task</span>
+          </button>
+          <button
+            onClick={() => setAppointmentModalOpen(true)}
+            className="h-10 px-3 sm:px-4 rounded-[10px] border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] hover:bg-[color:var(--ck-surface-hi)] text-sm font-bold text-[color:var(--ck-text)] transition-all flex items-center gap-1.5"
+            title={appointmentChip ? 'Edit appointment' : 'Schedule appointment'}
+          >
+            <Icon name="event" size="text-sm" />
+            <span className="hidden sm:inline">{appointmentChip ? 'Appointment' : 'Schedule'}</span>
           </button>
           <button
             onClick={() => setContractModalOpen(true)}
@@ -2119,12 +2283,15 @@ export default function LeadDetailPage() {
             station={lead.station}
             activities={activities}
             onNewTask={() => setShowNewTask(true)}
+            onScheduleAppointment={() => setAppointmentModalOpen(true)}
             onSmsCompose={() => { setComposeTab('sms'); setSmsModalOpen(true) }}
             onLogNote={() => setNotesModalOpen(true)}
             onAppointmentOutcome={() => setOutcomeModalOpen(true)}
             onContract={() => setContractModalOpen(true)}
             onCall={openLeadDialer}
           />
+
+          <AdsSignalReceipt leadId={lead.id} variant="sidebar" />
 
           <SortableColumn
             storageKey={`crm_col_right_v2_${id}`}
@@ -2277,6 +2444,7 @@ export default function LeadDetailPage() {
       {appointmentModalOpen && (
         <AppointmentModal
           lead={lead}
+          initialAppointment={activeAppointment}
           onClose={() => setAppointmentModalOpen(false)}
           onSuccess={() => { refreshAll() }}
         />
@@ -2289,10 +2457,10 @@ export default function LeadDetailPage() {
           onCreated={() => { setShowNewTask(false); refreshAll() }}
         />
       )}
-      {outcomeModalOpen && manifestAppointment && (
+      {outcomeModalOpen && activeAppointment && (
         <AppointmentOutcomeModal
           lead={lead}
-          appointment={manifestAppointment}
+          appointment={activeAppointment}
           onClose={() => { setOutcomeModalOpen(false); setOutcomeModalDismissed(true) }}
           onSuccess={() => { refreshAll() }}
         />

@@ -16,6 +16,7 @@ envFile.split('\n').forEach(line => {
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 const CRM_URL = 'http://localhost:3002'
+const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
 
 const PASS = '✓'
 const FAIL = '✗'
@@ -77,7 +78,9 @@ async function main() {
 
     const syncRes = await fetch(`${CRM_URL}/api/mojo/sync`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: ADMIN_API_SECRET
+        ? { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_API_SECRET}` }
+        : { 'Content-Type': 'application/json' },
       body: JSON.stringify({ calls: [syntheticCall] }),
     })
 

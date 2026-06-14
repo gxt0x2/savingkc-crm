@@ -1,9 +1,6 @@
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
-import { supabase } from '@/lib/supabase-lazy'
-import { isKnownPpcCampaignName } from '@/lib/ppc/campaigns'
-import { readUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
+import { loadPpcLeadConversionContext } from '@/lib/ppc/lead-conversion-context'
 
-const PPC_LEAD_SOURCES = new Set(['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'paid-search'])
 const QUALIFIED_OR_BETTER_STATIONS = new Set([
   'qualified',
   'appointment',
@@ -24,24 +21,6 @@ const QUALIFIED_OR_BETTER_STATIONS = new Set([
   'closed_won',
 ])
 
-type LeadRow = {
-  id: string
-  source: string | null
-  station: string | null
-}
-
-type ManifestRow = {
-  id: string | null
-  manifest: Record<string, unknown> | null
-}
-
-type OutboxAttributionRow = {
-  click_id: string | null
-  click_id_type: string | null
-  attribution: Record<string, unknown> | null
-  payload: Record<string, unknown> | null
-}
-
 export type QueuePpcQualifiedLeadConversionResult =
   | { queued: true; reason: 'queued' }
   | { queued: false; reason: string }
@@ -50,58 +29,8 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
-function cleanRecord(input: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(input).filter(([, value]) => value !== undefined && value !== null && value !== ''),
-  )
-}
-
 export function isQualifiedOrBetterStation(station: string | null | undefined): boolean {
   return QUALIFIED_OR_BETTER_STATIONS.has(text(station).toLowerCase())
-}
-
-function attributionFromManifest(manifest: Record<string, unknown> | null | undefined): Record<string, unknown> {
-  const acquisition = record(manifest?.acquisition)
-  return cleanRecord({
-    ...record(acquisition.attribution),
-    source: acquisition.source,
-    channel: acquisition.channel,
-  })
-}
-
-function attributionFromOutbox(row: OutboxAttributionRow | null | undefined): Record<string, unknown> {
-  if (!row) return {}
-  const attribution = record(row.attribution)
-  const clickIdType = text(row.click_id_type)
-  const clickId = text(row.click_id)
-  return cleanRecord({
-    ...attribution,
-    ...record(row.payload),
-    click_id: clickId,
-    click_id_type: clickIdType,
-    ...(clickIdType && clickId ? { [clickIdType]: clickId } : {}),
-  })
-}
-
-function hasPpcAttribution(attribution: Record<string, unknown>): boolean {
-  return (
-    text(attribution.gclid) !== '' ||
-    text(attribution.gbraid) !== '' ||
-    text(attribution.wbraid) !== '' ||
-    text(attribution.click_id) !== '' ||
-    isKnownPpcCampaignName(attribution.utm_campaign) ||
-    isKnownPpcCampaignName(attribution.campaign) ||
-    text(attribution.traffic_source) === 'google_ads' ||
-    text(attribution.channel) === 'google-ads'
-  )
-}
-
-function isPpcLead(lead: LeadRow, attribution: Record<string, unknown>): boolean {
-  return PPC_LEAD_SOURCES.has(text(lead.source)) || hasPpcAttribution(attribution)
 }
 
 export async function queuePpcQualifiedLeadConversion(input: {
@@ -115,60 +44,19 @@ export async function queuePpcQualifiedLeadConversion(input: {
     return { queued: false, reason: 'station_not_qualified' }
   }
 
-  const [{ data: lead, error: leadError }, { data: manifest }, { data: outboxRows }] = await Promise.all([
-    supabase
-      .from('leads')
-      .select('id, source, station')
-      .eq('id', input.leadId)
-      .maybeSingle(),
-    supabase
-      .from('manifests')
-      .select('id, manifest')
-      .eq('lead_id', input.leadId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from('ppc_conversion_outbox')
-      .select('click_id, click_id_type, attribution, payload')
-      .eq('lead_id', input.leadId)
-      .order('event_time', { ascending: false })
-      .limit(5),
-  ])
-
-  if (leadError) return { queued: false, reason: leadError.message }
-  if (!lead) return { queued: false, reason: 'lead_not_found' }
-
-  const manifestAttribution = attributionFromManifest((manifest as ManifestRow | null)?.manifest)
-  const priorOutboxRows = outboxRows as OutboxAttributionRow[] | null | undefined
-  const outboxAttribution = attributionFromOutbox(priorOutboxRows?.[0])
-  const priorUserIdentifiers = priorOutboxRows
-    ?.map((row) => readUserIdentifiers(row.payload))
-    .find((identifiers) => identifiers.length > 0) ?? []
-  const attribution = cleanRecord({
-    ...outboxAttribution,
-    ...manifestAttribution,
-    gclid: manifestAttribution.gclid || outboxAttribution.gclid,
-    gbraid: manifestAttribution.gbraid || outboxAttribution.gbraid,
-    wbraid: manifestAttribution.wbraid || outboxAttribution.wbraid,
-    click_id: manifestAttribution.click_id || outboxAttribution.click_id,
-    click_id_type: manifestAttribution.click_id_type || outboxAttribution.click_id_type,
-  })
-
-  if (!isPpcLead(lead as LeadRow, attribution)) {
-    return { queued: false, reason: 'not_ppc_lead' }
-  }
+  const context = await loadPpcLeadConversionContext(input.leadId)
+  if (!context.ok) return { queued: false, reason: context.reason }
 
   const queued = await enqueuePpcConversion({
     eventName: 'qualified_lead',
     eventCategory: 'form',
     leadId: input.leadId,
-    manifestId: (manifest as ManifestRow | null)?.id ?? null,
+    manifestId: context.manifestId,
     dedupeKey: `lead:${input.leadId}:qualified_lead`,
     optimizationRole: 'primary',
     approvedForGoogleAds: true,
     conversionValue: 1,
-    attribution,
+    attribution: context.attribution,
     payload: {
       source: 'crm_qualified_stage',
       form_status: 'qualified_lead',
@@ -178,7 +66,7 @@ export async function queuePpcQualifiedLeadConversion(input: {
       reason: input.reason ?? null,
       approval_required: false,
       google_ads_value_basis: 'factual_stage_conversion',
-      user_identifiers: priorUserIdentifiers.length ? priorUserIdentifiers : undefined,
+      user_identifiers: context.userIdentifiers.length ? context.userIdentifiers : undefined,
     },
   })
 

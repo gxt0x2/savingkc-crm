@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   buildGoogleAdsUploadPlan,
   getPpcConversionExportConfigHealth,
+  isPpcConversionOutboxClaimable,
+  isPpcConversionExportReady,
+  ppcConversionClaimableStatusFilter,
   runPpcConversionExport,
+  normalizeGoogleAdsDestinationResult,
   type PpcConversionOutboxExportRow,
 } from './conversion-exporter'
 
@@ -106,6 +110,28 @@ describe('ppc conversion exporter', () => {
     expect(health.googleAds.missingActionMappings).toEqual(
       expect.arrayContaining(['appointment_booked', 'call_connected_60s', 'call_connected_2m', 'call_connected_5m']),
     )
+  })
+
+  it('summarizes OpenAI Ads export configuration without exposing secrets', () => {
+    const health = getPpcConversionExportConfigHealth({
+      PPC_CONVERSION_EXPORT_DESTINATIONS: 'openai_ads',
+      NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID: 'pixel-123',
+      OPENAI_ADS_CONVERSIONS_API_KEY: 'openai-secret',
+    })
+
+    expect(health).toMatchObject({
+      configured: true,
+      mode: 'openai_ads_only',
+      enabledDestinations: ['openai_ads'],
+      openaiAds: {
+        enabled: true,
+        ready: true,
+        pixelIdConfigured: true,
+        apiKeyConfigured: true,
+        missingConfig: [],
+      },
+    })
+    expect(JSON.stringify(health)).not.toContain('openai-secret')
   })
 
   it('accepts a saved Google Ads OAuth token email as the refresh-token source', () => {
@@ -264,6 +290,77 @@ describe('ppc conversion exporter', () => {
     )
   })
 
+  it('sends final form submit rows to OpenAI Ads while keeping them out of Google/Stape exports', async () => {
+    const now = new Date('2026-05-21T13:00:00.000Z')
+    const row = makeRow({
+      event_name: 'lead_submitted',
+      event_category: 'form',
+      optimization_role: 'primary',
+      dedupe_key: 'lead:123:lead_submitted',
+      event_time: '2026-05-21T12:59:00.000Z',
+      attribution: {
+        landingUrl: 'https://savingkc.com/ppc?oppref=openai-click',
+        oppref: 'openai-click',
+      },
+      payload: {
+        form_status: 'submitted',
+        openai_ads_event_id: 'lead:123:lead_submitted',
+      },
+    })
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
+
+    const result = await runPpcConversionExport(
+      {
+        now,
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape,openai_ads',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+          NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID: 'pixel-123',
+          OPENAI_ADS_CONVERSIONS_API_KEY: 'openai-secret',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result.sent).toBe(1)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(String(url)).toBe('https://bzr.openai.com/v1/events?pid=pixel-123')
+    expect(init.headers).toMatchObject({
+      Authorization: 'Bearer openai-secret',
+      'Content-Type': 'application/json',
+    })
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      events: [
+        {
+          id: 'lead:123:lead_submitted',
+          type: 'lead_created',
+          oppref: 'openai-click',
+          source_url: 'https://savingkc.com/ppc?oppref=openai-click',
+          action_source: 'web',
+          data: { type: 'customer_action' },
+        },
+      ],
+    })
+    expect(store.markSent).toHaveBeenCalledWith(
+      row,
+      expect.objectContaining({
+        destinations: expect.arrayContaining([
+          expect.objectContaining({ destination: 'stape', status: 'skipped' }),
+          expect.objectContaining({ destination: 'openai_ads', status: 'sent' }),
+        ]),
+      }),
+      now,
+    )
+  })
+
   it('builds Google Ads call conversion payloads from call metadata', () => {
     const row = makeRow({
       event_name: 'call_connected_60s',
@@ -290,6 +387,143 @@ describe('ppc conversion exporter', () => {
       conversionValue: 1,
       currencyCode: 'USD',
     })
+  })
+
+  it('downgrades unmatched Google Ads call uploads to skips', async () => {
+    const row = makeRow({
+      event_name: 'call_connected_60s',
+      event_category: 'call',
+      optimization_role: 'secondary',
+      click_id: null,
+      click_id_type: null,
+      conversion_value: 1,
+      payload: {
+        from: '(816) 555-1212',
+        duration: 70,
+      },
+    })
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'access-token' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        partialFailureError: {
+          message: "The call or click leading to the imported event can't be found. Make sure your data source is set up to include correct identifiers., at conversions[0].caller_id",
+        },
+      }), { status: 200 }))
+
+    const result = await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads',
+          GOOGLE_ADS_CUSTOMER_ID: '646966429',
+          GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
+          GOOGLE_ADS_CLIENT_ID: 'client-id',
+          GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
+          GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
+          GOOGLE_ADS_CONVERSION_ACTION_CALL_CONNECTED_60S: '222',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result).toMatchObject({
+      skipped: 1,
+      failed: 0,
+    })
+    expect(result.results[0]?.destinations).toEqual([
+      expect.objectContaining({
+        destination: 'google_ads',
+        status: 'skipped',
+        detail: expect.stringContaining('caller_id was not matchable'),
+      }),
+    ])
+    expect(store.markSkipped).toHaveBeenCalledOnce()
+    expect(store.markFailed).not.toHaveBeenCalled()
+  })
+
+  it('leaves unrelated Google Ads failures as failures', () => {
+    const row = makeRow({
+      event_name: 'qualified_lead',
+      event_category: 'form',
+    })
+
+    expect(normalizeGoogleAdsDestinationResult(row, {
+      destination: 'google_ads',
+      status: 'failed',
+      detail: 'Google Ads rejected this click conversion',
+    })).toMatchObject({
+      status: 'failed',
+    })
+  })
+
+  it('repairs known unmatched Google Ads call dead letters before claiming rows', async () => {
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => []),
+      repairKnownSkippedRows: vi.fn(async () => 1),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+
+    const result = await runPpcConversionExport(
+      {
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'stape',
+          PPC_STAPE_ENDPOINT_URL: 'https://gtm.savingkc.com/data',
+        },
+      },
+      { store },
+    )
+
+    expect(store.repairKnownSkippedRows).toHaveBeenCalledOnce()
+    expect(store.claimRows).toHaveBeenCalledOnce()
+    expect(result).toMatchObject({
+      scanned: 0,
+      claimed: 0,
+      repairedKnownSkips: 1,
+      skipped: 1,
+      failed: 0,
+    })
+  })
+
+  it('defers call conversion exports until Google Ads can accept them', () => {
+    const callRow = makeRow({
+      event_name: 'call_connected_5m',
+      event_category: 'call',
+      event_time: '2026-06-08T12:18:48.740Z',
+      payload: {
+        call_start_date_time: '2026-06-08T12:13:48.740Z',
+        from: '(816) 555-1212',
+        duration: 300,
+      },
+    })
+
+    expect(isPpcConversionExportReady(callRow, new Date('2026-06-09T00:13:47.740Z'))).toBe(false)
+    expect(isPpcConversionExportReady(callRow, new Date('2026-06-09T00:13:48.740Z'))).toBe(true)
+    expect(isPpcConversionExportReady(makeRow(), new Date('2026-06-08T12:19:00.000Z'))).toBe(true)
+  })
+
+  it('reclaims stale processing rows while leaving fresh locks alone', () => {
+    const now = new Date('2026-06-08T18:20:00.000Z')
+
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'pending' }), now)).toBe(true)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'failed' }), now)).toBe(true)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'sent' }), now)).toBe(false)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'processing', locked_at: '2026-06-08T18:15:00.000Z' }), now)).toBe(false)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'processing', locked_at: '2026-06-08T18:10:00.000Z' }), now)).toBe(true)
+    expect(isPpcConversionOutboxClaimable(makeRow({ status: 'processing', locked_at: null }), now)).toBe(true)
+
+    expect(ppcConversionClaimableStatusFilter(now)).toBe(
+      'status.in.(pending,failed),and(status.eq.processing,locked_at.lt.2026-06-08T18:10:00.000Z),and(status.eq.processing,locked_at.is.null)',
+    )
   })
 
   it('does not mutate rows in dry-run mode', async () => {

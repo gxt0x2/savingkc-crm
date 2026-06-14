@@ -22,6 +22,7 @@ export type SeriesRow = {
 
 export type CampaignRow = {
   name: string
+  source?: string
   leads: number
   spend: number
   call: number
@@ -74,6 +75,7 @@ export type StageRow = {
 export type LeadRow = {
   id: string | number
   name: string
+  source?: string
   county: string
   prop: string
   campaign: string
@@ -95,6 +97,7 @@ export type OutboxRow = {
   id: string
   leadId: string | number | null
   leadName: string
+  source?: string
   event: string
   category: string
   status: string
@@ -116,6 +119,76 @@ export type OutboxRow = {
   ageDays: number
 }
 
+export type ExportHealth = {
+  total: number
+  pending: number
+  sent: number
+  skipped: number
+  failed: number
+  repairedKnownSkips: number
+  lastSuccessfulExport: string | null
+  lastSuccessfulEvent: string | null
+  lastSuccessfulLead: string | null
+  lastFailureReason: string | null
+  lastFailureAt: string | null
+  lastFailureEvent: string | null
+  status: 'clean' | 'watch' | 'attention'
+}
+
+export type OpenAIAdsHealth = {
+  status: 'clean' | 'watch' | 'attention'
+  message: string
+  pixelConfigured: boolean
+  serverApiConfigured: boolean
+  reportingApiConfigured: boolean
+  syncStatus: string | null
+  lastSyncAt: string | null
+  lastError: string | null
+  latestCampaignImportAt: string | null
+  campaignRows: number
+  trackingEvents: number
+  leads: number
+  pendingExports: number
+  sentExports: number
+  failedExports: number
+}
+
+export type MojoHealth = {
+  status: 'clean' | 'watch' | 'attention'
+  message: string
+  sessionStatus: string
+  syncHealth: string
+  businessHours: boolean
+  lastSyncAt: string | null
+  lastSyncAgeMinutes: number | null
+  lastSessionOkAt: string | null
+  lastError: string | null
+  lastErrorAt: string | null
+  latestQueuedAt: string | null
+  latestCompletedAt: string | null
+  latestQueueError: string | null
+  queue: {
+    pending: number
+    processing: number
+    completed24h: number
+    failed24h: number
+    deadLetter: number
+    queued24h: number
+    total7d: number
+  }
+  leads: {
+    last24h: number
+    period: number
+    qualifiedPeriod: number
+    appointmentPeriod: number
+  }
+  monitor: {
+    path: string
+    schedule: string
+    manualRefreshCommand: string
+  }
+}
+
 export type MicroStepRow = {
   key: string
   name: string
@@ -127,6 +200,7 @@ export type PaidSessionRow = {
   time: string
   date: 'today' | 'yesterday' | string
   dateL: string
+  source?: string
   campaign: string
   gclid: string
   kw: string
@@ -240,11 +314,11 @@ export function hourlySeries(dayOffset = 0): SeriesRow[] {
 }
 
 export const CAMPAIGNS: CampaignRow[] = [
-  { name: 'Tax Delinquent — KC Metro', leads: 16, spend: 1480, call: 7, form: 8, sms: 1, color: '#f87171' },
-  { name: 'Inherited / Probate', leads: 11, spend: 1010, call: 5, form: 5, sms: 1, color: '#22c55e' },
-  { name: 'Tired Landlords', leads: 9, spend: 760, call: 4, form: 4, sms: 1, color: '#eab308' },
-  { name: 'Cash Offer — Sell Fast', leads: 7, spend: 640, call: 2, form: 4, sms: 1, color: '#60a5fa' },
-  { name: 'Vacant / Distressed', leads: 4, spend: 328, call: 1, form: 3, sms: 0, color: '#c02626' },
+  { name: 'Tax Delinquent — KC Metro', source: 'Google Ads', leads: 16, spend: 1480, call: 7, form: 8, sms: 1, color: '#f87171' },
+  { name: 'Inherited / Probate', source: 'Google Ads', leads: 11, spend: 1010, call: 5, form: 5, sms: 1, color: '#22c55e' },
+  { name: 'Tired Landlords', source: 'Google Ads', leads: 9, spend: 760, call: 4, form: 4, sms: 1, color: '#eab308' },
+  { name: 'Cash Offer — Sell Fast', source: 'Google Ads', leads: 7, spend: 640, call: 2, form: 4, sms: 1, color: '#60a5fa' },
+  { name: 'Vacant / Distressed', source: 'Google Ads', leads: 4, spend: 328, call: 1, form: 3, sms: 0, color: '#c02626' },
 ]
 
 export const KEYWORDS: KeywordRow[] = [
@@ -446,6 +520,76 @@ export const OUTBOX: OutboxRow[] = [
   { id: 'ob01', leadId: 2, leadName: 'Estate of D. Reyes', event: 'Qualified Lead', category: 'form', status: 'Awaiting approval', approved: false, role: 'primary', clickId: 'CjwKCAjw8u_q9zABwE', clickIdType: 'gclid', campaign: 'Search 2026', keyword: 'we buy houses kc', value: 25000, attempts: 0, lastError: null, dryRun: false, exportable: true, approvalRequired: true, exportNote: null, sentAt: null, eventTime: new Date().toISOString(), ageDays: 0 },
   { id: 'ob02', leadId: 3, leadName: 'Janelle Cooper', event: 'Lead Submitted', category: 'form', status: 'Website/GTM only', approved: false, role: 'secondary', clickId: 'Cj0KCQjwz9_tiredwcB', clickIdType: 'gclid', campaign: 'Search 2026', keyword: 'sell rental property kc', value: 0, attempts: 1, lastError: null, dryRun: false, exportable: false, approvalRequired: false, exportNote: 'Tracked by website/GTM primary conversion', sentAt: new Date().toISOString(), eventTime: new Date(Date.now() - 86_400_000).toISOString(), ageDays: 1 },
 ]
+
+export const EXPORT_HEALTH: ExportHealth = {
+  total: OUTBOX.length,
+  pending: 1,
+  sent: 0,
+  skipped: 1,
+  failed: 0,
+  repairedKnownSkips: 0,
+  lastSuccessfulExport: null,
+  lastSuccessfulEvent: null,
+  lastSuccessfulLead: null,
+  lastFailureReason: null,
+  lastFailureAt: null,
+  lastFailureEvent: null,
+  status: 'watch',
+}
+
+export const OPENAI_ADS_HEALTH: OpenAIAdsHealth = {
+  status: 'watch',
+  message: 'Waiting for live OpenAI Ads reporting data.',
+  pixelConfigured: true,
+  serverApiConfigured: true,
+  reportingApiConfigured: true,
+  syncStatus: 'waiting',
+  lastSyncAt: null,
+  lastError: null,
+  latestCampaignImportAt: null,
+  campaignRows: 0,
+  trackingEvents: 0,
+  leads: 0,
+  pendingExports: 0,
+  sentExports: 0,
+  failedExports: 0,
+}
+
+export const MOJO_HEALTH: MojoHealth = {
+  status: 'watch',
+  message: 'Waiting for live Mojo health data',
+  sessionStatus: 'unknown',
+  syncHealth: 'unknown',
+  businessHours: false,
+  lastSyncAt: null,
+  lastSyncAgeMinutes: null,
+  lastSessionOkAt: null,
+  lastError: null,
+  lastErrorAt: null,
+  latestQueuedAt: null,
+  latestCompletedAt: null,
+  latestQueueError: null,
+  queue: {
+    pending: 0,
+    processing: 0,
+    completed24h: 0,
+    failed24h: 0,
+    deadLetter: 0,
+    queued24h: 0,
+    total7d: 0,
+  },
+  leads: {
+    last24h: 0,
+    period: 0,
+    qualifiedPeriod: 0,
+    appointmentPeriod: 0,
+  },
+  monitor: {
+    path: '/api/admin/mojo-health',
+    schedule: 'Every 15 minutes during Mojo business hours',
+    manualRefreshCommand: 'npm run mojo:session:manual',
+  },
+}
 
 export const MICRO_STEPS: MicroStepRow[] = [
   { key: 'click', name: 'Ad Click', icon: 'cursor' },

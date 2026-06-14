@@ -108,6 +108,9 @@ export async function GET(
     countsByType[e.event_type] = (countsByType[e.event_type] || 0) + 1
     if (e.event_type === 'page_view' && e.visitor_id) visitorsSet.add(e.visitor_id)
   }
+  const saveEvents = events.filter(e => e.event_type === 'save_toggle')
+  const saveCount = saveEvents.filter(e => e.metadata?.saved === true).length
+  const unsaveCount = saveEvents.filter(e => e.metadata?.saved === false).length
 
   // Session metrics
   const durations = sessions.map(s => s.total_duration_ms || 0).filter(n => n > 0)
@@ -259,6 +262,9 @@ export async function GET(
       conversion_rate_pct: conversionRate,
       shares: countsByType.share_click || 0,
       share_visits: countsByType.share_visit || 0,
+      save_taps: saveEvents.length,
+      saves: saveCount,
+      unsaves: unsaveCount,
       photo_opens: countsByType.photo_open || 0,
       street_view_opens: countsByType.street_view_open || 0,
       map_view_opens: countsByType.map_view_open || 0,

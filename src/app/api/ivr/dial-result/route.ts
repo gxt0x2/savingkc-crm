@@ -4,8 +4,10 @@ import { isOptedOut } from '@/lib/sms-opt-out'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
 import { formatPhone } from '@/lib/format'
+import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import {
@@ -113,6 +115,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
 
   const dedupeKey = input.dialCallSid || input.parentCallSid
   const isPpcCall = isPpcTrackingNumber(input.calledNumber)
+  const isTestCall = isInternalTestPhone(input.from)
   const profile = getGoogleAdsPhoneProfile(input.calledNumber)
   const googleAdsEvents = new Set(getGoogleAdsCallQualityMilestones(input.dialCallDuration).map((milestone) => milestone.event))
 
@@ -143,6 +146,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
         direction: 'inbound',
         from: input.from,
         to: input.calledNumber,
+        is_test: isTestCall,
         calledNumber: input.calledNumber,
         callSid: input.parentCallSid,
         dialStatus: input.dialStatus,
@@ -178,7 +182,7 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
         continue
       }
 
-      if (isPpcCall && googleAdsEvents.has(milestone.event)) {
+      if (isPpcCall && !isTestCall && googleAdsEvents.has(milestone.event)) {
         await enqueuePpcConversion({
           eventName: milestone.event,
           eventCategory: 'call',
@@ -223,11 +227,12 @@ export async function POST(req: Request) {
     const lead = await resolveLeadContext(leadId, from)
     const isPpcCall = isPpcTrackingNumber(calledNumber)
     const isGoogleAdsCall = isPpcCall || type === 'google_ads'
+    const isInternalTestCaller = isInternalTestPhone(from)
     const googleAdsProfile = getGoogleAdsPhoneProfile(calledNumber)
-    let resolvedLeadId = lead.id
+    let resolvedLeadId = isGoogleAdsCall && isInternalTestCaller ? null : lead.id
     let callerLabel = lead.name || callerPhoneLabel(from)
 
-    if (!resolvedLeadId && isGoogleAdsCall) {
+    if (!resolvedLeadId && isGoogleAdsCall && !isInternalTestCaller) {
       const googleAdsLead = await resolveGoogleAdsLeadContext(from, calledNumber)
       resolvedLeadId = googleAdsLead.leadId
       callerLabel = googleAdsLead.leadName || (resolvedLeadId ? `${googleAdsProfile.label} Caller ${callerPhoneLabel(from)}` : callerLabel)
@@ -257,6 +262,7 @@ export async function POST(req: Request) {
           dialCallSid,
           dialCallDuration,
           type,
+          is_test: isInternalTestCaller,
           ...(isGoogleAdsCall && {
             source: googleAdsProfile.source,
             traffic_source: 'google_ads',
@@ -336,6 +342,7 @@ export async function POST(req: Request) {
           dialCallSid,
           dialCallDuration,
           type,
+          is_test: isInternalTestCaller,
           source: googleAdsProfile.source,
           traffic_source: 'google_ads',
           campaign: googleAdsProfile.campaign,
@@ -345,22 +352,43 @@ export async function POST(req: Request) {
         }
       })
 
-      await createGoogleAdsMissedEscalationTask({
-        leadId: resolvedLeadId,
-        from,
-        calledNumber,
-        callSid: parentCallSid,
-        dialCallSid,
-        dialCallDuration,
-        routing,
-      })
+      if (!isInternalTestCaller) {
+        await createGoogleAdsMissedEscalationTask({
+          leadId: resolvedLeadId,
+          from,
+          calledNumber,
+          callSid: parentCallSid,
+          dialCallSid,
+          dialCallDuration,
+          routing,
+        })
+      }
     } else {
     // Alert both agents for IVR calls
     const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${from} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
-    await Promise.allSettled([
-      safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.primary.phone }),
-      safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.secondary.phone }),
-    ])
+    await sendTeamLeadAlert({
+      leadId: resolvedLeadId,
+      smsBody: missedMsg,
+      trigger: 'ivr_missed_call_alert',
+      source: 'inbound_ivr',
+      push: {
+        title: 'Missed Inbound Call',
+        body: `${type === 'seller' ? 'Seller' : 'Caller'} ${from} reached voicemail.`,
+        url: `/leads/${resolvedLeadId}`,
+        tag: 'ivr-missed-call',
+      },
+      metadata: {
+        outcome: 'missed',
+        direction: 'inbound',
+        from,
+        calledNumber,
+        callSid: parentCallSid,
+        dialStatus,
+        dialCallSid,
+        dialCallDuration,
+        type,
+      },
+    })
 
     // Log missed call
     await supabase.from('lead_activities').insert({
@@ -390,7 +418,7 @@ export async function POST(req: Request) {
   }
 
   // Auto-text ONLY when both agents miss IVR calls (not direct calls)
-  if (from && resolvedLeadId && !isDirect) {
+  if (from && resolvedLeadId && !isDirect && !isInternalTestCaller) {
     const optedOut = await isOptedOut(from)
     const { allowed: phoneOk } = phoneRateLimit(from)
     if (!optedOut && phoneOk) {

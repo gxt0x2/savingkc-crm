@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import {
   Area,
@@ -18,20 +19,25 @@ import {
   CALL_BREAKDOWN,
   CAMPAIGNS,
   DROP_LABEL,
+  EXPORT_HEALTH,
   FUNNEL,
   KEYWORDS,
   KPI,
   LEADS,
   MICRO_STEPS,
+  MOJO_HEALTH,
   NEGATIVES,
+  OPENAI_ADS_HEALTH,
   OUTBOX,
   PAID_SESSIONS,
   SERIES,
   STAGES,
   hourlySeries,
   type CampaignRow,
+  type ExportHealth,
   type IconName,
   type KpiItem,
+  type MojoHealth,
   type CallBreakdownRow,
   type FunnelBreakdownRow,
   type FunnelRow,
@@ -39,6 +45,7 @@ import {
   type LeadRow,
   type MarketingPeriod,
   type NegativeKeywordRow,
+  type OpenAIAdsHealth,
   type OutboxRow,
   type PaidSessionRow,
   type SeriesRow,
@@ -51,6 +58,7 @@ type SortKey = 'kw' | 'campaign' | 'clicks' | 'leads' | 'cpl' | 'qual' | 'status
 type SortDir = 'asc' | 'desc'
 type PaidFilter = 'all' | 'lead' | 'nolead'
 type PaidRange = MarketingPeriod | 'all'
+type PaidSourceFilter = 'all' | 'google_ads' | 'openai_ads'
 type PeriodState = {
   trend: MarketingPeriod
   funnel: MarketingPeriod
@@ -65,6 +73,10 @@ type DashboardSectionId =
   | 'campaigns'
   | 'searchTerms'
   | 'funnel'
+  | 'exportHealth'
+  | 'openAIAdsHealth'
+  | 'mojoHealth'
+  | 'heatmaps'
   | 'roster'
   | 'outbox'
   | 'paidJourneys'
@@ -74,13 +86,17 @@ const SEARCH_TERM_PAGE_SIZE = 10
 const OUTBOX_PAGE_SIZE = 5
 const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
 const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
-const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'roster', 'outbox', 'paidJourneys']
+const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'openAIAdsHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
 const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
   kpis: false,
   trend: false,
   campaigns: false,
   searchTerms: false,
   funnel: false,
+  exportHealth: false,
+  openAIAdsHealth: false,
+  mojoHealth: false,
+  heatmaps: false,
   roster: false,
   outbox: false,
   paidJourneys: false,
@@ -91,9 +107,38 @@ const DASHBOARD_SECTIONS: Record<DashboardSectionId, { label: string; size: Dash
   campaigns: { label: 'Conversions by Campaign', size: 'half' },
   searchTerms: { label: 'Search Term Performance', size: 'half' },
   funnel: { label: 'Marketing Funnel', size: 'full' },
+  exportHealth: { label: 'Export Health', size: 'full' },
+  openAIAdsHealth: { label: 'OpenAI Ads Health', size: 'full' },
+  mojoHealth: { label: 'Mojo Health', size: 'full' },
+  heatmaps: { label: 'Landing Page Heatmaps', size: 'full' },
   roster: { label: 'Active Lead Roster', size: 'full' },
   outbox: { label: 'Lead Conversion Outbox', size: 'full' },
   paidJourneys: { label: 'Latest Paid Journeys', size: 'full' },
+}
+const PAID_SOURCE_FILTERS: Array<{ value: PaidSourceFilter; label: string; hint: string }> = [
+  { value: 'all', label: 'All Paid', hint: 'Google + OpenAI' },
+  { value: 'google_ads', label: 'Google Ads', hint: 'Search + tax' },
+  { value: 'openai_ads', label: 'OpenAI Ads', hint: 'ChatGPT' },
+]
+const SOURCE_DRILLDOWN_COPY: Record<PaidSourceFilter, { label: string; eyebrow: string; description: string; accent: string }> = {
+  all: {
+    label: 'All Paid',
+    eyebrow: 'Google + OpenAI',
+    description: 'Combined paid view across campaigns, journeys, leads, export queue, and source health.',
+    accent: '#f87171',
+  },
+  google_ads: {
+    label: 'Google Ads',
+    eyebrow: 'Search + tax',
+    description: 'Google-only view of campaigns, PPC journeys, CRM leads, and offline conversion exports.',
+    accent: '#60a5fa',
+  },
+  openai_ads: {
+    label: 'OpenAI Ads',
+    eyebrow: 'ChatGPT',
+    description: 'OpenAI-only view of campaign import status, CRM attribution, journeys, leads, and export health.',
+    accent: '#a78bfa',
+  },
 }
 
 type MarketingBreakdown = {
@@ -108,6 +153,7 @@ type CallDisplayRow = CallBreakdownRow & {
 }
 type AdsCommandData = {
   source: 'live'
+  paidSourceFilter: PaidSourceFilter
   generatedAt: string
   syncedLabel: string
   freshness: {
@@ -116,6 +162,9 @@ type AdsCommandData = {
     googleAdsImportedAt: string | null
     googleAdsSyncStatus: string | null
     googleAdsSyncFinishedAt: string | null
+    openAIAdsImportedAt: string | null
+    openAIAdsSyncStatus: string | null
+    openAIAdsSyncFinishedAt: string | null
   }
   kpi: KpiItem[]
   series: SeriesRow[]
@@ -124,6 +173,9 @@ type AdsCommandData = {
   negatives: NegativeKeywordRow[]
   funnel: FunnelRow[]
   callBreakdown: CallBreakdownRow[]
+  exportHealth: ExportHealth
+  openAIAdsHealth: OpenAIAdsHealth
+  mojoHealth: MojoHealth
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
@@ -274,6 +326,46 @@ function formatKpi(value: number, fmt: KpiItem['fmt']): string {
   if (fmt === 'usd') return formatUsd(value)
   if (fmt === 'k') return formatK(value)
   return formatNum(value)
+}
+
+function kpiValue(rows: KpiItem[], label: string): number {
+  return rows.find((row) => row.lab.toLowerCase() === label.toLowerCase())?.val ?? 0
+}
+
+function latestLead(rows: LeadRow[]): LeadRow | null {
+  if (rows.length === 0) return null
+  return [...rows].sort((a, b) => Date.parse(b.ts0) - Date.parse(a.ts0))[0] ?? null
+}
+
+function topCampaign(rows: CampaignRow[]): CampaignRow | null {
+  if (rows.length === 0) return null
+  return [...rows].sort((a, b) => (b.leads - a.leads) || (b.spend - a.spend))[0] ?? null
+}
+
+function sourceExportCounts(rows: OutboxRow[]) {
+  return {
+    pending: rows.filter((row) => ['pending', 'processing'].some((status) => row.status.toLowerCase().includes(status))).length,
+    sent: rows.filter((row) => row.status.toLowerCase().includes('sent')).length,
+    failed: rows.filter((row) => /failed|dead/i.test(row.status)).length,
+  }
+}
+
+function sourceHealthSummary(source: PaidSourceFilter, exportHealth: ExportHealth, openAIAdsHealth: OpenAIAdsHealth) {
+  if (source === 'openai_ads') {
+    return {
+      status: openAIAdsHealth.status,
+      label: exportHealthLabel(openAIAdsHealth.status),
+      note: openAIAdsHealth.message,
+      target: 'openAIAdsHealth' as DashboardSectionId,
+    }
+  }
+
+  return {
+    status: exportHealth.status,
+    label: exportHealthLabel(exportHealth.status),
+    note: exportHealth.lastFailureReason || 'Google Ads, Stape, and OpenAI export queue summary.',
+    target: 'exportHealth' as DashboardSectionId,
+  }
 }
 
 function scaleN(value: number, period: MarketingPeriod): number {
@@ -725,6 +817,18 @@ function CampaignChart({
           </BarChart>
         </ResponsiveContainer>
       </div>
+      {rows.length ? (
+        <div className="campaign-source-list">
+          {rows.slice(0, 6).map((row) => (
+            <div className="campaign-source-row" key={`${row.source ?? 'Paid'}-${row.name}`}>
+              <span><i style={{ background: row.color }} /><span className="source-tag">{row.source ?? 'Google Ads'}</span>{row.name}</span>
+              <b className="mono">{row.leadsScaled} leads · {formatUsd(row.spendScaled)}</b>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state campaign-empty">No campaign rows for this source and period.</div>
+      )}
     </div>
   )
 }
@@ -1049,7 +1153,7 @@ function ActiveLeadRoster({
       <div className="panel-head">
         <div>
           <h2>Active Lead Roster</h2>
-          <div className="cap">Google Ads-sourced • tap any lead to explore full journey</div>
+          <div className="cap">Paid-source leads • Google Ads + OpenAI Ads • tap any lead to explore full journey</div>
         </div>
         <PeriodSelect value={period} onChange={onPeriodChange} label="Roster period" />
       </div>
@@ -1071,7 +1175,7 @@ function ActiveLeadRoster({
                 </span>
                 <span className="meta">{lead.county} · {lead.prop}</span>
                 <span className="kw">
-                  <SvgIcon name="cursor" size={11} /> {lead.kw}
+                  <SvgIcon name="cursor" size={11} /> <span className="source-tag">{lead.source ?? 'Google Ads'}</span> {lead.kw}
                 </span>
                 <span className="lead-metrics">
                   <span>
@@ -1112,6 +1216,259 @@ function outboxTime(row: OutboxRow): string {
   const date = new Date(row.eventTime)
   if (Number.isNaN(date.getTime())) return '--'
   return date.toLocaleString('en-US', { timeZone: DASHBOARD_TIME_ZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+function exportHealthTone(status: ExportHealth['status']): string {
+  if (status === 'attention') return '#f87171'
+  if (status === 'watch') return '#eab308'
+  return '#22c55e'
+}
+
+function exportHealthLabel(status: ExportHealth['status']): string {
+  if (status === 'attention') return 'Needs attention'
+  if (status === 'watch') return 'Watch queue'
+  return 'Clean'
+}
+
+function ExportHealthCard({ health }: { health: ExportHealth }) {
+  const tone = exportHealthTone(health.status)
+  return (
+    <div className="panel export-health-panel">
+      <div className="panel-head">
+        <div>
+          <h2>Ads Export Health</h2>
+          <div className="cap">Google Ads, Stape, and OpenAI Ads conversion export status</div>
+        </div>
+        <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
+          {exportHealthLabel(health.status)}
+        </span>
+      </div>
+      <div className="export-health-grid">
+        <div className="export-health-metric"><span>PENDING</span><b className="mono blue">{health.pending}</b></div>
+        <div className="export-health-metric"><span>SENT</span><b className="mono green">{health.sent}</b></div>
+        <div className="export-health-metric"><span>SKIPPED</span><b className="mono">{health.skipped}</b></div>
+        <div className="export-health-metric"><span>FAILED</span><b className="mono red">{health.failed}</b></div>
+        <div className="export-health-metric"><span>REPAIRED SKIPS</span><b className="mono gold">{health.repairedKnownSkips}</b></div>
+        <div className="export-health-metric"><span>TOTAL</span><b className="mono">{health.total}</b></div>
+      </div>
+      <div className="export-health-foot">
+        <div className="export-health-note">
+          <span>LAST SUCCESSFUL EXPORT</span>
+          <b>{health.lastSuccessfulExport ? formatFreshness(health.lastSuccessfulExport) : 'None in this period'}</b>
+          {(health.lastSuccessfulEvent || health.lastSuccessfulLead) ? (
+            <small>{health.lastSuccessfulEvent ?? 'Conversion'}{health.lastSuccessfulLead ? ` · ${health.lastSuccessfulLead}` : ''}</small>
+          ) : null}
+        </div>
+        <div className="export-health-note">
+          <span>LAST FAILURE REASON</span>
+          <b>{health.lastFailureReason ?? 'No failed exports in this period'}</b>
+          {health.lastFailureAt ? (
+            <small>{formatFreshness(health.lastFailureAt)}{health.lastFailureEvent ? ` · ${health.lastFailureEvent}` : ''}</small>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OpenAIAdsHealthCard({ health }: { health: OpenAIAdsHealth }) {
+  const tone = exportHealthTone(health.status)
+  const configRows = [
+    ['Pixel', health.pixelConfigured],
+    ['Server API', health.serverApiConfigured],
+    ['Reporting API', health.reportingApiConfigured],
+  ] as const
+
+  return (
+    <div className="panel openai-health-panel">
+      <div className="panel-head">
+        <div>
+          <h2>OpenAI Ads Health</h2>
+          <div className="cap">Pixel, Conversions API, reporting sync, and CRM attribution</div>
+        </div>
+        <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
+          {exportHealthLabel(health.status)}
+        </span>
+      </div>
+      <div className="openai-health-banner" style={{ borderColor: `${tone}44`, background: `${tone}12` }}>
+        <b>{health.message}</b>
+        <small>
+          Sync: {health.syncStatus ?? 'not run'} · Last sync: {health.lastSyncAt ? formatFreshness(health.lastSyncAt) : 'none'}
+          {health.latestCampaignImportAt ? ` · Campaign import: ${formatFreshness(health.latestCampaignImportAt)}` : ''}
+        </small>
+      </div>
+      <div className="openai-health-grid">
+        {configRows.map(([label, configured]) => (
+          <div className="openai-health-metric" key={label}>
+            <span>{label}</span>
+            <b className={configured ? 'green' : 'red'}>{configured ? 'Configured' : 'Missing'}</b>
+          </div>
+        ))}
+        <div className="openai-health-metric"><span>Campaign rows</span><b className="mono">{health.campaignRows}</b></div>
+        <div className="openai-health-metric"><span>Tracked events</span><b className="mono">{health.trackingEvents}</b></div>
+        <div className="openai-health-metric"><span>Leads</span><b className="mono">{health.leads}</b></div>
+      </div>
+      <div className="openai-export-strip">
+        <span><b className="mono blue">{health.pendingExports}</b> pending exports</span>
+        <span><b className="mono green">{health.sentExports}</b> sent exports</span>
+        <span><b className="mono red">{health.failedExports}</b> failed exports</span>
+        {health.lastError ? <span className="openai-health-error">{health.lastError}</span> : null}
+      </div>
+    </div>
+  )
+}
+
+function SourceDrilldownPanel({
+  source,
+  kpi,
+  campaigns,
+  leads,
+  outbox,
+  paidSessions,
+  exportHealth,
+  openAIAdsHealth,
+  onJump,
+}: {
+  source: PaidSourceFilter
+  kpi: KpiItem[]
+  campaigns: CampaignRow[]
+  leads: LeadRow[]
+  outbox: OutboxRow[]
+  paidSessions: PaidSessionRow[]
+  exportHealth: ExportHealth
+  openAIAdsHealth: OpenAIAdsHealth
+  onJump: (section: DashboardSectionId) => void
+}) {
+  const copy = SOURCE_DRILLDOWN_COPY[source]
+  const lead = latestLead(leads)
+  const campaign = topCampaign(campaigns)
+  const latestJourney = paidSessions[0] ?? null
+  const exports = sourceExportCounts(outbox)
+  const spend = campaigns.reduce((sum, row) => sum + row.spend, 0)
+  const health = sourceHealthSummary(source, exportHealth, openAIAdsHealth)
+  const healthTone = exportHealthTone(health.status)
+  const actions: Array<{ label: string; detail: string; target: DashboardSectionId }> = [
+    { label: 'Campaigns', detail: `${campaigns.length} rows`, target: 'campaigns' },
+    { label: 'Journeys', detail: `${paidSessions.length} sessions`, target: 'paidJourneys' },
+    { label: 'Leads', detail: `${leads.length} CRM records`, target: 'roster' },
+    { label: 'Outbox', detail: `${outbox.length} events`, target: 'outbox' },
+    { label: 'Health', detail: health.label, target: health.target },
+  ]
+
+  return (
+    <section className="source-drilldown panel" aria-label={`${copy.label} drilldown`} style={{ borderColor: `${copy.accent}55` }}>
+      <div className="source-drilldown-head">
+        <div>
+          <span className="source-drilldown-eyebrow" style={{ color: copy.accent }}>{copy.eyebrow}</span>
+          <h2>{copy.label} Drilldown</h2>
+          <p>{copy.description}</p>
+        </div>
+        <span className="source-drilldown-health" style={{ color: healthTone, borderColor: `${healthTone}55`, background: `${healthTone}16` }}>
+          {health.label}
+        </span>
+      </div>
+
+      <div className="source-drilldown-metrics">
+        <div><span>SPEND</span><b className="mono">{formatUsd(spend)}</b></div>
+        <div><span>CLICKS</span><b className="mono">{formatNum(kpiValue(kpi, 'Clicks'))}</b></div>
+        <div><span>LEADS</span><b className="mono">{formatNum(leads.length)}</b></div>
+        <div><span>QUALIFIED</span><b className="mono">{formatNum(kpiValue(kpi, 'Qualified'))}</b></div>
+        <div><span>OUTBOX</span><b className="mono">{outbox.length}</b></div>
+      </div>
+
+      <div className="source-drilldown-context">
+        <div>
+          <span>Top campaign</span>
+          <b>{campaign ? campaign.name : 'No campaign rows yet'}</b>
+          <small>{campaign ? `${campaign.leads} leads · ${formatUsd(campaign.spend)}` : 'Campaign reporting will appear after the next import.'}</small>
+        </div>
+        <div>
+          <span>Latest lead</span>
+          <b>{lead ? lead.name : 'No CRM lead yet'}</b>
+          <small>{lead ? `${lead.county} · ${lead.kw}` : 'Lead cards will appear here as this source creates CRM records.'}</small>
+        </div>
+        <div>
+          <span>Latest journey</span>
+          <b>{latestJourney ? latestJourney.campaign : 'No session yet'}</b>
+          <small>{latestJourney ? `${latestJourney.time} · ${latestJourney.sub}` : 'Visitor journeys will appear when paid traffic hits the site.'}</small>
+        </div>
+        <div>
+          <span>Export queue</span>
+          <b>{exports.pending} pending · {exports.sent} sent · {exports.failed} failed</b>
+          <small>{health.note}</small>
+        </div>
+      </div>
+
+      <div className="source-drilldown-actions">
+        {actions.map((action) => (
+          <button key={action.label} type="button" onClick={() => onJump(action.target)}>
+            <b>{action.label}</b>
+            <small>{action.detail}</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function mojoHealthTone(status: MojoHealth['status']): string {
+  if (status === 'attention') return '#f87171'
+  if (status === 'watch') return '#eab308'
+  return '#22c55e'
+}
+
+function mojoHealthLabel(status: MojoHealth['status']): string {
+  if (status === 'attention') return 'Needs attention'
+  if (status === 'watch') return 'Watch sync'
+  return 'Clean'
+}
+
+function formatAgeMinutes(minutes: number | null): string {
+  if (minutes == null) return '--'
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+}
+
+function MojoHealthCard({ health }: { health: MojoHealth }) {
+  const tone = mojoHealthTone(health.status)
+  return (
+    <div className="panel export-health-panel mojo-health-panel">
+      <div className="panel-head">
+        <div>
+          <h2>Mojo Health</h2>
+          <div className="cap">Session cookie, call queue, and CRM lead intake</div>
+        </div>
+        <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
+          {mojoHealthLabel(health.status)}
+        </span>
+      </div>
+      <div className="export-health-grid">
+        <div className="export-health-metric"><span>24H QUEUED</span><b className="mono blue">{health.queue.queued24h}</b></div>
+        <div className="export-health-metric"><span>24H DONE</span><b className="mono green">{health.queue.completed24h}</b></div>
+        <div className="export-health-metric"><span>ACTIVE</span><b className="mono gold">{health.queue.pending + health.queue.processing}</b></div>
+        <div className="export-health-metric"><span>FAILED</span><b className="mono red">{health.queue.failed24h + health.queue.deadLetter}</b></div>
+        <div className="export-health-metric"><span>24H LEADS</span><b className="mono green">{health.leads.last24h}</b></div>
+        <div className="export-health-metric"><span>PERIOD LEADS</span><b className="mono">{health.leads.period}</b></div>
+      </div>
+      <div className="export-health-foot">
+        <div className="export-health-note">
+          <span>LAST MOJO SYNC</span>
+          <b>{health.lastSyncAt ? formatFreshness(health.lastSyncAt) : 'No sync timestamp'}</b>
+          <small>{health.businessHours ? 'Business hours' : 'Outside business hours'} · age {formatAgeMinutes(health.lastSyncAgeMinutes)}</small>
+        </div>
+        <div className="export-health-note">
+          <span>SESSION / QUEUE STATUS</span>
+          <b>{health.message}</b>
+          <small>
+            Session {health.sessionStatus || 'unknown'} · Sync {health.syncHealth || 'unknown'}
+            {health.latestCompletedAt ? ` · Last completed ${formatFreshness(health.latestCompletedAt)}` : ''}
+          </small>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 type OutboxLeadGroup = {
@@ -1211,7 +1568,7 @@ function LeadOutboxPanel({
       <div className="panel-head">
         <div>
           <h2>Lead Conversion Outbox</h2>
-          <div className="cap">Google Ads export queue • read-only lead linkage</div>
+          <div className="cap">Ads export queue • Google Ads + OpenAI Ads • read-only lead linkage</div>
         </div>
         <PeriodSelect value={period} onChange={handlePeriodChange} label="Outbox period" />
       </div>
@@ -1252,7 +1609,10 @@ function LeadOutboxPanel({
                         <span>{open ? '-' : '+'}</span>
                         <span>
                           <span className="outbox-lead">{group.leadName}</span>
-                          <span className="outbox-sub">{group.campaign} · {group.keyword}</span>
+                          <span className="outbox-sub outbox-source-line">
+                            <span className="source-tag">{group.latest.source ?? 'Google Ads'}</span>
+                            <span>{group.campaign} · {group.keyword}</span>
+                          </span>
                         </span>
                       </button>
                     </td>
@@ -1277,7 +1637,10 @@ function LeadOutboxPanel({
                               <div className="outbox-event-line" key={row.id}>
                                 <div>
                                   <span className="outbox-event">{row.event}</span>
-                                  <span className="outbox-sub">{row.exportNote || `${row.category} · ${row.role}`}</span>
+                                  <span className="outbox-sub outbox-source-line">
+                                    <span className="source-tag">{row.source ?? 'Google Ads'}</span>
+                                    <span>{row.exportNote || `${row.category} · ${row.role}`}</span>
+                                  </span>
                                 </div>
                                 <span className="outbox-status" style={{ color: eventColor, borderColor: `${eventColor}55`, background: `${eventColor}16` }}>
                                   {row.dryRun ? 'Dry run' : row.status}
@@ -1402,7 +1765,7 @@ function LatestPaidJourneys({
             <button className="paid-row" key={session.id} onClick={() => onOpenSession(session)} type="button">
               <span className="paid-time">{session.time}<small>{session.dateL}</small></span>
               <span>
-                <span className="paid-camp">{session.campaign} <span className="gclid">{session.gclid.slice(0, 10)}…</span></span>
+                <span className="paid-camp"><span className="source-tag">{session.source ?? 'Google Ads'}</span> {session.campaign} <span className="gclid">{session.gclid.slice(0, 10)}…</span></span>
                 <span className="paid-meta">
                   <span><b>{progress}/{MICRO_STEPS.length}</b> steps</span>
                   <span>{currentStep}</span>
@@ -1433,10 +1796,11 @@ function LatestPaidJourneys({
 }
 
 function buildJourney(lead: LeadRow) {
+  const source = lead.source ?? 'Google Ads'
   return [
-    { h: 'Ad Impression', d: `Served on "${lead.kw}" · ${lead.campaign}` },
+    { h: 'Ad Impression', d: `Served by ${source} on "${lead.kw}" · ${lead.campaign}` },
     { h: 'Keyword Click', d: `Clicked search ad → routed to ${lead.land}` },
-    { h: 'Landing Page', d: `Viewed savingkc.com${lead.land} · source=google_ads` },
+    { h: 'Landing Page', d: `Viewed savingkc.com${lead.land} · source=${source}` },
     { h: 'Conversion Fired', d: `${lead.land === '/guide' ? 'Guide download' : 'Call form submit'} · logged to conversion outbox` },
     { h: 'New Lead Created', d: `Entered pipeline · SmartSkip enrichment · ${lead.county}` },
     { h: 'Attempted Contact', d: `Casey: ${lead.dials} dial${lead.dials === 1 ? '' : 's'} via Twilio` },
@@ -1494,7 +1858,7 @@ function JourneyOverlay({ lead, onClose }: { lead: LeadRow; onClose: () => void 
           </div>
           <div className="statside">
             <div className="charcard">
-              <div className="campaign-label">{lead.campaign}</div>
+              <div className="campaign-label">{lead.source ?? 'Google Ads'} · {lead.campaign}</div>
               <div className="char-name">{lead.name}</div>
               <div className="char-meta">{lead.prop}<br />{lead.county}<br />{lead.days} days in pipeline</div>
               <div className="score-row">
@@ -1544,6 +1908,7 @@ function JourneyOverlay({ lead, onClose }: { lead: LeadRow; onClose: () => void 
 
 function buildMicroEvents(session: PaidSessionRow) {
   const sub = session.sub
+  const source = session.source ?? 'Google Ads'
   const timeline = session.timeline || 'Not captured'
   const condition = session.condition || 'Not captured'
   const fields = session.contactFields?.length ? session.contactFields.map(displayFieldName).join(', ') : 'not captured'
@@ -1553,7 +1918,7 @@ function buildMicroEvents(session: PaidSessionRow) {
     : 'Page engagement tracked'
 
   return [
-    { ts: '0:00', dur: 0, durLabel: 'instant', act: `Clicked Google ad · keyword <b>"${session.kw}"</b>` },
+    { ts: '0:00', dur: 0, durLabel: 'instant', act: `Clicked ${source} ad · keyword <b>"${session.kw}"</b>` },
     { ts: '0:00', dur: session.loadMs / 1000, durLabel: `${(session.loadMs / 1000).toFixed(1)}s LCP`, act: `Loaded savingkc.com${session.land} · ${session.device}` },
     { ts: '0:04', dur: 0, durLabel: 'tracked', act: engagement },
     { ts: '0:23', dur: 12, durLabel: '12s', act: `Opened situation dropdown · <b>${sub}</b>` },
@@ -1686,7 +2051,7 @@ function MicroReplayOverlay({
           </div>
           <div className="micro-side">
             <div className="side-label">CAMPAIGN</div>
-            <div className="side-copy">{session.campaign}<br />{session.sub}<br /><span className="mono">{session.kw}</span></div>
+            <div className="side-copy">{session.source ?? 'Google Ads'}<br />{session.campaign}<br />{session.sub}<br /><span className="mono">{session.kw}</span></div>
             <div className="side-label spaced">LANDING</div>
             <div className="side-copy mono">savingkc.com{session.land}<br />{(session.loadMs / 1000).toFixed(2)}s LCP</div>
             {session.converted ? (
@@ -1753,6 +2118,35 @@ function BreakdownOverlay({ breakdown, onClose }: { breakdown: MarketingBreakdow
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function LandingHeatmapLauncher() {
+  const tracked = [
+    'FAQs opened',
+    'CTA clicks',
+    'Show Me clicks',
+    'Video watch depth',
+    'Section attention',
+    'Generic payload gaps',
+  ]
+
+  return (
+    <div className="heatmap-launch panel">
+      <div className="heatmap-copy">
+        <span className="mini-eyebrow">EVENT HEATMAP</span>
+        <h2>See what sellers and buyers actually touch.</h2>
+        <p>
+          Break down PPC, PPC Tax, and deal-page behavior by section, button, FAQ, video, session, and lead.
+        </p>
+        <div className="heatmap-track-list">
+          {tracked.map((item) => <span key={item}>{item}</span>)}
+        </div>
+      </div>
+      <Link className="heatmap-open" href="/marketing/heatmaps">
+        Open Heatmaps
+      </Link>
     </div>
   )
 }
@@ -1839,6 +2233,7 @@ export function AdsCommandPage() {
   const [kwCampaign, setKwCampaign] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('leads')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [paidSourceFilter, setPaidSourceFilter] = useState<PaidSourceFilter>('all')
   const [pjFilter, setPjFilter] = useState<PaidFilter>('all')
   const [pjRange, setPjRange] = useState<PaidRange>('month')
   const [pjLimit, setPjLimit] = useState(10)
@@ -1858,6 +2253,9 @@ export function AdsCommandPage() {
   const negatives = adsData?.negatives ?? NEGATIVES
   const funnel = adsData?.funnel ?? FUNNEL
   const callBreakdown = adsData?.callBreakdown ?? CALL_BREAKDOWN
+  const exportHealth = adsData?.exportHealth ?? EXPORT_HEALTH
+  const openAIAdsHealth = adsData?.openAIAdsHealth ?? OPENAI_ADS_HEALTH
+  const mojoHealth = adsData?.mojoHealth ?? MOJO_HEALTH
   const leads = adsData?.leads ?? LEADS
   const outbox = adsData?.outbox ?? OUTBOX
   const paidSessions = adsData?.paidSessions ?? PAID_SESSIONS
@@ -1895,7 +2293,7 @@ export function AdsCommandPage() {
     async function loadAdsData() {
       controller?.abort()
       controller = new AbortController()
-      const params = new URLSearchParams({ period: reportingPeriod })
+      const params = new URLSearchParams({ period: reportingPeriod, source: paidSourceFilter })
       const previewToken = new URLSearchParams(window.location.search).get('adsPreviewToken')
       if (previewToken) params.set('previewToken', previewToken)
 
@@ -1918,7 +2316,7 @@ export function AdsCommandPage() {
       window.clearInterval(refreshId)
       controller?.abort()
     }
-  }, [reportingPeriod])
+  }, [paidSourceFilter, reportingPeriod])
 
   useEffect(() => {
     const hasOverlay = Boolean(selectedLead || selectedSession || selectedBreakdown)
@@ -1941,6 +2339,19 @@ export function AdsCommandPage() {
     setPeriodState({ trend: period, funnel: period, camp: period, kw: period, roster: period, outbox: period })
     setPjRange(period)
     setPjPage(0)
+  }
+
+  function handlePaidSourceFilter(next: PaidSourceFilter) {
+    setPaidSourceFilter(next)
+    setKwCampaign('all')
+    setPjPage(0)
+  }
+
+  function jumpToDashboardSection(id: DashboardSectionId) {
+    setCollapsedSections((current) => current[id] ? { ...current, [id]: false } : current)
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(`[data-section-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
   }
 
   function setPaidJourneyRange(range: PaidRange) {
@@ -2100,6 +2511,22 @@ export function AdsCommandPage() {
       )
     }
 
+    if (id === 'exportHealth') {
+      return <ExportHealthCard health={exportHealth} />
+    }
+
+    if (id === 'openAIAdsHealth') {
+      return <OpenAIAdsHealthCard health={openAIAdsHealth} />
+    }
+
+    if (id === 'mojoHealth') {
+      return <MojoHealthCard health={mojoHealth} />
+    }
+
+    if (id === 'heatmaps') {
+      return <LandingHeatmapLauncher />
+    }
+
     if (id === 'roster') {
       return (
         <ActiveLeadRoster
@@ -2146,7 +2573,22 @@ export function AdsCommandPage() {
             <header className="bar live-only">
               <span className="live-pill"><span className="live-dot" /> LIVE • loading</span>
               <span className="fresh-pill">Tracking: waiting</span>
-              <span className="fresh-pill">Google Ads: waiting</span>
+              <span className="fresh-pill">Google Ads spend: waiting</span>
+              <span className="fresh-pill">OpenAI Ads spend: waiting</span>
+              <div className="source-filter is-loading" aria-label="Ad source filter">
+                <span>Ad source</span>
+                <div className="source-filter-buttons">
+                  {PAID_SOURCE_FILTERS.map((option) => (
+                    <button key={option.value} className={option.value === 'all' ? 'on' : ''} type="button" disabled>
+                      <b>{option.label}</b>
+                      <small>{option.hint}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <Link className="fresh-pill call-review-link" href="/marketing/alerts">Lead Alerts</Link>
+              <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
+              <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
             </header>
           </div>
         </div>
@@ -2162,8 +2604,42 @@ export function AdsCommandPage() {
           <header className="bar live-only">
             <span className="live-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'LIVE • preview data'}</span>
             <span className="fresh-pill">Tracking: {formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</span>
-            <span className="fresh-pill">Google Ads: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
+            <span className="fresh-pill">Google Ads spend: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
+            <span className="fresh-pill">OpenAI Ads spend: {formatFreshness(adsData?.freshness.openAIAdsImportedAt)}</span>
+            <div className="source-filter" aria-label="Ad source filter">
+              <span>Ad source</span>
+              <div className="source-filter-buttons">
+                {PAID_SOURCE_FILTERS.map((option) => (
+                  <button
+                    key={option.value}
+                    className={paidSourceFilter === option.value ? 'on' : ''}
+                    type="button"
+                    aria-pressed={paidSourceFilter === option.value}
+                    onClick={() => handlePaidSourceFilter(option.value)}
+                  >
+                    <b>{option.label}</b>
+                    <small>{option.hint}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <span className="fresh-pill">Mojo: {mojoHealthLabel(mojoHealth.status)}</span>
+            <Link className="fresh-pill call-review-link" href="/marketing/alerts">Lead Alerts</Link>
+            <Link className="fresh-pill call-review-link" href="/marketing/calls">Call Review</Link>
+            <Link className="fresh-pill call-review-link" href="/marketing/heatmaps">Heatmaps</Link>
           </header>
+
+          <SourceDrilldownPanel
+            source={paidSourceFilter}
+            kpi={kpi}
+            campaigns={campaigns}
+            leads={leads}
+            outbox={outbox}
+            paidSessions={paidSessions}
+            exportHealth={exportHealth}
+            openAIAdsHealth={openAIAdsHealth}
+            onJump={jumpToDashboardSection}
+          />
 
           <div className="layout-grid">
             {sectionOrder.map((sectionId) => (
@@ -2187,7 +2663,7 @@ export function AdsCommandPage() {
           </div>
 
           <div className="foot">
-            SAVING KC • GOOGLE ADS COMMAND • {adsData ? 'Google Ads backfill + CRM PPC read model' : 'preview fallback data'}
+            SAVING KC • ADS COMMAND • {adsData ? 'Paid ads import + CRM paid-source read model' : 'preview fallback data'}
           </div>
         </div>
 
@@ -2279,6 +2755,35 @@ const ADS_COMMAND_STYLES = `
 .ads-command .bar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
 .ads-command .live-pill { display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--text-secondary); background:var(--surface-2); border:1px solid var(--line); padding:6px 14px 6px 12px; border-radius:999px; }
 .ads-command .fresh-pill { display:inline-flex; align-items:center; min-height:28px; font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary); background:rgba(255,255,255,.03); border:1px solid var(--line); padding:6px 10px; border-radius:999px; }
+.ads-command .source-filter { display:inline-flex; align-items:center; gap:8px; min-height:32px; border:1px solid var(--line); border-radius:999px; padding:3px 4px 3px 10px; background:rgba(255,255,255,.035); }
+.ads-command .source-filter > span { color:var(--text-tertiary); font-size:10px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }
+.ads-command .source-filter-buttons { display:inline-flex; gap:3px; }
+.ads-command .source-filter button { min-height:28px; display:flex; align-items:center; gap:6px; border:0; border-radius:999px; background:transparent; color:var(--text-secondary); padding:4px 10px; cursor:pointer; }
+.ads-command .source-filter button.on { background:var(--surface); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.4); }
+.ads-command .source-filter button:disabled { cursor:wait; opacity:.7; }
+.ads-command .source-filter b { font-size:11.5px; line-height:1; }
+.ads-command .source-filter small { color:var(--text-tertiary); font-size:9.5px; font-weight:700; }
+.ads-command .source-drilldown { margin:0 0 18px; background:linear-gradient(135deg,rgba(248,113,113,.08),rgba(96,165,250,.05) 46%,rgba(167,139,250,.07)); }
+.ads-command .source-drilldown-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:18px; }
+.ads-command .source-drilldown-eyebrow { display:block; margin-bottom:6px; font-size:10px; font-weight:950; letter-spacing:.18em; text-transform:uppercase; }
+.ads-command .source-drilldown h2 { font-size:24px; letter-spacing:-.6px; margin:0 0 6px; }
+.ads-command .source-drilldown p { margin:0; max-width:760px; color:var(--text-secondary); line-height:1.45; font-size:13px; }
+.ads-command .source-drilldown-health { flex:0 0 auto; display:inline-flex; align-items:center; min-height:32px; border:1px solid; border-radius:999px; padding:6px 12px; font-size:11px; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
+.ads-command .source-drilldown-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:14px; }
+.ads-command .source-drilldown-metrics > div { min-width:0; border:1px solid var(--line); border-radius:16px; padding:14px; background:rgba(0,0,0,.12); }
+.ads-command .source-drilldown-metrics span, .ads-command .source-drilldown-context span { display:block; color:var(--text-tertiary); font-size:10px; font-weight:900; letter-spacing:.1em; text-transform:uppercase; }
+.ads-command .source-drilldown-metrics b { display:block; margin-top:8px; color:var(--text); font-size:24px; line-height:1; }
+.ads-command .source-drilldown-context { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.ads-command .source-drilldown-context > div { min-width:0; border-top:1px solid var(--line); padding-top:13px; }
+.ads-command .source-drilldown-context b { display:block; min-height:18px; margin-top:7px; color:var(--text); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ads-command .source-drilldown-context small { display:block; margin-top:4px; color:var(--text-tertiary); line-height:1.35; font-size:11.5px; overflow-wrap:anywhere; }
+.ads-command .source-drilldown-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+.ads-command .source-drilldown-actions button { min-height:38px; display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:7px 12px; color:var(--text); background:var(--surface-2); cursor:pointer; }
+.ads-command .source-drilldown-actions button:hover { border-color:rgba(248,113,113,.45); background:var(--surface-3); }
+.ads-command .source-drilldown-actions b { font-size:12px; }
+.ads-command .source-drilldown-actions small { color:var(--text-tertiary); font-size:10.5px; font-weight:750; }
+.ads-command .call-review-link { color:#fecaca; text-decoration:none; font-weight:800; letter-spacing:.02em; }
+.ads-command .call-review-link:hover { color:#fff; border-color:rgba(227,46,46,.45); background:rgba(227,46,46,.12); }
 .ads-command .live-dot { width:7px; height:7px; background:var(--success); border-radius:50%; box-shadow:0 0 0 3px rgba(34,197,94,.2); animation:adsPulse 2s ease-in-out infinite; }
 @keyframes adsPulse { 0%,100%{opacity:1} 50%{opacity:.6} }
 .ads-command .layout-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:18px 14px; align-items:start; }
@@ -2307,6 +2812,15 @@ const ADS_COMMAND_STYLES = `
 .ads-command .delta.up { color:var(--success); }
 .ads-command .delta.down { color:var(--accent); }
 .ads-command .panel { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-2xl); padding:26px 28px; margin-bottom:18px; box-shadow:var(--shadow-md); min-width:0; }
+.ads-command .heatmap-launch { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:18px; margin-bottom:0; background:linear-gradient(135deg, rgba(239,68,68,.12), rgba(255,255,255,.045) 42%, rgba(59,130,246,.1)); }
+.ads-command .heatmap-copy { min-width:0; }
+.ads-command .mini-eyebrow { display:block; margin-bottom:8px; color:var(--accent-bright); font-family:var(--font-mono); font-size:10.5px; font-weight:900; letter-spacing:.12em; }
+.ads-command .heatmap-copy h2 { margin:0; font-size:22px; line-height:1.1; letter-spacing:-.02em; }
+.ads-command .heatmap-copy p { max-width:760px; margin:8px 0 0; color:var(--text-secondary); font-size:13px; line-height:1.5; }
+.ads-command .heatmap-track-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:14px; }
+.ads-command .heatmap-track-list span { display:inline-flex; min-height:26px; align-items:center; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.045); border-radius:999px; padding:0 10px; color:var(--text-secondary); font-size:12px; font-weight:750; }
+.ads-command .heatmap-open { min-height:42px; display:inline-flex; align-items:center; justify-content:center; border-radius:12px; padding:0 18px; color:#fff; background:var(--accent); text-decoration:none; font-size:13px; font-weight:900; box-shadow:0 18px 42px -24px var(--accent); white-space:nowrap; transition:transform .14s ease, filter .14s ease; }
+.ads-command .heatmap-open:hover { transform:translateY(-1px); filter:brightness(1.08); }
 .ads-command .panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
 .ads-command .panel h2 { font-size:18px; font-weight:700; letter-spacing:-.4px; margin:0 0 2px; }
 .ads-command .cap { font-size:12px; color:var(--text-tertiary); font-weight:500; }
@@ -2324,6 +2838,12 @@ const ADS_COMMAND_STYLES = `
 .ads-command .schip.disabled { opacity:.5; cursor:not-allowed; }
 .ads-command .chartbox { position:relative; height:260px; }
 .ads-command .chartbox.sm { height:238px; }
+.ads-command .campaign-source-list { display:flex; flex-direction:column; gap:7px; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+.ads-command .campaign-source-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:30px; color:var(--text-secondary); font-size:12px; }
+.ads-command .campaign-source-row > span { min-width:0; display:flex; align-items:center; gap:8px; font-weight:750; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ads-command .campaign-source-row i { width:9px; height:9px; border-radius:999px; flex:0 0 auto; }
+.ads-command .campaign-source-row b { color:var(--text-tertiary); font-size:11px; white-space:nowrap; }
+.ads-command .campaign-empty { min-height:70px; padding:18px; }
 .ads-command .campaign-keyword-grid { display:grid; grid-template-columns:1fr 1.28fr; gap:14px; margin-bottom:18px; }
 .ads-command .table-scroll { width:100%; overflow-x:auto; overscroll-behavior-x:contain; }
 .ads-command table { width:100%; border-collapse:collapse; font-size:13.5px; }
@@ -2393,6 +2913,7 @@ const ADS_COMMAND_STYLES = `
 .ads-command .lead-status { font-size:10px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; flex-shrink:0; margin-top:2px; }
 .ads-command .lead .meta { display:block; font-size:12px; color:var(--text-secondary); margin-top:4px; line-height:1.3; }
 .ads-command .lead .kw { font-size:11px; color:var(--text-tertiary); margin-top:8px; display:flex; align-items:center; gap:4px; opacity:.85; }
+.ads-command .source-tag { display:inline-flex; align-items:center; min-height:18px; border-radius:999px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:var(--text-secondary); padding:1px 7px; font-size:10px; font-weight:850; letter-spacing:.02em; white-space:nowrap; }
 .ads-command .lead-metrics { display:flex; justify-content:space-between; align-items:flex-end; margin-top:14px; }
 .ads-command .mini-label { display:block; font-size:9px; color:var(--text-tertiary); font-weight:600; letter-spacing:.5px; }
 .ads-command .lead .spread { display:block; font-weight:800; font-size:18px; letter-spacing:-.6px; line-height:1; }
@@ -2401,6 +2922,29 @@ const ADS_COMMAND_STYLES = `
 .ads-command .score-label { display:block; font-size:9px; color:var(--text-tertiary); font-weight:600; letter-spacing:.5px; }
 .ads-command .miniprog { display:block; height:3px; background:var(--surface-3); border-radius:999px; margin-top:10px; overflow:hidden; }
 .ads-command .miniprog > span { display:block; height:100%; background:linear-gradient(to right,var(--accent),var(--accent-bright)); border-radius:999px; }
+.ads-command .export-health-panel { overflow:hidden; }
+.ads-command .export-health-state { display:inline-flex; align-items:center; justify-content:center; min-height:28px; border:1px solid; border-radius:999px; padding:4px 12px; font-size:11px; font-weight:900; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; }
+.ads-command .export-health-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; margin-top:4px; }
+.ads-command .export-health-metric { min-width:0; border-top:1px solid var(--line); padding-top:12px; }
+.ads-command .export-health-metric span,
+.ads-command .export-health-note span { display:block; font-size:10px; font-weight:850; color:var(--text-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+.ads-command .export-health-metric b { display:block; font-size:24px; line-height:1; margin-top:7px; color:var(--text); }
+.ads-command .export-health-foot { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.35fr); gap:18px; margin-top:18px; padding-top:16px; border-top:1px solid var(--line); }
+.ads-command .export-health-note { min-width:0; }
+.ads-command .export-health-note b { display:block; margin-top:6px; color:var(--text); font-size:14px; line-height:1.35; overflow-wrap:anywhere; }
+.ads-command .export-health-note small { display:block; color:var(--text-tertiary); font-size:12px; line-height:1.35; margin-top:4px; overflow-wrap:anywhere; }
+.ads-command .openai-health-panel { overflow:hidden; }
+.ads-command .openai-health-banner { border:1px solid; border-radius:14px; padding:13px 15px; margin-bottom:14px; }
+.ads-command .openai-health-banner b { display:block; color:var(--text); font-size:14px; line-height:1.35; }
+.ads-command .openai-health-banner small { display:block; color:var(--text-tertiary); font-size:12px; line-height:1.4; margin-top:4px; }
+.ads-command .openai-health-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; }
+.ads-command .openai-health-metric { min-width:0; border-top:1px solid var(--line); padding-top:12px; }
+.ads-command .openai-health-metric span { display:block; font-size:10px; font-weight:850; color:var(--text-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+.ads-command .openai-health-metric b { display:block; margin-top:7px; color:var(--text); font-size:14px; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ads-command .openai-health-metric b.mono { font-size:24px; line-height:1; }
+.ads-command .openai-export-strip { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; padding-top:14px; border-top:1px solid var(--line); }
+.ads-command .openai-export-strip > span { display:inline-flex; align-items:center; gap:6px; min-height:28px; border:1px solid var(--line); border-radius:999px; padding:5px 10px; color:var(--text-secondary); background:var(--surface-2); font-size:12px; font-weight:750; }
+.ads-command .openai-health-error { color:var(--danger) !important; border-color:rgba(248,113,113,.35) !important; background:rgba(248,113,113,.08) !important; max-width:100%; overflow-wrap:anywhere; }
 .ads-command .outbox-panel { margin-top:14px; }
 .ads-command .outbox-summary { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
 .ads-command .outbox-summary > div { background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-lg); padding:11px 12px; }
@@ -2414,6 +2958,8 @@ const ADS_COMMAND_STYLES = `
 .ads-command .outbox-event,
 .ads-command .outbox-lead { display:block; font-weight:800; color:var(--text); line-height:1.25; }
 .ads-command .outbox-sub { display:block; color:var(--text-tertiary); font-size:11px; line-height:1.35; margin-top:3px; max-width:290px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ads-command .outbox-source-line { display:flex; align-items:center; gap:7px; max-width:360px; }
+.ads-command .outbox-source-line > span:last-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ads-command .outbox-status { display:inline-flex; align-items:center; justify-content:center; min-height:24px; border:1px solid; border-radius:999px; padding:3px 9px; font-size:11px; font-weight:850; white-space:nowrap; }
 .ads-command .outbox-error { display:block; color:var(--danger); font-size:11px; line-height:1.25; margin-top:3px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ads-command .outbox-expand { display:flex; align-items:flex-start; gap:10px; width:100%; background:none; border:0; color:var(--text); padding:0; text-align:left; cursor:pointer; font:inherit; }
@@ -2548,9 +3094,9 @@ const ADS_COMMAND_STYLES = `
 .ads-command .breakdown-bar span { display:block; height:100%; border-radius:999px; }
 .ads-command .breakdown-item p { margin:7px 0 0; color:var(--text-tertiary); font-size:12px; }
 @media (min-width:1101px) { .ads-command .layout-grid { grid-template-columns:minmax(0,1fr) minmax(0,1.28fr); } .ads-command .layout-section.full { grid-column:1/-1; } .ads-command .layout-section.half { grid-column:auto / span 1; } }
-@media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } }
-@media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } }
+@media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } .ads-command .source-drilldown-context { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } .ads-command .source-drilldown-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:920px) { .ads-command .stage-top { grid-template-columns:1fr; align-items:flex-start; } .ads-command .qbadges { margin-left:0; } .ads-command .stage-body, .ads-command .micro-body { grid-template-columns:1fr; } .ads-command .statside, .ads-command .micro-side { display:none; } .ads-command .stage { inset:10px; width:auto; } }
-@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .table-scroll table { min-width:680px; } .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
+@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .source-filter { width:100%; border-radius:14px; align-items:flex-start; } .ads-command .source-filter-buttons { flex-wrap:wrap; } .ads-command .source-drilldown-head { flex-direction:column; } .ads-command .source-drilldown-metrics, .ads-command .source-drilldown-context { grid-template-columns:1fr; } .ads-command .source-drilldown-actions button { width:100%; justify-content:space-between; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .openai-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .campaign-source-row { align-items:flex-start; flex-direction:column; gap:4px; } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
 @media (max-width:640px) { .ads-command .roster { grid-template-columns:1fr; } .ads-command .live-pill { font-size:11px; } }
 `

@@ -397,6 +397,137 @@ describe('ppc report', () => {
     expect(report.attributionRows.some((row) => row.keyword === 'cash home buyer kc')).toBe(true)
   })
 
+  it('surfaces OpenAI Ads journeys from oppref without a Google click id', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      leads: [
+        ...baseInput.leads,
+        {
+          id: 'lead-openai',
+          full_name: 'OpenAI Seller',
+          phone: '+18165540123',
+          email: 'openai-seller@savingkc.testmail',
+          source: 'ppc-landing',
+          station: 'new',
+          priority: 'hot',
+          property_address: '1200 OpenAI Ave',
+          city: 'Kansas City',
+          created_at: '2026-05-22T16:00:00.000Z',
+          updated_at: '2026-05-22T16:03:00.000Z',
+          classification: null,
+          opportunity_score: null,
+        },
+      ],
+      manifests: [
+        ...baseInput.manifests,
+        {
+          lead_id: 'lead-openai',
+          created_at: '2026-05-22T16:00:00.000Z',
+          manifest: {
+            acquisition: {
+              attribution: {
+                oppref: 'oppref_openai_123',
+                utm_source: 'openai_ads',
+                utm_medium: 'cpc',
+                utm_campaign: 'OpenAI Seller Funnel',
+                landingUrl: 'https://savingkc.com/ppc?oppref=oppref_openai_123',
+              },
+            },
+          },
+        },
+      ],
+      outbox: [
+        ...baseInput.outbox,
+        {
+          id: 'outbox-openai-submit',
+          event_name: 'lead_submitted',
+          event_category: 'form',
+          dedupe_key: 'lead:lead-openai:lead_submitted',
+          status: 'pending',
+          approved_for_google_ads: false,
+          optimization_role: 'primary',
+          lead_id: 'lead-openai',
+          conversion_value: 25,
+          event_time: '2026-05-22T16:03:00.000Z',
+          click_id: null,
+          click_id_type: null,
+          attribution: {
+            oppref: 'oppref_openai_123',
+            utm_source: 'openai_ads',
+            utm_medium: 'cpc',
+            utm_campaign: 'OpenAI Seller Funnel',
+            landingUrl: 'https://savingkc.com/ppc?oppref=oppref_openai_123',
+          },
+          payload: { openai_ads_event_id: 'lead:lead-openai:lead_submitted', form_status: 'submitted' },
+          attempts: 0,
+          last_error: null,
+          sent_at: null,
+          created_at: '2026-05-22T16:03:00.000Z',
+        },
+      ],
+      trackingEvents: [
+        ...baseInput.trackingEvents,
+        {
+          id: 'event-openai-visit',
+          event_id: 'event-openai-visit',
+          event_name: 'ppc_visit_started',
+          event_category: 'visit',
+          event_time: '2026-05-22T16:00:00.000Z',
+          session_id: 'session-openai',
+          visitor_id: 'visitor-openai',
+          lead_id: 'lead-openai',
+          page_location: 'https://savingkc.com/ppc?oppref=oppref_openai_123',
+          page_referrer: 'https://chatgpt.com/',
+          traffic_source: null,
+          campaign: null,
+          utm_source: 'openai_ads',
+          utm_medium: 'cpc',
+          utm_campaign: 'OpenAI Seller Funnel',
+          utm_term: null,
+          utm_content: null,
+          form_step: 1,
+          form_status: null,
+          situation_raw: null,
+          timeline_raw: null,
+          condition_raw: null,
+          phone_number: null,
+          sms_consent: null,
+          is_test: false,
+          gclid: null,
+          gbraid: null,
+          wbraid: null,
+          gad_source: null,
+          gad_campaignid: null,
+          gad_adgroupid: null,
+          attribution: {},
+          payload: { attribution: { oppref: 'oppref_openai_123' } },
+          created_at: '2026-05-22T16:00:00.000Z',
+        },
+      ],
+    })
+
+    expect(report.attributionRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'openai_ads',
+          medium: 'cpc',
+          campaign: 'OpenAI Seller Funnel',
+          leads: 1,
+        }),
+      ]),
+    )
+    expect(report.journeySessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'openai_ads',
+          campaign: 'OpenAI Seller Funnel',
+          clickId: 'oppref_openai_123',
+          leadId: 'lead-openai',
+        }),
+      ]),
+    )
+  })
+
   it('only asks for approval on rows explicitly marked approval_required', () => {
     const report = buildPpcReport({
       ...baseInput,

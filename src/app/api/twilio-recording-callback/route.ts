@@ -4,6 +4,7 @@ import twilio from 'twilio'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
+import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { supabase } from '@/lib/supabase-lazy'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { syncCoOwners } from '@/lib/co-owners'
@@ -18,7 +19,11 @@ import {
 import {
   markLeadAsGoogleAdsPhoneLead,
   phoneLookupVariants,
+  resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
+
+export const runtime = 'nodejs'
+export const maxDuration = 60
 
 type RecordingCallbackMeta = {
   callSid?: string
@@ -38,6 +43,7 @@ type RecordingCallbackMeta = {
   tracking_number?: string
   landing_page?: string
   phone_profile?: string
+  is_test?: boolean
 }
 
 type RecordingContext = {
@@ -51,6 +57,7 @@ type RecordingContext = {
   tracking_number?: string
   landing_page?: string
   phone_profile?: string
+  is_test?: boolean
 }
 
 type JsonObject = Record<string, unknown>
@@ -206,8 +213,11 @@ export async function POST(req: Request) {
     const hintedLeadId = url.searchParams.get('leadId') || ''
     const sourceHint = url.searchParams.get('source') || ''
     const calledNumber = url.searchParams.get('calledNumber') || to || ''
+    const externalPhone = from?.startsWith('client:') ? to : from
+    const isInternalTestRecording = isInternalTestPhone(externalPhone)
     const profile = getGoogleAdsPhoneProfile(sourceHint || calledNumber)
-    const isGoogleAdsRecording = (
+    const isFormLeadAgentCallback = sourceHint === 'ppc_form_agent_callback'
+    const isGoogleAdsRecording = !isFormLeadAgentCallback && (
       sourceHint === GOOGLE_ADS_PHONE_SOURCE ||
       sourceHint === GOOGLE_ADS_TAX_PHONE_SOURCE ||
       isPpcTrackingNumber(calledNumber)
@@ -217,6 +227,7 @@ export async function POST(req: Request) {
       from,
       to,
       calledNumber,
+      is_test: isInternalTestRecording,
       ...(isGoogleAdsRecording && {
         traffic_source: 'google_ads',
         campaign: profile.campaign || GOOGLE_ADS_CAMPAIGN,
@@ -238,6 +249,11 @@ export async function POST(req: Request) {
     if (recordingDuration < 5) {
       console.log(`[recording-callback] Skipping short recording (${recordingDuration}s)`)
       return NextResponse.json({ ok: true, skipped: 'too_short' })
+    }
+
+    if (isInternalTestRecording) {
+      console.log(`[recording-callback] Skipping internal test phone recording (${externalPhone || 'unknown'})`)
+      return NextResponse.json({ ok: true, skipped: 'internal_test_phone' })
     }
 
     // Match the recorded call back to a lead by the external phone number.
@@ -270,6 +286,17 @@ export async function POST(req: Request) {
       }
     }
 
+    // Google Ads call recordings are seller-facing signals. If no seller lead
+    // exists yet, resolve/create it from the caller phone before falling back
+    // to child-leg lookup, which can match the internal agent leg instead.
+    if (!leadId && isGoogleAdsRecording && cleanPhone) {
+      const googleAdsLead = await resolveGoogleAdsLeadContext(cleanPhone, calledNumber || sourceHint)
+      leadId = googleAdsLead.leadId
+      if (leadId) {
+        console.log(`[recording-callback] Resolved Google Ads recording to seller lead ${leadId}`)
+      }
+    }
+
     // Fallback: WebRTC parent legs have empty To — look at child legs via Twilio
     if (!leadId && callSid) {
       leadId = await resolveLeadIdFromChildLegs(callSid)
@@ -285,7 +312,7 @@ export async function POST(req: Request) {
 
     console.log(`[recording-callback] Processing recording for lead ${leadId}`)
 
-    if (isGoogleAdsRecording && from) {
+    if (isGoogleAdsRecording && from && !isInternalTestRecording) {
       await markLeadAsGoogleAdsPhoneLead(leadId, from, null, calledNumber || sourceHint).catch((error) => {
         console.error('[recording-callback] Google Ads attribution refresh failed:', error)
       })
@@ -303,12 +330,9 @@ export async function POST(req: Request) {
       context: recordingContext,
     })
 
-    // Fire-and-forget: download, transcribe, analyze, store
-    processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext).catch(err =>
-      console.error('[recording-callback] Processing failed:', err)
-    )
+    await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
 
-    return NextResponse.json({ ok: true, leadId, processing: true })
+    return NextResponse.json({ ok: true, leadId, processed: true })
   } catch (err) {
     console.error('[recording-callback] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

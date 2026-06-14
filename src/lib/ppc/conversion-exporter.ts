@@ -25,10 +25,24 @@ const DEFAULT_BATCH_SIZE = 25
 const DEFAULT_MAX_ATTEMPTS = 8
 const DEFAULT_GOOGLE_ADS_API_VERSION = 'v24'
 const DEFAULT_STAPE_REQUEST_PATH = '/data'
+const GOOGLE_ADS_CALL_CONVERSION_MIN_AGE_MS = 12 * 60 * 60 * 1000
+const PPC_CONVERSION_PROCESSING_LOCK_TTL_MS = 10 * 60 * 1000
+const OPENAI_ADS_CONVERSIONS_ENDPOINT = 'https://bzr.openai.com/v1/events'
+const OPENAI_ADS_MAX_EVENT_AGE_MS = 7 * 24 * 60 * 60 * 1000
+const OPENAI_ADS_MAX_FUTURE_SKEW_MS = 10 * 60 * 1000
 const GOOGLE_ADS_WORKER_CANDIDATE_EVENT_NAMES = [
   ...GOOGLE_ADS_FACTUAL_PPC_EVENT_NAMES,
   ...GOOGLE_ADS_CLEANUP_ONLY_PPC_EVENT_NAMES,
 ]
+const OPENAI_ADS_EXPORTABLE_PPC_EVENT_NAMES: PpcConversionEventName[] = [
+  'lead_submitted',
+  'qualified_lead',
+  'appointment_booked',
+  'call_connected_60s',
+  'call_connected_2m',
+  'call_connected_5m',
+]
+const OPENAI_ADS_EXPORTABLE_PPC_EVENTS = new Set<string>(OPENAI_ADS_EXPORTABLE_PPC_EVENT_NAMES)
 
 type Env = Record<string, string | undefined>
 
@@ -68,7 +82,7 @@ export type PpcConversionOutboxExportRow = {
 }
 
 export type DestinationResult = {
-  destination: 'google_ads' | 'stape'
+  destination: 'google_ads' | 'stape' | 'openai_ads'
   status: 'sent' | 'skipped' | 'failed' | 'would_send'
   detail?: string
 }
@@ -86,6 +100,7 @@ export type PpcConversionExportResult = {
   configured: boolean
   scanned: number
   claimed: number
+  repairedKnownSkips: number
   sent: number
   skipped: number
   failed: number
@@ -96,7 +111,7 @@ export type PpcConversionExportResult = {
 
 export type PpcConversionExportConfigHealth = {
   configured: boolean
-  mode: 'google_ads_and_stape' | 'google_ads_only' | 'stape_only' | 'not_configured'
+  mode: 'all' | 'google_ads_and_stape' | 'google_ads_only' | 'stape_only' | 'openai_ads_only' | 'mixed' | 'not_configured'
   enabledDestinations: DestinationResult['destination'][]
   googleAds: {
     enabled: boolean
@@ -114,12 +129,20 @@ export type PpcConversionExportConfigHealth = {
     previewHeaderConfigured: boolean
     missingConfig: string[]
   }
+  openaiAds: {
+    enabled: boolean
+    ready: boolean
+    pixelIdConfigured: boolean
+    apiKeyConfigured: boolean
+    missingConfig: string[]
+  }
   warnings: string[]
 }
 
 type OutboxStore = {
   listRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]>
   claimRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]>
+  repairKnownSkippedRows?(now: Date): Promise<number>
   markSent(row: PpcConversionOutboxExportRow, summary: Record<string, unknown>, now: Date): Promise<void>
   markSkipped(row: PpcConversionOutboxExportRow, reason: string, summary: Record<string, unknown>, now: Date): Promise<void>
   markFailed(row: PpcConversionOutboxExportRow, reason: string, summary: Record<string, unknown>, now: Date): Promise<void>
@@ -179,9 +202,18 @@ type StapeConfig = {
   origin: string
 }
 
+type OpenAIAdsConfig = {
+  pixelId: string
+  apiKey: string
+}
+
 type GoogleAdsUploadPlan =
   | { kind: 'click'; conversion: Record<string, unknown> }
   | { kind: 'call'; conversion: Record<string, unknown> }
+  | { kind: 'skip'; reason: string; hardFailure?: boolean }
+
+type OpenAIAdsUploadPlan =
+  | { kind: 'event'; event: Record<string, unknown> }
   | { kind: 'skip'; reason: string; hardFailure?: boolean }
 
 class SupabaseOutboxStore implements OutboxStore {
@@ -190,16 +222,16 @@ class SupabaseOutboxStore implements OutboxStore {
     private readonly maxAttempts: number,
   ) {}
 
-  async listRows(limit: number): Promise<PpcConversionOutboxExportRow[]> {
-    return this.queryCandidateRows(limit)
+  async listRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]> {
+    return this.queryCandidateRows(limit, now)
   }
 
   async claimRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]> {
-    const candidates = await this.queryCandidateRows(limit)
+    const candidates = await this.queryCandidateRows(limit, now)
     const claimed: PpcConversionOutboxExportRow[] = []
 
     for (const row of candidates) {
-      const { data, error } = await this.client
+      let query = this.client
         .from('ppc_conversion_outbox')
         .update({
           status: 'processing',
@@ -208,9 +240,15 @@ class SupabaseOutboxStore implements OutboxStore {
           attempts: Number(row.attempts ?? 0) + 1,
         })
         .eq('id', row.id)
-        .in('status', ['pending', 'failed'])
-        .select('*')
-        .maybeSingle()
+
+      if (row.status === 'processing') {
+        query = query.eq('status', 'processing')
+        query = row.locked_at ? query.eq('locked_at', row.locked_at) : query.is('locked_at', null)
+      } else {
+        query = query.in('status', ['pending', 'failed'])
+      }
+
+      const { data, error } = await query.select('*').maybeSingle()
 
       if (error) {
         console.error('[ppc/conversion-exporter] claim failed', error)
@@ -264,18 +302,53 @@ class SupabaseOutboxStore implements OutboxStore {
     })
   }
 
-  private async queryCandidateRows(limit: number): Promise<PpcConversionOutboxExportRow[]> {
+  async repairKnownSkippedRows(now: Date): Promise<number> {
+    const { data, error } = await this.client
+      .from('ppc_conversion_outbox')
+      .select('*')
+      .eq('status', 'dead_letter')
+      .eq('event_category', 'call')
+      .ilike('last_error', '%caller_id%')
+      .order('event_time', { ascending: true })
+      .limit(25)
+
+    if (error) throw new Error(error.message)
+
+    let repaired = 0
+    for (const row of (data ?? []) as PpcConversionOutboxExportRow[]) {
+      if (!isUnmatchedGoogleAdsCallUpload(row, row.last_error ?? undefined)) continue
+
+      const detail = googleAdsUnmatchedCallSkipReason()
+      await this.updateRow(row, {
+        status: 'skipped',
+        locked_at: null,
+        last_error: detail,
+        updated_at: now.toISOString(),
+        payload: mergePayload(row, cleanJsonRecord({
+          ...rowSummary(row, [{ destination: 'google_ads', status: 'skipped', detail }], now),
+          repaired_dead_letter_at: now.toISOString(),
+        })),
+      })
+      repaired += 1
+    }
+
+    return repaired
+  }
+
+  private async queryCandidateRows(limit: number, now: Date): Promise<PpcConversionOutboxExportRow[]> {
     const { data, error } = await this.client
       .from('ppc_conversion_outbox')
       .select('*')
       .or(`approved_for_google_ads.eq.true,event_name.in.(${GOOGLE_ADS_WORKER_CANDIDATE_EVENT_NAMES.join(',')})`)
-      .in('status', ['pending', 'failed'])
+      .or(ppcConversionClaimableStatusFilter(now))
       .lt('attempts', this.maxAttempts)
       .order('event_time', { ascending: true })
       .limit(Math.min(100, limit * 3))
 
     if (error) throw new Error(error.message)
     return ((data ?? []) as PpcConversionOutboxExportRow[])
+      .filter((row) => isPpcConversionOutboxClaimable(row, now))
+      .filter((row) => isPpcConversionExportReady(row, now))
       .filter((row) => row.approved_for_google_ads || !approvalRequired(row))
       .slice(0, limit)
   }
@@ -544,6 +617,20 @@ function readStapeConfig(env: Env): { config: StapeConfig | null; missing: strin
   }
 }
 
+function readOpenAIAdsConfig(env: Env): { config: OpenAIAdsConfig | null; missing: string[] } {
+  const pixelId = readEnv(env, 'OPENAI_ADS_PIXEL_ID') || readEnv(env, 'NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID')
+  const apiKey = readEnv(env, 'OPENAI_ADS_CONVERSIONS_API_KEY')
+  const missing = ([
+    ['OPENAI_ADS_PIXEL_ID or NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID', pixelId],
+    ['OPENAI_ADS_CONVERSIONS_API_KEY', apiKey],
+  ] as Array<[string, string | null]>)
+    .filter(([, value]) => !value)
+    .map(([key]) => key)
+
+  if (missing.length || !pixelId || !apiKey) return { config: null, missing }
+  return { config: { pixelId, apiKey }, missing: [] }
+}
+
 function readEnabledDestinations(env: Env): { destinations: Set<DestinationResult['destination']>; missing: string[] } {
   const raw = readEnv(env, 'PPC_CONVERSION_EXPORT_DESTINATIONS')
   if (!raw) return { destinations: new Set(['google_ads', 'stape']), missing: [] }
@@ -555,7 +642,14 @@ function readEnabledDestinations(env: Env): { destinations: Set<DestinationResul
 
   const destinations = new Set<DestinationResult['destination']>()
   for (const value of values) {
+    if (value === 'all') {
+      destinations.add('google_ads')
+      destinations.add('stape')
+      destinations.add('openai_ads')
+      continue
+    }
     if (value === 'google_ads' || value === 'stape') destinations.add(value)
+    if (value === 'openai_ads' || value === 'openai') destinations.add('openai_ads')
   }
 
   return destinations.size > 0
@@ -575,9 +669,13 @@ function endpointHost(endpoint: string | null | undefined): string | null {
 function configMode(destinations: Set<DestinationResult['destination']>): PpcConversionExportConfigHealth['mode'] {
   const googleAds = destinations.has('google_ads')
   const stape = destinations.has('stape')
+  const openaiAds = destinations.has('openai_ads')
+  if (googleAds && stape && openaiAds) return 'all'
   if (googleAds && stape) return 'google_ads_and_stape'
+  if ([googleAds, stape, openaiAds].filter(Boolean).length > 1) return 'mixed'
   if (googleAds) return 'google_ads_only'
   if (stape) return 'stape_only'
+  if (openaiAds) return 'openai_ads_only'
   return 'not_configured'
 }
 
@@ -585,6 +683,7 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
   const enabled = readEnabledDestinations(env)
   const googleEnabled = enabled.destinations.has('google_ads')
   const stapeEnabled = enabled.destinations.has('stape')
+  const openaiEnabled = enabled.destinations.has('openai_ads')
   const customerId = normalizeCustomerId(readEnv(env, 'GOOGLE_ADS_CUSTOMER_ID'))
   const actionMappings = customerId ? loadConversionActions(env, customerId) : {}
   const configuredActionMappings = GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES.filter((eventName) => Boolean(actionMappings[eventName]))
@@ -595,8 +694,12 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
   const stape = stapeEnabled
     ? readStapeConfig(env)
     : { config: null, missing: [] }
+  const openai = openaiEnabled
+    ? readOpenAIAdsConfig(env)
+    : { config: null, missing: [] }
   const googleReady = Boolean(google.config && missingActionMappings.length === 0)
   const stapeReady = Boolean(stape.config)
+  const openaiReady = Boolean(openai.config)
   const warnings: string[] = []
 
   if (enabled.missing.length) {
@@ -614,9 +717,12 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
   if (stapeEnabled && !stapeReady) {
     warnings.push('Stape/server GTM is enabled but its endpoint is not configured.')
   }
+  if (openaiEnabled && !openaiReady) {
+    warnings.push('OpenAI Ads export is enabled but its Pixel ID or Conversions API key is missing.')
+  }
 
   return {
-    configured: (googleEnabled && googleReady) || (stapeEnabled && stapeReady),
+    configured: (googleEnabled && googleReady) || (stapeEnabled && stapeReady) || (openaiEnabled && openaiReady),
     mode: configMode(enabled.destinations),
     enabledDestinations: Array.from(enabled.destinations),
     googleAds: {
@@ -634,6 +740,13 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
       endpointHost: endpointHost(stape.config?.endpoint ?? readEnv(env, 'PPC_STAPE_ENDPOINT_URL') ?? readEnv(env, 'STAPE_SGTM_DOMAIN')),
       previewHeaderConfigured: Boolean(stape.config?.previewHeader),
       missingConfig: stape.missing,
+    },
+    openaiAds: {
+      enabled: openaiEnabled,
+      ready: openaiReady,
+      pixelIdConfigured: Boolean(readEnv(env, 'OPENAI_ADS_PIXEL_ID') || readEnv(env, 'NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID')),
+      apiKeyConfigured: Boolean(readEnv(env, 'OPENAI_ADS_CONVERSIONS_API_KEY')),
+      missingConfig: openai.missing,
     },
     warnings,
   }
@@ -697,6 +810,39 @@ function inferCallStartDate(row: PpcConversionOutboxExportRow): Date {
   const eventDate = new Date(row.event_time)
   if (!Number.isFinite(duration) || duration <= 0 || Number.isNaN(eventDate.getTime())) return eventDate
   return new Date(eventDate.getTime() - duration * 1000)
+}
+
+export function isPpcConversionExportReady(row: PpcConversionOutboxExportRow, now = new Date()): boolean {
+  if (row.event_category !== 'call') return true
+
+  const callStartDate = inferCallStartDate(row)
+  if (Number.isNaN(callStartDate.getTime())) return true
+
+  return now.getTime() - callStartDate.getTime() >= GOOGLE_ADS_CALL_CONVERSION_MIN_AGE_MS
+}
+
+function ppcConversionProcessingStaleCutoff(now: Date): string {
+  return new Date(now.getTime() - PPC_CONVERSION_PROCESSING_LOCK_TTL_MS).toISOString()
+}
+
+export function isPpcConversionOutboxClaimable(row: PpcConversionOutboxExportRow, now = new Date()): boolean {
+  if (row.status === 'pending' || row.status === 'failed') return true
+  if (row.status !== 'processing') return false
+  if (!row.locked_at) return true
+
+  const lockedAt = Date.parse(row.locked_at)
+  if (!Number.isFinite(lockedAt)) return true
+
+  return lockedAt <= now.getTime() - PPC_CONVERSION_PROCESSING_LOCK_TTL_MS
+}
+
+export function ppcConversionClaimableStatusFilter(now = new Date()): string {
+  const staleCutoff = ppcConversionProcessingStaleCutoff(now)
+  return [
+    'status.in.(pending,failed)',
+    `and(status.eq.processing,locked_at.lt.${staleCutoff})`,
+    'and(status.eq.processing,locked_at.is.null)',
+  ].join(',')
 }
 
 export function buildGoogleAdsUploadPlan(
@@ -830,6 +976,115 @@ function buildStapeEventData(row: PpcConversionOutboxExportRow): Record<string, 
   })
 }
 
+function isOpenAIAdsExportablePpcEvent(eventName: string | null | undefined): boolean {
+  return Boolean(eventName && OPENAI_ADS_EXPORTABLE_PPC_EVENTS.has(eventName))
+}
+
+function sourceUrlForRow(row: PpcConversionOutboxExportRow): string {
+  const attribution = row.attribution ?? {}
+  const payload = row.payload ?? {}
+  return (
+    text(payload.page_location) ||
+    text(attribution.page_location) ||
+    text(attribution.landingUrl) ||
+    'https://savingkc.com/ppc'
+  )
+}
+
+function openAIAdsActionSource(row: PpcConversionOutboxExportRow): string {
+  if (row.event_category === 'call') return 'phone_call'
+  if (row.event_name === 'qualified_lead') return 'offline'
+  return 'web'
+}
+
+function openAIAdsEventType(row: PpcConversionOutboxExportRow): {
+  type: string
+  customEventName?: string
+  dataType: 'customer_action' | 'custom'
+} | null {
+  if (row.event_name === 'lead_submitted') {
+    return { type: 'lead_created', dataType: 'customer_action' }
+  }
+  if (row.event_name === 'appointment_booked') {
+    return { type: 'appointment_scheduled', dataType: 'customer_action' }
+  }
+  if (
+    row.event_name === 'qualified_lead' ||
+    row.event_name === 'call_connected_60s' ||
+    row.event_name === 'call_connected_2m' ||
+    row.event_name === 'call_connected_5m'
+  ) {
+    return { type: 'custom', customEventName: row.event_name, dataType: 'custom' }
+  }
+  return null
+}
+
+function buildOpenAIAdsUploadPlan(row: PpcConversionOutboxExportRow, now: Date): OpenAIAdsUploadPlan {
+  if (!isOpenAIAdsExportablePpcEvent(row.event_name)) {
+    return {
+      kind: 'skip',
+      reason: `${row.event_name || 'conversion'} is not eligible for OpenAI Ads export`,
+      hardFailure: false,
+    }
+  }
+
+  const eventDate = new Date(row.event_time)
+  if (Number.isNaN(eventDate.getTime())) {
+    return {
+      kind: 'skip',
+      reason: `Invalid OpenAI Ads event time for ${row.event_name}`,
+      hardFailure: true,
+    }
+  }
+
+  const ageMs = now.getTime() - eventDate.getTime()
+  if (ageMs > OPENAI_ADS_MAX_EVENT_AGE_MS) {
+    return {
+      kind: 'skip',
+      reason: 'OpenAI Ads CAPI accepts events from the last 7 days only',
+      hardFailure: false,
+    }
+  }
+  if (ageMs < -OPENAI_ADS_MAX_FUTURE_SKEW_MS) {
+    return {
+      kind: 'skip',
+      reason: 'OpenAI Ads CAPI rejects events more than 10 minutes in the future',
+      hardFailure: true,
+    }
+  }
+
+  const mapped = openAIAdsEventType(row)
+  if (!mapped) {
+    return {
+      kind: 'skip',
+      reason: `${row.event_name} has no OpenAI Ads event mapping`,
+      hardFailure: false,
+    }
+  }
+
+  const attribution = row.attribution ?? {}
+  const payload = row.payload ?? {}
+  const actionSource = openAIAdsActionSource(row)
+  const sourceUrl = sourceUrlForRow(row)
+  const eventId = text(payload.openai_ads_event_id) || row.dedupe_key || row.id
+
+  return {
+    kind: 'event',
+    event: cleanJsonRecord({
+      id: eventId,
+      type: mapped.type,
+      custom_event_name: mapped.customEventName,
+      timestamp_ms: eventDate.getTime(),
+      oppref: text(attribution.oppref) || text(payload.oppref),
+      source_url: sourceUrl,
+      action_source: actionSource,
+      data: {
+        type: mapped.dataType,
+      },
+    }),
+  }
+}
+
 async function resolveGoogleAdsRefreshToken(config: GoogleAdsConfig, client: SupabaseClient): Promise<string> {
   if (config.refreshToken) return config.refreshToken
 
@@ -940,6 +1195,40 @@ async function uploadGoogleAdsConversion(
   }
 }
 
+function isUnmatchedGoogleAdsCallUpload(row: PpcConversionOutboxExportRow, detail: string | undefined): boolean {
+  if (row.event_category !== 'call') return false
+
+  const normalized = (detail ?? '').toLowerCase()
+  if (!normalized) return false
+
+  return (
+    normalized.includes('caller_id') &&
+    (
+      normalized.includes("can't be found") ||
+      normalized.includes('cannot be found') ||
+      normalized.includes("couldn't be found") ||
+      normalized.includes('could not be found')
+    )
+  )
+}
+
+function googleAdsUnmatchedCallSkipReason(): string {
+  return 'Google Ads call upload skipped: caller_id was not matchable to a Google Ads call record. Keep CRM/Stape/OpenAI call attribution; use Google forwarding/DNI for Google call-only optimization.'
+}
+
+export function normalizeGoogleAdsDestinationResult(
+  row: PpcConversionOutboxExportRow,
+  result: DestinationResult,
+): DestinationResult {
+  if (result.status !== 'failed' || !isUnmatchedGoogleAdsCallUpload(row, result.detail)) return result
+
+  return {
+    ...result,
+    status: 'skipped',
+    detail: googleAdsUnmatchedCallSkipReason(),
+  }
+}
+
 async function sendStapeEvent(
   row: PpcConversionOutboxExportRow,
   config: StapeConfig,
@@ -979,6 +1268,60 @@ async function sendStapeEvent(
   }
 }
 
+async function sendOpenAIAdsEvent(
+  row: PpcConversionOutboxExportRow,
+  config: OpenAIAdsConfig,
+  fetchFn: typeof fetch,
+  validateOnly: boolean,
+  now: Date,
+): Promise<DestinationResult> {
+  const plan = buildOpenAIAdsUploadPlan(row, now)
+  if (plan.kind === 'skip') {
+    return {
+      destination: 'openai_ads',
+      status: plan.hardFailure ? 'failed' : 'skipped',
+      detail: plan.reason,
+    }
+  }
+
+  const url = new URL(OPENAI_ADS_CONVERSIONS_ENDPOINT)
+  url.searchParams.set('pid', config.pixelId)
+
+  const response = await fetchFn(url.toString(), {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      validate_only: validateOnly || undefined,
+      events: [plan.event],
+    }),
+  })
+
+  const bodyText = await response.text().catch(() => '')
+  let body: Record<string, unknown> = {}
+  try {
+    body = bodyText ? JSON.parse(bodyText) as Record<string, unknown> : {}
+  } catch {
+    body = {}
+  }
+
+  if (!response.ok) {
+    return {
+      destination: 'openai_ads',
+      status: 'failed',
+      detail: summarizeRemoteError(body, bodyText || `OpenAI Ads CAPI failed (${response.status})`),
+    }
+  }
+
+  return {
+    destination: 'openai_ads',
+    status: validateOnly ? 'would_send' : 'sent',
+    detail: `${validateOnly ? 'validateOnly:' : ''}${plan.event.type}:${row.event_name}`,
+  }
+}
+
 function summarizeRemoteError(body: Record<string, unknown>, fallback: string): string {
   const error = body.error
   if (typeof error === 'string') return error
@@ -993,33 +1336,59 @@ function plannedDestinations(
   row: PpcConversionOutboxExportRow,
   googleConfig: GoogleAdsConfig | null,
   stapeConfig: StapeConfig | null,
+  openaiConfig: OpenAIAdsConfig | null,
+  now: Date,
 ): DestinationResult[] {
-  if (!isGoogleAdsExportablePpcEvent(row.event_name)) {
+  const googleEligible = isGoogleAdsExportablePpcEvent(row.event_name)
+  const openaiEligible = isOpenAIAdsExportablePpcEvent(row.event_name)
+
+  if (!googleEligible && !openaiEligible) {
     const detail = nonExportablePpcEventReason(row.event_name)
     return [
       ...(stapeConfig ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
       ...(googleConfig ? [{ destination: 'google_ads' as const, status: 'skipped' as const, detail }] : []),
+      ...(openaiConfig ? [{ destination: 'openai_ads' as const, status: 'skipped' as const, detail }] : []),
     ]
   }
 
   const conversionValue = googleAdsConversionValue(row)
-  if (!conversionValue) {
+  if (googleEligible && !conversionValue) {
     const detail = missingQualityScoreReason(row)
     return [
       ...(stapeConfig ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
       ...(googleConfig ? [{ destination: 'google_ads' as const, status: 'failed' as const, detail }] : []),
+      ...(openaiConfig ? [{ destination: 'openai_ads' as const, status: 'skipped' as const, detail }] : []),
     ]
   }
 
   const destinations: DestinationResult[] = []
-  if (stapeConfig) destinations.push({ destination: 'stape', status: 'would_send', detail: stapeConfig.endpoint })
+  if (stapeConfig) {
+    destinations.push(
+      googleEligible
+        ? { destination: 'stape', status: 'would_send', detail: stapeConfig.endpoint }
+        : { destination: 'stape', status: 'skipped', detail: nonExportablePpcEventReason(row.event_name) },
+    )
+  }
 
   if (googleConfig) {
-    const plan = buildGoogleAdsUploadPlan(row, googleConfig)
+    if (googleEligible) {
+      const plan = buildGoogleAdsUploadPlan(row, googleConfig)
+      destinations.push(
+        plan.kind === 'skip'
+          ? { destination: 'google_ads', status: 'skipped', detail: plan.reason }
+          : { destination: 'google_ads', status: 'would_send', detail: plan.kind },
+      )
+    } else {
+      destinations.push({ destination: 'google_ads', status: 'skipped', detail: nonExportablePpcEventReason(row.event_name) })
+    }
+  }
+
+  if (openaiConfig) {
+    const plan = buildOpenAIAdsUploadPlan(row, now)
     destinations.push(
       plan.kind === 'skip'
-        ? { destination: 'google_ads', status: 'skipped', detail: plan.reason }
-        : { destination: 'google_ads', status: 'would_send', detail: plan.kind },
+        ? { destination: 'openai_ads', status: plan.hardFailure ? 'failed' : 'skipped', detail: plan.reason }
+        : { destination: 'openai_ads', status: 'would_send', detail: plan.event.type as string },
     )
   }
 
@@ -1053,13 +1422,17 @@ export async function runPpcConversionExport(
   const stape = enabled.destinations.has('stape')
     ? readStapeConfig(env)
     : { config: null, missing: [] }
-  const missingConfig = [...enabled.missing, ...google.missing, ...stape.missing]
+  const openai = enabled.destinations.has('openai_ads')
+    ? readOpenAIAdsConfig(env)
+    : { config: null, missing: [] }
+  const missingConfig = [...enabled.missing, ...google.missing, ...stape.missing, ...openai.missing]
 
-  if (!google.config && !stape.config) {
+  if (!google.config && !stape.config && !openai.config) {
     return emptyExportResult({ dryRun, configured: false, missingConfig })
   }
 
   const store = deps.store ?? new SupabaseOutboxStore(supabaseAdmin(), maxAttempts)
+  const repairedKnownSkips = readOnly ? 0 : await (store.repairKnownSkippedRows?.(now) ?? Promise.resolve(0))
   const rows = readOnly
     ? await store.listRows(batchSize, now)
     : await store.claimRows(batchSize, now)
@@ -1069,7 +1442,7 @@ export async function runPpcConversionExport(
 
   for (const row of rows) {
     if (dryRun) {
-      const destinations = plannedDestinations(row, google.config, stape.config)
+      const destinations = plannedDestinations(row, google.config, stape.config, openai.config, now)
       results.push({ id: row.id, eventName: row.event_name, status: 'pending', destinations })
       continue
     }
@@ -1081,6 +1454,9 @@ export async function runPpcConversionExport(
       if (stape.config) {
         destinations.unshift({ destination: 'stape', status: 'skipped', detail: 'Awaiting approval for Google Ads export' })
       }
+      if (openai.config) {
+        destinations.push({ destination: 'openai_ads', status: 'skipped', detail: 'Awaiting approval for ads export' })
+      }
       if (validateOnly) {
         results.push({ id: row.id, eventName: row.event_name, status: 'pending', destinations })
         continue
@@ -1091,11 +1467,15 @@ export async function runPpcConversionExport(
       continue
     }
 
-    if (!isGoogleAdsExportablePpcEvent(row.event_name)) {
+    const googleEligible = isGoogleAdsExportablePpcEvent(row.event_name)
+    const openaiEligible = isOpenAIAdsExportablePpcEvent(row.event_name)
+
+    if (!googleEligible && !openaiEligible) {
       const detail = nonExportablePpcEventReason(row.event_name)
       const destinations: DestinationResult[] = [
         ...(stape.config ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
         ...(google.config ? [{ destination: 'google_ads' as const, status: 'skipped' as const, detail }] : []),
+        ...(openai.config ? [{ destination: 'openai_ads' as const, status: 'skipped' as const, detail }] : []),
       ]
       if (validateOnly) {
         results.push({ id: row.id, eventName: row.event_name, status: 'skipped', destinations })
@@ -1107,11 +1487,12 @@ export async function runPpcConversionExport(
     }
 
     const conversionValue = googleAdsConversionValue(row)
-    if (!conversionValue) {
+    if (googleEligible && !conversionValue) {
       const detail = missingQualityScoreReason(row)
       const destinations: DestinationResult[] = [
         ...(stape.config ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
         ...(google.config ? [{ destination: 'google_ads' as const, status: 'failed' as const, detail }] : []),
+        ...(openai.config ? [{ destination: 'openai_ads' as const, status: 'skipped' as const, detail }] : []),
       ]
       if (validateOnly) {
         results.push({ id: row.id, eventName: row.event_name, status: 'failed', destinations })
@@ -1126,30 +1507,47 @@ export async function runPpcConversionExport(
 
     if (stape.config) {
       destinations.push(
-        validateOnly
-          ? { destination: 'stape', status: 'would_send', detail: 'Validate-only run; Stape request not sent' }
-          : await sendStapeEvent(row, stape.config, fetchFn),
+        googleEligible
+          ? validateOnly
+            ? { destination: 'stape', status: 'would_send', detail: 'Validate-only run; Stape request not sent' }
+            : await sendStapeEvent(row, stape.config, fetchFn)
+          : { destination: 'stape', status: 'skipped', detail: nonExportablePpcEventReason(row.event_name) },
       )
     }
 
     if (google.config) {
-      const plan = buildGoogleAdsUploadPlan(row, google.config)
-      if (plan.kind === 'skip') {
-        destinations.push({ destination: 'google_ads', status: plan.hardFailure ? 'failed' : 'skipped', detail: plan.reason })
+      if (!googleEligible) {
+        destinations.push({ destination: 'google_ads', status: 'skipped', detail: nonExportablePpcEventReason(row.event_name) })
       } else {
-        tokenPromise = tokenPromise ?? getGoogleAdsAccessToken(google.config, fetchFn)
-        const accessToken = await tokenPromise
-        destinations.push(
-          await uploadGoogleAdsConversion(
-            row,
-            plan,
-            google.config,
-            accessToken,
-            fetchFn,
-            validateOnly,
-          ),
-        )
+        const plan = buildGoogleAdsUploadPlan(row, google.config)
+        if (plan.kind === 'skip') {
+          destinations.push({ destination: 'google_ads', status: plan.hardFailure ? 'failed' : 'skipped', detail: plan.reason })
+        } else {
+          tokenPromise = tokenPromise ?? getGoogleAdsAccessToken(google.config, fetchFn)
+          const accessToken = await tokenPromise
+          destinations.push(
+            normalizeGoogleAdsDestinationResult(
+              row,
+              await uploadGoogleAdsConversion(
+                row,
+                plan,
+                google.config,
+                accessToken,
+                fetchFn,
+                validateOnly,
+              ),
+            ),
+          )
+        }
       }
+    }
+
+    if (openai.config) {
+      destinations.push(
+        openaiEligible
+          ? await sendOpenAIAdsEvent(row, openai.config, fetchFn, validateOnly, now)
+          : { destination: 'openai_ads', status: 'skipped', detail: `${row.event_name} is not eligible for OpenAI Ads export` },
+      )
     }
 
     const failed = destinations.filter((destination) => destination.status === 'failed')
@@ -1192,8 +1590,9 @@ export async function runPpcConversionExport(
     configured: true,
     scanned: rows.length,
     claimed: readOnly ? 0 : rows.length,
+    repairedKnownSkips,
     sent: results.filter((result) => result.status === 'sent').length,
-    skipped: results.filter((result) => result.status === 'skipped').length,
+    skipped: repairedKnownSkips + results.filter((result) => result.status === 'skipped').length,
     failed: results.filter((result) => result.status === 'failed').length,
     pending: results.filter((result) => result.status === 'pending').length,
     missingConfig,
@@ -1208,6 +1607,7 @@ function emptyExportResult(input: { dryRun: boolean; configured: boolean; missin
     configured: input.configured,
     scanned: 0,
     claimed: 0,
+    repairedKnownSkips: 0,
     sent: 0,
     skipped: 0,
     failed: 0,

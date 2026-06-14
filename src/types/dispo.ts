@@ -154,6 +154,8 @@ export interface DealPage {
   parking: string | null
   contract_notes: string | null
   assignment_fee: number | null
+  asking_price: number | null
+  purchase_price: number | null
   created_at: string
   updated_at: string
 }

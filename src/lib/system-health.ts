@@ -73,6 +73,7 @@ export async function getWorkerHealthSummary(
     'Twilio Webhook (Inbound SMS)',
     'Twilio Webhook (Missed Call)',
     'Mojo Sync',
+    'Mojo Health',
     'Follow-Up Sequence Runner',
   ]
 

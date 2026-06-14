@@ -3,13 +3,11 @@ import { isOptedOut } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
 import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
-import { sendPushToAgents } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { formatPhone } from '@/lib/format'
 import { supabase } from '@/lib/supabase-lazy'
 
-const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
-const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 
 // Random delay to make auto-texts feel human (not instant/robotic)
@@ -186,18 +184,26 @@ export async function POST(req: Request) {
           }
         }
 
-        // Alert both agents about known lead missed call
+        // Alert eligible agents about known lead missed call.
         const missedAlert = `🔥 Missed call from ${leadName} (hot lead)${response?.shouldSend ? '. Auto-text sent' : ''}. Callback in 5 min. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
-        await Promise.allSettled([
-          safeSendSMS({ body: missedAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
-          safeSendSMS({ body: missedAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
-        ])
-        sendPushToAgents({
-          title: 'Missed Call - Hot Lead',
-          body: `${leadName} called and got no answer.`,
-          url: `/leads/${leadId}`,
-          tag: 'missed-call',
-        }).catch(() => {})
+        await sendTeamLeadAlert({
+          leadId,
+          smsBody: missedAlert,
+          trigger: 'known_missed_call_alert',
+          source: 'inbound_call',
+          push: {
+            title: 'Missed Call - Hot Lead',
+            body: `${leadName} called and got no answer.`,
+            url: `/leads/${leadId}`,
+            tag: 'missed-call',
+          },
+          metadata: {
+            from,
+            calledNumber: to || TWILIO_PHONE,
+            callSid,
+            auto_text_sent: Boolean(response?.shouldSend),
+          },
+        })
 
         // 5-min callback task assigned to the agent whose number was called
         await supabase.from('lead_activities').insert({
@@ -300,18 +306,26 @@ export async function POST(req: Request) {
           }
         }
 
-        // Alert both agents about unknown caller
+        // Alert eligible agents about unknown caller.
         const agentAlert = `📞 Missed call from unknown number ${formatPhone(from)}${response?.shouldSend ? '. Auto-text sent' : ''}. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
-        await Promise.allSettled([
-          safeSendSMS({ body: agentAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
-          safeSendSMS({ body: agentAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
-        ])
-        sendPushToAgents({
-          title: 'Missed Call - Unknown',
-          body: `Unknown number ${formatPhone(from)} called.`,
-          url: newLeadId ? `/leads/${newLeadId}` : '/',
-          tag: 'missed-call-unknown',
-        }).catch(() => {})
+        await sendTeamLeadAlert({
+          leadId: newLeadId,
+          smsBody: agentAlert,
+          trigger: 'unknown_missed_call_alert',
+          source: 'inbound_call',
+          push: {
+            title: 'Missed Call - Unknown',
+            body: `Unknown number ${formatPhone(from)} called.`,
+            url: newLeadId ? `/leads/${newLeadId}` : '/',
+            tag: 'missed-call-unknown',
+          },
+          metadata: {
+            from,
+            calledNumber: to || TWILIO_PHONE,
+            callSid,
+            auto_text_sent: Boolean(response?.shouldSend),
+          },
+        })
 
         // Briefing event for unknown missed call
         try {

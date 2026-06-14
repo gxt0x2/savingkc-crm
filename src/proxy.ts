@@ -50,6 +50,11 @@ const TRUSTED_BEARER_API_PREFIXES = [
   '/api/hot-opportunities/cron',
 ]
 
+const TRUSTED_BEARER_API_EXACT = new Set([
+  '/api/deals/import-photos',
+  '/api/deals/upload',
+])
+
 const HEALTH_CHECK_PATHS = new Set([
   '/dialer',
   '/api/twilio-token',
@@ -97,6 +102,10 @@ function isPublicDealApi(request: NextRequest): boolean {
 
   if (parts.length === 4) {
     const action = parts[3]
+    if (action === 'test-inspection-report') {
+      return request.method === 'GET' || request.method === 'OPTIONS'
+    }
+
     return action === 'events' || action === 'offer' || action === 'session'
   }
 
@@ -120,6 +129,7 @@ function isTrustedBearerRoute(request: NextRequest): boolean {
 
   return (
     HEALTH_CHECK_PATHS.has(pathname) ||
+    TRUSTED_BEARER_API_EXACT.has(pathname) ||
     TRUSTED_BEARER_API_PREFIXES.some(prefix => pathname.startsWith(prefix))
   )
 }

@@ -8,6 +8,7 @@
 import { sendPpcTrackingEvent } from '@/lib/ppc/tracking-client'
 import { getAttribution } from '@/lib/ppc/attribution'
 import { ppcCampaignNameForContext, ppcPageVariantForPath } from '@/lib/ppc/campaigns'
+import { sendOpenAIAdsPixelEvent } from '@/lib/ppc/openai-ads-client'
 
 export type ConversionEvent =
   | 'lead_quiz_started'
@@ -34,6 +35,14 @@ export type PpcMicroEvent =
   | 'cta_click'
   | 'nav_click'
   | 'faq_opened'
+  | 'show_me_clicked'
+  | 'video_started'
+  | 'video_play'
+  | 'video_progress_25'
+  | 'video_progress_50'
+  | 'video_progress_75'
+  | 'video_completed'
+  | 'video_paused'
 
 export type PpcTrackingEvent = ConversionEvent | PpcMicroEvent
 
@@ -55,6 +64,8 @@ export const CONVERSION_OPTIMIZATION_ROLES: Record<ConversionEvent, Optimization
   appointment_booked: 'primary',
 }
 
+const TEST_MARKER_RE = /(^|[^a-z0-9])(codex|test|dummy|probe|smoke)([^a-z0-9]|$)/i
+
 declare global {
   interface Window {
     dataLayer?: Array<Record<string, unknown>>
@@ -75,6 +86,40 @@ function cleanPayload(payload: Record<string, unknown>): Record<string, unknown>
 
 function isServerRecorded(event: PpcTrackingEvent): boolean {
   return event === 'lead_submitted' || event === 'appointment_booked'
+}
+
+function isConversionEvent(event: PpcTrackingEvent): event is ConversionEvent {
+  return event in CONVERSION_VALUES
+}
+
+function isSmokeTestMode(
+  attribution: ReturnType<typeof safeAttribution>,
+  pageContext: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): boolean {
+  if (typeof window === 'undefined') return false
+
+  const search = window.location?.search ?? ''
+  const params = new URLSearchParams(search)
+  if (params.get('skc_test') === '1' || params.get('skc_test') === 'true') return true
+
+  const values = [
+    window.location?.href,
+    pageContext.page_location,
+    payload.event_id,
+    payload.test_id,
+    attribution?.landingUrl,
+    attribution?.utm_source,
+    attribution?.utm_medium,
+    attribution?.utm_campaign,
+    attribution?.utm_content,
+    attribution?.gclid,
+    attribution?.gbraid,
+    attribution?.wbraid,
+    attribution?.oppref,
+  ]
+
+  return values.some((value) => typeof value === 'string' && TEST_MARKER_RE.test(value))
 }
 
 function safeAttribution() {
@@ -121,11 +166,17 @@ export function firePpcTrackingEvent(
   })
 
   window.dataLayer = window.dataLayer || []
-  window.dataLayer.push(dataLayerEvent)
+  const suppressBrowserConversion = isConversionEvent(event) && isSmokeTestMode(attribution, pageContext, payload)
+
+  if (!suppressBrowserConversion) {
+    window.dataLayer.push(dataLayerEvent)
+    sendOpenAIAdsPixelEvent(dataLayerEvent)
+  }
+
   if (!isServerRecorded(event)) sendPpcTrackingEvent(dataLayerEvent)
 
   if (process.env.NODE_ENV !== 'production') {
-    console.log('[ppc/conversions] fired', event)
+    console.log('[ppc/conversions] fired', event, suppressBrowserConversion ? '(browser conversion suppressed)' : '')
   }
 
   return dataLayerEvent

@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase-lazy'
 import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
 import { normalizeDealStage } from '@/types/pipeline'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
+import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
+import { upsertAppointmentFromCall } from '@/lib/appointments'
 
 // Stations that should auto-advance to appointment_set when an appointment
 // is scheduled. We never demote a more-advanced station (offer_made,
@@ -24,17 +26,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'leadId and scheduledAt required' }, { status: 400 })
     }
 
-    const appointmentId = randomUUID()
-
     // 1. Ensure manifest exists
     await ensureManifestExists(leadId)
+
+    const canonicalAppointment = await upsertAppointmentFromCall({
+      leadId,
+      scheduledAt,
+      type: type || 'phone_call',
+      address: address || null,
+      notes: notes || null,
+      source: 'manual',
+      assignedTo: assignedTo || 'casey',
+    })
+    const appointmentId = canonicalAppointment?.id ?? randomUUID()
+    const scheduledIso = canonicalAppointment?.scheduled_at ?? scheduledAt
 
     // 2. Update manifest with appointment object
     const updated = await updateManifestAndCascade(leadId, (manifest) => {
       manifest.pipeline.appointment = {
         appointmentId,
         type: type || 'phone_call',
-        scheduledAt,
+        scheduledAt: scheduledIso,
         createdAt: new Date().toISOString(),
         status: 'scheduled',
         confirmationCount: 0,
@@ -46,8 +58,8 @@ export async function POST(req: NextRequest) {
         reminderAutomationSource: 'appointment_modal',
         automationLog: [],
         assignedTo: assignedTo || 'casey',
-        address: address || null,
-        notes: notes || null,
+        address: canonicalAppointment?.address ?? address ?? null,
+        notes: canonicalAppointment?.notes ?? notes ?? null,
       }
 
       if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
@@ -71,11 +83,20 @@ export async function POST(req: NextRequest) {
       .eq('id', leadId)
       .single()
     const currentStage = normalizeDealStage(leadRow?.station)
+    const leadAppointmentPatch: Record<string, unknown> = {
+      appointment_date: scheduledIso,
+      appointment_notes: canonicalAppointment?.notes ?? notes ?? null,
+      updated_at: new Date().toISOString(),
+    }
     if (currentStage && ADVANCE_FROM_STATIONS.has(currentStage)) {
-      await supabase
-        .from('leads')
-        .update({ station: 'appointment_set', updated_at: new Date().toISOString() })
-        .eq('id', leadId)
+      leadAppointmentPatch.station = 'appointment_set'
+    }
+    await supabase
+      .from('leads')
+      .update(leadAppointmentPatch)
+      .eq('id', leadId)
+
+    if (currentStage && ADVANCE_FROM_STATIONS.has(currentStage)) {
       await updateManifestAndCascade(leadId, (manifest) => {
         manifest.currentStation = 'appointment_set'
         manifest.auditTrail = manifest.auditTrail ?? []
@@ -102,14 +123,14 @@ export async function POST(req: NextRequest) {
       google_meet: 'Google Meet',
     }
     const typeLabel = typeLabels[type] || type
-    const dateDisplay = new Date(scheduledAt).toLocaleDateString('en-US', {
+    const dateDisplay = new Date(scheduledIso).toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Chicago'
     })
-    const timeDisplay = new Date(scheduledAt).toLocaleTimeString('en-US', {
+    const timeDisplay = new Date(scheduledIso).toLocaleTimeString('en-US', {
       hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago'
     })
 
-    await supabase.from('lead_activities').insert({
+    const { data: appointmentActivity } = await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'appointment',
       description: `Appointment scheduled: ${typeLabel} on ${dateDisplay} at ${timeDisplay} with ${assignedTo}${notes ? `. Notes: ${notes}` : ''}`,
@@ -117,13 +138,23 @@ export async function POST(req: NextRequest) {
       metadata: {
         appointment_id: appointmentId,
         type,
-        scheduled_at: scheduledAt,
-        due_date: scheduledAt,
+        scheduled_at: scheduledIso,
+        due_date: scheduledIso,
         assigned_to: assignedTo,
         notes,
         status: 'scheduled',
       },
-    })
+    }).select('id').maybeSingle()
+
+    await queuePpcAppointmentBookedConversion({
+      leadId,
+      appointmentId,
+      activityId: appointmentActivity?.id ?? null,
+      scheduledAt: scheduledIso,
+      appointmentType: type || 'phone_call',
+      assignedTo: assignedTo || 'casey',
+      source: 'appointment_modal',
+    }).catch((error) => console.error('[create-appointment] PPC appointment conversion queue failed:', error))
 
     // 4. Create SMS reminder task if requested
     if (sendReminder && phone) {
