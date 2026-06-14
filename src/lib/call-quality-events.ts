@@ -1,3 +1,10 @@
+import {
+  DEFAULT_PPC_CAMPAIGN,
+  PPC_CAMPAIGNS,
+  ppcCampaignForPhone,
+  type PpcCampaignConfig,
+} from '@/lib/ppc/campaigns'
+
 export type CallQualityEventName =
   | 'call_connected_60s'
   | 'call_connected_2m'
@@ -10,10 +17,51 @@ export type CallQualityMilestone = {
   conversionValue: number
 }
 
-export const PPC_TRACKING_PHONE_DIGITS = '8166088808'
-export const GOOGLE_ADS_PHONE_NUMBER = '+18166088808'
-export const GOOGLE_ADS_PHONE_SOURCE = 'google_ads_phone'
-export const GOOGLE_ADS_CAMPAIGN = 'Search 2026'
+const PROPERTY_TAX_PPC_CAMPAIGN = PPC_CAMPAIGNS.find((campaign) => campaign.key === 'property_tax')!
+
+export const PPC_TRACKING_PHONE_DIGITS = DEFAULT_PPC_CAMPAIGN.phoneDigits
+export const PPC_TAX_TRACKING_PHONE_DIGITS = PROPERTY_TAX_PPC_CAMPAIGN.phoneDigits
+export const PPC_TRACKING_PHONE_NUMBERS = PPC_CAMPAIGNS.map((campaign) => campaign.phoneTel)
+export const GOOGLE_ADS_PHONE_NUMBER = DEFAULT_PPC_CAMPAIGN.phoneTel
+export const GOOGLE_ADS_TAX_PHONE_NUMBER = PROPERTY_TAX_PPC_CAMPAIGN.phoneTel
+export const GOOGLE_ADS_PHONE_SOURCE = DEFAULT_PPC_CAMPAIGN.phoneSource
+export const GOOGLE_ADS_TAX_PHONE_SOURCE = PROPERTY_TAX_PPC_CAMPAIGN.phoneSource
+export const GOOGLE_ADS_CAMPAIGN = DEFAULT_PPC_CAMPAIGN.name
+
+export type GoogleAdsPhoneProfileKey = 'general' | 'tax'
+
+export type GoogleAdsPhoneProfile = {
+  key: GoogleAdsPhoneProfileKey
+  label: string
+  number: string
+  trackingDigits: string
+  source: string
+  campaign: string
+  landingPage: string
+}
+
+export const GOOGLE_ADS_PHONE_PROFILES: GoogleAdsPhoneProfile[] = [
+  {
+    key: 'general',
+    label: 'Google Ads',
+    number: DEFAULT_PPC_CAMPAIGN.phoneTel,
+    trackingDigits: DEFAULT_PPC_CAMPAIGN.phoneDigits,
+    source: DEFAULT_PPC_CAMPAIGN.phoneSource,
+    campaign: DEFAULT_PPC_CAMPAIGN.name,
+    landingPage: DEFAULT_PPC_CAMPAIGN.pagePath,
+  },
+  {
+    key: 'tax',
+    label: 'Google Ads Tax',
+    number: PROPERTY_TAX_PPC_CAMPAIGN.phoneTel,
+    trackingDigits: PROPERTY_TAX_PPC_CAMPAIGN.phoneDigits,
+    source: PROPERTY_TAX_PPC_CAMPAIGN.phoneSource,
+    campaign: PROPERTY_TAX_PPC_CAMPAIGN.name,
+    landingPage: PROPERTY_TAX_PPC_CAMPAIGN.pagePath,
+  },
+]
+
+const DEFAULT_GOOGLE_ADS_PHONE_PROFILE = GOOGLE_ADS_PHONE_PROFILES[0]!
 
 export const CALL_QUALITY_MILESTONES: CallQualityMilestone[] = [
   {
@@ -48,12 +96,26 @@ export function parseCallDurationSeconds(value: unknown): number | null {
 }
 
 export function isPpcTrackingNumber(raw: string): boolean {
-  const digits = raw.replace(/\D/g, '')
-  return digits === PPC_TRACKING_PHONE_DIGITS || digits === `1${PPC_TRACKING_PHONE_DIGITS}`
+  return Boolean(ppcCampaignForPhone(raw))
 }
 
 export function isGoogleAdsPhoneNumber(raw: string): boolean {
   return isPpcTrackingNumber(raw)
+}
+
+export function getGoogleAdsPhoneProfile(raw: string | null | undefined): GoogleAdsPhoneProfile {
+  const value = (raw || '').trim().toLowerCase()
+  const digits = value.replace(/\D/g, '')
+  return GOOGLE_ADS_PHONE_PROFILES.find((profile) => (
+    value === profile.source ||
+    value === profile.key ||
+    digits === profile.trackingDigits ||
+    digits === `1${profile.trackingDigits}`
+  )) || DEFAULT_GOOGLE_ADS_PHONE_PROFILE
+}
+
+export function getPpcCampaignForPhone(raw: string | null | undefined): PpcCampaignConfig | null {
+  return ppcCampaignForPhone(raw)
 }
 
 export function getCallQualityMilestones(durationSeconds: number | null | undefined): CallQualityMilestone[] {
@@ -65,4 +127,9 @@ export function getCallQualityMilestones(durationSeconds: number | null | undefi
 export function getHighestCallQualityMilestone(durationSeconds: number | null | undefined): CallQualityMilestone | null {
   const milestones = getCallQualityMilestones(durationSeconds)
   return milestones[milestones.length - 1] || null
+}
+
+export function getGoogleAdsCallQualityMilestones(durationSeconds: number | null | undefined): CallQualityMilestone[] {
+  const highest = getHighestCallQualityMilestone(durationSeconds)
+  return highest ? [highest] : []
 }

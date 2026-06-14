@@ -1,9 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import Image from 'next/image'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { captureAttribution, getAttribution } from '@/lib/ppc/attribution'
 import { fireConversion, fireFormError, firePpcTrackingEvent } from '@/lib/ppc/conversions'
 import { getPpcSessionContext } from '@/lib/ppc/tracking-client'
+import { buildGoogleAdsLeadsUserData } from '@/lib/ppc/browser-enhanced-conversions'
 import { AddressAutocomplete } from './AddressAutocomplete'
 
 type Situation =
@@ -16,12 +18,14 @@ type Situation =
 
 type Timeline = 'asap' | '60-days' | 'flexible' | 'exploring'
 type Condition = 'good' | 'needs-work' | 'major-repair' | 'vacant'
-type AddressSource = 'typed' | 'google_places'
+type AuctionStatus = 'yes' | 'no' | 'not-sure'
+type FormStep = 1 | 2 | 3 | 4
 
 interface QuizState {
   situation: Situation | ''
   timeline: Timeline | ''
   condition: Condition | ''
+  auctionStatus: AuctionStatus | ''
   address: string
   name: string
   phone: string
@@ -32,6 +36,7 @@ const EMPTY_STATE: QuizState = {
   situation: '',
   timeline: '',
   condition: '',
+  auctionStatus: '',
   address: '',
   name: '',
   phone: '',
@@ -61,16 +66,134 @@ const CONDITION_TILES: { value: Condition; icon: string; label: string }[] = [
   { value: 'vacant', icon: 'door_front', label: 'Vacant' },
 ]
 
+const AUCTION_TILES: { value: AuctionStatus; icon: string; label: string }[] = [
+  { value: 'yes', icon: 'gavel', label: 'Yes' },
+  { value: 'no', icon: 'home', label: 'No' },
+  { value: 'not-sure', icon: 'help', label: 'Not sure' },
+]
+
 type SellLandingProps = {
   phoneDisplay: string
   phoneTel: string
   showBookingCta?: boolean
+  variant?: 'general' | 'tax'
 }
 
-export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: SellLandingProps) {
-  const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [state, setState] = useState<QuizState>(EMPTY_STATE)
-  const [addressSource, setAddressSource] = useState<AddressSource>('typed')
+type YouTubePlayer = {
+  playVideo: () => void
+  destroy: () => void
+  getCurrentTime?: () => number
+  getDuration?: () => number
+}
+
+type YouTubePlayerEvent = {
+  target: YouTubePlayer
+}
+
+type YouTubeStateEvent = YouTubePlayerEvent & {
+  data: number
+}
+
+type YouTubeNamespace = {
+  Player: new (
+    element: string | HTMLIFrameElement,
+    options: { events?: { onReady?: (event: YouTubePlayerEvent) => void; onStateChange?: (event: YouTubeStateEvent) => void } },
+  ) => YouTubePlayer
+}
+
+declare global {
+  interface Window {
+    YT?: YouTubeNamespace
+    onYouTubeIframeAPIReady?: () => void
+  }
+}
+
+const VIDEO_TESTIMONIALS = [
+  {
+    id: 'bZyZYbI0sg4',
+    title: 'Seller story: a cleaner way out',
+    runtime: '1:08',
+    thumbnail: '/ppc/seller-story-cleaner-way-out.webp',
+    url: 'https://www.youtube.com/embed/bZyZYbI0sg4',
+  },
+  {
+    id: 'eA55Ehd17mI',
+    title: 'Seller story: local help in KC',
+    runtime: '1:29',
+    thumbnail: '/ppc/seller-story-local-help.webp',
+    url: 'https://www.youtube.com/embed/eA55Ehd17mI',
+  },
+]
+
+const YOUTUBE_STATE = {
+  ended: 0,
+  playing: 1,
+  paused: 2,
+} as const
+
+type DecisionRowClick = {
+  stage: string
+  title: string
+  cta: string
+  section: 'problems' | 'stages'
+  position: number
+}
+
+function slugifyId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'item'
+}
+
+function stableEventId(...parts: string[]): string {
+  return parts.map(slugifyId).filter(Boolean).join('__')
+}
+
+function pageVariantKey(variant: SellLandingProps['variant']): 'ppc_tax' | 'ppc_general' {
+  return variant === 'tax' ? 'ppc_tax' : 'ppc_general'
+}
+
+function sectionFromClickLocation(clickLocation: string): string {
+  if (clickLocation.includes('nav') || clickLocation.includes('topbar')) return 'navigation'
+  if (clickLocation.includes('hero')) return 'hero'
+  if (clickLocation.includes('mid')) return 'mid_cta'
+  if (clickLocation.includes('final') || clickLocation.includes('bottom')) return 'final_cta'
+  if (clickLocation.includes('footer')) return 'footer'
+  if (clickLocation.includes('problem')) return 'problems'
+  if (clickLocation.includes('tax_decision')) return 'stages'
+  return clickLocation.replace(/_/g, '-')
+}
+
+function navLabelForTarget(target: string, isTaxLanding: boolean): string {
+  const labels: Record<string, string> = isTaxLanding
+    ? {
+      quiz: 'Start',
+      timeline: 'Steps',
+      stages: 'Issues',
+      team: 'Team',
+      faq: 'FAQ',
+      'video-testimonials': 'Reviews',
+    }
+    : {
+      quiz: 'Start',
+      how: 'Steps',
+      problems: 'Issues',
+      about: 'Team',
+      faq: 'FAQ',
+      'video-testimonials': 'Reviews',
+    }
+  return labels[target] || target.replace(/-/g, ' ')
+}
+
+function initialQuizState(): QuizState {
+  return { ...EMPTY_STATE, situation: 'tax-delinquent' }
+}
+
+export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, variant = 'general' }: SellLandingProps) {
+  const isTaxLanding = variant === 'tax'
+  const variantKey = pageVariantKey(variant)
+  const totalSteps = 4
+  const finalStep = 4
+  const [step, setStep] = useState<FormStep>(1)
+  const [state, setState] = useState<QuizState>(() => initialQuizState())
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [bookingOpen, setBookingOpen] = useState(false)
@@ -83,36 +206,28 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
   const [navJumpVisible, setNavJumpVisible] = useState(false)
   const toolCardRef = useRef<HTMLDivElement | null>(null)
   const stage3AutosavedKeyRef = useRef<string | null>(null)
-  const addressCapturedKeyRef = useRef<string | null>(null)
+  const addressCaptureKeyRef = useRef<string | null>(null)
   const potentialLeadKeyRef = useRef<string | null>(null)
-  const formContextRef = useRef<Record<string, unknown>>({})
-  const sectionViewedRef = useRef<Set<string>>(new Set())
-  const scrollDepthRef = useRef<Set<number>>(new Set())
-
-  useEffect(() => {
-    formContextRef.current = {
-      form_step: step,
-      situation: state.situation || undefined,
-      timeline: state.timeline || undefined,
-      condition: state.condition || undefined,
-      form_status: submitted ? 'submitted' : step === 3 ? 'step_3_visible' : 'in_progress',
-    }
-  }, [state.condition, state.situation, state.timeline, step, submitted])
+  const contactFieldTrackedRef = useRef<Set<string>>(new Set())
+  const viewedSectionsRef = useRef<Set<string>>(new Set())
+  const scrollDepthsRef = useRef<Set<number>>(new Set())
 
   useEffect(() => {
     captureAttribution()
     firePpcTrackingEvent('ppc_visit_started', {
-      form_step: 1,
-      page_path: window.location.pathname,
+      ppc_phone_display: phoneDisplay,
+      ppc_phone_tel: phoneTel,
       landing_page: window.location.href,
-      referrer: document.referrer || undefined,
+      page_title: document.title,
+      total_steps: totalSteps,
     })
     firePpcTrackingEvent('skc_phone_number_selected', {
       ppc_phone_display: phoneDisplay,
       ppc_phone_tel: phoneTel,
       landing_page: window.location.href,
+      total_steps: totalSteps,
     })
-  }, [phoneDisplay, phoneTel])
+  }, [phoneDisplay, phoneTel, totalSteps])
 
   useEffect(() => {
     const el = toolCardRef.current
@@ -128,77 +243,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     return () => obs.disconnect()
   }, [])
 
-  useEffect(() => {
-    const sections = Array.from(document.querySelectorAll<HTMLElement>('[data-track-section]'))
-    if (!sections.length) return
-
-    const markViewed = (section: string) => {
-      if (sectionViewedRef.current.has(section)) return
-      sectionViewedRef.current.add(section)
-      firePpcTrackingEvent('section_viewed', {
-        section,
-        ...formContextRef.current,
-      })
-    }
-
-    if (typeof IntersectionObserver === 'undefined') {
-      markViewed('hero_quiz')
-      return
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting || entry.intersectionRatio < 0.35) continue
-          const section = entry.target instanceof HTMLElement ? entry.target.dataset.trackSection : undefined
-          if (section) markViewed(section)
-        }
-      },
-      { threshold: [0.35, 0.55] },
-    )
-
-    sections.forEach((section) => observer.observe(section))
-    return () => observer.disconnect()
-  }, [])
-
-  useEffect(() => {
-    const thresholds = [25, 50, 75, 90]
-    let ticking = false
-
-    const measure = () => {
-      ticking = false
-      const doc = document.documentElement
-      const body = document.body
-      const scrollHeight = Math.max(doc.scrollHeight, body?.scrollHeight ?? 0)
-      const viewed = window.scrollY + window.innerHeight
-      const depth = scrollHeight <= 0 ? 100 : Math.round((viewed / scrollHeight) * 100)
-
-      for (const threshold of thresholds) {
-        if (depth < threshold || scrollDepthRef.current.has(threshold)) continue
-        scrollDepthRef.current.add(threshold)
-        firePpcTrackingEvent('scroll_depth_reached', {
-          scroll_depth: threshold,
-          ...formContextRef.current,
-        })
-      }
-    }
-
-    const onScroll = () => {
-      if (ticking) return
-      ticking = true
-      window.requestAnimationFrame(measure)
-    }
-
-    measure()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('resize', onScroll)
-    return () => {
-      window.removeEventListener('scroll', onScroll)
-      window.removeEventListener('resize', onScroll)
-    }
-  }, [])
-
-  const postPartial = useCallback(async (currentStep: 1 | 2 | 3, partial: Partial<QuizState>) => {
+  const postPartial = useCallback(async (currentStep: FormStep, partial: Partial<QuizState>) => {
     try {
       const attribution = getAttribution()
       const { sessionId, visitorId } = getPpcSessionContext()
@@ -209,9 +254,8 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
           step: currentStep,
           ...partial,
           attribution,
-          sessionId,
-          visitorId,
-          smsConsent: true,
+          sessionId: sessionId ?? undefined,
+          visitorId: visitorId ?? undefined,
         }),
       })
     } catch {
@@ -219,28 +263,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     }
   }, [])
 
-  const postPpcLeadSignal = useCallback(async (payload: Record<string, unknown>) => {
-    try {
-      const attribution = getAttribution()
-      const { sessionId, visitorId } = getPpcSessionContext()
-      const response = await fetch('/api/leads/ppc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...payload,
-          attribution,
-          sessionId,
-          visitorId,
-          smsConsent: true,
-        }),
-      })
-      return await response.json().catch(() => null)
-    } catch {
-      return null
-    }
-  }, [])
-
-  const trackFormError = (message: string, field: string, formStep: 1 | 2 | 3) => {
+  const trackFormError = (message: string, field: string, formStep: FormStep) => {
     setError(message)
     fireFormError(message, {
       form_step: formStep,
@@ -248,11 +271,212 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       situation: state.situation || undefined,
       timeline: state.timeline || undefined,
       condition: state.condition || undefined,
+      auctionStatus: state.auctionStatus || undefined,
     })
   }
 
+  const commonFunnelPayload = useCallback(() => ({
+    form_step: step,
+    total_steps: totalSteps,
+    situation: state.situation || undefined,
+    timeline: state.timeline || undefined,
+    condition: state.condition || undefined,
+    auctionStatus: state.auctionStatus || undefined,
+  }), [
+    state.auctionStatus,
+    state.condition,
+    state.situation,
+    state.timeline,
+    step,
+    totalSteps,
+  ])
+
   useEffect(() => {
-    if (submitted || step !== 3) return
+    const thresholds = [25, 50, 75, 90]
+
+    const measure = () => {
+      const doc = document.documentElement
+      const body = document.body
+      const scrollHeight = Math.max(doc.scrollHeight, body.scrollHeight)
+      const viewportHeight = window.innerHeight || doc.clientHeight
+      const scrollTop = window.scrollY || doc.scrollTop || body.scrollTop || 0
+      const scrollable = scrollHeight - viewportHeight
+
+      if (scrollable <= 200 || scrollTop < 10) return
+
+      const depth = Math.min(100, Math.round(((scrollTop + viewportHeight) / scrollHeight) * 100))
+      thresholds.forEach((threshold) => {
+        if (depth < threshold || scrollDepthsRef.current.has(threshold)) return
+        scrollDepthsRef.current.add(threshold)
+        firePpcTrackingEvent('scroll_depth_reached', {
+          ...commonFunnelPayload(),
+          scroll_depth: threshold,
+          percent_scrolled: depth,
+        })
+      })
+    }
+
+    measure()
+    window.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure)
+      window.removeEventListener('resize', measure)
+    }
+  }, [commonFunnelPayload])
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return
+
+    const sectionIds = isTaxLanding
+      ? ['quiz', 'timeline', 'stages', 'team', 'video-testimonials', 'reviews', 'faq']
+      : ['quiz', 'how', 'problems', 'about', 'video-testimonials', 'reviews', 'faq']
+    const sections = sectionIds
+      .map((id) => document.getElementById(id))
+      .filter((section): section is HTMLElement => Boolean(section))
+
+    if (!sections.length) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const sectionId = entry.target.id
+          if (!entry.isIntersecting || viewedSectionsRef.current.has(sectionId)) return
+          viewedSectionsRef.current.add(sectionId)
+          firePpcTrackingEvent('section_viewed', {
+            ...commonFunnelPayload(),
+            section_id: sectionId,
+            section_name: sectionId.replace(/-/g, ' '),
+          })
+        })
+      },
+      { threshold: 0.25, rootMargin: '-10% 0px -35% 0px' },
+    )
+
+    sections.forEach((section) => observer.observe(section))
+    return () => observer.disconnect()
+  }, [commonFunnelPayload, isTaxLanding])
+
+  useEffect(() => {
+    if (submitted || step !== finalStep) return
+
+    const address = state.address.trim()
+    if (address.length < 6) return
+
+    const addressCaptureKey = [
+      address,
+      state.situation,
+      state.timeline,
+      state.condition,
+      state.auctionStatus,
+    ].join('|')
+    if (addressCaptureKeyRef.current === addressCaptureKey) return
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const attribution = getAttribution()
+        const { sessionId, visitorId } = getPpcSessionContext()
+        const r = await fetch('/api/leads/ppc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            intent: 'address_capture',
+            step: finalStep,
+            address,
+            addressSource: 'typed',
+            situation: state.situation || undefined,
+            timeline: state.timeline || undefined,
+            condition: state.condition || undefined,
+            auctionStatus: state.auctionStatus || undefined,
+            attribution,
+            sessionId: sessionId ?? undefined,
+            visitorId: visitorId ?? undefined,
+          }),
+        })
+        if (r.ok) addressCaptureKeyRef.current = addressCaptureKey
+      } catch {
+        // best-effort only; the actual form can still submit normally.
+      }
+    }, 900)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    finalStep,
+    state.address,
+    state.auctionStatus,
+    state.condition,
+    state.situation,
+    state.timeline,
+    step,
+    submitted,
+  ])
+
+  useEffect(() => {
+    if (submitted || step !== finalStep) return
+
+    const address = state.address.trim()
+    const name = state.name.trim()
+    const phone = state.phone.trim()
+    const email = state.email.trim().toLowerCase()
+    const phoneDigits = phone.replace(/\D/g, '')
+    const hasPhoneOrEmail = phoneDigits.length >= 10 || email.includes('@')
+    const hasSubmitFields = Boolean(address && name && phoneDigits.length >= 10 && email.includes('@'))
+
+    if (!address || !hasPhoneOrEmail || hasSubmitFields) return
+
+    const potentialLeadKey = [address, name, phoneDigits, email].join('|')
+    if (potentialLeadKeyRef.current === potentialLeadKey) return
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const attribution = getAttribution()
+        const { sessionId, visitorId } = getPpcSessionContext()
+        const r = await fetch('/api/leads/ppc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            intent: 'potential',
+            step: finalStep,
+            address,
+            addressSource: 'typed',
+            situation: state.situation,
+            timeline: state.timeline,
+            condition: state.condition,
+            auctionStatus: state.auctionStatus || undefined,
+            contact: { name, phone, email },
+            attribution,
+            sessionId: sessionId ?? undefined,
+            visitorId: visitorId ?? undefined,
+          }),
+        })
+        const json = await r.json().catch(() => null)
+        if (r.ok && json?.ok) {
+          potentialLeadKeyRef.current = potentialLeadKey
+          if (json.manifestId) setManifestId(json.manifestId)
+          if (json.leadId) setLeadId(json.leadId)
+        }
+      } catch {
+        // best-effort only; final submit still owns notifications and conversion.
+      }
+    }, 1500)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    finalStep,
+    state.address,
+    state.auctionStatus,
+    state.condition,
+    state.email,
+    state.name,
+    state.phone,
+    state.situation,
+    state.timeline,
+    step,
+    submitted,
+  ])
+
+  useEffect(() => {
+    if (submitted || step !== finalStep) return
 
     const address = state.address.trim()
     const name = state.name.trim()
@@ -274,17 +498,16 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             intent: 'autosave',
-            step: 3,
+            step: finalStep,
             address,
-            addressSource,
             situation: state.situation,
             timeline: state.timeline,
             condition: state.condition,
+            auctionStatus: state.auctionStatus || undefined,
             contact: { name, phone, email },
             attribution,
-            sessionId,
-            visitorId,
-            smsConsent: true,
+            sessionId: sessionId ?? undefined,
+            visitorId: visitorId ?? undefined,
           }),
         })
         const json = await r.json().catch(() => null)
@@ -292,18 +515,17 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
           stage3AutosavedKeyRef.current = autosaveKey
           if (json.manifestId) setManifestId(json.manifestId)
           const stage3Payload = {
-            form_step: 3,
+            form_step: finalStep,
             form_status: 'stage_3_complete_no_submit',
             form_submitted: false,
             has_address: true,
-            address_source: addressSource,
             has_name: true,
             has_phone: true,
             has_email: true,
-            sms_consent: true,
             situation: state.situation || undefined,
             timeline: state.timeline || undefined,
             condition: state.condition || undefined,
+            auctionStatus: state.auctionStatus || undefined,
           }
           firePpcTrackingEvent('step_3_field_completed', stage3Payload)
           fireConversion('lead_stage3_completed', stage3Payload)
@@ -316,105 +538,41 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     return () => window.clearTimeout(timer)
   }, [
     state.address,
-    addressSource,
+    state.auctionStatus,
     state.condition,
     state.email,
     state.name,
     state.phone,
     state.situation,
     state.timeline,
+    finalStep,
     step,
     submitted,
   ])
 
-  useEffect(() => {
-    if (submitted || step !== 3) return
+  const validateTimeline = (formStep: FormStep) => {
+    if (state.timeline) return true
+    trackFormError('Answer this question to continue.', 'timeline', formStep)
+    return false
+  }
 
-    const address = state.address.trim().replace(/\s+/g, ' ')
-    if (address.length < 8 || !/\d/.test(address)) return
+  const validateCondition = (formStep: FormStep) => {
+    if (state.condition) return true
+    trackFormError('Answer this question to continue.', 'condition', formStep)
+    return false
+  }
 
-    const key = `${address}|${addressSource}`
-    if (addressCapturedKeyRef.current === key) return
+  const validateTimelineAndCondition = (formStep: FormStep) => {
+    if (state.timeline && state.condition) return true
+    trackFormError(
+      'Answer both questions to continue.',
+      !state.timeline ? 'timeline' : 'condition',
+      formStep,
+    )
+    return false
+  }
 
-    const timer = window.setTimeout(async () => {
-      const json = await postPpcLeadSignal({
-        intent: 'address_capture',
-        step: 3,
-        address,
-        addressSource,
-        situation: state.situation || undefined,
-        timeline: state.timeline || undefined,
-        condition: state.condition || undefined,
-      })
-      if (json?.ok) addressCapturedKeyRef.current = key
-    }, 1400)
-
-    return () => window.clearTimeout(timer)
-  }, [
-    addressSource,
-    postPpcLeadSignal,
-    state.address,
-    state.condition,
-    state.situation,
-    state.timeline,
-    step,
-    submitted,
-  ])
-
-  useEffect(() => {
-    if (submitted || step !== 3) return
-
-    const address = state.address.trim().replace(/\s+/g, ' ')
-    const name = state.name.trim()
-    const phone = state.phone.trim()
-    const email = state.email.trim().toLowerCase()
-    const phoneDigits = phone.replace(/\D/g, '')
-    const hasPhone = phoneDigits.length >= 10
-    const hasEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-    const hasSubmitFields = Boolean(address && name && hasPhone && hasEmail)
-
-    if (address.length < 8 || !/\d/.test(address) || hasSubmitFields || (!hasPhone && !hasEmail)) return
-
-    const key = [address, name, hasPhone ? phoneDigits : '', hasEmail ? email : '', addressSource].join('|')
-    if (potentialLeadKeyRef.current === key) return
-
-    const timer = window.setTimeout(async () => {
-      const json = await postPpcLeadSignal({
-        intent: 'potential',
-        step: 3,
-        address,
-        addressSource,
-        situation: state.situation || undefined,
-        timeline: state.timeline || undefined,
-        condition: state.condition || undefined,
-        contact: {
-          name: name || undefined,
-          phone: hasPhone ? phone : undefined,
-          email: hasEmail ? email : undefined,
-        },
-      })
-      if (json?.ok) {
-        potentialLeadKeyRef.current = key
-        if (json.manifestId) setManifestId(json.manifestId)
-      }
-    }, 1800)
-
-    return () => window.clearTimeout(timer)
-  }, [
-    addressSource,
-    postPpcLeadSignal,
-    state.address,
-    state.condition,
-    state.email,
-    state.name,
-    state.phone,
-    state.situation,
-    state.timeline,
-    step,
-    submitted,
-  ])
-
-  const advance = (toStep: 1 | 2 | 3) => {
+  const advance = (toStep: FormStep) => {
     setError(null)
     if (toStep === 2) {
       if (!state.situation) {
@@ -429,43 +587,60 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         setQuizStartedFired(true)
       }
       postPartial(1, { situation: state.situation })
-      firePpcTrackingEvent('form_step_completed', {
-        form_step: 1,
-        next_step: 2,
-        situation: state.situation,
-      })
     }
     if (toStep === 3) {
-      if (!state.timeline || !state.condition) {
-        trackFormError('Answer both questions to continue.', !state.timeline ? 'timeline' : 'condition', 2)
-        return
+      if (isTaxLanding) {
+        if (!state.auctionStatus) {
+          trackFormError('Answer this question to continue.', 'auctionStatus', 2)
+          return
+        }
+        postPartial(2, {
+          situation: state.situation,
+          auctionStatus: state.auctionStatus,
+        })
+      } else {
+        if (!validateTimeline(2)) return
+        postPartial(2, {
+          situation: state.situation,
+          timeline: state.timeline,
+        })
+      }
+    }
+    if (toStep === 4) {
+      const qualificationStep = 3
+      if (isTaxLanding) {
+        if (!validateTimelineAndCondition(qualificationStep)) return
+      } else {
+        if (!validateTimeline(2)) return
+        if (!validateCondition(qualificationStep)) return
       }
       fireConversion('lead_quiz_qualified', {
-        form_step: 2,
+        form_step: qualificationStep,
         situation: state.situation,
         timeline: state.timeline,
         condition: state.condition,
+        auctionStatus: state.auctionStatus || undefined,
       })
-      postPartial(2, {
+      postPartial(qualificationStep, {
         situation: state.situation,
         timeline: state.timeline,
         condition: state.condition,
-      })
-      firePpcTrackingEvent('form_step_completed', {
-        form_step: 2,
-        next_step: 3,
-        situation: state.situation,
-        timeline: state.timeline,
-        condition: state.condition,
+        auctionStatus: state.auctionStatus || undefined,
       })
     }
+    firePpcTrackingEvent('form_step_completed', {
+      ...commonFunnelPayload(),
+      completed_step: step,
+      next_step: toStep,
+      form_status: toStep === finalStep ? 'qualified' : 'in_progress',
+    })
     setStep(toStep)
   }
 
   const submit = async () => {
     setError(null)
     if (!state.address.trim() || !state.name.trim() || !state.phone.trim() || !state.email.trim()) {
-      trackFormError('We need all four to send you a custom offer.', 'contact_fields', 3)
+      trackFormError('We need all four to send you a custom offer.', 'contact_fields', finalStep)
       return
     }
     setSubmitting(true)
@@ -476,46 +651,53 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          step: 3,
+          step: finalStep,
           intent: 'submit',
           address: state.address,
-          addressSource,
           situation: state.situation,
           timeline: state.timeline,
           condition: state.condition,
+          auctionStatus: state.auctionStatus || undefined,
           contact: {
             name: state.name,
             phone: state.phone,
             email: state.email,
           },
           attribution,
-          sessionId,
-          visitorId,
-          smsConsent: true,
+          sessionId: sessionId ?? undefined,
+          visitorId: visitorId ?? undefined,
         }),
       })
       const json = await r.json()
       if (!r.ok || !json?.ok) throw new Error(json?.error ?? 'Submit failed')
-      fireConversion('lead_submitted', {
-        form_step: 3,
-        form_status: 'submitted',
-        form_submitted: true,
-        stage3_autosaved: Boolean(manifestId || json.manifestId),
-        has_address: true,
-        address_source: addressSource,
-        has_name: true,
-        has_phone: true,
-        has_email: true,
-        sms_consent: true,
-        situation: state.situation || undefined,
-        timeline: state.timeline || undefined,
-        condition: state.condition || undefined,
-      })
+      if (!json.conversionSuppressed && !json.notificationsSkipped && !json.test) {
+        const leadsUserData = await buildGoogleAdsLeadsUserData({
+          email: state.email,
+          phone: state.phone,
+        })
+
+        fireConversion('lead_submitted', {
+          event_id: typeof json.conversionEventId === 'string' ? json.conversionEventId : undefined,
+          form_step: finalStep,
+          form_status: 'submitted',
+          form_submitted: true,
+          stage3_autosaved: Boolean(manifestId || json.manifestId),
+          has_address: true,
+          has_name: true,
+          has_phone: true,
+          has_email: true,
+          situation: state.situation || undefined,
+          timeline: state.timeline || undefined,
+          condition: state.condition || undefined,
+          auctionStatus: state.auctionStatus || undefined,
+          leadsUserData: leadsUserData ?? undefined,
+        })
+      }
       setLeadId(json.leadId ?? null)
       setManifestId(json.manifestId ?? null)
       setSubmitted(true)
     } catch (e) {
-      trackFormError(e instanceof Error ? e.message : 'Submit failed. Please try again or call us.', 'submit', 3)
+      trackFormError(e instanceof Error ? e.message : 'Submit failed. Please try again or call us.', 'submit', finalStep)
     } finally {
       setSubmitting(false)
     }
@@ -544,6 +726,34 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     }
   }, [bookingOpen])
 
+  const trackContactFieldStarted = <K extends keyof QuizState>(key: K, value: QuizState[K]) => {
+    if (key !== 'address' && key !== 'name' && key !== 'phone' && key !== 'email') return
+    if (contactFieldTrackedRef.current.has(key)) return
+
+    const cleaned = String(value || '').trim()
+    const enoughSignal = key === 'phone'
+      ? cleaned.replace(/\D/g, '').length >= 3
+      : key === 'email'
+        ? cleaned.length >= 3
+        : cleaned.length >= 2
+    if (!enoughSignal) return
+
+    contactFieldTrackedRef.current.add(key)
+    firePpcTrackingEvent('contact_field_started', {
+      form_step: finalStep,
+      field_name: key,
+      field_group: 'contact',
+      has_address: key === 'address' || Boolean(state.address.trim()),
+      has_name: key === 'name' || Boolean(state.name.trim()),
+      has_phone: key === 'phone' || state.phone.replace(/\D/g, '').length >= 3,
+      has_email: key === 'email' || Boolean(state.email.trim()),
+      situation: state.situation || undefined,
+      timeline: state.timeline || undefined,
+      condition: state.condition || undefined,
+      auctionStatus: state.auctionStatus || undefined,
+    })
+  }
+
   const select = <K extends keyof QuizState>(key: K, value: QuizState[K]) => {
     const previous = state[key]
     setState((s) => ({ ...s, [key]: value }))
@@ -557,79 +767,137 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
     }
     if (key === 'timeline') {
       firePpcTrackingEvent('timeline_selected', {
-        form_step: 2,
+        form_step: isTaxLanding ? 3 : 2,
         situation: state.situation || undefined,
         timeline: value,
       })
     }
     if (key === 'condition') {
       firePpcTrackingEvent('condition_selected', {
-        form_step: 2,
+        form_step: 3,
         situation: state.situation || undefined,
         timeline: state.timeline || undefined,
         condition: value,
       })
     }
+    if (key === 'auctionStatus') {
+      firePpcTrackingEvent('auction_status_selected', {
+        form_step: 2,
+        situation: state.situation || undefined,
+        auctionStatus: value,
+      })
+    }
+    trackContactFieldStarted(key, value)
   }
 
-  const updateAddress = (value: string, source: AddressSource = 'typed') => {
-    setAddressSource(source)
-    select('address', value)
-  }
-
-  const trackCtaClick = (clickLocation: string, targetSection = 'quiz') => {
+  const trackCtaClick = (clickLocation: string, ctaLabel: string, ctaTarget = 'quiz') => {
+    const destination = ctaTarget.startsWith('#') ? ctaTarget : `#${ctaTarget}`
     firePpcTrackingEvent('cta_click', {
+      ...commonFunnelPayload(),
+      cta_id: stableEventId(variantKey, 'cta', clickLocation, ctaLabel || ctaTarget),
       click_location: clickLocation,
-      target_section: targetSection,
-      ...formContextRef.current,
+      placement: clickLocation,
+      section: sectionFromClickLocation(clickLocation),
+      cta_label: ctaLabel,
+      cta_target: ctaTarget,
+      destination,
     })
   }
-
+  const trackNavClick = (id: string, clickLocation: string) => {
+    const navLabel = navLabelForTarget(id, isTaxLanding)
+    firePpcTrackingEvent('nav_click', {
+      ...commonFunnelPayload(),
+      nav_id: stableEventId(variantKey, 'nav', clickLocation, id),
+      nav_target: id,
+      nav_label: navLabel,
+      click_location: clickLocation,
+      placement: clickLocation,
+      section: 'navigation',
+      destination: `#${id}`,
+    })
+  }
   const scrollToQuiz = () => document.getElementById('quiz')?.scrollIntoView({ behavior: 'smooth' })
-  const jumpToQuiz = (e: MouseEvent<HTMLAnchorElement>, clickLocation: string) => {
-    e.preventDefault()
-    trackCtaClick(clickLocation)
+  const handleQuizCta = (clickLocation: string, ctaLabel: string) => {
+    trackCtaClick(clickLocation, ctaLabel)
     scrollToQuiz()
   }
-
-  const scrollToId = (id: string, clickLocation: string) => (e: MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault()
-    setMobileMenuOpen(false)
-    firePpcTrackingEvent('nav_click', {
-      click_location: clickLocation,
-      target_section: id,
-      ...formContextRef.current,
+  const handleDecisionRowClick = (row: DecisionRowClick) => {
+    firePpcTrackingEvent('show_me_clicked', {
+      ...commonFunnelPayload(),
+      item_id: stableEventId(variantKey, row.section, row.stage, row.title),
+      item_label: row.title,
+      issue: row.stage,
+      cta_label: row.cta,
+      destination: '#quiz',
+      section: row.section,
+      placement: 'decision_row',
+      position: row.position,
     })
+    scrollToQuiz()
+  }
+  const scrollToId = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault()
+    trackNavClick(id, mobileMenuOpen ? 'mobile_nav' : 'top_nav')
+    setMobileMenuOpen(false)
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
   const trackPhoneClick = (clickLocation: string) => {
     firePpcTrackingEvent('phone_click', {
       phone_number: phoneTel,
       phone_display: phoneDisplay,
+      cta_id: stableEventId(variantKey, 'phone', clickLocation),
+      cta_label: `Call ${phoneDisplay}`,
       click_location: clickLocation,
-      ...formContextRef.current,
+      placement: clickLocation,
+      section: sectionFromClickLocation(clickLocation),
+      destination: `tel:${phoneTel}`,
     })
   }
+  const faqs = isTaxLanding ? TAX_FAQS : FAQS
+  const isAuctionStep = isTaxLanding && step === 2
+  const isTimelineStep = isTaxLanding ? step === 3 : step === 2
+  const isConditionStep = !isTaxLanding && step === 3
+  const timelineNextStep: FormStep = isTaxLanding ? 4 : 3
+  const stepLabel = step === finalStep
+    ? '15 seconds to finish'
+    : isAuctionStep
+      ? '10 seconds'
+      : isTimelineStep
+        ? '20 seconds'
+        : isConditionStep
+          ? '15 seconds'
+        : '30 seconds'
 
   return (
-    <div className="skc-sell">
+    <div className={`skc-sell ${isTaxLanding ? 'tax-landing' : ''}`}>
       {/* ============ TOP BAR ============ */}
       <div className="topbar">
         <div className="container topbar-inner">
-          <a href="#quiz" className="logo" onClick={scrollToId('quiz', 'topbar_logo')}>
+          <a href="#quiz" className="logo" onClick={scrollToId('quiz')}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/skc-logo.png" alt="Saving KC Homebuyers" className="topbar-logo" width={489} height={141} />
           </a>
           <nav className="nav-links" aria-label="primary">
-            <a href="#how" onClick={scrollToId('how', 'top_nav_how')}>How it works</a>
-            <a href="#about" onClick={scrollToId('about', 'top_nav_about')}>About us</a>
-            <a href="#faq" onClick={scrollToId('faq', 'top_nav_faq')}>FAQ</a>
-            <a href="#reviews" onClick={scrollToId('reviews', 'top_nav_reviews')}>Reviews</a>
+            {isTaxLanding ? (
+              <>
+                <a href="#timeline" onClick={scrollToId('timeline')}>Steps</a>
+                <a href="#stages" onClick={scrollToId('stages')}>Issues</a>
+                <a href="#team" onClick={scrollToId('team')}>Team</a>
+              </>
+            ) : (
+              <>
+                <a href="#how" onClick={scrollToId('how')}>Steps</a>
+                <a href="#problems" onClick={scrollToId('problems')}>Issues</a>
+                <a href="#about" onClick={scrollToId('about')}>Team</a>
+              </>
+            )}
+            <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
+            <a href="#video-testimonials" onClick={scrollToId('video-testimonials')}>Reviews</a>
           </nav>
-          <div className="topbar-right">
+          <div className={`topbar-right ${navJumpVisible ? 'has-jump' : ''}`}>
             <div className="topbar-trust">
               <span className="stars">★★★★★</span>
-              <span><strong>100+</strong> KC homeowners helped</span>
+              <span><strong>100+</strong> Owners helped</span>
             </div>
             <a href={`tel:${phoneTel}`} className="topbar-phone" onClick={() => trackPhoneClick('topbar')}>
               <span className="material-symbols-outlined" aria-hidden>call</span>
@@ -639,9 +907,9 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
               <a
                 href="#quiz"
                 className="nav-jump visible"
-                onClick={(e) => jumpToQuiz(e, 'sticky_offer_cta')}
+                onClick={scrollToId('quiz')}
               >
-                Get My Offer
+                {isTaxLanding ? 'Start Fresh' : 'Get My Offer'}
                 <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
               </a>
             )}
@@ -658,10 +926,21 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         </div>
         <div className={`mobile-menu ${mobileMenuOpen ? 'open' : ''}`}>
           <div className="mobile-menu-inner">
-            <a href="#how" onClick={scrollToId('how', 'mobile_nav_how')}>How it works</a>
-            <a href="#about" onClick={scrollToId('about', 'mobile_nav_about')}>About us</a>
-            <a href="#faq" onClick={scrollToId('faq', 'mobile_nav_faq')}>FAQ</a>
-            <a href="#reviews" onClick={scrollToId('reviews', 'mobile_nav_reviews')}>Reviews</a>
+            {isTaxLanding ? (
+              <>
+                <a href="#timeline" onClick={scrollToId('timeline')}>Steps</a>
+                <a href="#stages" onClick={scrollToId('stages')}>Issues</a>
+                <a href="#team" onClick={scrollToId('team')}>Team</a>
+              </>
+            ) : (
+              <>
+                <a href="#how" onClick={scrollToId('how')}>Steps</a>
+                <a href="#problems" onClick={scrollToId('problems')}>Issues</a>
+                <a href="#about" onClick={scrollToId('about')}>Team</a>
+              </>
+            )}
+            <a href="#faq" onClick={scrollToId('faq')}>FAQ</a>
+            <a href="#video-testimonials" onClick={scrollToId('video-testimonials')}>Reviews</a>
             <div className="mobile-trust">
               <span className="stars">★★★★★</span>
               <span><strong>100+</strong> KC homeowners helped</span>
@@ -675,43 +954,53 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       </div>
 
       {/* ============ HERO ============ */}
-      <section className="hero" id="quiz" data-track-section="hero_quiz">
+      <section className="hero" id="quiz">
         <div className="container">
           <div className="hero-grid">
             <div className="hero-copy">
               <div className="hero-eyebrow">
-                <span className="dot"></span> Kansas City • MO + KS
+                <span className="dot"></span> {isTaxLanding ? 'Tax-delinquent specialists · KC metro' : 'Kansas City • MO + KS'}
               </div>
-              <h1>Sell My House In Kansas City Today.</h1>
-              <p className="sub">
-                Back taxes. A house you didn&apos;t ask for. A tenant you can&apos;t get out. Repairs you stopped counting. Whatever it is, you don&apos;t have to fix it, clean it, or explain it. Tell us the address. We bring a fair cash number in an hour. You pick the day it closes.
-              </p>
+              {isTaxLanding ? (
+                <>
+                  <h1>Behind on property taxes <span className="accent">&amp; want to sell?</span></h1>
+                  <p className="tax-hero-summary">
+                    Back taxes, penalties, county deadlines, and letters you do not want to open can make the house feel like a clock is running. We help you see the real number, protect what equity is left, and move without repairs, agents, or public listing pressure.
+                  </p>
+                  <div className="fresh-start">
+                    <span className="fresh-start-icon material-symbols-outlined" aria-hidden>wb_sunny</span>
+                    <span className="fresh-start-text">
+                      The <span className="em">fresh start</span>{' '}you&apos;ve been waiting for.
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h1>Sell My House In <span className="accent">Kansas City</span> Today.</h1>
+                  <div className="sub">
+                    <p>Back taxes. An inherited headache. A tenant who won’t leave. Repairs that never end.</p>
+                    <p>Whatever stress you’re facing, you don’t have to fix it, clean it, or explain it. Just give us the address and we’ll bring you a fair cash offer in under an hour. You pick the closing date.</p>
+                  </div>
+                  <div className="fresh-start">
+                    <span className="fresh-start-icon material-symbols-outlined" aria-hidden>wb_sunny</span>
+                    <span className="fresh-start-text">
+                      The <span className="em">fresh start</span>{' '}you&apos;ve been waiting for.
+                    </span>
+                  </div>
+                </>
+              )}
 
               <ul className="hero-bullets">
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>You pay $0.</strong> No fees, no commissions, no repairs, and no cleanup. The number we say is the check you get.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Keep your privacy.</strong> Handle things quietly at closing. Probate, liens, back taxes, hoarder mess. No neighbors. No judgment.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Pick your payday.</strong> Close in 14 days if you need out fast, or take 60. You set the pace.
-                  </span>
-                </li>
+                <li><span className="check">✓</span><span><strong>$0 due before you sell.</strong></span></li>
+                <li><span className="check">✓</span><span><strong>100% private.</strong> <span className="muted-inline">No yard signs. No open houses.</span></span></li>
+                <li><span className="check">✓</span><span><strong>Close in 7-60 days</strong> <span className="muted-inline">- you pick the day.</span></span></li>
+                <li><span className="check">✓</span><span><strong>Back taxes paid at closing.</strong></span></li>
               </ul>
 
               <div className="hero-trust-row">
                 <span className="stars">★★★★★</span>
                 <span className="trust-text">
-                  <strong>4.9/5</strong> from <strong>100+ KC homeowners</strong>
+                  <strong>4.9/5</strong> from <strong>100+ Owners helped</strong>
                 </span>
                 <span className="trust-text">
                   • <strong>11 years</strong> in the KC market
@@ -722,25 +1011,27 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
             <div className="hero-form">
             <div className="tool-card" ref={toolCardRef}>
               <span className="tool-eyebrow">
-                <span className="material-symbols-outlined" aria-hidden>bolt</span>
-                Start here
+                <span className="material-symbols-outlined" aria-hidden>{isTaxLanding ? 'wb_sunny' : 'bolt'}</span>
+                {isTaxLanding ? 'Your fresh start starts here' : 'Start here'}
               </span>
-              <h2>Get Your Cash Offer in 1 hour.</h2>
+              <h2>{isTaxLanding ? 'Get My Cash Offer In 1 hour.' : 'Get Your Cash Offer in 1 hour.'}</h2>
               <p className="tool-sub">
-                Get a cash-offer range based on your property location, condition, and timeline in less than 1 hour.
+                {isTaxLanding
+                  ? "Four quick questions. Answer or don't."
+                  : 'Get a cash-offer range based on your property location, condition, and timeline in less than 1 hour.'}
               </p>
 
               <div className="step-indicator">
-                <span className="step-pill" aria-label={`Step ${step} of 3`}>
+                <span className="step-pill" aria-label={`Step ${step} of ${totalSteps}`}>
                   <span className="step-num-circle">{step}</span>
-                  <span className="step-num-text">Step {step} of 3</span>
+                  <span className="step-num-text">Step {step} of {totalSteps}</span>
                 </span>
                 <span className="step-track">
-                  <span className="step-track-fill" style={{ width: `${(step / 3) * 100}%` }} />
+                  <span className="step-track-fill" style={{ width: `${(step / totalSteps) * 100}%` }} />
                 </span>
               </div>
               <div className="step-label">
-                {step === 3 ? '15 seconds to finish' : step === 2 ? '20 seconds' : '30 seconds'}
+                {stepLabel}
               </div>
 
               {submitted ? (
@@ -756,7 +1047,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                   </p>
                   {showBookingCta && (
                     <button type="button" className="btn-continue" onClick={openBooking}>
-                      Book a 15-min Call
+                      <span className="btn-label">Book a 15-min Call</span>
                       <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                     </button>
                   )}
@@ -764,24 +1055,47 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
               ) : step === 1 ? (
                 <div style={{ marginTop: 18 }}>
                   <div className="form-field form-field-prominent">
-                    <span className="field-label">What&apos;s your situation?</span>
-                    <div className="radio-group three-col">
-                      {SITUATION_TILES.map(({ value, icon, label }) => (
+                    <span className="field-label">
+                      {isTaxLanding ? 'Are you behind on property taxes?' : "What's your situation?"}
+                    </span>
+                    {isTaxLanding ? (
+                      <div className="radio-group yesno">
                         <button
-                          key={value}
                           type="button"
-                          className={`radio-tile ${state.situation === value ? 'selected' : ''}`}
-                          onClick={() => select('situation', value)}
+                          className={`radio-tile ${state.situation === 'tax-delinquent' ? 'selected' : ''}`}
+                          onClick={() => select('situation', 'tax-delinquent')}
                         >
-                          <span className="material-symbols-outlined" aria-hidden>{icon}</span>
-                          {label}
+                          <span className="material-symbols-outlined" aria-hidden>warning</span>
+                          Yes
                         </button>
-                      ))}
-                    </div>
+                        <button
+                          type="button"
+                          className={`radio-tile ${state.situation === 'other' ? 'selected' : ''}`}
+                          onClick={() => select('situation', 'other')}
+                        >
+                          <span className="material-symbols-outlined" aria-hidden>check_circle</span>
+                          No / Not sure
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="radio-group three-col">
+                        {SITUATION_TILES.map(({ value, icon, label }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`radio-tile ${state.situation === value ? 'selected' : ''}`}
+                            onClick={() => select('situation', value)}
+                          >
+                            <span className="material-symbols-outlined" aria-hidden>{icon}</span>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
                   <button type="button" className="btn-continue" onClick={() => advance(2)}>
-                    Continue
+                    <span className="btn-label">Next</span>
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                   <p className="form-footer">
@@ -791,11 +1105,35 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                     Your info stays private. No spam, ever.
                   </p>
                 </div>
-              ) : step === 2 ? (
+              ) : isAuctionStep ? (
                 <div style={{ marginTop: 18 }}>
-                  <div className="form-field">
-                    <label>How soon do you need to sell?</label>
-                    <div className="radio-group">
+                  <div className="form-field form-field-prominent">
+                    <span className="field-label">Has your home been sold at auction?</span>
+                    <div className="radio-group three-col">
+                      {AUCTION_TILES.map(({ value, icon, label }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`radio-tile ${state.auctionStatus === value ? 'selected' : ''}`}
+                          onClick={() => select('auctionStatus', value)}
+                        >
+                          <span className="material-symbols-outlined" aria-hidden>{icon}</span>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
+                  <button type="button" className="btn-continue" onClick={() => advance(3)}>
+                    <span className="btn-label">Next</span>
+                    <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+                  </button>
+                </div>
+              ) : isTimelineStep ? (
+                <div style={{ marginTop: 18 }}>
+                  <div className={`form-field ${!isTaxLanding ? 'form-field-prominent' : ''}`}>
+                    <label>{isTaxLanding ? 'How soon would you like this behind you?' : 'How soon do you need to sell?'}</label>
+                    <div className={`radio-group ${!isTaxLanding ? 'prominent-choices' : ''}`}>
                       {TIMELINE_TILES.map(({ value, label }) => (
                         <button
                           key={value}
@@ -808,9 +1146,35 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                       ))}
                     </div>
                   </div>
-                  <div className="form-field">
+                  {isTaxLanding && (
+                    <div className="form-field">
+                      <label>What shape is the property in?</label>
+                      <div className="radio-group">
+                        {CONDITION_TILES.map(({ value, icon, label }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`radio-tile ${state.condition === value ? 'selected' : ''}`}
+                            onClick={() => select('condition', value)}
+                          >
+                            <span className="material-symbols-outlined" aria-hidden>{icon}</span>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
+                  <button type="button" className="btn-continue" onClick={() => advance(timelineNextStep)}>
+                    <span className="btn-label">{isTaxLanding ? 'See My Fresh-Start Number' : 'Next'}</span>
+                    <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+                  </button>
+                </div>
+              ) : isConditionStep ? (
+                <div style={{ marginTop: 18 }}>
+                  <div className="form-field form-field-prominent">
                     <label>Condition of the property</label>
-                    <div className="radio-group">
+                    <div className="radio-group prominent-choices">
                       {CONDITION_TILES.map(({ value, icon, label }) => (
                         <button
                           key={value}
@@ -825,8 +1189,8 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                     </div>
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
-                  <button type="button" className="btn-continue" onClick={() => advance(3)}>
-                    See My Offer Range
+                  <button type="button" className="btn-continue" onClick={() => advance(4)}>
+                    <span className="btn-label">See My Offer Range</span>
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                 </div>
@@ -850,7 +1214,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                     <span className="material-symbols-outlined" style={{ color: 'var(--green)', fontSize: 18, fontVariationSettings: "'FILL' 1" }} aria-hidden>
                       check_circle
                     </span>
-                    Cash-offer range ready — finish below to see it.
+                    {isTaxLanding ? 'Fresh-start number ready — finish below to see it.' : 'Cash-offer range ready — finish below to see it.'}
                   </div>
                   <div className="form-field">
                     <label htmlFor="address">Property address</label>
@@ -858,11 +1222,10 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                       id="address"
                       placeholder="Start typing your address…"
                       value={state.address}
-                      onChange={(v) => updateAddress(v, 'typed')}
-                      onPlaceSelected={(address) => {
-                        updateAddress(address, 'google_places')
+                      onChange={(v) => select('address', v)}
+                      onPlaceSelected={() => {
                         firePpcTrackingEvent('address_selected', {
-                          form_step: 3,
+                          form_step: finalStep,
                           address_source: 'google_places',
                           has_address: true,
                           situation: state.situation || undefined,
@@ -909,14 +1272,14 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
                   </div>
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
                   <button type="button" className="btn-continue" onClick={submit} disabled={submitting}>
-                    {submitting ? 'Sending…' : 'Get My Custom Offer'}
+                    <span className="btn-label">{submitting ? 'Sending…' : 'Get My Custom Offer'}</span>
                     {!submitting && (
                       <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                     )}
                   </button>
                   <p className="form-footer">
                     <span className="material-symbols-outlined" style={{ fontSize: 14, verticalAlign: 'middle', marginRight: 3 }} aria-hidden>lock</span>
-                    We never sell your info. By clicking, you agree we may call, text, or email about your property offer. Consent is not required to sell. Msg/data rates may apply. Reply STOP to opt out.
+                    Inbound-only · We never sell your info · A2P 10DLC compliant
                   </p>
                 </div>
               )}
@@ -926,84 +1289,48 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
         </div>
       </section>
 
-      {/* ============ HOW IT WORKS ============ */}
-      <section className="block" id="how" data-track-section="how_it_works">
-        <div className="container">
-          <div className="section-eyebrow">How it works</div>
-          <h2 className="section-title">Out from under it in 3 steps.</h2>
-          <p className="section-sub">
-            No back-and-forth, no surprise fees, no walk-throughs unless you want one. Here&apos;s what actually happens.
-          </p>
+      <TaxTrustStrip />
 
-          <div className="steps-grid">
-            <div className="step">
-              <div className="step-icon">
-                <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>location_on</span>
-              </div>
-              <div className="step-num">Step 1 · 30 sec</div>
-              <h3>Tell us about the property</h3>
-              <p>
-                Address, situation, timeline. That&apos;s it. No SSN, no income docs, no credit check — we&apos;re buying the house, not lending to you.
-              </p>
-            </div>
-            <div className="step">
-              <div className="step-icon">
-                <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>call</span>
-              </div>
-              <div className="step-num">Step 2 · 1 hour</div>
-              <h3>We build a structured offer</h3>
-              <p>
-                We pull title, check the back-tax balance, and structure an offer that <em>actually accounts for your situation</em> — probate, liens, code violations, all of it.
-              </p>
-            </div>
-            <div className="step">
-              <div className="step-icon">
-                <span className="material-symbols-outlined" style={{ fontSize: 30 }} aria-hidden>key</span>
-              </div>
-              <div className="step-num">Step 3 · 7–30 days</div>
-              <h3>You pick the closing date</h3>
-              <p>
-                Cash at closing through a local KC title company. We pay the back taxes, handle the paperwork, and you walk away clean. Need to stay 30 days? We work that in.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ============ SITUATIONS ============ */}
-      <section className="block" id="about" data-track-section="situations">
-        <div className="container">
-          <div className="section-eyebrow">Who we help</div>
-          <h2 className="section-title">If life put you here, we can help.</h2>
-          <p className="section-sub">
-            No matter how you ended up holding this house, you&apos;re not the first and you won&apos;t be the last. We&apos;ve built the offer for every one of these — quietly, fairly, fast.
-          </p>
-
-          <div className="situations-grid">
-            <SitCard icon="gavel" title="Back taxes piling up" body="Stop the auction clock and walk away with the equity you’d otherwise lose at the courthouse steps. We pay the county directly." cta="Protect what you’ve built" onClick={(e) => jumpToQuiz(e, 'situation_card_back_taxes')} />
-            <SitCard icon="family_history" title="Inherited more than you bargained for" body="Turn a house full of memories and obligations into one clean check your family can split. We work alongside probate — you don’t have to wait for it." cta="Honor the past, move forward" onClick={(e) => jumpToQuiz(e, 'situation_card_inherited')} />
-            <SitCard icon="person_off" title="Done being everybody’s landlord" body="Hand us the keys, the tenant, and the headache. We close with renters in place — no evictions, no awkward conversations, no 60-day notices." cta="Get your weekends back" onClick={(e) => jumpToQuiz(e, 'situation_card_landlord')} />
-            <SitCard icon="construction" title="A house you can’t afford to fix" body="Fire damage, foundation cracks, code violations, a kitchen frozen in 1978 — none of it scares us, and none of it lowers our offer the way a retail buyer would." cta="Sell it exactly as it sits" onClick={(e) => jumpToQuiz(e, 'situation_card_repairs')} />
-            <SitCard icon="schedule_send" title="Foreclosure, divorce, or a fast move" body="When life forces a fast decision, we move at your speed and protect your privacy. 14-day closings with title partners who already know our paperwork." cta="Close on your timeline" onClick={(e) => jumpToQuiz(e, 'situation_card_life_event')} />
-            <SitCard icon="landscape" title="Land or lots draining your wallet" body="Vacant lots, ag parcels, that infill piece your uncle left you — if it’s costing you taxes every year and earning you nothing, we’ll take it off your books." cta="Stop paying for nothing" onClick={(e) => jumpToQuiz(e, 'situation_card_land')} />
-          </div>
-        </div>
-      </section>
+      {isTaxLanding ? (
+        <>
+          <TaxFreshStartTimeline />
+          <TaxDecisionRows onRowClick={handleDecisionRowClick} />
+          <TaxGuarantee />
+          <TaxTeamSection />
+        </>
+      ) : (
+        <>
+          <GeneralFreshStartTimeline />
+          <GeneralProblemRows onRowClick={handleDecisionRowClick} />
+          <GeneralPromise />
+          <GeneralTeamSection />
+        </>
+      )}
 
       {/* ============ MID CTA ============ */}
-      <section className="block" data-track-section="mid_cta">
+      <section className="block">
         <div className="container">
           <div className="mid-cta">
             <div className="mid-cta-content">
               <h2>
-                Every month you wait, this gets <span className="accent">harder, not cheaper.</span>
+                {isTaxLanding ? 'Every month you wait,' : 'Every month you wait, this gets'}{' '}
+                <span className="accent">{isTaxLanding ? 'the math gets worse.' : 'harder, not cheaper.'}</span>
               </h2>
               <p>
-                Property problems compound. Taxes accrue interest. Vacant houses get vandalized. Estates rack up legal costs. Tenants disappear with the security deposit. The number you get six months from now will be smaller than the number you can get this week. Let&apos;s see yours.
+                {isTaxLanding
+                  ? 'Interest compounds. Penalties stack. Auction dates lock. The number you can walk away with this week can be smaller next month. Get your real number now.'
+                  : 'Taxes grow. Repairs get worse. Empty houses get damaged. Bad tenants can cost more each month. Get a clear number today, then decide what is best for you.'}
               </p>
               <div className="mid-cta-actions">
-                <a href="#quiz" className="btn-secondary" onClick={(e) => jumpToQuiz(e, 'mid_page_offer_cta')}>
-                  See My Number
+                <a
+                  href="#quiz"
+                  className="btn-secondary"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleQuizCta('mid_page_cta', isTaxLanding ? 'Start My Fresh Start' : 'Get My Number')
+                  }}
+                >
+                  {isTaxLanding ? 'Start My Fresh Start' : 'Get My Number'}
                   <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                 </a>
                 <a href={`tel:${phoneTel}`} className="btn-secondary" onClick={() => trackPhoneClick('mid_page_cta')}>
@@ -1014,108 +1341,79 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
             </div>
             <div className="mid-cta-stat">
               <div className="stat-box">
-                <div className="num">$45K</div>
-                <div className="label">Average cash in homeowners&apos; pockets at closing</div>
+                <div className="num">{isTaxLanding ? '$45K' : '$0'}</div>
+                <div className="label">
+                  {isTaxLanding ? 'Average walk-away cash' : 'Needed before you sell'}
+                </div>
               </div>
               <div className="stat-box">
-                <div className="num">18 days</div>
-                <div className="label">Fastest close when you need out now</div>
+                <div className="num">{isTaxLanding ? '18 days' : '7-60 days'}</div>
+                <div className="label">
+                  {isTaxLanding ? 'Fastest pre-DLT close' : 'You pick the closing day'}
+                </div>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ============ COUNTIES ============ */}
-      <section className="block" data-track-section="service_area">
+      <GeneralVideoTestimonials />
+
+      {/* ============ TESTIMONIALS ============ */}
+      <section className="block" id="reviews">
         <div className="container">
-          <div className="section-eyebrow">Service area</div>
-          <h2 className="section-title">We know your county. And your block.</h2>
+          <div className="section-eyebrow">Real fresh starts</div>
+          <h2 className="section-title">
+            {isTaxLanding ? (
+              <>
+                100+ KC neighbors. <span className="accent-green">All the way home.</span>
+              </>
+            ) : (
+              <>
+                100+ KC neighbors. <span className="accent-green">All the way home.</span>
+              </>
+            )}
+          </h2>
           <p className="section-sub">
-            We work both sides of the state line. If your property is in any of these counties, we can help.
+            {isTaxLanding
+              ? 'No actors. Real sellers, real tax pressure, real closing-table outcomes.'
+              : 'No actors. Real sellers, real house trouble, real closing-table outcomes.'}
           </p>
 
-          <div className="county-grid">
-            {[
-              ['JA', 'Jackson County', 'Missouri'],
-              ['CL', 'Clay County', 'Missouri'],
-              ['PL', 'Platte County', 'Missouri'],
-              ['WY', 'Wyandotte County', 'Kansas'],
-              ['JO', 'Johnson County', 'Kansas'],
-              ['+', 'Surrounding metro', 'Case-by-case'],
-            ].map(([flag, name, sub]) => (
-              <div key={name} className="county-card">
-                <div className="county-flag">{flag}</div>
-                <div>
-                  <h4>{name}</h4>
-                  <div className="state">{sub}</div>
-                </div>
-              </div>
+          <div className="testimonials featured-testimonials">
+            {(isTaxLanding ? TAX_TESTIMONIALS : TESTIMONIALS).map((testimonial) => (
+              <Testimonial key={`${testimonial.initials}-${testimonial.name}`} {...testimonial} />
             ))}
           </div>
         </div>
       </section>
 
-      {/* ============ TESTIMONIALS ============ */}
-      <section className="block" id="reviews" data-track-section="reviews">
-        <div className="container">
-          <div className="section-eyebrow">What KC homeowners say</div>
-          <h2 className="section-title">100+ neighbors. Real stories.</h2>
-          <p className="section-sub">
-            These aren&apos;t paid testimonials. They&apos;re people we&apos;ve actually helped — and you can ask them yourself before we close.
-          </p>
-
-          <div className="testimonials">
-            <Testimonial
-              initials="RM"
-              name="Renee M."
-              meta="Inherited property · Jackson County, MO"
-              quote='"Three years of unpaid taxes on a house I inherited from my dad. Every other buyer wanted to deduct the taxes twice from the offer. Saving KC paid the back taxes at closing and still gave me a fair number. Closed in 18 days."'
-            />
-            <Testimonial
-              initials="DT"
-              name="David T."
-              meta="Tired landlord · Wyandotte County, KS"
-              quote='"Bad tenants, busted HVAC, and I live in Denver. I didn’t have the time or the heart to deal with it. Ernest’s team handled the tenant conversation, took the property as-is with everything still inside. Done."'
-            />
-            <Testimonial
-              initials="JK"
-              name="Jerome K."
-              meta="Pre-DLT auction · Jackson County, MO"
-              quote='"I was 60 days from the DLT auction. Two other ‘we buy houses’ guys ghosted me when they saw the title. Saving KC didn’t blink — closed in 14 days. I walked away with money instead of a court notice."'
-            />
-            <Testimonial
-              initials="SP"
-              name="Sandra P."
-              meta="Probate sale · Clay County, MO"
-              quote='"My brother and I disagreed on everything about the estate. They worked with both of us, kept the communication separate when we needed it, and got us to closing without making it worse. That’s rare."'
-            />
-          </div>
-        </div>
-      </section>
-
       {/* ============ FAQ ============ */}
-      <section className="block" id="faq" data-track-section="faq">
+      <section className="block" id="faq">
         <div className="container">
           <div className="section-eyebrow">Common questions</div>
           <h2 className="section-title">Questions worth asking.</h2>
 
           <div className="faq-list">
-            {FAQS.map((faq, i) => (
+            {faqs.map((faq, i) => (
               <div key={i} className={`faq-item ${openFaq === i ? 'open' : ''}`}>
                 <button
                   type="button"
                   className="faq-q"
                   aria-expanded={openFaq === i}
                   onClick={() => {
-                    if (openFaq !== i) {
-                      firePpcTrackingEvent('faq_opened', {
-                        faq_index: i,
-                        faq_question: faq.q,
-                        ...formContextRef.current,
-                      })
-                    }
-                    setOpenFaq(openFaq === i ? null : i)
+                    const willOpen = openFaq !== i
+                    setOpenFaq(willOpen ? i : null)
+                    if (!willOpen) return
+                    firePpcTrackingEvent('faq_opened', {
+                      ...commonFunnelPayload(),
+                      faq_id: stableEventId(variantKey, 'faq', String(i + 1), faq.q),
+                      faq_index: i + 1,
+                      faq_question: faq.q,
+                      label: faq.q,
+                      section: 'faq',
+                      position: i + 1,
+                    })
                   }}
                 >
                   {faq.q} <span className="plus">+</span>
@@ -1130,22 +1428,30 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
       </section>
 
       {/* ============ FINAL CTA ============ */}
-      <section className="block" data-track-section="final_cta">
+      <section className="block">
         <div className="container">
           <div className="final-cta">
             <h2>
-              Stop wondering.{' '}
-              <span className="accent">Find out what your house is actually worth in 30 seconds.</span>
+              {isTaxLanding ? 'Your ' : 'Stop wondering. '}
+              <span className="accent">
+                {isTaxLanding ? 'fresh start' : 'Get your cash offer in 1 hour.'}
+              </span>
+              {isTaxLanding ? ' is one form away.' : ''}
             </h2>
             <p>
-              No phone call until you ask. No pressure, no spam. Just a real offer range based on your address and your situation.
+              {isTaxLanding
+                ? '60 seconds. Four questions. Cash offer in an hour. Closing timeline built around title and your situation.'
+                : 'Tell us the address and what is going on. We will give you a real number. You can say yes or no.'}
             </p>
             <a
               href="#quiz"
               className="btn-secondary lg"
-              onClick={(e) => jumpToQuiz(e, 'final_offer_cta')}
+              onClick={(e) => {
+                e.preventDefault()
+                handleQuizCta('final_cta', isTaxLanding ? 'Start My Fresh Start' : 'Get My Cash Offer')
+              }}
             >
-              Get My Free Offer Estimate
+              {isTaxLanding ? 'Start My Fresh Start' : 'Get My Cash Offer'}
               <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
             </a>
             <div className="micro">
@@ -1201,28 +1507,775 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false }: 
   )
 }
 
-function SitCard({
-  icon,
-  title,
-  body,
-  cta,
-  onClick,
-}: {
-  icon: string
-  title: string
-  body: string
-  cta: string
-  onClick?: (e: MouseEvent<HTMLAnchorElement>) => void
-}) {
+function GeneralFreshStartTimeline() {
   return (
-    <a href="#quiz" className="sit-card" onClick={onClick}>
-      <div className="sit-icon">
-        <span className="material-symbols-outlined" style={{ fontSize: 22 }} aria-hidden>{icon}</span>
+    <section className="block tax-timeline-section" id="how">
+      <div className="container">
+        <div className="section-eyebrow">How it works</div>
+        <h2 className="section-title">
+          Tell us the mess. <span className="accent-green">We bring a number.</span>
+        </h2>
+        <p className="section-sub">
+          You do not need a perfect house. You do not need money to fix it. You only need the address and the truth.
+        </p>
+
+        <div className="tax-timeline">
+          <div className="tax-timeline-rail" />
+          {[
+            ['1', 'Today', 'Tell us what is wrong', 'Taxes, repairs, a tenant, probate, or junk. Say it in plain words.'],
+            ['2', '1 hour', 'Get a real cash number', 'We check the house, title, taxes, and repairs. Then we show you the math.'],
+            ['3', 'Your day', 'Close and move on', 'Pick 7 days or 60 days. We close at title and pay the agreed costs.'],
+          ].map(([day, label, title, body], index) => (
+            <div className={`tax-timeline-step step-${index + 1}`} key={title}>
+              <div className="tax-day">
+                <span className="day-num">{day}</span>
+                <span className="day-label">{label}</span>
+              </div>
+              <h3>{title}</h3>
+              <p>{body}</p>
+            </div>
+          ))}
+        </div>
       </div>
-      <h3>{title}</h3>
-      <p>{body}</p>
-      <span className="sit-link">{cta}</span>
-    </a>
+    </section>
+  )
+}
+
+function GeneralProblemRows({ onRowClick }: { onRowClick: (row: DecisionRowClick) => void }) {
+  const rows = [
+    {
+      tone: 'brand',
+      icon: 'gavel',
+      stage: 'Back taxes',
+      title: 'Tax letters keep coming',
+      body: 'Fees grow each month. The county may set a sale date.',
+      ifLabel: 'What we can do',
+      ifValue: 'We can pay the back taxes at closing if we buy the house.',
+      thenLabel: 'You get',
+      thenValue: <>A clear cash offer and a way out</>,
+      cta: 'Show me',
+    },
+    {
+      tone: 'amber',
+      icon: 'family_history',
+      stage: 'Inherited house',
+      title: 'You got a house you did not ask for',
+      body: 'Family may not agree. The house may need work. You may live far away.',
+      ifLabel: 'What we can do',
+      ifValue: 'We can buy it as-is and work with the probate path.',
+      thenLabel: 'You get',
+      thenValue: <>One clean closing for the family</>,
+      cta: 'Show me',
+    },
+    {
+      tone: 'green',
+      icon: 'construction',
+      stage: 'Tenant or repairs',
+      title: 'The house is too much right now',
+      body: 'The tenant will not leave, or the repairs cost more than you have.',
+      ifLabel: 'What we can do',
+      ifValue: 'We buy with tenants, junk, old stuff, and repairs still there.',
+      thenLabel: 'You get',
+      thenValue: <>No cleaning. No fixing. No showings.</>,
+      cta: 'Start',
+    },
+  ]
+
+  return (
+    <section className="block tax-decision-section" id="problems">
+      <div className="container">
+        <div className="section-eyebrow">What kind of trouble is it?</div>
+        <h2 className="section-title">
+          Pick the problem. <span className="accent-green">We show the next step.</span>
+        </h2>
+        <p className="section-sub">
+          Most sellers who call us are tired, stuck, or scared of what comes next. That is exactly who we help.
+        </p>
+
+        <div className="tax-decision-block">
+          <div className="decision-top">
+            You do not have to fix it first. <strong>We buy the hard houses.</strong>
+          </div>
+          <div className="decision-rows">
+            {rows.map((row, index) => (
+              <button
+                type="button"
+                className={`decision-row decision-card ${row.tone}`}
+                key={row.stage}
+                onClick={() => onRowClick({
+                  stage: row.stage,
+                  title: row.title,
+                  cta: row.cta,
+                  section: 'problems',
+                  position: index + 1,
+                })}
+              >
+                <span className="decision-stage">{row.stage}</span>
+                <span className="if-block decision-card-head">
+                  <span className="if-icon">
+                    <span className="material-symbols-outlined" aria-hidden>{row.icon}</span>
+                  </span>
+                  <span className="if-text">
+                    <span className="decision-title">{row.title}</span>
+                    <span className="decision-body">{row.body}</span>
+                  </span>
+                </span>
+                <span className="if-label">{row.ifLabel}</span>
+                <span className="if-value">{row.ifValue}</span>
+                <span className="then-text">
+                  <span className="then-label">{row.thenLabel}</span>
+                  <span className="then-value">{row.thenValue}</span>
+                </span>
+                <span className="row-cta">
+                  {row.cta}
+                  <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="tax-county-chips">
+          {[
+            ['Jackson', 'MO'],
+            ['Clay', 'MO'],
+            ['Platte', 'MO'],
+            ['Wyandotte', 'KS'],
+            ['Johnson', 'KS'],
+          ].map(([county, state]) => (
+            <span className="tax-county-chip" key={county}>
+              <span className="material-symbols-outlined" aria-hidden>location_on</span>
+              {county} <span>{state}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function GeneralPromise() {
+  return (
+    <section className="block tax-guarantee-section">
+      <div className="container">
+        <div className="tax-guarantee">
+          <div className="guarantee-seal">
+            <span className="material-symbols-outlined" aria-hidden>verified_user</span>
+            <span>Our promise</span>
+          </div>
+          <div className="guarantee-copy">
+            <h2>
+              You do not have to <span className="accent-green">fix the house</span> first.
+            </h2>
+            <p>
+              Take what you want and leave the rest. Tell us what is really going on. We will give you a number and explain it in plain English.
+            </p>
+          </div>
+          <div className="guarantee-checks">
+            <span><span className="material-symbols-outlined" aria-hidden>check</span>No repairs</span>
+            <span><span className="material-symbols-outlined" aria-hidden>check</span>No cleaning</span>
+            <span><span className="material-symbols-outlined" aria-hidden>check</span>No open houses</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function GeneralTeamSection() {
+  return (
+    <section className="block tax-team-section" id="about">
+      <div className="container">
+        <div className="tax-team">
+          <div className="tax-team-copy">
+            <div className="section-eyebrow">Who you&apos;ll talk to</div>
+            <h2 className="section-title">Local KC people, not a call center.</h2>
+            <p>
+              You talk with Ernest Dodson and Casey Davis. We look at the house, taxes, title, repairs, and your time. Then we tell you what we can pay and when we can close. No pushy script.
+            </p>
+            <div className="tax-team-proof">
+              <span><strong>11+</strong> years in KC</span>
+              <span><strong>100+</strong> sellers helped</span>
+              <span><strong>4.9</strong> Google rating</span>
+            </div>
+          </div>
+          <div className="tax-team-cards" aria-label="Saving KC team">
+            <article className="tax-team-card">
+              <div className="tax-team-card-head">
+                <div className="tax-team-photo">
+                  <Image src="/ernest-profile.png" alt="Ernest Dodson" width={192} height={192} sizes="96px" />
+                </div>
+                <div>
+                  <h3>Ernest Dodson</h3>
+                  <p className="tax-team-title">Lead House Hunter</p>
+                </div>
+              </div>
+              <p>Helps you understand the offer, the title path, and the cleanest way out.</p>
+            </article>
+            <article className="tax-team-card">
+              <div className="tax-team-card-head">
+                <div className="tax-team-photo">
+                  <Image src="/casey.jpg" alt="Casey Davis" width={192} height={192} sizes="96px" />
+                </div>
+                <div>
+                  <h3>Casey Davis</h3>
+                  <p className="tax-team-title">Junior House Hunter</p>
+                </div>
+              </div>
+              <p>Keeps follow-up simple, fast, and clear while your file moves to closing.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function GeneralVideoTestimonials() {
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null)
+  const videoFrameRefs = useRef<Record<string, HTMLIFrameElement | null>>({})
+  const videoPlayers = useRef<Record<string, YouTubePlayer | null>>({})
+  const initializingVideoIds = useRef<Set<string>>(new Set())
+  const playerInitAttempts = useRef<Record<string, number>>({})
+  const playerInitRetryTimers = useRef<number[]>([])
+  const initializePlayersRef = useRef<() => void>(() => undefined)
+  const pendingPlayVideoId = useRef<string | null>(null)
+  const playRetryTimers = useRef<number[]>([])
+  const videoProgressTimers = useRef<Record<string, number>>({})
+  const videoProgressMilestones = useRef<Record<string, Set<number>>>({})
+  const startedVideoIds = useRef<Set<string>>(new Set())
+
+  const videoPayload = useCallback((video: typeof VIDEO_TESTIMONIALS[number], extras: Record<string, unknown> = {}) => {
+    const position = VIDEO_TESTIMONIALS.findIndex((item) => item.id === video.id) + 1
+    return {
+      video_id: video.id,
+      video_title: video.title,
+      title: video.title,
+      runtime: video.runtime,
+      section: 'video-testimonials',
+      placement: 'video-testimonials',
+      position,
+      destination: video.url,
+      ...extras,
+    }
+  }, [])
+
+  const trackVideoStartedOnce = useCallback((video: typeof VIDEO_TESTIMONIALS[number], trigger: string) => {
+    if (startedVideoIds.current.has(video.id)) return
+    startedVideoIds.current.add(video.id)
+    firePpcTrackingEvent('video_started', videoPayload(video, {
+      trigger,
+      percent: 0,
+      watch_percent: 0,
+    }))
+  }, [videoPayload])
+
+  const clearPlayRetryTimers = useCallback(() => {
+    playRetryTimers.current.forEach((timerId) => window.clearTimeout(timerId))
+    playRetryTimers.current = []
+  }, [])
+
+  const clearPlayerInitRetryTimers = useCallback(() => {
+    playerInitRetryTimers.current.forEach((timerId) => window.clearTimeout(timerId))
+    playerInitRetryTimers.current = []
+  }, [])
+
+  const clearVideoProgressTimer = useCallback((videoId: string) => {
+    const timer = videoProgressTimers.current[videoId]
+    if (timer) window.clearInterval(timer)
+    delete videoProgressTimers.current[videoId]
+  }, [])
+
+  const clearAllVideoProgressTimers = useCallback(() => {
+    Object.keys(videoProgressTimers.current).forEach(clearVideoProgressTimer)
+  }, [clearVideoProgressTimer])
+
+  const resetVideoPlayers = useCallback(() => {
+    Object.values(videoPlayers.current).forEach((player) => player?.destroy())
+    videoPlayers.current = {}
+    initializingVideoIds.current.clear()
+    playerInitAttempts.current = {}
+  }, [])
+
+  const sendPlayCommand = useCallback((videoId: string) => {
+    const player = videoPlayers.current[videoId]
+    if (player) {
+      player.playVideo()
+      pendingPlayVideoId.current = null
+      return
+    }
+
+    videoFrameRefs.current[videoId]?.contentWindow?.postMessage(
+      JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+      'https://www.youtube.com',
+    )
+  }, [])
+
+  const videoPercent = useCallback((player: YouTubePlayer): number => {
+    const duration = player.getDuration?.() ?? 0
+    const current = player.getCurrentTime?.() ?? 0
+    if (!duration || duration <= 0 || !Number.isFinite(duration) || !Number.isFinite(current)) return 0
+    return Math.max(0, Math.min(100, Math.round((current / duration) * 100)))
+  }, [])
+
+  const trackVideoMilestones = useCallback((video: typeof VIDEO_TESTIMONIALS[number], player: YouTubePlayer): number => {
+    const percent = videoPercent(player)
+    const sent = videoProgressMilestones.current[video.id] ?? new Set<number>()
+    videoProgressMilestones.current[video.id] = sent
+
+    ;([25, 50, 75] as const).forEach((threshold) => {
+      if (percent < threshold || sent.has(threshold)) return
+      sent.add(threshold)
+      firePpcTrackingEvent(`video_progress_${threshold}` as const, videoPayload(video, {
+        percent: threshold,
+        watch_percent: percent,
+      }))
+    })
+
+    return percent
+  }, [videoPayload, videoPercent])
+
+  const startVideoProgressTimer = useCallback((video: typeof VIDEO_TESTIMONIALS[number], player: YouTubePlayer) => {
+    clearVideoProgressTimer(video.id)
+    videoProgressTimers.current[video.id] = window.setInterval(() => {
+      trackVideoMilestones(video, player)
+    }, 2000)
+  }, [clearVideoProgressTimer, trackVideoMilestones])
+
+  const handleVideoStateChange = useCallback((video: typeof VIDEO_TESTIMONIALS[number], event: YouTubeStateEvent) => {
+    const player = event.target
+    if (event.data === YOUTUBE_STATE.playing) {
+      trackVideoStartedOnce(video, 'youtube_state')
+      startVideoProgressTimer(video, player)
+      return
+    }
+
+    if (event.data === YOUTUBE_STATE.paused) {
+      const percent = trackVideoMilestones(video, player)
+      clearVideoProgressTimer(video.id)
+      firePpcTrackingEvent('video_paused', videoPayload(video, {
+        percent,
+        watch_percent: percent,
+      }))
+      return
+    }
+
+    if (event.data === YOUTUBE_STATE.ended) {
+      clearVideoProgressTimer(video.id)
+      firePpcTrackingEvent('video_completed', videoPayload(video, {
+        percent: 100,
+        watch_percent: 100,
+      }))
+    }
+  }, [
+    clearVideoProgressTimer,
+    startVideoProgressTimer,
+    trackVideoMilestones,
+    trackVideoStartedOnce,
+    videoPayload,
+  ])
+
+  const initializePlayers = useCallback(() => {
+    const YouTubePlayerConstructor = window.YT?.Player
+    if (!YouTubePlayerConstructor) return
+
+    VIDEO_TESTIMONIALS.forEach((video) => {
+      const frame = videoFrameRefs.current[video.id]
+      if (!frame || videoPlayers.current[video.id] || initializingVideoIds.current.has(video.id)) return
+
+      initializingVideoIds.current.add(video.id)
+      playerInitAttempts.current[video.id] = (playerInitAttempts.current[video.id] ?? 0) + 1
+      new YouTubePlayerConstructor(`seller-video-player-${video.id}`, {
+        events: {
+          onReady: (event) => {
+            videoPlayers.current[video.id] = event.target
+            initializingVideoIds.current.delete(video.id)
+            if (pendingPlayVideoId.current === video.id) {
+              sendPlayCommand(video.id)
+            }
+          },
+          onStateChange: (event) => handleVideoStateChange(video, event),
+        },
+      })
+
+      if (playerInitAttempts.current[video.id] < 4) {
+        const retryTimer = window.setTimeout(() => {
+          if (videoPlayers.current[video.id]) return
+          initializingVideoIds.current.delete(video.id)
+          initializePlayersRef.current()
+        }, 1200)
+        playerInitRetryTimers.current.push(retryTimer)
+      }
+    })
+  }, [handleVideoStateChange, sendPlayCommand])
+
+  useEffect(() => {
+    initializePlayersRef.current = initializePlayers
+  }, [initializePlayers])
+
+  useEffect(() => {
+    return () => {
+      clearPlayRetryTimers()
+      clearPlayerInitRetryTimers()
+      clearAllVideoProgressTimers()
+      resetVideoPlayers()
+    }
+  }, [clearAllVideoProgressTimers, clearPlayerInitRetryTimers, clearPlayRetryTimers, resetVideoPlayers])
+
+  useEffect(() => {
+    const previousReadyHandler = window.onYouTubeIframeAPIReady
+    const handleReady = () => {
+      previousReadyHandler?.()
+      initializePlayers()
+    }
+
+    if (window.YT?.Player) {
+      initializePlayers()
+      return
+    }
+
+    window.onYouTubeIframeAPIReady = handleReady
+
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const script = document.createElement('script')
+      script.src = 'https://www.youtube.com/iframe_api'
+      script.async = true
+      document.head.appendChild(script)
+    }
+
+    return () => {
+      if (window.onYouTubeIframeAPIReady === handleReady) {
+        window.onYouTubeIframeAPIReady = previousReadyHandler
+      }
+    }
+  }, [initializePlayers])
+
+  const startVideo = useCallback((videoId: string) => {
+    clearPlayRetryTimers()
+    const video = VIDEO_TESTIMONIALS.find((item) => item.id === videoId)
+    if (video) trackVideoStartedOnce(video, 'thumbnail')
+    setActiveVideoId(videoId)
+    pendingPlayVideoId.current = videoId
+
+    sendPlayCommand(videoId)
+    playRetryTimers.current = [120, 360, 700, 1100, 1700, 2500, 3600].map((delay) =>
+      window.setTimeout(() => sendPlayCommand(videoId), delay),
+    )
+  }, [clearPlayRetryTimers, sendPlayCommand, trackVideoStartedOnce])
+
+  return (
+    <section id="video-testimonials" className="block video-testimonial-section" aria-labelledby="video-testimonials-title">
+      <div className="container">
+        <div className="video-testimonial-panel">
+          <div className="section-eyebrow">Video testimonials</div>
+          <h2 className="section-title" id="video-testimonials-title">
+            Hear from sellers who <span className="accent-green">got unstuck.</span>
+          </h2>
+          <p className="section-sub">
+            Two short stories from real people who needed a simple way to sell.
+          </p>
+
+          <div className="video-testimonial-grid">
+            {VIDEO_TESTIMONIALS.map((video) => (
+              <article className="video-testimonial-card" key={video.id}>
+                <div className="video-frame">
+                  <iframe
+                    id={`seller-video-player-${video.id}`}
+                    ref={(node) => {
+                      videoFrameRefs.current[video.id] = node
+                    }}
+                    src={`${video.url}?enablejsapi=1&rel=0&playsinline=1`}
+                    title={video.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                  {activeVideoId !== video.id && (
+                    <button
+                      className="video-thumbnail-button"
+                      type="button"
+                      data-video-url={video.url}
+                      onPointerDown={(event) => {
+                        if (event.button === 0) startVideo(video.id)
+                      }}
+                      onClick={() => startVideo(video.id)}
+                      aria-label={`Play ${video.title}, ${video.runtime}`}
+                    >
+                      <Image
+                        src={video.thumbnail}
+                        alt=""
+                        fill
+                        sizes="(max-width: 980px) 90vw, 470px"
+                        className="video-thumbnail-image"
+                      />
+                      <span className="video-duration-badge">{video.runtime}</span>
+                      <span className="video-youtube-play" aria-hidden>
+                        <span className="video-youtube-triangle" />
+                      </span>
+                    </button>
+                  )}
+                </div>
+                <div className="video-card-label">
+                  <span className="material-symbols-outlined" aria-hidden>play_circle</span>
+                  <span className="video-card-title">{video.title}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TaxTrustStrip() {
+  return (
+    <section className="tax-trust-strip" aria-label="Trust signals">
+      <div className="container tax-trust-inner">
+        <div className="tax-trust-label">As trusted by</div>
+        <div className="tax-trust-logos">
+          <div className="tax-trust-logo">
+            <div className="logo-kshb"><span className="num">41</span><span className="peacock" aria-hidden /></div>
+            <span>KSHB · NBC</span>
+          </div>
+          <div className="tax-trust-logo">
+            <div className="logo-kmbc"><span className="num">9</span><span className="net">abc</span></div>
+            <span>KMBC · ABC</span>
+          </div>
+          <div className="tax-trust-logo">
+            <div className="logo-bbb">BBB</div>
+            <span>Accredited business</span>
+          </div>
+          <div className="tax-trust-logo">
+            <div className="logo-kcbj">Kansas City<br /><strong>Business Journal</strong></div>
+            <span>Local market coverage</span>
+          </div>
+          <div className="tax-trust-logo">
+            <div className="stars">★★★★★</div>
+            <span><strong>4.9</strong> · 100+ reviews</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TaxFreshStartTimeline() {
+  return (
+    <section className="block tax-timeline-section" id="timeline">
+      <div className="container">
+        <div className="section-eyebrow">Fresh start in 60 minutes</div>
+        <h2 className="section-title">
+          Form today. <span className="accent-green">Offer today.</span>
+        </h2>
+        <p className="section-sub">Most &quot;we buy houses&quot; promises take weeks. Yours starts with a real number in the next hour.</p>
+
+        <div className="tax-timeline">
+          <div className="tax-timeline-rail" />
+          {[
+            ['1', 'Today', 'Tell us your story', '60 seconds. Four questions. We start the file right away.'],
+            ['2', 'Today', 'Cash offer in hand', 'We check the tax pressure, title path, and walk you through the number.'],
+            ['3', 'Closing day', 'Your fresh start', 'Check in hand. Back taxes paid. Title closed. You walk away clean.'],
+          ].map(([day, label, title, body], index) => (
+            <div className={`tax-timeline-step step-${index + 1}`} key={day}>
+              <div className="tax-day">
+                <span className="day-num">{day}</span>
+                <span className="day-label">{label}</span>
+              </div>
+              <h3>{title}</h3>
+              <p>{body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TaxDecisionRows({ onRowClick }: { onRowClick: (row: DecisionRowClick) => void }) {
+  const rows = [
+    {
+      tone: 'brand',
+      icon: 'gavel',
+      stage: 'Pre-auction',
+      title: '3+ years behind',
+      body: 'You still own the house, but the county clock is getting louder.',
+      ifLabel: 'Best move',
+      ifValue: "Sell before the auction locks in someone else's timeline.",
+      thenLabel: 'You walk away with',
+      thenValue: <>Cash for the house · <span className="em">fresh start</span> in 14 days</>,
+      cta: 'Start',
+    },
+    {
+      tone: 'amber',
+      icon: 'history',
+      stage: 'Post-auction',
+      title: 'Redemption window',
+      body: 'The sale happened, but the deadline may not be closed yet.',
+      ifLabel: 'Best move',
+      ifValue: 'Move before the redemption period disappears.',
+      thenLabel: 'You walk away with',
+      thenValue: <>Cash before the deadline closes</>,
+      cta: 'Start',
+    },
+    {
+      tone: 'green',
+      icon: 'savings',
+      stage: 'Excess proceeds',
+      title: 'Property already sold',
+      body: 'The property may be gone, but the county may still be holding money.',
+      ifLabel: 'Best move',
+      ifValue: 'Check whether surplus funds are sitting at the county.',
+      thenLabel: 'The county may owe you',
+      thenValue: <>Excess proceeds — <span className="em">found money</span></>,
+      cta: 'Check',
+    },
+  ]
+
+  return (
+    <section className="block tax-decision-section" id="stages">
+      <div className="container">
+        <div className="section-eyebrow">Where are you in this?</div>
+        <h2 className="section-title">
+          Find your stage. <span className="accent-green">See your fresh start.</span>
+        </h2>
+        <p className="section-sub">Three stages. Three different deadlines. Tap the one that feels closest.</p>
+
+        <div className="tax-decision-block">
+          <div className="decision-top">
+            Whatever stage you&apos;re in, <strong>there&apos;s money on the table.</strong>
+          </div>
+          <div className="decision-rows">
+            {rows.map((row, index) => (
+              <button
+                type="button"
+                className={`decision-row decision-card ${row.tone}`}
+                key={row.stage}
+                onClick={() => onRowClick({
+                  stage: row.stage,
+                  title: row.title,
+                  cta: row.cta,
+                  section: 'stages',
+                  position: index + 1,
+                })}
+              >
+                <span className="decision-stage">{row.stage}</span>
+                <span className="if-block decision-card-head">
+                  <span className="if-icon">
+                    <span className="material-symbols-outlined" aria-hidden>{row.icon}</span>
+                  </span>
+                  <span className="if-text">
+                    <span className="decision-title">{row.title}</span>
+                    <span className="decision-body">{row.body}</span>
+                  </span>
+                </span>
+                <span className="if-label">{row.ifLabel}</span>
+                <span className="if-value">{row.ifValue}</span>
+                <span className="then-text">
+                  <span className="then-label">{row.thenLabel}</span>
+                  <span className="then-value">{row.thenValue}</span>
+                </span>
+                <span className="row-cta">
+                  {row.cta}
+                  <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="tax-county-chips">
+          {[
+            ['Jackson', 'MO'],
+            ['Clay', 'MO'],
+            ['Platte', 'MO'],
+            ['Wyandotte', 'KS'],
+            ['Johnson', 'KS'],
+          ].map(([county, state]) => (
+            <span className="tax-county-chip" key={county}>
+              <span className="material-symbols-outlined" aria-hidden>location_on</span>
+              {county} <span>{state}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TaxTeamSection() {
+  return (
+    <section className="block tax-team-section" id="team">
+      <div className="container">
+        <div className="tax-team">
+          <div className="tax-team-copy">
+            <div className="section-eyebrow">Who you&apos;ll talk to</div>
+            <h2 className="section-title">Local KC people, not a call center.</h2>
+            <p>
+              You&apos;ll talk with Ernest Dodson and Casey Davis from the Saving KC team. We know Jackson, Clay, Platte, Wyandotte, and Johnson County tax-sale timelines, and we keep the conversation private, direct, and pressure-free.
+            </p>
+            <div className="tax-team-proof">
+              <span><strong>11+</strong> years in KC</span>
+              <span><strong>100+</strong> homeowners helped</span>
+              <span><strong>4.9</strong> Google rating</span>
+            </div>
+          </div>
+          <div className="tax-team-cards" aria-label="Saving KC team">
+            <article className="tax-team-card">
+              <div className="tax-team-card-head">
+                <div className="tax-team-photo">
+                  <Image src="/ernest-profile.png" alt="Ernest Dodson" width={192} height={192} sizes="96px" />
+                </div>
+                <div>
+                  <h3>Ernest Dodson</h3>
+                  <p className="tax-team-title">Lead House Hunter</p>
+                </div>
+              </div>
+              <p>Walks through the tax pressure, the title path, and the number so you know exactly where you stand.</p>
+            </article>
+            <article className="tax-team-card">
+              <div className="tax-team-card-head">
+                <div className="tax-team-photo">
+                  <Image src="/casey.jpg" alt="Casey Davis" width={192} height={192} sizes="96px" />
+                </div>
+                <div>
+                  <h3>Casey Davis</h3>
+                  <p className="tax-team-title">Junior House Hunter</p>
+                </div>
+              </div>
+              <p>Fast follow-up, clear next steps, and steady communication while the file moves toward closing.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TaxGuarantee() {
+  return (
+    <section className="block tax-guarantee-section">
+      <div className="container">
+        <div className="tax-guarantee">
+          <div className="guarantee-seal">
+            <span className="material-symbols-outlined" aria-hidden>verified_user</span>
+            <span>Our promise</span>
+          </div>
+          <div className="guarantee-copy">
+            <h2>
+              The <span className="accent-green">no-catch</span> promise.
+            </h2>
+            <p>
+              The number we give you is the number you walk away with, minus payoffs and back taxes, every penny disclosed before you sign.
+            </p>
+          </div>
+          <div className="guarantee-checks">
+            <span><span className="material-symbols-outlined" aria-hidden>check</span>No fees</span>
+            <span><span className="material-symbols-outlined" aria-hidden>check</span>No commissions</span>
+            <span><span className="material-symbols-outlined" aria-hidden>check</span>No obligation</span>
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -1231,14 +2284,22 @@ function Testimonial({
   name,
   meta,
   quote,
+  result,
 }: {
   initials: string
   name: string
   meta: string
   quote: string
+  result?: string
 }) {
   return (
     <div className="testimonial">
+      {result && (
+        <span className="testimonial-result">
+          <span className="material-symbols-outlined" aria-hidden>check</span>
+          {result}
+        </span>
+      )}
       <div className="stars">★★★★★</div>
       <p className="testimonial-quote">{quote}</p>
       <div className="testimonial-author">
@@ -1252,33 +2313,110 @@ function Testimonial({
   )
 }
 
+const TESTIMONIALS: Array<{
+  initials: string
+  name: string
+  meta: string
+  quote: string
+  result?: string
+}> = [
+  {
+    initials: 'JK',
+    name: 'Jerome K.',
+    meta: 'Jackson County, MO',
+    result: 'Closed fast',
+    quote: '"I was close to a tax sale. Other buyers stopped calling when they saw the title. Saving KC stayed with it and closed fast."',
+  },
+  {
+    initials: 'RM',
+    name: 'Renee M.',
+    meta: 'Wyandotte County, KS',
+    result: 'Inherited · 18 days',
+    quote: '"I had a house from my dad and three years of taxes. Saving KC paid the taxes at closing. I got a fair check."',
+  },
+  {
+    initials: 'SP',
+    name: 'Sandra P.',
+    meta: 'Clay County, MO',
+    result: 'Probate sale',
+    quote: '"My brother and I did not agree on the house. They kept it calm, talked to both of us, and got us to closing."',
+  },
+]
+
+const TAX_TESTIMONIALS: typeof TESTIMONIALS = [
+  {
+    initials: 'JK',
+    name: 'Jerome K.',
+    meta: 'Jackson County, MO',
+    result: 'Closed in 14 days',
+    quote: '"I was 60 days from the DLT auction. Two other guys ghosted me. Saving KC didn’t blink."',
+  },
+  {
+    initials: 'RM',
+    name: 'Renee M.',
+    meta: 'Wyandotte County, KS',
+    result: 'Inherited · 18 days',
+    quote: '"Three years of unpaid taxes on a house I inherited. They paid the back taxes at closing and still gave me a fair number."',
+  },
+  {
+    initials: 'SP',
+    name: 'Sandra P.',
+    meta: 'Clay County, MO',
+    result: '$12K in excess proceeds',
+    quote: '"Had no idea money was sitting at the county. They walked me through the claim and didn’t charge a dime."',
+  },
+]
+
+const TAX_FAQS: { q: string; a: string }[] = [
+  {
+    q: "Too late to sell if I'm 3+ years behind?",
+    a: 'Almost never. Until the auction happens and the redemption period expires, you usually still have options. The earlier you talk to us, the more room there is to protect equity.',
+  },
+  {
+    q: 'Do I have to pay the back taxes first?',
+    a: 'No. The county can be paid directly at closing out of the sale proceeds. You do not need to write a check upfront to ask for an offer.',
+  },
+  {
+    q: 'What are excess proceeds?',
+    a: 'When a property sells at tax sale for more than the back taxes, the surplus may belong to the former owner. We can check the address and tell you if there may be money to claim.',
+  },
+  {
+    q: 'Can you still buy during redemption?',
+    a: 'Often, yes, but timing and state rules matter. Missouri and Kansas work differently, so the sooner we review the property, the better the math tends to be.',
+  },
+  {
+    q: 'Any fees or commissions?',
+    a: 'None. No agent commission, no seller closing costs from us, and no obligation. Any payoffs and back taxes are disclosed before you sign.',
+  },
+]
+
 const FAQS: { q: string; a: string }[] = [
   {
     q: 'How much will I actually get?',
-    a: "Depends on the property's after-repair value, condition, and any liens or back taxes. Our offers typically come in 65–85% of after-repair value, minus repairs and back taxes. We show you the math — no black-box numbers. If our offer doesn't make sense for you, we'll tell you that too.",
+    a: 'We look at what the house is worth, what repairs cost, and any taxes or liens. Then we show you the number in plain English. No hidden math.',
   },
   {
     q: 'Do I need to pay the back taxes before selling?',
-    a: "No. We pay them directly to the county at closing out of the sale proceeds. You don't write a check — it comes off the top of our offer, and you see exactly how it's calculated.",
+    a: 'No. If we buy the house, the back taxes can be paid at closing from the sale money. You do not need to write a check first.',
   },
   {
     q: 'Can you buy if the house is still in probate?',
-    a: "Yes, in most cases. We've closed deals where probate was still open — we just structure the timing around the court's process. We work with KC probate attorneys regularly and can refer you to one if you don't have one.",
+    a: 'Often, yes. We can work with the probate path and help you understand what needs to happen before closing.',
   },
   {
     q: 'What if there are tenants in the property?',
-    a: "We buy with tenants in place. You don't have to evict, give notice, or have an awkward conversation. We take the lease as-is at closing.",
+    a: 'We can buy with tenants in place. You do not have to evict first or have a hard talk before you call us.',
   },
   {
     q: 'Are there any fees or commissions?',
-    a: 'None. No agent commissions, no closing costs on your end, no inspection fees. The number on our offer is what hits your bank account (minus payoffs and back taxes, which we disclose line-by-line).',
+    a: 'No. No agent commission, no repair bill from us, and no cleanup bill from us. We show any taxes or payoffs before you sign.',
   },
   {
     q: 'How fast can you close?',
-    a: "Fastest we've done is 18 days from offer to close on a pre-DLT property. Typical is 21–30 days, but we'll close on your timeline — including if you need 60–90 days to find your next place.",
+    a: 'Often 7 to 30 days if title is clear. If you need more time, we can usually give you 60 days.',
   },
   {
     q: 'Why should I trust Saving KC over the other "cash for houses" guys?',
-    a: "Fair question. Three things: (1) We're a real KC business with 11 years here, not a national lead-buyer reselling your info. (2) We close most of what we put under contract — we don't tie up your property and back out. (3) We'll give you references to homeowners we've closed with in the last 90 days. Call them before you sign anything.",
+    a: 'We are local KC buyers. We do not sell your lead to a list. You talk with our team, get a clear offer, and choose if it works for you.',
   },
 ]

@@ -14,11 +14,9 @@ function bearerToken(authHeader: string | null): string | null {
 }
 
 function requestSecret(req: Request): string | null {
-  const url = new URL(req.url)
   return (
     bearerToken(req.headers.get('authorization')) ||
     req.headers.get('x-admin-secret')?.trim() ||
-    url.searchParams.get('secret')?.trim() ||
     null
   )
 }

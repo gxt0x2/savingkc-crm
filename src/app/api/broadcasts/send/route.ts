@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { safeSendSMS } from '@/lib/safe-communications'
-import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { BROADCAST_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
 // Round-robin counter for Twilio numbers (resets on restart, fine for this)
 let twilioRRIndex = 0
@@ -11,6 +11,30 @@ function nextTwilioNumber(): string {
   const num = TWILIO_NUMBERS[twilioRRIndex % TWILIO_NUMBERS.length]
   twilioRRIndex++
   return num.value
+}
+
+function trackedDealPageUrl(
+  baseUrl: string,
+  params: {
+    buyerId?: string | null
+    broadcastId: string
+    recipientId: string
+    medium: 'sms' | 'email'
+  },
+): string {
+  if (!baseUrl) return ''
+  try {
+    const url = new URL(baseUrl)
+    if (params.buyerId) url.searchParams.set('buyer_id', params.buyerId)
+    url.searchParams.set('broadcast_id', params.broadcastId)
+    url.searchParams.set('broadcast_recipient_id', params.recipientId)
+    url.searchParams.set('utm_source', 'savingkc')
+    url.searchParams.set('utm_medium', params.medium)
+    url.searchParams.set('utm_campaign', `deal_broadcast_${params.broadcastId.slice(0, 8)}`)
+    return url.toString()
+  } catch {
+    return baseUrl
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +82,6 @@ export async function POST(req: NextRequest) {
     const address = snapshot.property_address || 'Address TBD'
     const pType = snapshot.property_type || 'Property'
     const arv = snapshot.arv ? `$${Number(snapshot.arv).toLocaleString()}` : 'N/A'
-    const price = snapshot.asking_price ? `$${Number(snapshot.asking_price).toLocaleString()}` : 'N/A'
     const beds = snapshot.beds ?? '?'
     const baths = snapshot.baths_full ?? '?'
     const sqft = snapshot.sqft ? Number(snapshot.sqft).toLocaleString() : '?'
@@ -67,16 +90,19 @@ export async function POST(req: NextRequest) {
     let dealPageUrl = ''
     const { data: dealPage } = await db
       .from('deal_pages')
-      .select('slug')
+      .select('slug, asking_price')
       .eq('lead_id', broadcast.lead_id)
       .eq('is_active', true)
+      .order('created_at', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
 
     if (dealPage) {
       const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.savingkc.com'
       dealPageUrl = `${baseUrl}/deals/${dealPage.slug}`
     }
+    const buyerFacingPrice = dealPage?.asking_price ?? snapshot.asking_price
+    const price = buyerFacingPrice ? `$${Number(buyerFacingPrice).toLocaleString()}` : 'N/A'
 
     let smsSent = 0
     let emailsSent = 0
@@ -88,6 +114,18 @@ export async function POST(req: NextRequest) {
       if (!buyer) continue
 
       const buyerFirst = buyer.first_name || (buyer.name ? buyer.name.split(' ')[0] : 'Investor')
+      const smsDealPageUrl = trackedDealPageUrl(dealPageUrl, {
+        buyerId: buyer.id,
+        broadcastId: broadcast_id,
+        recipientId: recipient.id,
+        medium: 'sms',
+      })
+      const emailDealPageUrl = trackedDealPageUrl(dealPageUrl, {
+        buyerId: buyer.id,
+        broadcastId: broadcast_id,
+        recipientId: recipient.id,
+        medium: 'email',
+      })
 
       // --- SMS ---
       if (buyer.sms_opted_in && buyer.phone) {
@@ -97,7 +135,7 @@ export async function POST(req: NextRequest) {
             `${address} - ${pType}`,
             `ARV: ${arv} | Price: ${price}`,
             `${beds}bd/${baths}ba | ${sqft}sf`,
-            dealPageUrl ? `Details: ${dealPageUrl}` : '',
+            smsDealPageUrl ? `Details: ${smsDealPageUrl}` : '',
             'Reply STOP to opt out',
           ].filter(Boolean).join('\n')
 
@@ -111,7 +149,7 @@ export async function POST(req: NextRequest) {
                 .replace('{beds}', String(beds))
                 .replace('{baths}', String(baths))
                 .replace('{sqft}', sqft)
-                .replace('{dealPageUrl}', dealPageUrl)
+                .replace('{dealPageUrl}', smsDealPageUrl)
             : defaultSmsBody
 
           await safeSendSMS({
@@ -157,7 +195,7 @@ export async function POST(req: NextRequest) {
                 .replace('{beds}', String(beds))
                 .replace('{baths}', String(baths))
                 .replace('{sqft}', sqft)
-                .replace('{dealPageUrl}', dealPageUrl)
+                .replace('{dealPageUrl}', emailDealPageUrl)
             : buildEmailHtml({
                 buyerFirst,
                 address,
@@ -167,7 +205,7 @@ export async function POST(req: NextRequest) {
                 beds: String(beds),
                 baths: String(baths),
                 sqft,
-                dealPageUrl,
+                dealPageUrl: emailDealPageUrl,
                 city: snapshot.city || '',
                 state: snapshot.state || 'MO',
               })

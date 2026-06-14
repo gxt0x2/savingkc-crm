@@ -1,4 +1,5 @@
-import { PPC_TRACKING_PHONE_DIGITS } from '@/lib/call-quality-events'
+import { isPpcTrackingNumber } from '@/lib/call-quality-events'
+import { isKnownPpcCampaignName, ppcCampaignNameForContext } from '@/lib/ppc/campaigns'
 import {
   conversionDeadline,
   defaultGoogleAdsQualityScore,
@@ -6,6 +7,9 @@ import {
   type ConversionDeadlineStatus,
   type GoogleAdsQualityScore,
 } from '@/lib/ppc/conversion-approval'
+import { isGoogleAdsApprovalRequiredPpcEvent, isGoogleAdsExportablePpcEvent } from '@/lib/ppc/exportable-events'
+import type { PpcConversionExportConfigHealth } from '@/lib/ppc/conversion-exporter'
+import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceSlug } from './paid-source'
 
 export type PpcLeadRow = {
   id: string
@@ -118,6 +122,13 @@ export type PpcTrackingEventRow = {
   created_at: string | null
 }
 
+export type PpcMissedCallTaskRow = {
+  id: string
+  lead_id: string | null
+  created_at: string | null
+  metadata: Record<string, unknown> | null
+}
+
 export type PpcReportInput = {
   days: number
   since: string
@@ -129,6 +140,8 @@ export type PpcReportInput = {
   appointments: PpcAppointmentRow[]
   revenue: PpcRevenueRow[]
   manifests: PpcManifestRow[]
+  missedCallTasks?: PpcMissedCallTaskRow[]
+  exportConfig?: PpcConversionExportConfigHealth
   now?: string | Date
 }
 
@@ -257,6 +270,31 @@ export type PpcReport = {
     pendingExports: number
     failedExports: number
   }
+  operationsHealth: {
+    ppcExportWorker: {
+      path: string
+      schedule: string
+      status: 'healthy' | 'attention' | 'blocked'
+      readyToExport: number
+      pending: number
+      awaitingApproval: number
+      failed: number
+      deadLetter: number
+      oldestReadyAt: string | null
+      oldestReadyAgeHours: number | null
+      lastSentAt: string | null
+    }
+    googleAdsMissedCalls: {
+      path: string
+      schedule: string
+      status: 'healthy' | 'attention' | 'blocked'
+      pendingEscalations: number
+      overdueEscalations: number
+      oldestDueAt: string | null
+      oldestDueAgeMinutes: number | null
+    }
+  }
+  exportConfig: PpcConversionExportConfigHealth
   daily: Array<{
     date: string
     leads: number
@@ -327,6 +365,17 @@ export type PpcReport = {
     callQuality: string
     revenue: number
   }>
+  resultCounts: {
+    journeySessionsShown: number
+    journeySessionsTotal: number
+    journeySessionsHiddenNoClickId: number
+    recentSessionsShown: number
+    recentSessionsTotal: number
+    recentLeadsShown: number
+    recentLeadsTotal: number
+    attributionRowsShown: number
+    attributionRowsTotal: number
+  }
 }
 
 type LeadState = {
@@ -349,6 +398,10 @@ type LeadState = {
 const QUALIFIED_STAGES = new Set(['qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'contract_signed', 'closed'])
 const CONTRACT_STAGES = new Set(['under_contract', 'closed_won', 'contract_signed', 'closed'])
 const APPOINTMENT_STAGES = new Set(['appointment_set', 'offer_made', 'under_contract', 'closed_won', 'contract_signed', 'closed'])
+const JOURNEY_SESSION_LIMIT = 12
+const RECENT_SESSION_LIMIT = 25
+const RECENT_LEAD_LIMIT = 25
+const ATTRIBUTION_ROW_LIMIT = 25
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -374,6 +427,38 @@ function money(value: unknown): number {
 function pct(numerator: number, denominator: number): number | null {
   if (denominator <= 0) return null
   return Math.round((numerator / denominator) * 1000) / 10
+}
+
+function validDate(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function olderIso(current: string | null, next: string | null | undefined): string | null {
+  const nextDate = validDate(next)
+  if (!nextDate) return current
+  const currentDate = validDate(current)
+  return !currentDate || nextDate.getTime() < currentDate.getTime() ? nextDate.toISOString() : current
+}
+
+function newerIso(current: string | null, next: string | null | undefined): string | null {
+  const nextDate = validDate(next)
+  if (!nextDate) return current
+  const currentDate = validDate(current)
+  return !currentDate || nextDate.getTime() > currentDate.getTime() ? nextDate.toISOString() : current
+}
+
+function ageHours(value: string | null, now: Date): number | null {
+  const date = validDate(value)
+  if (!date || Number.isNaN(now.getTime())) return null
+  return Math.max(0, Math.round(((now.getTime() - date.getTime()) / 3_600_000) * 10) / 10)
+}
+
+function ageMinutes(value: string | null, now: Date): number | null {
+  const date = validDate(value)
+  if (!date || Number.isNaN(now.getTime())) return null
+  return Math.max(0, Math.round((now.getTime() - date.getTime()) / 60_000))
 }
 
 function normalizeStage(stage: string | null | undefined): string {
@@ -414,15 +499,14 @@ function digits(value: unknown): string {
 }
 
 function isPpcNumber(value: unknown): boolean {
-  const valueDigits = digits(value)
-  return valueDigits === PPC_TRACKING_PHONE_DIGITS || valueDigits === `1${PPC_TRACKING_PHONE_DIGITS}`
+  return isPpcTrackingNumber(text(value))
 }
 
 function isPpcActivity(activity: PpcActivityRow): boolean {
   const meta = metadata(activity)
   return (
     text(meta.traffic_source) === 'google_ads' ||
-    text(meta.campaign) === 'Search 2026' ||
+    isKnownPpcCampaignName(meta.campaign) ||
     isPpcNumber(meta.tracking_number) ||
     isPpcNumber(meta.calledNumber) ||
     isPpcNumber(meta.to)
@@ -505,8 +589,9 @@ function extractAttributionFromOutbox(row: PpcOutboxRow): Record<string, unknown
 
 function extractAttributionFromTracking(row: PpcTrackingEventRow): Record<string, unknown> {
   const payload = record(row.payload)
+  const payloadAttribution = record(payload.attribution)
   return cleanAttribution({
-    ...record(payload.attribution),
+    ...payloadAttribution,
     traffic_source: row.traffic_source,
     campaign: row.campaign,
     utm_source: row.utm_source,
@@ -514,12 +599,17 @@ function extractAttributionFromTracking(row: PpcTrackingEventRow): Record<string
     utm_campaign: row.utm_campaign,
     utm_term: row.utm_term,
     utm_content: row.utm_content,
+    keyword: payload.keyword,
+    matchtype: payload.matchtype,
     gclid: row.gclid,
     gbraid: row.gbraid,
     wbraid: row.wbraid,
     gad_source: row.gad_source,
     gad_campaignid: row.gad_campaignid,
     gad_adgroupid: row.gad_adgroupid,
+    oppref: payload.oppref ?? payloadAttribution.oppref,
+    landingUrl: row.page_location,
+    referrer: row.page_referrer,
   })
 }
 
@@ -545,15 +635,15 @@ function mergeAttribution(current: Record<string, unknown>, incoming: Record<str
 }
 
 function hasClickId(attribution: Record<string, unknown>): boolean {
-  return Boolean(text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id))
+  return Boolean(paidSourceIdentifier(attribution))
 }
 
 function campaignName(attribution: Record<string, unknown>): string {
-  return text(attribution.utm_campaign) || text(attribution.campaign) || 'Search 2026'
+  return ppcCampaignNameForContext({ attribution })
 }
 
 function sourceName(attribution: Record<string, unknown>): string {
-  return text(attribution.utm_source) || (text(attribution.traffic_source) === 'google_ads' ? 'google' : 'google')
+  return text(attribution.utm_source) || paidSourceSlug(attribution)
 }
 
 function mediumName(attribution: Record<string, unknown>): string {
@@ -561,7 +651,11 @@ function mediumName(attribution: Record<string, unknown>): string {
 }
 
 function keywordName(attribution: Record<string, unknown>): string {
-  return text(attribution.utm_term) || 'Unmapped keyword'
+  return text(attribution.utm_term) ||
+    text(attribution.keyword) ||
+    queryParamFromAttribution(attribution, 'utm_term') ||
+    queryParamFromAttribution(attribution, 'keyword') ||
+    'Keyword not passed'
 }
 
 function contentName(attribution: Record<string, unknown>): string {
@@ -569,11 +663,21 @@ function contentName(attribution: Record<string, unknown>): string {
 }
 
 function campaignId(attribution: Record<string, unknown>): string {
-  return text(attribution.gad_campaignid) || text(attribution.campaign_id) || 'unmapped'
+  return text(attribution.gad_campaignid) ||
+    text(attribution.campaign_id) ||
+    text(attribution.campaignid) ||
+    queryParamFromAttribution(attribution, 'gad_campaignid') ||
+    queryParamFromAttribution(attribution, 'campaignid') ||
+    'unmapped'
 }
 
 function adGroupId(attribution: Record<string, unknown>): string {
-  return text(attribution.gad_adgroupid) || text(attribution.adgroup_id) || 'unmapped'
+  return text(attribution.gad_adgroupid) ||
+    text(attribution.adgroup_id) ||
+    text(attribution.adgroupid) ||
+    queryParamFromAttribution(attribution, 'gad_adgroupid') ||
+    queryParamFromAttribution(attribution, 'adgroupid') ||
+    'unmapped'
 }
 
 function displayPhone(phone: string | null): string {
@@ -629,7 +733,7 @@ function eventKey(row: PpcTrackingEventRow): string {
 
 function clickIdFromTracking(row: PpcTrackingEventRow): string {
   const attribution = extractAttributionFromTracking(row)
-  return text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id)
+  return paidSourceIdentifier(attribution)
 }
 
 function sessionKey(row: PpcTrackingEventRow): string {
@@ -672,6 +776,16 @@ function latestRowText(rows: PpcTrackingEventRow[], key: keyof PpcTrackingEventR
     if (value) return value
   }
   return '--'
+}
+
+function queryParamFromAttribution(attribution: Record<string, unknown>, key: string): string {
+  const landingUrl = text(attribution.landingUrl)
+  if (!landingUrl) return ''
+  try {
+    return text(new URL(landingUrl).searchParams.get(key))
+  } catch {
+    return ''
+  }
 }
 
 function compactClickId(value: string): string {
@@ -765,6 +879,7 @@ function outboxStatus(row: PpcOutboxRow): string {
 function eventLabel(name: string | null): string {
   const value = text(name)
   if (value === 'lead_submitted') return 'Final Form Submit'
+  if (value === 'qualified_lead') return 'Qualified Lead'
   if (value === 'lead_stage3_completed') return 'Step 3 Complete'
   if (value === 'appointment_booked') return 'Appointment Booked'
   if (value === 'call_connected_60s') return 'Call 60+ Seconds'
@@ -795,12 +910,11 @@ function isTestOutboxRow(row: PpcOutboxRow): boolean {
 }
 
 function clickIdType(row: PpcOutboxRow, attribution: Record<string, unknown>): string {
-  return text(row.click_id_type) ||
-    (text(attribution.gclid) ? 'gclid' : text(attribution.gbraid) ? 'gbraid' : text(attribution.wbraid) ? 'wbraid' : '--')
+  return text(row.click_id_type) || paidSourceIdentifierType(attribution)
 }
 
 function clickIdForOutbox(row: PpcOutboxRow, attribution: Record<string, unknown>): string {
-  return compactClickId(text(row.click_id) || text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id))
+  return compactClickId(text(row.click_id) || paidSourceIdentifier(attribution))
 }
 
 function buildConversionApprovalRow(
@@ -857,8 +971,14 @@ function buildJourneySteps({
   outboxRows: PpcOutboxRow[]
 }): PpcReport['journeySessions'][number]['steps'] {
   const clickId = clickIdFromTracking(ordered[0]) || text(attribution.click_id)
-  const visitAt = firstEventAt(ordered, (row) => eventName(row) === 'ppc_visit_started' || eventName(row) === 'page_view')
+  const visitAt = firstEventAt(ordered, (row) => {
+    const name = eventName(row)
+    return name === 'ppc_landing_request' || name === 'ppc_visit_started' || name === 'page_view'
+  })
   const phoneAt = firstEventAt(ordered, isPhoneSignal)
+  const phoneLabel = ordered
+    .map((row) => payloadText(row, 'ppc_phone_display') || payloadText(row, 'phone_display') || text(row.phone_number))
+    .find(Boolean)
   const situation = latestRowText(ordered, 'situation_raw')
   const timeline = latestRowText(ordered, 'timeline_raw')
   const condition = latestRowText(ordered, 'condition_raw')
@@ -872,7 +992,7 @@ function buildJourneySteps({
   const addressAt = firstEventAt(ordered, (row) => eventName(row) === 'address_typed' || Boolean(payloadText(row, 'address')))
   const addressSource = Array.from(new Set(ordered.map((row) => payloadText(row, 'address_source')).filter(Boolean)))[0] || ''
   const submittedAt = firstEventAt(ordered, (row) => eventName(row) === 'lead_submitted' || text(row.form_status) === 'submitted')
-  const submitOutbox = outboxRows.find((row) => text(row.event_name) === 'lead_submitted')
+  const exportOutbox = outboxRows.find((row) => outboxStatus(row) === 'sent') ?? outboxRows[0] ?? null
   const leadAt = leadState?.lead.created_at ?? null
 
   return [
@@ -894,7 +1014,7 @@ function buildJourneySteps({
       key: 'phone_signal',
       label: 'PPC Phone',
       status: phoneAt ? 'complete' : 'missing',
-      detail: phoneAt ? '816-608-8808 shown' : 'No phone signal',
+      detail: phoneAt ? `${phoneLabel || 'PPC phone'} shown` : 'No phone signal',
       at: phoneAt,
     },
     {
@@ -941,12 +1061,44 @@ function buildJourneySteps({
     },
     {
       key: 'ads_outbox',
-      label: 'Ads Outbox',
-      status: submitOutbox ? 'complete' : submittedAt ? 'active' : 'missing',
-      detail: submitOutbox ? outboxStatus(submitOutbox) : submittedAt ? 'Missing outbox row' : 'Not queued',
-      at: eventAt(submitOutbox),
+      label: 'Conversion Signal',
+      status: exportOutbox ? (outboxStatus(exportOutbox) === 'sent' ? 'complete' : 'active') : submittedAt ? 'complete' : 'missing',
+      detail: exportOutbox ? `${eventLabel(exportOutbox.event_name)}: ${outboxStatus(exportOutbox)}` : submittedAt ? 'Primary conversion tracked by GTM' : 'Not queued',
+      at: eventAt(exportOutbox) ?? submittedAt,
     },
   ]
+}
+
+function fallbackExportConfig(): PpcConversionExportConfigHealth {
+  return {
+    configured: false,
+    mode: 'not_configured',
+    enabledDestinations: [],
+    googleAds: {
+      enabled: false,
+      ready: false,
+      customerId: null,
+      apiVersion: null,
+      missingConfig: [],
+      configuredActionMappings: [],
+      missingActionMappings: [],
+    },
+    stape: {
+      enabled: false,
+      ready: false,
+      endpointHost: null,
+      previewHeaderConfigured: false,
+      missingConfig: [],
+    },
+    openaiAds: {
+      enabled: false,
+      ready: false,
+      pixelIdConfigured: false,
+      apiKeyConfigured: false,
+      missingConfig: [],
+    },
+    warnings: ['Export worker configuration was not included in this report response.'],
+  }
 }
 
 export function buildPpcReport(input: PpcReportInput): PpcReport {
@@ -970,8 +1122,10 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     state.attribution = mergeAttribution(state.attribution, extractAttributionFromManifest(row.manifest))
   }
 
+  const exportableOutbox = input.outbox.filter((row) => isGoogleAdsExportablePpcEvent(text(row.event_name)))
+
   const exportHealth = {
-    total: input.outbox.length,
+    total: exportableOutbox.length,
     primary: 0,
     secondary: 0,
     pending: 0,
@@ -983,13 +1137,14 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     approvedPending: 0,
   }
 
-  for (const row of input.outbox) {
+  for (const row of exportableOutbox) {
     const role = text(row.optimization_role).toLowerCase()
     if (role === 'primary') exportHealth.primary += 1
     if (role === 'secondary') exportHealth.secondary += 1
 
     const status = text(row.status).toLowerCase()
-    if (row.approved_for_google_ads === false && (status === 'pending' || status === 'processing' || status === 'failed')) {
+    const needsApproval = isGoogleAdsApprovalRequiredPpcEvent(text(row.event_name), row.payload)
+    if (needsApproval && row.approved_for_google_ads === false && (status === 'pending' || status === 'processing' || status === 'failed')) {
       exportHealth.awaitingApproval += 1
     }
     if (row.approved_for_google_ads === true && (status === 'pending' || status === 'processing' || status === 'failed')) {
@@ -1080,7 +1235,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     trackingEvents
       .filter((row) => {
         const name = eventName(row)
-        return name === 'ppc_visit_started' || name === 'page_view'
+        return name === 'ppc_landing_request' || name === 'ppc_visit_started' || name === 'page_view'
       })
       .map(eventKey),
   )
@@ -1138,7 +1293,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
   for (const row of trackingEvents) {
     const bucket = ensureBucket(dailyBuckets, compactDate(row.event_time || row.created_at))
     const name = eventName(row)
-    if (name === 'ppc_visit_started' || name === 'page_view') bucket.visits += 1
+    if (name === 'ppc_landing_request' || name === 'ppc_visit_started' || name === 'page_view') bucket.visits += 1
     if (isPhoneSignal(row)) bucket.phoneClicks += 1
     if (name === 'lead_submitted') bucket.formSubmits += 1
   }
@@ -1163,12 +1318,18 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
   }
   const statesByLeadId = new Map(states.map((state) => [state.lead.id, state]))
   const outboxByLeadId = new Map<string, PpcOutboxRow[]>()
-  for (const row of input.outbox) {
+  for (const row of exportableOutbox) {
     if (!row.lead_id) continue
     outboxByLeadId.set(row.lead_id, [...(outboxByLeadId.get(row.lead_id) ?? []), row])
   }
 
-  const recentSessions = Array.from(sessionGroups.entries())
+  const allSessionEntries = Array.from(sessionGroups.entries())
+  const adClickSessionEntries = allSessionEntries.filter(([, rows]) =>
+    rows.some((row) => hasClickId(extractAttributionFromTracking(row)) || Boolean(clickIdFromTracking(row))),
+  )
+  const hiddenNoClickIdSessionCount = allSessionEntries.length - adClickSessionEntries.length
+
+  const recentSessions = adClickSessionEntries
     .map(([key, rows]) => {
       const ordered = [...rows].sort((a, b) => new Date(a.event_time || a.created_at || 0).getTime() - new Date(b.event_time || b.created_at || 0).getTime())
       const first = ordered[0]
@@ -1208,9 +1369,9 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       } satisfies PpcReport['recentSessions'][number]
     })
     .sort((a, b) => new Date(b.lastEventAt || b.firstEventAt || 0).getTime() - new Date(a.lastEventAt || a.firstEventAt || 0).getTime())
-    .slice(0, 25)
+    .slice(0, RECENT_SESSION_LIMIT)
 
-  const journeySessions = Array.from(sessionGroups.entries())
+  const journeySessions = adClickSessionEntries
     .map(([key, rows]) => {
       const ordered = [...rows].sort((a, b) => new Date(a.event_time || a.created_at || 0).getTime() - new Date(b.event_time || b.created_at || 0).getTime())
       const first = ordered[0]
@@ -1249,7 +1410,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       } satisfies PpcReport['journeySessions'][number]
     })
     .sort((a, b) => new Date(b.lastEventAt || b.firstEventAt || 0).getTime() - new Date(a.lastEventAt || a.firstEventAt || 0).getTime())
-    .slice(0, 12)
+    .slice(0, JOURNEY_SESSION_LIMIT)
 
   const attributionMap = new Map<string, PpcReport['attributionRows'][number]>()
   for (const state of states) {
@@ -1297,7 +1458,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     group.revenue += state.revenue
   }
 
-  const recentLeads = states
+  const allRecentLeads = states
     .map((state) => {
       const attribution = state.attribution
       const highestCallQuality = state.milestone5m.size > 0
@@ -1337,10 +1498,11 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       } satisfies PpcReport['recentLeads'][number]
     })
     .sort((a, b) => new Date(b.lastSignalAt || b.createdAt || 0).getTime() - new Date(a.lastSignalAt || a.createdAt || 0).getTime())
-    .slice(0, 25)
+  const recentLeads = allRecentLeads.slice(0, RECENT_LEAD_LIMIT)
 
-  const conversionApprovalQueue = input.outbox
+  const conversionApprovalQueue = exportableOutbox
     .filter((row) => text(row.status).toLowerCase() !== 'sent')
+    .filter((row) => isGoogleAdsApprovalRequiredPpcEvent(text(row.event_name), row.payload))
     .filter((row) => !isTestOutboxRow(row))
     .filter((row) => {
       if (!row.lead_id) return true
@@ -1365,6 +1527,52 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     score2: conversionApprovalQueue.filter((row) => row.qualityScore === 2).length,
     score3: conversionApprovalQueue.filter((row) => row.qualityScore === 3).length,
   }
+
+  const readyExportRows = exportableOutbox.filter((row) => {
+    const status = text(row.status).toLowerCase()
+    if (!['pending', 'processing', 'failed'].includes(status)) return false
+    return row.approved_for_google_ads || !isGoogleAdsApprovalRequiredPpcEvent(text(row.event_name), row.payload)
+  })
+  const oldestReadyAt = readyExportRows.reduce<string | null>(
+    (oldest, row) => olderIso(oldest, row.event_time || row.created_at),
+    null,
+  )
+  const lastSentAt = exportableOutbox.reduce<string | null>(
+    (newest, row) => newerIso(newest, row.sent_at),
+    null,
+  )
+  const oldestReadyAgeHours = ageHours(oldestReadyAt, reportNow)
+  const exportFailureCount = exportHealth.failed + exportHealth.deadLetter
+  const exportStatus = exportFailureCount > 0
+    ? 'blocked'
+    : readyExportRows.length > 0 && (oldestReadyAgeHours ?? 0) >= 1
+      ? 'attention'
+      : 'healthy'
+
+  let pendingEscalations = 0
+  let overdueEscalations = 0
+  let oldestDueAt: string | null = null
+  for (const task of input.missedCallTasks ?? []) {
+    const metadata = record(task.metadata)
+    if (text(metadata.task_type) !== 'google_ads_missed_call_escalation') continue
+    if (text(metadata.status).toLowerCase() !== 'pending') continue
+    pendingEscalations += 1
+    const dueAt = text(metadata.due_date) || task.created_at
+    const dueDate = validDate(dueAt)
+    if (!dueDate || dueDate.getTime() <= reportNow.getTime()) {
+      overdueEscalations += 1
+      oldestDueAt = olderIso(oldestDueAt, dueAt)
+    }
+  }
+  const oldestDueAgeMinutes = ageMinutes(oldestDueAt, reportNow)
+  const missedCallStatus = overdueEscalations > 0 && (oldestDueAgeMinutes ?? 0) >= 15
+    ? 'blocked'
+    : overdueEscalations > 0 || pendingEscalations > 0
+      ? 'attention'
+      : 'healthy'
+  const allAttributionRows = Array.from(attributionMap.values())
+    .sort((a, b) => b.revenue - a.revenue || b.formSubmits - a.formSubmits || b.leads - a.leads)
+  const attributionRows = allAttributionRows.slice(0, ATTRIBUTION_ROW_LIMIT)
 
   return {
     generatedAt: Number.isNaN(reportNow.getTime()) ? new Date().toISOString() : reportNow.toISOString(),
@@ -1401,9 +1609,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     },
     funnel,
     callQuality,
-    attributionRows: Array.from(attributionMap.values())
-      .sort((a, b) => b.revenue - a.revenue || b.formSubmits - a.formSubmits || b.leads - a.leads)
-      .slice(0, 25),
+    attributionRows,
     exportHealth,
     conversionApproval,
     conversionApprovalQueue,
@@ -1418,9 +1624,45 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
       pendingExports: exportHealth.pending + exportHealth.awaitingApproval,
       failedExports: exportHealth.failed + exportHealth.deadLetter,
     },
+    operationsHealth: {
+      ppcExportWorker: {
+        path: '/api/workers/ppc-conversion-export',
+        schedule: 'Every 15 minutes',
+        status: exportStatus,
+        readyToExport: readyExportRows.length,
+        pending: exportHealth.pending,
+        awaitingApproval: exportHealth.awaitingApproval,
+        failed: exportHealth.failed,
+        deadLetter: exportHealth.deadLetter,
+        oldestReadyAt,
+        oldestReadyAgeHours,
+        lastSentAt,
+      },
+      googleAdsMissedCalls: {
+        path: '/api/cron/google-ads-missed-calls',
+        schedule: 'Every 5 minutes',
+        status: missedCallStatus,
+        pendingEscalations,
+        overdueEscalations,
+        oldestDueAt,
+        oldestDueAgeMinutes,
+      },
+    },
+    exportConfig: input.exportConfig ?? fallbackExportConfig(),
     daily: Array.from(dailyBuckets.values()).sort((a, b) => a.date.localeCompare(b.date)),
     recentSessions,
     journeySessions,
     recentLeads,
+    resultCounts: {
+      journeySessionsShown: journeySessions.length,
+      journeySessionsTotal: adClickSessionEntries.length,
+      journeySessionsHiddenNoClickId: hiddenNoClickIdSessionCount,
+      recentSessionsShown: recentSessions.length,
+      recentSessionsTotal: adClickSessionEntries.length,
+      recentLeadsShown: recentLeads.length,
+      recentLeadsTotal: allRecentLeads.length,
+      attributionRowsShown: attributionRows.length,
+      attributionRowsTotal: allAttributionRows.length,
+    },
   }
 }

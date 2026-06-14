@@ -23,10 +23,20 @@ jobs:
             exit 1
           fi
 
+          set +e
           response="$(curl --fail-with-body --silent --show-error \
             --request POST \
             --header "Authorization: Bearer ${PPC_CONVERSION_EXPORT_SECRET}" \
-            "${PPC_CONVERSION_EXPORT_URL}")"
+            "${PPC_CONVERSION_EXPORT_URL}" 2>&1)"
+          curl_status=$?
+          set -e
+
+          printf '%s' "$response" > ppc-export-response.txt
+
+          if [ "$curl_status" -ne 0 ]; then
+            printf '%s\n' "$response"
+            exit "$curl_status"
+          fi
 
           RESPONSE="$response" node - <<'NODE'
           const result = JSON.parse(process.env.RESPONSE || '{}')
@@ -45,3 +55,38 @@ jobs:
             process.exit(1)
           }
           NODE
+
+      - name: Alert Ernest on PPC export failure
+        if: failure()
+        env:
+          PPC_CONVERSION_EXPORT_SECRET: ${{ secrets.PPC_CONVERSION_EXPORT_SECRET }}
+          PPC_CONVERSION_EXPORT_ALERT_URL: https://crm.savingkc.com/api/workers/ppc-conversion-export-alert
+        run: |
+          if [ -z "$PPC_CONVERSION_EXPORT_SECRET" ]; then
+            echo "PPC_CONVERSION_EXPORT_SECRET is not configured; cannot send CRM alert."
+            exit 0
+          fi
+
+          payload="$(node - <<'NODE'
+          const fs = require('fs')
+
+          const response = fs.existsSync('ppc-export-response.txt')
+            ? fs.readFileSync('ppc-export-response.txt', 'utf8').slice(0, 5000)
+            : ''
+
+          process.stdout.write(JSON.stringify({
+            workflow: 'PPC conversion export',
+            runId: process.env.GITHUB_RUN_ID,
+            runUrl: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            reason: 'Scheduled PPC conversion export failed.',
+            response,
+          }))
+          NODE
+          )"
+
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${PPC_CONVERSION_EXPORT_SECRET}" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "$PPC_CONVERSION_EXPORT_ALERT_URL" || echo "PPC export failure alert request failed."

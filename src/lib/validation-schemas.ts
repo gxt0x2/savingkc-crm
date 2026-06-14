@@ -128,6 +128,7 @@ export const buyerOfferSchema = z.object({
   contingencies: z.string().max(2000).optional(),
   notes: z.string().max(2000).optional(),
   buyer_name: z.string().min(1).max(200),
+  buyer_company: z.string().min(1).max(200).optional(),
   buyer_phone: z.string().min(10).max(20),
   buyer_email: z.string().email(),
 })

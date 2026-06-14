@@ -108,20 +108,20 @@ const baseInput: PpcReportInput = {
   ],
   outbox: [
     {
-      id: 'outbox-submit',
-      event_name: 'lead_submitted',
+      id: 'outbox-qualified',
+      event_name: 'qualified_lead',
       event_category: 'form',
-      dedupe_key: 'lead:lead-form:lead_submitted',
+      dedupe_key: 'lead:lead-form:qualified_lead',
       status: 'sent',
       approved_for_google_ads: true,
       optimization_role: 'primary',
       lead_id: 'lead-form',
-      conversion_value: 25,
+      conversion_value: 1,
       event_time: '2026-05-20T14:06:00.000Z',
       click_id: 'click-form',
       click_id_type: 'gclid',
       attribution: { gclid: 'click-form', utm_campaign: 'Search 2026' },
-      payload: { form_status: 'submitted' },
+      payload: { form_status: 'qualified', google_ads_value_basis: 'factual_stage_conversion' },
       attempts: 1,
       last_error: null,
       sent_at: '2026-05-20T14:07:00.000Z',
@@ -302,16 +302,12 @@ describe('ppc report', () => {
     expect(report.exportHealth.secondary).toBe(1)
     expect(report.exportHealth.pending).toBe(1)
     expect(report.exportHealth.sent).toBe(1)
-    expect(report.exportHealth.awaitingApproval).toBe(1)
-    expect(report.conversionApproval.awaitingApproval).toBe(1)
-    expect(report.conversionApprovalQueue).toHaveLength(1)
-    expect(report.conversionApprovalQueue[0]).toMatchObject({
-      id: 'outbox-2m',
-      eventLabel: 'Call 2+ Minutes',
-      qualityScore: null,
-      suggestedQualityScore: 1,
-      deadlineStatus: 'normal',
-    })
+    expect(report.exportHealth.awaitingApproval).toBe(0)
+    expect(report.operationsHealth.ppcExportWorker.status).toBe('attention')
+    expect(report.operationsHealth.ppcExportWorker.readyToExport).toBe(1)
+    expect(report.operationsHealth.googleAdsMissedCalls.status).toBe('healthy')
+    expect(report.conversionApproval.awaitingApproval).toBe(0)
+    expect(report.conversionApprovalQueue).toHaveLength(0)
     expect(report.journeySessions[0]?.steps.map((step) => [step.key, step.status])).toEqual([
       ['ad_click', 'complete'],
       ['page_visit', 'complete'],
@@ -330,12 +326,267 @@ describe('ppc report', () => {
     const report = buildPpcReport({
       ...baseInput,
       activities: baseInput.activities.filter((activity) => activity.id !== 'activity-submit'),
-      outbox: baseInput.outbox.filter((row) => row.id !== 'outbox-submit'),
+      outbox: baseInput.outbox.filter((row) => row.id !== 'outbox-qualified'),
     })
 
     expect(report.summary.formSubmits).toBe(0)
     expect(report.summary.stage3NoSubmit).toBe(1)
     expect(report.recentLeads.find((lead) => lead.id === 'lead-form')?.formStatus).toBe('stage_3_no_submit')
+  })
+
+  it('shows paid click journeys only when an ad click id is present', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      trackingEvents: [
+        ...baseInput.trackingEvents,
+        {
+          id: 'event-no-click',
+          event_id: 'event-no-click',
+          event_name: 'ppc_visit_started',
+          event_category: 'visit',
+          event_time: '2026-05-21T18:00:00.000Z',
+          session_id: 'session-no-click',
+          visitor_id: 'visitor-no-click',
+          lead_id: null,
+          form_step: 1,
+          form_status: null,
+          situation_raw: null,
+          timeline_raw: null,
+          condition_raw: null,
+          phone_number: null,
+          sms_consent: null,
+          is_test: false,
+          gclid: null,
+          attribution: {},
+          payload: {},
+          created_at: '2026-05-21T18:00:00.000Z',
+        },
+      ],
+    })
+
+    expect(report.resultCounts.journeySessionsTotal).toBe(1)
+    expect(report.resultCounts.journeySessionsHiddenNoClickId).toBe(1)
+    expect(report.journeySessions).toHaveLength(1)
+    expect(report.journeySessions[0]?.clickId).toBe('click-form')
+  })
+
+  it('maps keyword from Google Ads ValueTrack keyword fields when utm_term is absent', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      manifests: [
+        {
+          lead_id: 'lead-form',
+          created_at: '2026-05-20T14:00:00.000Z',
+          manifest: {
+            acquisition: {
+              attribution: {
+                gclid: 'click-form',
+                utm_source: 'google',
+                utm_medium: 'cpc',
+                utm_campaign: 'Search 2026',
+                keyword: 'cash home buyer kc',
+                campaignid: 'campaign-1',
+                adgroupid: 'adgroup-1',
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    expect(report.attributionRows.some((row) => row.keyword === 'cash home buyer kc')).toBe(true)
+  })
+
+  it('surfaces OpenAI Ads journeys from oppref without a Google click id', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      leads: [
+        ...baseInput.leads,
+        {
+          id: 'lead-openai',
+          full_name: 'OpenAI Seller',
+          phone: '+18165540123',
+          email: 'openai-seller@savingkc.testmail',
+          source: 'ppc-landing',
+          station: 'new',
+          priority: 'hot',
+          property_address: '1200 OpenAI Ave',
+          city: 'Kansas City',
+          created_at: '2026-05-22T16:00:00.000Z',
+          updated_at: '2026-05-22T16:03:00.000Z',
+          classification: null,
+          opportunity_score: null,
+        },
+      ],
+      manifests: [
+        ...baseInput.manifests,
+        {
+          lead_id: 'lead-openai',
+          created_at: '2026-05-22T16:00:00.000Z',
+          manifest: {
+            acquisition: {
+              attribution: {
+                oppref: 'oppref_openai_123',
+                utm_source: 'openai_ads',
+                utm_medium: 'cpc',
+                utm_campaign: 'OpenAI Seller Funnel',
+                landingUrl: 'https://savingkc.com/ppc?oppref=oppref_openai_123',
+              },
+            },
+          },
+        },
+      ],
+      outbox: [
+        ...baseInput.outbox,
+        {
+          id: 'outbox-openai-submit',
+          event_name: 'lead_submitted',
+          event_category: 'form',
+          dedupe_key: 'lead:lead-openai:lead_submitted',
+          status: 'pending',
+          approved_for_google_ads: false,
+          optimization_role: 'primary',
+          lead_id: 'lead-openai',
+          conversion_value: 25,
+          event_time: '2026-05-22T16:03:00.000Z',
+          click_id: null,
+          click_id_type: null,
+          attribution: {
+            oppref: 'oppref_openai_123',
+            utm_source: 'openai_ads',
+            utm_medium: 'cpc',
+            utm_campaign: 'OpenAI Seller Funnel',
+            landingUrl: 'https://savingkc.com/ppc?oppref=oppref_openai_123',
+          },
+          payload: { openai_ads_event_id: 'lead:lead-openai:lead_submitted', form_status: 'submitted' },
+          attempts: 0,
+          last_error: null,
+          sent_at: null,
+          created_at: '2026-05-22T16:03:00.000Z',
+        },
+      ],
+      trackingEvents: [
+        ...baseInput.trackingEvents,
+        {
+          id: 'event-openai-visit',
+          event_id: 'event-openai-visit',
+          event_name: 'ppc_visit_started',
+          event_category: 'visit',
+          event_time: '2026-05-22T16:00:00.000Z',
+          session_id: 'session-openai',
+          visitor_id: 'visitor-openai',
+          lead_id: 'lead-openai',
+          page_location: 'https://savingkc.com/ppc?oppref=oppref_openai_123',
+          page_referrer: 'https://chatgpt.com/',
+          traffic_source: null,
+          campaign: null,
+          utm_source: 'openai_ads',
+          utm_medium: 'cpc',
+          utm_campaign: 'OpenAI Seller Funnel',
+          utm_term: null,
+          utm_content: null,
+          form_step: 1,
+          form_status: null,
+          situation_raw: null,
+          timeline_raw: null,
+          condition_raw: null,
+          phone_number: null,
+          sms_consent: null,
+          is_test: false,
+          gclid: null,
+          gbraid: null,
+          wbraid: null,
+          gad_source: null,
+          gad_campaignid: null,
+          gad_adgroupid: null,
+          attribution: {},
+          payload: { attribution: { oppref: 'oppref_openai_123' } },
+          created_at: '2026-05-22T16:00:00.000Z',
+        },
+      ],
+    })
+
+    expect(report.attributionRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'openai_ads',
+          medium: 'cpc',
+          campaign: 'OpenAI Seller Funnel',
+          leads: 1,
+        }),
+      ]),
+    )
+    expect(report.journeySessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'openai_ads',
+          campaign: 'OpenAI Seller Funnel',
+          clickId: 'oppref_openai_123',
+          leadId: 'lead-openai',
+        }),
+      ]),
+    )
+  })
+
+  it('only asks for approval on rows explicitly marked approval_required', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      outbox: [
+        ...baseInput.outbox,
+        {
+          id: 'outbox-stage3',
+          event_name: 'lead_stage3_completed',
+          event_category: 'form',
+          dedupe_key: 'lead:lead-form:lead_stage3_completed',
+          status: 'pending',
+          approved_for_google_ads: false,
+          optimization_role: 'secondary',
+          lead_id: 'lead-form',
+          conversion_value: 1,
+          event_time: '2026-05-20T14:05:00.000Z',
+          click_id: 'click-form',
+          click_id_type: 'gclid',
+          attribution: { gclid: 'click-form', utm_campaign: 'Search 2026' },
+          payload: { form_status: 'stage_3_complete_no_submit' },
+          attempts: 0,
+          last_error: null,
+          sent_at: null,
+          created_at: '2026-05-20T14:05:00.000Z',
+        },
+        {
+          id: 'outbox-qualified-review',
+          event_name: 'qualified_lead',
+          event_category: 'form',
+          dedupe_key: 'lead:lead-form:qualified_lead_review',
+          status: 'pending',
+          approved_for_google_ads: false,
+          optimization_role: 'primary',
+          lead_id: 'lead-form',
+          conversion_value: null,
+          event_time: '2026-05-20T14:08:00.000Z',
+          click_id: 'click-form',
+          click_id_type: 'gclid',
+          attribution: { gclid: 'click-form', utm_campaign: 'Search 2026' },
+          payload: { form_status: 'qualified_lead', approval_required: true },
+          attempts: 0,
+          last_error: null,
+          sent_at: null,
+          created_at: '2026-05-20T14:08:00.000Z',
+        },
+      ],
+    })
+
+    expect(report.conversionApprovalQueue.map((row) => row.eventName)).not.toContain('lead_stage3_completed')
+    expect(report.conversionApprovalQueue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventName: 'qualified_lead',
+          eventLabel: 'Qualified Lead',
+          id: 'outbox-qualified-review',
+          suggestedQualityScore: 2,
+        }),
+      ]),
+    )
   })
 
   it('labels partial PPC captures as potential until step 3 is complete', () => {
@@ -407,5 +658,28 @@ describe('ppc report', () => {
 
     expect(report.summary.paidVisits).toBe(1)
     expect(report.summary.testRecords).toBe(1)
+  })
+
+  it('surfaces overdue Google Ads missed-call escalations', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      missedCallTasks: [
+        {
+          id: 'task-overdue',
+          lead_id: 'lead-call',
+          created_at: '2026-05-23T11:45:00.000Z',
+          metadata: {
+            task_type: 'google_ads_missed_call_escalation',
+            status: 'pending',
+            due_date: '2026-05-23T11:50:00.000Z',
+          },
+        },
+      ],
+    })
+
+    expect(report.operationsHealth.googleAdsMissedCalls.pendingEscalations).toBe(1)
+    expect(report.operationsHealth.googleAdsMissedCalls.overdueEscalations).toBe(1)
+    expect(report.operationsHealth.googleAdsMissedCalls.status).toBe('attention')
+    expect(report.operationsHealth.googleAdsMissedCalls.oldestDueAgeMinutes).toBe(10)
   })
 })

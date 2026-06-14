@@ -11,6 +11,9 @@ interface Stats {
     conversion_rate_pct: number
     shares: number
     share_visits: number
+    save_taps: number
+    saves: number
+    unsaves: number
     photo_opens: number
     street_view_opens: number
     map_view_opens: number
@@ -146,6 +149,15 @@ export function DealStatsPanel({ slug }: { slug: string }) {
   if (!stats) return <div className="bg-white border border-slate-200 rounded-xl p-4 text-xs text-slate-500">No stats available</div>
 
   const s = stats.summary
+  const maxInteractions = Math.max(
+    s.photo_opens,
+    s.street_view_opens,
+    s.map_view_opens,
+    s.offer_modal_opens,
+    s.inquiry_modal_opens,
+    s.save_taps,
+    1
+  )
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -187,11 +199,12 @@ export function DealStatsPanel({ slug }: { slug: string }) {
             <Stat label="Avg Time" value={fmtDuration(s.avg_time_on_page_ms)} sub={`median ${fmtDuration(s.median_time_on_page_ms)}`} />
             <Stat label="Offers" value={s.offers_submitted} sub={`${s.conversion_rate_pct}% conv`} accent />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <Stat label="Active Time" value={fmtDuration(s.avg_active_time_ms)} sub="engaged only" />
             <Stat label="Total Time" value={fmtDuration(s.total_time_on_site_ms)} sub="all visitors" />
             <Stat label="Avg Scroll" value={`${s.avg_scroll_pct}%`} sub="of page" />
             <Stat label="Shares" value={s.shares} sub={`${s.share_visits} visits`} />
+            <Stat label="Likes" value={s.saves} sub={`${s.save_taps} taps`} />
           </div>
 
           <div>
@@ -332,11 +345,12 @@ export function DealStatsPanel({ slug }: { slug: string }) {
           <div>
             <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-2">Interaction Breakdown</p>
             <div className="space-y-1.5">
-              <Bar label="Photo Opens" value={s.photo_opens} max={Math.max(s.photo_opens, s.street_view_opens, s.map_view_opens, s.offer_modal_opens, 1)} />
-              <Bar label="Street View" value={s.street_view_opens} max={Math.max(s.photo_opens, s.street_view_opens, s.map_view_opens, s.offer_modal_opens, 1)} />
-              <Bar label="Map View" value={s.map_view_opens} max={Math.max(s.photo_opens, s.street_view_opens, s.map_view_opens, s.offer_modal_opens, 1)} />
-              <Bar label="Offer Modal" value={s.offer_modal_opens} max={Math.max(s.photo_opens, s.street_view_opens, s.map_view_opens, s.offer_modal_opens, 1)} />
-              <Bar label="Inquiry Modal" value={s.inquiry_modal_opens} max={Math.max(s.photo_opens, s.street_view_opens, s.map_view_opens, s.offer_modal_opens, 1)} />
+              <Bar label="Photo Opens" value={s.photo_opens} max={maxInteractions} />
+              <Bar label="Street View" value={s.street_view_opens} max={maxInteractions} />
+              <Bar label="Map View" value={s.map_view_opens} max={maxInteractions} />
+              <Bar label="Offer Modal" value={s.offer_modal_opens} max={maxInteractions} />
+              <Bar label="Inquiry Modal" value={s.inquiry_modal_opens} max={maxInteractions} />
+              <Bar label="Like Taps" value={s.save_taps} max={maxInteractions} color="#e11d48" />
             </div>
           </div>
         </div>

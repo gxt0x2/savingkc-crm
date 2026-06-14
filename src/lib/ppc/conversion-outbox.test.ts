@@ -84,6 +84,49 @@ describe('ppc conversion outbox', () => {
     })
   })
 
+  it('builds qualified lead rows as automatic factual conversion signals', () => {
+    const row = buildPpcConversionOutboxRow({
+      eventName: 'qualified_lead',
+      eventCategory: 'form',
+      dedupeKey: 'lead:123:qualified_lead',
+      leadId: 'lead-123',
+      optimizationRole: 'primary',
+      conversionValue: 1,
+      attribution: { gclid: 'click-123', utm_campaign: 'Search 2026' },
+      payload: { source: 'crm_qualified_stage', approval_required: false },
+    })
+
+    expect(row).toMatchObject({
+      event_name: 'qualified_lead',
+      optimization_role: 'primary',
+      approved_for_google_ads: true,
+      conversion_value: 1,
+      click_id: 'click-123',
+      payload: expect.objectContaining({
+        source: 'crm_qualified_stage',
+        approval_required: false,
+      }),
+    })
+  })
+
+  it('uses the property tax campaign fallback from attribution', () => {
+    const row = buildPpcConversionOutboxRow({
+      eventName: 'qualified_lead',
+      eventCategory: 'form',
+      dedupeKey: 'lead:tax:qualified_lead',
+      attribution: {
+        gclid: 'tax-click',
+        landingUrl: 'https://savingkc.com/ppc-tax?gclid=tax-click',
+      },
+      payload: { source: 'crm_qualified_stage' },
+    })
+
+    expect(row.payload).toMatchObject({
+      campaign: 'Search - Property Tax',
+      source: 'crm_qualified_stage',
+    })
+  })
+
   it('does not throw when the queue table is not deployed yet', async () => {
     const result = await enqueuePpcConversion(
       {

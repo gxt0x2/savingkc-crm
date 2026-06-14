@@ -3,11 +3,14 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
+  getGoogleAdsPhoneProfile,
+  getGoogleAdsCallQualityMilestones,
   getCallQualityMilestones,
   isPpcTrackingNumber,
   parseCallDurationSeconds,
-  PPC_TRACKING_PHONE_DIGITS,
 } from '@/lib/call-quality-events'
+import { phoneLookupVariants } from '@/lib/google-ads-phone'
+import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 
 /**
@@ -39,6 +42,9 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
 
   const dedupeKey = input.callSid || input.parentCallSid
   const isPpcCall = isPpcTrackingNumber(input.from)
+  const isTestCall = isInternalTestPhone(input.to)
+  const profile = getGoogleAdsPhoneProfile(input.from)
+  const googleAdsEvents = new Set(getGoogleAdsCallQualityMilestones(input.duration).map((milestone) => milestone.event))
 
   for (const milestone of milestones) {
     try {
@@ -67,14 +73,18 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
         direction: 'outbound',
         from: input.from,
         to: input.to,
+        is_test: isTestCall,
         callSid: input.callSid,
         parentCallSid: input.parentCallSid,
         dedupeKey,
         identity: input.identity,
         ...(isPpcCall && {
           traffic_source: 'google_ads',
-          campaign: 'Search 2026',
-          tracking_number: PPC_TRACKING_PHONE_DIGITS,
+          campaign: profile.campaign,
+          tracking_number: profile.trackingDigits,
+          lead_source: profile.source,
+          landing_page: profile.landingPage,
+          phone_profile: profile.key,
         }),
       }
 
@@ -95,7 +105,7 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
         continue
       }
 
-      if (isPpcCall) {
+      if (isPpcCall && !isTestCall && googleAdsEvents.has(milestone.event)) {
         await enqueuePpcConversion(
           {
             eventName: milestone.event,
@@ -108,7 +118,7 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
             attribution: {
               utm_source: 'google',
               utm_medium: 'cpc',
-              utm_campaign: 'Search 2026',
+              utm_campaign: profile.campaign,
             },
             payload: metadata,
           },
@@ -146,11 +156,19 @@ export async function POST(req: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     )
 
-    const cleanTo = to.replace(/[^\d+]/g, '')
     let leadId: string | null = null
-    if (cleanTo) {
-      const { data } = await supabase.from('leads').select('id').eq('phone', cleanTo).maybeSingle()
-      leadId = data?.id || null
+    for (const variant of phoneLookupVariants(to)) {
+      const { data } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('phone', variant)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data?.id) {
+        leadId = data.id
+        break
+      }
     }
 
     // Stamp a diagnostic activity row so it shows up in the Activity Feed

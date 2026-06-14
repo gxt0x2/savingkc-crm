@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase-lazy'
 import { cleanJsonRecord } from '@/lib/ppc/conversion-outbox'
+import { ppcCampaignNameForContext } from '@/lib/ppc/campaigns'
 
 export const SITUATION_TO_TAG = {
   'tax-delinquent': 'tax_delinquent',
@@ -32,9 +33,14 @@ export type PpcTrackingAttribution = {
   utm_campaign?: string
   utm_term?: string
   utm_content?: string
+  keyword?: string
+  matchtype?: string
+  campaignid?: string
+  adgroupid?: string
   gclid?: string
   gbraid?: string
   wbraid?: string
+  oppref?: string
   gad_source?: string
   gad_campaignid?: string
   gad_adgroupid?: string
@@ -144,6 +150,7 @@ function categoryFor(eventName: string, fallback?: PpcTrackingEventCategory): Pp
   if (eventName === 'phone_click' || eventName === 'skc_phone_number_selected') return 'phone'
   if (eventName === 'form_error') return 'error'
   if (eventName.startsWith('lead_') || eventName === 'appointment_booked') return 'conversion'
+  if (eventName === 'contact_field_started') return 'form'
   if (eventName === 'address_typed' || eventName === 'ppc_potential_lead_created') return 'form'
   if (eventName.includes('form') || eventName.includes('step') || eventName.endsWith('_selected')) return 'form'
   return 'web'
@@ -177,7 +184,12 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
     page_location: pageLocation,
     page_referrer: text(input.pageReferrer) || text(attribution.referrer),
     traffic_source: text(input.trafficSource) || 'google_ads',
-    campaign: text(input.campaign) || text(attribution.utm_campaign) || 'Search 2026',
+    campaign: ppcCampaignNameForContext({
+      campaign: input.campaign,
+      attribution,
+      pagePath: input.pagePath,
+      pageLocation,
+    }),
     utm_source: text(attribution.utm_source),
     utm_medium: text(attribution.utm_medium),
     utm_campaign: text(attribution.utm_campaign),

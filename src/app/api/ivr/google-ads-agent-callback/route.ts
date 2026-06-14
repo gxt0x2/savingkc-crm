@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { GOOGLE_ADS_PHONE_NUMBER } from '@/lib/call-quality-events'
+import { GOOGLE_ADS_PHONE_NUMBER, getGoogleAdsPhoneProfile } from '@/lib/call-quality-events'
 import { callerPhoneLabel } from '@/lib/google-ads-phone'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +27,7 @@ export async function POST(req: Request) {
   const calledNumber = url.searchParams.get('calledNumber') || GOOGLE_ADS_PHONE_NUMBER
   const agentName = url.searchParams.get('agentName') || 'agent'
   const triggerCallSid = url.searchParams.get('triggerCallSid') || ''
+  const profile = getGoogleAdsPhoneProfile(calledNumber)
 
   if (!leadPhone) {
     return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
@@ -37,10 +38,11 @@ export async function POST(req: Request) {
   }
 
   const resultAction = `${BASE_URL}/api/ivr/google-ads-agent-callback-result?leadId=${esc(leadId)}&amp;leadPhone=${esc(leadPhone)}&amp;calledNumber=${esc(calledNumber)}&amp;agentName=${esc(agentName)}&amp;triggerCallSid=${esc(triggerCallSid)}`
+  const recordingCallback = `${BASE_URL}/api/twilio-recording-callback?source=${esc(profile.source)}&amp;from=${esc(leadPhone)}&amp;leadId=${esc(leadId)}&amp;calledNumber=${esc(calledNumber)}&amp;callSid=${esc(triggerCallSid)}`
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna">Google Ads lead callback. Calling ${callerPhoneLabel(leadPhone)} now.</Say>
-  <Dial action="${resultAction}" method="POST" timeout="20" callerId="${calledNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${resultAction}" method="POST" timeout="20" callerId="${calledNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${recordingCallback}" recordingStatusCallbackMethod="POST">
     <Number>${leadPhone}</Number>
   </Dial>
 </Response>`

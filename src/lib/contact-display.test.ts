@@ -14,6 +14,8 @@ describe('contact-display', () => {
     expect(formatLeadSource('ppc-landing')).toBe('Google Ads')
     expect(getAvatarLabel('Google Ads Caller', '+18165551212', 'google_ads_phone')).toBe('GA')
     expect(formatLeadSource('google_ads_phone')).toBe('Google Ads')
+    expect(getAvatarLabel('Google Ads Tax Caller', '+18165551212', 'google_ads_tax_phone')).toBe('GA')
+    expect(formatLeadSource('google_ads_tax_phone')).toBe('Google Ads Tax')
   })
 
   it('falls back to phone when the stored name is only a caller placeholder', () => {

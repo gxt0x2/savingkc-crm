@@ -7,7 +7,6 @@ import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CommandPalette } from './command-palette'
 import { DialerPanel, CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar'
-import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useThemePreference } from '@/hooks/use-theme-preference'
@@ -16,6 +15,23 @@ import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
+
+function HeaderSvg({ name, className = 'h-5 w-5' }: { name: 'menu' | 'search' | 'phone' | 'sun' | 'moon' | 'close'; className?: string }) {
+  const paths = {
+    menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+    search: <path d="m15.5 15.5 4 4M10.5 17a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13Z" />,
+    phone: <path d="M7.5 4.5 10 7l-1.75 2.25a11.5 11.5 0 0 0 6.5 6.5L17 14l2.5 2.5-1 3a2 2 0 0 1-2.2 1.35C9.75 19.9 4.1 14.25 3.15 7.7A2 2 0 0 1 4.5 5.5l3-1Z" />,
+    sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>,
+    moon: <path d="M20 14.5A7.5 7.5 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />,
+    close: <path d="m6 6 12 12M18 6 6 18" />,
+  }[name]
+
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {paths}
+    </svg>
+  )
+}
 
 function subscribeHydration() {
   return () => {}
@@ -127,6 +143,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [pendingQueueCallerId, setPendingQueueCallerId] = useState<string | null>(null)
   const [pendingQueueCallerPlan, setPendingQueueCallerPlan] = useState<DialerCallerPlan | null>(null)
   const [pendingQueueAutoDial, setPendingQueueAutoDial] = useState(false)
+  const [pendingQueueRingCount, setPendingQueueRingCount] = useState<number | null>(null)
 
   function handleDialerStatusChange(status: CallStatus) {
     setDialerStatus(status)
@@ -147,6 +164,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueueCallerId(null)
         setPendingQueueCallerPlan(null)
         setPendingQueueAutoDial(false)
+        setPendingQueueRingCount(null)
         setShowDialer(true)
       }
     }
@@ -158,6 +176,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueueCallerId(callerId)
         setPendingQueueCallerPlan(normalizeDialerCallerPlan(detail.callerPlan, callerId || ''))
         setPendingQueueAutoDial(Boolean(detail.autoDial))
+        setPendingQueueRingCount(typeof detail.ringCount === 'number' ? detail.ringCount : null)
         setPendingDialLead(null)
         setShowDialer(true)
       }
@@ -229,7 +248,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="sticky top-0 w-full z-40 border-b shadow-sm"
         style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
       >
-        <div className="max-w-[1440px] mx-auto px-3 sm:px-4 lg:px-6 h-16 flex items-center justify-between gap-3 overflow-hidden">
+        <div className="max-w-[1440px] mx-auto px-3 sm:px-4 lg:px-6 h-16 flex items-center justify-between gap-3">
           {/* LEFT: hamburger + logo */}
           <div className="flex items-center gap-3 flex-shrink-0">
             {/* Hamburger — mobile only */}
@@ -238,7 +257,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
             >
-              <Icon name="menu" size="text-xl" />
+              <HeaderSvg name="menu" />
             </button>
 
             {/* Brand — real /logo.png with a pixel-exact SVG color-matrix filter.
@@ -292,7 +311,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               style={{ background: 'var(--ck-surface-elev)' }}
               aria-label="Open search"
             >
-              <Icon name="search" size="text-lg" className="text-[var(--ck-text-dim)]" />
+              <HeaderSvg name="search" className="h-5 w-5 text-[var(--ck-text-dim)]" />
               <span className="flex-1 text-left">Search leads…</span>
               <kbd
                 className="hidden xl:inline-block text-[10px] font-bold rounded px-1.5 py-0.5"
@@ -312,7 +331,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 aria-label="Open dialer"
                 title="Open dialer"
               >
-                <Icon name="call" size="text-lg" className="text-white" />
+                <HeaderSvg name="phone" className="h-5 w-5 text-white" />
                 <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ring-1 ring-[#E32E2E] ${
                   dialerStatus === 'ready' || dialerStatus === 'on_call' ? 'bg-emerald-400' :
                   dialerStatus === 'connecting' || dialerStatus === 'calling' ? 'bg-amber-300' :
@@ -328,11 +347,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   aria-label={userTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
                   title={userTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
                 >
-                  <Icon
-                    name={userTheme === 'dark' ? 'light_mode' : 'dark_mode'}
-                    size="text-lg"
-                    className="text-[var(--ck-text)]"
-                  />
+                  <HeaderSvg name={userTheme === 'dark' ? 'sun' : 'moon'} className="h-5 w-5 text-[var(--ck-text)]" />
                 </button>
               )}
               <NotificationBell />
@@ -370,20 +385,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       onClick={() => setShowProfileMenu(false)}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[var(--ck-text)] hover:bg-[var(--ck-surface-hi)] transition-colors"
                     >
-                      <Icon name="checklist" size="text-lg" className="text-[var(--ck-text-muted)]" /> SOD / EOD
+                      SOD / EOD
                     </Link>
                     <Link
                       href={mode === 'tc' ? '/settings?portal=tc' : '/settings'}
                       onClick={() => setShowProfileMenu(false)}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[var(--ck-text)] hover:bg-[var(--ck-surface-hi)] transition-colors"
                     >
-                      <Icon name="settings" size="text-lg" className="text-[var(--ck-text-muted)]" /> Settings
+                      Settings
                     </Link>
                     <button
                       onClick={() => { setShowProfileMenu(false); signOut() }}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[#FCA5A5] hover:bg-[#E32E2E]/10 transition-colors"
                     >
-                      <Icon name="logout" size="text-lg" /> Sign Out
+                      Sign Out
                     </button>
                   </div>
                 )}
@@ -420,7 +435,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="p-2 rounded-lg transition-colors text-[var(--ck-text-muted)] hover:bg-[var(--ck-surface-hi)]"
             onClick={() => setDrawerOpen(false)}
           >
-            <Icon name="close" size="text-xl" />
+            <HeaderSvg name="close" />
           </button>
         </div>
         <div className="p-4">
@@ -446,13 +461,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Dialer Panel — Twilio softphone */}
       <DialerPanel
         open={showDialer}
-        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null); setPendingQueueAutoDial(false) }}
+        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null); setPendingQueueAutoDial(false); setPendingQueueRingCount(null) }}
         onStatusChange={handleDialerStatusChange}
         pendingDial={pendingDialLead}
         pendingQueue={pendingQueue}
         pendingQueueCallerId={pendingQueueCallerId}
         pendingQueueCallerPlan={pendingQueueCallerPlan}
         pendingQueueAutoDial={pendingQueueAutoDial}
+        pendingQueueRingCount={pendingQueueRingCount}
         presentation={dialerPresentation}
       />
 
