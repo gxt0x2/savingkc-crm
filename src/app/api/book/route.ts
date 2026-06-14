@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { buildManifest } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
-import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
-import { sendPushToAgents } from '@/lib/push-notifications'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { ensureManifestExists } from '@/lib/manifest-sync'
+import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { supabase } from '@/lib/supabase-lazy'
 
 // Random delay to make auto-texts feel human
@@ -34,6 +33,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { first_name, phone, property_address, slot_date, slot_time, slot_datetime, source } = body
+    const bodyLeadId = body.lead_id || body.leadId || null
+    const bodyManifestId = body.manifest_id || body.manifestId || null
+    const isPpcBooking = source === 'ppc-landing'
+    const bookingSource = source === 'youtube' ? 'youtube' : isPpcBooking ? 'ppc-landing' : source || 'website_form'
+    const landingPage = isPpcBooking ? '/ppc' : '/call'
 
     // Validate required fields — property_address is optional from /call page
     if (!first_name?.trim() || !phone?.trim() || !slot_date || !slot_time || !slot_datetime) {
@@ -69,17 +73,39 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Try to find existing lead by phone
+    // Prefer explicit funnel identifiers before falling back to phone.
     let leadId: string | null = null
-    const { data: existingLead } = await supabase
-      .from('leads')
-      .select('id')
-      .eq('phone', normalizedPhone)
-      .limit(1)
+    if (bodyLeadId) {
+      const { data: explicitLead } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('id', bodyLeadId)
+        .maybeSingle()
+      leadId = explicitLead?.id ?? null
+    }
 
-    if (existingLead && existingLead.length > 0) {
-      leadId = existingLead[0].id
-    } else {
+    if (!leadId && bodyManifestId) {
+      const { data: manifestLead } = await supabase
+        .from('manifests')
+        .select('lead_id')
+        .eq('id', bodyManifestId)
+        .maybeSingle()
+      leadId = manifestLead?.lead_id ?? null
+    }
+
+    if (!leadId) {
+      const { data: existingLead } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('phone', normalizedPhone)
+        .limit(1)
+
+      if (existingLead && existingLead.length > 0) {
+        leadId = existingLead[0].id
+      }
+    }
+
+    if (!leadId) {
       // Check prospects before creating bare lead
       const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
       const { createEnrichedLeadFromProspect } = await import('@/lib/prospect-to-lead')
@@ -128,8 +154,8 @@ export async function POST(req: NextRequest) {
         slot_time,
         slot_datetime,
         lead_id: leadId,
-        source: source === 'youtube' ? 'youtube' : 'website_form',
-        landing_page: '/call',
+        source: bookingSource,
+        landing_page: landingPage,
       })
       .select('id')
       .single()
@@ -141,6 +167,9 @@ export async function POST(req: NextRequest) {
         { status: 500, headers: corsHeaders }
       )
     }
+
+    let resolvedManifestId: string | null = bodyManifestId
+    let ppcConversion: Awaited<ReturnType<typeof queuePpcAppointmentBookedConversion>> | null = null
 
     // Log lead activity
     if (leadId) {
@@ -154,7 +183,7 @@ export async function POST(req: NextRequest) {
           slot_date,
           slot_time,
           property_address: property_address?.trim() || '',
-          source: 'website_form',
+          source: bookingSource,
         },
       })
     }
@@ -163,13 +192,17 @@ export async function POST(req: NextRequest) {
     if (leadId) {
       try {
         console.log('[BOOK] Calling ensureManifestExists for lead:', leadId)
-        const manifestId = await ensureManifestExists(leadId)
+        const manifestId = bodyManifestId || await ensureManifestExists(leadId)
+        resolvedManifestId = manifestId ?? null
         console.log('[BOOK] ensureManifestExists returned:', manifestId)
         if (!manifestId) {
           console.error('[BOOK] Failed to ensure manifest for lead:', leadId)
         }
 
         const manifestData = manifestId ? { id: manifestId } : null
+        if (manifestId) {
+          await supabase.from('manifests').update({ booking_id: booking.id }).eq('id', manifestId)
+        }
 
         // Trigger enrichment if property_address is provided (non-blocking)
         if (manifestData?.id && property_address?.trim()) {
@@ -210,6 +243,18 @@ export async function POST(req: NextRequest) {
         console.log('[BOOK] Calling updateManifestAndCascade for lead:', leadId)
         // Update manifest with appointment object
         const updated = await updateManifestAndCascade(leadId, (manifest) => {
+          manifest.currentStation = 'appointment_set'
+          manifest.priority = 'hot'
+          if (isPpcBooking && !manifest.acquisition) {
+            manifest.acquisition = {
+              source: 'ppc-landing',
+              channel: 'google-ads',
+              attribution: {
+                capturedAt: new Date().toISOString(),
+                landingUrl: 'https://savingkc.com/ppc',
+              },
+            }
+          }
           manifest.pipeline.appointment = {
             appointmentId: randomUUID(),
             type: 'phone_call', // /call bookings are always phone calls
@@ -226,7 +271,7 @@ export async function POST(req: NextRequest) {
             automationLog: [],
             assignedTo: 'casey', // Default for website bookings
             address: null, // Phone calls don't need address
-            notes: `Booked via ${source === 'youtube' ? 'YouTube' : 'website'} /call widget`,
+            notes: `Booked via ${isPpcBooking ? 'PPC' : source === 'youtube' ? 'YouTube' : 'website'} /call widget`,
           }
 
           // Mark briefing as stale
@@ -240,7 +285,8 @@ export async function POST(req: NextRequest) {
             agent: 'booking:call_widget',
             action: 'appointment_created',
             details: {
-              source: source === 'youtube' ? 'youtube' : 'website_form',
+              source: bookingSource,
+              funnel: isPpcBooking ? 'ppc-landing' : undefined,
               scheduledAt: slot_datetime,
               bookingId: booking.id,
             },
@@ -249,20 +295,34 @@ export async function POST(req: NextRequest) {
         console.log('[BOOK] updateManifestAndCascade returned:', updated)
 
         // Create lead_activities record for calendar display
-        await supabase.from('lead_activities').insert({
+        const { data: appointmentActivity } = await supabase.from('lead_activities').insert({
           lead_id: leadId,
           activity_type: 'appointment',
-          description: `Call appointment scheduled via ${source === 'youtube' ? 'YouTube' : 'website'} widget`,
+          description: `Call appointment scheduled via ${isPpcBooking ? 'PPC' : source === 'youtube' ? 'YouTube' : 'website'} widget`,
           agent: 'System',
           metadata: {
             type: 'phone_call',
             scheduled_at: slot_datetime,
             due_date: slot_datetime, // Calendar reads due_date
             booking_id: booking.id,
-            source: source === 'youtube' ? 'youtube' : 'website_form',
+            source: bookingSource,
             status: 'scheduled',
           },
-        })
+        }).select('id').maybeSingle()
+
+        if (isPpcBooking) {
+          ppcConversion = await queuePpcAppointmentBookedConversion({
+            leadId,
+            appointmentId: booking.id,
+            bookingId: booking.id,
+            activityId: appointmentActivity?.id ?? null,
+            scheduledAt: slot_datetime,
+            scheduledTime: slot_time,
+            appointmentType: 'phone_call',
+            assignedTo: 'casey',
+            source: bookingSource,
+          })
+        }
       } catch (manifestErr) {
         console.error('Failed to create/update manifest (non-critical):', manifestErr)
         // Don't fail the booking
@@ -294,29 +354,36 @@ export async function POST(req: NextRequest) {
       })
     }, 15, 30)
 
-    // Push notification (instant)
-    sendPushToAgents({
-      title: 'New Booking',
-      body: `${first_name.trim()} booked for ${formattedDate} at ${displayTime}`,
-      url: leadId ? `/leads/${leadId}` : '/',
-      tag: 'booking',
-    }).catch(() => {})
-
-    // Send alert SMS to Casey (delayed 30-60s)
+    // Alert eligible team members immediately.
     const alertBody = `📅 New call booked: ${first_name.trim()}${property_address?.trim() ? ` at ${property_address.trim()}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${normalizedPhone}`
-    sendDelayed(async () => {
-      await safeSendSMS({
-        body: alertBody,
-        from: process.env.TWILIO_PHONE_NUMBER!,
-        to: process.env.CASEY_PHONE || '+18167564943',
-      })
-    }, 30, 60)
+    await sendTeamLeadAlert({
+      leadId,
+      smsBody: alertBody,
+      trigger: 'booking_alert',
+      source: bookingSource,
+      trafficSource: isPpcBooking ? 'google_ads' : 'non_paid',
+      push: {
+        title: 'New Booking',
+        body: `${first_name.trim()} booked for ${formattedDate} at ${displayTime}`,
+        url: leadId ? `/leads/${leadId}` : '/',
+        tag: `booking-${booking.id}`,
+      },
+      metadata: {
+        booking_id: booking.id,
+        slot_date,
+        slot_time,
+        scheduled_at: slot_datetime,
+      },
+    })
 
     return NextResponse.json(
       {
         success: true,
         message: 'Booking confirmed!',
         booking_id: booking.id,
+        lead_id: leadId,
+        manifest_id: resolvedManifestId,
+        ppc_conversion: ppcConversion,
         display_date: formattedDate,
         display_time: displayTime,
       },

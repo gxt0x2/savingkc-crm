@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
 import { AddLeadModal } from '@/components/leads/add-lead-modal'
 import { calculateTemperature, TEMPERATURE_CONFIG } from '@/lib/lead-temperature'
+import { DEAD_REASONS } from '@/lib/lead-outcomes'
 import { toProperCase, formatPhone } from '@/lib/format'
 
 interface Lead {
@@ -59,6 +60,8 @@ export default function LeadsPage() {
   const [priorityDropdownOpen, setPriorityDropdownOpen] = useState(false)
   const [actionFeedback, setActionFeedback] = useState<string | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkDeadDialogOpen, setBulkDeadDialogOpen] = useState(false)
+  const [bulkDeadReason, setBulkDeadReason] = useState('')
   const stationRef = useRef<HTMLDivElement>(null)
   const priorityRef = useRef<HTMLDivElement>(null)
   const headerCheckboxRef = useRef<HTMLInputElement>(null)
@@ -108,7 +111,7 @@ export default function LeadsPage() {
 
   // Filter + sort
   const processed = useMemo(() => {
-    let result = leads.filter((l) => {
+    const result = leads.filter((l) => {
       // Search
       if (search) {
         const q = search.toLowerCase()
@@ -244,22 +247,40 @@ export default function LeadsPage() {
     setTimeout(() => setActionFeedback(null), 2500)
   }
 
-  async function handleBulkStation(station: string) {
+  async function handleBulkStation(station: string, selectedDeadReason?: string) {
     setStationDropdownOpen(false)
+    if (station === 'appointment_set') {
+      showFeedback('Open each lead and use Schedule for Appointment Set')
+      return
+    }
+    if (station === 'dead' && !selectedDeadReason) {
+      setBulkDeadDialogOpen(true)
+      return
+    }
     setBulkLoading(true)
     try {
-      const supabase = createClient()
       const ids = Array.from(selectedIds)
-      const { error } = await supabase
-        .from('leads')
-        .update({ station })
-        .in('id', ids)
-      if (error) throw error
+      await Promise.all(ids.map(async (id) => {
+        const res = await fetch(`/api/admin/leads/${id}/station`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            station,
+            reason: station === 'dead' ? 'bulk dead outcome from leads list' : 'bulk stage change from leads list',
+            ...(station === 'dead' ? { deadReason: selectedDeadReason } : {}),
+          }),
+        })
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body.error || `HTTP ${res.status}`)
+        }
+      }))
       showFeedback(`Moved ${ids.length} lead${ids.length !== 1 ? 's' : ''} to "${station.replace(/_/g, ' ')}"`)
       setSelectedIds(new Set())
       fetchLeads()
-    } catch {
-      showFeedback('Failed to update leads')
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to update leads')
     } finally {
       setBulkLoading(false)
     }
@@ -300,7 +321,7 @@ export default function LeadsPage() {
       })
       // Parse body even on non-2xx so we can surface server error text.
       const text = await res.text()
-      let data: any = {}
+      let data: { success?: boolean; error?: string; raw?: string } = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { raw: text } }
 
       if (res.status === 401) {
@@ -850,6 +871,56 @@ export default function LeadsPage() {
           >
             <Icon name="close" size="text-sm" />
           </button>
+        </div>
+      )}
+
+      {bulkDeadDialogOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-950 p-5 text-white shadow-2xl">
+            <div className="mb-4">
+              <p className="text-sm font-black uppercase tracking-wider text-red-400">Bulk Dead Outcome</p>
+              <h3 className="mt-1 text-xl font-black">Choose the reason</h3>
+              <p className="mt-1 text-sm font-semibold text-slate-400">
+                This will mark {selectedIds.size} selected lead{selectedIds.size !== 1 ? 's' : ''} dead and store the same reason on each record.
+              </p>
+            </div>
+            <select
+              value={bulkDeadReason}
+              onChange={(e) => setBulkDeadReason(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-white focus:border-red-500 focus:outline-none"
+              aria-label="Bulk dead reason"
+            >
+              <option value="">Select reason...</option>
+              {DEAD_REASONS.map((reason) => (
+                <option key={reason.id} value={reason.id}>{reason.label}</option>
+              ))}
+            </select>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkDeadDialogOpen(false)
+                  setBulkDeadReason('')
+                }}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-black text-slate-200 hover:bg-slate-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!bulkDeadReason || bulkLoading}
+                onClick={async () => {
+                  const selected = bulkDeadReason
+                  setBulkDeadDialogOpen(false)
+                  setBulkDeadReason('')
+                  await handleBulkStation('dead', selected)
+                }}
+                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Mark Dead
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

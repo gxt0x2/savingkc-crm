@@ -7,6 +7,7 @@ import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { updateManifestAndCascade } from '@/lib/manifest-sync'
 import { parkLead } from '@/lib/hot-engine'
 import { triageLead, type TriageResult } from '@/lib/lead-triage'
+import { deadReasonLabel } from '@/lib/lead-outcomes'
 import type { ManifestV2 } from '@/lib/manifest-builder'
 
 /**
@@ -146,9 +147,20 @@ export async function POST(req: NextRequest) {
       if (!allowedVerdicts.has(f.verdict)) continue
       try {
         if (f.verdict === 'dead') {
+          const deadReason = 'system_triage'
+          const now = new Date().toISOString()
           const { error: updErr } = await db
             .from('leads')
-            .update({ station: 'dead', updated_at: new Date().toISOString() })
+            .update({
+              station: 'dead',
+              priority: 'cold',
+              classification: 'dead',
+              opportunity_score: 0,
+              dead_reason: deadReason,
+              dead_at: now,
+              dead_by: 'system:lead_triage',
+              updated_at: now,
+            })
             .eq('id', f.leadId)
           if (updErr) {
             f.applied = false
@@ -159,10 +171,15 @@ export async function POST(req: NextRequest) {
             manifest.currentStation = 'dead'
             manifest.auditTrail = manifest.auditTrail ?? []
             manifest.auditTrail.push({
-              timestamp: new Date().toISOString(),
+              timestamp: now,
               agent: 'system:lead_triage',
               action: 'marked_dead',
-              details: { reason: f.reason, rationale: f.rationale },
+              details: {
+                reason: f.reason,
+                rationale: f.rationale,
+                dead_reason: deadReason,
+                dead_reason_label: deadReasonLabel(deadReason),
+              },
             })
           }, 'lead_triage').catch(() => false)
         } else if (f.verdict === 'park') {

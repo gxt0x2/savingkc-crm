@@ -3,14 +3,15 @@ export const maxDuration = 60
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { normalizeDealStage, type DealStage } from '@/types/pipeline'
+import { getContactSignal, isOutboundAttempt, type ContactActivityLike, type ContactSignal } from '@/lib/contact-display'
+import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
  * GET /api/contacts
  *
- * Returns one row per active acquisition lead with the fields the Contacts
+ * Returns one row per active lead with the fields the Contacts
  * smart list needs: name, address, phone, next activity, tags, station,
- * composite score. Single endpoint — the page filters by station tab on
+ * composite score. Parked and archived leads are excluded here. Single endpoint — the page filters by station tab on
  * the client.
  *
  * Auth: session (the page is auth-gated).
@@ -20,6 +21,7 @@ export interface ContactRow {
   id: string
   fullName: string | null
   phone: string | null
+  source: string | null
   address: string | null
   city: string | null
   station: DealStage
@@ -32,6 +34,9 @@ export interface ContactRow {
   } | null
   tags: string[]
   lastContactAt: string | null
+  createdAt: string | null
+  firstOutboundAt: string | null
+  contactSignal: ContactSignal | null
   updatedAt: string | null
 }
 
@@ -59,6 +64,14 @@ interface ManifestPayload {
     lastSellerContactDate?: string
     lastInboundDate?: string
   }
+}
+
+const ACTIVE_CONTACT_STAGES = new Set<DealStage>([...ACQUISITION_STAGES, 'under_contract'])
+const CONTACT_ACTIVITY_TYPES = ['call', 'sms', 'email', 'voicemail', 'missed_call']
+
+function getActiveContactStation(station: string | null | undefined): DealStage | null {
+  const normalized = normalizeDealStage(station) ?? 'new'
+  return ACTIVE_CONTACT_STAGES.has(normalized) ? normalized : null
 }
 
 function pickNextActivity(m: ManifestPayload): ContactRow['nextActivity'] {
@@ -96,17 +109,21 @@ export async function GET() {
 
   const { data: leads, error: leadsErr } = await db
     .from('leads')
-    .select('id, full_name, phone, station, property_address, city, updated_at, is_parked, is_favorite')
+    .select('id, full_name, phone, source, station, property_address, city, created_at, updated_at, is_parked, is_favorite')
     .eq('is_parked', false)
     .order('updated_at', { ascending: false })
 
   if (leadsErr) return NextResponse.json({ error: leadsErr.message }, { status: 500 })
   const rows = leads ?? []
-  if (rows.length === 0) return NextResponse.json({ items: [] })
+  const activeRows = rows
+    .map((lead) => ({ lead, station: getActiveContactStation(lead.station) }))
+    .filter((row): row is { lead: typeof rows[number]; station: DealStage } => row.station !== null)
 
-  const leadIds = rows.map((l) => l.id)
+  if (activeRows.length === 0) return NextResponse.json({ items: [] })
 
-  const [{ data: manifests }, { data: scores }] = await Promise.all([
+  const leadIds = activeRows.map(({ lead }) => lead.id)
+
+  const [{ data: manifests }, { data: scores }, { data: activities }] = await Promise.all([
     db
       .from('manifests')
       .select('lead_id, manifest, created_at')
@@ -116,6 +133,12 @@ export async function GET() {
       .from('hot_opportunities_cache')
       .select('lead_id, composite_score')
       .in('lead_id', leadIds),
+    db
+      .from('lead_activities')
+      .select('lead_id, activity_type, type, description, metadata, created_at')
+      .in('lead_id', leadIds)
+      .in('activity_type', CONTACT_ACTIVITY_TYPES)
+      .order('created_at', { ascending: true }),
   ])
 
   const latestManifest = new Map<string, ManifestPayload>()
@@ -130,9 +153,22 @@ export async function GET() {
     scoreByLead.set(s.lead_id, Number(s.composite_score ?? 0))
   }
 
+  const firstOutboundByLead = new Map<string, string>()
+  const latestSignalByLead = new Map<string, ContactSignal>()
+  for (const activity of (activities ?? []) as ContactActivityLike[]) {
+    const leadId = typeof activity.lead_id === 'string' ? activity.lead_id : null
+    if (!leadId) continue
+
+    if (!firstOutboundByLead.has(leadId) && isOutboundAttempt(activity) && activity.created_at) {
+      firstOutboundByLead.set(leadId, activity.created_at)
+    }
+
+    const signal = getContactSignal(activity)
+    if (signal) latestSignalByLead.set(leadId, signal)
+  }
+
   const items: ContactRow[] = []
-  for (const lead of rows) {
-    const station = normalizeDealStage(lead.station) ?? 'new'
+  for (const { lead, station } of activeRows) {
     const manifest = latestManifest.get(lead.id) ?? {}
     const lastContactAt =
       manifest.communications?.lastSellerContactDate ??
@@ -143,6 +179,7 @@ export async function GET() {
       id: lead.id,
       fullName: lead.full_name,
       phone: lead.phone,
+      source: lead.source,
       address: lead.property_address,
       city: lead.city,
       station,
@@ -151,6 +188,9 @@ export async function GET() {
       nextActivity: pickNextActivity(manifest),
       tags: pickTags(manifest),
       lastContactAt,
+      createdAt: lead.created_at,
+      firstOutboundAt: firstOutboundByLead.get(lead.id) ?? null,
+      contactSignal: latestSignalByLead.get(lead.id) ?? null,
       updatedAt: lead.updated_at,
     })
   }

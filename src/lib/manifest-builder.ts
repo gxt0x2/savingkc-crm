@@ -116,6 +116,8 @@ export interface ManifestProperty {
 }
 
 export interface ManifestBooking {
+  bookingId?: string
+  scheduledAt?: string
   scheduledDate?: string
   scheduledTime?: string
   type?: 'discovery' | 'walkthrough' | 'closing'
@@ -251,6 +253,9 @@ export interface TranscriptEntry {
     verbatimQuotes?: string[]
     objectionResponses?: string[]
     concessionSignals?: string[]
+    painPoints?: string[]
+    emotionalDrivers?: string[]
+    nextSteps?: string[]
     agentCoaching?: {
       strengths?: string[]
       improvements?: string[]
@@ -277,8 +282,12 @@ export interface ManifestCommunications {
   thankYouSms?: {
     sent: boolean
     sentAt?: string
+    attemptedAt?: string
     template?: string
     to?: string
+    sid?: string
+    status?: string
+    error?: string
   }
 }
 
@@ -382,6 +391,24 @@ export interface ManifestV2 {
   dispositionTier?: number
   scoring?: ManifestScoring
   closing?: ManifestClosing
+  acquisition?: ManifestAcquisition
+}
+
+export interface ManifestAcquisition {
+  source?: string
+  channel?: string
+  subChannel?: string
+  attribution?: {
+    utm_source?: string
+    utm_medium?: string
+    utm_campaign?: string
+    utm_term?: string
+    utm_content?: string
+    gclid?: string
+    referrer?: string
+    landingUrl?: string
+    capturedAt?: string
+  }
 }
 
 export interface BuildManifestInput {

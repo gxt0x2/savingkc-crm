@@ -12,8 +12,8 @@ function dollars(amount?: number | null): string {
 
 function stageLabel(station: string): string {
   const labels: Record<string, string> = {
-    intake: 'Intake', new: 'New', contacted: 'Contacted',
-    qualifying: 'Qualifying', qualified: 'Qualified',
+    intake: 'Intake', new: 'New', contacted: 'Leads',
+    qualifying: 'Qualifying', qualified: 'Opportunities',
     appt_set: 'Appt Set', appointment_set: 'Appointment Set', discovery: 'Discovery',
     research: 'Research', valuation: 'Valuation',
     offer: 'Offer', offer_made: 'Offer Made',

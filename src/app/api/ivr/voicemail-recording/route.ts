@@ -1,26 +1,16 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 
-import { sendPushToAgents } from '@/lib/push-notifications'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { ensureManifestExists } from '@/lib/manifest-sync'
-import { safeSendSMS } from '@/lib/safe-communications'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { formatPhone } from '@/lib/format'
 import type { ManifestV2 } from '@/lib/manifest-builder'
 
 
-
-const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
-const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
-
-const AGENT_PHONES: Record<string, string> = {
-  Ernest: ERNEST_PHONE,
-  Casey: CASEY_PHONE,
-}
 
 export async function POST(req: Request) {
   try {
@@ -64,7 +54,7 @@ export async function POST(req: Request) {
       resolvedLeadId = existingLead.id
     } else {
       const { data: newLead } = await supabase.from('leads').insert({
-        full_name: `Voicemail Caller (${formatPhone(from)})`,
+        full_name: `Voicemail Caller ${formatPhone(from) || from}`,
         phone: from,
         source: 'inbound_voicemail',
         station: 'new',
@@ -93,30 +83,27 @@ export async function POST(req: Request) {
     }
   })
 
-  // SMS notify the agent
-  const agentPhone = AGENT_PHONES[agent]
+  // Notify eligible agents.
   const vmMsg = `New voicemail from ${from} (${recordingDuration}s). Listen: ${recordingUrl}${resolvedLeadId ? `\n${BASE_URL}/leads/${resolvedLeadId}` : ''}`
-
-  if (agentPhone) {
-    try {
-      await safeSendSMS({ body: vmMsg, from: TWILIO_PHONE, to: agentPhone })
-    } catch (e) {
-      console.error(`Voicemail SMS notification to ${agent} failed:`, e)
-    }
-  } else {
-    await Promise.allSettled([
-      safeSendSMS({ body: vmMsg, from: TWILIO_PHONE, to: CASEY_PHONE }),
-      safeSendSMS({ body: vmMsg, from: TWILIO_PHONE, to: ERNEST_PHONE }),
-    ])
-  }
-
-  // Push notification
-  sendPushToAgents({
-    title: 'New Voicemail',
-    body: `Voicemail from ${from} (${recordingDuration}s)`,
-    url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/',
-    tag: 'voicemail',
-  }).catch(() => {})
+  await sendTeamLeadAlert({
+    leadId: resolvedLeadId,
+    smsBody: vmMsg,
+    trigger: 'voicemail_recording_alert',
+    source: 'inbound_voicemail',
+    push: {
+      title: 'New Voicemail',
+      body: `Voicemail from ${from} (${recordingDuration}s)`,
+      url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/',
+      tag: 'voicemail',
+    },
+    metadata: {
+      from,
+      recordingUrl,
+      recordingSid,
+      duration: recordingDuration,
+      for_agent: agent || null,
+    },
+  })
 
   // Ari briefing event
   try {

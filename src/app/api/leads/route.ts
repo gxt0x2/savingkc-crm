@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ensureManifestExists } from '@/lib/manifest-sync'
-import { safeSendSMS } from '@/lib/safe-communications'
+import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { regenerateBriefing, EAGER_REGEN_EVENTS } from '@/lib/briefing-regen'
+import { notifyNewLead } from '@/lib/ari-briefing'
+import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
+import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
+import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
+import { DEAD_REASONS, cleanDeadReason, deadReasonLabel } from '@/lib/lead-outcomes'
+import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 
 const corsHeaders = {
@@ -33,8 +38,293 @@ const LEAD_TRIAGE = {
 
 type LeadTriageClassification = keyof typeof LEAD_TRIAGE
 
+type WebsiteLeadAttribution = Record<string, unknown>
+
+const WEBSITE_LEAD_SOURCE = 'website_form'
+const GOOGLE_ADS_LEAD_SOURCE = 'google_ads'
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 function isLeadTriageClassification(value: unknown): value is LeadTriageClassification {
   return typeof value === 'string' && value in LEAD_TRIAGE
+}
+
+function cleanString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+function normalizePhone(phone: unknown): string | null {
+  const digits = cleanString(phone)?.replace(/\D/g, '') ?? ''
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return null
+}
+
+function phoneLookupVariants(phone: unknown, normalizedPhone: string | null): string[] {
+  const raw = cleanString(phone)
+  const digits = raw?.replace(/\D/g, '') ?? ''
+  return [...new Set([
+    normalizedPhone,
+    raw,
+    digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits,
+    digits.length === 10 ? `1${digits}` : null,
+  ].filter((value): value is string => Boolean(value)))]
+}
+
+function cleanSessionId(value: unknown): string | null {
+  const sessionId = cleanString(value)
+  return sessionId && UUID_RE.test(sessionId) ? sessionId : null
+}
+
+function cleanAttribution(value: unknown): WebsiteLeadAttribution {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as WebsiteLeadAttribution
+    : {}
+}
+
+function attributionText(attribution: WebsiteLeadAttribution, key: string): string {
+  const value = attribution[key]
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function isGoogleAdsAttribution(attribution: WebsiteLeadAttribution): boolean {
+  return (
+    attributionText(attribution, 'source') === 'google_ads' ||
+    Boolean(attributionText(attribution, 'gclid')) ||
+    Boolean(attributionText(attribution, 'gbraid')) ||
+    Boolean(attributionText(attribution, 'wbraid')) ||
+    attributionText(attribution, 'utm_source').replace(/[^a-z]/g, '') === 'google' &&
+      ['cpc', 'ppc', 'paid', 'paidsearch', 'paid_search', 'sem'].includes(attributionText(attribution, 'utm_medium'))
+  )
+}
+
+async function findLeadIdByPhone(phoneVariants: string[]): Promise<string | null> {
+  if (phoneVariants.length === 0) return null
+  const { data } = await supabase
+    .from('leads')
+    .select('id')
+    .in('phone', phoneVariants)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return data?.id ?? null
+}
+
+async function findLeadBySessionId(sessionId: string | null): Promise<{ id: string; form_status?: string | null } | null> {
+  if (!sessionId) return null
+  const { data, error } = await supabase
+    .from('leads')
+    .select('id, form_status')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error && isMissingColumnError(error)) {
+    const { data: fallback, error: fallbackError } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (fallbackError) console.error('[website-lead] session lookup fallback failed:', fallbackError)
+    return fallback ?? null
+  }
+
+  if (error) {
+    console.error('[website-lead] session lookup failed:', error)
+    return null
+  }
+
+  return data ?? null
+}
+
+async function findLeadIdByEmail(email: string | null): Promise<string | null> {
+  if (!email) return null
+  const { data } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('email', email)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return data?.id ?? null
+}
+
+async function findLeadIdByAddress(address: string | null): Promise<string | null> {
+  if (!address) return null
+  const { data } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('property_address', address)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return data?.id ?? null
+}
+
+async function removeMergedPartialLead(sessionLead: { id: string; form_status?: string | null } | null, leadId: string): Promise<void> {
+  if (!sessionLead || sessionLead.id === leadId || sessionLead.form_status !== 'partial') return
+  const { error } = await supabase
+    .from('leads')
+    .delete()
+    .eq('id', sessionLead.id)
+    .eq('form_status', 'partial')
+
+  if (error) console.error('[website-lead] failed to remove merged partial lead:', error)
+}
+
+function withoutFormStatus<T extends Record<string, unknown>>(fields: T): Omit<T, 'form_status'> {
+  const { form_status: _formStatus, ...rest } = fields
+  return rest
+}
+
+async function insertWebsiteLead(fields: Record<string, unknown>, isGoogleAds: boolean): Promise<{ id: string } | null> {
+  const insertFields = {
+    ...fields,
+    station: 'new',
+    priority: isGoogleAds ? 'hot' : 'normal',
+  }
+
+  const { data, error } = await supabase
+    .from('leads')
+    .insert(insertFields)
+    .select('id')
+    .single()
+
+  if (!error) return data
+
+  if (isMissingColumnError(error) && 'form_status' in insertFields) {
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('leads')
+      .insert(withoutFormStatus(insertFields))
+      .select('id')
+      .single()
+
+    if (!fallbackError) return fallbackData
+    console.error('[website-lead] Supabase insert fallback error:', fallbackError)
+    return null
+  }
+
+  console.error('[website-lead] Supabase insert error:', error)
+  return null
+}
+
+async function updateWebsiteLead(leadId: string, fields: Record<string, unknown>): Promise<boolean> {
+  const { error } = await supabase
+    .from('leads')
+    .update(fields)
+    .eq('id', leadId)
+
+  if (!error) return true
+
+  if (isMissingColumnError(error) && 'form_status' in fields) {
+    const { error: fallbackError } = await supabase
+      .from('leads')
+      .update(withoutFormStatus(fields))
+      .eq('id', leadId)
+
+    if (!fallbackError) return true
+    console.error('[website-lead] Supabase update fallback error:', fallbackError)
+    return false
+  }
+
+  console.error('[website-lead] Supabase update error:', error)
+  return false
+}
+
+async function upsertWebsiteLeadActivity(input: {
+  leadId: string
+  formSource: string
+  sessionId: string | null
+  address: string | null
+  attribution: WebsiteLeadAttribution
+  landingUrl: string | null
+  referrer: string | null
+  smsConsent: boolean
+  isGoogleAds: boolean
+}): Promise<string | null> {
+  const metadata = {
+    source: 'website_form_submit',
+    form_source: input.formSource,
+    form_status: 'submitted',
+    form_submitted: true,
+    traffic_source: input.isGoogleAds ? 'google_ads' : 'non_paid',
+    session_id: input.sessionId,
+    address: input.address,
+    attribution: input.attribution,
+    landing_url: input.landingUrl,
+    referrer: input.referrer,
+    sms_consent: input.smsConsent,
+  }
+
+  const { data, error } = await supabase
+    .from('lead_activities')
+    .insert({
+      lead_id: input.leadId,
+      activity_type: 'status_change',
+      description: 'Website form submitted.',
+      agent: 'System',
+      metadata,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error('[website-lead] activity insert failed:', error)
+    return null
+  }
+
+  return data?.id ?? null
+}
+
+async function triggerWebsiteLeadSideEffects(input: {
+  leadId: string
+  fullName: string
+  address: string | null
+  phone: string | null
+  source: string
+  formSource: string
+  isGoogleAds: boolean
+}) {
+  const leadUrl = `/leads/${input.leadId}`
+  const publicLeadUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}${leadUrl}`
+  const addressPart = input.address ? ` at ${input.address}` : ''
+  const label = input.isGoogleAds ? 'Google Ads website lead' : 'Website lead'
+  const alertBody = `New ${label}: ${input.fullName}${addressPart}. Phone: ${input.phone || 'not provided'}. ${publicLeadUrl}`
+
+  await Promise.allSettled([
+    notifyNewLead(input.leadId, input.fullName, input.source),
+    regenerateBriefing(input.leadId, 'website_lead_submitted', true),
+  ])
+
+  await sendTeamLeadAlert({
+    leadId: input.leadId,
+    smsBody: alertBody,
+    trigger: 'website_lead_alert',
+    source: input.formSource,
+    trafficSource: input.isGoogleAds ? 'google_ads' : 'non_paid',
+    push: {
+      title: label,
+      body: `${input.fullName}${addressPart}`,
+      url: leadUrl,
+      tag: `website-lead-${input.leadId}`,
+    },
+    callback: input.phone ? {
+      leadPhone: input.phone,
+      callerId: process.env.TWILIO_PHONE_NUMBER || '+18163077835',
+      fullName: input.fullName,
+      address: input.address,
+      trigger: 'website_form_submit',
+    } : false,
+    metadata: {
+      form_source: input.formSource,
+    },
+  })
 }
 
 export async function OPTIONS() {
@@ -44,97 +334,187 @@ export async function OPTIONS() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { name, address, phone, email, source } = body
+    const name = cleanString(body.name) || 'Website Lead'
+    const address = cleanString(body.address)
+    const phone = cleanString(body.phone)
+    const email = cleanString(body.email)?.toLowerCase() ?? null
+    const formSource = cleanString(body.source) || WEBSITE_LEAD_SOURCE
+    const sessionId = cleanSessionId(body.session_id)
+    const attribution = cleanAttribution(body.attribution)
+    const landingUrl = cleanString(body.landing_url) || cleanString(attribution.landingUrl)
+    const referrer = cleanString(body.referrer) || cleanString(attribution.referrer)
+    const smsConsent = body.sms_consent === true
+    const normalizedPhone = normalizePhone(phone)
+    const phoneVariants = phoneLookupVariants(phone, normalizedPhone)
+    const isGoogleAds = isGoogleAdsAttribution(attribution)
+    const leadSource = isGoogleAds ? GOOGLE_ADS_LEAD_SOURCE : WEBSITE_LEAD_SOURCE
+
+    if (!normalizedPhone && !address && !email) {
+      return NextResponse.json(
+        { success: false, error: 'Phone, address, or email is required' },
+        { status: 400, headers: corsHeaders },
+      )
+    }
 
     let leadId: string | null = null
 
-    // Normalize phone
-    const normalizedPhone = phone ? phone.replace(/\D/g, '').replace(/^1/, '') : null
+    const sessionLead = await findLeadBySessionId(sessionId)
 
-    // Check if lead already exists by phone
-    if (normalizedPhone) {
-      const { data: existingLead } = await supabase
-        .from('leads')
-        .select('id')
-        .eq('phone', `+1${normalizedPhone}`)
-        .single()
-
-      if (existingLead) {
-        leadId = existingLead.id
-      }
-    }
+    // Prefer a real phone/email/address match over a partial capture row, then
+    // fall back to the session row so final submit upgrades the partial lead.
+    leadId =
+      await findLeadIdByPhone(normalizedPhone ? [normalizedPhone] : []) ||
+      await findLeadIdByEmail(email) ||
+      await findLeadIdByAddress(address) ||
+      sessionLead?.id ||
+      await findLeadIdByPhone(phoneVariants)
 
     // If no existing lead, check prospects
     if (!leadId && normalizedPhone) {
       const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
       const { createEnrichedLeadFromProspect } = await import('@/lib/prospect-to-lead')
 
-      const prospectMatches = await lookupProspectByPhone(`+1${normalizedPhone}`)
+      const prospectMatches = await lookupProspectByPhone(normalizedPhone)
       if (prospectMatches.length > 0) {
         leadId = await createEnrichedLeadFromProspect(
           prospectMatches[0],
-          `+1${normalizedPhone}`,
-          source || 'website_form',
+          normalizedPhone,
+          WEBSITE_LEAD_SOURCE,
           'warm'
         )
       }
     }
 
-    // If still no lead, create bare lead
-    if (!leadId) {
-      // Parse address for county detection
-      let city, state, zip, county
-      if (address) {
+    let cityState: { city?: string; state?: string; zip?: string; county?: string } = {}
+    if (address) {
+      try {
         const { parseAddressForCounty } = await import('@/lib/county-enrichment')
         const parsed = parseAddressForCounty(address)
-        if (parsed) { city = parsed.city; state = parsed.state; zip = parsed.zip; county = parsed.county }
+        if (parsed) cityState = parsed
+      } catch {
+        // County enrichment is best-effort; lead intake should continue.
       }
+    }
 
-      const { data, error } = await supabase
-        .from('leads')
-        .insert({
-          full_name: name,
-          property_address: address,
-          phone: normalizedPhone ? `+1${normalizedPhone}` : null,
-          email,
-          source: source || 'website_form',
-          station: 'new',
-          priority: 'normal',
-          ...(city ? { city } : {}),
-          ...(state ? { state } : {}),
-          ...(zip ? { zip } : {}),
-          ...(county ? { county } : {}),
-        })
-        .select('id')
-        .single()
+    const baseLeadFields = {
+      full_name: name,
+      ...(address ? { property_address: address } : {}),
+      ...(normalizedPhone ? { phone: normalizedPhone } : {}),
+      ...(email ? { email } : {}),
+      source: leadSource,
+      form_status: 'submitted',
+      ...(sessionId ? { session_id: sessionId } : {}),
+      ...(cityState.city ? { city: cityState.city } : {}),
+      ...(cityState.state ? { state: cityState.state } : {}),
+      ...(cityState.zip ? { zip: cityState.zip } : {}),
+      ...(cityState.county ? { county: cityState.county } : {}),
+    }
 
-      if (error) {
-        console.error('Supabase insert error:', error)
-        return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: corsHeaders })
+    // If still no lead, create bare lead
+    if (!leadId) {
+      const data = await insertWebsiteLead(baseLeadFields, isGoogleAds)
+
+      if (!data?.id) {
+        return NextResponse.json({ success: false, error: 'Lead insert failed' }, { status: 500, headers: corsHeaders })
       }
 
       leadId = data.id
+    } else {
+      const updated = await updateWebsiteLead(leadId, {
+        ...baseLeadFields,
+        ...(sessionLead?.id === leadId ? { station: 'new' } : {}),
+        ...(isGoogleAds ? { priority: 'hot' } : {}),
+      })
+
+      if (!updated) {
+        return NextResponse.json({ success: false, error: 'Lead update failed' }, { status: 500, headers: corsHeaders })
+      }
     }
 
-    // Create manifest (fire-and-forget)
-    if (leadId) ensureManifestExists(leadId).catch(err => console.error('[MANIFEST] Failed:', err))
+    const resolvedLeadId = leadId as string
+    await removeMergedPartialLead(sessionLead, resolvedLeadId)
 
-    const smsText = `🔔 New website lead: ${name} | ${address} | ${phone}`
+    const manifestId = await ensureManifestExists(resolvedLeadId)
+    if (!manifestId) {
+      console.error('[website-lead] manifest bootstrap failed for lead', resolvedLeadId)
+      return NextResponse.json({ success: false, error: 'Manifest unavailable' }, { status: 500, headers: corsHeaders })
+    }
 
-    await Promise.allSettled([
-      safeSendSMS({
-        body: smsText,
-        from: process.env.TWILIO_PHONE_NUMBER!,
-        to: process.env.CASEY_PHONE!,
-      }),
-      safeSendSMS({
-        body: smsText,
-        from: process.env.TWILIO_PHONE_NUMBER!,
-        to: process.env.ERNEST_PHONE!,
-      }),
-    ])
+    await updateManifestAndCascade(
+      resolvedLeadId,
+      (manifest) => {
+        manifest.source = leadSource
+        manifest.leadSource = leadSource
+        manifest.priority = isGoogleAds ? 'hot' : 'warm'
+        if (address && !manifest.property.address) manifest.property.address = address
+        if (normalizedPhone && !manifest.owner.phones?.includes(normalizedPhone)) {
+          manifest.owner.phones = [normalizedPhone, ...(manifest.owner.phones ?? [])]
+        }
+        if (email && !manifest.owner.emails?.includes(email)) {
+          manifest.owner.emails = [email, ...(manifest.owner.emails ?? [])]
+        }
+        manifest.owner.fullName = name
+        manifest.acquisition = {
+          source: leadSource,
+          channel: isGoogleAds ? 'google-ads' : 'website',
+          attribution: {
+            ...attribution,
+            landingUrl: landingUrl ?? undefined,
+            referrer: referrer ?? undefined,
+            capturedAt: new Date().toISOString(),
+          },
+        }
+      },
+      leadSource,
+    )
 
-    return NextResponse.json({ success: true, leadId }, { headers: corsHeaders })
+    const activityId = await upsertWebsiteLeadActivity({
+      leadId: resolvedLeadId,
+      formSource,
+      sessionId,
+      address,
+      attribution,
+      landingUrl,
+      referrer,
+      smsConsent,
+      isGoogleAds,
+    })
+
+    if (isGoogleAds) {
+      await enqueuePpcConversion({
+        eventName: 'lead_submitted',
+        eventCategory: 'form',
+        leadId: resolvedLeadId,
+        manifestId,
+        activityId,
+        dedupeKey: `lead:${resolvedLeadId}:website_lead_submitted`,
+        optimizationRole: 'primary',
+        conversionValue: 25,
+        attribution,
+        payload: {
+          source: formSource,
+          form_status: 'submitted',
+          form_submitted: true,
+          address: address ?? null,
+        },
+      })
+    }
+
+    try {
+      await triggerWebsiteLeadSideEffects({
+        leadId: resolvedLeadId,
+        fullName: name,
+        address,
+        phone: normalizedPhone || phone,
+        source: leadSource,
+        formSource,
+        isGoogleAds,
+      })
+    } catch (err) {
+      console.error('[website-lead] side effects failed:', err)
+    }
+
+    return NextResponse.json({ success: true, leadId: resolvedLeadId, manifestId }, { headers: corsHeaders })
   } catch (err) {
     console.error('leads route error:', err)
     return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500, headers: corsHeaders })
@@ -180,6 +560,31 @@ export async function PATCH(req: NextRequest) {
       fields.opportunity_score = typeof fields.opportunity_score === 'number'
         ? fields.opportunity_score
         : triage.score
+    }
+
+    const requestedStation = typeof fields.station === 'string' ? fields.station : null
+    const markingDead = requestedStation === 'dead' || triageClassification === 'dead'
+    const deadReason = markingDead
+      ? cleanDeadReason(fields.dead_reason ?? fields.deadReason ?? activity?.deadReason ?? activity?.dead_reason)
+      : null
+
+    if (markingDead && !deadReason) {
+      return NextResponse.json({
+        success: false,
+        error: 'Dead reason required before marking this lead dead.',
+        requiresDeadReason: true,
+        allowedDeadReasons: DEAD_REASONS,
+      }, { status: 400, headers: corsHeaders })
+    }
+
+    delete fields.deadReason
+    if (markingDead) {
+      fields.dead_reason = deadReason
+      fields.dead_at ??= new Date().toISOString()
+      fields.dead_by ??= activityAgent
+      fields.priority ??= 'cold'
+      fields.classification ??= 'dead'
+      fields.opportunity_score = typeof fields.opportunity_score === 'number' ? fields.opportunity_score : 0
     }
 
     // CRITICAL: Handle appointment_set disposition → manifest write
@@ -452,6 +857,36 @@ export async function PATCH(req: NextRequest) {
           manifest.scoring.opportunity_score = manifestFields.opportunity_score
           manifest.scoring.scored_at = new Date().toISOString()
         }
+        if (markingDead && deadReason) {
+          manifest.priority = 'cold'
+          if (!manifest.scoring) {
+            manifest.scoring = {
+              opportunity_score: 0,
+              classification: 'dead',
+              reasoning: `Marked dead: ${deadReasonLabel(deadReason)}.`,
+              worth_enriching: false,
+              scored_at: new Date().toISOString(),
+              scored_by: 'disposition',
+            }
+          } else {
+            manifest.scoring.classification = 'dead'
+            manifest.scoring.opportunity_score = 0
+            manifest.scoring.reasoning = `Marked dead: ${deadReasonLabel(deadReason)}.`
+            manifest.scoring.worth_enriching = false
+            manifest.scoring.scored_at = new Date().toISOString()
+            manifest.scoring.scored_by = 'disposition'
+          }
+          if (!manifest.auditTrail) manifest.auditTrail = []
+          manifest.auditTrail.push({
+            timestamp: new Date().toISOString(),
+            agent: activityAgent,
+            action: 'marked_dead',
+            details: {
+              dead_reason: deadReason,
+              dead_reason_label: deadReasonLabel(deadReason),
+            },
+          })
+        }
       }, 'api:leads_patch')
 
       // Fallback to direct write if no manifest exists
@@ -485,12 +920,24 @@ export async function PATCH(req: NextRequest) {
     }
 
     const previousTriageData = previousTriageLead?.data ?? null
+    if (typeof fields.station === 'string') {
+      await queuePpcQualifiedLeadConversion({
+        leadId: id,
+        fromStation: previousTriageData?.station ?? null,
+        toStation: fields.station,
+        changedBy: activityAgent,
+        reason: triageClassification ? `manual triage: ${triageClassification}` : 'lead patch station update',
+      }).catch((error) => console.error('[leads PATCH] PPC qualified conversion queue failed:', error))
+    }
+
     if (triageClassification && previousTriageData?.classification !== triageClassification) {
       const triage = LEAD_TRIAGE[triageClassification]
       const { error: triageActivityError } = await supabase.from('lead_activities').insert({
         lead_id: id,
-        activity_type: 'status_change',
-        description: `Manual triage: ${triage.label}`,
+        activity_type: markingDead ? 'outcome' : 'status_change',
+        description: markingDead && deadReason
+          ? `Manual triage: ${triage.label} - ${deadReasonLabel(deadReason)}`
+          : `Manual triage: ${triage.label}`,
         agent: activityAgent,
         metadata: {
           source: 'lead_detail_triage',
@@ -500,6 +947,8 @@ export async function PATCH(req: NextRequest) {
           new_station: data.station ?? fields.station ?? null,
           old_priority: previousTriageData?.priority ?? null,
           new_priority: data.priority ?? fields.priority ?? null,
+          dead_reason: deadReason,
+          dead_reason_label: deadReason ? deadReasonLabel(deadReason) : null,
         },
       })
       if (triageActivityError) {

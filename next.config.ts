@@ -9,6 +9,16 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  images: {
+    qualities: [68, 75, 78],
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "fprrknfyzlthbxewnwmi.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
+    ],
+  },
   allowedDevOrigins: ['crm.savingkc.com'],
   env: {
     NEXT_PUBLIC_APP_VERSION: packageJson.version,

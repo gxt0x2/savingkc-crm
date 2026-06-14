@@ -1,10 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
-import { toProperCase } from '@/lib/format'
+import {
+  formatDurationBetween,
+  formatLeadSource,
+  getAvatarLabel,
+  getDisplayLeadName,
+  isGoogleAdsSource,
+  shouldUsePhoneAsName,
+  type ContactSignal,
+} from '@/lib/contact-display'
 import { FavoriteToggle } from '@/components/leads/favorite-toggle'
 import { StageSelector } from '@/components/leads/stage-selector'
 import type { DealStage } from '@/types/pipeline'
@@ -13,6 +21,7 @@ interface ContactRow {
   id: string
   fullName: string | null
   phone: string | null
+  source: string | null
   address: string | null
   city: string | null
   station: DealStage
@@ -25,6 +34,9 @@ interface ContactRow {
   } | null
   tags: string[]
   lastContactAt: string | null
+  createdAt: string | null
+  firstOutboundAt: string | null
+  contactSignal: ContactSignal | null
   updatedAt: string | null
 }
 
@@ -39,8 +51,8 @@ const LEAD_GROUP_SESSION_KEY = 'savingkc:lead-group:v1'
 const TABS: { key: TabKey; label: string; station?: DealStage; minScore?: number }[] = [
   { key: 'hot', label: 'Hot', minScore: 75 },
   { key: 'new', label: 'New', station: 'new' },
-  { key: 'contacted', label: 'Contacted', station: 'contacted' },
-  { key: 'qualified', label: 'Qualified', station: 'qualified' },
+  { key: 'contacted', label: 'Leads', station: 'contacted' },
+  { key: 'qualified', label: 'Opportunities', station: 'qualified' },
   { key: 'appointment_set', label: 'Appointment Set', station: 'appointment_set' },
   { key: 'offer_made', label: 'Offer Made', station: 'offer_made' },
   { key: 'in_closing', label: 'In Closing', station: 'under_contract' },
@@ -63,6 +75,12 @@ const STATION_COLORS: Record<DealStage, string> = {
 const TAG_URGENT = /^(foreclosure|tax[_-]delinquent|3yr[_-]tax[_-]delinquent|lien|deadline|contract|under[_-]contract|contingency|urgent|hot[_-]lead)$/i
 const TAG_LIFE = /^(probate|divorce|inherited|inheritance|deceased|relocation|health|financial[_-]distress|downsizing|estate)$/i
 const TAG_OPPORTUNITY = /^(motivated|ready[_-]to[_-]sell|vacant|distressed|fixer|tired[_-]landlord|high[_-]motivation|opportunity|warm[_-]lead)$/i
+
+const NEXT_ACTIVITY_CLAMP: CSSProperties = {
+  display: '-webkit-box',
+  WebkitBoxOrient: 'vertical',
+  WebkitLineClamp: 3,
+}
 
 function tagClasses(tag: string): string {
   const t = tag.replace(/\s+/g, '_')
@@ -110,16 +128,9 @@ function formatPhone(phone: string | null): string {
   return phone
 }
 
-function initials(name: string | null): string {
-  if (!name) return '?'
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase()
-  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase()
-}
-
 export default function ContactsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('hot')
+  const [nowTs, setNowTs] = useState(() => Date.now())
   const { data, isLoading, error } = useContacts()
   const queryClient = useQueryClient()
 
@@ -129,9 +140,9 @@ export default function ContactsPage() {
     queryClient.invalidateQueries({ queryKey: ['contacts'] })
   }, [queryClient])
 
-  // under_contract leads are exclusive to the In Closing tab. Every other
-  // list (including All and Hot) excludes them so a closing deal can't
-  // double-appear in the active acquisition queue.
+  // The API returns the active lead set: non-parked and not archived/dead.
+  // Working-queue tabs keep under_contract exclusive to In Closing, while All
+  // shows the total active lead count and list.
   const acquisitionOnly = useMemo(() => items.filter((i) => i.station !== 'under_contract'), [items])
 
   // Hot = composite score ≥ 75 OR manually starred (is_favorite).
@@ -140,7 +151,7 @@ export default function ContactsPage() {
 
   const counts = useMemo<Record<TabKey, number>>(() => {
     return {
-      all: acquisitionOnly.length,
+      all: items.length,
       hot: acquisitionOnly.filter(isHot).length,
       new: acquisitionOnly.filter((i) => i.station === 'new').length,
       contacted: acquisitionOnly.filter((i) => i.station === 'contacted').length,
@@ -153,11 +164,16 @@ export default function ContactsPage() {
 
   const visible = useMemo(() => {
     const tab = TABS.find((t) => t.key === activeTab)
-    if (!tab) return acquisitionOnly
-    const pool = activeTab === 'in_closing' ? items : acquisitionOnly
+    if (!tab) return items
+    const pool = activeTab === 'all' || activeTab === 'in_closing' ? items : acquisitionOnly
     let filtered = pool
     if (tab.station) filtered = filtered.filter((i) => i.station === tab.station)
     if (activeTab === 'hot') filtered = filtered.filter(isHot)
+    if (activeTab === 'new') {
+      return [...filtered].sort((a, b) => {
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      })
+    }
     return [...filtered].sort((a, b) => b.score - a.score)
   }, [items, acquisitionOnly, activeTab, isHot])
 
@@ -177,7 +193,7 @@ export default function ContactsPage() {
       ids: visible.map((row) => row.id),
       items: visible.map((row) => ({
         id: row.id,
-        name: row.fullName,
+        name: getDisplayLeadName(row.fullName, row.phone),
         address: [row.address, row.city].filter(Boolean).join(', ') || row.address,
       })),
     }))
@@ -187,9 +203,14 @@ export default function ContactsPage() {
     saveLeadGroup()
   }, [saveLeadGroup])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowTs(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   return (
     <div className="min-h-screen bg-[var(--ck-bg)] text-[var(--ck-text)]">
-      <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-[1536px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <header className="mb-4 flex items-center gap-3">
           <Icon name="contacts" size="text-3xl" className="text-[#E32E2E]" />
           <div>
@@ -243,18 +264,34 @@ export default function ContactsPage() {
         )}
 
         {visible.length > 0 && (
-          <div className="overflow-hidden rounded-lg border border-[var(--ck-border)]">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-lg border border-[var(--ck-border)]">
+            <table className="min-w-[1600px] w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[56px]" />
+                <col className="w-[18%]" />
+                <col className="w-[140px]" />
+                <col className="w-[150px]" />
+                <col className="w-[20%]" />
+                <col className="w-[145px]" />
+                <col className="w-[155px]" />
+                <col className="w-[155px]" />
+                <col className="w-[18%]" />
+                <col className="w-[170px]" />
+                <col className="w-[72px]" />
+              </colgroup>
               <thead className="bg-[var(--ck-surface-elev)] text-left text-xs uppercase tracking-wider text-[var(--ck-text-muted)]">
                 <tr>
-                  <th className="px-3 py-2.5 font-semibold w-[3%]"></th>
-                  <th className="px-4 py-2.5 font-semibold w-[22%]">Name</th>
-                  <th className="px-4 py-2.5 font-semibold w-[12%]">Stage</th>
-                  <th className="px-4 py-2.5 font-semibold w-[18%]">Address</th>
-                  <th className="px-4 py-2.5 font-semibold w-[11%]">Phone</th>
-                  <th className="px-4 py-2.5 font-semibold w-[16%]">Next Activity</th>
-                  <th className="px-4 py-2.5 font-semibold w-[14%]">Tags</th>
-                  <th className="px-4 py-2.5 font-semibold w-[4%] text-right">Score</th>
+                  <th className="px-3 py-2.5 font-semibold"></th>
+                  <th className="px-4 py-2.5 font-semibold">Name</th>
+                  <th className="px-4 py-2.5 font-semibold">Source</th>
+                  <th className="px-4 py-2.5 font-semibold">Stage</th>
+                  <th className="px-4 py-2.5 font-semibold">Address</th>
+                  <th className="px-4 py-2.5 font-semibold">Phone</th>
+                  <th className="px-4 py-2.5 font-semibold">Last Signal</th>
+                  <th className="px-4 py-2.5 font-semibold">Time in System</th>
+                  <th className="px-4 py-2.5 font-semibold">Next Activity</th>
+                  <th className="px-4 py-2.5 font-semibold">Tags</th>
+                  <th className="px-4 py-2.5 font-semibold text-right">Score</th>
                 </tr>
               </thead>
               <tbody>
@@ -262,6 +299,21 @@ export default function ContactsPage() {
                   const address = [row.address, row.city].filter(Boolean).join(', ')
                   const stripe = idx % 2 === 0 ? 'bg-[var(--ck-surface)]' : 'bg-[var(--ck-surface-elev)]'
                   const stationColor = STATION_COLORS[row.station] ?? STATION_COLORS.new
+                  const nextActivity = formatNextActivity(row.nextActivity)
+                  const shownTags = row.tags.slice(0, 4)
+                  const extraTagCount = row.tags.length - shownTags.length
+                  const displayName = getDisplayLeadName(row.fullName, row.phone)
+                  const usesPhoneName = shouldUsePhoneAsName(row.fullName)
+                  const sourceLabel = formatLeadSource(row.source)
+                  const avatarText = getAvatarLabel(row.fullName, row.phone, row.source)
+                  const avatarColor = isGoogleAdsSource(row.source) ? '#E32E2E' : stationColor
+                  const timerLabel = formatDurationBetween(row.createdAt, row.firstOutboundAt, nowTs)
+                  const timerState = row.firstOutboundAt
+                    ? 'Stopped at first outbound'
+                    : row.station === 'new'
+                      ? 'Running'
+                      : 'No outbound yet'
+                  const timerNeedsAttention = row.station === 'new' && !row.firstOutboundAt
                   return (
                     <tr
                       key={row.id}
@@ -270,24 +322,34 @@ export default function ContactsPage() {
                       <td className="px-3 py-3 align-middle">
                         <FavoriteToggle leadId={row.id} isFavorite={row.isFavorite} size="md" />
                       </td>
-                      <td className="px-4 py-3 align-middle">
+                      <td className="px-4 py-3 align-middle min-w-0">
                         <div className="flex items-center gap-3">
                           <div
                             className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                            style={{ backgroundColor: stationColor }}
+                            style={{ backgroundColor: avatarColor }}
                           >
-                            {initials(row.fullName)}
+                            {avatarText}
                           </div>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <Link
                               href={`/leads/${row.id}`}
                               onClick={saveLeadGroup}
                               className="block truncate font-semibold text-[var(--ck-text)] hover:text-[#E32E2E]"
                             >
-                              {toProperCase(row.fullName || 'Unnamed')}
+                              {displayName}
                             </Link>
+                            {usesPhoneName && (
+                              <span className="block truncate text-[11px] text-[var(--ck-text-dim)]">
+                                No caller name
+                              </span>
+                            )}
                           </div>
                         </div>
+                      </td>
+                      <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)]">
+                        <span className={isGoogleAdsSource(row.source) ? 'font-semibold text-[#E32E2E]' : ''}>
+                          {sourceLabel}
+                        </span>
                       </td>
                       <td className="px-4 py-3 align-middle">
                         <StageSelector
@@ -297,19 +359,54 @@ export default function ContactsPage() {
                           onChange={refreshContacts}
                         />
                       </td>
-                      <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)] truncate">{address || '--'}</td>
+                      <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)]">
+                        <div className="truncate" title={address || undefined}>{address || '--'}</div>
+                      </td>
                       <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)] whitespace-nowrap font-mono text-xs">
                         {formatPhone(row.phone)}
                       </td>
                       <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)]">
-                        {formatNextActivity(row.nextActivity)}
+                        {row.contactSignal ? (
+                          <div className="leading-5">
+                            <div className="font-medium text-[var(--ck-text)]">{row.contactSignal.label}</div>
+                            {row.contactSignal.at && (
+                              <div className="text-[11px] text-[var(--ck-text-dim)]">
+                                {formatDurationBetween(row.contactSignal.at, null, nowTs)} ago
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[var(--ck-text-dim)]">--</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-middle">
+                        <div
+                          className={`inline-flex min-w-[118px] flex-col items-center justify-center rounded-full border px-3 py-1.5 text-center shadow-sm ${
+                            timerNeedsAttention
+                              ? 'animate-pulse border-[#E32E2E]/50 bg-[#E32E2E]/15 text-[#E32E2E] shadow-[#E32E2E]/10'
+                              : 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
+                          }`}
+                          title={timerNeedsAttention ? 'Needs first outbound attempt' : 'First outbound attempt completed'}
+                        >
+                          <div className="text-sm font-black leading-none">
+                            {timerLabel}
+                          </div>
+                          <div className={`mt-1 text-[10px] font-bold uppercase tracking-wide ${timerNeedsAttention ? 'text-[#E32E2E]' : 'text-[var(--ck-text-dim)]'}`}>
+                            {timerState}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 align-middle text-[var(--ck-text-muted)]">
+                        <div className="overflow-hidden leading-5" style={NEXT_ACTIVITY_CLAMP} title={nextActivity}>
+                          {nextActivity}
+                        </div>
                       </td>
                       <td className="px-4 py-3 align-middle">
                         {row.tags.length === 0 ? (
                           <span className="text-[var(--ck-text-dim)]">--</span>
                         ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {row.tags.map((tag) => (
+                          <div className="flex flex-wrap gap-1" title={row.tags.map((tag) => tag.replace(/_/g, ' ')).join(', ')}>
+                            {shownTags.map((tag) => (
                               <span
                                 key={tag}
                                 className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${tagClasses(tag)}`}
@@ -317,6 +414,11 @@ export default function ContactsPage() {
                                 {tag.replace(/_/g, ' ')}
                               </span>
                             ))}
+                            {extraTagCount > 0 && (
+                              <span className="rounded border border-[var(--ck-border)] bg-[var(--ck-bg)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ck-text-muted)]">
+                                +{extraTagCount}
+                              </span>
+                            )}
                           </div>
                         )}
                       </td>

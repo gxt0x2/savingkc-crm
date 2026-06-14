@@ -1,10 +1,14 @@
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
 import PhotoGallery from './photo-gallery'
 import InquiryModal from './inquiry-modal'
 import { DealTracker } from './tracker'
+import { DealDocumentLink } from './deal-document-link'
+import { DealVideo } from './deal-video'
+import MobileDealPage from './mobile-deal-page'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +20,37 @@ function fmt(n: number | null | undefined): string {
 function fmtNum(n: number | null | undefined): string {
   if (n == null) return '—'
   return n.toLocaleString('en-US')
+}
+
+function fmtLotSize(n: number | null | undefined): string {
+  if (n == null) return '—'
+  if (n >= 1000) {
+    const acres = n / 43560
+    return `${acres.toLocaleString('en-US', { maximumFractionDigits: 2 })} acres`
+  }
+  const formatted = n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return `${formatted} acre${n === 1 ? '' : 's'}`
+}
+
+function fmtDate(dateValue: string): string {
+  const [year, month, day] = dateValue.split('T')[0].split('-').map(Number)
+  if (year && month && day) {
+    return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+  return new Date(dateValue).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function displayDescription(description: string | null): string {
+  if (!description) return 'No description provided.'
+  const cleaned = description
+    .replace(/\s+with\s+\$?[\d,]+\s+ARV\b\.?/gi, '.')
+    .replace(/\s*\(?ARV:\s*\$?[\d,]+\)?/gi, '')
+    .split(/\r?\n/)
+    .filter((line) => !/gross\s*margin|^\s*ARV\b/i.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return cleaned || 'No description provided.'
 }
 
 /* ── Outline icon components (thin, strokeWidth 1.5, matching InvestorLift) ── */
@@ -50,21 +85,163 @@ function IconWrench({ className = '' }: { className?: string }) {
 function IconShield({ className = '' }: { className?: string }) {
   return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
 }
-function IconDoc({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+function IconWarningTriangle({ className = '' }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3.75 21 19.5H3L12 3.75Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4.25M12 16.25h.01" /></svg>
 }
-function IconDownload({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-}
-function IconEye({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-}
-function IconMail({ className = '' }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
-}
-
 /* ── Card wrapper — consistent styling ── */
 const card = 'bg-white border border-[#eaeaea] rounded-2xl'
+const TEST_DEAL_SLUG = '28_iezio'
+type DealStatus = 'active' | 'pending' | 'closed'
+type PublicLead = {
+  property_address: string | null
+  city: string | null
+  state: string | null
+  zip: string | null
+  county: string | null
+  property_type: string | null
+  beds: number | null
+  baths_full: number | null
+  baths_half: number | null
+  sqft: number | null
+  offer_amount: number | null
+  lot_size: number | null
+  year_built: number | null
+}
+
+const DEAL_STATUS_META: Record<DealStatus, { label: string; className: string }> = {
+  active: {
+    label: 'Active',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  pending: {
+    label: 'Pending',
+    className: 'border-orange-200 bg-orange-50 text-orange-700',
+  },
+  closed: {
+    label: 'Closed',
+    className: 'border-slate-300 bg-slate-100 text-slate-700',
+  },
+}
+
+function testInspectionReport(slug: string) {
+  return {
+    name: 'Test Inspection Report',
+    url: `/api/deals/${slug}/test-inspection-report`,
+    uploaded_at: '2026-05-25T00:00:00.000Z',
+  }
+}
+
+function buildLocationLine(
+  lead: { property_address: string | null; city: string | null; state: string | null; zip: string | null; county: string | null } | null,
+  showAddress: boolean
+): string {
+  if (!lead) return 'Kansas City area'
+  if (showAddress && lead.property_address) {
+    const cityState = [lead.city, lead.state].filter(Boolean).join(', ')
+    return `${lead.property_address}${cityState ? `, ${cityState}` : ''}${lead.zip ? ` ${lead.zip}` : ''}`
+  }
+  return `${[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}` || 'Kansas City area'
+}
+
+function buildShareTitle(
+  lead: { property_address: string | null } | null,
+  fallbackTitle: string | null,
+  showAddress: boolean
+): string {
+  const label = showAddress && lead?.property_address ? lead.property_address : fallbackTitle || 'Property'
+  return `${label} | Saving KC Homebuyers`
+}
+
+function buildShareDescription(
+  lead: { property_address: string | null; city: string | null; state: string | null; zip: string | null; county: string | null } | null,
+  showAddress: boolean,
+  askingPrice: number | null | undefined
+): string {
+  const location = buildLocationLine(lead, showAddress)
+  return askingPrice != null ? `${fmt(askingPrice)} | ${location}` : location
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}): Promise<Metadata> {
+  const { slug } = await params
+  const db = supabaseAdmin()
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+
+  const { data: dealPage } = await db
+    .from('deal_pages')
+    .select('lead_id, title, photos, asking_price, show_address, is_active')
+    .eq('slug', slug)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (!dealPage) {
+    return {
+      title: 'Property | Saving KC Homebuyers',
+      description: 'Property opportunity from Saving KC Homebuyers',
+    }
+  }
+
+  const { data: lead } = await db
+    .from('leads')
+    .select('property_address, city, state, zip, county')
+    .eq('id', dealPage.lead_id)
+    .maybeSingle()
+
+  const showAddress = dealPage.show_address !== false
+  const title = buildShareTitle(lead, dealPage.title, showAddress)
+  const description = buildShareDescription(lead, showAddress, dealPage.asking_price)
+  const image = Array.isArray(dealPage.photos) ? dealPage.photos[0] : null
+  const url = `${appUrl.replace(/\/$/, '')}/deals/${slug}`
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description,
+      url,
+      siteName: 'Saving KC Homebuyers',
+      type: 'website',
+      images: image
+        ? [
+            {
+              url: image,
+              alt: title,
+            },
+          ]
+        : undefined,
+    },
+    twitter: {
+      card: image ? 'summary_large_image' : 'summary',
+      title,
+      description,
+      images: image ? [image] : undefined,
+    },
+  }
+}
+
+function deriveDealStatus({
+  isActive,
+  dispoStage,
+  tcStatus,
+}: {
+  isActive?: boolean | null
+  dispoStage?: string | null
+  tcStatus?: string | null
+}): DealStatus {
+  const stage = (dispoStage || '').toLowerCase()
+  const tc = (tcStatus || '').toLowerCase()
+
+  if (!isActive || stage === 'closed' || stage === 'dead' || tc === 'closed') {
+    return 'closed'
+  }
+
+  return 'active'
+}
 
 export default async function DealPage({
   params,
@@ -86,10 +263,49 @@ export default async function DealPage({
   const { data: lead } = await db
     .from('leads')
     .select(
-      'property_address, city, state, zip, county, property_type, beds, baths_full, baths_half, sqft, arv, offer_amount, lot_size, year_built'
+      'property_address, city, state, zip, county, property_type, beds, baths_full, baths_half, sqft, offer_amount, lot_size, year_built'
     )
     .eq('id', dealPage.lead_id)
-    .single()
+    .single<PublicLead>()
+
+  const { data: leadPhotoDocs } = await db
+    .from('documents')
+    .select('id, mime_type')
+    .eq('entity_type', 'lead')
+    .eq('entity_id', dealPage.lead_id)
+    .eq('doc_type', 'photos')
+    .order('uploaded_at', { ascending: false })
+
+  const fallbackPhotos = (leadPhotoDocs || [])
+    .filter((doc) => typeof doc.id === 'string' && String(doc.mime_type || '').startsWith('image/'))
+    .map((doc) => `/api/documents/${doc.id}/download?preview=1`)
+
+  let dispoStage: string | null = null
+  let tcStatus: string | null = null
+
+  const { data: workflowDeal } = await db
+    .from('dispo_deals')
+    .select('id, stage')
+    .eq('lead_id', dealPage.lead_id)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (workflowDeal) {
+    dispoStage = typeof workflowDeal.stage === 'string' ? workflowDeal.stage : null
+  }
+
+  if (workflowDeal?.id) {
+    const { data: workflowTcFile } = await db
+      .from('tc_files')
+      .select('status')
+      .eq('dispo_deal_id', workflowDeal.id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    tcStatus = typeof workflowTcFile?.status === 'string' ? workflowTcFile.status : null
+  }
 
   // Increment view count (fire-and-forget)
   db.from('deal_pages')
@@ -98,15 +314,26 @@ export default async function DealPage({
     .then(() => {})
 
   const title = dealPage.title || lead?.property_address || 'Investment Opportunity'
-  const photos: string[] = dealPage.photos || []
+  const photos: string[] = Array.isArray(dealPage.photos) && dealPage.photos.length > 0
+    ? dealPage.photos
+    : fallbackPhotos
   const videos: string[] = dealPage.videos || []
-  const inspectionReports: { name: string; url: string; uploaded_at: string }[] = dealPage.inspection_reports || []
+  const dbInspectionReports: { name: string; url: string; uploaded_at: string }[] = dealPage.inspection_reports || []
+  const inspectionReports = dbInspectionReports.length > 0
+    ? dbInspectionReports
+    : slug === TEST_DEAL_SLUG
+      ? [testInspectionReport(slug)]
+      : []
 
-  const askingPrice = lead?.offer_amount
-  const arv = lead?.arv
-  const grossMargin = askingPrice && arv ? arv - askingPrice : null
-
-  const viewCount = (dealPage.view_count || 0) + 1
+  const askingPrice = dealPage.asking_price ?? null
+  const overviewText = displayDescription(dealPage.description)
+  const locationLine = buildLocationLine(lead, dealPage.show_address !== false)
+  const dealStatus = deriveDealStatus({
+    isActive: dealPage.is_active,
+    dispoStage,
+    tcStatus,
+  })
+  const statusMeta = DEAL_STATUS_META[dealStatus]
 
   // Stats
   const statItems = [
@@ -121,7 +348,7 @@ export default async function DealPage({
     { label: 'Type', value: lead?.property_type || '—', icon: <IconHome className="w-[18px] h-[18px]" /> },
     { label: 'Parking', value: dealPage.parking || '—', icon: <IconCar className="w-[18px] h-[18px]" /> },
     { label: 'Built in', value: lead?.year_built ? String(lead.year_built) : '—', icon: <IconCalendar className="w-[18px] h-[18px]" /> },
-    { label: 'Lot size', value: lead?.lot_size ? String(lead.lot_size) : '—', icon: <IconExpand className="w-[18px] h-[18px]" /> },
+    { label: 'Lot size', value: fmtLotSize(lead?.lot_size), icon: <IconExpand className="w-[18px] h-[18px]" /> },
   ]
 
   const hasContractTerms = dealPage.contract_close_date || dealPage.earnest_money != null ||
@@ -129,28 +356,47 @@ export default async function DealPage({
     (dealPage.show_assignment_fee && dealPage.assignment_fee != null)
 
   const hasRepairEstimate = dealPage.repair_estimate_low != null || dealPage.repair_estimate_high != null
+  const primaryInspectionReport = inspectionReports[0] ?? null
 
   return (
     <div className="min-h-screen bg-white text-[#1a1a1a]" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
       <DealTracker slug={slug} />
+      <MobileDealPage
+        slug={slug}
+        title={title}
+        dealPage={dealPage}
+        lead={lead}
+        photos={photos}
+        videos={videos}
+        inspectionReports={inspectionReports}
+        askingPrice={askingPrice}
+        dealStatus={dealStatus}
+      />
 
-      {/* Header */}
-      <header className="border-b border-[#eaeaea]">
-        <div className="max-w-[1120px] mx-auto px-6 py-3.5 flex items-center gap-3">
-          <img src="/logo.png" alt="Saving KC Homebuyers" className="h-8 w-auto" />
-          <span className="text-[11px] font-medium text-teal-600 bg-teal-50 px-2.5 py-0.5 rounded-full tracking-wide">Deal Page</span>
-        </div>
-      </header>
-
+      <div className="hidden md:block">
       <main className="max-w-[1120px] mx-auto px-6 py-8">
+        <div className="mb-4 flex items-start justify-between gap-5">
+          <div className="min-w-0">
+            <div className="flex items-start gap-2.5">
+              <IconPin className="mt-1.5 h-5 w-5 shrink-0 text-[#666]" />
+              <h1 className="text-[28px] font-black leading-tight tracking-normal text-[#111]">
+                {locationLine}
+              </h1>
+            </div>
+          </div>
+          <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] ${statusMeta.className}`}>
+            {statusMeta.label}
+          </span>
+        </div>
+
         {/* Photo Gallery */}
         <PhotoGallery
           photos={photos}
-          propertyAddress={lead?.property_address}
-          city={lead?.city}
-          state={lead?.state}
-          zip={lead?.zip}
-          county={lead?.county}
+          propertyAddress={lead?.property_address ?? undefined}
+          city={lead?.city ?? undefined}
+          state={lead?.state ?? undefined}
+          zip={lead?.zip ?? undefined}
+          county={lead?.county ?? undefined}
           showAddress={dealPage.show_address !== false}
           slug={slug}
         />
@@ -161,19 +407,10 @@ export default async function DealPage({
             <div className="flex items-center gap-1.5 text-[14px] text-[#444]">
               <IconPin className="w-[18px] h-[18px] text-[#999]" />
               <span>
-                {dealPage.show_address !== false && lead.property_address
-                  ? `${lead.property_address}, ${[lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}`
-                  : `${[lead.county, lead.city, lead.state].filter(Boolean).join(', ')}${lead.zip ? ` ${lead.zip}` : ''}`
-                }
+                {locationLine}
               </span>
             </div>
           )}
-          <div className="flex items-center gap-5 text-[13px] text-[#999]">
-            <span className="flex items-center gap-1.5">
-              <IconEye className="w-[14px] h-[14px]" />
-              {viewCount} view{viewCount !== 1 ? 's' : ''}
-            </span>
-          </div>
         </div>
 
         {/* Main 2-col layout */}
@@ -200,7 +437,7 @@ export default async function DealPage({
               <div className="px-6 py-6">
                 <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-3">Overview</h2>
                 <p className="text-[14px] text-[#555] leading-[1.7] whitespace-pre-wrap">
-                  {dealPage.description || 'No description provided.'}
+                  {overviewText}
                 </p>
               </div>
             </section>
@@ -268,7 +505,7 @@ export default async function DealPage({
                     <div>
                       <p className="text-[13px] text-[#888] leading-none">Close Date</p>
                       <p className="text-[14px] font-medium text-[#1a1a1a] mt-1">
-                        {new Date(dealPage.contract_close_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {fmtDate(dealPage.contract_close_date)}
                       </p>
                     </div>
                   )}
@@ -305,13 +542,11 @@ export default async function DealPage({
 
             {/* Videos */}
             {videos.length > 0 && (
-              <section className={`${card} px-6 py-6`}>
+              <section className={`${card} px-6 py-6`} data-track-section="videos">
                 <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-4">Videos</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {videos.map((url, i) => (
-                    <video key={i} controls className="w-full rounded-xl" preload="metadata">
-                      <source src={url} />
-                    </video>
+                    <DealVideo key={url || i} slug={slug} url={url} index={i} />
                   ))}
                 </div>
               </section>
@@ -319,24 +554,17 @@ export default async function DealPage({
 
             {/* Inspection Reports */}
             {inspectionReports.length > 0 && (
-              <section className={`${card} px-6 py-6`}>
+              <section className={`${card} px-6 py-6`} data-track-section="documents">
                 <h2 className="text-[17px] font-semibold text-[#1a1a1a] mb-4">Inspection Reports</h2>
                 <div className="space-y-2">
                   {inspectionReports.map((report, i) => (
-                    <a
-                      key={i}
-                      href={report.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[#f0f0f0] hover:border-[#ddd] hover:bg-[#fafafa] transition-all"
-                    >
-                      <IconDoc className="w-5 h-5 text-red-400 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] font-medium text-[#1a1a1a] truncate">{report.name}</p>
-                        <p className="text-[12px] text-[#999]">PDF</p>
-                      </div>
-                      <IconDownload className="w-4 h-4 text-[#bbb] flex-shrink-0" />
-                    </a>
+                    <DealDocumentLink
+                      key={`${report.url}-${i}`}
+                      slug={slug}
+                      name={report.name}
+                      url={report.url}
+                      index={i}
+                    />
                   ))}
                 </div>
               </section>
@@ -355,18 +583,6 @@ export default async function DealPage({
               )}
 
               <div className="space-y-3 mb-6">
-                {dealPage.show_arv !== false && arv && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[14px] text-[#888]">ARV</span>
-                    <span className="text-[14px] font-semibold text-[#1a1a1a]">{fmt(arv)}</span>
-                  </div>
-                )}
-                {dealPage.show_arv !== false && grossMargin && grossMargin > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[14px] text-[#888]">Gross margin</span>
-                    <span className="text-[14px] font-semibold text-[#1a1a1a]">{fmt(grossMargin)}</span>
-                  </div>
-                )}
                 {dealPage.show_assignment_fee && dealPage.assignment_fee != null && (
                   <div className="flex items-center justify-between">
                     <span className="text-[14px] text-[#888]">Assignment Fee</span>
@@ -377,11 +593,24 @@ export default async function DealPage({
 
               {/* CTA Buttons */}
               <div className="space-y-2.5">
+                {primaryInspectionReport && (
+                  <a
+                    href={primaryInspectionReport.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-[#fed7aa] bg-[#fff7ed] px-4 py-3 text-[14px] font-semibold text-[#c2410c] shadow-[0_6px_18px_rgba(249,115,22,0.12)] transition-all hover:border-[#fdba74] hover:bg-[#ffedd5]"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <IconWarningTriangle className="h-5 w-5 shrink-0" />
+                      <span className="truncate">Inspection Report</span>
+                    </span>
+                    <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.08em] text-[#ea580c]">View Report</span>
+                  </a>
+                )}
                 {dealPage.accept_offers && (
                   <OfferForm
                     slug={slug}
                     askingPrice={askingPrice}
-                    arv={arv}
                     photo={photos[0]}
                     propertyAddress={lead?.property_address || title}
                     location={lead ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ') : ''}
@@ -397,8 +626,15 @@ export default async function DealPage({
                 <img src="/ernest-profile.png" alt="Ernest Dodson" className="w-14 h-14 rounded-full object-cover mb-3" />
                 <p className="text-[15px] font-semibold text-[#1a1a1a]">Ernest Dodson</p>
                 <p className="text-[13px] text-[#888] mt-0.5">Saving KC Homebuyers</p>
+                <p className="mt-1 text-[12px] font-bold uppercase tracking-[0.14em] text-[#16a34a]">Dispositions</p>
+                <a
+                  href="tel:+18166088858"
+                  className="mt-1 text-[15px] font-semibold text-[#1a1a1a] transition-colors hover:text-[#e32e2e]"
+                >
+                  816-608-8858
+                </a>
               </div>
-              <InquiryModal propertyAddress={lead?.property_address || title} />
+              <InquiryModal propertyAddress={lead?.property_address || title} slug={slug} />
             </div>
           </div>
         </div>
@@ -409,7 +645,8 @@ export default async function DealPage({
             Powered by Saving KC Homebuyers
           </p>
         </div>
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

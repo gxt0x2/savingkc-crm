@@ -9,6 +9,7 @@ const COLD_CALL_NUMBERS = new Set([
 
 // Standard greetings (company name included)
 const GREETING_AUDIO: Record<string, string> = {
+  SavingKC: `${BASE_URL}/audio/ivr-voicemail.mp3`,
   Ernest: `${BASE_URL}/audio/ernest-vm.mp3`,
   Casey: `${BASE_URL}/audio/casey-vm-v2.mp3`,
 }
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
 
   const isColdCall = COLD_CALL_NUMBERS.has(calledNumber)
 
-  // Use audio file for Ernest, text-to-speech for others
+  // Use recorded greetings where available, text-to-speech as the fallback.
   const audioGreeting = GREETING_AUDIO[agent]
   const textGreeting = isColdCall ? COLD_GREETING : (GREETINGS[agent] || DEFAULT_GREETING)
 

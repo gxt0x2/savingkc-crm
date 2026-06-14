@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
-import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { DispositionModal, DispositionType } from './disposition-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
+import { isDeadDisposition, isReachedDisposition } from '@/lib/dialer-dispositions'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 
@@ -74,6 +75,8 @@ interface DialerPanelProps {
   pendingQueueCallerId?: string | null
   pendingQueueCallerPlan?: DialerCallerPlan | null
   pendingQueueAutoDial?: boolean
+  /** How many rings to allow before giving up; maps to the Twilio Dial timeout. */
+  pendingQueueRingCount?: number | null
   presentation?: 'modal' | 'dock'
 }
 
@@ -236,6 +239,7 @@ export function DialerPanel({
   pendingQueueCallerId,
   pendingQueueCallerPlan,
   pendingQueueAutoDial = false,
+  pendingQueueRingCount = null,
   presentation = 'dock',
 }: DialerPanelProps) {
   const [status, setStatus] = useState<CallStatus>('offline')
@@ -246,6 +250,8 @@ export function DialerPanel({
   const callRef = useRef<TwilioDevice>(null)
   const callTimer = useCallTimer(status === 'on_call')
   const deviceInitialized = useRef(false)
+  // Ring count for the current heir-queue session → Twilio Dial timeout.
+  const ringCountRef = useRef<number | null>(null)
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -351,6 +357,7 @@ export function DialerPanel({
       setViewTab('dial')
       setQueue(pendingQueue)
       setQueueIndex(0)
+      ringCountRef.current = pendingQueueRingCount ?? null
       const planFromEvent = normalizeDialerCallerPlan(
         pendingQueueCallerPlan,
         typeof pendingQueueCallerId === 'string' ? pendingQueueCallerId.trim() : '',
@@ -378,7 +385,7 @@ export function DialerPanel({
       setSearchQuery('')
       setSearchResults([])
     }
-  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial])
+  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial, pendingQueueRingCount])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
@@ -563,6 +570,7 @@ export function DialerPanel({
         : (effectiveCallerId || '')
       const params: Record<string, string> = { To: number }
       if (callerIdForThisCall) params.CallerId = callerIdForThisCall
+      if (ringCountRef.current && ringCountRef.current > 0) params.RingCount = String(ringCountRef.current)
       // enableRingingState: true is required by the Twilio Voice SDK so the
       // parent (browser) call emits a 'ringing' event and plays the network
       // ringback tone while the destination phone rings. Without it the
@@ -616,9 +624,12 @@ export function DialerPanel({
 
       call.on('disconnect', () => {
         const duration = Math.round((Date.now() - callStartRef.current) / 1000)
-        const finalStatus = callWasAccepted ? 'completed' : 'no-answer'
-        const finalOutcome = callWasAccepted ? 'connected' : 'missed'
-        const finalDisposition = callWasAccepted ? 'answered' : 'no_answer'
+        // The SDK accept event means the browser leg opened, not that the
+        // seller answered. Treat this as an attempt until the user disposition
+        // or Twilio status callbacks provide a firmer outcome.
+        const finalStatus = callWasAccepted ? 'attempted' : 'no-answer'
+        const finalOutcome = callWasAccepted ? 'unknown' : 'missed'
+        const finalDisposition = callWasAccepted ? 'needs_disposition' : 'no_answer'
         lastCallDurationSecondsRef.current = duration
         setLastCallDuration(formatDuration(duration))
         fetch('/api/call-log', {
@@ -756,8 +767,9 @@ export function DialerPanel({
   async function handleDisposition(
     disposition: DispositionType,
     notes?: string,
-    options?: { markAsLead?: boolean; autoDialNext?: boolean },
+    options?: { markAsLead?: boolean; autoDialNext?: boolean; verified?: boolean; deadReason?: string | null },
   ) {
+    const markedDead = isDeadDisposition(disposition)
     if (!selectedLead) {
       // Manual dial without a lead — log to call_log so the disposition is
       // not lost. The handler returns true so the modal closes cleanly.
@@ -773,6 +785,7 @@ export function DialerPanel({
           agent: activeAgentName,
           duration_seconds: lastCallDurationSecondsRef.current || null,
           notes: notes || null,
+          dead_reason: options?.deadReason ?? null,
         }),
       }).catch(() => {})
       return true
@@ -781,7 +794,7 @@ export function DialerPanel({
     try {
       if (activeItem) {
         // Heir-dialer path: log to prospect_phones + activity feed via our own
-        // endpoint (which handles both writes in one call).
+        // endpoint (which handles verification + dead-lead rollup in one call).
         const response = await fetch('/api/heirs/attempt', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -793,6 +806,8 @@ export function DialerPanel({
             agent: activeAgentName,
             duration: lastCallDurationSecondsRef.current || null,
             mark_as_lead: Boolean(options?.markAsLead),
+            verified: options?.verified,
+            dead_reason: options?.deadReason ?? null,
           }),
         })
         if (!response.ok) {
@@ -808,12 +823,23 @@ export function DialerPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: selectedLead.id,
+            // A 'dead' disposition rolls the whole lead to station 'dead' with
+            // the why captured in dead_reason.
+            ...(markedDead
+              ? {
+                  station: 'dead',
+                  dead_reason: options?.deadReason ?? null,
+                  dead_at: new Date().toISOString(),
+                  dead_by: activeAgentName,
+                }
+              : {}),
             activity: {
               type: 'call',
               disposition,
               notes,
               phone: lastCallPhoneRef.current,
               agent: activeAgentName,
+              dead_reason: options?.deadReason ?? null,
             },
           }),
         })
@@ -822,7 +848,9 @@ export function DialerPanel({
           throw new Error(payload?.error || 'Could not save call disposition.')
         }
       }
-      window.dispatchEvent(new CustomEvent('crm:disposition-logged', { detail: { leadId: selectedLead.id } }))
+      window.dispatchEvent(new CustomEvent('crm:disposition-logged', {
+        detail: { leadId: selectedLead.id, disposition, reached: isReachedDisposition(disposition), dead: markedDead },
+      }))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save disposition.')
       return false
@@ -1474,6 +1502,8 @@ export function DialerPanel({
         callDuration={lastCallDuration || undefined}
         markAsLeadAvailable={Boolean(dispositionQueueItem)}
         markAsLeadLabel={dispositionQueueItem ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
+        showVerifyToggle={Boolean(dispositionQueueItem)}
+        verifyLabel={dispositionQueueItem ? `Verified — this is ${dispositionQueueItem.heirName}` : undefined}
         variant={dispositionQueueItem ? 'heirQueue' : 'standard'}
         primaryActionLabel={dispositionQueueItem ? 'Save & Next Number' : 'Save & Next Lead'}
         nextActions={selectedLead ? [

@@ -18,5 +18,9 @@ paths = [
 
 regexes = [
   '''\$\{\{\s*secrets\.[A-Z0-9_]+\s*\}\}''',
-  '''\$\{\{\s*vars\.[A-Z0-9_]+\s*\}\}'''
+  '''\$\{\{\s*vars\.[A-Z0-9_]+\s*\}\}''',
+  # Local-storage key constants in PPC attribution — not credentials,
+  # just dotted namespace strings with high enough entropy to trip the
+  # generic-api-key default rule.
+  '''skc\.ppc\.attribution\.v\d+''',
 ]

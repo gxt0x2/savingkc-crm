@@ -72,7 +72,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
 
-    // Build deal snapshot from lead fields
+    const { data: activeDealPage } = await db
+      .from('deal_pages')
+      .select('slug, asking_price')
+      .eq('lead_id', lead_id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    // Build deal snapshot from the deal-page public price.
     const deal_snapshot = {
       property_address: lead.property_address,
       city: lead.city,
@@ -84,7 +93,8 @@ export async function POST(req: NextRequest) {
       baths_full: lead.baths_full,
       sqft: lead.sqft,
       arv: lead.arv,
-      asking_price: lead.offer_amount,
+      asking_price: activeDealPage?.asking_price ?? null,
+      deal_page_slug: activeDealPage?.slug ?? null,
       lot_size: lead.lot_size,
       year_built: lead.year_built,
     }

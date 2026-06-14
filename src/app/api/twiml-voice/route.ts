@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
-import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
+import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { parseDialTimeout } from '@/lib/ring-timeout'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -94,11 +96,21 @@ export async function POST(req: Request) {
         : fallbackCallerId
 
       const statusCallback = `${BASE_URL}/api/twilio-call-status?identity=${encodeURIComponent(identity)}`
+      const dialTimeout = parseDialTimeout(getFormString(body, ['RingCount', 'ringCount', 'ring_count']))
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${callerId}" timeout="15" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial callerId="${callerId}" timeout="${dialTimeout}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number statusCallback="${statusCallback}" statusCallbackEvent="initiated ringing answered completed" statusCallbackMethod="POST">${sanitizedTo}</Number>
   </Dial>
+</Response>`
+      return xmlResponse(twiml)
+    }
+
+    // ── GOOGLE ADS: dedicated paid-search line, no generic IVR ──
+    if (isGoogleAdsPhoneNumber(to)) {
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${BASE_URL}/api/ivr/google-ads?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
 </Response>`
       return xmlResponse(twiml)
     }

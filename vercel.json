@@ -15,6 +15,34 @@
     {
       "path": "/api/hot-opportunities/cron",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/workers/ppc-conversion-export",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/google-ads-reporting-sync",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/openai-ads-reporting-sync",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/google-ads-missed-calls",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/process-mojo-queue",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-mojo-emails",
+      "schedule": "*/15 13-22 * * 1-5"
+    },
+    {
+      "path": "/api/admin/mojo-health",
+      "schedule": "*/15 13-22 * * 1-5"
     }
   ],
   "rewrites": [

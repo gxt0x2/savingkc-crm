@@ -17,11 +17,14 @@ import type { ManifestV2 } from './manifest-builder'
 import { buildManifest } from './manifest-builder'
 import { classifyManifestChange, processHotEngineEvent } from './hot-engine/event-bus'
 import { autoEnrichLead } from './auto-enrich'
+import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
+import { normalizeDealStage } from '../types/pipeline'
 
 function getSupabase() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    getSupabaseUrl(),
+    getSupabaseAdminKey(),
+    { auth: { autoRefreshToken: false, persistSession: false } },
   )
 }
 
@@ -354,6 +357,14 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
     autoEnrichLead(leadId).catch(err =>
       console.error('[auto-enrich] Background enrichment failed for lead', leadId, err)
     )
+    processHotEngineEvent({
+      type: 'manifest_created',
+      leadId,
+      source: 'manifest_bootstrap',
+      tier1: false,
+    }).catch(err =>
+      console.error('[hot-engine] Manifest-created event processing failed:', err)
+    )
     return existing[0].id
   }
 
@@ -409,6 +420,14 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
   console.log('[ensureManifestExists] Triggering autoEnrichLead for lead', leadId)
   autoEnrichLead(leadId).catch(err =>
     console.error('[auto-enrich] Background enrichment failed for lead', leadId, err)
+  )
+  processHotEngineEvent({
+    type: 'manifest_created',
+    leadId,
+    source: 'manifest_bootstrap',
+    tier1: false,
+  }).catch(err =>
+    console.error('[hot-engine] Manifest-created event processing failed:', err)
   )
 
   return inserted?.id || null
@@ -515,6 +534,140 @@ export class ManifestWriteError extends Error {
   }
 }
 
+const DATE_LIKE_MANIFEST_KEYS = new Set([
+  'arv_date',
+  'closing_scheduled_at',
+  'confirmedAt',
+  'createdAt',
+  'dateTime',
+  'emd_confirmed_at',
+  'fetchedAt',
+  'generatedAt',
+  'hotSignalGeneratedAt',
+  'hud_received_at',
+  'lastCallDate',
+  'lastDispositionDate',
+  'lastEmailDate',
+  'lastInboundDate',
+  'lastMailDate',
+  'lastOutboundDate',
+  'lastPaymentDate',
+  'lastSellerContactDate',
+  'lastSellerResponse',
+  'lastTextDate',
+  'leadCreatedDate',
+  'preferredClosing',
+  'scheduledAt',
+  'scored_at',
+  'sellerDeadline',
+  'sentAt',
+  'targetCloseDate',
+  'timestamp',
+])
+
+const LEGACY_DATE_PLACEHOLDER_RE = /^(not mentioned|not provided|not scheduled|unknown|none|n\/a|na)$/i
+
+const LEGACY_DATE_SANITIZE_SUBTREES = [
+  'agentNotes',
+  'ariIntelligence',
+  'auditTrail',
+  'booking',
+  'closing',
+  'communications',
+  'financials',
+  'motivationHistory',
+  'notes',
+  'pipeline',
+  'property',
+  'scoring',
+  'situation',
+] as const
+
+const STATION_ALIASES: Record<string, string> = {
+  'appointment-booked': 'appointment_set',
+}
+
+function normalizeManifestStation(station: unknown): string | null {
+  if (typeof station !== 'string' || !station) return null
+  return STATION_ALIASES[station] ?? normalizeDealStage(station) ?? station
+}
+
+function sanitizeLegacyDatePlaceholders(
+  subtrees: Record<string, unknown>,
+  current: ManifestV2 | null,
+): Record<string, unknown> {
+  const cleaned: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(subtrees)) {
+    const sanitized = sanitizeDatePlaceholderValue(value, key)
+    if (!sanitized.remove) cleaned[key] = sanitized.value
+  }
+
+  const incomingStation = normalizeManifestStation(cleaned.currentStation)
+  if (incomingStation && incomingStation !== cleaned.currentStation) {
+    cleaned.currentStation = incomingStation
+  }
+
+  if (!current) return cleaned
+
+  const normalizedStation = normalizeManifestStation(current.currentStation)
+  if (
+    normalizedStation &&
+    normalizedStation !== current.currentStation &&
+    !('currentStation' in cleaned)
+  ) {
+    cleaned.currentStation = normalizedStation
+  }
+
+  for (const key of LEGACY_DATE_SANITIZE_SUBTREES) {
+    if (key in cleaned) continue
+    const value = (current as unknown as Record<string, unknown>)[key]
+    if (value === undefined) continue
+
+    const sanitized = sanitizeDatePlaceholderValue(value, key)
+    if (sanitized.changed && !sanitized.remove) cleaned[key] = sanitized.value
+  }
+
+  return cleaned
+}
+
+function sanitizeDatePlaceholderValue(
+  value: unknown,
+  key?: string,
+): { value: unknown; changed: boolean; remove: boolean } {
+  if (typeof value === 'string') {
+    const shouldRemove =
+      !!key &&
+      DATE_LIKE_MANIFEST_KEYS.has(key) &&
+      LEGACY_DATE_PLACEHOLDER_RE.test(value.trim())
+    return { value, changed: shouldRemove, remove: shouldRemove }
+  }
+
+  if (Array.isArray(value)) {
+    let changed = false
+    const next: unknown[] = []
+    for (const item of value) {
+      const sanitized = sanitizeDatePlaceholderValue(item, key)
+      if (sanitized.changed) changed = true
+      if (!sanitized.remove) next.push(sanitized.value)
+    }
+    return { value: changed ? next : value, changed, remove: false }
+  }
+
+  if (value && typeof value === 'object') {
+    let changed = false
+    const next: Record<string, unknown> = {}
+    for (const [childKey, childValue] of Object.entries(value)) {
+      const sanitized = sanitizeDatePlaceholderValue(childValue, childKey)
+      if (sanitized.changed) changed = true
+      if (!sanitized.remove) next[childKey] = sanitized.value
+    }
+    return { value: changed ? next : value, changed, remove: false }
+  }
+
+  return { value, changed: false, remove: false }
+}
+
 /**
  * V2.1 write path. Routes through the update_manifest_and_cascade Postgres
  * RPC for shallow per-subtree replacement + history row + denormalized
@@ -572,7 +725,10 @@ export async function updateManifestV2_1(
     : { ...params.subtrees! }
 
   // Strip derived fields client-side (RPC does this too, belt-and-suspenders).
-  const cleaned: Record<string, unknown> = { ...resolvedSubtrees }
+  const cleaned: Record<string, unknown> = sanitizeLegacyDatePlaceholders(
+    { ...resolvedSubtrees },
+    previousManifest,
+  )
   for (const derivedKey of ['hot_eligibility', 'completeness']) {
     if (derivedKey in cleaned) {
       console.warn(
@@ -605,7 +761,8 @@ export async function updateManifestV2_1(
   // denormalized lead columns are retired.
   if (leadId) {
     const leadUpdate: Record<string, unknown> = {}
-    if (manifest.currentStation) leadUpdate.station = manifest.currentStation
+    const normalizedStation = normalizeManifestStation(manifest.currentStation)
+    if (normalizedStation) leadUpdate.station = normalizedStation
     if (manifest.priority) leadUpdate.priority = manifest.priority
     const motivationScore = manifest.situation?.motivation?.score
     if (motivationScore && motivationScore >= 1) {

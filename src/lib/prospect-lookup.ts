@@ -1,10 +1,30 @@
 import { createClient } from '@supabase/supabase-js'
+import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
 
 function getSupabase() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    getSupabaseUrl(),
+    getSupabaseAdminKey(),
+    { auth: { autoRefreshToken: false, persistSession: false } },
   )
+}
+
+function phoneLookupVariants(raw: string): string[] {
+  const digits = raw.replace(/\D/g, '')
+  const variants = new Set<string>()
+
+  if (raw.trim()) variants.add(raw.trim())
+  if (!digits) return Array.from(variants)
+
+  const national = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+  if (national.length === 10) {
+    variants.add(`+1${national}`)
+    variants.add(national)
+    variants.add(`${national.slice(0, 3)}-${national.slice(3, 6)}-${national.slice(6)}`)
+    variants.add(`(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}`)
+  }
+
+  return Array.from(variants)
 }
 
 export interface ProspectMatch {
@@ -42,12 +62,52 @@ export interface ProspectMatch {
   relationship: string | null
 }
 
+type ProspectRow = {
+  id: string
+  parcel_id: string
+  county: string
+  situs_address: string | null
+  situs_street: string | null
+  situs_city: string | null
+  situs_state: string | null
+  situs_zip: string | null
+  owner_1: string | null
+  owner_1_first: string | null
+  owner_1_last: string | null
+  owner_1_type: string | null
+  mailing_street: string | null
+  mailing_city: string | null
+  mailing_state: string | null
+  mailing_zip: string | null
+  cumulative_due: number | null
+  earliest_delinquent_year: number | null
+  delinquent_years_category: string | null
+  total_market_value: number | null
+  zestimate: number | null
+  occupancy_status: string | null
+  is_deceased: boolean
+  is_skip_traced: boolean
+  owner_age: number | null
+  email_1: string | null
+  email_2: string | null
+  lead_id: string | null
+}
+
+type ProspectPhoneRow = {
+  phone_type: string | null
+  contact_name: string | null
+  relationship: string | null
+  prospects: ProspectRow | ProspectRow[] | null
+}
+
 /**
- * Look up prospects by phone number (E.164).
+ * Look up prospects by phone number across the known skip-trace phone table.
  * Returns all matching prospects sorted: owners first, 3yr+ before 2yr, highest debt first.
  */
 export async function lookupProspectByPhone(phone: string): Promise<ProspectMatch[]> {
   const supabase = getSupabase()
+  const variants = phoneLookupVariants(phone)
+  if (variants.length === 0) return []
 
   const { data, error } = await supabase
     .from('prospect_phones')
@@ -86,14 +146,15 @@ export async function lookupProspectByPhone(phone: string): Promise<ProspectMatc
         lead_id
       )
     `)
-    .eq('phone', phone)
+    .in('phone', variants)
 
   if (error || !data) return []
 
-  const matches: ProspectMatch[] = data
-    .filter((row: any) => row.prospects)
-    .map((row: any) => {
-      const p = row.prospects
+  const matches: ProspectMatch[] = (data as ProspectPhoneRow[])
+    .filter((row) => row.prospects)
+    .map((row) => {
+      const p = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects
+      if (!p) return null
       return {
         prospect_id: p.id,
         parcel_id: p.parcel_id,
@@ -128,6 +189,7 @@ export async function lookupProspectByPhone(phone: string): Promise<ProspectMatc
         relationship: row.relationship,
       }
     })
+    .filter((match): match is ProspectMatch => Boolean(match))
 
   // Sort: owners first, 3yr+ before 2yr, highest debt first
   matches.sort((a, b) => {

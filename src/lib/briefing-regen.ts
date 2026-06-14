@@ -7,6 +7,8 @@
  * when multiple updates happen in rapid succession.
  */
 
+import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
+
 const COOLDOWN_MS = 60_000 // 60 seconds
 const regenTimestamps = new Map<string, number>() // leadId → last regen epoch
 
@@ -19,6 +21,23 @@ export const EAGER_REGEN_EVENTS = new Set([
   'not_interested',
   'dead',
 ])
+
+function getBriefingRegenBaseUrl(port: string): string {
+  if (process.env.BRIEFING_REGEN_URL) return process.env.BRIEFING_REGEN_URL
+
+  const publicAppUrl = process.env.NEXT_PUBLIC_APP_URL
+  const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : ''
+
+  if (process.env.VERCEL === '1' || vercelUrl) {
+    return publicAppUrl || vercelUrl
+  }
+
+  if (publicAppUrl && !publicAppUrl.includes('localhost')) {
+    return `http://localhost:${port}`
+  }
+
+  return publicAppUrl || `http://localhost:${port}`
+}
 
 /**
  * Regenerate the Ari briefing for a lead if cooldown has elapsed.
@@ -44,8 +63,9 @@ export async function regenerateBriefing(
   try {
     const { createClient } = await import('@supabase/supabase-js')
     const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      getSupabaseUrl(),
+      getSupabaseAdminKey(),
+      { auth: { autoRefreshToken: false, persistSession: false } },
     )
 
     // Find the manifest for this lead
@@ -60,15 +80,10 @@ export async function regenerateBriefing(
       return false
     }
 
-    // Use localhost to avoid going out through Cloudflare and back in.
-    // The previous setup hit https://crm.savingkc.com from inside the same
-    // pm2 process, which often failed silently and left briefingStale=true
-    // forever — exactly the "stale status doesn't update" symptom.
+    // PM2 should call localhost to avoid Cloudflare loopbacks; Vercel must
+    // call the public deployment URL because localhost is the function sandbox.
     const port = process.env.PORT || '3002'
-    const baseUrl = process.env.BRIEFING_REGEN_URL
-      || (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')
-        ? `http://localhost:${port}`
-        : process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${port}`)
+    const baseUrl = getBriefingRegenBaseUrl(port)
     const authSecret =
       process.env.ADMIN_API_SECRET ||
       process.env.CRON_SECRET ||

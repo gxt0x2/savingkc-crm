@@ -15,17 +15,28 @@ const SPECIAL_CASES: Record<string, string> = {
 }
 
 /**
+ * Collapse labels like "Google Ads Caller ((816) 555-1212)" to
+ * "Google Ads Caller (816) 555-1212".
+ */
+export function normalizePhoneDisplayText(text: string | null | undefined): string {
+  if (!text) return ''
+  return text.replace(/\(\((\d{3})\)\s*(\d{3})-(\d{4})\)/g, '($1) $2-$3')
+}
+
+/**
  * Convert a name to proper/title case.
  * Handles: McDonald, O'Brien, hyphenated names, etc.
  */
 export function toProperCase(name: string | null | undefined): string {
   if (!name) return ''
   
-  return name
+  return normalizePhoneDisplayText(name)
     .trim()
     .split(/\s+/)
     .map((word, index) => {
       const lower = word.toLowerCase()
+
+      if (index > 0 && LOWERCASE_WORDS.has(lower)) return lower
       
       // Check special cases
       if (SPECIAL_CASES[lower]) return SPECIAL_CASES[lower]

@@ -12,6 +12,13 @@ import type { ProspectMatch } from '@/lib/prospect-lookup'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { formatPhone } from '@/lib/format'
 import { supabase } from '@/lib/supabase-lazy'
+import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
+import {
+  googleAdsNewTextTeamMessage,
+  markLeadAsGoogleAdsPhoneLead,
+  notifyGoogleAdsTeam,
+  resolveGoogleAdsLeadContext,
+} from '@/lib/google-ads-phone'
 
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
 const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
@@ -59,6 +66,7 @@ export async function POST(req: Request) {
     const to = body.get('To') as string
     const messageBody = body.get('Body') as string
     const messageSid = body.get('MessageSid') as string
+    const isGoogleAdsSms = isGoogleAdsPhoneNumber(to || '')
 
     if (!from || !messageBody) {
       return new NextResponse('Missing required fields', { status: 400 })
@@ -168,6 +176,48 @@ export async function POST(req: Request) {
           },
         })
       } catch {}
+
+      return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+        headers: { 'Content-Type': 'text/xml' },
+      })
+    }
+
+    if (isGoogleAdsSms) {
+      let googleAdsLeadId = leadId
+      let googleAdsLeadName = leadName
+
+      if (googleAdsLeadId) {
+        await markLeadAsGoogleAdsPhoneLead(googleAdsLeadId, from, leadName, to)
+      } else {
+        const googleAdsLead = await resolveGoogleAdsLeadContext(from, to)
+        googleAdsLeadId = googleAdsLead.leadId
+        googleAdsLeadName = googleAdsLead.leadName || googleAdsLeadName
+      }
+
+      if (googleAdsLeadId) {
+        await supabase.from('lead_activities')
+          .update({ lead_id: googleAdsLeadId })
+          .eq('metadata->>message_sid', messageSid)
+          .is('lead_id', null)
+
+        onCommunicationEvent(googleAdsLeadId, { type: 'inbound_sms', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
+      }
+
+      await notifyGoogleAdsTeam(
+        googleAdsNewTextTeamMessage(from, messageBody, googleAdsLeadId, to),
+        {
+          leadId: googleAdsLeadId,
+          trigger: 'google_ads_inbound_sms',
+          calledNumber: to,
+          metadata: {
+            direction: 'outbound_alert',
+            from,
+            to,
+            message_sid: messageSid,
+            lead_name: googleAdsLeadName,
+          },
+        },
+      )
 
       return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
         headers: { 'Content-Type': 'text/xml' },
@@ -590,7 +640,7 @@ export async function POST(req: Request) {
       } else {
         // Generic unknown SMS — create basic lead
         const { data: newLead } = await supabase.from('leads').insert({
-          full_name: `SMS Lead (${formatPhone(from)})`,
+          full_name: `SMS Lead ${formatPhone(from) || from}`,
           phone: from,
           source: 'inbound_sms',
           station: 'new',
