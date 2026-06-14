@@ -50,6 +50,7 @@ import {
   type PaidSessionRow,
   type SeriesRow,
 } from '@/lib/marketing/ads-command-seed'
+import { EMPTY_TRAFFIC_QUALITY_REPORT, type TrafficQualityReport, type TrafficQualityStatus } from '@/lib/marketing/traffic-quality'
 
 type MetricKey = 'spend' | 'cpl' | 'leads' | 'qualified' | 'clicks' | 'conversions'
 type CampaignView = 'campaign' | 'type'
@@ -69,6 +70,7 @@ type PeriodState = {
 }
 type DashboardSectionId =
   | 'kpis'
+  | 'trafficQuality'
   | 'trend'
   | 'campaigns'
   | 'searchTerms'
@@ -86,9 +88,10 @@ const SEARCH_TERM_PAGE_SIZE = 10
 const OUTBOX_PAGE_SIZE = 5
 const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
 const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
-const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'openAIAdsHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
+const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trafficQuality', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'openAIAdsHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
 const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
   kpis: false,
+  trafficQuality: false,
   trend: false,
   campaigns: false,
   searchTerms: false,
@@ -103,6 +106,7 @@ const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
 }
 const DASHBOARD_SECTIONS: Record<DashboardSectionId, { label: string; size: DashboardSectionSize }> = {
   kpis: { label: 'KPI Row', size: 'full' },
+  trafficQuality: { label: 'Traffic Quality', size: 'full' },
   trend: { label: 'Performance Trend', size: 'full' },
   campaigns: { label: 'Conversions by Campaign', size: 'half' },
   searchTerms: { label: 'Search Term Performance', size: 'half' },
@@ -179,6 +183,7 @@ type AdsCommandData = {
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
+  trafficQuality: TrafficQualityReport
 }
 
 const PERIODS: Record<MarketingPeriod, { l: string; days: number; hourly?: boolean; offset?: number }> = {
@@ -2151,6 +2156,168 @@ function LandingHeatmapLauncher() {
   )
 }
 
+function trafficQualityLabel(status: TrafficQualityStatus): string {
+  if (status === 'suspicious') return 'Suspicious'
+  if (status === 'watch') return 'Watch'
+  return 'Healthy'
+}
+
+function trafficQualityTone(status: TrafficQualityStatus): 'good' | 'watch' | 'bad' {
+  if (status === 'suspicious') return 'bad'
+  if (status === 'watch') return 'watch'
+  return 'good'
+}
+
+function compactTrafficValue(value: string | null | undefined, keep = 20): string {
+  if (!value || value === '--') return '--'
+  return value.length > keep ? `${value.slice(0, keep)}...` : value
+}
+
+function trafficDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.max(0, Math.round(seconds))}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainder = Math.round(seconds % 60)
+  return `${minutes}m ${remainder.toString().padStart(2, '0')}s`
+}
+
+function TrafficQualityPanel({ report }: { report: TrafficQualityReport }) {
+  const tone = trafficQualityTone(report.status)
+  const summary = report.summary
+  const stats = [
+    { label: 'Sessions scored', value: summary.sessions, sub: `${summary.cleanSessions} clean` },
+    { label: 'Watch / suspicious', value: summary.watchSessions + summary.suspiciousSessions, sub: `${summary.suspiciousRate}% of traffic` },
+    { label: 'Server landings', value: summary.serverLandingRequests, sub: `${summary.serverOnlySessions} server-only` },
+    { label: 'No engagement', value: summary.noEngagementSessions, sub: `${summary.shortVisitSessions} very short` },
+    { label: 'Repeat clusters', value: summary.repeatIpClusters + summary.repeatUaClusters, sub: `${summary.repeatIpClusters} IP / ${summary.repeatUaClusters} browser` },
+    { label: 'Bot sessions', value: summary.botSessions, sub: 'classified by request context' },
+  ]
+
+  return (
+    <div className={`traffic-quality panel tq-${tone}`}>
+      <div className="traffic-hero">
+        <div className="traffic-copy">
+          <span className="mini-eyebrow">TRAFFIC QUALITY</span>
+          <h2>Paid-click monitoring without automatic blocking.</h2>
+          <p>
+            Every PPC landing request is captured before browser JavaScript, then matched against engagement events, click IDs, hashed IP/browser patterns, and CRM outcomes.
+          </p>
+        </div>
+        <div className="traffic-score">
+          <span>Quality Score</span>
+          <strong className="mono">{report.score}</strong>
+          <em>{trafficQualityLabel(report.status)}</em>
+        </div>
+      </div>
+
+      <div className="traffic-cadence" aria-label="Traffic quality run cadence">
+        <div><b>Capture</b><span>{report.runSchedule.capture}</span></div>
+        <div><b>Analysis</b><span>{report.runSchedule.analysis}</span></div>
+        <div><b>Mode</b><span>{report.runSchedule.mode}</span></div>
+        <div><b>Checked</b><span>{formatFreshness(report.lastEvaluatedAt)}</span></div>
+      </div>
+
+      <div className="traffic-stats">
+        {stats.map((item) => (
+          <div className="traffic-stat" key={item.label}>
+            <span>{item.label}</span>
+            <strong className="mono">{formatNum(item.value)}</strong>
+            <em>{item.sub}</em>
+          </div>
+        ))}
+      </div>
+
+      <div className="traffic-grid">
+        <div className="traffic-issues">
+          <div className="traffic-section-head">
+            <h3>Issues to review</h3>
+            <span>{report.issues.length ? `${report.issues.length} active` : 'None active'}</span>
+          </div>
+          {report.issues.length ? report.issues.map((item) => (
+            <div className={`traffic-issue ${item.severity}`} key={item.key}>
+              <div>
+                <strong>{item.label}</strong>
+                <p>{item.detail}</p>
+              </div>
+              <b className="mono">{formatNum(item.count)}</b>
+            </div>
+          )) : (
+            <div className="traffic-empty">No repeat-click or bot-pattern issues in the selected period.</div>
+          )}
+        </div>
+
+        <div className="traffic-sources">
+          <div className="traffic-section-head">
+            <h3>Source pressure</h3>
+            <span>{report.sources.length ? 'By campaign/source' : 'Waiting'}</span>
+          </div>
+          {report.sources.length ? report.sources.map((source) => (
+            <div className="traffic-source-row" key={source.key}>
+              <div>
+                <strong>{source.label}</strong>
+                <span>{source.sessions} sessions · {source.noEngagement} no engagement · {source.serverOnly} server-only</span>
+              </div>
+              <b className="mono">{source.suspiciousRate}%</b>
+            </div>
+          )) : (
+            <div className="traffic-empty">No paid traffic rows yet for this period.</div>
+          )}
+        </div>
+      </div>
+
+      <div className="traffic-table-wrap">
+        <div className="traffic-section-head">
+          <h3>Highest-risk sessions</h3>
+          <span>Hashed device signals only</span>
+        </div>
+        <div className="table-scroll">
+          <table className="traffic-table">
+            <thead>
+              <tr>
+                <th>Risk</th>
+                <th>Campaign</th>
+                <th>Click / Session</th>
+                <th>Flags</th>
+                <th>Device</th>
+                <th>Duration</th>
+                <th>Form</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.sessions.length ? report.sessions.map((session) => (
+                <tr key={session.id}>
+                  <td>
+                    <span className={`traffic-risk ${trafficQualityTone(session.status)}`}>
+                      {session.riskScore}
+                    </span>
+                  </td>
+                  <td className="kw">
+                    {session.campaign}
+                    <span className="traffic-muted">{session.source} · {session.landingPage}</span>
+                  </td>
+                  <td className="mono">
+                    {compactTrafficValue(session.clickId, 18)}
+                    <span className="traffic-muted">IP {session.ipHashPrefix ?? '--'} · UA {session.userAgentHashPrefix ?? '--'}</span>
+                  </td>
+                  <td className="traffic-flags">
+                    {session.flags.slice(0, 3).map((flag) => <span key={flag}>{flag}</span>)}
+                  </td>
+                  <td>{session.device}</td>
+                  <td className="mono">{trafficDuration(session.durationSec)}</td>
+                  <td className="mono">Step {session.maxFormStep} · {session.maxScrollDepth}%</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td className="empty-table" colSpan={7}>No paid sessions to score yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LayoutSection({
   id,
   collapsed,
@@ -2259,6 +2426,7 @@ export function AdsCommandPage() {
   const leads = adsData?.leads ?? LEADS
   const outbox = adsData?.outbox ?? OUTBOX
   const paidSessions = adsData?.paidSessions ?? PAID_SESSIONS
+  const trafficQuality = adsData?.trafficQuality ?? EMPTY_TRAFFIC_QUALITY_REPORT
   const campaignOptions = useMemo(() => campaigns.map((campaign) => campaign.name), [campaigns])
   const reportingPeriod = periodState.trend
 
@@ -2458,6 +2626,10 @@ export function AdsCommandPage() {
           onToggleSeries={toggleSeries}
         />
       )
+    }
+
+    if (id === 'trafficQuality') {
+      return <TrafficQualityPanel report={trafficQuality} />
     }
 
     if (id === 'campaigns') {
@@ -2821,6 +2993,57 @@ const ADS_COMMAND_STYLES = `
 .ads-command .heatmap-track-list span { display:inline-flex; min-height:26px; align-items:center; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.045); border-radius:999px; padding:0 10px; color:var(--text-secondary); font-size:12px; font-weight:750; }
 .ads-command .heatmap-open { min-height:42px; display:inline-flex; align-items:center; justify-content:center; border-radius:12px; padding:0 18px; color:#fff; background:var(--accent); text-decoration:none; font-size:13px; font-weight:900; box-shadow:0 18px 42px -24px var(--accent); white-space:nowrap; transition:transform .14s ease, filter .14s ease; }
 .ads-command .heatmap-open:hover { transform:translateY(-1px); filter:brightness(1.08); }
+.ads-command .traffic-quality { margin-bottom:0; overflow:hidden; }
+.ads-command .traffic-quality.tq-good { border-color:rgba(34,197,94,.22); }
+.ads-command .traffic-quality.tq-watch { border-color:rgba(234,179,8,.28); }
+.ads-command .traffic-quality.tq-bad { border-color:rgba(239,68,68,.34); }
+.ads-command .traffic-hero { display:grid; grid-template-columns:minmax(0,1fr) 150px; gap:18px; align-items:stretch; margin-bottom:14px; }
+.ads-command .traffic-copy { min-width:0; }
+.ads-command .traffic-copy h2 { margin:0; font-size:22px; line-height:1.08; letter-spacing:-.02em; }
+.ads-command .traffic-copy p { max-width:860px; margin:8px 0 0; color:var(--text-secondary); font-size:13px; line-height:1.5; }
+.ads-command .traffic-score { display:flex; flex-direction:column; align-items:flex-end; justify-content:center; min-height:110px; border:1px solid var(--line); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.015)); padding:14px 16px; }
+.ads-command .traffic-score span,
+.ads-command .traffic-stat span,
+.ads-command .traffic-section-head span { color:var(--text-tertiary); font-size:10px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.ads-command .traffic-score strong { color:var(--text); font-size:42px; line-height:.95; letter-spacing:-.05em; }
+.ads-command .traffic-score em,
+.ads-command .traffic-stat em { color:var(--text-secondary); font-size:12px; font-style:normal; font-weight:750; }
+.ads-command .traffic-cadence { display:grid; grid-template-columns:1.15fr 1fr .92fr .65fr; gap:8px; margin:0 0 14px; }
+.ads-command .traffic-cadence > div { min-width:0; border:1px solid var(--line); border-radius:14px; background:var(--surface-2); padding:10px 12px; }
+.ads-command .traffic-cadence b { display:block; margin-bottom:4px; color:var(--text); font-size:11px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+.ads-command .traffic-cadence span { display:block; color:var(--text-secondary); font-size:12px; line-height:1.35; }
+.ads-command .traffic-stats { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:14px; }
+.ads-command .traffic-stat { min-width:0; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.025); padding:12px; }
+.ads-command .traffic-stat strong { display:block; margin:5px 0 3px; color:var(--text); font-size:24px; line-height:1; letter-spacing:-.04em; }
+.ads-command .traffic-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
+.ads-command .traffic-issues,
+.ads-command .traffic-sources,
+.ads-command .traffic-table-wrap { min-width:0; border:1px solid var(--line); border-radius:18px; background:var(--surface-2); padding:14px; }
+.ads-command .traffic-section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.ads-command .traffic-section-head h3 { margin:0; font-size:14px; font-weight:900; letter-spacing:-.01em; }
+.ads-command .traffic-issue,
+.ads-command .traffic-source-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; border-top:1px solid var(--line); padding:10px 0; }
+.ads-command .traffic-issue:first-of-type,
+.ads-command .traffic-source-row:first-of-type { border-top:0; padding-top:0; }
+.ads-command .traffic-issue strong,
+.ads-command .traffic-source-row strong { display:block; color:var(--text); font-size:13px; font-weight:900; line-height:1.2; }
+.ads-command .traffic-issue p,
+.ads-command .traffic-source-row span { display:block; margin:3px 0 0; color:var(--text-secondary); font-size:12px; line-height:1.35; }
+.ads-command .traffic-issue b,
+.ads-command .traffic-source-row b { min-width:42px; text-align:right; color:var(--text); font-size:16px; }
+.ads-command .traffic-issue.high b { color:var(--accent-bright); }
+.ads-command .traffic-issue.medium b { color:var(--warning); }
+.ads-command .traffic-empty { border:1px dashed var(--line); border-radius:14px; padding:18px; color:var(--text-tertiary); font-size:12.5px; text-align:center; }
+.ads-command .traffic-table { min-width:980px; }
+.ads-command .traffic-table td { vertical-align:top; }
+.ads-command .traffic-table td:first-child { width:68px; }
+.ads-command .traffic-risk { display:inline-flex; min-width:42px; justify-content:center; border:1px solid var(--line); border-radius:999px; padding:5px 8px; font-family:var(--font-mono); font-size:12px; font-weight:900; }
+.ads-command .traffic-risk.good { color:var(--success); border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.09); }
+.ads-command .traffic-risk.watch { color:var(--warning); border-color:rgba(234,179,8,.38); background:rgba(234,179,8,.10); }
+.ads-command .traffic-risk.bad { color:var(--accent-bright); border-color:rgba(239,68,68,.42); background:rgba(239,68,68,.12); }
+.ads-command .traffic-muted { display:block; margin-top:3px; color:var(--text-tertiary); font-size:11px; line-height:1.25; white-space:normal; }
+.ads-command .traffic-flags { min-width:210px; text-align:left; }
+.ads-command .traffic-flags span { display:inline-flex; margin:0 4px 4px 0; border:1px solid rgba(255,255,255,.11); border-radius:999px; background:rgba(255,255,255,.045); color:var(--text-secondary); padding:3px 7px; font-family:var(--font-sans); font-size:11px; font-weight:800; white-space:nowrap; }
 .ads-command .panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
 .ads-command .panel h2 { font-size:18px; font-weight:700; letter-spacing:-.4px; margin:0 0 2px; }
 .ads-command .cap { font-size:12px; color:var(--text-tertiary); font-weight:500; }
