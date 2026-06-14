@@ -624,9 +624,12 @@ export function DialerPanel({
 
       call.on('disconnect', () => {
         const duration = Math.round((Date.now() - callStartRef.current) / 1000)
-        const finalStatus = callWasAccepted ? 'completed' : 'no-answer'
-        const finalOutcome = callWasAccepted ? 'connected' : 'missed'
-        const finalDisposition = callWasAccepted ? 'answered' : 'no_answer'
+        // The SDK accept event means the browser leg opened, not that the
+        // seller answered. Treat this as an attempt until the user disposition
+        // or Twilio status callbacks provide a firmer outcome.
+        const finalStatus = callWasAccepted ? 'attempted' : 'no-answer'
+        const finalOutcome = callWasAccepted ? 'unknown' : 'missed'
+        const finalDisposition = callWasAccepted ? 'needs_disposition' : 'no_answer'
         lastCallDurationSecondsRef.current = duration
         setLastCallDuration(formatDuration(duration))
         fetch('/api/call-log', {

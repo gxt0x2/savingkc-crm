@@ -971,7 +971,10 @@ function buildJourneySteps({
   outboxRows: PpcOutboxRow[]
 }): PpcReport['journeySessions'][number]['steps'] {
   const clickId = clickIdFromTracking(ordered[0]) || text(attribution.click_id)
-  const visitAt = firstEventAt(ordered, (row) => eventName(row) === 'ppc_visit_started' || eventName(row) === 'page_view')
+  const visitAt = firstEventAt(ordered, (row) => {
+    const name = eventName(row)
+    return name === 'ppc_landing_request' || name === 'ppc_visit_started' || name === 'page_view'
+  })
   const phoneAt = firstEventAt(ordered, isPhoneSignal)
   const phoneLabel = ordered
     .map((row) => payloadText(row, 'ppc_phone_display') || payloadText(row, 'phone_display') || text(row.phone_number))
@@ -1232,7 +1235,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     trackingEvents
       .filter((row) => {
         const name = eventName(row)
-        return name === 'ppc_visit_started' || name === 'page_view'
+        return name === 'ppc_landing_request' || name === 'ppc_visit_started' || name === 'page_view'
       })
       .map(eventKey),
   )
@@ -1290,7 +1293,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
   for (const row of trackingEvents) {
     const bucket = ensureBucket(dailyBuckets, compactDate(row.event_time || row.created_at))
     const name = eventName(row)
-    if (name === 'ppc_visit_started' || name === 'page_view') bucket.visits += 1
+    if (name === 'ppc_landing_request' || name === 'ppc_visit_started' || name === 'page_view') bucket.visits += 1
     if (isPhoneSignal(row)) bucket.phoneClicks += 1
     if (name === 'lead_submitted') bucket.formSubmits += 1
   }

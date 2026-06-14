@@ -40,6 +40,7 @@ export type PpcTrackingAttribution = {
   gclid?: string
   gbraid?: string
   wbraid?: string
+  oppref?: string
   gad_source?: string
   gad_campaignid?: string
   gad_adgroupid?: string

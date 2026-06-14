@@ -1,5 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server'
 
 // Routes that don't require authentication
 const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', '/deals', '/ppc']
@@ -27,6 +27,7 @@ const PUBLIC_API_EXACT = new Set([
   '/api/twilio-sms-webhook',
   '/api/twilio-missed-call',
   '/api/twilio-recording-callback',
+  '/api/twilio-call-status',
 ])
 
 const PUBLIC_API_PREFIXES = [
@@ -155,8 +156,151 @@ function unauthorized() {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 }
 
-export async function proxy(request: NextRequest) {
+const PAID_LANDING_PATHS = new Set(['/ppc', '/ppc/', '/ppc-tax', '/ppc-tax/'])
+const ATTRIBUTION_QUERY_KEYS = [
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+  'keyword',
+  'matchtype',
+  'campaignid',
+  'adgroupid',
+  'gclid',
+  'gbraid',
+  'wbraid',
+  'oppref',
+  'gad_source',
+  'gad_campaignid',
+  'gad_adgroupid',
+] as const
+
+function isPaidLandingPageRequest(request: NextRequest): boolean {
+  return request.method === 'GET' && PAID_LANDING_PATHS.has(request.nextUrl.pathname)
+}
+
+function cleanText(value: string | null | undefined): string | undefined {
+  return value?.trim() || undefined
+}
+
+function readAttributionFromRequest(request: NextRequest): Record<string, string> {
+  const params = request.nextUrl.searchParams
+  const attribution: Record<string, string> = {}
+
+  for (const key of ATTRIBUTION_QUERY_KEYS) {
+    const value = cleanText(params.get(key))
+    if (value) attribution[key] = value
+  }
+
+  const cookieOppref = cleanText(request.cookies.get('__oppref')?.value)
+  if (cookieOppref && !attribution.oppref) attribution.oppref = cookieOppref
+
+  return attribution
+}
+
+function hasGoogleAdsSignal(attribution: Record<string, string>): boolean {
+  return Boolean(
+    attribution.gclid ||
+    attribution.gbraid ||
+    attribution.wbraid ||
+    attribution.gad_source ||
+    attribution.gad_campaignid ||
+    attribution.gad_adgroupid ||
+    attribution.utm_source?.toLowerCase().includes('google') ||
+    attribution.utm_medium?.toLowerCase() === 'cpc',
+  )
+}
+
+function hasOpenAIAdsSignal(request: NextRequest, attribution: Record<string, string>): boolean {
+  const source = attribution.utm_source?.toLowerCase() ?? ''
+  const medium = attribution.utm_medium?.toLowerCase() ?? ''
+  const campaign = attribution.utm_campaign?.toLowerCase() ?? ''
+  const referrer = request.headers.get('referer')?.toLowerCase() ?? ''
+  const url = request.nextUrl.href.toLowerCase()
+
+  return Boolean(
+    attribution.oppref ||
+    source.includes('openai') ||
+    source.includes('chatgpt') ||
+    medium.includes('openai') ||
+    campaign.includes('openai') ||
+    referrer.includes('chatgpt.com') ||
+    referrer.includes('openai.com') ||
+    url.includes('utm_source=openai'),
+  )
+}
+
+function campaignForPaidLanding(request: NextRequest, attribution: Record<string, string>, trafficSource?: string): string {
+  if (attribution.utm_campaign) return attribution.utm_campaign
+  if (trafficSource === 'openai_ads') return 'OpenAI Ads'
+  return request.nextUrl.pathname.startsWith('/ppc-tax') ? 'Search - Property Tax' : 'Search 2026'
+}
+
+function forwardedTrackingHeaders(request: NextRequest): Headers {
+  const headers = new Headers({ 'content-type': 'application/json' })
+  for (const name of [
+    'user-agent',
+    'accept-language',
+    'x-forwarded-for',
+    'x-vercel-forwarded-for',
+    'x-real-ip',
+    'cf-connecting-ip',
+    'sec-ch-ua-platform',
+    'sec-ch-ua-mobile',
+  ]) {
+    const value = request.headers.get(name)
+    if (value) headers.set(name, value)
+  }
+  return headers
+}
+
+function queuePaidLandingRequest(request: NextRequest, event: NextFetchEvent) {
+  const attribution = readAttributionFromRequest(request)
+  const openaiAds = hasOpenAIAdsSignal(request, attribution)
+  const googleAds = hasGoogleAdsSignal(attribution)
+  const trafficSource = openaiAds ? 'openai_ads' : googleAds ? 'google_ads' : undefined
+  const eventId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? `server_ppc_landing_request_${crypto.randomUUID()}`
+    : `server_ppc_landing_request_${Date.now()}_${Math.random().toString(36).slice(2)}`
+
+  event.waitUntil(
+    fetch(`${request.nextUrl.origin}/api/ppc/track`, {
+      method: 'POST',
+      headers: forwardedTrackingHeaders(request),
+      body: JSON.stringify({
+        eventId,
+        eventName: 'ppc_landing_request',
+        eventCategory: 'visit',
+        eventTime: new Date().toISOString(),
+        pagePath: request.nextUrl.pathname,
+        pageLocation: request.nextUrl.href,
+        pageReferrer: cleanText(request.headers.get('referer')),
+        trafficSource,
+        campaign: campaignForPaidLanding(request, attribution, trafficSource),
+        attribution: {
+          ...attribution,
+          referrer: cleanText(request.headers.get('referer')),
+          landingUrl: request.nextUrl.href,
+        },
+        payload: {
+          server_side: true,
+          paid_signal: openaiAds || googleAds,
+          paid_source_detected: trafficSource ?? 'unknown',
+        },
+      }),
+    }).catch((error) => {
+      console.warn('[proxy] paid landing tracking failed', error)
+    }),
+  )
+}
+
+export async function proxy(request: NextRequest, event: NextFetchEvent) {
   const { pathname } = request.nextUrl
+
+  if (isPaidLandingPageRequest(request)) {
+    queuePaidLandingRequest(request, event)
+  }
 
   if (hasTestBypass(request)) {
     return NextResponse.next()
