@@ -4,7 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone, toProperCase } from '@/lib/format'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
-import { isReachedDisposition, dispositionLabel as canonicalDispositionLabel } from '@/lib/dialer-dispositions'
+import {
+  dispositionStopsNumber,
+  isReachedDisposition,
+  dispositionLabel as canonicalDispositionLabel,
+} from '@/lib/dialer-dispositions'
 
 // Dialer queue item — sent to DialerPanel so it can cycle through heirs while
 // the property stays pinned. `leadId` is the property's lead_id, never the
@@ -103,6 +107,10 @@ function verifiedPhoneOf(heir: Heir): HeirPhone | null {
   return heir.phones.find(isVerifiedPhone) ?? null
 }
 
+function isAutoCallablePhone(p: HeirPhone): boolean {
+  return Boolean(p.number?.trim()) && !dispositionStopsNumber(p.last_disposition)
+}
+
 function dispositionLabel(d: string | null): string {
   return canonicalDispositionLabel(d)
 }
@@ -123,7 +131,6 @@ export function HeirsSection({
   collapsible = true,
   dialerCallerId = null,
   dialerCallerPlan = null,
-  callHammerEnabled = true,
   autoStart = false,
   onAutoStartHandled,
   onAutoStartEmpty,
@@ -200,20 +207,19 @@ export function HeirsSection({
     }
   }
 
+  const callablePhonesForHeir = useCallback((heir: Heir) => {
+    const fresh = heir.phones.filter((phone) => isAutoCallablePhone(phone) && !phone.attempted)
+    const tried = heir.phones.filter((phone) => isAutoCallablePhone(phone) && phone.attempted)
+    return [...fresh, ...tried]
+  }, [])
+
   const totalHeirs = heirs.length
   const totalPhones = heirs.reduce((n, h) => n + h.phones.length, 0)
-  // Only count unattempted phones that are actually worth calling — heirs
-  // whose correct number is already confirmed are excluded from the queue.
   const unattemptedPhones = heirs.reduce(
-    (n, h) => n + (verifiedPhoneOf(h) ? 0 : h.unattempted_count),
+    (n, h) => n + h.phones.filter((phone) => isAutoCallablePhone(phone) && !phone.attempted).length,
     0,
   )
-  const queuedPhones = heirs.reduce((count, heir) => {
-    if (verifiedPhoneOf(heir)) return count
-    const available = heir.phones.filter((phone) => !phone.attempted).length
-    if (available === 0) return count
-    return count + available
-  }, 0)
+  const queuedPhones = heirs.reduce((count, heir) => count + callablePhonesForHeir(heir).length, 0)
   const verifiedHeirs = heirs.filter((h) => verifiedPhoneOf(h)).length
 
   // Manual verify / unverify of a single number. Persists server-side and
@@ -236,7 +242,7 @@ export function HeirsSection({
     }
   }, [leadId, load])
 
-  function mapHeirPhones(h: Heir, phones: HeirPhone[]): HeirDialerQueueItem[] {
+  const mapHeirPhones = useCallback((h: Heir, phones: HeirPhone[]): HeirDialerQueueItem[] => {
     return phones.map((p) => ({
       prospect_phone_id: p.id,
       phone: p.number,
@@ -246,20 +252,18 @@ export function HeirsSection({
       propertyAddress,
       deceasedOwnerName,
     }))
-  }
+  }, [deceasedOwnerName, leadId, propertyAddress])
 
-  // AUTO / BULK path (Call heirs, auto-start). Skips heirs we've already
-  // verified — once you've reached the right person you don't keep hammering
-  // every number — and only queues numbers that haven't been tried yet.
-  function buildQueueForHeir(h: Heir, forceAllPhones = false): HeirDialerQueueItem[] {
-    if (verifiedPhoneOf(h)) return []
-    const unattemptedPhones = h.phones.filter((p) => !p.attempted)
-    const dialTargets = callHammerEnabled || forceAllPhones ? unattemptedPhones : unattemptedPhones.slice(0, 1)
-    return mapHeirPhones(h, dialTargets)
-  }
+  // AUTO / BULK path (Call heirs, auto-start). Queue every callable listed
+  // number for this property, grouped by heir. Attempted/verified phones stay
+  // in the rotation for the current session; only hard-stop outcomes are
+  // removed from auto dialing.
+  const buildQueueForHeir = useCallback((h: Heir): HeirDialerQueueItem[] => {
+    return mapHeirPhones(h, callablePhonesForHeir(h))
+  }, [callablePhonesForHeir, mapHeirPhones])
 
   function queueAll() {
-    const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir, true))
+    const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
     dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { ringCount })
   }
 
@@ -274,10 +278,10 @@ export function HeirsSection({
 
   function queueOne(heir: Heir, phone: HeirPhone) {
     // Clicked number always dials (even if attempted/verified) — recall is
-    // never blocked. Remaining auto-queue follows the unattempted ordering.
+    // never blocked. Remaining auto-queue follows the property heir ordering.
     const clicked = mapHeirPhones(heir, [phone])[0]
     const remaining = heirs
-      .flatMap((h) => buildQueueForHeir(h, true))
+      .flatMap((h) => buildQueueForHeir(h))
       .filter((item) => item.prospect_phone_id !== phone.id)
     dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan, { ringCount })
   }
@@ -291,20 +295,7 @@ export function HeirsSection({
     if (autoStartedLeadRef.current === leadId) return
     autoStartedLeadRef.current = leadId
 
-    const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => {
-      if (verifiedPhoneOf(heir)) return []
-      return heir.phones
-        .filter((phone) => !phone.attempted)
-        .map((phone) => ({
-          prospect_phone_id: phone.id,
-          phone: phone.number,
-          heirName: toProperCase(heir.contact_name),
-          relation: heir.relationship,
-          leadId,
-          propertyAddress,
-          deceasedOwnerName,
-        }))
-    })
+    const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
 
     if (queue.length > 0) {
       dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true, ringCount })
@@ -312,7 +303,7 @@ export function HeirsSection({
       return
     }
     onAutoStartEmpty?.()
-  }, [autoStart, deceasedOwnerName, dialerCallerId, dialerCallerPlan, error, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, propertyAddress, ringCount])
+  }, [autoStart, buildQueueForHeir, dialerCallerId, dialerCallerPlan, error, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, ringCount])
 
   return (
     <section className={`ck-card ${expanded ? 'p-6' : 'px-6 py-4'}`}>
@@ -342,7 +333,7 @@ export function HeirsSection({
             <button
               onClick={(e) => { e.stopPropagation(); queueAll() }}
               className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap"
-              title="Cycle through all unattempted heir phones on this lead"
+              title="Cycle through every callable listed heir phone on this lead"
             >
               <Icon name="call" size="text-sm" />
               Call heirs ({queuedPhones})

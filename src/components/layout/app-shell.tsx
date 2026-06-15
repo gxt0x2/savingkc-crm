@@ -83,10 +83,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
   const useUserLightTheme = hydrated && !useTcLightTheme && userTheme === 'light'
   const useLightLogo = useTcLightTheme || useUserLightTheme
-  // Dialer renders as a centered modal with a blurred backdrop. Previously
-  // docked to the bottom-right corner; users wanted it centered like a
-  // proper modal so the call sits front-and-center.
-  const dialerPresentation = 'modal'
+  // The dedicated /dialer workspace already has its own call context and
+  // progress UI. Keep the softphone docked there so closing a disposition does
+  // not re-open a full-screen dialer over the heir queue.
+  const dialerPresentation = pathname?.startsWith('/dialer') ? 'dock' : 'modal'
 
   useEffect(() => {
     const html = document.documentElement
