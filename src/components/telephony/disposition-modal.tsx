@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import {
   DIALER_DISPOSITIONS,
@@ -201,9 +201,11 @@ export function DispositionModal({
   const [localSaving, setLocalSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
+  const savingRef = useRef(false)
 
   const isControlledDisposition = selectedDisposition !== undefined
   const isControlledNotes = notes !== undefined
+  const autoSubmitOnOutcome = variant === 'heirQueue'
 
   useEffect(() => {
     if (!open) return
@@ -249,6 +251,9 @@ export function DispositionModal({
     if (!dispositionRequiresReason(id)) setDeadReason('')
     setSaveError(null)
     setSaveNotice(null)
+    if (autoSubmitOnOutcome && !dispositionRequiresReason(id)) {
+      void submit({ closeAfter: true, advance: true, disposition: id })
+    }
   }
 
   function changeNotes(value: string) {
@@ -257,21 +262,34 @@ export function DispositionModal({
     setSaveNotice(null)
   }
 
-  async function submit({ closeAfter, advance }: { closeAfter: boolean; advance: boolean }) {
-    if (!activeDisposition || isSaving || localSaving) return
-    if (needsReason && !deadReason.trim()) {
+  async function submit({
+    closeAfter,
+    advance,
+    disposition = activeDisposition,
+    deadReason: deadReasonOverride,
+  }: {
+    closeAfter: boolean
+    advance: boolean
+    disposition?: DispositionType | null
+    deadReason?: string
+  }) {
+    if (!disposition || isSaving || localSaving || savingRef.current) return
+    const dispositionNeedsReason = dispositionRequiresReason(disposition)
+    const resolvedDeadReason = deadReasonOverride ?? deadReason
+    if (dispositionNeedsReason && !resolvedDeadReason.trim()) {
       setSaveError('Choose a reason before marking this lead dead.')
       return
     }
+    savingRef.current = true
     setSaveError(null)
     setSaveNotice(null)
     setLocalSaving(true)
     try {
-      const result = await onDisposition(activeDisposition, activeNotes.trim() || undefined, {
+      const result = await onDisposition(disposition, activeNotes.trim() || undefined, {
         markAsLead: markAsLeadAvailable && markAsLead,
         autoDialNext: advance,
         verified: showVerifyToggle && verifiedTouched ? verified : undefined,
-        deadReason: needsReason ? deadReason : undefined,
+        deadReason: dispositionNeedsReason ? resolvedDeadReason : undefined,
       })
       if (result === false) {
         setSaveError('Disposition was not saved. Try again before moving on.')
@@ -286,7 +304,21 @@ export function DispositionModal({
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Disposition was not saved. Try again.')
     } finally {
+      savingRef.current = false
       setLocalSaving(false)
+    }
+  }
+
+  function pickDeadReason(reasonId: string) {
+    setDeadReason(reasonId)
+    setSaveError(null)
+    if (autoSubmitOnOutcome && activeDisposition && dispositionRequiresReason(activeDisposition)) {
+      void submit({
+        closeAfter: true,
+        advance: true,
+        disposition: activeDisposition,
+        deadReason: reasonId,
+      })
     }
   }
 
@@ -453,7 +485,7 @@ export function DispositionModal({
                       <button
                         key={reason.id}
                         type="button"
-                        onClick={() => { setDeadReason(reason.id); setSaveError(null) }}
+                        onClick={() => pickDeadReason(reason.id)}
                         className={`flex items-center gap-2.5 px-3 py-2 rounded-[var(--skc-radius-control)] text-left text-[15px] tracking-[-0.01em] transition-colors ${
                           isPicked
                             ? 'bg-[#FF453A2E] text-white'
@@ -541,20 +573,24 @@ export function DispositionModal({
           </div>
 
           <div className="px-4 pb-4">
-            <button
-              className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-brand)] text-white text-[16px] font-semibold tracking-[-0.01em] disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => submit({ closeAfter: true, advance: true })}
-              disabled={!canSave}
-            >
-              {isSaving || localSaving ? 'Saving...' : 'Save & Next Lead'}
-            </button>
-            <button
-              className="w-full py-3 mt-1.5 rounded-[var(--skc-radius-card)] bg-transparent text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => submit({ closeAfter: true, advance: false })}
-              disabled={!canSave}
-            >
-              Save & Close
-            </button>
+            {!autoSubmitOnOutcome && (
+              <>
+                <button
+                  className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-brand)] text-white text-[16px] font-semibold tracking-[-0.01em] disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => submit({ closeAfter: true, advance: true })}
+                  disabled={!canSave}
+                >
+                  {isSaving || localSaving ? 'Saving...' : 'Save & Next Lead'}
+                </button>
+                <button
+                  className="w-full py-3 mt-1.5 rounded-[var(--skc-radius-card)] bg-transparent text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => submit({ closeAfter: true, advance: false })}
+                  disabled={!canSave}
+                >
+                  Save & Close
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -585,13 +621,17 @@ export function DispositionModal({
               {callDuration ? ` · ${callDuration}` : ''}
             </div>
           </div>
-          <button
-            className={`bg-transparent border-0 p-0 text-right text-[15px] font-semibold tracking-[-0.01em] ${canSave ? 'text-[var(--skc-brand)]' : 'text-[var(--skc-text-quaternary)] cursor-not-allowed'}`}
-            onClick={() => canSave && submit({ closeAfter: true, advance: false })}
-            disabled={!canSave}
-          >
-            {isSaving || localSaving ? 'Saving...' : 'Save'}
-          </button>
+          {autoSubmitOnOutcome ? (
+            <div />
+          ) : (
+            <button
+              className={`bg-transparent border-0 p-0 text-right text-[15px] font-semibold tracking-[-0.01em] ${canSave ? 'text-[var(--skc-brand)]' : 'text-[var(--skc-text-quaternary)] cursor-not-allowed'}`}
+              onClick={() => canSave && submit({ closeAfter: true, advance: false })}
+              disabled={!canSave}
+            >
+              {isSaving || localSaving ? 'Saving...' : 'Save'}
+            </button>
+          )}
         </div>
 
         <div className="px-4 pb-4 overflow-y-auto">
@@ -739,7 +779,7 @@ export function DispositionModal({
                         <button
                           key={reason.id}
                           type="button"
-                          onClick={() => { setDeadReason(reason.id); setSaveError(null) }}
+                          onClick={() => pickDeadReason(reason.id)}
                           className={`flex items-center gap-2.5 px-3 py-2 rounded-[var(--skc-radius-control)] text-left text-[14px] tracking-[-0.01em] transition-colors ${
                             isPicked
                               ? 'bg-[#FF453A2E] text-white'
@@ -833,22 +873,24 @@ export function DispositionModal({
             </aside>
           </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]">
-            <button
-              className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-brand)] text-white text-[16px] font-semibold tracking-[-0.01em] disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => submit({ closeAfter: true, advance: true })}
-              disabled={!canSave}
-            >
-              {isSaving || localSaving ? 'Saving...' : primaryActionLabel}
-            </button>
-            <button
-              className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-surface-2)] border border-[#2F2F38] text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => submit({ closeAfter: true, advance: false })}
-              disabled={!canSave}
-            >
-              {secondaryActionLabel}
-            </button>
-          </div>
+          {!autoSubmitOnOutcome && (
+            <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]">
+              <button
+                className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-brand)] text-white text-[16px] font-semibold tracking-[-0.01em] disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => submit({ closeAfter: true, advance: true })}
+                disabled={!canSave}
+              >
+                {isSaving || localSaving ? 'Saving...' : primaryActionLabel}
+              </button>
+              <button
+                className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-surface-2)] border border-[#2F2F38] text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => submit({ closeAfter: true, advance: false })}
+                disabled={!canSave}
+              >
+                {secondaryActionLabel}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
