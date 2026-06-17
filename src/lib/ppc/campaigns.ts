@@ -1,10 +1,10 @@
-export type PpcCampaignKey = 'search_2026' | 'property_tax'
+export type PpcCampaignKey = 'search_2026' | 'property_tax' | 'redemption' | 'excess_proceeds'
 
 export type PpcCampaignConfig = {
   key: PpcCampaignKey
   name: string
-  pagePath: '/ppc' | '/ppc-tax'
-  pageVariant: 'ppc' | 'ppc_tax'
+  pagePath: '/ppc' | '/ppc-tax' | '/ppc-redemption' | '/ppc-excess-proceeds'
+  pageVariant: 'ppc' | 'ppc_tax' | 'ppc_redemption' | 'ppc_excess_proceeds'
   phoneDisplay: string
   phoneTel: string
   phoneDigits: string
@@ -27,6 +27,26 @@ export const PPC_CAMPAIGNS = [
     name: 'Search - Property Tax',
     pagePath: '/ppc-tax',
     pageVariant: 'ppc_tax',
+    phoneDisplay: '(816) 608-6648',
+    phoneTel: '+18166086648',
+    phoneDigits: '8166086648',
+    phoneSource: 'google_ads_tax_phone',
+  },
+  {
+    key: 'redemption',
+    name: 'Search - Redemption',
+    pagePath: '/ppc-redemption',
+    pageVariant: 'ppc_redemption',
+    phoneDisplay: '(816) 608-6648',
+    phoneTel: '+18166086648',
+    phoneDigits: '8166086648',
+    phoneSource: 'google_ads_tax_phone',
+  },
+  {
+    key: 'excess_proceeds',
+    name: 'Search - Excess Proceeds',
+    pagePath: '/ppc-excess-proceeds',
+    pageVariant: 'ppc_excess_proceeds',
     phoneDisplay: '(816) 608-6648',
     phoneTel: '+18166086648',
     phoneDigits: '8166086648',
@@ -57,11 +77,11 @@ export function isKnownPpcCampaignName(value: unknown): boolean {
 }
 
 export function ppcCampaignForPagePath(value: unknown): PpcCampaignConfig | null {
-  const path = text(value)
+  const path = text(value).split(/[?#]/)[0] ?? ''
   if (!path) return null
-  if (path.startsWith('/ppc-tax')) return PPC_CAMPAIGNS.find((campaign) => campaign.key === 'property_tax') ?? null
-  if (path.startsWith('/ppc')) return DEFAULT_PPC_CAMPAIGN
-  return null
+  return PPC_CAMPAIGNS.find((campaign) => (
+    path === campaign.pagePath || path.startsWith(`${campaign.pagePath}/`)
+  )) ?? null
 }
 
 export function ppcCampaignForPageLocation(value: unknown): PpcCampaignConfig | null {

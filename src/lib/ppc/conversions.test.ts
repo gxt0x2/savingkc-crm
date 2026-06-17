@@ -151,6 +151,40 @@ describe('ppc browser tracking', () => {
     )
   })
 
+  it('adds page context for redemption and excess-proceeds landing pages', () => {
+    vi.stubGlobal('window', {
+      dataLayer: [],
+      oaiq: vi.fn(),
+      location: {
+        pathname: '/ppc-redemption',
+        href: 'https://crm.savingkc.com/ppc-redemption?gclid=redeem-click',
+      },
+    })
+
+    expect(firePpcTrackingEvent('ppc_visit_started')).toMatchObject({
+      event: 'ppc_visit_started',
+      campaign: 'Search - Redemption',
+      page_path: '/ppc-redemption',
+      page_variant: 'ppc_redemption',
+    })
+
+    vi.stubGlobal('window', {
+      dataLayer: [],
+      oaiq: vi.fn(),
+      location: {
+        pathname: '/ppc-excess-proceeds',
+        href: 'https://crm.savingkc.com/ppc-excess-proceeds?gclid=excess-click',
+      },
+    })
+
+    expect(firePpcTrackingEvent('ppc_visit_started')).toMatchObject({
+      event: 'ppc_visit_started',
+      campaign: 'Search - Excess Proceeds',
+      page_path: '/ppc-excess-proceeds',
+      page_variant: 'ppc_excess_proceeds',
+    })
+  })
+
   it('tracks stage 3 completion as a diagnostic field-completion signal', () => {
     const event = firePpcTrackingEvent('step_3_field_completed', {
       form_step: 3,

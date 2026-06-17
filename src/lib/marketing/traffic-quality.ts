@@ -497,7 +497,7 @@ export function buildTrafficQualityReport(
       .slice(0, 8),
     sessions: sessions.slice(0, 12),
     runSchedule: {
-      capture: 'Every /ppc and /ppc-tax page request, before browser JavaScript; browser events stream as the visitor acts.',
+      capture: 'Every paid landing-page request (/ppc, /ppc-tax, /ppc-redemption, /ppc-excess-proceeds) before browser JavaScript; browser events stream as the visitor acts.',
       analysis: 'Recomputed when /marketing loads and every 60 seconds while the dashboard is open.',
       mode: 'Monitor-only. No visitor blocking or Google Ads IP exclusion is automated.',
     },

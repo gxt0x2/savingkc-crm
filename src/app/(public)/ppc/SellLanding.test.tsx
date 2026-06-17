@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SellLanding } from './SellLanding'
 
 vi.mock('next/image', () => ({
-  default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => React.createElement('img', props),
+  default: ({ fill: _fill, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean }) => React.createElement('img', props),
 }))
 
 function renderLanding(variant?: React.ComponentProps<typeof SellLanding>['variant']) {
@@ -18,6 +18,10 @@ function renderLanding(variant?: React.ComponentProps<typeof SellLanding>['varia
       variant={variant}
     />,
   )
+}
+
+function clickNextButton() {
+  fireEvent.click(screen.getByRole('button', { name: /^Next$/ }))
 }
 
 afterEach(() => {
@@ -87,6 +91,86 @@ describe('SellLanding', () => {
     expect(html).not.toContain('autoplay=1')
     expect(html).not.toContain('video-card-duration')
     expect(html).not.toContain('&amp;apos;')
+  })
+
+  it('renders redemption-specific form copy and option values', () => {
+    const html = renderLanding('redemption')
+
+    expect(html).toContain('Tax sale happened? <span class="accent">You may still have a move.</span>')
+    expect(html).toContain('Are you trying to redeem after a tax sale?')
+    expect(html).toContain('Yes, redemption window')
+    expect(html).toContain('Check My Window')
+    expect(html).not.toContain('&amp;apos;')
+  })
+
+  it('renders excess-proceeds-specific form copy and option values', () => {
+    const html = renderLanding('excess-proceeds')
+
+    expect(html).toContain('County may be holding money <span class="accent">after a tax sale.</span>')
+    expect(html).toContain('Do you think there are excess proceeds?')
+    expect(html).toContain('Yes / I received notice')
+    expect(html).toContain('Check Proceeds')
+    expect(html).not.toContain('&amp;apos;')
+  })
+
+  it('walks the redemption landing through auction status and redemption qualifier steps', () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) })))
+
+    render(
+      <SellLanding
+        phoneDisplay="(816) 608-6648"
+        phoneTel="+18166086648"
+        variant="redemption"
+      />,
+    )
+
+    expect(screen.getByText('Are you trying to redeem after a tax sale?')).toBeInTheDocument()
+    clickNextButton()
+
+    expect(screen.getByLabelText('Step 2 of 4')).toBeInTheDocument()
+    expect(screen.getByText('Did the tax sale already happen?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }))
+    clickNextButton()
+
+    expect(screen.getByLabelText('Step 3 of 4')).toBeInTheDocument()
+    expect(screen.getByText('How close is the redemption deadline?')).toBeInTheDocument()
+    expect(screen.getByText('What help do you need first?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Under 30 days' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Need payoff amount' }))
+    fireEvent.click(screen.getByRole('button', { name: /Check My Redemption Path/i }))
+
+    expect(screen.getByLabelText('Step 4 of 4')).toBeInTheDocument()
+    expect(screen.getByText('Redemption review ready — finish below so we can check the property.')).toBeInTheDocument()
+  })
+
+  it('walks the excess-proceeds landing through sale status and claim qualifier steps', () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) })))
+
+    render(
+      <SellLanding
+        phoneDisplay="(816) 608-6648"
+        phoneTel="+18166086648"
+        variant="excess-proceeds"
+      />,
+    )
+
+    expect(screen.getByText('Do you think there are excess proceeds?')).toBeInTheDocument()
+    clickNextButton()
+
+    expect(screen.getByLabelText('Step 2 of 4')).toBeInTheDocument()
+    expect(screen.getByText('Has the property already sold at tax sale?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }))
+    clickNextButton()
+
+    expect(screen.getByLabelText('Step 3 of 4')).toBeInTheDocument()
+    expect(screen.getByText('When did the sale happen?')).toBeInTheDocument()
+    expect(screen.getByText('What makes the claim hard?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Last 12 months' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Need claim filed' }))
+    fireEvent.click(screen.getByRole('button', { name: /Check My Proceeds Path/i }))
+
+    expect(screen.getByLabelText('Step 4 of 4')).toBeInTheDocument()
+    expect(screen.getByText('Proceeds review ready — finish below so we can check the address.')).toBeInTheDocument()
   })
 
   it('splits the general quiz timeline and condition into separate steps', () => {

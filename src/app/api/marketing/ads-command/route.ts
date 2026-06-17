@@ -1057,6 +1057,14 @@ function conditionLabel(value: string): string {
   if (value === 'needs-work') return 'Needs work'
   if (value === 'major-repair') return 'Major repairs'
   if (value === 'vacant') return 'Vacant'
+  if (value === 'redeem-payoff') return 'Need payoff amount'
+  if (value === 'redeem-title') return 'Need title help'
+  if (value === 'redeem-cash') return 'Need cash to redeem'
+  if (value === 'redeem-sell') return 'Want to sell instead'
+  if (value === 'proceeds-claim') return 'Need claim filed'
+  if (value === 'proceeds-heirs') return 'Multiple heirs/owners'
+  if (value === 'proceeds-liens') return 'Lien/title questions'
+  if (value === 'proceeds-cash-now') return 'Want cash now'
   return displayText(value, 'Not captured')
 }
 

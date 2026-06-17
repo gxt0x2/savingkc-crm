@@ -14,6 +14,19 @@ describe('ppc campaign registry', () => {
     })
   })
 
+  it('maps the new tax-adjacent landing pages to their campaigns', () => {
+    expect(ppcCampaignForPageLocation('https://savingkc.com/ppc-redemption?gclid=click')).toMatchObject({
+      name: 'Search - Redemption',
+      pagePath: '/ppc-redemption',
+      pageVariant: 'ppc_redemption',
+    })
+    expect(ppcCampaignForPageLocation('https://savingkc.com/ppc-excess-proceeds?gclid=click')).toMatchObject({
+      name: 'Search - Excess Proceeds',
+      pagePath: '/ppc-excess-proceeds',
+      pageVariant: 'ppc_excess_proceeds',
+    })
+  })
+
   it('maps phone-only calls to their campaign', () => {
     expect(ppcCampaignForPhone('+18166086648')).toMatchObject({
       name: 'Search - Property Tax',

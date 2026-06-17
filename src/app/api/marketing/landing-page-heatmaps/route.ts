@@ -25,7 +25,13 @@ function parsePositiveInt(value: string | null, fallback: number, min: number, m
 }
 
 function pageFilter(value: string | null): string {
-  if (value === '/ppc' || value === '/ppc-tax' || value === 'deals') return value
+  if (
+    value === '/ppc' ||
+    value === '/ppc-tax' ||
+    value === '/ppc-redemption' ||
+    value === '/ppc-excess-proceeds' ||
+    value === 'deals'
+  ) return value
   return 'all'
 }
 

@@ -92,4 +92,45 @@ describe('PPC lead intelligence promotion', () => {
       state: 'MO',
     })
   })
+
+  it('records redemption and excess-proceeds qualifiers without overwriting physical condition', () => {
+    const redemptionManifest = buildManifest({
+      firstName: 'Redeem',
+      source: 'ppc-landing',
+      station: 'new',
+      priority: 'warm',
+    })
+    const redemption = applyPpcLeadIntelligenceToManifest(redemptionManifest, {
+      source: 'ppc_form_submit',
+      formStatus: 'submitted',
+      situation: 'redemption-window',
+      timeline: 'asap',
+      condition: 'redeem-title',
+      auctionStatus: 'yes',
+    })
+
+    expect(redemption.sellerSituation).toContain('Tax-sale redemption window')
+    expect(redemptionManifest.situation.type).toContain('tax_sale_redemption')
+    expect(redemptionManifest.situation.motivation?.signals).toContain('Needs title help during redemption')
+    expect(redemptionManifest.property.condition?.overall).toBeUndefined()
+
+    const proceedsManifest = buildManifest({
+      firstName: 'Proceeds',
+      source: 'ppc-landing',
+      station: 'new',
+      priority: 'warm',
+    })
+    applyPpcLeadIntelligenceToManifest(proceedsManifest, {
+      source: 'ppc_form_submit',
+      formStatus: 'submitted',
+      situation: 'excess-proceeds',
+      timeline: '60-days',
+      condition: 'proceeds-heirs',
+      auctionStatus: 'yes',
+    })
+
+    expect(proceedsManifest.situation.type).toContain('excess_proceeds')
+    expect(proceedsManifest.situation.motivation?.signals).toContain('Multiple heirs or owners involved')
+    expect(proceedsManifest.property.condition?.overall).toBeUndefined()
+  })
 })
