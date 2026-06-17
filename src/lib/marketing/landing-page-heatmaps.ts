@@ -204,6 +204,8 @@ function pageFrom(row: LandingHeatmapEventRow): { key: string; label: string } {
   const path = pathnameFrom(row.page_path)
     || pathnameFrom(text(payload.page_path) || text(payload.pagePath) || null)
     || pathnameFrom(row.page_location)
+  if (path.startsWith('/ppc-excess-proceeds')) return { key: '/ppc-excess-proceeds', label: 'PPC Excess Proceeds' }
+  if (path.startsWith('/ppc-redemption')) return { key: '/ppc-redemption', label: 'PPC Redemption' }
   if (path.startsWith('/ppc-tax')) return { key: '/ppc-tax', label: 'PPC Tax' }
   if (path.startsWith('/ppc')) return { key: '/ppc', label: 'PPC' }
   if (path.startsWith('/deals') || path.startsWith('/deal-pages')) return { key: '/deals', label: 'Deal Pages' }

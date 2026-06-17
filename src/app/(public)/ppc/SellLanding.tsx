@@ -8,16 +8,34 @@ import { getPpcSessionContext } from '@/lib/ppc/tracking-client'
 import { buildGoogleAdsLeadsUserData } from '@/lib/ppc/browser-enhanced-conversions'
 import { AddressAutocomplete } from './AddressAutocomplete'
 
+type LandingVariant = 'general' | 'tax' | 'redemption' | 'excess-proceeds'
+
 type Situation =
   | 'tax-delinquent'
   | 'inherited'
   | 'tired-landlord'
   | 'condition'
   | 'life-event'
+  | 'redemption-window'
+  | 'redemption-not-sure'
+  | 'excess-proceeds'
+  | 'excess-not-sure'
   | 'other'
 
 type Timeline = 'asap' | '60-days' | 'flexible' | 'exploring'
-type Condition = 'good' | 'needs-work' | 'major-repair' | 'vacant'
+type Condition =
+  | 'good'
+  | 'needs-work'
+  | 'major-repair'
+  | 'vacant'
+  | 'redeem-payoff'
+  | 'redeem-title'
+  | 'redeem-cash'
+  | 'redeem-sell'
+  | 'proceeds-claim'
+  | 'proceeds-heirs'
+  | 'proceeds-liens'
+  | 'proceeds-cash-now'
 type AuctionStatus = 'yes' | 'no' | 'not-sure'
 type FormStep = 1 | 2 | 3 | 4
 
@@ -72,11 +90,93 @@ const AUCTION_TILES: { value: AuctionStatus; icon: string; label: string }[] = [
   { value: 'not-sure', icon: 'help', label: 'Not sure' },
 ]
 
+type RadioTile<T extends string> = {
+  value: T
+  icon?: string
+  label: string
+}
+
+type DecisionRowContent = {
+  tone: 'brand' | 'amber' | 'green'
+  icon: string
+  stage: string
+  title: string
+  body: string
+  ifLabel: string
+  ifValue: string
+  thenLabel: string
+  thenValue: string
+  cta: string
+}
+
+type TestimonialContent = {
+  initials: string
+  name: string
+  meta: string
+  quote: string
+  result?: string
+}
+
+type SpecializedLandingContent = {
+  rootClass: string
+  navJumpLabel: string
+  heroEyebrow: string
+  heroTitle: string
+  heroAccent: string
+  heroSummary: string
+  heroBullets: Array<{ strong: string; muted?: string }>
+  toolIcon: string
+  toolEyebrow: string
+  toolTitle: string
+  toolSub: string
+  step1Question: string
+  situationTiles: Array<RadioTile<Situation>>
+  auctionQuestion: string
+  timelineQuestion: string
+  timelineTiles: Array<RadioTile<Timeline>>
+  conditionQuestion: string
+  conditionTiles: Array<RadioTile<Condition>>
+  nextOfferLabel: string
+  readyText: string
+  midCtaTitle: string
+  midCtaAccent: string
+  midCtaBody: string
+  midCtaLabel: string
+  midStats: Array<{ number: string; label: string }>
+  timelineEyebrow: string
+  timelineTitle: string
+  timelineAccent: string
+  timelineSub: string
+  timelineSteps: Array<[string, string, string, string]>
+  decisionEyebrow: string
+  decisionTitle: string
+  decisionAccent: string
+  decisionSub: string
+  decisionTop: string
+  decisionRows: DecisionRowContent[]
+  guaranteeTitle: string
+  guaranteeAccent: string
+  guaranteeBody: string
+  guaranteeChecks: string[]
+  teamBody: string
+  teamProof: string[]
+  ernestBody: string
+  caseyBody: string
+  testimonials: TestimonialContent[]
+  reviewsSub: string
+  finalTitlePrefix: string
+  finalAccent: string
+  finalTitleSuffix: string
+  finalBody: string
+  finalCtaLabel: string
+  faqs: Array<{ q: string; a: string }>
+}
+
 type SellLandingProps = {
   phoneDisplay: string
   phoneTel: string
   showBookingCta?: boolean
-  variant?: 'general' | 'tax'
+  variant?: LandingVariant
 }
 
 type YouTubePlayer = {
@@ -147,8 +247,11 @@ function stableEventId(...parts: string[]): string {
   return parts.map(slugifyId).filter(Boolean).join('__')
 }
 
-function pageVariantKey(variant: SellLandingProps['variant']): 'ppc_tax' | 'ppc_general' {
-  return variant === 'tax' ? 'ppc_tax' : 'ppc_general'
+function pageVariantKey(variant: SellLandingProps['variant']): 'ppc_tax' | 'ppc_general' | 'ppc_redemption' | 'ppc_excess_proceeds' {
+  if (variant === 'tax') return 'ppc_tax'
+  if (variant === 'redemption') return 'ppc_redemption'
+  if (variant === 'excess-proceeds') return 'ppc_excess_proceeds'
+  return 'ppc_general'
 }
 
 function sectionFromClickLocation(clickLocation: string): string {
@@ -162,8 +265,8 @@ function sectionFromClickLocation(clickLocation: string): string {
   return clickLocation.replace(/_/g, '-')
 }
 
-function navLabelForTarget(target: string, isTaxLanding: boolean): string {
-  const labels: Record<string, string> = isTaxLanding
+function navLabelForTarget(target: string, isSpecializedLanding: boolean): string {
+  const labels: Record<string, string> = isSpecializedLanding
     ? {
       quiz: 'Start',
       timeline: 'Steps',
@@ -183,17 +286,20 @@ function navLabelForTarget(target: string, isTaxLanding: boolean): string {
   return labels[target] || target.replace(/-/g, ' ')
 }
 
-function initialQuizState(): QuizState {
+function initialQuizState(variant: LandingVariant): QuizState {
+  if (variant === 'redemption') return { ...EMPTY_STATE, situation: 'redemption-window' }
+  if (variant === 'excess-proceeds') return { ...EMPTY_STATE, situation: 'excess-proceeds' }
   return { ...EMPTY_STATE, situation: 'tax-delinquent' }
 }
 
 export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, variant = 'general' }: SellLandingProps) {
-  const isTaxLanding = variant === 'tax'
+  const specialized = variant === 'general' ? null : SPECIALIZED_LANDING_CONTENT[variant]
+  const isSpecializedLanding = Boolean(specialized)
   const variantKey = pageVariantKey(variant)
   const totalSteps = 4
   const finalStep = 4
   const [step, setStep] = useState<FormStep>(1)
-  const [state, setState] = useState<QuizState>(() => initialQuizState())
+  const [state, setState] = useState<QuizState>(() => initialQuizState(variant))
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [bookingOpen, setBookingOpen] = useState(false)
@@ -328,7 +434,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return
 
-    const sectionIds = isTaxLanding
+    const sectionIds = isSpecializedLanding
       ? ['quiz', 'timeline', 'stages', 'team', 'video-testimonials', 'reviews', 'faq']
       : ['quiz', 'how', 'problems', 'about', 'video-testimonials', 'reviews', 'faq']
     const sections = sectionIds
@@ -355,7 +461,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
 
     sections.forEach((section) => observer.observe(section))
     return () => observer.disconnect()
-  }, [commonFunnelPayload, isTaxLanding])
+  }, [commonFunnelPayload, isSpecializedLanding])
 
   useEffect(() => {
     if (submitted || step !== finalStep) return
@@ -589,7 +695,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
       postPartial(1, { situation: state.situation })
     }
     if (toStep === 3) {
-      if (isTaxLanding) {
+      if (isSpecializedLanding) {
         if (!state.auctionStatus) {
           trackFormError('Answer this question to continue.', 'auctionStatus', 2)
           return
@@ -608,7 +714,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     }
     if (toStep === 4) {
       const qualificationStep = 3
-      if (isTaxLanding) {
+      if (isSpecializedLanding) {
         if (!validateTimelineAndCondition(qualificationStep)) return
       } else {
         if (!validateTimeline(2)) return
@@ -767,7 +873,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     }
     if (key === 'timeline') {
       firePpcTrackingEvent('timeline_selected', {
-        form_step: isTaxLanding ? 3 : 2,
+        form_step: isSpecializedLanding ? 3 : 2,
         situation: state.situation || undefined,
         timeline: value,
       })
@@ -804,7 +910,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     })
   }
   const trackNavClick = (id: string, clickLocation: string) => {
-    const navLabel = navLabelForTarget(id, isTaxLanding)
+    const navLabel = navLabelForTarget(id, isSpecializedLanding)
     firePpcTrackingEvent('nav_click', {
       ...commonFunnelPayload(),
       nav_id: stableEventId(variantKey, 'nav', clickLocation, id),
@@ -853,11 +959,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
       destination: `tel:${phoneTel}`,
     })
   }
-  const faqs = isTaxLanding ? TAX_FAQS : FAQS
-  const isAuctionStep = isTaxLanding && step === 2
-  const isTimelineStep = isTaxLanding ? step === 3 : step === 2
-  const isConditionStep = !isTaxLanding && step === 3
-  const timelineNextStep: FormStep = isTaxLanding ? 4 : 3
+  const faqs = specialized?.faqs ?? FAQS
+  const isAuctionStep = isSpecializedLanding && step === 2
+  const isTimelineStep = isSpecializedLanding ? step === 3 : step === 2
+  const isConditionStep = !isSpecializedLanding && step === 3
+  const timelineNextStep: FormStep = isSpecializedLanding ? 4 : 3
   const stepLabel = step === finalStep
     ? '15 seconds to finish'
     : isAuctionStep
@@ -869,7 +975,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         : '30 seconds'
 
   return (
-    <div className={`skc-sell ${isTaxLanding ? 'tax-landing' : ''}`}>
+    <div className={`skc-sell ${isSpecializedLanding ? `tax-landing ${specialized?.rootClass ?? ''}` : ''}`}>
       {/* ============ TOP BAR ============ */}
       <div className="topbar">
         <div className="container topbar-inner">
@@ -878,7 +984,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             <img src="/skc-logo.png" alt="Saving KC Homebuyers" className="topbar-logo" width={489} height={141} />
           </a>
           <nav className="nav-links" aria-label="primary">
-            {isTaxLanding ? (
+            {isSpecializedLanding ? (
               <>
                 <a href="#timeline" onClick={scrollToId('timeline')}>Steps</a>
                 <a href="#stages" onClick={scrollToId('stages')}>Issues</a>
@@ -909,7 +1015,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 className="nav-jump visible"
                 onClick={scrollToId('quiz')}
               >
-                {isTaxLanding ? 'Start Fresh' : 'Get My Offer'}
+                {specialized?.navJumpLabel ?? 'Get My Offer'}
                 <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
               </a>
             )}
@@ -926,7 +1032,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         </div>
         <div className={`mobile-menu ${mobileMenuOpen ? 'open' : ''}`}>
           <div className="mobile-menu-inner">
-            {isTaxLanding ? (
+            {isSpecializedLanding ? (
               <>
                 <a href="#timeline" onClick={scrollToId('timeline')}>Steps</a>
                 <a href="#stages" onClick={scrollToId('stages')}>Issues</a>
@@ -959,16 +1065,16 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
           <div className="hero-grid">
             <div className="hero-copy">
               <div className="hero-eyebrow">
-                <span className="dot"></span> {isTaxLanding ? 'Tax-delinquent specialists · KC metro' : 'Kansas City • MO + KS'}
+                <span className="dot"></span> {specialized?.heroEyebrow ?? 'Kansas City • MO + KS'}
               </div>
-              {isTaxLanding ? (
+              {specialized ? (
                 <>
-                  <h1>Behind on property taxes <span className="accent">&amp; want to sell?</span></h1>
+                  <h1>{specialized.heroTitle} <span className="accent">{specialized.heroAccent}</span></h1>
                   <p className="tax-hero-summary">
-                    Back taxes, penalties, county deadlines, and letters you do not want to open can make the house feel like a clock is running. We help you see the real number, protect what equity is left, and move without repairs, agents, or public listing pressure.
+                    {specialized.heroSummary}
                   </p>
                   <div className="fresh-start">
-                    <span className="fresh-start-icon material-symbols-outlined" aria-hidden>wb_sunny</span>
+                    <span className="fresh-start-icon material-symbols-outlined" aria-hidden>{specialized.toolIcon}</span>
                     <span className="fresh-start-text">
                       The <span className="em">fresh start</span>{' '}you&apos;ve been waiting for.
                     </span>
@@ -991,10 +1097,20 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               )}
 
               <ul className="hero-bullets">
-                <li><span className="check">✓</span><span><strong>$0 due before you sell.</strong></span></li>
-                <li><span className="check">✓</span><span><strong>100% private.</strong> <span className="muted-inline">No yard signs. No open houses.</span></span></li>
-                <li><span className="check">✓</span><span><strong>Close in 7-60 days</strong> <span className="muted-inline">- you pick the day.</span></span></li>
-                <li><span className="check">✓</span><span><strong>Back taxes paid at closing.</strong></span></li>
+                {(specialized?.heroBullets ?? [
+                  { strong: '$0 due before you sell.' },
+                  { strong: '100% private.', muted: 'No yard signs. No open houses.' },
+                  { strong: 'Close in 7-60 days', muted: '- you pick the day.' },
+                  { strong: 'Back taxes paid at closing.' },
+                ]).map((item) => (
+                  <li key={`${item.strong}-${item.muted ?? ''}`}>
+                    <span className="check">✓</span>
+                    <span>
+                      <strong>{item.strong}</strong>
+                      {item.muted && <span className="muted-inline"> {item.muted}</span>}
+                    </span>
+                  </li>
+                ))}
               </ul>
 
               <div className="hero-trust-row">
@@ -1011,14 +1127,12 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             <div className="hero-form">
             <div className="tool-card" ref={toolCardRef}>
               <span className="tool-eyebrow">
-                <span className="material-symbols-outlined" aria-hidden>{isTaxLanding ? 'wb_sunny' : 'bolt'}</span>
-                {isTaxLanding ? 'Your fresh start starts here' : 'Start here'}
+                <span className="material-symbols-outlined" aria-hidden>{specialized?.toolIcon ?? 'bolt'}</span>
+                {specialized?.toolEyebrow ?? 'Start here'}
               </span>
-              <h2>{isTaxLanding ? 'Get My Cash Offer In 1 hour.' : 'Get Your Cash Offer in 1 hour.'}</h2>
+              <h2>{specialized?.toolTitle ?? 'Get Your Cash Offer in 1 hour.'}</h2>
               <p className="tool-sub">
-                {isTaxLanding
-                  ? "Four quick questions. Answer or don't."
-                  : 'Get a cash-offer range based on your property location, condition, and timeline in less than 1 hour.'}
+                {specialized?.toolSub ?? 'Get a cash-offer range based on your property location, condition, and timeline in less than 1 hour.'}
               </p>
 
               <div className="step-indicator">
@@ -1056,26 +1170,21 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 <div style={{ marginTop: 18 }}>
                   <div className="form-field form-field-prominent">
                     <span className="field-label">
-                      {isTaxLanding ? 'Are you behind on property taxes?' : "What's your situation?"}
+                      {specialized?.step1Question ?? "What's your situation?"}
                     </span>
-                    {isTaxLanding ? (
-                      <div className="radio-group yesno">
-                        <button
-                          type="button"
-                          className={`radio-tile ${state.situation === 'tax-delinquent' ? 'selected' : ''}`}
-                          onClick={() => select('situation', 'tax-delinquent')}
-                        >
-                          <span className="material-symbols-outlined" aria-hidden>warning</span>
-                          Yes
-                        </button>
-                        <button
-                          type="button"
-                          className={`radio-tile ${state.situation === 'other' ? 'selected' : ''}`}
-                          onClick={() => select('situation', 'other')}
-                        >
-                          <span className="material-symbols-outlined" aria-hidden>check_circle</span>
-                          No / Not sure
-                        </button>
+                    {specialized ? (
+                      <div className={`radio-group ${specialized.situationTiles.length === 2 ? 'yesno' : 'three-col'}`}>
+                        {specialized.situationTiles.map(({ value, icon, label }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`radio-tile ${state.situation === value ? 'selected' : ''}`}
+                            onClick={() => select('situation', value)}
+                          >
+                            {icon && <span className="material-symbols-outlined" aria-hidden>{icon}</span>}
+                            {label}
+                          </button>
+                        ))}
                       </div>
                     ) : (
                       <div className="radio-group three-col">
@@ -1108,7 +1217,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               ) : isAuctionStep ? (
                 <div style={{ marginTop: 18 }}>
                   <div className="form-field form-field-prominent">
-                    <span className="field-label">Has your home been sold at auction?</span>
+                    <span className="field-label">{specialized?.auctionQuestion ?? 'Has your home been sold at auction?'}</span>
                     <div className="radio-group three-col">
                       {AUCTION_TILES.map(({ value, icon, label }) => (
                         <button
@@ -1131,10 +1240,10 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                 </div>
               ) : isTimelineStep ? (
                 <div style={{ marginTop: 18 }}>
-                  <div className={`form-field ${!isTaxLanding ? 'form-field-prominent' : ''}`}>
-                    <label>{isTaxLanding ? 'How soon would you like this behind you?' : 'How soon do you need to sell?'}</label>
-                    <div className={`radio-group ${!isTaxLanding ? 'prominent-choices' : ''}`}>
-                      {TIMELINE_TILES.map(({ value, label }) => (
+                  <div className={`form-field ${!isSpecializedLanding ? 'form-field-prominent' : ''}`}>
+                    <label>{specialized?.timelineQuestion ?? 'How soon do you need to sell?'}</label>
+                    <div className={`radio-group ${!isSpecializedLanding ? 'prominent-choices' : ''}`}>
+                      {(specialized?.timelineTiles ?? TIMELINE_TILES).map(({ value, label }) => (
                         <button
                           key={value}
                           type="button"
@@ -1146,18 +1255,18 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                       ))}
                     </div>
                   </div>
-                  {isTaxLanding && (
+                  {isSpecializedLanding && (
                     <div className="form-field">
-                      <label>What shape is the property in?</label>
+                      <label>{specialized?.conditionQuestion ?? 'What shape is the property in?'}</label>
                       <div className="radio-group">
-                        {CONDITION_TILES.map(({ value, icon, label }) => (
+                        {(specialized?.conditionTiles ?? CONDITION_TILES).map(({ value, icon, label }) => (
                           <button
                             key={value}
                             type="button"
                             className={`radio-tile ${state.condition === value ? 'selected' : ''}`}
                             onClick={() => select('condition', value)}
                           >
-                            <span className="material-symbols-outlined" aria-hidden>{icon}</span>
+                            {icon && <span className="material-symbols-outlined" aria-hidden>{icon}</span>}
                             {label}
                           </button>
                         ))}
@@ -1166,7 +1275,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   )}
                   {error && <p style={{ color: 'var(--brand)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
                   <button type="button" className="btn-continue" onClick={() => advance(timelineNextStep)}>
-                    <span className="btn-label">{isTaxLanding ? 'See My Fresh-Start Number' : 'Next'}</span>
+                    <span className="btn-label">{specialized?.nextOfferLabel ?? 'Next'}</span>
                     <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                   </button>
                 </div>
@@ -1214,7 +1323,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                     <span className="material-symbols-outlined" style={{ color: 'var(--green)', fontSize: 18, fontVariationSettings: "'FILL' 1" }} aria-hidden>
                       check_circle
                     </span>
-                    {isTaxLanding ? 'Fresh-start number ready — finish below to see it.' : 'Cash-offer range ready — finish below to see it.'}
+                    {specialized?.readyText ?? 'Cash-offer range ready — finish below to see it.'}
                   </div>
                   <div className="form-field">
                     <label htmlFor="address">Property address</label>
@@ -1291,12 +1400,12 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
 
       <TaxTrustStrip />
 
-      {isTaxLanding ? (
+      {specialized ? (
         <>
-          <TaxFreshStartTimeline />
-          <TaxDecisionRows onRowClick={handleDecisionRowClick} />
-          <TaxGuarantee />
-          <TaxTeamSection />
+          <TaxFreshStartTimeline content={specialized} />
+          <TaxDecisionRows content={specialized} onRowClick={handleDecisionRowClick} />
+          <TaxGuarantee content={specialized} />
+          <TaxTeamSection content={specialized} />
         </>
       ) : (
         <>
@@ -1313,13 +1422,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
           <div className="mid-cta">
             <div className="mid-cta-content">
               <h2>
-                {isTaxLanding ? 'Every month you wait,' : 'Every month you wait, this gets'}{' '}
-                <span className="accent">{isTaxLanding ? 'the math gets worse.' : 'harder, not cheaper.'}</span>
+                {specialized?.midCtaTitle ?? 'Every month you wait, this gets'}{' '}
+                <span className="accent">{specialized?.midCtaAccent ?? 'harder, not cheaper.'}</span>
               </h2>
               <p>
-                {isTaxLanding
-                  ? 'Interest compounds. Penalties stack. Auction dates lock. The number you can walk away with this week can be smaller next month. Get your real number now.'
-                  : 'Taxes grow. Repairs get worse. Empty houses get damaged. Bad tenants can cost more each month. Get a clear number today, then decide what is best for you.'}
+                {specialized?.midCtaBody ?? 'Taxes grow. Repairs get worse. Empty houses get damaged. Bad tenants can cost more each month. Get a clear number today, then decide what is best for you.'}
               </p>
               <div className="mid-cta-actions">
                 <a
@@ -1327,10 +1434,10 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
                   className="btn-secondary"
                   onClick={(e) => {
                     e.preventDefault()
-                    handleQuizCta('mid_page_cta', isTaxLanding ? 'Start My Fresh Start' : 'Get My Number')
+                    handleQuizCta('mid_page_cta', specialized?.midCtaLabel ?? 'Get My Number')
                   }}
                 >
-                  {isTaxLanding ? 'Start My Fresh Start' : 'Get My Number'}
+                  {specialized?.midCtaLabel ?? 'Get My Number'}
                   <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
                 </a>
                 <a href={`tel:${phoneTel}`} className="btn-secondary" onClick={() => trackPhoneClick('mid_page_cta')}>
@@ -1340,18 +1447,15 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
               </div>
             </div>
             <div className="mid-cta-stat">
-              <div className="stat-box">
-                <div className="num">{isTaxLanding ? '$45K' : '$0'}</div>
-                <div className="label">
-                  {isTaxLanding ? 'Average walk-away cash' : 'Needed before you sell'}
+              {(specialized?.midStats ?? [
+                { number: '$0', label: 'Needed before you sell' },
+                { number: '7-60 days', label: 'You pick the closing day' },
+              ]).map((stat) => (
+                <div className="stat-box" key={`${stat.number}-${stat.label}`}>
+                  <div className="num">{stat.number}</div>
+                  <div className="label">{stat.label}</div>
                 </div>
-              </div>
-              <div className="stat-box">
-                <div className="num">{isTaxLanding ? '18 days' : '7-60 days'}</div>
-                <div className="label">
-                  {isTaxLanding ? 'Fastest pre-DLT close' : 'You pick the closing day'}
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1364,7 +1468,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         <div className="container">
           <div className="section-eyebrow">Real fresh starts</div>
           <h2 className="section-title">
-            {isTaxLanding ? (
+            {specialized ? (
               <>
                 100+ KC neighbors. <span className="accent-green">All the way home.</span>
               </>
@@ -1375,13 +1479,11 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
             )}
           </h2>
           <p className="section-sub">
-            {isTaxLanding
-              ? 'No actors. Real sellers, real tax pressure, real closing-table outcomes.'
-              : 'No actors. Real sellers, real house trouble, real closing-table outcomes.'}
+            {specialized?.reviewsSub ?? 'No actors. Real sellers, real house trouble, real closing-table outcomes.'}
           </p>
 
           <div className="testimonials featured-testimonials">
-            {(isTaxLanding ? TAX_TESTIMONIALS : TESTIMONIALS).map((testimonial) => (
+            {(specialized?.testimonials ?? TESTIMONIALS).map((testimonial) => (
               <Testimonial key={`${testimonial.initials}-${testimonial.name}`} {...testimonial} />
             ))}
           </div>
@@ -1432,26 +1534,24 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         <div className="container">
           <div className="final-cta">
             <h2>
-              {isTaxLanding ? 'Your ' : 'Stop wondering. '}
+              {specialized?.finalTitlePrefix ?? 'Stop wondering. '}
               <span className="accent">
-                {isTaxLanding ? 'fresh start' : 'Get your cash offer in 1 hour.'}
+                {specialized?.finalAccent ?? 'Get your cash offer in 1 hour.'}
               </span>
-              {isTaxLanding ? ' is one form away.' : ''}
+              {specialized?.finalTitleSuffix ?? ''}
             </h2>
             <p>
-              {isTaxLanding
-                ? '60 seconds. Four questions. Cash offer in an hour. Closing timeline built around title and your situation.'
-                : 'Tell us the address and what is going on. We will give you a real number. You can say yes or no.'}
+              {specialized?.finalBody ?? 'Tell us the address and what is going on. We will give you a real number. You can say yes or no.'}
             </p>
             <a
               href="#quiz"
               className="btn-secondary lg"
               onClick={(e) => {
                 e.preventDefault()
-                handleQuizCta('final_cta', isTaxLanding ? 'Start My Fresh Start' : 'Get My Cash Offer')
+                handleQuizCta('final_cta', specialized?.finalCtaLabel ?? 'Get My Cash Offer')
               }}
             >
-              {isTaxLanding ? 'Start My Fresh Start' : 'Get My Cash Offer'}
+              {specialized?.finalCtaLabel ?? 'Get My Cash Offer'}
               <span className="material-symbols-outlined" aria-hidden>arrow_forward</span>
             </a>
             <div className="micro">
@@ -2059,23 +2159,19 @@ function TaxTrustStrip() {
   )
 }
 
-function TaxFreshStartTimeline() {
+function TaxFreshStartTimeline({ content }: { content: SpecializedLandingContent }) {
   return (
     <section className="block tax-timeline-section" id="timeline">
       <div className="container">
-        <div className="section-eyebrow">Fresh start in 60 minutes</div>
+        <div className="section-eyebrow">{content.timelineEyebrow}</div>
         <h2 className="section-title">
-          Form today. <span className="accent-green">Offer today.</span>
+          {content.timelineTitle} <span className="accent-green">{content.timelineAccent}</span>
         </h2>
-        <p className="section-sub">Most &quot;we buy houses&quot; promises take weeks. Yours starts with a real number in the next hour.</p>
+        <p className="section-sub">{content.timelineSub}</p>
 
         <div className="tax-timeline">
           <div className="tax-timeline-rail" />
-          {[
-            ['1', 'Today', 'Tell us your story', '60 seconds. Four questions. We start the file right away.'],
-            ['2', 'Today', 'Cash offer in hand', 'We check the tax pressure, title path, and walk you through the number.'],
-            ['3', 'Closing day', 'Your fresh start', 'Check in hand. Back taxes paid. Title closed. You walk away clean.'],
-          ].map(([day, label, title, body], index) => (
+          {content.timelineSteps.map(([day, label, title, body], index) => (
             <div className={`tax-timeline-step step-${index + 1}`} key={day}>
               <div className="tax-day">
                 <span className="day-num">{day}</span>
@@ -2091,61 +2187,28 @@ function TaxFreshStartTimeline() {
   )
 }
 
-function TaxDecisionRows({ onRowClick }: { onRowClick: (row: DecisionRowClick) => void }) {
-  const rows = [
-    {
-      tone: 'brand',
-      icon: 'gavel',
-      stage: 'Pre-auction',
-      title: '3+ years behind',
-      body: 'You still own the house, but the county clock is getting louder.',
-      ifLabel: 'Best move',
-      ifValue: "Sell before the auction locks in someone else's timeline.",
-      thenLabel: 'You walk away with',
-      thenValue: <>Cash for the house · <span className="em">fresh start</span> in 14 days</>,
-      cta: 'Start',
-    },
-    {
-      tone: 'amber',
-      icon: 'history',
-      stage: 'Post-auction',
-      title: 'Redemption window',
-      body: 'The sale happened, but the deadline may not be closed yet.',
-      ifLabel: 'Best move',
-      ifValue: 'Move before the redemption period disappears.',
-      thenLabel: 'You walk away with',
-      thenValue: <>Cash before the deadline closes</>,
-      cta: 'Start',
-    },
-    {
-      tone: 'green',
-      icon: 'savings',
-      stage: 'Excess proceeds',
-      title: 'Property already sold',
-      body: 'The property may be gone, but the county may still be holding money.',
-      ifLabel: 'Best move',
-      ifValue: 'Check whether surplus funds are sitting at the county.',
-      thenLabel: 'The county may owe you',
-      thenValue: <>Excess proceeds — <span className="em">found money</span></>,
-      cta: 'Check',
-    },
-  ]
-
+function TaxDecisionRows({
+  content,
+  onRowClick,
+}: {
+  content: SpecializedLandingContent
+  onRowClick: (row: DecisionRowClick) => void
+}) {
   return (
     <section className="block tax-decision-section" id="stages">
       <div className="container">
-        <div className="section-eyebrow">Where are you in this?</div>
+        <div className="section-eyebrow">{content.decisionEyebrow}</div>
         <h2 className="section-title">
-          Find your stage. <span className="accent-green">See your fresh start.</span>
+          {content.decisionTitle} <span className="accent-green">{content.decisionAccent}</span>
         </h2>
-        <p className="section-sub">Three stages. Three different deadlines. Tap the one that feels closest.</p>
+        <p className="section-sub">{content.decisionSub}</p>
 
         <div className="tax-decision-block">
           <div className="decision-top">
-            Whatever stage you&apos;re in, <strong>there&apos;s money on the table.</strong>
+            {content.decisionTop}
           </div>
           <div className="decision-rows">
-            {rows.map((row, index) => (
+            {content.decisionRows.map((row, index) => (
               <button
                 type="button"
                 className={`decision-row decision-card ${row.tone}`}
@@ -2202,7 +2265,7 @@ function TaxDecisionRows({ onRowClick }: { onRowClick: (row: DecisionRowClick) =
   )
 }
 
-function TaxTeamSection() {
+function TaxTeamSection({ content }: { content: SpecializedLandingContent }) {
   return (
     <section className="block tax-team-section" id="team">
       <div className="container">
@@ -2211,12 +2274,12 @@ function TaxTeamSection() {
             <div className="section-eyebrow">Who you&apos;ll talk to</div>
             <h2 className="section-title">Local KC people, not a call center.</h2>
             <p>
-              You&apos;ll talk with Ernest Dodson and Casey Davis from the Saving KC team. We know Jackson, Clay, Platte, Wyandotte, and Johnson County tax-sale timelines, and we keep the conversation private, direct, and pressure-free.
+              {content.teamBody}
             </p>
             <div className="tax-team-proof">
-              <span><strong>11+</strong> years in KC</span>
-              <span><strong>100+</strong> homeowners helped</span>
-              <span><strong>4.9</strong> Google rating</span>
+              {content.teamProof.map((proof) => (
+                <span key={proof}>{proof}</span>
+              ))}
             </div>
           </div>
           <div className="tax-team-cards" aria-label="Saving KC team">
@@ -2230,7 +2293,7 @@ function TaxTeamSection() {
                   <p className="tax-team-title">Lead House Hunter</p>
                 </div>
               </div>
-              <p>Walks through the tax pressure, the title path, and the number so you know exactly where you stand.</p>
+              <p>{content.ernestBody}</p>
             </article>
             <article className="tax-team-card">
               <div className="tax-team-card-head">
@@ -2242,7 +2305,7 @@ function TaxTeamSection() {
                   <p className="tax-team-title">Junior House Hunter</p>
                 </div>
               </div>
-              <p>Fast follow-up, clear next steps, and steady communication while the file moves toward closing.</p>
+              <p>{content.caseyBody}</p>
             </article>
           </div>
         </div>
@@ -2251,7 +2314,7 @@ function TaxTeamSection() {
   )
 }
 
-function TaxGuarantee() {
+function TaxGuarantee({ content }: { content: SpecializedLandingContent }) {
   return (
     <section className="block tax-guarantee-section">
       <div className="container">
@@ -2262,16 +2325,16 @@ function TaxGuarantee() {
           </div>
           <div className="guarantee-copy">
             <h2>
-              The <span className="accent-green">no-catch</span> promise.
+              {content.guaranteeTitle} <span className="accent-green">{content.guaranteeAccent}</span>
             </h2>
             <p>
-              The number we give you is the number you walk away with, minus payoffs and back taxes, every penny disclosed before you sign.
+              {content.guaranteeBody}
             </p>
           </div>
           <div className="guarantee-checks">
-            <span><span className="material-symbols-outlined" aria-hidden>check</span>No fees</span>
-            <span><span className="material-symbols-outlined" aria-hidden>check</span>No commissions</span>
-            <span><span className="material-symbols-outlined" aria-hidden>check</span>No obligation</span>
+            {content.guaranteeChecks.map((check) => (
+              <span key={check}><span className="material-symbols-outlined" aria-hidden>check</span>{check}</span>
+            ))}
           </div>
         </div>
       </div>
@@ -2313,13 +2376,7 @@ function Testimonial({
   )
 }
 
-const TESTIMONIALS: Array<{
-  initials: string
-  name: string
-  meta: string
-  quote: string
-  result?: string
-}> = [
+const TESTIMONIALS: TestimonialContent[] = [
   {
     initials: 'JK',
     name: 'Jerome K.',
@@ -2389,6 +2446,389 @@ const TAX_FAQS: { q: string; a: string }[] = [
     a: 'None. No agent commission, no seller closing costs from us, and no obligation. Any payoffs and back taxes are disclosed before you sign.',
   },
 ]
+
+const SPECIALIZED_LANDING_CONTENT: Record<Exclude<LandingVariant, 'general'>, SpecializedLandingContent> = {
+  tax: {
+    rootClass: 'tax-variant',
+    navJumpLabel: 'Start Fresh',
+    heroEyebrow: 'Tax-delinquent specialists · KC metro',
+    heroTitle: 'Behind on property taxes',
+    heroAccent: '& want to sell?',
+    heroSummary: 'Back taxes, penalties, county deadlines, and letters you do not want to open can make the house feel like a clock is running. We help you see the real number, protect what equity is left, and move without repairs, agents, or public listing pressure.',
+    heroBullets: [
+      { strong: '$0 due before you sell.' },
+      { strong: '100% private.', muted: 'No yard signs. No open houses.' },
+      { strong: 'Close in 7-60 days', muted: '- you pick the day.' },
+      { strong: 'Back taxes paid at closing.' },
+    ],
+    toolIcon: 'wb_sunny',
+    toolEyebrow: 'Your fresh start starts here',
+    toolTitle: 'Get My Cash Offer In 1 hour.',
+    toolSub: "Four quick questions. Answer or don't.",
+    step1Question: 'Are you behind on property taxes?',
+    situationTiles: [
+      { value: 'tax-delinquent', icon: 'warning', label: 'Yes' },
+      { value: 'other', icon: 'check_circle', label: 'No / Not sure' },
+    ],
+    auctionQuestion: 'Has your home been sold at auction?',
+    timelineQuestion: 'How soon would you like this behind you?',
+    timelineTiles: TIMELINE_TILES,
+    conditionQuestion: 'What shape is the property in?',
+    conditionTiles: CONDITION_TILES,
+    nextOfferLabel: 'See My Fresh-Start Number',
+    readyText: 'Fresh-start number ready — finish below to see it.',
+    midCtaTitle: 'Every month you wait,',
+    midCtaAccent: 'the math gets worse.',
+    midCtaBody: 'Interest compounds. Penalties stack. Auction dates lock. The number you can walk away with this week can be smaller next month. Get your real number now.',
+    midCtaLabel: 'Start My Fresh Start',
+    midStats: [
+      { number: '$45K', label: 'Average walk-away cash' },
+      { number: '18 days', label: 'Fastest pre-DLT close' },
+    ],
+    timelineEyebrow: 'Fresh start in 60 minutes',
+    timelineTitle: 'Form today.',
+    timelineAccent: 'Offer today.',
+    timelineSub: 'Most "we buy houses" promises take weeks. Yours starts with a real number in the next hour.',
+    timelineSteps: [
+      ['1', 'Today', 'Tell us your story', '60 seconds. Four questions. We start the file right away.'],
+      ['2', 'Today', 'Cash offer in hand', 'We check the tax pressure, title path, and walk you through the number.'],
+      ['3', 'Closing day', 'Your fresh start', 'Check in hand. Back taxes paid. Title closed. You walk away clean.'],
+    ],
+    decisionEyebrow: 'Where are you in this?',
+    decisionTitle: 'Find your stage.',
+    decisionAccent: 'See your fresh start.',
+    decisionSub: 'Three stages. Three different deadlines. Tap the one that feels closest.',
+    decisionTop: "Whatever stage you're in, there's money on the table.",
+    decisionRows: [
+      {
+        tone: 'brand',
+        icon: 'gavel',
+        stage: 'Pre-auction',
+        title: '3+ years behind',
+        body: 'You still own the house, but the county clock is getting louder.',
+        ifLabel: 'Best move',
+        ifValue: "Sell before the auction locks in someone else's timeline.",
+        thenLabel: 'You walk away with',
+        thenValue: 'Cash for the house · fresh start in 14 days',
+        cta: 'Start',
+      },
+      {
+        tone: 'amber',
+        icon: 'history',
+        stage: 'Post-auction',
+        title: 'Redemption window',
+        body: 'The sale happened, but the deadline may not be closed yet.',
+        ifLabel: 'Best move',
+        ifValue: 'Move before the redemption period disappears.',
+        thenLabel: 'You walk away with',
+        thenValue: 'Cash before the deadline closes',
+        cta: 'Start',
+      },
+      {
+        tone: 'green',
+        icon: 'savings',
+        stage: 'Excess proceeds',
+        title: 'Property already sold',
+        body: 'The property may be gone, but the county may still be holding money.',
+        ifLabel: 'Best move',
+        ifValue: 'Check whether surplus funds are sitting at the county.',
+        thenLabel: 'The county may owe you',
+        thenValue: 'Excess proceeds - found money',
+        cta: 'Check',
+      },
+    ],
+    guaranteeTitle: 'The',
+    guaranteeAccent: 'no-catch promise.',
+    guaranteeBody: 'The number we give you is the number you walk away with, minus payoffs and back taxes, every penny disclosed before you sign.',
+    guaranteeChecks: ['No fees', 'No commissions', 'No obligation'],
+    teamBody: 'You will talk with Ernest Dodson and Casey Davis from the Saving KC team. We know Jackson, Clay, Platte, Wyandotte, and Johnson County tax-sale timelines, and we keep the conversation private, direct, and pressure-free.',
+    teamProof: ['11+ years in KC', '100+ homeowners helped', '4.9 Google rating'],
+    ernestBody: 'Walks through the tax pressure, the title path, and the number so you know exactly where you stand.',
+    caseyBody: 'Fast follow-up, clear next steps, and steady communication while the file moves toward closing.',
+    testimonials: TAX_TESTIMONIALS,
+    reviewsSub: 'No actors. Real sellers, real tax pressure, real closing-table outcomes.',
+    finalTitlePrefix: 'Your ',
+    finalAccent: 'fresh start',
+    finalTitleSuffix: ' is one form away.',
+    finalBody: '60 seconds. Four questions. Cash offer in an hour. Closing timeline built around title and your situation.',
+    finalCtaLabel: 'Start My Fresh Start',
+    faqs: TAX_FAQS,
+  },
+  redemption: {
+    rootClass: 'redemption-variant',
+    navJumpLabel: 'Check My Window',
+    heroEyebrow: 'Redemption-window help · KC metro',
+    heroTitle: 'Tax sale happened?',
+    heroAccent: 'You may still have a move.',
+    heroSummary: 'A tax sale does not always mean the story is over. If the redemption window is still open, timing matters. We help you understand the deadline, the payoff path, and whether selling before the window closes protects more of your equity.',
+    heroBullets: [
+      { strong: 'Deadline-aware review.', muted: 'Missouri and Kansas timelines are different.' },
+      { strong: 'Private cash-offer option.', muted: 'No public listing or open houses.' },
+      { strong: 'Title and payoff path explained.', muted: 'Plain English, no pressure.' },
+      { strong: '$0 upfront to ask.' },
+    ],
+    toolIcon: 'timer',
+    toolEyebrow: 'Check the redemption path',
+    toolTitle: 'See Your Redemption Options In 1 hour.',
+    toolSub: 'Four quick questions. We start with the deadline, then the address.',
+    step1Question: 'Are you trying to redeem after a tax sale?',
+    situationTiles: [
+      { value: 'redemption-window', icon: 'timer', label: 'Yes, redemption window' },
+      { value: 'redemption-not-sure', icon: 'help', label: 'Not sure / need help' },
+    ],
+    auctionQuestion: 'Did the tax sale already happen?',
+    timelineQuestion: 'How close is the redemption deadline?',
+    timelineTiles: [
+      { value: 'asap', label: 'Under 30 days' },
+      { value: '60-days', label: '30-90 days' },
+      { value: 'flexible', label: 'More than 90 days' },
+      { value: 'exploring', label: 'I do not know' },
+    ],
+    conditionQuestion: 'What help do you need first?',
+    conditionTiles: [
+      { value: 'redeem-payoff', icon: 'request_quote', label: 'Need payoff amount' },
+      { value: 'redeem-title', icon: 'fact_check', label: 'Need title help' },
+      { value: 'redeem-cash', icon: 'savings', label: 'Need cash to redeem' },
+      { value: 'redeem-sell', icon: 'sell', label: 'Want to sell instead' },
+    ],
+    nextOfferLabel: 'Check My Redemption Path',
+    readyText: 'Redemption review ready — finish below so we can check the property.',
+    midCtaTitle: 'Every day matters when',
+    midCtaAccent: 'a redemption clock is running.',
+    midCtaBody: 'The deadline, payoff amount, title status, and county process decide your real options. Waiting can turn a fixable problem into a closed door.',
+    midCtaLabel: 'Check My Window',
+    midStats: [
+      { number: '1 hour', label: 'Initial option review' },
+      { number: '$0', label: 'Upfront to ask' },
+    ],
+    timelineEyebrow: 'Redemption path in 3 moves',
+    timelineTitle: 'Deadline first.',
+    timelineAccent: 'Options second.',
+    timelineSub: 'We start with what can still be done, then show the cleanest route before time gets tighter.',
+    timelineSteps: [
+      ['1', 'Today', 'Tell us where it stands', 'Sale happened, deadline unknown, payoff unclear, or title confusing. Say what you know.'],
+      ['2', 'Today', 'We check the moving parts', 'We review the address, county path, tax pressure, title risk, and whether a sale still makes sense.'],
+      ['3', 'Your move', 'Redeem, sell, or walk away informed', 'You get a direct explanation and a cash-offer option if selling is the cleaner route.'],
+    ],
+    decisionEyebrow: 'Where are you stuck?',
+    decisionTitle: 'Pick the blocker.',
+    decisionAccent: 'We map the next move.',
+    decisionSub: 'Redemption problems usually come down to deadline, payoff, title, or cash.',
+    decisionTop: 'The sooner we know the deadline, the more options stay open.',
+    decisionRows: [
+      {
+        tone: 'brand',
+        icon: 'timer',
+        stage: 'Deadline',
+        title: 'I do not know how much time is left',
+        body: 'The tax sale happened and every letter feels urgent.',
+        ifLabel: 'First move',
+        ifValue: 'Identify the deadline and whether the window is still open.',
+        thenLabel: 'You get',
+        thenValue: 'A clear next-step plan before time runs out',
+        cta: 'Check',
+      },
+      {
+        tone: 'amber',
+        icon: 'request_quote',
+        stage: 'Payoff',
+        title: 'I do not know the real number',
+        body: 'Taxes, fees, interest, and sale costs can be hard to untangle.',
+        ifLabel: 'First move',
+        ifValue: 'Estimate the payoff path and compare it to selling as-is.',
+        thenLabel: 'You get',
+        thenValue: 'A better decision than guessing',
+        cta: 'Start',
+      },
+      {
+        tone: 'green',
+        icon: 'sell',
+        stage: 'Sell',
+        title: 'I may rather sell than redeem',
+        body: 'If the math does not work, selling can protect what is left.',
+        ifLabel: 'First move',
+        ifValue: 'Get a private cash-offer option before the window closes.',
+        thenLabel: 'You get',
+        thenValue: 'A way out without listing pressure',
+        cta: 'Show me',
+      },
+    ],
+    guaranteeTitle: 'The',
+    guaranteeAccent: 'deadline-aware promise.',
+    guaranteeBody: 'We will not pretend every redemption file is simple. We tell you what looks possible, what looks risky, and what we can actually do before you sign anything.',
+    guaranteeChecks: ['No upfront fee', 'No public listing', 'No obligation'],
+    teamBody: 'You will talk with Ernest Dodson and Casey Davis from the Saving KC team. We know KC tax-sale and title pressure, and we keep redemption conversations private, practical, and fast.',
+    teamProof: ['Local KC team', 'Deadline-first review', 'Private cash-offer option'],
+    ernestBody: 'Helps you understand the redemption deadline, payoff path, title risk, and whether selling solves the problem.',
+    caseyBody: 'Keeps follow-up moving so the file does not sit while the deadline gets closer.',
+    testimonials: TAX_TESTIMONIALS,
+    reviewsSub: 'Real sellers, real tax pressure, real deadline decisions.',
+    finalTitlePrefix: 'Your ',
+    finalAccent: 'redemption options',
+    finalTitleSuffix: ' start with one address.',
+    finalBody: '60 seconds. Four questions. We check the window, the address, and the cleanest path forward.',
+    finalCtaLabel: 'Check My Redemption Path',
+    faqs: [
+      {
+        q: 'What is a redemption period?',
+        a: 'It is the limited window after some tax sales where the owner may still have a path to redeem the property. The rules depend on the state, county, and sale type.',
+      },
+      {
+        q: 'Can I sell during redemption?',
+        a: 'Often there may still be options, but timing and title rules matter. The safest first step is checking the property and deadline quickly.',
+      },
+      {
+        q: 'Do I need the full payoff amount before I call?',
+        a: 'No. Tell us what you know. We can start with the address and help you understand what needs to be checked.',
+      },
+      {
+        q: 'What if I want to keep the house?',
+        a: 'That is fine. We can still help you understand the possible paths. A cash offer is only one option, not an obligation.',
+      },
+      {
+        q: 'Will this be private?',
+        a: 'Yes. No public listing, no open houses, and no pressure. You speak directly with our local team.',
+      },
+    ],
+  },
+  'excess-proceeds': {
+    rootClass: 'excess-proceeds-variant',
+    navJumpLabel: 'Check Proceeds',
+    heroEyebrow: 'Excess-proceeds help · KC metro',
+    heroTitle: 'County may be holding money',
+    heroAccent: 'after a tax sale.',
+    heroSummary: 'If a property sold at tax sale for more than the taxes owed, the surplus may belong to the former owner or rightful heirs. We help you check the address, understand the claim path, and decide whether you want help moving it forward.',
+    heroBullets: [
+      { strong: 'Check whether proceeds may exist.', muted: 'Start with the property address.' },
+      { strong: 'Heir and owner questions welcome.', muted: 'We keep it clear and private.' },
+      { strong: 'No upfront fee to ask.' },
+      { strong: 'Cash-now option if you want speed.' },
+    ],
+    toolIcon: 'savings',
+    toolEyebrow: 'Check for surplus funds',
+    toolTitle: 'See If Excess Proceeds May Be Available.',
+    toolSub: 'Four quick questions. We start with the sale status and the address.',
+    step1Question: 'Do you think there are excess proceeds?',
+    situationTiles: [
+      { value: 'excess-proceeds', icon: 'savings', label: 'Yes / I received notice' },
+      { value: 'excess-not-sure', icon: 'help', label: 'Not sure / check for me' },
+    ],
+    auctionQuestion: 'Has the property already sold at tax sale?',
+    timelineQuestion: 'When did the sale happen?',
+    timelineTiles: [
+      { value: 'asap', label: 'Under 30 days' },
+      { value: '60-days', label: 'Last 12 months' },
+      { value: 'flexible', label: 'More than 12 months' },
+      { value: 'exploring', label: 'I do not know' },
+    ],
+    conditionQuestion: 'What makes the claim hard?',
+    conditionTiles: [
+      { value: 'proceeds-claim', icon: 'assignment', label: 'Need claim filed' },
+      { value: 'proceeds-heirs', icon: 'groups', label: 'Multiple heirs/owners' },
+      { value: 'proceeds-liens', icon: 'account_balance', label: 'Lien or title questions' },
+      { value: 'proceeds-cash-now', icon: 'payments', label: 'Want cash now' },
+    ],
+    nextOfferLabel: 'Check My Proceeds Path',
+    readyText: 'Proceeds review ready — finish below so we can check the address.',
+    midCtaTitle: 'Surplus funds can disappear when',
+    midCtaAccent: 'deadlines get missed.',
+    midCtaBody: 'Counties do not always make the process easy. The right paperwork, owner proof, and timing can decide whether money gets claimed or left behind.',
+    midCtaLabel: 'Check Proceeds',
+    midStats: [
+      { number: '$0', label: 'Upfront to check' },
+      { number: '1 hour', label: 'Initial file review' },
+    ],
+    timelineEyebrow: 'Claim path in 3 moves',
+    timelineTitle: 'Find the file.',
+    timelineAccent: 'Protect the claim.',
+    timelineSub: 'Start with the address. Then we check whether the sale may have created surplus funds and what proof is likely needed.',
+    timelineSteps: [
+      ['1', 'Today', 'Tell us the address', 'Give us the property and what notice, letter, or sale detail you have.'],
+      ['2', 'Today', 'We check the sale path', 'We look for surplus indicators, owner/heir issues, liens, and claim deadlines.'],
+      ['3', 'Next step', 'Claim it or get a cash option', 'You decide whether to pursue the claim yourself or talk through a faster option.'],
+    ],
+    decisionEyebrow: 'What are you trying to solve?',
+    decisionTitle: 'Choose the claim issue.',
+    decisionAccent: 'We show the next step.',
+    decisionSub: 'Most excess-proceeds files need clarity on money, proof, heirs, or liens.',
+    decisionTop: 'The property may be gone, but the money may not be.',
+    decisionRows: [
+      {
+        tone: 'brand',
+        icon: 'savings',
+        stage: 'Money',
+        title: 'I think the county owes me money',
+        body: 'You got a letter, heard about surplus funds, or saw the sale price.',
+        ifLabel: 'First move',
+        ifValue: 'Check whether the sale looks like it created excess proceeds.',
+        thenLabel: 'You get',
+        thenValue: 'A clearer read on whether a claim is worth chasing',
+        cta: 'Check',
+      },
+      {
+        tone: 'amber',
+        icon: 'groups',
+        stage: 'Heirs',
+        title: 'There are multiple owners or heirs',
+        body: 'The right person may need to sign or prove their claim.',
+        ifLabel: 'First move',
+        ifValue: 'Map the owner/heir issue before paperwork goes sideways.',
+        thenLabel: 'You get',
+        thenValue: 'A cleaner claim path',
+        cta: 'Start',
+      },
+      {
+        tone: 'green',
+        icon: 'payments',
+        stage: 'Cash now',
+        title: 'I want a faster option',
+        body: 'Some people do not want to wait on a slow claim process.',
+        ifLabel: 'First move',
+        ifValue: 'Talk through whether a cash-now option makes sense.',
+        thenLabel: 'You get',
+        thenValue: 'Speed, certainty, and a private conversation',
+        cta: 'Show me',
+      },
+    ],
+    guaranteeTitle: 'The',
+    guaranteeAccent: 'clear-claim promise.',
+    guaranteeBody: 'We will tell you what we can see, what is still unknown, and what proof may be needed. No pressure, no public listing, and no fake guarantees.',
+    guaranteeChecks: ['No upfront fee', 'Private review', 'Plain-English next steps'],
+    teamBody: 'You will talk with Ernest Dodson and Casey Davis from the Saving KC team. We help owners and heirs understand tax-sale surplus questions without turning the process into a maze.',
+    teamProof: ['Local KC team', 'Owner/heir path review', 'Private proceeds check'],
+    ernestBody: 'Helps you understand the claim path, owner proof, lien issues, and whether a cash-now option makes sense.',
+    caseyBody: 'Keeps follow-up simple and gathers the details needed to keep the claim review moving.',
+    testimonials: TAX_TESTIMONIALS,
+    reviewsSub: 'Real sellers, real tax-sale pressure, real surplus conversations.',
+    finalTitlePrefix: 'Your ',
+    finalAccent: 'excess proceeds check',
+    finalTitleSuffix: ' starts with the address.',
+    finalBody: '60 seconds. Four questions. We check the sale status, address, and likely claim path.',
+    finalCtaLabel: 'Check My Proceeds',
+    faqs: [
+      {
+        q: 'What are excess proceeds?',
+        a: 'They are potential surplus funds left after a tax sale if the sale price was higher than the taxes, costs, and allowed payoffs.',
+      },
+      {
+        q: 'Who can claim the money?',
+        a: 'Usually the former owner or rightful claimant, but heirs, liens, and title issues can change the path. That is why the address and ownership story matter.',
+      },
+      {
+        q: 'Do I need paperwork before I call?',
+        a: 'No. A notice, letter, sale date, or even just the property address is enough to start the review.',
+      },
+      {
+        q: 'Can you guarantee funds are available?',
+        a: 'No. Nobody should guarantee that without checking the file. We can help you understand what looks possible and what still needs proof.',
+      },
+      {
+        q: 'Is this private?',
+        a: 'Yes. The conversation stays with our local team. We do not sell your information to a list.',
+      },
+    ],
+  },
+}
 
 const FAQS: { q: string; a: string }[] = [
   {

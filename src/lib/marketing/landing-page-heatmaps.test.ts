@@ -126,6 +126,8 @@ describe('landing page heatmap report', () => {
       rows: [
         row({ event_id: 'ppc', page_path: '/ppc', page_location: 'https://savingkc.com/ppc' }),
         row({ event_id: 'tax', page_path: '/ppc-tax', page_location: 'https://savingkc.com/ppc-tax' }),
+        row({ event_id: 'redemption', page_path: '/ppc-redemption', page_location: 'https://savingkc.com/ppc-redemption' }),
+        row({ event_id: 'excess', page_path: '/ppc-excess-proceeds', page_location: 'https://savingkc.com/ppc-excess-proceeds' }),
         row({ event_id: 'deal', page_path: '/deals/abc123', page_location: 'https://crm.savingkc.com/deals/abc123' }),
       ],
       days: 30,
@@ -137,6 +139,23 @@ describe('landing page heatmap report', () => {
     expect(report.pages).toHaveLength(1)
     expect(report.pages[0]?.pageKey).toBe('/deals')
     expect(report.pages[0]?.pageLabel).toBe('Deal Pages')
+  })
+
+  it('normalizes redemption and excess-proceeds PPC pages', () => {
+    const report = buildLandingPageHeatmapReport({
+      rows: [
+        row({ event_id: 'redemption', page_path: '/ppc-redemption', page_location: 'https://savingkc.com/ppc-redemption' }),
+        row({ event_id: 'excess', page_path: '/ppc-excess-proceeds', page_location: 'https://savingkc.com/ppc-excess-proceeds' }),
+      ],
+      days: 30,
+      since: '2026-06-01T00:00:00.000Z',
+      until: '2026-07-01T00:00:00.000Z',
+    })
+
+    expect(report.pages.map((page) => page.pageKey).sort()).toEqual([
+      '/ppc-excess-proceeds',
+      '/ppc-redemption',
+    ])
   })
 
   it('aggregates video progress milestones and max watch percentage', () => {

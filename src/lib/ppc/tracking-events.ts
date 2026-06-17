@@ -8,6 +8,10 @@ export const SITUATION_TO_TAG = {
   'tired-landlord': 'tired_landlord',
   condition: 'distressed_condition',
   'life-event': 'life_event',
+  'redemption-window': 'tax_sale_redemption',
+  'redemption-not-sure': 'redemption_help_needed',
+  'excess-proceeds': 'excess_proceeds',
+  'excess-not-sure': 'excess_proceeds_check',
   other: 'ppc_other',
 } as const
 
@@ -23,6 +27,14 @@ export const CONDITION_TO_OVERALL = {
   'needs-work': 'fair',
   'major-repair': 'poor',
   vacant: 'poor',
+  'redeem-payoff': null,
+  'redeem-title': null,
+  'redeem-cash': null,
+  'redeem-sell': null,
+  'proceeds-claim': null,
+  'proceeds-heirs': null,
+  'proceeds-liens': null,
+  'proceeds-cash-now': null,
 } as const
 
 export type PpcTrackingEventCategory = 'visit' | 'form' | 'phone' | 'call' | 'conversion' | 'error' | 'web'

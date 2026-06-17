@@ -58,10 +58,27 @@ const SituationSchema = z.enum([
   'tired-landlord',
   'condition',
   'life-event',
+  'redemption-window',
+  'redemption-not-sure',
+  'excess-proceeds',
+  'excess-not-sure',
   'other',
 ])
 const TimelineSchema = z.enum(['asap', '60-days', 'flexible', 'exploring'])
-const ConditionSchema = z.enum(['good', 'needs-work', 'major-repair', 'vacant'])
+const ConditionSchema = z.enum([
+  'good',
+  'needs-work',
+  'major-repair',
+  'vacant',
+  'redeem-payoff',
+  'redeem-title',
+  'redeem-cash',
+  'redeem-sell',
+  'proceeds-claim',
+  'proceeds-heirs',
+  'proceeds-liens',
+  'proceeds-cash-now',
+])
 const AuctionStatusSchema = z.enum(['yes', 'no', 'not-sure'])
 
 const AttributionSchema = z
@@ -159,12 +176,12 @@ function pagePathFromAttribution(attribution: z.infer<typeof AttributionSchema>)
 
   try {
     const path = new URL(landingUrl).pathname
-    if (path.startsWith('/ppc-tax')) return '/ppc-tax'
-    if (path.startsWith('/ppc')) return '/ppc'
+    const campaign = ppcCampaignForPagePath(path)
+    if (campaign) return campaign.pagePath
     return path || '/ppc'
   } catch {
-    if (landingUrl.startsWith('/ppc-tax')) return '/ppc-tax'
-    if (landingUrl.startsWith('/ppc')) return '/ppc'
+    const campaign = ppcCampaignForPagePath(landingUrl)
+    if (campaign) return campaign.pagePath
     return '/ppc'
   }
 }

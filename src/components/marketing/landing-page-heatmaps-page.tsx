@@ -5,13 +5,15 @@ import { useEffect, useMemo, useState } from 'react'
 import type { LandingHeatmapItem, LandingHeatmapPage, LandingHeatmapReport, LandingHeatmapSection, LandingHeatmapVideo } from '@/lib/marketing/landing-page-heatmaps'
 
 type HeatmapTab = 'sections' | 'faqs' | 'ctas' | 'showMe' | 'videos' | 'specificity'
-type HeatmapPageFilter = 'all' | '/ppc' | '/ppc-tax' | 'deals'
+type HeatmapPageFilter = 'all' | '/ppc' | '/ppc-tax' | '/ppc-redemption' | '/ppc-excess-proceeds' | 'deals'
 
 const DAY_OPTIONS = [7, 30, 90] as const
 const PAGE_OPTIONS: Array<{ value: HeatmapPageFilter; label: string }> = [
   { value: 'all', label: 'All Pages' },
   { value: '/ppc', label: 'PPC' },
   { value: '/ppc-tax', label: 'PPC Tax' },
+  { value: '/ppc-redemption', label: 'PPC Redemption' },
+  { value: '/ppc-excess-proceeds', label: 'PPC Excess Proceeds' },
   { value: 'deals', label: 'Deal Pages' },
 ]
 const TABS: Array<{ value: HeatmapTab; label: string }> = [

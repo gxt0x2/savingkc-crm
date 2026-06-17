@@ -60,6 +60,26 @@ const SITUATION_DETAILS: Record<PpcSituation, { primary: string; label: string; 
     label: 'Life event driving the sale',
     signal: 'Life event',
   },
+  'redemption-window': {
+    primary: 'Resolve a tax-sale redemption deadline',
+    label: 'Tax-sale redemption window',
+    signal: 'Redemption deadline',
+  },
+  'redemption-not-sure': {
+    primary: 'Clarify tax-sale redemption options',
+    label: 'Redemption help needed',
+    signal: 'Redemption uncertainty',
+  },
+  'excess-proceeds': {
+    primary: 'Check excess proceeds after tax sale',
+    label: 'Excess proceeds claim',
+    signal: 'Excess proceeds',
+  },
+  'excess-not-sure': {
+    primary: 'Check whether excess proceeds may exist',
+    label: 'Excess proceeds check requested',
+    signal: 'Excess proceeds uncertainty',
+  },
   other: {
     primary: 'Explore selling options',
     label: 'Seller is exploring selling options',
@@ -104,25 +124,74 @@ const TIMELINE_DETAILS: Record<PpcTimeline, {
   },
 }
 
-const CONDITION_DETAILS: Record<PpcCondition, { label: string; notes: string; scoreBump: number }> = {
+const CONDITION_DETAILS: Record<PpcCondition, {
+  label: string
+  notes: string
+  scoreBump: number
+  overall?: NonNullable<NonNullable<ManifestV2['property']['condition']>['overall']>
+}> = {
   good: {
     label: 'Good condition',
     notes: 'Seller said the property is in good condition on the paid form.',
     scoreBump: 0,
+    overall: 'good',
   },
   'needs-work': {
     label: 'Property needs work',
     notes: 'Seller said the property needs work on the paid form.',
     scoreBump: 1,
+    overall: 'fair',
   },
   'major-repair': {
     label: 'Major repairs needed',
     notes: 'Seller said the property needs major repairs on the paid form.',
     scoreBump: 2,
+    overall: 'poor',
   },
   vacant: {
     label: 'Property is vacant',
     notes: 'Seller said the property is vacant on the paid form.',
+    scoreBump: 2,
+    overall: 'poor',
+  },
+  'redeem-payoff': {
+    label: 'Needs redemption payoff amount',
+    notes: 'Seller needs help understanding the redemption payoff amount.',
+    scoreBump: 1,
+  },
+  'redeem-title': {
+    label: 'Needs title help during redemption',
+    notes: 'Seller needs title or ownership help during the redemption window.',
+    scoreBump: 1,
+  },
+  'redeem-cash': {
+    label: 'Needs cash to redeem',
+    notes: 'Seller may need cash or a sale option to handle redemption.',
+    scoreBump: 2,
+  },
+  'redeem-sell': {
+    label: 'Wants to sell instead of redeem',
+    notes: 'Seller is considering selling instead of redeeming the property.',
+    scoreBump: 2,
+  },
+  'proceeds-claim': {
+    label: 'Needs excess-proceeds claim filed',
+    notes: 'Seller needs help understanding the excess-proceeds claim path.',
+    scoreBump: 1,
+  },
+  'proceeds-heirs': {
+    label: 'Multiple heirs or owners involved',
+    notes: 'Seller reported multiple heirs or owners for an excess-proceeds claim.',
+    scoreBump: 1,
+  },
+  'proceeds-liens': {
+    label: 'Lien or title questions on proceeds',
+    notes: 'Seller reported lien or title questions around excess proceeds.',
+    scoreBump: 1,
+  },
+  'proceeds-cash-now': {
+    label: 'Interested in cash-now proceeds option',
+    notes: 'Seller wants to discuss a faster cash option for excess proceeds.',
     scoreBump: 2,
   },
 }
@@ -174,7 +243,12 @@ function scorePpcLead(input: PpcLeadIntelligenceInput): number | null {
   const auction = input.auctionStatus ? AUCTION_DETAILS[input.auctionStatus] : null
   let score = timeline?.baseScore ?? 4
 
-  if (input.situation === 'tax-delinquent') score += 2
+  if (
+    input.situation === 'tax-delinquent' ||
+    input.situation === 'redemption-window' ||
+    input.situation === 'excess-proceeds'
+  ) score += 2
+  else if (input.situation === 'redemption-not-sure' || input.situation === 'excess-not-sure') score += 1
   else if (input.situation === 'condition' || input.situation === 'tired-landlord') score += 1
   else if (input.situation === 'inherited' || input.situation === 'life-event') score += 1
 
@@ -290,9 +364,11 @@ export function applyPpcLeadIntelligenceToManifest(
 
   if (input.condition) {
     const details = CONDITION_DETAILS[input.condition]
-    manifest.property.condition.overall = CONDITION_TO_OVERALL[input.condition]
-    if (!manifest.property.condition.notes || manifest.property.condition.notes.startsWith('Seller said')) {
-      manifest.property.condition.notes = details.notes
+    if (details.overall) {
+      manifest.property.condition.overall = details.overall
+      if (!manifest.property.condition.notes || manifest.property.condition.notes.startsWith('Seller said')) {
+        manifest.property.condition.notes = details.notes
+      }
     }
     if (input.condition === 'vacant') {
       manifest.property.vacant = true

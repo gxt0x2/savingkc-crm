@@ -1917,7 +1917,7 @@ function buildMicroEvents(session: PaidSessionRow) {
   const timeline = session.timeline || 'Not captured'
   const condition = session.condition || 'Not captured'
   const fields = session.contactFields?.length ? session.contactFields.map(displayFieldName).join(', ') : 'not captured'
-  const isTax = session.land.startsWith('/ppc-tax') || Boolean(session.auctionStatus)
+  const isTax = isTaxStylePaidLanding(session.land) || Boolean(session.auctionStatus)
   const engagement = session.scrollDepth && session.scrollDepth > 0
     ? `Scrolled ${session.scrollDepth}%`
     : 'Page engagement tracked'
@@ -1959,10 +1959,18 @@ function displayFieldName(field: string): string {
 function microStepName(session: PaidSessionRow, index: number): string {
   const step = MICRO_STEPS[index]
   if (!step) return '—'
-  const isTax = session.land.startsWith('/ppc-tax') || Boolean(session.auctionStatus)
+  const isTax = isTaxStylePaidLanding(session.land) || Boolean(session.auctionStatus)
   if (isTax && step.key === 'timeline') return 'Auction Status'
   if (isTax && step.key === 'condition') return 'Timeline + Condition'
   return step.name
+}
+
+function isTaxStylePaidLanding(path: string): boolean {
+  return (
+    path.startsWith('/ppc-tax') ||
+    path.startsWith('/ppc-redemption') ||
+    path.startsWith('/ppc-excess-proceeds')
+  )
 }
 
 function microProgress(progress: number): number {

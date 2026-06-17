@@ -156,7 +156,16 @@ function unauthorized() {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 }
 
-const PAID_LANDING_PATHS = new Set(['/ppc', '/ppc/', '/ppc-tax', '/ppc-tax/'])
+const PAID_LANDING_PATHS = new Set([
+  '/ppc',
+  '/ppc/',
+  '/ppc-tax',
+  '/ppc-tax/',
+  '/ppc-redemption',
+  '/ppc-redemption/',
+  '/ppc-excess-proceeds',
+  '/ppc-excess-proceeds/',
+])
 const ATTRIBUTION_QUERY_KEYS = [
   'utm_source',
   'utm_medium',
@@ -234,7 +243,10 @@ function hasOpenAIAdsSignal(request: NextRequest, attribution: Record<string, st
 function campaignForPaidLanding(request: NextRequest, attribution: Record<string, string>, trafficSource?: string): string {
   if (attribution.utm_campaign) return attribution.utm_campaign
   if (trafficSource === 'openai_ads') return 'OpenAI Ads'
-  return request.nextUrl.pathname.startsWith('/ppc-tax') ? 'Search - Property Tax' : 'Search 2026'
+  if (request.nextUrl.pathname.startsWith('/ppc-excess-proceeds')) return 'Search - Excess Proceeds'
+  if (request.nextUrl.pathname.startsWith('/ppc-redemption')) return 'Search - Redemption'
+  if (request.nextUrl.pathname.startsWith('/ppc-tax')) return 'Search - Property Tax'
+  return 'Search 2026'
 }
 
 function forwardedTrackingHeaders(request: NextRequest): Headers {
