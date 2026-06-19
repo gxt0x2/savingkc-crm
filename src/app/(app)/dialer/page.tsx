@@ -10,6 +10,7 @@ import { SmsThreadPanel } from '@/components/leads/sms-thread-panel'
 import { CommsTimeline, CommsSummaryBar } from '@/components/leads/comms-timeline'
 import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
 import { BulkSmsModal } from '@/components/leads/bulk-sms-modal'
+import { DialerConversationHub } from '@/components/dialer/dialer-conversation-hub'
 import { createClient } from '@/lib/supabase/client'
 import { calculateTemperature } from '@/lib/lead-temperature'
 import { toProperCase, formatPhone } from '@/lib/format'
@@ -1479,6 +1480,7 @@ function DialerHome() {
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [pacing, setPacing] = useState(18)
   const [showBulkSms, setShowBulkSms] = useState(false)
+  const [homeTab, setHomeTab] = useState<'queue' | 'conversations'>('queue')
 
   useEffect(() => {
     if (!callerId && DEFAULT_DIALER_CALLER_ID) {
@@ -2078,7 +2080,7 @@ function DialerHome() {
   }, [callerId])
 
   return (
-    <div className="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
+    <div className={`mx-auto px-4 py-6 pb-24 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'max-w-[1440px]' : 'max-w-[1180px]'}`}>
       <BulkSmsModal
         open={showBulkSms}
         onClose={() => setShowBulkSms(false)}
@@ -2087,25 +2089,57 @@ function DialerHome() {
         fromPhone={callerId}
       />
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">Calling Command Center</h1>
-          <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick who to call, the number to call from, and how — then start.</p>
+        <div className="min-w-0">
+          <div className="mb-4 inline-flex overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
+            <button
+              type="button"
+              onClick={() => setHomeTab('queue')}
+              className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+                homeTab === 'queue' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+              }`}
+            >
+              <Icon name="phone_in_talk" size="text-base" /> Call Queue
+            </button>
+            <button
+              type="button"
+              onClick={() => setHomeTab('conversations')}
+              className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+                homeTab === 'conversations' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+              }`}
+            >
+              <Icon name="forum" size="text-base" /> Conversations
+            </button>
+          </div>
+          <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">
+            {homeTab === 'conversations' ? 'Communication Hub' : 'Calling Command Center'}
+          </h1>
+          <p className="mt-1 text-sm text-[var(--ck-text-muted)]">
+            {homeTab === 'conversations'
+              ? 'Review seller calls, texts, and emails from one inbox, then reply without leaving the dialer.'
+              : 'Pick who to call, the number to call from, and how — then start.'}
+          </p>
         </div>
-        <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3.5 py-1.5 text-sm font-bold text-[var(--ck-text)] sm:self-auto">
-          <span className={`h-2 w-2 rounded-full ${loading ? 'bg-[var(--ck-text-dim)]' : queue.length ? 'bg-[#1E9E68]' : 'bg-[#E32E2E]'}`} />
-          {loading ? 'Loading queue…' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} ready`}
-        </div>
+        {homeTab === 'queue' && (
+          <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3.5 py-1.5 text-sm font-bold text-[var(--ck-text)] sm:self-auto">
+            <span className={`h-2 w-2 rounded-full ${loading ? 'bg-[var(--ck-text-dim)]' : queue.length ? 'bg-[#1E9E68]' : 'bg-[#E32E2E]'}`} />
+            {loading ? 'Loading queue…' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} ready`}
+          </div>
+        )}
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-4 text-sm text-[#ffb4b4]">
-          {error}
-        </div>
-      )}
+      {homeTab === 'conversations' ? (
+        <DialerConversationHub agent={agent} defaultFromPhone={callerId} />
+      ) : (
+        <>
+          {error && (
+            <div className="mb-4 rounded-lg border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-4 text-sm text-[#ffb4b4]">
+              {error}
+            </div>
+          )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
-        {/* ── WHO: pick the queue, refine, preview ── */}
-        <main className="space-y-5">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
+            {/* ── WHO: pick the queue, refine, preview ── */}
+            <main className="space-y-5">
           <section className="ck-card p-5">
             <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E32E2E]/15 text-[#ff7777]">1</span>
@@ -2567,10 +2601,12 @@ function DialerHome() {
               )}
             </div>
           </section>
-        </aside>
-      </div>
+            </aside>
+          </div>
+        </>
+      )}
 
-      {showOptionalFilters && (
+      {homeTab === 'queue' && showOptionalFilters && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
           <button
             type="button"
