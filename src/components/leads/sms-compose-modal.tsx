@@ -67,6 +67,18 @@ interface SmsTemplate {
   merge_fields: string[]
 }
 
+const SMS_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound']
+
+function isInboundSms(activity: Activity) {
+  const direction = typeof activity.metadata?.direction === 'string'
+    ? activity.metadata.direction.toLowerCase()
+    : ''
+  return direction === 'inbound' ||
+    direction === 'received' ||
+    activity.activity_type === 'sms_received' ||
+    activity.activity_type === 'sms_inbound'
+}
+
 interface ComposeModalProps {
   lead: Lead
   onClose: () => void
@@ -111,7 +123,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
       .from('lead_activities')
       .select('id, activity_type, description, agent, metadata, created_at')
       .eq('lead_id', lead.id)
-      .in('activity_type', ['sms_sent', 'sms_received', 'sms_inbound'])
+      .in('activity_type', SMS_ACTIVITY_TYPES)
       .order('created_at', { ascending: true })
       .limit(50)
     if (data) setMessages(data)
@@ -120,9 +132,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
   // ── Auto-detect reply number from last inbound SMS (only if user hasn't manually changed) ──
   useEffect(() => {
     if (fromPhoneOverridden) return
-    const lastInbound = [...messages].reverse().find(
-      m => m.activity_type === 'sms_received' || m.activity_type === 'sms_inbound'
-    )
+    const lastInbound = [...messages].reverse().find(isInboundSms)
     if (lastInbound?.metadata?.to) {
       const matchedNumber = TWILIO_NUMBERS.find(n => n.value === lastInbound.metadata!.to)
       if (matchedNumber) setFromPhone(matchedNumber.value)
@@ -171,7 +181,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
         },
         (payload: { new?: { activity_type?: string } }) => {
           const type = payload.new?.activity_type
-          if (type === 'sms_sent' || type === 'sms_received' || type === 'sms_inbound') {
+          if (type && SMS_ACTIVITY_TYPES.includes(type)) {
             fetchHistory()
           }
         }
@@ -306,7 +316,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
     }
   }
 
-  const isOutbound = (m: Activity) => m.activity_type === 'sms_sent'
+  const isOutbound = (m: Activity) => !isInboundSms(m)
 
   return (
     <>

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { HeirsSection } from '@/components/leads/heirs-section'
 import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
+import { SmsThreadPanel } from '@/components/leads/sms-thread-panel'
 import { CommsTimeline, CommsSummaryBar } from '@/components/leads/comms-timeline'
 import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
 import { BulkSmsModal } from '@/components/leads/bulk-sms-modal'
@@ -504,7 +505,7 @@ function DialerPageInner() {
   // Activity feed for current lead
   const [activities, setActivities] = useState<Activity[]>([])
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
-  const [leftTab, setLeftTab] = useState<'activity' | 'recent_calls'>('activity')
+  const [leftTab, setLeftTab] = useState<'texts' | 'activity' | 'recent_calls'>('texts')
 
   // Live queue state from telephony-bar
   const [queueState, setQueueState] = useState<QueueState | null>(null)
@@ -1159,10 +1160,21 @@ function DialerPageInner() {
             </div>
           </section>
 
-          {/* Activity + recent call history */}
+          {/* Text thread + activity + recent call history */}
           <section className="ck-card p-5">
             <div className="flex items-center justify-between mb-3 gap-3">
               <div className="inline-flex rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setLeftTab('texts')}
+                  className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md transition-colors ${
+                    leftTab === 'texts'
+                      ? 'bg-[#E32E2E] text-white'
+                      : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'
+                  }`}
+                >
+                  Text Hub
+                </button>
                 <button
                   type="button"
                   onClick={() => setLeftTab('activity')}
@@ -1187,10 +1199,25 @@ function DialerPageInner() {
                 </button>
               </div>
               <span className="text-[10px] text-[var(--ck-text-dim)]">
-                {leftTab === 'activity' ? `${commsEvents.length} touches` : `${recentCalls.length} recent`}
+                {leftTab === 'texts'
+                  ? `${commsSummary.sms} texts`
+                  : leftTab === 'activity'
+                  ? `${commsEvents.length} touches`
+                  : `${recentCalls.length} recent`}
               </span>
             </div>
-            {leftTab === 'activity' ? (
+            {leftTab === 'texts' && currentLeadId ? (
+              <SmsThreadPanel
+                leadId={currentLeadId}
+                leadName={ownerName}
+                phone={currentLead?.phone}
+                propertyAddress={situsAddress}
+                activities={activities}
+                defaultFromPhone={sessionCallerId || null}
+                agent="Ernest"
+                onRefresh={refreshActivities}
+              />
+            ) : leftTab === 'activity' ? (
               <div className="space-y-3">
                 <CommsSummaryBar summary={commsSummary} />
                 <div className="border-t border-[var(--ck-border)] pt-3">
