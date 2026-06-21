@@ -930,6 +930,12 @@ function clickIdFromTracking(row: PpcTrackingSummaryRow): string {
   return paidSourceIdentifier(attribution)
 }
 
+function shouldIncludePaidJourney(row: PpcTrackingSummaryRow): boolean {
+  const attribution = trackingAttribution(row)
+  if (paidSourceKey(attribution) === 'openai_ads') return true
+  return Boolean(paidSourceIdentifier(attribution))
+}
+
 function trackingPaidSource(row: PpcTrackingSummaryRow): PaidSourceKey {
   return paidSourceKey(trackingAttribution(row))
 }
@@ -1122,7 +1128,7 @@ function sessionDrop(rows: PpcTrackingSummaryRow[]): PaidSessionRow['drop'] {
 function buildPaidSessions(rows: PpcTrackingSummaryRow[]): PaidSessionRow[] {
   const groups = new Map<string, PpcTrackingSummaryRow[]>()
   for (const row of rows) {
-    if (!clickIdFromTracking(row)) continue
+    if (!shouldIncludePaidJourney(row)) continue
     const key = sessionKey(row)
     groups.set(key, [...(groups.get(key) ?? []), row])
   }

@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase-lazy'
 import { cleanJsonRecord } from '@/lib/ppc/conversion-outbox'
 import { ppcCampaignNameForContext } from '@/lib/ppc/campaigns'
+import { paidSourceSlug } from '@/lib/marketing/paid-source'
 
 export const SITUATION_TO_TAG = {
   'tax-delinquent': 'tax_delinquent',
@@ -177,6 +178,13 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
   const gbraid = text(attribution.gbraid)
   const wbraid = text(attribution.wbraid)
   const pageLocation = text(input.pageLocation) || text(attribution.landingUrl)
+  const pageReferrer = text(input.pageReferrer) || text(attribution.referrer)
+  const trafficSource = text(input.trafficSource) || paidSourceSlug({
+    ...attribution,
+    page_location: pageLocation,
+    page_referrer: pageReferrer,
+    source_url: pageLocation,
+  })
   const payload = cleanJsonRecord({
     ...(input.payload ?? {}),
     attribution,
@@ -194,8 +202,8 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
     activity_id: text(input.activityId),
     page_path: text(input.pagePath),
     page_location: pageLocation,
-    page_referrer: text(input.pageReferrer) || text(attribution.referrer),
-    traffic_source: text(input.trafficSource) || 'google_ads',
+    page_referrer: pageReferrer,
+    traffic_source: trafficSource,
     campaign: ppcCampaignNameForContext({
       campaign: input.campaign,
       attribution,

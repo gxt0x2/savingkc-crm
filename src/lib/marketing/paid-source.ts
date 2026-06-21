@@ -30,8 +30,11 @@ function hasOpenAIAdsSignal(input: PaidSourceInput): boolean {
     source.includes('openai') ||
     medium.includes('openai') ||
     campaign.includes('openai') ||
-    referrer.includes('chatgpt.com') && source.includes('openai') ||
-    landingUrl.includes('utm_source=openai'),
+    referrer.includes('chatgpt.com') ||
+    referrer.includes('openai.com') ||
+    landingUrl.includes('utm_source=openai') ||
+    landingUrl.includes('utm_source=chatgpt') ||
+    landingUrl.includes('oppref='),
   )
 }
 
