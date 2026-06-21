@@ -368,7 +368,7 @@ function sourceHealthSummary(source: PaidSourceFilter, exportHealth: ExportHealt
   return {
     status: exportHealth.status,
     label: exportHealthLabel(exportHealth.status),
-    note: exportHealth.lastFailureReason || 'Google Ads, Stape, and OpenAI export queue summary.',
+    note: exportHealth.lastFailureReason || 'Google Ads, OpenAI Ads, GA4, and Stape export queue summary.',
     target: 'exportHealth' as DashboardSectionId,
   }
 }
@@ -1242,7 +1242,7 @@ function ExportHealthCard({ health }: { health: ExportHealth }) {
       <div className="panel-head">
         <div>
           <h2>Ads Export Health</h2>
-          <div className="cap">Google Ads, Stape, and OpenAI Ads conversion export status</div>
+          <div className="cap">Google Ads, OpenAI Ads, GA4, and Stape conversion export status</div>
         </div>
         <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
           {exportHealthLabel(health.status)}

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { createHash } from 'node:crypto'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import {
   cleanJsonRecord,
@@ -27,6 +28,8 @@ const DEFAULT_GOOGLE_ADS_API_VERSION = 'v24'
 const DEFAULT_STAPE_REQUEST_PATH = '/data'
 const GOOGLE_ADS_CALL_CONVERSION_MIN_AGE_MS = 12 * 60 * 60 * 1000
 const PPC_CONVERSION_PROCESSING_LOCK_TTL_MS = 10 * 60 * 1000
+const GA4_MEASUREMENT_PROTOCOL_ENDPOINT = 'https://www.google-analytics.com/mp/collect'
+const GA4_MEASUREMENT_PROTOCOL_DEBUG_ENDPOINT = 'https://www.google-analytics.com/debug/mp/collect'
 const OPENAI_ADS_CONVERSIONS_ENDPOINT = 'https://bzr.openai.com/v1/events'
 const OPENAI_ADS_MAX_EVENT_AGE_MS = 7 * 24 * 60 * 60 * 1000
 const OPENAI_ADS_MAX_FUTURE_SKEW_MS = 10 * 60 * 1000
@@ -43,6 +46,8 @@ const OPENAI_ADS_EXPORTABLE_PPC_EVENT_NAMES: PpcConversionEventName[] = [
   'call_connected_5m',
 ]
 const OPENAI_ADS_EXPORTABLE_PPC_EVENTS = new Set<string>(OPENAI_ADS_EXPORTABLE_PPC_EVENT_NAMES)
+const GA4_EXPORTABLE_PPC_EVENT_NAMES: PpcConversionEventName[] = OPENAI_ADS_EXPORTABLE_PPC_EVENT_NAMES
+const GA4_EXPORTABLE_PPC_EVENTS = new Set<string>(GA4_EXPORTABLE_PPC_EVENT_NAMES)
 
 type Env = Record<string, string | undefined>
 
@@ -82,7 +87,7 @@ export type PpcConversionOutboxExportRow = {
 }
 
 export type DestinationResult = {
-  destination: 'google_ads' | 'stape' | 'openai_ads'
+  destination: 'google_ads' | 'stape' | 'openai_ads' | 'ga4'
   status: 'sent' | 'skipped' | 'failed' | 'would_send'
   detail?: string
 }
@@ -111,7 +116,7 @@ export type PpcConversionExportResult = {
 
 export type PpcConversionExportConfigHealth = {
   configured: boolean
-  mode: 'all' | 'google_ads_and_stape' | 'google_ads_only' | 'stape_only' | 'openai_ads_only' | 'mixed' | 'not_configured'
+  mode: 'all' | 'google_ads_and_stape' | 'google_ads_only' | 'stape_only' | 'openai_ads_only' | 'ga4_only' | 'mixed' | 'not_configured'
   enabledDestinations: DestinationResult['destination'][]
   googleAds: {
     enabled: boolean
@@ -134,6 +139,13 @@ export type PpcConversionExportConfigHealth = {
     ready: boolean
     pixelIdConfigured: boolean
     apiKeyConfigured: boolean
+    missingConfig: string[]
+  }
+  ga4: {
+    enabled: boolean
+    ready: boolean
+    measurementIdConfigured: boolean
+    apiSecretConfigured: boolean
     missingConfig: string[]
   }
   warnings: string[]
@@ -207,6 +219,11 @@ type OpenAIAdsConfig = {
   apiKey: string
 }
 
+type Ga4Config = {
+  measurementId: string
+  apiSecret: string
+}
+
 type GoogleAdsUploadPlan =
   | { kind: 'click'; conversion: Record<string, unknown> }
   | { kind: 'call'; conversion: Record<string, unknown> }
@@ -214,6 +231,10 @@ type GoogleAdsUploadPlan =
 
 type OpenAIAdsUploadPlan =
   | { kind: 'event'; event: Record<string, unknown> }
+  | { kind: 'skip'; reason: string; hardFailure?: boolean }
+
+type Ga4UploadPlan =
+  | { kind: 'event'; body: Record<string, unknown>; eventName: string }
   | { kind: 'skip'; reason: string; hardFailure?: boolean }
 
 class SupabaseOutboxStore implements OutboxStore {
@@ -631,6 +652,27 @@ function readOpenAIAdsConfig(env: Env): { config: OpenAIAdsConfig | null; missin
   return { config: { pixelId, apiKey }, missing: [] }
 }
 
+function readGa4Config(env: Env): { config: Ga4Config | null; missing: string[] } {
+  const measurementId =
+    readEnv(env, 'GA4_MEASUREMENT_ID') ||
+    readEnv(env, 'GOOGLE_ANALYTICS_MEASUREMENT_ID') ||
+    readEnv(env, 'NEXT_PUBLIC_GA4_MEASUREMENT_ID') ||
+    readEnv(env, 'NEXT_PUBLIC_GOOGLE_ANALYTICS_MEASUREMENT_ID')
+  const apiSecret =
+    readEnv(env, 'GA4_API_SECRET') ||
+    readEnv(env, 'GOOGLE_ANALYTICS_API_SECRET') ||
+    readEnv(env, 'GA4_MEASUREMENT_PROTOCOL_API_SECRET')
+  const missing = ([
+    ['GA4_MEASUREMENT_ID or NEXT_PUBLIC_GA4_MEASUREMENT_ID', measurementId],
+    ['GA4_API_SECRET or GOOGLE_ANALYTICS_API_SECRET', apiSecret],
+  ] as Array<[string, string | null]>)
+    .filter(([, value]) => !value)
+    .map(([key]) => key)
+
+  if (missing.length || !measurementId || !apiSecret) return { config: null, missing }
+  return { config: { measurementId, apiSecret }, missing: [] }
+}
+
 function readEnabledDestinations(env: Env): { destinations: Set<DestinationResult['destination']>; missing: string[] } {
   const raw = readEnv(env, 'PPC_CONVERSION_EXPORT_DESTINATIONS')
   if (!raw) return { destinations: new Set(['google_ads', 'stape']), missing: [] }
@@ -646,10 +688,12 @@ function readEnabledDestinations(env: Env): { destinations: Set<DestinationResul
       destinations.add('google_ads')
       destinations.add('stape')
       destinations.add('openai_ads')
+      destinations.add('ga4')
       continue
     }
     if (value === 'google_ads' || value === 'stape') destinations.add(value)
     if (value === 'openai_ads' || value === 'openai') destinations.add('openai_ads')
+    if (value === 'ga4' || value === 'google_analytics') destinations.add('ga4')
   }
 
   return destinations.size > 0
@@ -670,12 +714,15 @@ function configMode(destinations: Set<DestinationResult['destination']>): PpcCon
   const googleAds = destinations.has('google_ads')
   const stape = destinations.has('stape')
   const openaiAds = destinations.has('openai_ads')
+  const ga4 = destinations.has('ga4')
+  if (googleAds && stape && openaiAds && ga4) return 'all'
   if (googleAds && stape && openaiAds) return 'all'
   if (googleAds && stape) return 'google_ads_and_stape'
-  if ([googleAds, stape, openaiAds].filter(Boolean).length > 1) return 'mixed'
+  if ([googleAds, stape, openaiAds, ga4].filter(Boolean).length > 1) return 'mixed'
   if (googleAds) return 'google_ads_only'
   if (stape) return 'stape_only'
   if (openaiAds) return 'openai_ads_only'
+  if (ga4) return 'ga4_only'
   return 'not_configured'
 }
 
@@ -684,6 +731,7 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
   const googleEnabled = enabled.destinations.has('google_ads')
   const stapeEnabled = enabled.destinations.has('stape')
   const openaiEnabled = enabled.destinations.has('openai_ads')
+  const ga4Enabled = enabled.destinations.has('ga4')
   const customerId = normalizeCustomerId(readEnv(env, 'GOOGLE_ADS_CUSTOMER_ID'))
   const actionMappings = customerId ? loadConversionActions(env, customerId) : {}
   const configuredActionMappings = GOOGLE_ADS_EXPORTABLE_PPC_EVENT_NAMES.filter((eventName) => Boolean(actionMappings[eventName]))
@@ -697,9 +745,13 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
   const openai = openaiEnabled
     ? readOpenAIAdsConfig(env)
     : { config: null, missing: [] }
+  const ga4 = ga4Enabled
+    ? readGa4Config(env)
+    : { config: null, missing: [] }
   const googleReady = Boolean(google.config && missingActionMappings.length === 0)
   const stapeReady = Boolean(stape.config)
   const openaiReady = Boolean(openai.config)
+  const ga4Ready = Boolean(ga4.config)
   const warnings: string[] = []
 
   if (enabled.missing.length) {
@@ -720,9 +772,12 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
   if (openaiEnabled && !openaiReady) {
     warnings.push('OpenAI Ads export is enabled but its Pixel ID or Conversions API key is missing.')
   }
+  if (ga4Enabled && !ga4Ready) {
+    warnings.push('GA4 Measurement Protocol export is enabled but its Measurement ID or API secret is missing.')
+  }
 
   return {
-    configured: (googleEnabled && googleReady) || (stapeEnabled && stapeReady) || (openaiEnabled && openaiReady),
+    configured: (googleEnabled && googleReady) || (stapeEnabled && stapeReady) || (openaiEnabled && openaiReady) || (ga4Enabled && ga4Ready),
     mode: configMode(enabled.destinations),
     enabledDestinations: Array.from(enabled.destinations),
     googleAds: {
@@ -747,6 +802,22 @@ export function getPpcConversionExportConfigHealth(env: Env = process.env): PpcC
       pixelIdConfigured: Boolean(readEnv(env, 'OPENAI_ADS_PIXEL_ID') || readEnv(env, 'NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID')),
       apiKeyConfigured: Boolean(readEnv(env, 'OPENAI_ADS_CONVERSIONS_API_KEY')),
       missingConfig: openai.missing,
+    },
+    ga4: {
+      enabled: ga4Enabled,
+      ready: ga4Ready,
+      measurementIdConfigured: Boolean(
+        readEnv(env, 'GA4_MEASUREMENT_ID') ||
+        readEnv(env, 'GOOGLE_ANALYTICS_MEASUREMENT_ID') ||
+        readEnv(env, 'NEXT_PUBLIC_GA4_MEASUREMENT_ID') ||
+        readEnv(env, 'NEXT_PUBLIC_GOOGLE_ANALYTICS_MEASUREMENT_ID'),
+      ),
+      apiSecretConfigured: Boolean(
+        readEnv(env, 'GA4_API_SECRET') ||
+        readEnv(env, 'GOOGLE_ANALYTICS_API_SECRET') ||
+        readEnv(env, 'GA4_MEASUREMENT_PROTOCOL_API_SECRET'),
+      ),
+      missingConfig: ga4.missing,
     },
     warnings,
   }
@@ -980,6 +1051,10 @@ function isOpenAIAdsExportablePpcEvent(eventName: string | null | undefined): bo
   return Boolean(eventName && OPENAI_ADS_EXPORTABLE_PPC_EVENTS.has(eventName))
 }
 
+function isGa4ExportablePpcEvent(eventName: string | null | undefined): boolean {
+  return Boolean(eventName && GA4_EXPORTABLE_PPC_EVENTS.has(eventName))
+}
+
 function sourceUrlForRow(row: PpcConversionOutboxExportRow): string {
   const attribution = row.attribution ?? {}
   const payload = row.payload ?? {}
@@ -989,6 +1064,120 @@ function sourceUrlForRow(row: PpcConversionOutboxExportRow): string {
     text(attribution.landingUrl) ||
     'https://savingkc.com/ppc'
   )
+}
+
+function ga4EventName(row: PpcConversionOutboxExportRow): string | null {
+  if (row.event_name === 'lead_submitted') return 'generate_lead'
+  if (row.event_name === 'qualified_lead') return 'qualified_lead'
+  if (row.event_name === 'appointment_booked') return 'appointment_booked'
+  if (
+    row.event_name === 'call_connected_60s' ||
+    row.event_name === 'call_connected_2m' ||
+    row.event_name === 'call_connected_5m'
+  ) {
+    return row.event_name
+  }
+  return null
+}
+
+function ga4FallbackClientId(row: PpcConversionOutboxExportRow): string {
+  const seed = [row.id, row.dedupe_key, row.lead_id, row.manifest_id].filter(Boolean).join(':') || row.event_time
+  const hash = createHash('sha256').update(seed).digest('hex')
+  return `${Number.parseInt(hash.slice(0, 8), 16)}.${Number.parseInt(hash.slice(8, 16), 16)}`
+}
+
+function ga4ClientIdForRow(row: PpcConversionOutboxExportRow): string {
+  const attribution = row.attribution ?? {}
+  const payload = row.payload ?? {}
+  return (
+    text(payload.ga_client_id) ||
+    text(payload.ga4_client_id) ||
+    text(payload.client_id) ||
+    text(payload.clientId) ||
+    text(attribution.ga_client_id) ||
+    text(attribution.ga4_client_id) ||
+    text(attribution.client_id) ||
+    text(attribution.clientId) ||
+    ga4FallbackClientId(row)
+  )
+}
+
+function buildGa4UploadPlan(row: PpcConversionOutboxExportRow): Ga4UploadPlan {
+  if (!isGa4ExportablePpcEvent(row.event_name)) {
+    return {
+      kind: 'skip',
+      reason: `${row.event_name || 'conversion'} is not eligible for GA4 export`,
+      hardFailure: false,
+    }
+  }
+
+  const eventDate = new Date(row.event_time)
+  if (Number.isNaN(eventDate.getTime())) {
+    return {
+      kind: 'skip',
+      reason: `Invalid GA4 event time for ${row.event_name}`,
+      hardFailure: true,
+    }
+  }
+
+  const eventName = ga4EventName(row)
+  if (!eventName) {
+    return {
+      kind: 'skip',
+      reason: `${row.event_name} has no GA4 event mapping`,
+      hardFailure: false,
+    }
+  }
+
+  const attribution = row.attribution ?? {}
+  const payload = row.payload ?? {}
+  const pageLocation = sourceUrlForRow(row)
+  const pagePath =
+    text(payload.page_path) ||
+    text(attribution.page_path) ||
+    ppcCampaignForPageLocation(pageLocation)?.pagePath ||
+    undefined
+  const campaign = ppcCampaignNameForContext({
+    campaign: payload.campaign,
+    attribution,
+    pagePath,
+    pageLocation,
+  })
+
+  return {
+    kind: 'event',
+    eventName,
+    body: cleanJsonRecord({
+      client_id: ga4ClientIdForRow(row),
+      timestamp_micros: eventDate.getTime() * 1000,
+      non_personalized_ads: false,
+      events: [
+        {
+          name: eventName,
+          params: cleanJsonRecord({
+            event_id: text(payload.openai_ads_event_id) || row.dedupe_key || row.id,
+            dedupe_key: row.dedupe_key,
+            engagement_time_msec: 1,
+            value: googleAdsConversionValue(row) ?? undefined,
+            currency: row.currency || 'USD',
+            event_category: row.event_category,
+            optimization_role: row.optimization_role,
+            lead_id: row.lead_id,
+            manifest_id: row.manifest_id,
+            activity_id: row.activity_id,
+            campaign,
+            page_location: pageLocation,
+            page_path: pagePath,
+            traffic_source: text(payload.traffic_source) || text(attribution.traffic_source) || 'paid',
+            click_id_type: row.click_id_type,
+            gclid: row.click_id_type === 'gclid' ? row.click_id : undefined,
+            gbraid: row.click_id_type === 'gbraid' ? row.click_id : undefined,
+            wbraid: row.click_id_type === 'wbraid' ? row.click_id : undefined,
+          }),
+        },
+      ],
+    }),
+  }
 }
 
 function openAIAdsActionSource(row: PpcConversionOutboxExportRow): string {
@@ -1268,6 +1457,76 @@ async function sendStapeEvent(
   }
 }
 
+async function sendGa4Event(
+  row: PpcConversionOutboxExportRow,
+  config: Ga4Config,
+  fetchFn: typeof fetch,
+  validateOnly: boolean,
+): Promise<DestinationResult> {
+  const plan = buildGa4UploadPlan(row)
+  if (plan.kind === 'skip') {
+    return {
+      destination: 'ga4',
+      status: plan.hardFailure ? 'failed' : 'skipped',
+      detail: plan.reason,
+    }
+  }
+
+  const url = new URL(validateOnly ? GA4_MEASUREMENT_PROTOCOL_DEBUG_ENDPOINT : GA4_MEASUREMENT_PROTOCOL_ENDPOINT)
+  url.searchParams.set('measurement_id', config.measurementId)
+  url.searchParams.set('api_secret', config.apiSecret)
+
+  const response = await fetchFn(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(plan.body),
+  })
+
+  const bodyText = await response.text().catch(() => '')
+  let body: Record<string, unknown> = {}
+  try {
+    body = bodyText ? JSON.parse(bodyText) as Record<string, unknown> : {}
+  } catch {
+    body = {}
+  }
+
+  if (!response.ok) {
+    return {
+      destination: 'ga4',
+      status: 'failed',
+      detail: summarizeRemoteError(body, bodyText || `GA4 Measurement Protocol failed (${response.status})`),
+    }
+  }
+
+  if (validateOnly) {
+    const validationMessages = Array.isArray(body.validationMessages) ? body.validationMessages : []
+    const errorMessage = validationMessages
+      .map((message) => {
+        if (!message || typeof message !== 'object') return String(message)
+        const typed = message as { validationCode?: unknown; description?: unknown; fieldPath?: unknown }
+        const description = typeof typed.description === 'string' ? typed.description : ''
+        const validationCode = typeof typed.validationCode === 'string' ? typed.validationCode : ''
+        const fieldPath = typeof typed.fieldPath === 'string' ? typed.fieldPath : ''
+        return [fieldPath, validationCode, description].filter(Boolean).join(': ')
+      })
+      .find(Boolean)
+
+    if (errorMessage) {
+      return {
+        destination: 'ga4',
+        status: 'failed',
+        detail: String(errorMessage),
+      }
+    }
+  }
+
+  return {
+    destination: 'ga4',
+    status: validateOnly ? 'would_send' : 'sent',
+    detail: `${validateOnly ? 'validateOnly:' : ''}${plan.eventName}:${row.event_name}`,
+  }
+}
+
 async function sendOpenAIAdsEvent(
   row: PpcConversionOutboxExportRow,
   config: OpenAIAdsConfig,
@@ -1337,17 +1596,20 @@ function plannedDestinations(
   googleConfig: GoogleAdsConfig | null,
   stapeConfig: StapeConfig | null,
   openaiConfig: OpenAIAdsConfig | null,
+  ga4Config: Ga4Config | null,
   now: Date,
 ): DestinationResult[] {
   const googleEligible = isGoogleAdsExportablePpcEvent(row.event_name)
   const openaiEligible = isOpenAIAdsExportablePpcEvent(row.event_name)
+  const ga4Eligible = isGa4ExportablePpcEvent(row.event_name)
 
-  if (!googleEligible && !openaiEligible) {
+  if (!googleEligible && !openaiEligible && !ga4Eligible) {
     const detail = nonExportablePpcEventReason(row.event_name)
     return [
       ...(stapeConfig ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
       ...(googleConfig ? [{ destination: 'google_ads' as const, status: 'skipped' as const, detail }] : []),
       ...(openaiConfig ? [{ destination: 'openai_ads' as const, status: 'skipped' as const, detail }] : []),
+      ...(ga4Config ? [{ destination: 'ga4' as const, status: 'skipped' as const, detail }] : []),
     ]
   }
 
@@ -1358,6 +1620,7 @@ function plannedDestinations(
       ...(stapeConfig ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
       ...(googleConfig ? [{ destination: 'google_ads' as const, status: 'failed' as const, detail }] : []),
       ...(openaiConfig ? [{ destination: 'openai_ads' as const, status: 'skipped' as const, detail }] : []),
+      ...(ga4Config ? [{ destination: 'ga4' as const, status: 'skipped' as const, detail }] : []),
     ]
   }
 
@@ -1389,6 +1652,15 @@ function plannedDestinations(
       plan.kind === 'skip'
         ? { destination: 'openai_ads', status: plan.hardFailure ? 'failed' : 'skipped', detail: plan.reason }
         : { destination: 'openai_ads', status: 'would_send', detail: plan.event.type as string },
+    )
+  }
+
+  if (ga4Config) {
+    const plan = buildGa4UploadPlan(row)
+    destinations.push(
+      plan.kind === 'skip'
+        ? { destination: 'ga4', status: plan.hardFailure ? 'failed' : 'skipped', detail: plan.reason }
+        : { destination: 'ga4', status: 'would_send', detail: plan.eventName },
     )
   }
 
@@ -1425,9 +1697,12 @@ export async function runPpcConversionExport(
   const openai = enabled.destinations.has('openai_ads')
     ? readOpenAIAdsConfig(env)
     : { config: null, missing: [] }
-  const missingConfig = [...enabled.missing, ...google.missing, ...stape.missing, ...openai.missing]
+  const ga4 = enabled.destinations.has('ga4')
+    ? readGa4Config(env)
+    : { config: null, missing: [] }
+  const missingConfig = [...enabled.missing, ...google.missing, ...stape.missing, ...openai.missing, ...ga4.missing]
 
-  if (!google.config && !stape.config && !openai.config) {
+  if (!google.config && !stape.config && !openai.config && !ga4.config) {
     return emptyExportResult({ dryRun, configured: false, missingConfig })
   }
 
@@ -1442,7 +1717,7 @@ export async function runPpcConversionExport(
 
   for (const row of rows) {
     if (dryRun) {
-      const destinations = plannedDestinations(row, google.config, stape.config, openai.config, now)
+      const destinations = plannedDestinations(row, google.config, stape.config, openai.config, ga4.config, now)
       results.push({ id: row.id, eventName: row.event_name, status: 'pending', destinations })
       continue
     }
@@ -1457,6 +1732,9 @@ export async function runPpcConversionExport(
       if (openai.config) {
         destinations.push({ destination: 'openai_ads', status: 'skipped', detail: 'Awaiting approval for ads export' })
       }
+      if (ga4.config) {
+        destinations.push({ destination: 'ga4', status: 'skipped', detail: 'Awaiting approval for ads export' })
+      }
       if (validateOnly) {
         results.push({ id: row.id, eventName: row.event_name, status: 'pending', destinations })
         continue
@@ -1469,13 +1747,15 @@ export async function runPpcConversionExport(
 
     const googleEligible = isGoogleAdsExportablePpcEvent(row.event_name)
     const openaiEligible = isOpenAIAdsExportablePpcEvent(row.event_name)
+    const ga4Eligible = isGa4ExportablePpcEvent(row.event_name)
 
-    if (!googleEligible && !openaiEligible) {
+    if (!googleEligible && !openaiEligible && !ga4Eligible) {
       const detail = nonExportablePpcEventReason(row.event_name)
       const destinations: DestinationResult[] = [
         ...(stape.config ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
         ...(google.config ? [{ destination: 'google_ads' as const, status: 'skipped' as const, detail }] : []),
         ...(openai.config ? [{ destination: 'openai_ads' as const, status: 'skipped' as const, detail }] : []),
+        ...(ga4.config ? [{ destination: 'ga4' as const, status: 'skipped' as const, detail }] : []),
       ]
       if (validateOnly) {
         results.push({ id: row.id, eventName: row.event_name, status: 'skipped', destinations })
@@ -1493,6 +1773,7 @@ export async function runPpcConversionExport(
         ...(stape.config ? [{ destination: 'stape' as const, status: 'skipped' as const, detail }] : []),
         ...(google.config ? [{ destination: 'google_ads' as const, status: 'failed' as const, detail }] : []),
         ...(openai.config ? [{ destination: 'openai_ads' as const, status: 'skipped' as const, detail }] : []),
+        ...(ga4.config ? [{ destination: 'ga4' as const, status: 'skipped' as const, detail }] : []),
       ]
       if (validateOnly) {
         results.push({ id: row.id, eventName: row.event_name, status: 'failed', destinations })
@@ -1547,6 +1828,14 @@ export async function runPpcConversionExport(
         openaiEligible
           ? await sendOpenAIAdsEvent(row, openai.config, fetchFn, validateOnly, now)
           : { destination: 'openai_ads', status: 'skipped', detail: `${row.event_name} is not eligible for OpenAI Ads export` },
+      )
+    }
+
+    if (ga4.config) {
+      destinations.push(
+        ga4Eligible
+          ? await sendGa4Event(row, ga4.config, fetchFn, validateOnly)
+          : { destination: 'ga4', status: 'skipped', detail: `${row.event_name} is not eligible for GA4 export` },
       )
     }
 

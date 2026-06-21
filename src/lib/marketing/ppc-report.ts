@@ -1097,6 +1097,13 @@ function fallbackExportConfig(): PpcConversionExportConfigHealth {
       apiKeyConfigured: false,
       missingConfig: [],
     },
+    ga4: {
+      enabled: false,
+      ready: false,
+      measurementIdConfigured: false,
+      apiSecretConfigured: false,
+      missingConfig: [],
+    },
     warnings: ['Export worker configuration was not included in this report response.'],
   }
 }

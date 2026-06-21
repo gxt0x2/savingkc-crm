@@ -55,6 +55,7 @@ function formatTime(value: string | null): string {
 function destinationLabel(value: string): string {
   if (value === 'google_ads') return 'Google'
   if (value === 'openai_ads') return 'OpenAI'
+  if (value === 'ga4') return 'GA4'
   if (value === 'stape') return 'Stape'
   return value.replace(/_/g, ' ')
 }
