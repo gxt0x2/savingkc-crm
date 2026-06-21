@@ -95,6 +95,39 @@ describe('ppc browser tracking', () => {
     )
   })
 
+  it('marks ChatGPT/OpenAI ad visits as OpenAI Ads instead of hardcoded Google Ads', () => {
+    const oaiq = vi.fn()
+    vi.stubGlobal('sessionStorage', { getItem: vi.fn(() => null), setItem: vi.fn() })
+    vi.stubGlobal('document', { referrer: 'https://chatgpt.com/c/seller-search', cookie: '' })
+    vi.stubGlobal('window', {
+      dataLayer: [],
+      oaiq,
+      location: {
+        pathname: '/ppc',
+        href: 'https://savingkc.com/ppc',
+        search: '',
+        hostname: 'savingkc.com',
+        protocol: 'https:',
+      },
+      navigator: {},
+    })
+
+    const event = firePpcTrackingEvent('ppc_visit_started')
+
+    expect(event).toMatchObject({
+      event: 'ppc_visit_started',
+      traffic_source: 'openai_ads',
+      campaign: 'Search 2026',
+      page_path: '/ppc',
+    })
+    expect(oaiq).toHaveBeenCalledWith(
+      'measure',
+      'page_viewed',
+      expect.objectContaining({ type: 'contents' }),
+      { event_id: event?.event_id },
+    )
+  })
+
   it('suppresses browser conversion tags on smoke-test URLs', () => {
     const oaiq = vi.fn()
     vi.stubGlobal('window', {
