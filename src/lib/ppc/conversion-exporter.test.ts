@@ -134,6 +134,28 @@ describe('ppc conversion exporter', () => {
     expect(JSON.stringify(health)).not.toContain('openai-secret')
   })
 
+  it('summarizes GA4 export configuration without exposing secrets', () => {
+    const health = getPpcConversionExportConfigHealth({
+      PPC_CONVERSION_EXPORT_DESTINATIONS: 'ga4',
+      GA4_MEASUREMENT_ID: 'G-ABC123',
+      GA4_API_SECRET: 'ga4-secret',
+    })
+
+    expect(health).toMatchObject({
+      configured: true,
+      mode: 'ga4_only',
+      enabledDestinations: ['ga4'],
+      ga4: {
+        enabled: true,
+        ready: true,
+        measurementIdConfigured: true,
+        apiSecretConfigured: true,
+        missingConfig: [],
+      },
+    })
+    expect(JSON.stringify(health)).not.toContain('ga4-secret')
+  })
+
   it('accepts a saved Google Ads OAuth token email as the refresh-token source', () => {
     const health = getPpcConversionExportConfigHealth({
       PPC_CONVERSION_EXPORT_DESTINATIONS: 'google_ads',
@@ -356,6 +378,143 @@ describe('ppc conversion exporter', () => {
           expect.objectContaining({ destination: 'stape', status: 'skipped' }),
           expect.objectContaining({ destination: 'openai_ads', status: 'sent' }),
         ]),
+      }),
+      now,
+    )
+  })
+
+  it('validates final form submit rows against GA4 without mutating the queue', async () => {
+    const now = new Date('2026-05-21T13:00:00.000Z')
+    const row = makeRow({
+      event_name: 'lead_submitted',
+      event_category: 'form',
+      optimization_role: 'primary',
+      dedupe_key: 'lead:123:lead_submitted',
+      event_time: '2026-05-21T12:59:00.000Z',
+      attribution: {
+        landingUrl: 'https://savingkc.com/ppc?utm_source=openai_ads&oppref=openai-click',
+        oppref: 'openai-click',
+      },
+      payload: {
+        form_status: 'submitted',
+        openai_ads_event_id: 'lead:123:lead_submitted',
+      },
+    })
+    const store = {
+      listRows: vi.fn(async () => [row]),
+      claimRows: vi.fn(async () => {
+        throw new Error('validate-only should not claim rows')
+      }),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ validationMessages: [] }), { status: 200 }))
+
+    const result = await runPpcConversionExport(
+      {
+        now,
+        validateOnly: true,
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'ga4',
+          GA4_MEASUREMENT_ID: 'G-ABC123',
+          GA4_API_SECRET: 'ga4-secret',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      scanned: 1,
+      claimed: 0,
+      pending: 1,
+      failed: 0,
+    })
+    expect(store.listRows).toHaveBeenCalledOnce()
+    expect(store.claimRows).not.toHaveBeenCalled()
+    expect(store.markSent).not.toHaveBeenCalled()
+    expect(store.markSkipped).not.toHaveBeenCalled()
+    expect(store.markFailed).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledOnce()
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(String(url)).toContain('https://www.google-analytics.com/debug/mp/collect')
+    expect(String(url)).toContain('measurement_id=G-ABC123')
+    expect(String(url)).toContain('api_secret=ga4-secret')
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      client_id: expect.any(String),
+      events: [
+        {
+          name: 'generate_lead',
+          params: expect.objectContaining({
+            event_id: 'lead:123:lead_submitted',
+            traffic_source: 'paid',
+          }),
+        },
+      ],
+    })
+    expect(result.results[0]?.destinations).toEqual([
+      expect.objectContaining({ destination: 'ga4', status: 'would_send', detail: 'validateOnly:generate_lead:lead_submitted' }),
+    ])
+  })
+
+  it('sends final form submit rows directly to GA4 and marks them sent', async () => {
+    const now = new Date('2026-05-21T13:00:00.000Z')
+    const row = makeRow({
+      event_name: 'lead_submitted',
+      event_category: 'form',
+      optimization_role: 'primary',
+      dedupe_key: 'lead:123:lead_submitted',
+      event_time: '2026-05-21T12:59:00.000Z',
+      payload: {
+        form_status: 'submitted',
+        openai_ads_event_id: 'lead:123:lead_submitted',
+      },
+    })
+    const store = {
+      listRows: vi.fn(),
+      claimRows: vi.fn(async () => [row]),
+      markSent: vi.fn(),
+      markSkipped: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+
+    const result = await runPpcConversionExport(
+      {
+        now,
+        env: {
+          PPC_CONVERSION_EXPORT_DESTINATIONS: 'ga4',
+          GA4_MEASUREMENT_ID: 'G-ABC123',
+          GA4_API_SECRET: 'ga4-secret',
+        },
+      },
+      { store, fetch: fetchMock as unknown as typeof fetch },
+    )
+
+    expect(result.sent).toBe(1)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(String(url)).toContain('https://www.google-analytics.com/mp/collect')
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      events: [
+        {
+          name: 'generate_lead',
+          params: expect.objectContaining({
+            event_id: 'lead:123:lead_submitted',
+            lead_id: 'lead-123',
+          }),
+        },
+      ],
+    })
+    expect(store.markSent).toHaveBeenCalledWith(
+      row,
+      expect.objectContaining({
+        destinations: [
+          expect.objectContaining({ destination: 'ga4', status: 'sent', detail: 'generate_lead:lead_submitted' }),
+        ],
       }),
       now,
     )
