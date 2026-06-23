@@ -608,6 +608,7 @@ function extractAttributionFromTracking(row: PpcTrackingEventRow): Record<string
     gad_campaignid: row.gad_campaignid,
     gad_adgroupid: row.gad_adgroupid,
     oppref: payload.oppref ?? payloadAttribution.oppref,
+    skc_openai_click_id: payload.skc_openai_click_id ?? payloadAttribution.skc_openai_click_id,
     landingUrl: row.page_location,
     referrer: row.page_referrer,
   })
@@ -631,6 +632,7 @@ function mergeAttribution(current: Record<string, unknown>, incoming: Record<str
     wbraid: current.wbraid || incoming.wbraid,
     click_id: current.click_id || incoming.click_id,
     click_id_type: current.click_id_type || incoming.click_id_type,
+    skc_openai_click_id: current.skc_openai_click_id || incoming.skc_openai_click_id,
   })
 }
 
@@ -698,7 +700,7 @@ function hasTestMarker(...values: Array<unknown>): boolean {
 }
 
 function isTestAttribution(attribution: Record<string, unknown>): boolean {
-  return hasTestMarker(attribution.gclid, attribution.gbraid, attribution.wbraid, attribution.click_id, attribution.utm_term, attribution.utm_content)
+  return hasTestMarker(attribution.gclid, attribution.gbraid, attribution.wbraid, attribution.click_id, attribution.skc_openai_click_id, attribution.utm_term, attribution.utm_content)
 }
 
 function isTestState(state: LeadState): boolean {
@@ -717,9 +719,11 @@ function isTestTrackingEvent(row: PpcTrackingEventRow): boolean {
     attribution.gclid,
     attribution.gbraid,
     attribution.wbraid,
+    attribution.skc_openai_click_id,
     row.payload?.gclid,
     row.payload?.gbraid,
     row.payload?.wbraid,
+    row.payload?.skc_openai_click_id,
   )
 }
 
@@ -898,11 +902,13 @@ function isTestOutboxRow(row: PpcOutboxRow): boolean {
     attribution.gclid,
     attribution.gbraid,
     attribution.wbraid,
+    attribution.skc_openai_click_id,
     attribution.utm_term,
     attribution.utm_content,
     payload.gclid,
     payload.gbraid,
     payload.wbraid,
+    payload.skc_openai_click_id,
     payload.email,
     payload.phone,
     payload.name,
@@ -1486,7 +1492,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
             : state.hasPpcCall
               ? 'call_only'
               : 'lead_only'
-      const clickId = text(attribution.gclid) || text(attribution.gbraid) || text(attribution.wbraid) || text(attribution.click_id) || '--'
+      const clickId = paidSourceIdentifier(attribution) || '--'
       return {
         id: state.lead.id,
         name: displayName(state.lead),

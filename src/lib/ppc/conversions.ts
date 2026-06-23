@@ -118,6 +118,7 @@ function isSmokeTestMode(
     attribution?.gbraid,
     attribution?.wbraid,
     attribution?.oppref,
+    attribution?.skc_openai_click_id,
   ]
 
   return values.some((value) => typeof value === 'string' && TEST_MARKER_RE.test(value))

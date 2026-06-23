@@ -57,6 +57,7 @@ export type PpcTrackingAttribution = {
   gad_source?: string
   gad_campaignid?: string
   gad_adgroupid?: string
+  skc_openai_click_id?: string
   referrer?: string
   landingUrl?: string
 }
@@ -177,6 +178,7 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
   const gclid = text(attribution.gclid)
   const gbraid = text(attribution.gbraid)
   const wbraid = text(attribution.wbraid)
+  const skcOpenAIClickId = text(attribution.skc_openai_click_id)
   const pageLocation = text(input.pageLocation) || text(attribution.landingUrl)
   const pageReferrer = text(input.pageReferrer) || text(attribution.referrer)
   const trafficSource = text(input.trafficSource) || paidSourceSlug({
@@ -231,7 +233,7 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
     condition_overall: condition && condition in CONDITION_TO_OVERALL ? CONDITION_TO_OVERALL[condition as keyof typeof CONDITION_TO_OVERALL] : null,
     phone_number: text(input.phoneNumber),
     sms_consent: bool(input.smsConsent),
-    is_test: Boolean(input.isTest) || hasTestMarker(input.eventId, gclid, gbraid, wbraid, input.sessionId, input.visitorId),
+    is_test: Boolean(input.isTest) || hasTestMarker(input.eventId, gclid, gbraid, wbraid, skcOpenAIClickId, input.sessionId, input.visitorId),
     payload,
   }
 }

@@ -23,6 +23,7 @@ const AttributionSchema = z
     gad_source: z.string().max(120).optional(),
     gad_campaignid: z.string().max(180).optional(),
     gad_adgroupid: z.string().max(180).optional(),
+    skc_openai_click_id: z.string().max(240).optional(),
     referrer: z.string().max(500).optional(),
     landingUrl: z.string().max(500).optional(),
   })

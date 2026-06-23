@@ -528,6 +528,68 @@ describe('ppc report', () => {
     )
   })
 
+  it('surfaces OpenAI Ads journeys from the first-party click id when oppref is absent', () => {
+    const report = buildPpcReport({
+      ...baseInput,
+      trackingEvents: [
+        ...baseInput.trackingEvents,
+        {
+          id: 'event-openai-first-party',
+          event_id: 'event-openai-first-party',
+          event_name: 'ppc_landing_request',
+          event_category: 'visit',
+          event_time: '2026-05-22T16:00:00.000Z',
+          session_id: null,
+          visitor_id: null,
+          lead_id: null,
+          page_location: 'https://savingkc.com/ppc?utm_source=chatgpt',
+          page_referrer: 'https://chatgpt.com/',
+          traffic_source: 'openai_ads',
+          campaign: 'OpenAI Ads',
+          utm_source: 'chatgpt',
+          utm_medium: null,
+          utm_campaign: null,
+          utm_term: null,
+          utm_content: null,
+          form_step: null,
+          form_status: null,
+          situation_raw: null,
+          timeline_raw: null,
+          condition_raw: null,
+          phone_number: null,
+          sms_consent: null,
+          is_test: false,
+          gclid: null,
+          gbraid: null,
+          wbraid: null,
+          gad_source: null,
+          gad_campaignid: null,
+          gad_adgroupid: null,
+          attribution: {},
+          payload: {
+            server_side: true,
+            attribution: {
+              skc_openai_click_id: 'skc_openai_report_123',
+              utm_source: 'chatgpt',
+            },
+          },
+          created_at: '2026-05-22T16:00:00.000Z',
+        },
+      ],
+    })
+
+    expect(report.journeySessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'skc_openai_report_123',
+          source: 'chatgpt',
+          campaign: 'OpenAI Ads',
+          clickId: 'skc_openai..._123',
+        }),
+      ]),
+    )
+  })
+
   it('only asks for approval on rows explicitly marked approval_required', () => {
     const report = buildPpcReport({
       ...baseInput,

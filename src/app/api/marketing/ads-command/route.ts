@@ -920,6 +920,7 @@ function trackingAttribution(row: PpcTrackingSummaryRow): Record<string, unknown
     gbraid: row.gbraid || attribution.gbraid || payload.gbraid,
     wbraid: row.wbraid || attribution.wbraid || payload.wbraid,
     oppref: attribution.oppref || payload.oppref,
+    skc_openai_click_id: attribution.skc_openai_click_id || payload.skc_openai_click_id,
     landingUrl: row.page_location || attribution.landingUrl || payload.landingUrl,
     referrer: row.page_referrer || attribution.referrer || payload.referrer,
   }

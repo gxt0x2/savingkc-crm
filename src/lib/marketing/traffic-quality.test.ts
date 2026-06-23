@@ -135,4 +135,37 @@ describe('traffic quality report', () => {
     })
     expect(report.sessions.map((session) => session.clickId)).toEqual(['oppref-a', 'oppref-b', 'oppref-c'])
   })
+
+  it('scores OpenAI Ads server-only landings with first-party click ids when oppref is absent', () => {
+    const report = buildTrafficQualityReport([
+      row({
+        event_id: 'openai-no-oppref-1',
+        traffic_source: 'openai_ads',
+        campaign: 'OpenAI Ads',
+        page_location: 'https://savingkc.com/ppc?utm_source=chatgpt',
+        page_referrer: 'https://chatgpt.com/',
+        payload: {
+          ...device('ip-openai', 'ua-openai'),
+          server_side: true,
+          attribution: {
+            skc_openai_click_id: 'skc_openai_abc',
+            utm_source: 'chatgpt',
+          },
+        },
+      }),
+    ], { now: '2026-06-06T14:02:00.000Z' })
+
+    expect(report.summary.sessions).toBe(1)
+    expect(report.summary.serverLandingRequests).toBe(1)
+    expect(report.summary.serverOnlySessions).toBe(1)
+    expect(report.sources[0]).toMatchObject({
+      label: 'openai_ads / OpenAI Ads',
+      sessions: 1,
+    })
+    expect(report.sessions[0]).toMatchObject({
+      clickId: 'skc_openai_abc',
+      source: 'openai_ads',
+      campaign: 'OpenAI Ads',
+    })
+  })
 })
