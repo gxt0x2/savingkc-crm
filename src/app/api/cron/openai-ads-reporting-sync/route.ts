@@ -7,6 +7,7 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const DEFAULT_LOOKBACK_DAYS = 30
 
 function parseBool(value: string | null): boolean {
   return value === '1' || value === 'true' || value === 'yes'
@@ -32,8 +33,8 @@ function addDays(date: string, days: number): string {
 }
 
 function readLookbackDays(value: string | null): number {
-  const parsed = Number(value || process.env.OPENAI_ADS_REPORTING_SYNC_LOOKBACK_DAYS || 7)
-  if (!Number.isFinite(parsed) || parsed < 1) return 7
+  const parsed = Number(value || process.env.OPENAI_ADS_REPORTING_SYNC_LOOKBACK_DAYS || DEFAULT_LOOKBACK_DAYS)
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_LOOKBACK_DAYS
   return Math.min(30, Math.floor(parsed))
 }
 
