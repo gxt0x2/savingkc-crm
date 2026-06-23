@@ -27,6 +27,7 @@ import {
 } from '@/lib/marketing/ads-command-seed'
 import { getMojoHealth } from '@/lib/marketing/mojo-health'
 import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceKey, paidSourceLabel, type PaidSourceKey } from '@/lib/marketing/paid-source'
+import { buildClickCaptureHealth, type ClickCaptureHealth } from '@/lib/marketing/click-capture-health'
 import { buildTrafficQualityReport, type TrafficQualityReport } from '@/lib/marketing/traffic-quality'
 
 export const dynamic = 'force-dynamic'
@@ -210,6 +211,7 @@ type AdsCommandResponse = {
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
+  captureHealth: ClickCaptureHealth
   trafficQuality: TrafficQualityReport
 }
 
@@ -1668,6 +1670,13 @@ export async function GET(req: NextRequest) {
       leads: leadRowsForResponse,
       outbox: buildOutboxRows(rows.outboxRows, rows.leadRows),
       paidSessions: buildPaidSessions(rows.trackingRows),
+      captureHealth: buildClickCaptureHealth({
+        campaignRows: rows.campaignRows,
+        trackingRows: rows.trackingRows,
+        leadRows: rows.leadRows,
+        outboxRows: rows.outboxRows,
+        generatedAt,
+      }),
       trafficQuality: buildTrafficQualityReport(rows.trackingRows, { now: generatedAt }),
     }
 
