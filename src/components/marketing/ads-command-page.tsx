@@ -1683,6 +1683,8 @@ function LeadOutboxPanel({
 
 function LatestPaidJourneys({
   sessions,
+  source,
+  platformClicks,
   filter,
   range,
   limit,
@@ -1694,6 +1696,8 @@ function LatestPaidJourneys({
   onOpenSession,
 }: {
   sessions: PaidSessionRow[]
+  source: PaidSourceFilter
+  platformClicks: number
   filter: PaidFilter
   range: PaidRange
   limit: number
@@ -1720,7 +1724,15 @@ function LatestPaidJourneys({
   const rows = filtered.slice(start, start + limit)
   const clicks = filtered.length
   const conversions = filtered.filter((session) => session.converted).length
-  const cr = clicks ? (conversions / clicks) * 100 : 0
+  const paidClicks = Math.max(platformClicks, clicks)
+  const unmatchedClicks = Math.max(0, paidClicks - clicks)
+  const cr = paidClicks ? (conversions / paidClicks) * 100 : 0
+  const sourceLabel = source === 'openai_ads' ? 'OpenAI Ads' : source === 'google_ads' ? 'Google Ads' : 'paid ads'
+  const attributionHint = source === 'openai_ads'
+    ? 'OpenAI attribution signal'
+    : source === 'google_ads'
+      ? 'Google click id'
+      : 'paid attribution signal'
 
   useEffect(() => {
     if (page !== safePage) onPageChange(safePage)
@@ -1734,9 +1746,16 @@ function LatestPaidJourneys({
       </div>
       <div className="pj-metrics">
         <div className="pjm green"><div className="l">CONVERSION RATE</div><div className="v">{cr.toFixed(1)}%</div></div>
-        <div className="pjm blue"><div className="l">PAID CLICKS</div><div className="v">{clicks}</div></div>
+        <div className="pjm blue"><div className="l">PAID CLICKS</div><div className="v">{paidClicks}</div></div>
+        <div className="pjm purple"><div className="l">SESSION REPLAYS</div><div className="v">{clicks}</div></div>
         <div className="pjm red"><div className="l">CONVERSIONS</div><div className="v">{conversions}</div></div>
       </div>
+      {unmatchedClicks > 0 ? (
+        <div className="pj-gap">
+          <b>{formatNum(unmatchedClicks)} {sourceLabel} click{unmatchedClicks === 1 ? '' : 's'} imported without a replayable website session.</b>
+          <span>Journey rows appear only after the landing page sends a tracking event. This usually means the visitor bounced before the page loaded, blocked tracking, or the click arrived without the expected {attributionHint}.</span>
+        </div>
+      ) : null}
       <div className="pj-controls">
         <div className="pj-tabs">
           <button className={filter === 'all' ? 'on' : ''} onClick={() => onFilterChange('all')} type="button">All</button>
@@ -1763,7 +1782,12 @@ function LatestPaidJourneys({
         </div>
       </div>
       <div className="paid-list">
-        {rows.map((session) => {
+        {rows.length === 0 ? (
+          <div className="pj-empty">
+            <b>No replayable sessions for this filter yet.</b>
+            <span>{paidClicks > 0 ? `${formatNum(paidClicks)} platform click${paidClicks === 1 ? '' : 's'} imported, but no matching on-site journey is available for this source and period.` : 'Platform clicks and on-site journeys will appear here after paid traffic reaches the landing page.'}</span>
+          </div>
+        ) : rows.map((session) => {
           const progress = microProgress(session.progress)
           const currentStep = microStepName(session, progress - 1)
           return (
@@ -2740,6 +2764,8 @@ export function AdsCommandPage() {
         onLimitChange={(limit) => { setPjLimit(limit); setPjPage(0) }}
         onPageChange={setPjPage}
         onOpenSession={setSelectedSession}
+        source={paidSourceFilter}
+        platformClicks={kpiValue(kpi, 'Clicks')}
       />
     )
   }
@@ -3201,13 +3227,18 @@ const ADS_COMMAND_STYLES = `
 .ads-command .outbox-event-line small { display:block; color:var(--text-tertiary); font-family:var(--font-mono); margin-top:3px; }
 .ads-command .sec-title { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 .ads-command .sec-title h2 { font-size:17px; font-weight:700; margin:0; letter-spacing:-.3px; }
-.ads-command .pj-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; }
+.ads-command .pj-metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
 .ads-command .pjm { background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-lg); padding:18px 20px; text-align:center; }
 .ads-command .pjm .l { font-size:12px; color:var(--text-tertiary); font-weight:600; letter-spacing:.02em; }
 .ads-command .pjm .v { font-weight:800; font-size:38px; line-height:1; margin-top:4px; letter-spacing:-1.5px; }
 .ads-command .pjm.green .v { color:var(--success); }
 .ads-command .pjm.blue .v { color:var(--info); }
+.ads-command .pjm.purple .v { color:#a78bfa; }
 .ads-command .pjm.red .v { color:var(--accent); }
+.ads-command .pj-gap { border:1px solid rgba(167,139,250,.35); background:rgba(167,139,250,.08); border-radius:var(--radius-lg); padding:13px 16px; margin:-6px 0 16px; display:flex; align-items:flex-start; gap:10px; color:var(--text-secondary); font-size:12.5px; line-height:1.45; }
+.ads-command .pj-gap b { color:var(--text); overflow-wrap:anywhere; }
+.ads-command .pj-empty { border:1px dashed var(--line-2); border-radius:var(--radius-lg); background:var(--surface-2); padding:28px 18px; color:var(--text-secondary); display:flex; flex-direction:column; gap:6px; text-align:center; }
+.ads-command .pj-empty b { color:var(--text); }
 .ads-command .pj-controls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
 .ads-command .pj-tabs { display:inline-flex; border:1px solid var(--line); border-radius:var(--radius-md); overflow:hidden; background:var(--surface-2); }
 .ads-command .pj-tabs button { background:none; border:0; color:var(--text-secondary); font-size:12.5px; font-weight:600; padding:8px 15px; cursor:pointer; }
