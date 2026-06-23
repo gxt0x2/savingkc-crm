@@ -159,6 +159,8 @@ function unauthorized() {
 const PAID_LANDING_PATHS = new Set([
   '/ppc',
   '/ppc/',
+  '/ppc-openai',
+  '/ppc-openai/',
   '/ppc-tax',
   '/ppc-tax/',
   '/ppc-redemption',
@@ -240,6 +242,10 @@ function hasGoogleAdsSignal(attribution: Record<string, string>): boolean {
   )
 }
 
+function isOpenAIAdsLandingPath(request: NextRequest): boolean {
+  return request.nextUrl.pathname === '/ppc-openai' || request.nextUrl.pathname === '/ppc-openai/'
+}
+
 function hasOpenAIAdsSignal(request: NextRequest, attribution: Record<string, string>): boolean {
   const source = attribution.utm_source?.toLowerCase() ?? ''
   const medium = attribution.utm_medium?.toLowerCase() ?? ''
@@ -248,6 +254,7 @@ function hasOpenAIAdsSignal(request: NextRequest, attribution: Record<string, st
   const url = request.nextUrl.href.toLowerCase()
 
   return Boolean(
+    isOpenAIAdsLandingPath(request) ||
     attribution.oppref ||
     attribution.skc_openai_click_id ||
     source.includes('openai') ||
@@ -268,6 +275,7 @@ function hasFreshOpenAIAdsSignal(request: NextRequest, attribution: Record<strin
   const url = request.nextUrl.href.toLowerCase()
 
   return Boolean(
+    isOpenAIAdsLandingPath(request) ||
     attribution.oppref ||
     source.includes('openai') ||
     source.includes('chatgpt') ||
