@@ -183,7 +183,18 @@ const ATTRIBUTION_QUERY_KEYS = [
   'gad_source',
   'gad_campaignid',
   'gad_adgroupid',
+  'skc_openai_click_id',
 ] as const
+
+const OPENAI_CLICK_COOKIE = '__skc_openai_click_id'
+const PPC_ATTRIBUTION_COOKIE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60
+
+type PaidLandingCookie = {
+  name: string
+  value: string
+  maxAge: number
+  secure: boolean
+}
 
 function isPaidLandingPageRequest(request: NextRequest): boolean {
   return request.method === 'GET' && PAID_LANDING_PATHS.has(request.nextUrl.pathname)
@@ -205,7 +216,15 @@ function readAttributionFromRequest(request: NextRequest): Record<string, string
   const cookieOppref = cleanText(request.cookies.get('__oppref')?.value)
   if (cookieOppref && !attribution.oppref) attribution.oppref = cookieOppref
 
+  const cookieOpenAIClickId = cleanText(request.cookies.get(OPENAI_CLICK_COOKIE)?.value)
+  if (cookieOpenAIClickId && !attribution.skc_openai_click_id) attribution.skc_openai_click_id = cookieOpenAIClickId
+
   return attribution
+}
+
+function makeOpenAIClickId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `skc_openai_${crypto.randomUUID()}`
+  return `skc_openai_${Date.now()}_${Math.random().toString(36).slice(2)}`
 }
 
 function hasGoogleAdsSignal(attribution: Record<string, string>): boolean {
@@ -230,6 +249,7 @@ function hasOpenAIAdsSignal(request: NextRequest, attribution: Record<string, st
 
   return Boolean(
     attribution.oppref ||
+    attribution.skc_openai_click_id ||
     source.includes('openai') ||
     source.includes('chatgpt') ||
     medium.includes('openai') ||
@@ -237,6 +257,26 @@ function hasOpenAIAdsSignal(request: NextRequest, attribution: Record<string, st
     referrer.includes('chatgpt.com') ||
     referrer.includes('openai.com') ||
     url.includes('utm_source=openai'),
+  )
+}
+
+function hasFreshOpenAIAdsSignal(request: NextRequest, attribution: Record<string, string>): boolean {
+  const source = attribution.utm_source?.toLowerCase() ?? ''
+  const medium = attribution.utm_medium?.toLowerCase() ?? ''
+  const campaign = attribution.utm_campaign?.toLowerCase() ?? ''
+  const referrer = request.headers.get('referer')?.toLowerCase() ?? ''
+  const url = request.nextUrl.href.toLowerCase()
+
+  return Boolean(
+    attribution.oppref ||
+    source.includes('openai') ||
+    source.includes('chatgpt') ||
+    medium.includes('openai') ||
+    campaign.includes('openai') ||
+    referrer.includes('chatgpt.com') ||
+    referrer.includes('openai.com') ||
+    url.includes('utm_source=openai') ||
+    url.includes('utm_source=chatgpt'),
   )
 }
 
@@ -267,11 +307,24 @@ function forwardedTrackingHeaders(request: NextRequest): Headers {
   return headers
 }
 
-function queuePaidLandingRequest(request: NextRequest, event: NextFetchEvent) {
+function queuePaidLandingRequest(request: NextRequest, event: NextFetchEvent): PaidLandingCookie[] {
   const attribution = readAttributionFromRequest(request)
   const openaiAds = hasOpenAIAdsSignal(request, attribution)
   const googleAds = hasGoogleAdsSignal(attribution)
   const trafficSource = openaiAds ? 'openai_ads' : googleAds ? 'google_ads' : undefined
+  const cookies: PaidLandingCookie[] = []
+  if (openaiAds && !attribution.oppref) {
+    const shouldMintFreshClickId = hasFreshOpenAIAdsSignal(request, attribution) || !attribution.skc_openai_click_id
+    attribution.skc_openai_click_id = shouldMintFreshClickId
+      ? makeOpenAIClickId()
+      : attribution.skc_openai_click_id
+    cookies.push({
+      name: OPENAI_CLICK_COOKIE,
+      value: attribution.skc_openai_click_id,
+      maxAge: PPC_ATTRIBUTION_COOKIE_MAX_AGE_SECONDS,
+      secure: request.nextUrl.protocol === 'https:',
+    })
+  }
   const eventId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? `server_ppc_landing_request_${crypto.randomUUID()}`
     : `server_ppc_landing_request_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -305,37 +358,53 @@ function queuePaidLandingRequest(request: NextRequest, event: NextFetchEvent) {
       console.warn('[proxy] paid landing tracking failed', error)
     }),
   )
+
+  return cookies
+}
+
+function withPaidLandingCookies(response: NextResponse, cookies: PaidLandingCookie[]): NextResponse {
+  for (const cookie of cookies) {
+    response.cookies.set(cookie.name, cookie.value, {
+      httpOnly: false,
+      sameSite: 'lax',
+      secure: cookie.secure,
+      path: '/',
+      maxAge: cookie.maxAge,
+    })
+  }
+  return response
 }
 
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
   const { pathname } = request.nextUrl
+  let paidLandingCookies: PaidLandingCookie[] = []
 
   if (isPaidLandingPageRequest(request)) {
-    queuePaidLandingRequest(request, event)
+    paidLandingCookies = queuePaidLandingRequest(request, event)
   }
 
   if (hasTestBypass(request)) {
-    return NextResponse.next()
+    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
 
   // Skip auth for public routes
   if (PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
-    return NextResponse.next()
+    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
 
   // Skip auth for explicitly public API routes and external webhooks
   if (isPublicApiRoute(request)) {
-    return NextResponse.next()
+    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
 
   // Let server-to-server checks through only when they carry a trusted bearer.
   if (isTrustedBearerRoute(request)) {
-    return NextResponse.next()
+    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
 
   // Skip auth for static files and Next.js internals
   if (isStaticAsset(pathname)) {
-    return NextResponse.next()
+    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
   // Create Supabase client and refresh session
   let supabaseResponse = NextResponse.next({ request })
@@ -366,13 +435,13 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   // If no user and trying to access protected route, redirect to login
   if (!user) {
     if (pathname.startsWith('/api/')) {
-      return unauthorized()
+      return withPaidLandingCookies(unauthorized(), paidLandingCookies)
     }
 
-    return loginRedirect(request)
+    return withPaidLandingCookies(loginRedirect(request), paidLandingCookies)
   }
 
-  return supabaseResponse
+  return withPaidLandingCookies(supabaseResponse, paidLandingCookies)
 }
 
 export const config = {

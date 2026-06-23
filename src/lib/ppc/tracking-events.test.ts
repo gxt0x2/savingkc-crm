@@ -27,4 +27,33 @@ describe('ppc tracking event rows', () => {
       wbraid: null,
     })
   })
+
+  it('stores the first-party OpenAI click id in attribution payloads', () => {
+    const row = buildPpcTrackingEventRow({
+      eventId: 'skc_ppc_visit_started_openai_click',
+      eventName: 'ppc_visit_started',
+      sessionId: 'session-openai',
+      visitorId: 'visitor-openai',
+      pagePath: '/ppc',
+      pageLocation: 'https://savingkc.com/ppc?utm_source=chatgpt',
+      attribution: {
+        utm_source: 'chatgpt',
+        skc_openai_click_id: 'skc_openai_abc',
+        landingUrl: 'https://savingkc.com/ppc?utm_source=chatgpt',
+      },
+    })
+
+    expect(row).toMatchObject({
+      traffic_source: 'openai_ads',
+      utm_source: 'chatgpt',
+      gclid: null,
+      gbraid: null,
+      wbraid: null,
+      payload: {
+        attribution: expect.objectContaining({
+          skc_openai_click_id: 'skc_openai_abc',
+        }),
+      },
+    })
+  })
 })

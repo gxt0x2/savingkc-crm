@@ -186,7 +186,9 @@ function clickId(row: TrafficQualityTrackingRow): string {
     || text(attribution.gbraid)
     || text(attribution.wbraid)
     || text(attribution.oppref)
+    || text(attribution.skc_openai_click_id)
     || text(payload(row).click_id)
+    || text(payload(row).skc_openai_click_id)
     || text(payload(row).oppref)
 }
 
