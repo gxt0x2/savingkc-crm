@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
 import { isOptedOut, handleOptOut, handleOptIn, isStopKeyword, isStartKeyword } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
-import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
+import { rateLimit, rateLimitConfigs, getClientIp } from '@/middleware/rate-limit'
 import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
 import { regenerateBriefing } from '@/lib/briefing-regen'
 import { sendPushToAgents } from '@/lib/push-notifications'
-import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect, formatProspectAlert } from '@/lib/prospect-to-lead'
 import type { ProspectMatch } from '@/lib/prospect-lookup'
@@ -17,6 +16,7 @@ import {
   googleAdsNewTextTeamMessage,
   markLeadAsGoogleAdsPhoneLead,
   notifyGoogleAdsTeam,
+  phoneLookupVariants,
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
 
@@ -24,12 +24,6 @@ const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
 const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
-
-// Random delay to make auto-texts feel human
-function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
-  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
-  setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
-}
 
 function isOfficeHours(): boolean {
   const now = new Date()
@@ -45,6 +39,36 @@ const TEAM_NUMBERS = new Set([
   '+18166088588', // Ernest company
   '+18162262552', // Ernest personal
 ])
+
+type SmsSuppressionReason = 'SPAM' | 'BLOCKED' | 'DNC' | 'WRONG_NUMBER' | string
+
+async function findLeadByPhone(phone: string) {
+  for (const variant of phoneLookupVariants(phone)) {
+    const { data } = await supabase
+      .from('leads')
+      .select('id, full_name, phone, station, priority')
+      .eq('phone', variant)
+      .limit(1)
+      .maybeSingle()
+    if (data) return data
+  }
+  return null
+}
+
+async function smsSuppressionReason(phone: string): Promise<SmsSuppressionReason | null> {
+  const { data } = await supabase
+    .from('sms_opt_outs')
+    .select('reason')
+    .eq('phone', phone)
+    .eq('is_opted_out', true)
+    .maybeSingle()
+
+  return typeof data?.reason === 'string' ? data.reason.toUpperCase() : null
+}
+
+function isHardBlockedReason(reason: SmsSuppressionReason | null): boolean {
+  return reason === 'SPAM' || reason === 'BLOCKED'
+}
 
 export async function POST(req: Request) {
   try {
@@ -104,20 +128,16 @@ export async function POST(req: Request) {
       return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
     }
 
-    // Match sender phone number to a lead in the database
-    const { data: leads } = await supabase
-      .from('leads')
-      .select('id, full_name, phone, station, priority')
-      .eq('phone', from)
-      .limit(1)
-
-    const lead = leads && leads.length > 0 ? leads[0] : null
+    // Match sender phone number to a lead in the database. Twilio sends E.164,
+    // but older imports can store national/formatted variants.
+    const lead = await findLeadByPhone(from)
     const leadId = lead?.id || null
     const leadName = lead?.full_name || 'Unknown'
+    const suppressionReason = await smsSuppressionReason(from)
 
     // Prospect lookup for unknown senders
     let prospectMatch: ProspectMatch | null = null
-    if (!lead) {
+    if (!lead && !isHardBlockedReason(suppressionReason)) {
       const matches = await lookupProspectByPhone(from)
       prospectMatch = matches.length > 0 ? matches[0] : null
     }
@@ -140,6 +160,12 @@ export async function POST(req: Request) {
     // Sync to manifest (fire-and-forget)
     if (leadId) {
       onCommunicationEvent(leadId, { type: 'inbound_sms', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
+    }
+
+    if (isHardBlockedReason(suppressionReason)) {
+      return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+        headers: { 'Content-Type': 'text/xml' },
+      })
     }
 
     // ── Team numbers: log + notify, but skip auto-reply/lead creation ──
@@ -630,7 +656,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── Unknown number — full automation: lead, manifest, alerts, auto-reply, task ──
+    // ── Unknown number — create/enrich lead, alert agents, create task. No generic seller auto-reply. ──
     if (!lead) {
       let newLeadId: string | null = null
 
@@ -733,29 +759,8 @@ export async function POST(req: Request) {
         } catch {}
       }
 
-      // Auto-reply to unknown sender (delayed 30-60s, with dedup)
-      const optedOut = await isOptedOut(from)
-      const { allowed: phoneOk } = phoneRateLimit(from)
-      if (!optedOut && phoneOk) {
-        const replyFrom = to || TWILIO_PHONE
-        const autoReplyMsg = `Thanks for reaching out to Saving KC Homebuyers! Are you looking to sell a property? Reply YES and we'll call you right back.`
-        const isDupe = await isDuplicateSms(from, autoReplyMsg)
-        if (!isDupe) {
-          sendDelayed(async () => {
-            await safeSendSMS({ body: autoReplyMsg, from: replyFrom, to: from })
-            await logSmsSend(from, autoReplyMsg, replyFrom, newLeadId || undefined)
-            if (newLeadId) {
-              await supabase.from('lead_activities').insert({
-                lead_id: newLeadId,
-                activity_type: 'sms',
-                description: autoReplyMsg,
-                agent: 'System',
-                metadata: { direction: 'outbound', from: replyFrom, to: from, trigger: 'unknown_sms_auto_reply' }
-              })
-            }
-          }, 30, 60)
-        }
-      }
+      // Generic unknown/prospect texts are human takeover only. Missed-call and
+      // explicit YES flows can still acknowledge in their scoped handlers above.
     }
 
     // No auto-reply for general messages from known leads — keep it human

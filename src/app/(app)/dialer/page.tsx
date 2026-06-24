@@ -1478,7 +1478,6 @@ function DialerHome() {
   const [useCallHammer, setUseCallHammer] = useState(true)
   const [useVoicemailCallHammer, setUseVoicemailCallHammer] = useState(false)
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
-  const [pacing, setPacing] = useState(18)
   const [showBulkSms, setShowBulkSms] = useState(false)
   const [homeTab, setHomeTab] = useState<'queue' | 'conversations'>('queue')
 
@@ -1793,10 +1792,8 @@ function DialerHome() {
 
     if (dialerMode === 'click_to_call') {
       setMode('power')
-      setPacing((current) => Math.max(current, 18))
     } else {
       setMode('predictive')
-      setPacing((current) => Math.min(current, 12))
     }
 
     if (activeSavedQueueId) {
@@ -2080,7 +2077,7 @@ function DialerHome() {
   }, [callerId])
 
   return (
-    <div className={`mx-auto px-4 py-6 pb-24 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'max-w-[1440px]' : 'max-w-[1180px]'}`}>
+    <div className={`mx-auto px-4 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'max-w-[1440px] py-4 pb-4' : 'max-w-[1180px] py-6 pb-24'}`}>
       <BulkSmsModal
         open={showBulkSms}
         onClose={() => setShowBulkSms(false)}
@@ -2088,7 +2085,7 @@ function DialerHome() {
         agent={agent}
         fromPhone={callerId}
       />
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className={`${homeTab === 'conversations' ? 'mb-3' : 'mb-6'} flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between`}>
         <div className="min-w-0">
           <div className="mb-4 inline-flex overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
             <button
@@ -2796,27 +2793,6 @@ function DarkSelect({ label, value, onChange, options }: { label: string; value:
         ))}
       </select>
     </label>
-  )
-}
-
-function SegmentedControl({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return (
-    <div>
-      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Mode</span>
-      <div className="mt-2 grid grid-cols-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
-        {['power', 'predictive'].map((option) => (
-          <button
-            key={option}
-            onClick={() => onChange(option)}
-            className={`rounded-md px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
-              value === option ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
-            }`}
-          >
-            {option}
-          </button>
-        ))}
-      </div>
-    </div>
   )
 }
 

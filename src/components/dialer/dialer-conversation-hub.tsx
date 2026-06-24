@@ -11,7 +11,7 @@ type HubView = 'dashboard' | 'inbox' | 'templates'
 type HubFilter = 'needs_reply' | 'unanswered' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
 type ComposeMode = 'sms' | 'email'
 type TemplateCategory = 'intro' | 'follow_up' | 'nurture' | 'ghost_protocol' | 'missed_call'
-type PhoneQualityStatus = 'unknown' | 'verified' | 'wrong_number' | 'dnc'
+type PhoneQualityStatus = 'unknown' | 'verified' | 'wrong_number' | 'dnc' | 'spam' | 'blocked'
 
 interface HubLead {
   id: string
@@ -118,6 +118,15 @@ const PRIORITY_OPTIONS = [
   { value: 'normal', label: 'Normal' },
   { value: 'low', label: 'Cold' },
 ]
+const SUPPRESSED_PHONE_STATUSES = new Set<PhoneQualityStatus>(['wrong_number', 'dnc', 'spam', 'blocked'])
+const PHONE_STATUS_LABELS: Record<PhoneQualityStatus, string> = {
+  unknown: 'unknown',
+  verified: 'verified',
+  wrong_number: 'wrong number',
+  dnc: 'DNC',
+  spam: 'spam',
+  blocked: 'blocked',
+}
 
 function textValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -429,10 +438,10 @@ function composerWarnings(body: string): string[] {
 function phoneStatusFromActivities(activities: HubActivity[]): PhoneQualityStatus {
   const statusActivity = activities.slice().reverse().find((activity) => {
     const status = textValue(activityMetadata(activity).phone_status)
-    return status === 'verified' || status === 'wrong_number' || status === 'dnc'
+    return status === 'verified' || status === 'wrong_number' || status === 'dnc' || status === 'spam' || status === 'blocked'
   })
   const status = textValue(statusActivity ? activityMetadata(statusActivity).phone_status : null)
-  return status === 'verified' || status === 'wrong_number' || status === 'dnc' ? status : 'unknown'
+  return status === 'verified' || status === 'wrong_number' || status === 'dnc' || status === 'spam' || status === 'blocked' ? status : 'unknown'
 }
 
 function addressQuery(lead: HubLead | null): string {
@@ -821,7 +830,8 @@ export function DialerConversationHub({
   const messageMetric = useMemo(() => smsSegmentMetric(message), [message])
   const messageWarnings = useMemo(() => composerWarnings(message), [message])
 
-  const groupedActivities = useMemo(() => groupByDay(activeActivities), [activeActivities])
+  const visibleActivities = useMemo(() => activeActivities.slice(-8), [activeActivities])
+  const groupedActivities = useMemo(() => groupByDay(visibleActivities), [visibleActivities])
 
   async function handleSend() {
     const body = message.trim()
@@ -935,8 +945,10 @@ export function DialerConversationHub({
   ]
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)]">
-      <div className="border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
+    <section className={`overflow-hidden rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] ${
+      view === 'inbox' ? 'flex h-[calc(100vh-190px)] min-h-[520px] max-h-[calc(100vh-190px)] flex-col' : ''
+    }`}>
+      <div className="shrink-0 border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="inline-flex w-full overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1 sm:w-auto">
             {viewTabs.map((tab) => (
@@ -1020,7 +1032,7 @@ export function DialerConversationHub({
 
       {view === 'inbox' && (
         <>
-          <div className="border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
+          <div className="shrink-0 border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex gap-1 overflow-x-auto rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
                 {inboxTabs.map((tab) => (
@@ -1050,9 +1062,9 @@ export function DialerConversationHub({
             </div>
           </div>
 
-      <div className="grid min-h-[720px] lg:grid-cols-[330px_minmax(0,1fr)_290px]">
-        <aside className="border-b border-[var(--ck-border)] lg:border-b-0 lg:border-r">
-          <div className="flex items-center justify-between border-b border-[var(--ck-border)] px-4 py-3">
+      <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[330px_minmax(0,1fr)_290px]">
+        <aside className="flex min-h-0 flex-col border-b border-[var(--ck-border)] lg:border-b-0 lg:border-r">
+          <div className="flex shrink-0 items-center justify-between border-b border-[var(--ck-border)] px-4 py-3">
             <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{filteredThreads.length} Results</p>
             <button
               type="button"
@@ -1064,7 +1076,7 @@ export function DialerConversationHub({
               <Icon name="refresh" size="text-base" />
             </button>
           </div>
-          <div className="max-h-[656px] overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {loading ? (
               <div className="p-6 text-center text-sm text-[var(--ck-text-muted)]">Loading...</div>
             ) : error ? (
@@ -1106,10 +1118,10 @@ export function DialerConversationHub({
           </div>
         </aside>
 
-        <main className="flex min-h-[720px] min-w-0 flex-col border-b border-[var(--ck-border)] lg:border-b-0 lg:border-r">
+        <main className="flex min-h-0 min-w-0 flex-col border-b border-[var(--ck-border)] lg:border-b-0 lg:border-r">
           {activeThread ? (
             <>
-              <header className="flex flex-col gap-3 border-b border-[var(--ck-border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <header className="flex shrink-0 flex-col gap-3 border-b border-[var(--ck-border)] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="truncate text-lg font-black text-[var(--ck-text)]">{activeThread.name}</p>
                   <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">
@@ -1138,11 +1150,11 @@ export function DialerConversationHub({
                 </div>
               </header>
 
-              <div ref={scrollRef} className="flex-1 overflow-y-auto bg-black/15 px-5 py-5">
+              <div ref={scrollRef} className="min-h-0 flex-1 overflow-hidden bg-black/15 px-5 py-4">
                 {groupedActivities.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-sm text-[var(--ck-text-dim)]">No messages yet.</div>
                 ) : (
-                  <div className="space-y-6">
+                  <div className="space-y-4">
                     {groupedActivities.map((group) => (
                       <div key={group.day} className="space-y-3">
                         <div className="flex items-center gap-3">
@@ -1159,8 +1171,8 @@ export function DialerConversationHub({
                 )}
               </div>
 
-              <footer className="border-t border-[var(--ck-border)] bg-[var(--ck-surface)]">
-                <div className="flex items-center gap-1 px-5 pt-3">
+              <footer className="shrink-0 border-t border-[var(--ck-border)] bg-[var(--ck-surface)]">
+                <div className="flex items-center gap-1 px-5 pt-2">
                   {(['sms', 'email'] as ComposeMode[]).map((mode) => (
                     <button
                       key={mode}
@@ -1204,7 +1216,7 @@ export function DialerConversationHub({
                   )}
                 </div>
                 {showReplyTools && (
-                  <div className="mx-5 mt-3 grid gap-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3 lg:grid-cols-2">
+                  <div className="mx-5 mt-2 grid gap-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-2 lg:grid-cols-2">
                     <div>
                       <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Quick Replies</p>
                       <div className="flex flex-wrap gap-2">
@@ -1244,14 +1256,14 @@ export function DialerConversationHub({
                     SMS is suppressed for this number. Remove the DNC status before texting again.
                   </div>
                 )}
-                <div className="flex items-end gap-3 px-5 py-3">
+                <div className="flex items-end gap-3 px-5 py-2">
                   <textarea
                     value={message}
                     onChange={(event) => setMessage(event.target.value)}
                     onKeyDown={handleComposerKeyDown}
-                    rows={3}
+                    rows={2}
                     placeholder={composeMode === 'sms' ? 'Type a text...' : 'Write an email...'}
-                    className="min-h-[82px] flex-1 resize-none rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-sm text-[var(--ck-text)] placeholder:text-[var(--ck-text-dim)] outline-none focus:border-[#E32E2E]"
+                    className="min-h-[58px] flex-1 resize-none rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-sm text-[var(--ck-text)] placeholder:text-[var(--ck-text-dim)] outline-none focus:border-[#E32E2E]"
                   />
                   <button
                     type="button"
@@ -1265,7 +1277,7 @@ export function DialerConversationHub({
                   </button>
                 </div>
                 {composeMode === 'sms' && (
-                  <div className="flex flex-wrap items-center gap-2 px-5 pb-3 text-[10px] font-bold text-[var(--ck-text-dim)]">
+                  <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[10px] font-bold text-[var(--ck-text-dim)]">
                     <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1">
                       {messageMetric.encoding} - {messageMetric.characters} chars - {messageMetric.segments} segment{messageMetric.segments === 1 ? '' : 's'} - {messageMetric.remaining} left
                     </span>
@@ -1282,7 +1294,7 @@ export function DialerConversationHub({
           )}
         </main>
 
-        <aside className="min-h-[360px] bg-[var(--ck-surface)] px-5 py-5">
+        <aside className="min-h-0 overflow-y-auto bg-[var(--ck-surface)] px-5 py-4">
           {activeThread ? (
             <SellerRail
               thread={activeThread}
@@ -1640,7 +1652,7 @@ function ConversationEvent({ activity, initials, phone }: { activity: HubActivit
             <Icon name={icon} size="text-base" />
             {activity.activity_type.replace(/_/g, ' ')}
           </p>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--ck-text)]">{body || 'Activity logged'}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-[var(--ck-text)]">{body || 'Activity logged'}</p>
           <p className="mt-2 text-[10px] text-[var(--ck-text-dim)]">{activity.agent || 'System'} - {fullTime(activity.created_at)}</p>
         </div>
       </div>
@@ -1678,7 +1690,7 @@ function ConversationEvent({ activity, initials, phone }: { activity: HubActivit
       <div className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
         <div className="max-w-[560px] rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-4 py-3">
           <p className="text-xs font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{inbound ? 'Email received' : 'Email sent'}</p>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--ck-text)]">{body || 'Email'}</p>
+          <p className="mt-2 line-clamp-3 text-sm text-[var(--ck-text)]">{body || 'Email'}</p>
           <p className="mt-2 text-[10px] text-[var(--ck-text-dim)]">{fullTime(activity.created_at)}{activity.agent ? ` - ${activity.agent}` : ''}</p>
         </div>
       </div>
@@ -1693,7 +1705,7 @@ function ConversationEvent({ activity, initials, phone }: { activity: HubActivit
         </span>
         <div>
           <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${inbound ? 'rounded-bl-md bg-[var(--ck-surface-elev)] text-[var(--ck-text)]' : 'rounded-br-md bg-[#2787ff] text-white'}`}>
-            <p className="whitespace-pre-wrap break-words">{body || '[empty message]'}</p>
+            <p className="line-clamp-3 break-words">{body || '[empty message]'}</p>
           </div>
           <p className={`mt-1 px-1 text-[10px] text-[var(--ck-text-dim)] ${inbound ? 'text-left' : 'text-right'}`}>
             {inbound ? 'Seller' : activity.agent || 'Saving KC'} - {fullTime(activity.created_at)}
@@ -1839,7 +1851,7 @@ function SellerRail({
       if (!response.ok) throw new Error(payload?.error || 'Could not update phone status.')
       setActionMessage(payload?.message || 'Phone status updated.')
       setActionTone('success')
-      if (action === 'dnc' || action === 'wrong_number') onPhoneSuppressed()
+      if (SUPPRESSED_PHONE_STATUSES.has(action)) onPhoneSuppressed()
       onRefresh()
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : 'Could not update phone status.')
@@ -1864,7 +1876,7 @@ function SellerRail({
         <RailLine icon="mail" value={lead?.email || 'No email'} />
         <RailLine icon="location_on" value={[lead?.property_address, lead?.city, lead?.state].filter(Boolean).join(', ') || 'No property'} />
         <RailLine icon="sell" value={lead?.station ? lead.station.replace(/_/g, ' ') : 'No stage'} />
-        <RailLine icon="verified" value={`Phone: ${phoneStatus.replace(/_/g, ' ')}`} />
+        <RailLine icon="verified" value={`Phone: ${PHONE_STATUS_LABELS[phoneStatus]}`} />
       </div>
 
       <div className="grid grid-cols-2 gap-2 border-t border-[var(--ck-border)] pt-4">
@@ -1937,10 +1949,12 @@ function SellerRail({
 
       <div className="space-y-3 border-t border-[var(--ck-border)] pt-4">
         <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Phone Quality</p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <PhoneActionButton label="Verify" icon="verified" active={phoneStatus === 'verified'} busy={savingAction === 'verified'} disabled={!hasPhone} onClick={() => void handlePhoneAction('verified')} />
           <PhoneActionButton label="Wrong #" icon="phone_disabled" active={phoneStatus === 'wrong_number'} busy={savingAction === 'wrong_number'} disabled={!hasPhone} onClick={() => void handlePhoneAction('wrong_number')} />
           <PhoneActionButton label="DNC" icon="block" active={phoneStatus === 'dnc'} busy={savingAction === 'dnc'} disabled={!hasPhone} onClick={() => void handlePhoneAction('dnc')} />
+          <PhoneActionButton label="Spam" icon="report" active={phoneStatus === 'spam'} busy={savingAction === 'spam'} disabled={!hasPhone} onClick={() => void handlePhoneAction('spam')} />
+          <PhoneActionButton label="Block" icon="person_off" active={phoneStatus === 'blocked'} busy={savingAction === 'blocked'} disabled={!hasPhone} onClick={() => void handlePhoneAction('blocked')} />
         </div>
       </div>
 

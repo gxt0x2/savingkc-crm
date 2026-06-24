@@ -2,17 +2,27 @@ import { NextResponse } from 'next/server'
 import { handleOptOut } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
 
-type PhoneStatusAction = 'verified' | 'wrong_number' | 'dnc'
+type PhoneStatusAction = 'verified' | 'wrong_number' | 'dnc' | 'spam' | 'blocked'
 
 const ACTION_LABELS: Record<PhoneStatusAction, string> = {
   verified: 'verified',
   wrong_number: 'wrong number',
   dnc: 'DNC',
+  spam: 'spam',
+  blocked: 'blocked',
 }
 
 function cleanAction(value: unknown): PhoneStatusAction | null {
-  if (value === 'verified' || value === 'wrong_number' || value === 'dnc') return value
+  if (value === 'verified' || value === 'wrong_number' || value === 'dnc' || value === 'spam' || value === 'blocked') return value
   return null
+}
+
+function suppressionReason(action: PhoneStatusAction): string | null {
+  if (action === 'verified') return null
+  if (action === 'wrong_number') return 'WRONG_NUMBER'
+  if (action === 'dnc') return 'DNC'
+  if (action === 'spam') return 'SPAM'
+  return 'BLOCKED'
 }
 
 export async function POST(req: Request) {
@@ -27,8 +37,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'phone and action are required' }, { status: 400 })
     }
 
-    if (action === 'dnc' || action === 'wrong_number') {
-      await handleOptOut(phone, action === 'dnc' ? 'DNC' : 'WRONG_NUMBER')
+    const reason = suppressionReason(action)
+    if (reason) {
+      await handleOptOut(phone, reason)
     }
 
     const description = `Phone marked ${ACTION_LABELS[action]}${phone ? `: ${phone}` : ''}`
@@ -41,7 +52,7 @@ export async function POST(req: Request) {
         source: 'dialer_conversation_hub',
         phone,
         phone_status: action,
-        sms_suppressed: action === 'dnc' || action === 'wrong_number',
+        sms_suppressed: Boolean(reason),
       },
     })
 
@@ -53,7 +64,7 @@ export async function POST(req: Request) {
       success: true,
       message: action === 'verified'
         ? 'Phone marked verified.'
-        : 'Phone suppressed for future SMS.',
+        : `Phone marked ${ACTION_LABELS[action]} and suppressed for future SMS.`,
     })
   } catch (err) {
     console.error('[conversations/phone-status] error:', err)
