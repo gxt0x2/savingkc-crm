@@ -1150,7 +1150,7 @@ export function DialerConversationHub({
                 </div>
               </header>
 
-              <div ref={scrollRef} className="min-h-0 flex-1 overflow-hidden bg-black/15 px-5 py-4">
+              <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto bg-black/15 px-5 py-4">
                 {groupedActivities.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-sm text-[var(--ck-text-dim)]">No messages yet.</div>
                 ) : (

@@ -2085,9 +2085,12 @@ function DialerHome() {
         agent={agent}
         fromPhone={callerId}
       />
-      <div className={`${homeTab === 'conversations' ? 'mb-3' : 'mb-6'} flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between`}>
-        <div className="min-w-0">
-          <div className="mb-4 inline-flex overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
+      <div className={homeTab === 'conversations'
+        ? 'mb-3 flex justify-center'
+        : 'mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'}
+      >
+        <div className={homeTab === 'conversations' ? '' : 'min-w-0'}>
+          <div className={`${homeTab === 'conversations' ? '' : 'mb-4'} inline-flex overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1`}>
             <button
               type="button"
               onClick={() => setHomeTab('queue')}
@@ -2107,14 +2110,12 @@ function DialerHome() {
               <Icon name="forum" size="text-base" /> Conversations
             </button>
           </div>
-          <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">
-            {homeTab === 'conversations' ? 'Communication Hub' : 'Calling Command Center'}
-          </h1>
-          <p className="mt-1 text-sm text-[var(--ck-text-muted)]">
-            {homeTab === 'conversations'
-              ? 'Review seller calls, texts, and emails from one inbox, then reply without leaving the dialer.'
-              : 'Pick who to call, the number to call from, and how — then start.'}
-          </p>
+          {homeTab === 'queue' && (
+            <>
+              <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">Calling Command Center</h1>
+              <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick who to call, the number to call from, and how — then start.</p>
+            </>
+          )}
         </div>
         {homeTab === 'queue' && (
           <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3.5 py-1.5 text-sm font-bold text-[var(--ck-text)] sm:self-auto">
