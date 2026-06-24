@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server'
+import { resolvePpcTrackingEndpoint } from '@/lib/ppc/tracking-endpoint'
 
 // Routes that don't require authentication
 const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', '/deals', '/ppc']
@@ -338,7 +339,7 @@ function queuePaidLandingRequest(request: NextRequest, event: NextFetchEvent): P
     : `server_ppc_landing_request_${Date.now()}_${Math.random().toString(36).slice(2)}`
 
   event.waitUntil(
-    fetch(`${request.nextUrl.origin}/api/ppc/track`, {
+    fetch(resolvePpcTrackingEndpoint(request.nextUrl), {
       method: 'POST',
       headers: forwardedTrackingHeaders(request),
       body: JSON.stringify({
