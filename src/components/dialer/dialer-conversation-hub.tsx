@@ -7,8 +7,10 @@ import { createClient } from '@/lib/supabase/client'
 import { CONVERSATION_TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { formatPhone, toProperCase } from '@/lib/format'
 
-type HubFilter = 'recents' | 'unread' | 'starred' | 'all'
+type HubView = 'dashboard' | 'inbox' | 'templates'
+type HubFilter = 'needs_reply' | 'unanswered' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
 type ComposeMode = 'sms' | 'email'
+type TemplateCategory = 'intro' | 'follow_up' | 'nurture' | 'ghost_protocol' | 'missed_call'
 
 interface HubLead {
   id: string
@@ -20,6 +22,7 @@ interface HubLead {
   state: string | null
   zip: string | null
   county: string | null
+  source: string | null
   station: string | null
   priority: string | null
   assigned_agent: string | null
@@ -49,9 +52,40 @@ interface HubThread {
   activities: HubActivity[]
 }
 
+interface SmsTemplateRow {
+  id: string
+  name: string
+  category: string
+  body: string
+  merge_fields: string[] | null
+  usage_count: number | null
+}
+
+interface CampaignMetric {
+  label: string
+  sent: number
+  replies: number
+  active: number
+}
+
+interface TagMetric {
+  label: string
+  count: number
+  tone: string
+}
+
+interface ReplyMetric {
+  count: number
+  averageMinutes: number | null
+}
+
 const COMM_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail']
 const SMS_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound'])
 const DEFAULT_FROM_PHONE = CONVERSATION_TWILIO_NUMBERS[0]?.value || '+18163077835'
+const RESTRICTED_WORDS = ['guaranteed', 'free cash', 'risk-free', 'urgent', 'act now', 'limited time', 'government', 'irs']
+const NEGATIVE_KEYWORDS = ['lawsuit', 'foreclosure rescue', 'loan modification', 'credit repair', 'covid', 'bankruptcy attorney']
+const DEFAULT_TEMPLATE_BODY = 'Hi {firstName}, this is Casey with Saving KC Homebuyers. I was reaching out about {propertyAddress}. Would you be open to a quick conversation?'
+const TEMPLATE_CATEGORIES: TemplateCategory[] = ['intro', 'follow_up', 'nurture', 'ghost_protocol', 'missed_call']
 
 function textValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -182,6 +216,128 @@ function buildUnmatchedThread(phone: string, activities: HubActivity[]): HubThre
   }
 }
 
+function sortedAscending(activities: HubActivity[]): HubActivity[] {
+  return activities.slice().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+}
+
+function smsActivities(thread: HubThread): HubActivity[] {
+  return thread.activities.filter(isSmsActivity)
+}
+
+function latestSmsByDirection(thread: HubThread, direction: 'inbound' | 'outbound'): HubActivity | null {
+  return smsActivities(thread).find((activity) => activityDirection(activity) === direction) || null
+}
+
+function latestInbound(thread: HubThread): HubActivity | null {
+  return latestSmsByDirection(thread, 'inbound')
+}
+
+function latestOutbound(thread: HubThread): HubActivity | null {
+  return latestSmsByDirection(thread, 'outbound')
+}
+
+function threadNeedsReply(thread: HubThread): boolean {
+  const last = thread.lastActivity
+  return Boolean(last && activityDirection(last) === 'inbound' && (isSmsActivity(last) || last.activity_type === 'email' || last.activity_type === 'call'))
+}
+
+function threadIsUnanswered(thread: HubThread): boolean {
+  const outbound = latestOutbound(thread)
+  if (!outbound) return false
+  const inbound = latestInbound(thread)
+  return !inbound || new Date(inbound.created_at).getTime() < new Date(outbound.created_at).getTime()
+}
+
+function threadIsDripReady(thread: HubThread): boolean {
+  if (threadNeedsReply(thread)) return false
+  const outbound = latestOutbound(thread)
+  if (!outbound) return false
+  const days = Math.floor((Date.now() - new Date(outbound.created_at).getTime()) / 86_400_000)
+  return days >= 3
+}
+
+function threadStatus(thread: HubThread): string {
+  if (threadNeedsReply(thread)) return 'Needs reply'
+  if (threadIsDripReady(thread)) return 'Drip ready'
+  if (threadIsUnanswered(thread)) return 'Unanswered'
+  if (!thread.lead?.assigned_agent) return 'Unassigned'
+  return 'Nurturing'
+}
+
+function averageReplyMetric(threads: HubThread[]): ReplyMetric {
+  const deltas: number[] = []
+  for (const thread of threads) {
+    let lastOutboundAt: number | null = null
+    for (const activity of sortedAscending(smsActivities(thread))) {
+      const at = new Date(activity.created_at).getTime()
+      if (!Number.isFinite(at)) continue
+      if (activityDirection(activity) === 'outbound') {
+        lastOutboundAt = at
+      } else if (lastOutboundAt != null && at > lastOutboundAt) {
+        deltas.push(Math.max(0, Math.round((at - lastOutboundAt) / 60000)))
+        lastOutboundAt = null
+      }
+    }
+  }
+
+  if (deltas.length === 0) return { count: 0, averageMinutes: null }
+  const total = deltas.reduce((sum, value) => sum + value, 0)
+  return { count: deltas.length, averageMinutes: Math.round(total / deltas.length) }
+}
+
+function replyMetricLabel(metric: ReplyMetric): string {
+  if (metric.averageMinutes == null) return 'No replies yet'
+  if (metric.averageMinutes < 60) return `${metric.averageMinutes} min`
+  const hours = metric.averageMinutes / 60
+  return hours < 24 ? `${hours.toFixed(1)} hr` : `${Math.round(hours / 24)} days`
+}
+
+function weekKey(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('en-US', { weekday: 'short' })
+}
+
+function formatPercent(numerator: number, denominator: number): string {
+  if (denominator <= 0) return '0%'
+  return `${Math.round((numerator / denominator) * 100)}%`
+}
+
+function templateMergeFields(body: string): string[] {
+  return Array.from(new Set(Array.from(body.matchAll(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g)).map((match) => match[1])))
+}
+
+function templateVariations(body: string): number {
+  const spinnerMatches = Array.from(body.matchAll(/\{([^{}|]+(?:\|[^{}|]+)+)\}/g))
+  return spinnerMatches.reduce((product, match) => {
+    const count = match[1].split('|').map((part) => part.trim()).filter(Boolean).length
+    return product * Math.max(1, count)
+  }, 1)
+}
+
+function templateCompliance(body: string) {
+  const lower = body.toLowerCase()
+  const restricted = RESTRICTED_WORDS.filter((word) => lower.includes(word))
+  const negatives = NEGATIVE_KEYWORDS.filter((word) => lower.includes(word))
+  const hasOptOut = /stop|unsubscribe|opt out/i.test(body)
+  const hasMerge = templateMergeFields(body).length > 0
+  const isLong = body.length > 320
+  return {
+    restricted,
+    negatives,
+    hasOptOut,
+    hasMerge,
+    isLong,
+    score: [restricted.length === 0, negatives.length === 0, hasMerge, !isLong].filter(Boolean).length,
+  }
+}
+
+function renderSpinnerPreview(body: string): string {
+  return body.replace(/\{([^{}|]+(?:\|[^{}|]+)+)\}/g, (_, group: string) => {
+    return group.split('|').map((part) => part.trim()).filter(Boolean)[0] || ''
+  })
+}
+
 export function DialerConversationHub({
   agent = 'Ernest',
   defaultFromPhone,
@@ -193,8 +349,15 @@ export function DialerConversationHub({
   const [threads, setThreads] = useState<HubThread[]>([])
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [activeActivities, setActiveActivities] = useState<HubActivity[]>([])
-  const [filter, setFilter] = useState<HubFilter>('recents')
+  const [view, setView] = useState<HubView>('dashboard')
+  const [filter, setFilter] = useState<HubFilter>('needs_reply')
   const [search, setSearch] = useState('')
+  const [templates, setTemplates] = useState<SmsTemplateRow[]>([])
+  const [templateName, setTemplateName] = useState('Initial seller outreach')
+  const [templateCategory, setTemplateCategory] = useState<TemplateCategory>('intro')
+  const [templateBody, setTemplateBody] = useState(DEFAULT_TEMPLATE_BODY)
+  const [templateSaving, setTemplateSaving] = useState(false)
+  const [templateStatus, setTemplateStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [composeMode, setComposeMode] = useState<ComposeMode>('sms')
@@ -227,7 +390,7 @@ export function DialerConversationHub({
       if (leadIds.length > 0) {
         const { data: leadRows, error: leadError } = await supabase
           .from('leads')
-          .select('id, full_name, phone, email, property_address, city, state, zip, county, station, priority, assigned_agent, created_at, updated_at')
+          .select('id, full_name, phone, email, property_address, city, state, zip, county, source, station, priority, assigned_agent, created_at, updated_at')
           .in('id', leadIds)
         if (leadError) throw new Error(leadError.message)
         leads = (leadRows || []) as HubLead[]
@@ -322,6 +485,20 @@ export function DialerConversationHub({
     void loadThreads()
   }, [loadThreads])
 
+  const loadTemplates = useCallback(async () => {
+    try {
+      const response = await fetch('/api/sms-templates', { cache: 'no-store' })
+      const payload = await response.json()
+      setTemplates((payload.templates || []) as SmsTemplateRow[])
+    } catch {
+      setTemplates([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadTemplates()
+  }, [loadTemplates])
+
   useEffect(() => {
     void loadActiveActivities()
   }, [loadActiveActivities])
@@ -362,8 +539,11 @@ export function DialerConversationHub({
   const filteredThreads = useMemo(() => {
     const query = search.trim().toLowerCase()
     return threads.filter((thread) => {
-      if (filter === 'unread' && !thread.unread) return false
-      if (filter === 'starred' && !thread.starred) return false
+      if (filter === 'needs_reply' && !threadNeedsReply(thread)) return false
+      if (filter === 'unanswered' && !threadIsUnanswered(thread)) return false
+      if (filter === 'hot' && !thread.starred) return false
+      if (filter === 'drip_ready' && !threadIsDripReady(thread)) return false
+      if (filter === 'unassigned' && thread.lead?.assigned_agent) return false
       if (query) {
         const haystack = [
           thread.name,
@@ -372,6 +552,9 @@ export function DialerConversationHub({
           thread.lead?.property_address,
           thread.lead?.city,
           thread.lead?.county,
+          thread.lead?.source,
+          thread.lead?.station,
+          threadStatus(thread),
           threadSnippet(thread.lastActivity),
         ].filter(Boolean).join(' ').toLowerCase()
         if (!haystack.includes(query)) return false
@@ -406,6 +589,99 @@ export function DialerConversationHub({
     }
     return options
   }, [defaultFromPhone, replyFromPhone])
+
+  const needsReplyCount = useMemo(() => threads.filter(threadNeedsReply).length, [threads])
+  const unansweredCount = useMemo(() => threads.filter(threadIsUnanswered).length, [threads])
+  const dripReadyCount = useMemo(() => threads.filter(threadIsDripReady).length, [threads])
+  const unassignedCount = useMemo(() => threads.filter((thread) => !thread.lead?.assigned_agent).length, [threads])
+  const hotCount = useMemo(() => threads.filter((thread) => thread.starred).length, [threads])
+  const replyMetric = useMemo(() => averageReplyMetric(threads), [threads])
+
+  const recentSmsActivities = useMemo(() => {
+    return threads.flatMap((thread) => smsActivities(thread))
+  }, [threads])
+
+  const textActivity = useMemo(() => {
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date()
+      date.setDate(date.getDate() - (6 - index))
+      return { label: date.toLocaleDateString('en-US', { weekday: 'short' }), sent: 0, replies: 0 }
+    })
+    const byLabel = new Map(days.map((day) => [day.label, day]))
+    recentSmsActivities.forEach((activity) => {
+      const label = weekKey(activity.created_at)
+      const bucket = byLabel.get(label)
+      if (!bucket) return
+      if (activityDirection(activity) === 'inbound') bucket.replies += 1
+      else bucket.sent += 1
+    })
+    return days
+  }, [recentSmsActivities])
+
+  const maxTextActivity = useMemo(() => {
+    return Math.max(1, ...textActivity.map((day) => Math.max(day.sent, day.replies)))
+  }, [textActivity])
+
+  const campaignMetrics = useMemo<CampaignMetric[]>(() => {
+    const map = new Map<string, CampaignMetric>()
+    threads.forEach((thread) => {
+      const label = thread.lead?.source || 'Uncategorized'
+      const current = map.get(label) || { label, sent: 0, replies: 0, active: 0 }
+      current.active += 1
+      thread.activities.forEach((activity) => {
+        if (!isSmsActivity(activity)) return
+        if (activityDirection(activity) === 'inbound') current.replies += 1
+        else current.sent += 1
+      })
+      map.set(label, current)
+    })
+    return Array.from(map.values())
+      .sort((a, b) => (b.replies + b.sent) - (a.replies + a.sent))
+      .slice(0, 5)
+  }, [threads])
+
+  const tagMetrics = useMemo<TagMetric[]>(() => {
+    const colors = ['#F7B955', '#7D9BFF', '#72D398', '#FF8A8A', '#B987FF', '#6DD5ED']
+    const counts = new Map<string, number>()
+    threads.forEach((thread) => {
+      const tags = [
+        thread.lead?.priority ? `${thread.lead.priority} priority` : null,
+        thread.lead?.station ? thread.lead.station.replace(/_/g, ' ') : null,
+        thread.lead?.county ? `${thread.lead.county} county` : null,
+        thread.lead?.source || null,
+        threadStatus(thread),
+      ].filter(Boolean) as string[]
+      tags.forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1))
+    })
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([label, count], index) => ({ label, count, tone: colors[index % colors.length] }))
+  }, [threads])
+
+  const leadBreakdown = useMemo(() => {
+    const hot = threads.filter((thread) => thread.lead?.priority === 'hot').length
+    const warm = threads.filter((thread) => thread.lead?.priority === 'high' || thread.lead?.priority === 'normal').length
+    const nurture = threads.filter((thread) => ['nurture', 'follow_up', 'contacted'].includes(thread.lead?.station || '')).length
+    const drip = dripReadyCount
+    const noStatus = threads.filter((thread) => !thread.lead?.station).length
+    return [
+      { label: 'Hot Leads', value: hot, color: '#E32E2E' },
+      { label: 'Warm Leads', value: warm, color: '#F7B955' },
+      { label: 'Nurture', value: nurture, color: '#72D398' },
+      { label: 'Drips', value: drip, color: '#7D9BFF' },
+      { label: 'No Status', value: noStatus, color: '#8A8F98' },
+    ]
+  }, [dripReadyCount, threads])
+
+  const templateValidation = useMemo(() => templateCompliance(templateBody), [templateBody])
+  const templatePreview = useMemo(() => {
+    return renderSpinnerPreview(templateBody)
+      .replace(/\{firstName\}/g, 'Sandra')
+      .replace(/\{propertyAddress\}/g, '4321 Oak St')
+  }, [templateBody])
+  const templateFields = useMemo(() => templateMergeFields(templateBody), [templateBody])
+  const variationCount = useMemo(() => templateVariations(templateBody), [templateBody])
 
   const groupedActivities = useMemo(() => groupByDay(activeActivities), [activeActivities])
   const threadPhone = activeThread?.phone || activeThread?.lead?.phone || null
@@ -460,6 +736,35 @@ export function DialerConversationHub({
     }
   }
 
+  async function handleSaveTemplate() {
+    const name = templateName.trim()
+    const body = templateBody.trim()
+    if (!name || !body || templateSaving) return
+
+    setTemplateSaving(true)
+    setTemplateStatus(null)
+    try {
+      const response = await fetch('/api/sms-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          category: templateCategory,
+          body,
+          merge_fields: templateFields,
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || 'Could not save template')
+      setTemplateStatus('Template saved.')
+      await loadTemplates()
+    } catch (err) {
+      setTemplateStatus(err instanceof Error ? err.message : 'Could not save template')
+    } finally {
+      setTemplateSaving(false)
+    }
+  }
+
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault()
@@ -467,10 +772,19 @@ export function DialerConversationHub({
     }
   }
 
-  const tabs: Array<{ id: HubFilter; label: string; count?: number }> = [
-    { id: 'unread', label: 'Unread', count: threads.filter((thread) => thread.unread).length },
+  const viewTabs: Array<{ id: HubView; label: string; icon: string }> = [
+    { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+    { id: 'inbox', label: 'Inbox', icon: 'inbox' },
+    { id: 'templates', label: 'Templates', icon: 'edit_note' },
+  ]
+
+  const inboxTabs: Array<{ id: HubFilter; label: string; count?: number }> = [
+    { id: 'needs_reply', label: 'Needs reply', count: needsReplyCount },
+    { id: 'unanswered', label: 'Unanswered', count: unansweredCount },
+    { id: 'hot', label: 'Hot', count: hotCount },
+    { id: 'drip_ready', label: 'Drip ready', count: dripReadyCount },
+    { id: 'unassigned', label: 'Unassigned', count: unassignedCount },
     { id: 'recents', label: 'Recents' },
-    { id: 'starred', label: 'Starred', count: threads.filter((thread) => thread.starred).length },
     { id: 'all', label: 'All', count: threads.length },
   ]
 
@@ -479,32 +793,117 @@ export function DialerConversationHub({
       <div className="border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="inline-flex w-full overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1 sm:w-auto">
-            {tabs.map((tab) => (
+            {viewTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setFilter(tab.id)}
+                onClick={() => setView(tab.id)}
                 className={`flex-1 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors sm:flex-none ${
-                  filter === tab.id
+                  view === tab.id
                     ? 'bg-[#E32E2E] text-white'
                     : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'
                 }`}
               >
-                {tab.label}{typeof tab.count === 'number' ? ` ${tab.count}` : ''}
+                <span className="inline-flex items-center gap-1.5">
+                  <Icon name={tab.icon} size="text-base" />
+                  {tab.label}
+                </span>
               </button>
             ))}
           </div>
-          <div className="relative w-full lg:max-w-[320px]">
-            <Icon name="search" size="text-base" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search conversations"
-              className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] pl-9 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-            />
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-[var(--ck-text-muted)]">
+            <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-1.5">{needsReplyCount} need reply</span>
+            <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-1.5">{dripReadyCount} drip ready</span>
+            <button
+              type="button"
+              onClick={() => {
+                void loadThreads()
+                void loadTemplates()
+              }}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--ck-border)] px-3 text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
+            >
+              <Icon name="refresh" size="text-base" /> Refresh
+            </button>
           </div>
         </div>
       </div>
+
+      {view === 'dashboard' && (
+        <HubDashboard
+          totalThreads={threads.length}
+          needsReplyCount={needsReplyCount}
+          unansweredCount={unansweredCount}
+          dripReadyCount={dripReadyCount}
+          replyMetric={replyMetric}
+          campaignMetrics={campaignMetrics}
+          textActivity={textActivity}
+          maxTextActivity={maxTextActivity}
+          tagMetrics={tagMetrics}
+          leadBreakdown={leadBreakdown}
+          onOpenInbox={(nextFilter) => {
+            setFilter(nextFilter)
+            setView('inbox')
+          }}
+        />
+      )}
+
+      {view === 'templates' && (
+        <TemplateBuilder
+          templates={templates}
+          templateName={templateName}
+          templateCategory={templateCategory}
+          templateBody={templateBody}
+          templatePreview={templatePreview}
+          templateFields={templateFields}
+          variationCount={variationCount}
+          templateValidation={templateValidation}
+          templateSaving={templateSaving}
+          templateStatus={templateStatus}
+          onNameChange={setTemplateName}
+          onCategoryChange={setTemplateCategory}
+          onBodyChange={setTemplateBody}
+          onLoadTemplate={(template) => {
+            const category = template.category as TemplateCategory
+            setTemplateName(template.name)
+            setTemplateCategory(TEMPLATE_CATEGORIES.includes(category) ? category : 'intro')
+            setTemplateBody(template.body)
+            setTemplateStatus(null)
+          }}
+          onSave={() => void handleSaveTemplate()}
+        />
+      )}
+
+      {view === 'inbox' && (
+        <>
+          <div className="border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex gap-1 overflow-x-auto rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
+                {inboxTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFilter(tab.id)}
+                    className={`shrink-0 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+                      filter === tab.id
+                        ? 'bg-[#E32E2E] text-white'
+                        : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'
+                    }`}
+                  >
+                    {tab.label}{typeof tab.count === 'number' ? ` ${tab.count}` : ''}
+                  </button>
+                ))}
+              </div>
+              <div className="relative w-full xl:max-w-[320px]">
+                <Icon name="search" size="text-base" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search conversations"
+                  className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] pl-9 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                />
+              </div>
+            </div>
+          </div>
 
       <div className="grid min-h-[720px] lg:grid-cols-[330px_minmax(0,1fr)_290px]">
         <aside className="border-b border-[var(--ck-border)] lg:border-b-0 lg:border-r">
@@ -551,7 +950,7 @@ export function DialerConversationHub({
                       </span>
                       <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{threadSnippet(thread.lastActivity)}</span>
                       <span className="mt-1 block truncate text-[10px] text-[var(--ck-text-dim)]">
-                        {thread.lead?.property_address || formatPhone(thread.phone || '') || 'Unmatched conversation'}
+                        {threadStatus(thread)} - {thread.lead?.property_address || formatPhone(thread.phone || '') || 'Unmatched conversation'}
                       </span>
                     </span>
                     <span className="pt-0.5 text-right text-[10px] font-bold text-[var(--ck-text-dim)]">{timeAgo(thread.lastActivity?.created_at || thread.lead?.updated_at || thread.lead?.created_at)}</span>
@@ -682,7 +1081,324 @@ export function DialerConversationHub({
           )}
         </aside>
       </div>
+        </>
+      )}
     </section>
+  )
+}
+
+function HubDashboard({
+  totalThreads,
+  needsReplyCount,
+  unansweredCount,
+  dripReadyCount,
+  replyMetric,
+  campaignMetrics,
+  textActivity,
+  maxTextActivity,
+  tagMetrics,
+  leadBreakdown,
+  onOpenInbox,
+}: {
+  totalThreads: number
+  needsReplyCount: number
+  unansweredCount: number
+  dripReadyCount: number
+  replyMetric: ReplyMetric
+  campaignMetrics: CampaignMetric[]
+  textActivity: Array<{ label: string; sent: number; replies: number }>
+  maxTextActivity: number
+  tagMetrics: TagMetric[]
+  leadBreakdown: Array<{ label: string; value: number; color: string }>
+  onOpenInbox: (filter: HubFilter) => void
+}) {
+  const leadTotal = Math.max(1, leadBreakdown.reduce((sum, item) => sum + item.value, 0))
+  return (
+    <div className="space-y-4 p-4 sm:p-5">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <DashboardStat icon="mark_chat_unread" label="Needs Reply" value={needsReplyCount} detail="Inbound seller messages waiting" tone="text-cyan-200" onClick={() => onOpenInbox('needs_reply')} />
+          <DashboardStat icon="schedule" label="Unanswered" value={unansweredCount} detail="Outbound texts with no reply yet" tone="text-amber-200" onClick={() => onOpenInbox('unanswered')} />
+          <DashboardStat icon="automation" label="Drip Ready" value={dripReadyCount} detail="No reply after 3+ days" tone="text-blue-200" onClick={() => onOpenInbox('drip_ready')} />
+          <DashboardStat icon="forum" label="Active Threads" value={totalThreads} detail="Recent calls, texts, emails" tone="text-emerald-200" onClick={() => onOpenInbox('recents')} />
+        </section>
+
+        <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Prospect Leads</p>
+              <p className="mt-2 text-3xl font-black text-[var(--ck-text)]">{totalThreads.toLocaleString()}</p>
+              <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Average reply time: {replyMetricLabel(replyMetric)}</p>
+            </div>
+            <div className="h-24 w-24 rounded-full border-[14px] border-[#7D9BFF]" style={{ borderTopColor: '#72D398', borderRightColor: '#F7B955', borderBottomColor: '#E32E2E' }} />
+          </div>
+          <div className="mt-4 grid gap-2">
+            {leadBreakdown.map((item) => (
+              <div key={item.label} className="grid grid-cols-[96px_minmax(0,1fr)_34px] items-center gap-2 text-xs">
+                <span className="truncate text-[var(--ck-text-muted)]">{item.label}</span>
+                <span className="h-2 overflow-hidden rounded-full bg-[var(--ck-surface)]">
+                  <span className="block h-full rounded-full" style={{ width: `${Math.max(4, (item.value / leadTotal) * 100)}%`, background: item.color }} />
+                </span>
+                <span className="text-right font-bold text-[var(--ck-text)]">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(320px,0.8fr)]">
+        <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Top Campaigns</p>
+            <Icon name="campaign" size="text-lg" className="text-[var(--ck-text-dim)]" />
+          </div>
+          <div className="space-y-2">
+            {campaignMetrics.length === 0 ? (
+              <p className="py-8 text-center text-sm text-[var(--ck-text-muted)]">No campaign activity yet.</p>
+            ) : campaignMetrics.map((campaign) => (
+              <div key={campaign.label} className="grid grid-cols-[minmax(0,1fr)_42px_42px_42px] gap-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-xs">
+                <span className="truncate font-bold text-[var(--ck-text)]">{campaign.label}</span>
+                <span className="text-right text-[var(--ck-text-muted)]">{campaign.sent}</span>
+                <span className="text-right text-cyan-200">{campaign.replies}</span>
+                <span className="text-right text-[var(--ck-text-dim)]">{formatPercent(campaign.replies, campaign.sent || campaign.active)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Text Activity</p>
+              <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Sent vs. seller replies over the last 7 days.</p>
+            </div>
+            <Icon name="show_chart" size="text-lg" className="text-[var(--ck-text-dim)]" />
+          </div>
+          <div className="grid h-56 grid-cols-7 items-end gap-3 border-b border-[var(--ck-border)] pb-3">
+            {textActivity.map((day) => (
+              <div key={day.label} className="flex h-full flex-col justify-end gap-1">
+                <span className="rounded-t bg-[#72D398]/70" style={{ height: `${Math.max(4, (day.replies / maxTextActivity) * 100)}%` }} title={`${day.replies} replies`} />
+                <span className="rounded-t bg-[#7D9BFF]/70" style={{ height: `${Math.max(4, (day.sent / maxTextActivity) * 100)}%` }} title={`${day.sent} sent`} />
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 grid grid-cols-7 gap-3 text-center text-[10px] font-bold uppercase text-[var(--ck-text-dim)]">
+            {textActivity.map((day) => <span key={day.label}>{day.label}</span>)}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Tags</p>
+            <Icon name="sell" size="text-lg" className="text-[var(--ck-text-dim)]" />
+          </div>
+          <div className="space-y-2">
+            {tagMetrics.length === 0 ? (
+              <p className="py-8 text-center text-sm text-[var(--ck-text-muted)]">No tag metrics yet.</p>
+            ) : tagMetrics.map((tag) => (
+              <div key={tag.label} className="grid grid-cols-[112px_minmax(0,1fr)_34px] items-center gap-2 text-xs">
+                <span className="truncate text-[var(--ck-text-muted)]">{tag.label}</span>
+                <span className="h-2 overflow-hidden rounded-full bg-[var(--ck-surface)]">
+                  <span className="block h-full rounded-full" style={{ width: `${Math.max(8, (tag.count / Math.max(1, tagMetrics[0]?.count || 1)) * 100)}%`, background: tag.tone }} />
+                </span>
+                <span className="text-right font-bold text-[var(--ck-text)]">{tag.count}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function DashboardStat({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+  onClick,
+}: {
+  icon: string
+  label: string
+  value: number
+  detail: string
+  tone: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4 text-left transition-colors hover:border-[#E32E2E]/45"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <Icon name={icon} size="text-2xl" className={tone} />
+        <span className="text-2xl font-black text-[var(--ck-text)]">{value.toLocaleString()}</span>
+      </div>
+      <p className="mt-3 text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{label}</p>
+      <p className="mt-1 text-xs text-[var(--ck-text-muted)]">{detail}</p>
+    </button>
+  )
+}
+
+function TemplateBuilder({
+  templates,
+  templateName,
+  templateCategory,
+  templateBody,
+  templatePreview,
+  templateFields,
+  variationCount,
+  templateValidation,
+  templateSaving,
+  templateStatus,
+  onNameChange,
+  onCategoryChange,
+  onBodyChange,
+  onLoadTemplate,
+  onSave,
+}: {
+  templates: SmsTemplateRow[]
+  templateName: string
+  templateCategory: TemplateCategory
+  templateBody: string
+  templatePreview: string
+  templateFields: string[]
+  variationCount: number
+  templateValidation: ReturnType<typeof templateCompliance>
+  templateSaving: boolean
+  templateStatus: string | null
+  onNameChange: (value: string) => void
+  onCategoryChange: (value: TemplateCategory) => void
+  onBodyChange: (value: string) => void
+  onLoadTemplate: (template: SmsTemplateRow) => void
+  onSave: () => void
+}) {
+  const canSave = templateName.trim().length > 0 && templateBody.trim().length > 0 && templateValidation.restricted.length === 0
+  return (
+    <div className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+          <label className="block">
+            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Template Name</span>
+            <input
+              value={templateName}
+              onChange={(event) => onNameChange(event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Template Type</span>
+            <select
+              value={templateCategory}
+              onChange={(event) => onCategoryChange(event.target.value as TemplateCategory)}
+              className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+            >
+              {TEMPLATE_CATEGORIES.map((category) => (
+                <option key={category} value={category}>{category.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <button type="button" className="rounded-lg bg-[#2787ff] px-3 py-1.5 text-xs font-black text-white">Best Practices</button>
+              <button type="button" className="rounded-lg border border-[var(--ck-border)] px-3 py-1.5 text-xs font-bold text-[var(--ck-text-muted)]">Negative Keywords</button>
+              <button
+                type="button"
+                onClick={() => onBodyChange(`${templateBody} Reply STOP to opt out.`)}
+                className="rounded-lg border border-[var(--ck-border)] px-3 py-1.5 text-xs font-bold text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]"
+              >
+                Add opt-out line
+              </button>
+            </div>
+            <textarea
+              value={templateBody}
+              onChange={(event) => onBodyChange(event.target.value)}
+              rows={12}
+              placeholder="Write your message. Use {firstName}, {propertyAddress}, and spinner groups like {considering|thinking about|open to}."
+              className="w-full resize-none rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-3 text-sm leading-relaxed text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+            />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-[var(--ck-text-dim)]">
+              <span>{templateBody.length} characters</span>
+              <span>{variationCount.toLocaleString()} variation{variationCount === 1 ? '' : 's'}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {['{firstName}', '{propertyAddress}', '{mailingAddress}', '{agentName}', '{companyName}'].map((token) => (
+                <button
+                  key={token}
+                  type="button"
+                  onClick={() => onBodyChange(`${templateBody}${templateBody.endsWith(' ') || templateBody.length === 0 ? '' : ' '}${token}`)}
+                  className="rounded-lg border border-[var(--ck-border)] px-2.5 py-1 text-[11px] font-bold text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]"
+                >
+                  {token}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <ChecklistItem ok={templateBody.length >= 8} label="Minimum of 8 characters" />
+            <ChecklistItem ok={!templateValidation.isLong} label="Clean SMS length" detail={templateValidation.isLong ? 'Over 320 characters' : undefined} />
+            <ChecklistItem ok={templateValidation.restricted.length === 0} label="No restricted words" detail={templateValidation.restricted.join(', ')} />
+            <ChecklistItem ok={templateValidation.negatives.length === 0} label="No negative keywords" detail={templateValidation.negatives.join(', ')} />
+            <ChecklistItem ok={templateValidation.hasMerge} label="Uses at least one merge field" />
+            <ChecklistItem ok={templateValidation.hasOptOut} label="Opt-out language present" />
+            <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)]">
+              Compliance score <span className="text-[var(--ck-text)]">{templateValidation.score}/4</span>
+            </div>
+            <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Preview</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--ck-text)]">{templatePreview || 'Preview will appear here.'}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={!canSave || templateSaving}
+              className="w-full rounded-xl bg-[#E32E2E] px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {templateSaving ? 'Saving...' : 'Save Template'}
+            </button>
+            {templateStatus && <p className={`text-xs font-bold ${templateStatus.includes('saved') ? 'text-emerald-300' : 'text-[#ff7777]'}`}>{templateStatus}</p>}
+          </div>
+        </div>
+      </section>
+
+      <aside className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+        <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Saved Templates</p>
+        <div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1">
+          {templates.length === 0 ? (
+            <p className="py-8 text-center text-sm text-[var(--ck-text-muted)]">No templates loaded.</p>
+          ) : templates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => onLoadTemplate(template)}
+              className="w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-3 text-left transition-colors hover:border-[#E32E2E]/45"
+            >
+              <span className="block truncate text-sm font-black text-[var(--ck-text)]">{template.name}</span>
+              <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{template.category} - used {(template.usage_count || 0).toLocaleString()} times</span>
+              <span className="mt-2 line-clamp-2 block text-xs text-[var(--ck-text-dim)]">{template.body}</span>
+            </button>
+          ))}
+        </div>
+      </aside>
+    </div>
+  )
+}
+
+function ChecklistItem({ ok, label, detail }: { ok: boolean; label: string; detail?: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2">
+      <Icon name={ok ? 'check_circle' : 'error'} size="text-base" className={ok ? 'text-emerald-300' : 'text-[#ff7777]'} />
+      <div className="min-w-0">
+        <p className="text-xs font-bold text-[var(--ck-text)]">{label}</p>
+        {detail && <p className="mt-0.5 break-words text-[10px] text-[var(--ck-text-dim)]">{detail}</p>}
+      </div>
+    </div>
   )
 }
 
