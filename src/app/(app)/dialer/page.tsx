@@ -2076,6 +2076,29 @@ function DialerHome() {
     })
   }, [callerId])
 
+  const homeTabSwitcher = (
+    <div className="inline-flex overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
+      <button
+        type="button"
+        onClick={() => setHomeTab('queue')}
+        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+          homeTab === 'queue' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+        }`}
+      >
+        <Icon name="phone_in_talk" size="text-base" /> Call Queue
+      </button>
+      <button
+        type="button"
+        onClick={() => setHomeTab('conversations')}
+        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+          homeTab === 'conversations' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+        }`}
+      >
+        <Icon name="forum" size="text-base" /> Conversations
+      </button>
+    </div>
+  )
+
   return (
     <div className={`mx-auto px-4 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'max-w-[1440px] py-4 pb-4' : 'max-w-[1180px] py-6 pb-24'}`}>
       <BulkSmsModal
@@ -2085,48 +2108,22 @@ function DialerHome() {
         agent={agent}
         fromPhone={callerId}
       />
-      <div className={homeTab === 'conversations'
-        ? 'mb-3 flex justify-center'
-        : 'mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'}
-      >
-        <div className={homeTab === 'conversations' ? '' : 'min-w-0'}>
-          <div className={`${homeTab === 'conversations' ? '' : 'mb-4'} inline-flex overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1`}>
-            <button
-              type="button"
-              onClick={() => setHomeTab('queue')}
-              className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
-                homeTab === 'queue' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
-              }`}
-            >
-              <Icon name="phone_in_talk" size="text-base" /> Call Queue
-            </button>
-            <button
-              type="button"
-              onClick={() => setHomeTab('conversations')}
-              className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
-                homeTab === 'conversations' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
-              }`}
-            >
-              <Icon name="forum" size="text-base" /> Conversations
-            </button>
+      {homeTab === 'queue' && (
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-4">{homeTabSwitcher}</div>
+            <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">Calling Command Center</h1>
+            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick who to call, the number to call from, and how — then start.</p>
           </div>
-          {homeTab === 'queue' && (
-            <>
-              <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">Calling Command Center</h1>
-              <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick who to call, the number to call from, and how — then start.</p>
-            </>
-          )}
-        </div>
-        {homeTab === 'queue' && (
           <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3.5 py-1.5 text-sm font-bold text-[var(--ck-text)] sm:self-auto">
             <span className={`h-2 w-2 rounded-full ${loading ? 'bg-[var(--ck-text-dim)]' : queue.length ? 'bg-[#1E9E68]' : 'bg-[#E32E2E]'}`} />
             {loading ? 'Loading queue…' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} ready`}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {homeTab === 'conversations' ? (
-        <DialerConversationHub agent={agent} defaultFromPhone={callerId} />
+        <DialerConversationHub agent={agent} defaultFromPhone={callerId} homeTabSwitcher={homeTabSwitcher} />
       ) : (
         <>
           {error && (

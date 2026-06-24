@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
@@ -461,9 +461,11 @@ function zillowUrl(lead: HubLead | null): string | null {
 export function DialerConversationHub({
   agent = 'Ernest',
   defaultFromPhone,
+  homeTabSwitcher,
 }: {
   agent?: string
   defaultFromPhone?: string | null
+  homeTabSwitcher?: ReactNode
 }) {
   const router = useRouter()
   const [threads, setThreads] = useState<HubThread[]>([])
@@ -949,8 +951,8 @@ export function DialerConversationHub({
       view === 'inbox' ? 'flex h-[calc(100vh-190px)] min-h-[520px] max-h-[calc(100vh-190px)] flex-col' : ''
     }`}>
       <div className="shrink-0 border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="inline-flex w-full overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1 sm:w-auto">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center">
+          <div className="inline-flex w-full justify-self-start overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1 sm:w-auto">
             {viewTabs.map((tab) => (
               <button
                 key={tab.id}
@@ -969,7 +971,8 @@ export function DialerConversationHub({
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-[var(--ck-text-muted)]">
+          {homeTabSwitcher && <div className="justify-self-center">{homeTabSwitcher}</div>}
+          <div className="flex flex-wrap items-center gap-2 justify-self-end text-[11px] font-bold text-[var(--ck-text-muted)]">
             <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-1.5">{needsReplyCount} need reply</span>
             <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-1.5">{dripReadyCount} drip ready</span>
             <button
