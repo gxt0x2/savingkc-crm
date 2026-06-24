@@ -11,6 +11,7 @@ type HubView = 'dashboard' | 'inbox' | 'templates'
 type HubFilter = 'needs_reply' | 'unanswered' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
 type ComposeMode = 'sms' | 'email'
 type TemplateCategory = 'intro' | 'follow_up' | 'nurture' | 'ghost_protocol' | 'missed_call'
+type PhoneQualityStatus = 'unknown' | 'verified' | 'wrong_number' | 'dnc'
 
 interface HubLead {
   id: string
@@ -26,6 +27,7 @@ interface HubLead {
   station: string | null
   priority: string | null
   assigned_agent: string | null
+  notes: string | null
   created_at: string
   updated_at: string | null
 }
@@ -79,13 +81,43 @@ interface ReplyMetric {
   averageMinutes: number | null
 }
 
-const COMM_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail']
+interface SmsSegmentMetric {
+  encoding: 'GSM' | 'Unicode'
+  characters: number
+  segments: number
+  remaining: number
+}
+
+const COMM_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'note', 'status_change', 'outcome', 'appointment', 'task']
 const SMS_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound'])
+const CONVERSATION_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail'])
 const DEFAULT_FROM_PHONE = CONVERSATION_TWILIO_NUMBERS[0]?.value || '+18163077835'
 const RESTRICTED_WORDS = ['guaranteed', 'free cash', 'risk-free', 'urgent', 'act now', 'limited time', 'government', 'irs']
 const NEGATIVE_KEYWORDS = ['lawsuit', 'foreclosure rescue', 'loan modification', 'credit repair', 'covid', 'bankruptcy attorney']
 const DEFAULT_TEMPLATE_BODY = 'Hi {firstName}, this is Casey with Saving KC Homebuyers. I was reaching out about {propertyAddress}. Would you be open to a quick conversation?'
 const TEMPLATE_CATEGORIES: TemplateCategory[] = ['intro', 'follow_up', 'nurture', 'ghost_protocol', 'missed_call']
+const QUICK_REPLIES = [
+  { label: 'Still interested?', body: 'Hi {firstName}, just checking back on {propertyAddress}. Are you still open to talking through options?' },
+  { label: 'Call me', body: 'I can help with that. What is a good time today for a quick call?' },
+  { label: 'Need details', body: 'Thanks for getting back to me. What is the best number to reach you, and what is your timeline?' },
+  { label: 'Wrong number', body: 'Sorry about that. I will update our records so we do not keep reaching out.' },
+  { label: 'Opt-out', body: 'Understood. We will stop texting this number.' },
+]
+const STAGE_OPTIONS = [
+  { value: 'new', label: 'New' },
+  { value: 'contacted', label: 'Contacted' },
+  { value: 'qualified', label: 'Qualified' },
+  { value: 'appointment_set', label: 'Appointment Set' },
+  { value: 'offer_made', label: 'Offer Made' },
+  { value: 'under_contract', label: 'Under Contract' },
+  { value: 'closed_lost', label: 'Closed Lost' },
+]
+const PRIORITY_OPTIONS = [
+  { value: 'hot', label: 'Hot' },
+  { value: 'high', label: 'Warm' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'low', label: 'Cold' },
+]
 
 function textValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -104,6 +136,10 @@ function activityDirection(activity: HubActivity): 'inbound' | 'outbound' {
 
 function isSmsActivity(activity: HubActivity): boolean {
   return SMS_TYPES.has(activity.activity_type)
+}
+
+function isConversationActivity(activity: HubActivity): boolean {
+  return CONVERSATION_TYPES.has(activity.activity_type)
 }
 
 function activityBody(activity: HubActivity): string {
@@ -171,6 +207,9 @@ function threadSnippet(activity: HubActivity | null): string {
   if (activity.activity_type === 'call') return activityDirection(activity) === 'inbound' ? 'Inbound call' : 'Outbound call'
   if (activity.activity_type === 'voicemail') return 'Voicemail'
   if (activity.activity_type === 'email') return activityBody(activity) || 'Email'
+  if (activity.activity_type === 'note') return `Note: ${activityBody(activity)}`
+  if (activity.activity_type === 'status_change' || activity.activity_type === 'outcome') return activityBody(activity) || 'Status updated'
+  if (activity.activity_type === 'appointment' || activity.activity_type === 'task') return activityBody(activity) || 'Task'
   return activityBody(activity) || 'Text message'
 }
 
@@ -188,6 +227,7 @@ function groupByDay(activities: HubActivity[]): Array<{ day: string; items: HubA
 function buildThreadForLead(lead: HubLead, activities: HubActivity[]): HubThread {
   const sorted = activities.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   const lastActivity = sorted[0] || null
+  const lastConversation = sorted.find(isConversationActivity) || null
   return {
     id: lead.id,
     lead,
@@ -195,7 +235,7 @@ function buildThreadForLead(lead: HubLead, activities: HubActivity[]): HubThread
     name: displayName(lead, lead.phone),
     initials: getInitials(lead.full_name || lead.phone),
     lastActivity,
-    unread: Boolean(lastActivity && activityDirection(lastActivity) === 'inbound'),
+    unread: Boolean(lastConversation && activityDirection(lastConversation) === 'inbound'),
     starred: lead.priority === 'hot' || lead.priority === 'high',
     activities: sorted,
   }
@@ -203,6 +243,7 @@ function buildThreadForLead(lead: HubLead, activities: HubActivity[]): HubThread
 
 function buildUnmatchedThread(phone: string, activities: HubActivity[]): HubThread {
   const sorted = activities.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  const lastConversation = sorted.find(isConversationActivity) || null
   return {
     id: `unmatched:${phone}`,
     lead: null,
@@ -210,7 +251,7 @@ function buildUnmatchedThread(phone: string, activities: HubActivity[]): HubThre
     name: formatPhone(phone) || phone,
     initials: getInitials(phone),
     lastActivity: sorted[0] || null,
-    unread: true,
+    unread: Boolean(lastConversation && activityDirection(lastConversation) === 'inbound'),
     starred: false,
     activities: sorted,
   }
@@ -236,8 +277,12 @@ function latestOutbound(thread: HubThread): HubActivity | null {
   return latestSmsByDirection(thread, 'outbound')
 }
 
+function latestConversation(thread: HubThread): HubActivity | null {
+  return thread.activities.find(isConversationActivity) || null
+}
+
 function threadNeedsReply(thread: HubThread): boolean {
-  const last = thread.lastActivity
+  const last = latestConversation(thread)
   return Boolean(last && activityDirection(last) === 'inbound' && (isSmsActivity(last) || last.activity_type === 'email' || last.activity_type === 'call'))
 }
 
@@ -338,6 +383,72 @@ function renderSpinnerPreview(body: string): string {
   })
 }
 
+function firstNameForThread(thread: HubThread | null): string {
+  const name = thread?.lead?.full_name || thread?.name || ''
+  const first = name.trim().split(/\s+/)[0]
+  return first && !first.includes('(') ? toProperCase(first) : 'there'
+}
+
+function mergeComposerBody(body: string, thread: HubThread | null, agent: string): string {
+  const propertyAddress = thread?.lead?.property_address || 'the property'
+  const mailingAddress = [thread?.lead?.city, thread?.lead?.state].filter(Boolean).join(', ')
+  return renderSpinnerPreview(body)
+    .replace(/\{firstName\}/gi, firstNameForThread(thread))
+    .replace(/\{propertyAddress\}/gi, propertyAddress)
+    .replace(/\{mailingAddress\}/gi, mailingAddress || propertyAddress)
+    .replace(/\{agentName\}/gi, agent)
+    .replace(/\{companyName\}/gi, 'Saving KC Homebuyers')
+}
+
+function smsSegmentMetric(body: string): SmsSegmentMetric {
+  const characters = Array.from(body).length
+  const unicode = Array.from(body).some((char) => char.charCodeAt(0) > 127)
+  const singleLimit = unicode ? 70 : 160
+  const multiLimit = unicode ? 67 : 153
+  const segments = characters === 0 ? 0 : characters <= singleLimit ? 1 : Math.ceil(characters / multiLimit)
+  return {
+    encoding: unicode ? 'Unicode' : 'GSM',
+    characters,
+    segments,
+    remaining: Math.max(0, (segments <= 1 ? singleLimit : segments * multiLimit) - characters),
+  }
+}
+
+function composerWarnings(body: string): string[] {
+  const lower = body.toLowerCase()
+  const restricted = RESTRICTED_WORDS.filter((word) => lower.includes(word))
+  const negatives = NEGATIVE_KEYWORDS.filter((word) => lower.includes(word))
+  const warnings: string[] = []
+  if (restricted.length > 0) warnings.push(`Restricted: ${restricted.join(', ')}`)
+  if (negatives.length > 0) warnings.push(`Carrier-risk: ${negatives.join(', ')}`)
+  if (smsSegmentMetric(body).encoding === 'Unicode') warnings.push('Unicode characters reduce segment size')
+  if (body.length > 320) warnings.push('Long reply')
+  return warnings
+}
+
+function phoneStatusFromActivities(activities: HubActivity[]): PhoneQualityStatus {
+  const statusActivity = activities.slice().reverse().find((activity) => {
+    const status = textValue(activityMetadata(activity).phone_status)
+    return status === 'verified' || status === 'wrong_number' || status === 'dnc'
+  })
+  const status = textValue(statusActivity ? activityMetadata(statusActivity).phone_status : null)
+  return status === 'verified' || status === 'wrong_number' || status === 'dnc' ? status : 'unknown'
+}
+
+function addressQuery(lead: HubLead | null): string {
+  return [lead?.property_address, lead?.city, lead?.state, lead?.zip].filter(Boolean).join(', ')
+}
+
+function mapsUrl(lead: HubLead | null): string | null {
+  const query = addressQuery(lead)
+  return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : null
+}
+
+function zillowUrl(lead: HubLead | null): string | null {
+  const query = addressQuery(lead)
+  return query ? `https://www.zillow.com/homes/${encodeURIComponent(query)}_rb/` : null
+}
+
 export function DialerConversationHub({
   agent = 'Ernest',
   defaultFromPhone,
@@ -365,11 +476,15 @@ export function DialerConversationHub({
   const [fromPhone, setFromPhone] = useState(defaultFromPhone || DEFAULT_FROM_PHONE)
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [showReplyTools, setShowReplyTools] = useState(false)
+  const [phoneOptedOut, setPhoneOptedOut] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const activeThread = useMemo(() => {
     return threads.find((thread) => thread.id === activeThreadId) || threads[0] || null
   }, [activeThreadId, threads])
+  const threadPhone = activeThread?.phone || activeThread?.lead?.phone || null
+  const activeLeadId = activeThread?.id.startsWith('unmatched:') ? null : activeThread?.id || null
 
   const loadThreads = useCallback(async () => {
     setLoading(true)
@@ -390,7 +505,7 @@ export function DialerConversationHub({
       if (leadIds.length > 0) {
         const { data: leadRows, error: leadError } = await supabase
           .from('leads')
-          .select('id, full_name, phone, email, property_address, city, state, zip, county, source, station, priority, assigned_agent, created_at, updated_at')
+          .select('id, full_name, phone, email, property_address, city, state, zip, county, source, station, priority, assigned_agent, notes, created_at, updated_at')
           .in('id', leadIds)
         if (leadError) throw new Error(leadError.message)
         leads = (leadRows || []) as HubLead[]
@@ -532,9 +647,30 @@ export function DialerConversationHub({
   useEffect(() => {
     setMessage('')
     setSendError(null)
+    setShowReplyTools(false)
     setComposeMode('sms')
     setFromPhone(defaultFromPhone || DEFAULT_FROM_PHONE)
   }, [activeThreadId, defaultFromPhone])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadOptOutStatus() {
+      if (!threadPhone) {
+        setPhoneOptedOut(false)
+        return
+      }
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('sms_opt_outs')
+        .select('is_opted_out')
+        .eq('phone', threadPhone)
+        .eq('is_opted_out', true)
+        .maybeSingle()
+      if (!cancelled) setPhoneOptedOut(Boolean(data?.is_opted_out))
+    }
+    void loadOptOutStatus()
+    return () => { cancelled = true }
+  }, [threadPhone])
 
   const filteredThreads = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -682,16 +818,20 @@ export function DialerConversationHub({
   }, [templateBody])
   const templateFields = useMemo(() => templateMergeFields(templateBody), [templateBody])
   const variationCount = useMemo(() => templateVariations(templateBody), [templateBody])
+  const messageMetric = useMemo(() => smsSegmentMetric(message), [message])
+  const messageWarnings = useMemo(() => composerWarnings(message), [message])
 
   const groupedActivities = useMemo(() => groupByDay(activeActivities), [activeActivities])
-  const threadPhone = activeThread?.phone || activeThread?.lead?.phone || null
-  const activeLeadId = activeThread?.id.startsWith('unmatched:') ? null : activeThread?.id || null
 
   async function handleSend() {
     const body = message.trim()
     if (!activeThread || !body || sending) return
     if (composeMode === 'sms' && !threadPhone) {
       setSendError('No seller phone number is attached.')
+      return
+    }
+    if (composeMode === 'sms' && phoneOptedOut) {
+      setSendError('This number is marked DNC / SMS suppressed.')
       return
     }
     if (composeMode === 'email' && !activeThread.lead?.email) {
@@ -734,6 +874,12 @@ export function DialerConversationHub({
     } finally {
       setSending(false)
     }
+  }
+
+  function insertComposerBody(body: string) {
+    setMessage(mergeComposerBody(body, activeThread, agent))
+    setShowReplyTools(false)
+    setSendError(null)
   }
 
   async function handleSaveTemplate() {
@@ -854,7 +1000,6 @@ export function DialerConversationHub({
           templateCategory={templateCategory}
           templateBody={templateBody}
           templatePreview={templatePreview}
-          templateFields={templateFields}
           variationCount={variationCount}
           templateValidation={templateValidation}
           templateSaving={templateSaving}
@@ -1033,6 +1178,19 @@ export function DialerConversationHub({
                       Send {mode.toUpperCase()}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => setShowReplyTools((open) => !open)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                      showReplyTools
+                        ? 'bg-[#2787ff] text-white'
+                        : 'text-[var(--ck-text-muted)] hover:bg-white/[0.04] hover:text-[var(--ck-text)]'
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Icon name="quickreply" size="text-sm" /> Replies
+                    </span>
+                  </button>
                   {composeMode === 'sms' && (
                     <select
                       value={fromPhone}
@@ -1045,6 +1203,47 @@ export function DialerConversationHub({
                     </select>
                   )}
                 </div>
+                {showReplyTools && (
+                  <div className="mx-5 mt-3 grid gap-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3 lg:grid-cols-2">
+                    <div>
+                      <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Quick Replies</p>
+                      <div className="flex flex-wrap gap-2">
+                        {QUICK_REPLIES.map((reply) => (
+                          <button
+                            key={reply.label}
+                            type="button"
+                            onClick={() => insertComposerBody(reply.body)}
+                            className="rounded-lg border border-[var(--ck-border)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[#2787ff]/50 hover:text-[var(--ck-text)]"
+                          >
+                            {reply.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Saved Templates</p>
+                      <div className="grid max-h-32 gap-1 overflow-y-auto pr-1">
+                        {templates.length === 0 ? (
+                          <p className="text-xs text-[var(--ck-text-muted)]">No saved templates.</p>
+                        ) : templates.slice(0, 8).map((template) => (
+                          <button
+                            key={template.id}
+                            type="button"
+                            onClick={() => insertComposerBody(template.body)}
+                            className="truncate rounded-lg border border-[var(--ck-border)] px-2.5 py-1.5 text-left text-[11px] font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[#2787ff]/50 hover:text-[var(--ck-text)]"
+                          >
+                            {template.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {composeMode === 'sms' && phoneOptedOut && (
+                  <div className="mx-5 mt-3 rounded-xl border border-[#ff7777]/35 bg-[#ff7777]/10 px-3 py-2 text-xs font-bold text-[#ff9b9b]">
+                    SMS is suppressed for this number. Remove the DNC status before texting again.
+                  </div>
+                )}
                 <div className="flex items-end gap-3 px-5 py-3">
                   <textarea
                     value={message}
@@ -1057,7 +1256,7 @@ export function DialerConversationHub({
                   <button
                     type="button"
                     onClick={handleSend}
-                    disabled={sending || !message.trim()}
+                    disabled={sending || !message.trim() || (composeMode === 'sms' && phoneOptedOut)}
                     className="mb-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#E32E2E] text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
                     title="Send"
                     aria-label="Send"
@@ -1065,6 +1264,16 @@ export function DialerConversationHub({
                     {sending ? <Icon name="progress_activity" size="text-lg" className="animate-spin" /> : <Icon name="send" size="text-lg" />}
                   </button>
                 </div>
+                {composeMode === 'sms' && (
+                  <div className="flex flex-wrap items-center gap-2 px-5 pb-3 text-[10px] font-bold text-[var(--ck-text-dim)]">
+                    <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1">
+                      {messageMetric.encoding} - {messageMetric.characters} chars - {messageMetric.segments} segment{messageMetric.segments === 1 ? '' : 's'} - {messageMetric.remaining} left
+                    </span>
+                    {messageWarnings.map((warning) => (
+                      <span key={warning} className="rounded-full border border-amber-400/35 bg-amber-400/10 px-2 py-1 text-amber-200">{warning}</span>
+                    ))}
+                  </div>
+                )}
                 {sendError && <p className="px-5 pb-3 text-xs font-bold text-[#ff7777]">{sendError}</p>}
               </footer>
             </>
@@ -1075,7 +1284,18 @@ export function DialerConversationHub({
 
         <aside className="min-h-[360px] bg-[var(--ck-surface)] px-5 py-5">
           {activeThread ? (
-            <SellerRail thread={activeThread} onOpenLead={() => activeLeadId && router.push(`/leads/${activeLeadId}`)} />
+            <SellerRail
+              thread={activeThread}
+              activities={activeActivities}
+              agent={agent}
+              phoneOptedOut={phoneOptedOut}
+              onOpenLead={() => activeLeadId && router.push(`/leads/${activeLeadId}`)}
+              onRefresh={() => {
+                void loadActiveActivities()
+                void loadThreads()
+              }}
+              onPhoneSuppressed={() => setPhoneOptedOut(true)}
+            />
           ) : (
             <p className="text-sm text-[var(--ck-text-muted)]">No seller selected.</p>
           )}
@@ -1248,7 +1468,6 @@ function TemplateBuilder({
   templateCategory,
   templateBody,
   templatePreview,
-  templateFields,
   variationCount,
   templateValidation,
   templateSaving,
@@ -1264,7 +1483,6 @@ function TemplateBuilder({
   templateCategory: TemplateCategory
   templateBody: string
   templatePreview: string
-  templateFields: string[]
   variationCount: number
   templateValidation: ReturnType<typeof templateCompliance>
   templateSaving: boolean
@@ -1407,6 +1625,28 @@ function ConversationEvent({ activity, initials, phone }: { activity: HubActivit
   const body = activityBody(activity)
   const meta = activityMetadata(activity)
 
+  if (activity.activity_type === 'note' || activity.activity_type === 'status_change' || activity.activity_type === 'outcome' || activity.activity_type === 'appointment' || activity.activity_type === 'task') {
+    const icon = activity.activity_type === 'note'
+      ? 'edit_note'
+      : activity.activity_type === 'appointment'
+        ? 'event_available'
+        : activity.activity_type === 'task'
+          ? 'task_alt'
+          : 'sync_alt'
+    return (
+      <div className="flex justify-center">
+        <div className="max-w-[620px] rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-4 py-3 text-center shadow-sm">
+          <p className="inline-flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
+            <Icon name={icon} size="text-base" />
+            {activity.activity_type.replace(/_/g, ' ')}
+          </p>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--ck-text)]">{body || 'Activity logged'}</p>
+          <p className="mt-2 text-[10px] text-[var(--ck-text-dim)]">{activity.agent || 'System'} - {fullTime(activity.created_at)}</p>
+        </div>
+      </div>
+    )
+  }
+
   if (activity.activity_type === 'call' || activity.activity_type === 'voicemail') {
     return (
       <div className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
@@ -1464,8 +1704,151 @@ function ConversationEvent({ activity, initials, phone }: { activity: HubActivit
   )
 }
 
-function SellerRail({ thread, onOpenLead }: { thread: HubThread; onOpenLead: () => void }) {
+function SellerRail({
+  thread,
+  activities,
+  agent,
+  phoneOptedOut,
+  onOpenLead,
+  onRefresh,
+  onPhoneSuppressed,
+}: {
+  thread: HubThread
+  activities: HubActivity[]
+  agent: string
+  phoneOptedOut: boolean
+  onOpenLead: () => void
+  onRefresh: () => void
+  onPhoneSuppressed: () => void
+}) {
   const lead = thread.lead
+  const [note, setNote] = useState('')
+  const [savingAction, setSavingAction] = useState<string | null>(null)
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [actionTone, setActionTone] = useState<'success' | 'error' | null>(null)
+  const loggedPhoneStatus = phoneStatusFromActivities(activities)
+  const phoneStatus = loggedPhoneStatus !== 'unknown' ? loggedPhoneStatus : phoneOptedOut ? 'dnc' : 'unknown'
+  const mapHref = mapsUrl(lead)
+  const zillowHref = zillowUrl(lead)
+  const hasPhone = Boolean(thread.phone || lead?.phone)
+
+  async function handleAddNote() {
+    const content = note.trim()
+    if (!lead || !content || savingAction) return
+
+    setSavingAction('note')
+    setActionMessage(null)
+    setActionTone(null)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.from('lead_activities').insert({
+        lead_id: lead.id,
+        activity_type: 'note',
+        description: content,
+        agent,
+        metadata: { source: 'dialer_conversation_hub' },
+      })
+      if (error) throw new Error(error.message)
+
+      fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: lead.id,
+          activity: {
+            type: 'note',
+            disposition: 'note_added',
+            notes: content,
+            agent,
+          },
+        }),
+      }).catch(() => {})
+
+      setNote('')
+      setActionMessage('Note saved.')
+      setActionTone('success')
+      onRefresh()
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : 'Could not save note.')
+      setActionTone('error')
+    } finally {
+      setSavingAction(null)
+    }
+  }
+
+  async function handleLeadField(field: 'station' | 'priority', value: string) {
+    if (!lead || savingAction || lead[field] === value) return
+
+    setSavingAction(field)
+    setActionMessage(null)
+    setActionTone(null)
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: lead.id, [field]: value }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || `Could not update ${field}.`)
+
+      const supabase = createClient()
+      const { error: activityError } = await supabase.from('lead_activities').insert({
+        lead_id: lead.id,
+        activity_type: 'status_change',
+        description: `${field === 'station' ? 'Stage' : 'Priority'} changed from ${lead[field] || 'unset'} to ${value}`,
+        agent,
+        metadata: {
+          source: 'dialer_conversation_hub',
+          field,
+          old_value: lead[field],
+          new_value: value,
+        },
+      })
+      if (activityError) throw new Error(`${field === 'station' ? 'Stage' : 'Priority'} updated, but the timeline note failed: ${activityError.message}`)
+
+      setActionMessage(`${field === 'station' ? 'Stage' : 'Priority'} updated.`)
+      setActionTone('success')
+      onRefresh()
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : `Could not update ${field}.`)
+      setActionTone('error')
+    } finally {
+      setSavingAction(null)
+    }
+  }
+
+  async function handlePhoneAction(action: Exclude<PhoneQualityStatus, 'unknown'>) {
+    const phone = thread.phone || lead?.phone
+    if (!phone || savingAction) return
+
+    setSavingAction(action)
+    setActionMessage(null)
+    setActionTone(null)
+    try {
+      const response = await fetch('/api/conversations/phone-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: lead?.id || null,
+          phone,
+          action,
+          agent,
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || 'Could not update phone status.')
+      setActionMessage(payload?.message || 'Phone status updated.')
+      setActionTone('success')
+      if (action === 'dnc' || action === 'wrong_number') onPhoneSuppressed()
+      onRefresh()
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : 'Could not update phone status.')
+      setActionTone('error')
+    } finally {
+      setSavingAction(null)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="text-center">
@@ -1481,14 +1864,35 @@ function SellerRail({ thread, onOpenLead }: { thread: HubThread; onOpenLead: () 
         <RailLine icon="mail" value={lead?.email || 'No email'} />
         <RailLine icon="location_on" value={[lead?.property_address, lead?.city, lead?.state].filter(Boolean).join(', ') || 'No property'} />
         <RailLine icon="sell" value={lead?.station ? lead.station.replace(/_/g, ' ') : 'No stage'} />
+        <RailLine icon="verified" value={`Phone: ${phoneStatus.replace(/_/g, ' ')}`} />
       </div>
 
-      <div className="grid gap-2 border-t border-[var(--ck-border)] pt-4">
+      <div className="grid grid-cols-2 gap-2 border-t border-[var(--ck-border)] pt-4">
+        {mapHref && (
+          <a
+            href={mapHref}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-xl border border-[var(--ck-border)] px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
+          >
+            Maps
+          </a>
+        )}
+        {zillowHref && (
+          <a
+            href={zillowHref}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-xl border border-[var(--ck-border)] px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
+          >
+            Zillow
+          </a>
+        )}
         {lead && (
           <button
             type="button"
             onClick={onOpenLead}
-            className="rounded-xl bg-[#2787ff] px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-[#126fe5]"
+            className="rounded-xl bg-[#2787ff] px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#126fe5]"
           >
             Open Lead
           </button>
@@ -1496,13 +1900,116 @@ function SellerRail({ thread, onOpenLead }: { thread: HubThread; onOpenLead: () 
         {lead && (
           <a
             href={`/dialer?lead_ids=${lead.id}&return_to=/dialer`}
-            className="rounded-xl bg-[#E32E2E] px-4 py-2.5 text-center text-sm font-black text-white transition-colors hover:bg-[#C42626]"
+            className="rounded-xl bg-[#E32E2E] px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626]"
           >
             Start Dialer
           </a>
         )}
       </div>
+
+      {lead && (
+        <div className="space-y-3 border-t border-[var(--ck-border)] pt-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Lead Controls</p>
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)]">Stage</span>
+            <select
+              value={lead.station || 'new'}
+              onChange={(event) => void handleLeadField('station', event.target.value)}
+              disabled={Boolean(savingAction)}
+              className="mt-1 h-9 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 text-xs font-semibold text-[var(--ck-text)]"
+            >
+              {STAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)]">Priority</span>
+            <select
+              value={lead.priority || 'normal'}
+              onChange={(event) => void handleLeadField('priority', event.target.value)}
+              disabled={Boolean(savingAction)}
+              className="mt-1 h-9 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 text-xs font-semibold text-[var(--ck-text)]"
+            >
+              {PRIORITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
+
+      <div className="space-y-3 border-t border-[var(--ck-border)] pt-4">
+        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Phone Quality</p>
+        <div className="grid grid-cols-3 gap-2">
+          <PhoneActionButton label="Verify" icon="verified" active={phoneStatus === 'verified'} busy={savingAction === 'verified'} disabled={!hasPhone} onClick={() => void handlePhoneAction('verified')} />
+          <PhoneActionButton label="Wrong #" icon="phone_disabled" active={phoneStatus === 'wrong_number'} busy={savingAction === 'wrong_number'} disabled={!hasPhone} onClick={() => void handlePhoneAction('wrong_number')} />
+          <PhoneActionButton label="DNC" icon="block" active={phoneStatus === 'dnc'} busy={savingAction === 'dnc'} disabled={!hasPhone} onClick={() => void handlePhoneAction('dnc')} />
+        </div>
+      </div>
+
+      {lead && (
+        <div className="space-y-3 border-t border-[var(--ck-border)] pt-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Notes</p>
+          {lead.notes && <p className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-xs text-[var(--ck-text-muted)]">{lead.notes}</p>}
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            rows={3}
+            placeholder="Add seller note..."
+            className="w-full resize-none rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm text-[var(--ck-text)] placeholder:text-[var(--ck-text-dim)] outline-none focus:border-[#E32E2E]"
+          />
+          <button
+            type="button"
+            onClick={() => void handleAddNote()}
+            disabled={!note.trim() || savingAction === 'note'}
+            className="w-full rounded-xl border border-[var(--ck-border)] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {savingAction === 'note' ? 'Saving...' : 'Save Note'}
+          </button>
+        </div>
+      )}
+
+      {actionMessage && (
+        <p className={`rounded-xl border px-3 py-2 text-xs font-bold ${
+          actionTone === 'error'
+            ? 'border-[#ff7777]/35 bg-[#ff7777]/10 text-[#ff9b9b]'
+            : 'border-emerald-400/35 bg-emerald-400/10 text-emerald-200'
+        }`}>
+          {actionMessage}
+        </p>
+      )}
     </div>
+  )
+}
+
+function PhoneActionButton({
+  label,
+  icon,
+  active,
+  busy,
+  disabled = false,
+  onClick,
+}: {
+  label: string
+  icon: string
+  active: boolean
+  busy: boolean
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy || disabled}
+      className={`rounded-xl border px-2 py-2 text-[10px] font-black uppercase tracking-wider transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        active
+          ? 'border-[#E32E2E]/45 bg-[#E32E2E]/15 text-white'
+          : 'border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+      }`}
+    >
+      <span className="flex flex-col items-center gap-1">
+        <Icon name={busy ? 'progress_activity' : icon} size="text-base" className={busy ? 'animate-spin' : ''} />
+        {label}
+      </span>
+    </button>
   )
 }
 
