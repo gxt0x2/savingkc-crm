@@ -764,6 +764,7 @@ function CampaignChart({
       campaigns.map((campaign) => ({
         ...campaign,
         leadsScaled: scaleN(campaign.leads, period),
+        clicksScaled: scaleN(campaign.clicks ?? 0, period),
         spendScaled: scaleN(campaign.spend, period),
         callScaled: scaleN(campaign.call, period),
         formScaled: scaleN(campaign.form, period),
@@ -771,6 +772,8 @@ function CampaignChart({
       })),
     [campaigns, period],
   )
+  const hasAttributedLeads = rows.some((row) => row.leadsScaled > 0 || row.callScaled > 0 || row.formScaled > 0 || row.smsScaled > 0)
+  const hasPaidCampaignData = rows.some((row) => row.clicksScaled > 0 || row.spendScaled > 0)
 
   return (
     <div className="panel">
@@ -826,13 +829,19 @@ function CampaignChart({
             )}
           </BarChart>
         </ResponsiveContainer>
+        {!hasAttributedLeads && hasPaidCampaignData ? (
+          <div className="chart-note">
+            <b>0 attributed leads in this period.</b>
+            <span>Spend and clicks are imported; bars appear after a CRM lead or call conversion is attributed.</span>
+          </div>
+        ) : null}
       </div>
       {rows.length ? (
         <div className="campaign-source-list">
           {rows.slice(0, 6).map((row) => (
             <div className="campaign-source-row" key={`${row.source ?? 'Paid'}-${row.name}`}>
               <span><i style={{ background: row.color }} /><span className="source-tag">{row.source ?? 'Google Ads'}</span>{row.name}</span>
-              <b className="mono">{row.leadsScaled} leads · {formatUsd(row.spendScaled)}</b>
+              <b className="mono">{row.leadsScaled} leads · {formatNum(row.clicksScaled)} clicks · {formatUsd(row.spendScaled)}</b>
             </div>
           ))}
         </div>
@@ -3193,6 +3202,8 @@ const ADS_COMMAND_STYLES = `
 .ads-command .schip.disabled { opacity:.5; cursor:not-allowed; }
 .ads-command .chartbox { position:relative; height:260px; }
 .ads-command .chartbox.sm { height:238px; }
+.ads-command .chart-note { position:absolute; inset:auto 14px 12px 174px; border:1px solid rgba(96,165,250,.26); background:rgba(12,18,28,.78); backdrop-filter:blur(8px); border-radius:var(--radius-lg); padding:10px 12px; color:var(--text-secondary); font-size:11.5px; line-height:1.35; box-shadow:var(--shadow-sm); pointer-events:none; }
+.ads-command .chart-note b { display:block; color:var(--text); font-size:12px; margin-bottom:2px; }
 .ads-command .campaign-source-list { display:flex; flex-direction:column; gap:7px; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
 .ads-command .campaign-source-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:30px; color:var(--text-secondary); font-size:12px; }
 .ads-command .campaign-source-row > span { min-width:0; display:flex; align-items:center; gap:8px; font-weight:750; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

@@ -28,6 +28,7 @@ import {
 import { getMojoHealth } from '@/lib/marketing/mojo-health'
 import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceKey, paidSourceLabel, type PaidSourceKey } from '@/lib/marketing/paid-source'
 import { buildClickCaptureHealth, type ClickCaptureHealth } from '@/lib/marketing/click-capture-health'
+import { isBotOnlyPaidSession } from '@/lib/marketing/paid-session-filter'
 import { buildTrafficQualityReport, type TrafficQualityReport } from '@/lib/marketing/traffic-quality'
 
 export const dynamic = 'force-dynamic'
@@ -486,6 +487,7 @@ function groupCampaigns(rows: GoogleAdsCampaignDailyRow[], trackingRows: PpcTrac
       name,
       source: paidSourceLabelFromKeys(sourceByCampaign.get(name) ?? ['google_ads']),
       leads: crmLeadCount,
+      clicks: adTotals.clicks,
       spend: Math.round(adTotals.spend),
       call: conversions.call,
       form: crmLeadCount,
@@ -1137,6 +1139,7 @@ function buildPaidSessions(rows: PpcTrackingSummaryRow[]): PaidSessionRow[] {
   }
 
   return Array.from(groups.entries())
+    .filter(([, group]) => !isBotOnlyPaidSession(group))
     .map(([key, group]) => {
       const ordered = [...group].sort((a, b) => Date.parse(eventTimestamp(a)) - Date.parse(eventTimestamp(b)))
       const first = ordered[0]!
