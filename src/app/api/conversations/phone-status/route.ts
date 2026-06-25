@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { handleOptOut } from '@/lib/sms-opt-out'
+import { handleOptIn, handleOptOut } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
 
 type PhoneStatusAction = 'verified' | 'wrong_number' | 'dnc' | 'spam' | 'blocked'
@@ -11,6 +11,8 @@ const ACTION_LABELS: Record<PhoneStatusAction, string> = {
   spam: 'spam',
   blocked: 'blocked',
 }
+const CLEARABLE_SUPPRESSION_REASONS = new Set(['WRONG_NUMBER', 'SPAM', 'BLOCKED'])
+const HARD_OPT_OUT_REASONS = new Set(['DNC', 'STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'])
 
 function cleanAction(value: unknown): PhoneStatusAction | null {
   if (value === 'verified' || value === 'wrong_number' || value === 'dnc' || value === 'spam' || value === 'blocked') return value
@@ -23,6 +25,19 @@ function suppressionReason(action: PhoneStatusAction): string | null {
   if (action === 'dnc') return 'DNC'
   if (action === 'spam') return 'SPAM'
   return 'BLOCKED'
+}
+
+async function currentSuppression(phone: string): Promise<{ isSuppressed: boolean; reason: string | null }> {
+  const { data } = await supabase
+    .from('sms_opt_outs')
+    .select('is_opted_out, reason')
+    .eq('phone', phone)
+    .maybeSingle()
+
+  const reason = typeof data?.reason === 'string' && data.reason.trim()
+    ? data.reason.trim().toUpperCase()
+    : null
+  return { isSuppressed: Boolean(data?.is_opted_out), reason }
 }
 
 export async function POST(req: Request) {
@@ -40,10 +55,24 @@ export async function POST(req: Request) {
     }
 
     const reason = suppressionReason(action)
+    let clearedManualSuppression = false
+    const beforeSuppression = await currentSuppression(phone)
     if (reason) {
-      await handleOptOut(phone, reason)
+      const preserveHardOptOut = beforeSuppression.isSuppressed &&
+        beforeSuppression.reason &&
+        HARD_OPT_OUT_REASONS.has(beforeSuppression.reason) &&
+        reason !== 'DNC'
+      if (!preserveHardOptOut) {
+        await handleOptOut(phone, reason)
+      }
+    } else {
+      if (beforeSuppression.isSuppressed && beforeSuppression.reason && CLEARABLE_SUPPRESSION_REASONS.has(beforeSuppression.reason)) {
+        await handleOptIn(phone)
+        clearedManualSuppression = true
+      }
     }
 
+    const suppression = await currentSuppression(phone)
     const description = `Phone marked ${ACTION_LABELS[action]}${phone ? `: ${phone}` : ''}`
     const { error } = await supabase.from('lead_activities').insert({
       lead_id: leadId,
@@ -55,7 +84,8 @@ export async function POST(req: Request) {
         phone,
         ...(prospectPhoneId ? { prospect_phone_id: prospectPhoneId } : {}),
         phone_status: action,
-        sms_suppressed: Boolean(reason),
+        sms_suppressed: suppression.isSuppressed,
+        suppression_reason: suppression.reason,
       },
     })
 
@@ -63,10 +93,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    const verifiedMessage = suppression.isSuppressed
+      ? 'Phone marked verified. Existing DNC/STOP suppression still blocks SMS.'
+      : clearedManualSuppression
+        ? 'Phone marked verified and manual SMS suppression cleared.'
+        : 'Phone marked verified.'
+
     return NextResponse.json({
       success: true,
+      smsSuppressed: suppression.isSuppressed,
+      suppressionReason: suppression.reason,
       message: action === 'verified'
-        ? 'Phone marked verified.'
+        ? verifiedMessage
         : `Phone marked ${ACTION_LABELS[action]} and suppressed for future SMS.`,
     })
   } catch (err) {
