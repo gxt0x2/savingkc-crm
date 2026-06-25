@@ -695,10 +695,24 @@ function templateVariations(body: string): number {
   }, 1)
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function keywordScanText(body: string): string {
+  return body.replace(/\{[a-zA-Z][a-zA-Z0-9_]*\}/g, ' ').toLowerCase()
+}
+
+function keywordMatches(text: string, keyword: string): boolean {
+  const normalizedKeyword = keyword.toLowerCase()
+  if (/\s|-/.test(normalizedKeyword)) return text.includes(normalizedKeyword)
+  return new RegExp(`\\b${escapeRegExp(normalizedKeyword)}\\b`, 'i').test(text)
+}
+
 function templateCompliance(body: string) {
-  const lower = body.toLowerCase()
-  const restricted = RESTRICTED_WORDS.filter((word) => lower.includes(word))
-  const negatives = NEGATIVE_KEYWORDS.filter((word) => lower.includes(word))
+  const keywordText = keywordScanText(body)
+  const restricted = RESTRICTED_WORDS.filter((word) => keywordMatches(keywordText, word))
+  const negatives = NEGATIVE_KEYWORDS.filter((word) => keywordMatches(keywordText, word))
   const hasOptOut = /stop|unsubscribe|opt out/i.test(body)
   const hasMerge = templateMergeFields(body).length > 0
   const isLong = body.length > 320
@@ -765,9 +779,9 @@ function smsSegmentMetric(body: string): SmsSegmentMetric {
 }
 
 function composerWarnings(body: string): string[] {
-  const lower = body.toLowerCase()
-  const restricted = RESTRICTED_WORDS.filter((word) => lower.includes(word))
-  const negatives = NEGATIVE_KEYWORDS.filter((word) => lower.includes(word))
+  const keywordText = keywordScanText(body)
+  const restricted = RESTRICTED_WORDS.filter((word) => keywordMatches(keywordText, word))
+  const negatives = NEGATIVE_KEYWORDS.filter((word) => keywordMatches(keywordText, word))
   const warnings: string[] = []
   if (restricted.length > 0) warnings.push(`Restricted: ${restricted.join(', ')}`)
   if (negatives.length > 0) warnings.push(`Carrier-risk: ${negatives.join(', ')}`)
@@ -1218,7 +1232,10 @@ export function DialerConversationHub({
     return renderSpinnerPreview(templateBody)
       .replace(/\{firstName\}/g, 'Sandra')
       .replace(/\{propertyAddress\}/g, '4321 Oak St')
-  }, [templateBody])
+      .replace(/\{mailingAddress\}/g, 'Kansas City, MO')
+      .replace(/\{agentName\}/g, agent)
+      .replace(/\{companyName\}/g, 'Saving KC Homebuyers')
+  }, [agent, templateBody])
   const templateFields = useMemo(() => templateMergeFields(templateBody), [templateBody])
   const variationCount = useMemo(() => templateVariations(templateBody), [templateBody])
   const messageMetric = useMemo(() => smsSegmentMetric(message), [message])
