@@ -23,6 +23,7 @@ function hasOpenAIAdsSignal(input: PaidSourceInput): boolean {
 
   return Boolean(
     text(input.oppref) ||
+    text(input.skc_openai_click_id) ||
     source === 'openai_ads' ||
     source === 'openai' ||
     source === 'chatgpt' ||
@@ -30,8 +31,11 @@ function hasOpenAIAdsSignal(input: PaidSourceInput): boolean {
     source.includes('openai') ||
     medium.includes('openai') ||
     campaign.includes('openai') ||
-    referrer.includes('chatgpt.com') && source.includes('openai') ||
-    landingUrl.includes('utm_source=openai'),
+    referrer.includes('chatgpt.com') ||
+    referrer.includes('openai.com') ||
+    landingUrl.includes('utm_source=openai') ||
+    landingUrl.includes('utm_source=chatgpt') ||
+    landingUrl.includes('oppref='),
   )
 }
 
@@ -53,7 +57,8 @@ export function paidSourceIdentifier(input: PaidSourceInput): string {
     text(input.gbraid) ||
     text(input.wbraid) ||
     text(input.click_id) ||
-    text(input.oppref)
+    text(input.oppref) ||
+    text(input.skc_openai_click_id)
 }
 
 export function paidSourceIdentifierType(input: PaidSourceInput): string {
@@ -63,5 +68,6 @@ export function paidSourceIdentifierType(input: PaidSourceInput): string {
   if (text(input.wbraid)) return 'wbraid'
   if (text(input.click_id_type)) return text(input.click_id_type)
   if (text(input.oppref)) return 'oppref'
+  if (text(input.skc_openai_click_id)) return 'skc_openai_click_id'
   return '--'
 }

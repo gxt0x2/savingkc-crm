@@ -27,6 +27,8 @@ import {
 } from '@/lib/marketing/ads-command-seed'
 import { getMojoHealth } from '@/lib/marketing/mojo-health'
 import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceKey, paidSourceLabel, type PaidSourceKey } from '@/lib/marketing/paid-source'
+import { buildClickCaptureHealth, type ClickCaptureHealth } from '@/lib/marketing/click-capture-health'
+import { isBotOnlyPaidSession } from '@/lib/marketing/paid-session-filter'
 import { buildTrafficQualityReport, type TrafficQualityReport } from '@/lib/marketing/traffic-quality'
 
 export const dynamic = 'force-dynamic'
@@ -210,6 +212,7 @@ type AdsCommandResponse = {
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
+  captureHealth: ClickCaptureHealth
   trafficQuality: TrafficQualityReport
 }
 
@@ -484,6 +487,7 @@ function groupCampaigns(rows: GoogleAdsCampaignDailyRow[], trackingRows: PpcTrac
       name,
       source: paidSourceLabelFromKeys(sourceByCampaign.get(name) ?? ['google_ads']),
       leads: crmLeadCount,
+      clicks: adTotals.clicks,
       spend: Math.round(adTotals.spend),
       call: conversions.call,
       form: crmLeadCount,
@@ -920,6 +924,7 @@ function trackingAttribution(row: PpcTrackingSummaryRow): Record<string, unknown
     gbraid: row.gbraid || attribution.gbraid || payload.gbraid,
     wbraid: row.wbraid || attribution.wbraid || payload.wbraid,
     oppref: attribution.oppref || payload.oppref,
+    skc_openai_click_id: attribution.skc_openai_click_id || payload.skc_openai_click_id,
     landingUrl: row.page_location || attribution.landingUrl || payload.landingUrl,
     referrer: row.page_referrer || attribution.referrer || payload.referrer,
   }
@@ -928,6 +933,12 @@ function trackingAttribution(row: PpcTrackingSummaryRow): Record<string, unknown
 function clickIdFromTracking(row: PpcTrackingSummaryRow): string {
   const attribution = trackingAttribution(row)
   return paidSourceIdentifier(attribution)
+}
+
+function shouldIncludePaidJourney(row: PpcTrackingSummaryRow): boolean {
+  const attribution = trackingAttribution(row)
+  if (paidSourceKey(attribution) === 'openai_ads') return true
+  return Boolean(paidSourceIdentifier(attribution))
 }
 
 function trackingPaidSource(row: PpcTrackingSummaryRow): PaidSourceKey {
@@ -1122,12 +1133,13 @@ function sessionDrop(rows: PpcTrackingSummaryRow[]): PaidSessionRow['drop'] {
 function buildPaidSessions(rows: PpcTrackingSummaryRow[]): PaidSessionRow[] {
   const groups = new Map<string, PpcTrackingSummaryRow[]>()
   for (const row of rows) {
-    if (!clickIdFromTracking(row)) continue
+    if (!shouldIncludePaidJourney(row)) continue
     const key = sessionKey(row)
     groups.set(key, [...(groups.get(key) ?? []), row])
   }
 
   return Array.from(groups.entries())
+    .filter(([, group]) => !isBotOnlyPaidSession(group))
     .map(([key, group]) => {
       const ordered = [...group].sort((a, b) => Date.parse(eventTimestamp(a)) - Date.parse(eventTimestamp(b)))
       const first = ordered[0]!
@@ -1661,6 +1673,13 @@ export async function GET(req: NextRequest) {
       leads: leadRowsForResponse,
       outbox: buildOutboxRows(rows.outboxRows, rows.leadRows),
       paidSessions: buildPaidSessions(rows.trackingRows),
+      captureHealth: buildClickCaptureHealth({
+        campaignRows: rows.campaignRows,
+        trackingRows: rows.trackingRows,
+        leadRows: rows.leadRows,
+        outboxRows: rows.outboxRows,
+        generatedAt,
+      }),
       trafficQuality: buildTrafficQualityReport(rows.trackingRows, { now: generatedAt }),
     }
 

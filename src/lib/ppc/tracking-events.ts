@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase-lazy'
 import { cleanJsonRecord } from '@/lib/ppc/conversion-outbox'
 import { ppcCampaignNameForContext } from '@/lib/ppc/campaigns'
+import { paidSourceSlug } from '@/lib/marketing/paid-source'
 
 export const SITUATION_TO_TAG = {
   'tax-delinquent': 'tax_delinquent',
@@ -56,6 +57,7 @@ export type PpcTrackingAttribution = {
   gad_source?: string
   gad_campaignid?: string
   gad_adgroupid?: string
+  skc_openai_click_id?: string
   referrer?: string
   landingUrl?: string
 }
@@ -176,7 +178,15 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
   const gclid = text(attribution.gclid)
   const gbraid = text(attribution.gbraid)
   const wbraid = text(attribution.wbraid)
+  const skcOpenAIClickId = text(attribution.skc_openai_click_id)
   const pageLocation = text(input.pageLocation) || text(attribution.landingUrl)
+  const pageReferrer = text(input.pageReferrer) || text(attribution.referrer)
+  const trafficSource = text(input.trafficSource) || paidSourceSlug({
+    ...attribution,
+    page_location: pageLocation,
+    page_referrer: pageReferrer,
+    source_url: pageLocation,
+  })
   const payload = cleanJsonRecord({
     ...(input.payload ?? {}),
     attribution,
@@ -194,8 +204,8 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
     activity_id: text(input.activityId),
     page_path: text(input.pagePath),
     page_location: pageLocation,
-    page_referrer: text(input.pageReferrer) || text(attribution.referrer),
-    traffic_source: text(input.trafficSource) || 'google_ads',
+    page_referrer: pageReferrer,
+    traffic_source: trafficSource,
     campaign: ppcCampaignNameForContext({
       campaign: input.campaign,
       attribution,
@@ -223,7 +233,7 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
     condition_overall: condition && condition in CONDITION_TO_OVERALL ? CONDITION_TO_OVERALL[condition as keyof typeof CONDITION_TO_OVERALL] : null,
     phone_number: text(input.phoneNumber),
     sms_consent: bool(input.smsConsent),
-    is_test: Boolean(input.isTest) || hasTestMarker(input.eventId, gclid, gbraid, wbraid, input.sessionId, input.visitorId),
+    is_test: Boolean(input.isTest) || hasTestMarker(input.eventId, gclid, gbraid, wbraid, skcOpenAIClickId, input.sessionId, input.visitorId),
     payload,
   }
 }

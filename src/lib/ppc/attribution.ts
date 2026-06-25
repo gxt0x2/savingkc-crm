@@ -24,6 +24,7 @@ export interface AttributionPayload {
   gad_source?: string
   gad_campaignid?: string
   gad_adgroupid?: string
+  skc_openai_click_id?: string
   referrer?: string
   landingUrl: string
 }
@@ -49,6 +50,7 @@ const UTM_KEYS = [
   'gad_source',
   'gad_campaignid',
   'gad_adgroupid',
+  'skc_openai_click_id',
 ] as const
 
 export function captureAttribution(): AttributionPayload | null {
@@ -87,6 +89,10 @@ function attributionFromCurrentUrl(): AttributionPayload {
   if (!payload.oppref) {
     const oppref = readNamedCookie('__oppref')
     if (oppref) payload.oppref = oppref
+  }
+  if (!payload.skc_openai_click_id) {
+    const skcOpenAIClickId = readNamedCookie('__skc_openai_click_id')
+    if (skcOpenAIClickId) payload.skc_openai_click_id = skcOpenAIClickId
   }
   return payload
 }
@@ -140,6 +146,10 @@ function readCookie(): AttributionPayload | null {
     if (!parsed.oppref) {
       const oppref = readNamedCookie('__oppref')
       if (oppref) parsed.oppref = oppref
+    }
+    if (!parsed.skc_openai_click_id) {
+      const skcOpenAIClickId = readNamedCookie('__skc_openai_click_id')
+      if (skcOpenAIClickId) parsed.skc_openai_click_id = skcOpenAIClickId
     }
     return parsed
   } catch {

@@ -50,6 +50,7 @@ import {
   type PaidSessionRow,
   type SeriesRow,
 } from '@/lib/marketing/ads-command-seed'
+import { EMPTY_CLICK_CAPTURE_HEALTH, type ClickCaptureHealth, type ClickCaptureSourceHealth } from '@/lib/marketing/click-capture-health'
 import { EMPTY_TRAFFIC_QUALITY_REPORT, type TrafficQualityReport, type TrafficQualityStatus } from '@/lib/marketing/traffic-quality'
 
 type MetricKey = 'spend' | 'cpl' | 'leads' | 'qualified' | 'clicks' | 'conversions'
@@ -71,6 +72,7 @@ type PeriodState = {
 type DashboardSectionId =
   | 'kpis'
   | 'trafficQuality'
+  | 'clickCaptureHealth'
   | 'trend'
   | 'campaigns'
   | 'searchTerms'
@@ -88,10 +90,11 @@ const SEARCH_TERM_PAGE_SIZE = 10
 const OUTBOX_PAGE_SIZE = 5
 const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
 const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
-const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trafficQuality', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'openAIAdsHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
+const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trafficQuality', 'clickCaptureHealth', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'openAIAdsHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
 const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
   kpis: false,
   trafficQuality: false,
+  clickCaptureHealth: false,
   trend: false,
   campaigns: false,
   searchTerms: false,
@@ -107,6 +110,7 @@ const DEFAULT_COLLAPSED_SECTIONS: Record<DashboardSectionId, boolean> = {
 const DASHBOARD_SECTIONS: Record<DashboardSectionId, { label: string; size: DashboardSectionSize }> = {
   kpis: { label: 'KPI Row', size: 'full' },
   trafficQuality: { label: 'Traffic Quality', size: 'full' },
+  clickCaptureHealth: { label: 'Click Capture', size: 'full' },
   trend: { label: 'Performance Trend', size: 'full' },
   campaigns: { label: 'Conversions by Campaign', size: 'half' },
   searchTerms: { label: 'Search Term Performance', size: 'half' },
@@ -183,6 +187,7 @@ type AdsCommandData = {
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
+  captureHealth: ClickCaptureHealth
   trafficQuality: TrafficQualityReport
 }
 
@@ -368,7 +373,7 @@ function sourceHealthSummary(source: PaidSourceFilter, exportHealth: ExportHealt
   return {
     status: exportHealth.status,
     label: exportHealthLabel(exportHealth.status),
-    note: exportHealth.lastFailureReason || 'Google Ads, Stape, and OpenAI export queue summary.',
+    note: exportHealth.lastFailureReason || 'Google Ads, OpenAI Ads, GA4, and Stape export queue summary.',
     target: 'exportHealth' as DashboardSectionId,
   }
 }
@@ -759,6 +764,7 @@ function CampaignChart({
       campaigns.map((campaign) => ({
         ...campaign,
         leadsScaled: scaleN(campaign.leads, period),
+        clicksScaled: scaleN(campaign.clicks ?? 0, period),
         spendScaled: scaleN(campaign.spend, period),
         callScaled: scaleN(campaign.call, period),
         formScaled: scaleN(campaign.form, period),
@@ -766,6 +772,8 @@ function CampaignChart({
       })),
     [campaigns, period],
   )
+  const hasAttributedLeads = rows.some((row) => row.leadsScaled > 0 || row.callScaled > 0 || row.formScaled > 0 || row.smsScaled > 0)
+  const hasPaidCampaignData = rows.some((row) => row.clicksScaled > 0 || row.spendScaled > 0)
 
   return (
     <div className="panel">
@@ -821,13 +829,19 @@ function CampaignChart({
             )}
           </BarChart>
         </ResponsiveContainer>
+        {!hasAttributedLeads && hasPaidCampaignData ? (
+          <div className="chart-note">
+            <b>0 attributed leads in this period.</b>
+            <span>Spend and clicks are imported; bars appear after a CRM lead or call conversion is attributed.</span>
+          </div>
+        ) : null}
       </div>
       {rows.length ? (
         <div className="campaign-source-list">
           {rows.slice(0, 6).map((row) => (
             <div className="campaign-source-row" key={`${row.source ?? 'Paid'}-${row.name}`}>
               <span><i style={{ background: row.color }} /><span className="source-tag">{row.source ?? 'Google Ads'}</span>{row.name}</span>
-              <b className="mono">{row.leadsScaled} leads · {formatUsd(row.spendScaled)}</b>
+              <b className="mono">{row.leadsScaled} leads · {formatNum(row.clicksScaled)} clicks · {formatUsd(row.spendScaled)}</b>
             </div>
           ))}
         </div>
@@ -1242,7 +1256,7 @@ function ExportHealthCard({ health }: { health: ExportHealth }) {
       <div className="panel-head">
         <div>
           <h2>Ads Export Health</h2>
-          <div className="cap">Google Ads, Stape, and OpenAI Ads conversion export status</div>
+          <div className="cap">Google Ads, OpenAI Ads, GA4, and Stape conversion export status</div>
         </div>
         <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
           {exportHealthLabel(health.status)}
@@ -1323,6 +1337,93 @@ function OpenAIAdsHealthCard({ health }: { health: OpenAIAdsHealth }) {
   )
 }
 
+function captureStatusLabel(status: ClickCaptureHealth['status']): string {
+  if (status === 'attention') return 'Needs attention'
+  if (status === 'watch') return 'Watch capture'
+  return 'Clean'
+}
+
+function captureGapSummary(source: ClickCaptureSourceHealth): string {
+  if (source.gaps.platformToServer > 0) return `${formatNum(source.gaps.platformToServer)} platform click${source.gaps.platformToServer === 1 ? '' : 's'} without server landing`
+  if (source.gaps.serverToBrowser > 0) return `${formatNum(source.gaps.serverToBrowser)} server landing${source.gaps.serverToBrowser === 1 ? '' : 's'} without browser replay`
+  if (source.gaps.browserToForm > 0) return `${formatNum(source.gaps.browserToForm)} browser session${source.gaps.browserToForm === 1 ? '' : 's'} did not start the form`
+  if (source.gaps.formToLead > 0) return `${formatNum(source.gaps.formToLead)} form start${source.gaps.formToLead === 1 ? '' : 's'} without CRM lead`
+  if (source.gaps.leadToExport > 0) return `${formatNum(source.gaps.leadToExport)} lead signal${source.gaps.leadToExport === 1 ? '' : 's'} awaiting sent export`
+  return 'No capture gap for this source'
+}
+
+function CaptureSourceRow({ source }: { source: ClickCaptureSourceHealth }) {
+  const tone = exportHealthTone(source.status)
+  return (
+    <div className="capture-source-row">
+      <div className="capture-source-head">
+        <div>
+          <b>{source.label}</b>
+          <span>{source.message}</span>
+        </div>
+        <em style={{ color: tone, borderColor: `${tone}50`, background: `${tone}14` }}>{captureStatusLabel(source.status)}</em>
+      </div>
+      <div className="capture-stage-list">
+        {source.stages.map((stage) => (
+          <div className="capture-stage" key={stage.key}>
+            <span>{stage.label}</span>
+            <b className="mono">{formatNum(stage.value)}</b>
+            <small>{stage.previousRate == null ? stage.note : `${stage.previousRate}% from previous`}</small>
+          </div>
+        ))}
+      </div>
+      <div className="capture-gap-line">
+        <span>{captureGapSummary(source)}</span>
+        <span>{source.pendingExports} pending exports · {source.failedExports} failed</span>
+      </div>
+    </div>
+  )
+}
+
+function ClickCaptureHealthPanel({ health }: { health: ClickCaptureHealth }) {
+  const tone = exportHealthTone(health.status)
+  const totals = health.totals
+  const summary = [
+    { label: 'Platform clicks', value: totals.platformClicks, className: 'blue' },
+    { label: 'Server landings', value: totals.serverLandings, className: 'green' },
+    { label: 'Browser sessions', value: totals.browserSessions, className: 'purple' },
+    { label: 'Form starts', value: totals.formStarts, className: 'gold' },
+    { label: 'CRM leads', value: totals.crmLeads, className: 'green' },
+    { label: 'Exports sent', value: totals.exportedConversions, className: 'red' },
+  ]
+
+  return (
+    <div className="panel click-capture-panel">
+      <div className="panel-head">
+        <div>
+          <h2>Click Capture Health</h2>
+          <div className="cap">Ad platform clicks through CRM lead and conversion export feedback</div>
+        </div>
+        <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
+          {captureStatusLabel(health.status)}
+        </span>
+      </div>
+      <div className="capture-health-banner" style={{ borderColor: `${tone}44`, background: `${tone}12` }}>
+        <b>{health.message}</b>
+        <small>Checked {health.generatedAt ? formatFreshness(health.generatedAt) : 'waiting'} · {captureGapSummary(totals)}</small>
+      </div>
+      <div className="capture-health-grid">
+        {summary.map((item) => (
+          <div className="capture-health-metric" key={item.label}>
+            <span>{item.label}</span>
+            <b className={`mono ${item.className}`}>{formatNum(item.value)}</b>
+          </div>
+        ))}
+      </div>
+      <div className="capture-source-list">
+        {health.sources.map((source) => (
+          <CaptureSourceRow key={source.source} source={source} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function SourceDrilldownPanel({
   source,
   kpi,
@@ -1354,6 +1455,7 @@ function SourceDrilldownPanel({
   const healthTone = exportHealthTone(health.status)
   const actions: Array<{ label: string; detail: string; target: DashboardSectionId }> = [
     { label: 'Campaigns', detail: `${campaigns.length} rows`, target: 'campaigns' },
+    { label: 'Capture', detail: `${paidSessions.length} sessions`, target: 'clickCaptureHealth' },
     { label: 'Journeys', detail: `${paidSessions.length} sessions`, target: 'paidJourneys' },
     { label: 'Leads', detail: `${leads.length} CRM records`, target: 'roster' },
     { label: 'Outbox', detail: `${outbox.length} events`, target: 'outbox' },
@@ -1683,6 +1785,8 @@ function LeadOutboxPanel({
 
 function LatestPaidJourneys({
   sessions,
+  source,
+  platformClicks,
   filter,
   range,
   limit,
@@ -1694,6 +1798,8 @@ function LatestPaidJourneys({
   onOpenSession,
 }: {
   sessions: PaidSessionRow[]
+  source: PaidSourceFilter
+  platformClicks: number
   filter: PaidFilter
   range: PaidRange
   limit: number
@@ -1720,7 +1826,15 @@ function LatestPaidJourneys({
   const rows = filtered.slice(start, start + limit)
   const clicks = filtered.length
   const conversions = filtered.filter((session) => session.converted).length
-  const cr = clicks ? (conversions / clicks) * 100 : 0
+  const paidClicks = Math.max(platformClicks, clicks)
+  const unmatchedClicks = Math.max(0, paidClicks - clicks)
+  const cr = paidClicks ? (conversions / paidClicks) * 100 : 0
+  const sourceLabel = source === 'openai_ads' ? 'OpenAI Ads' : source === 'google_ads' ? 'Google Ads' : 'paid ads'
+  const attributionHint = source === 'openai_ads'
+    ? 'OpenAI attribution signal'
+    : source === 'google_ads'
+      ? 'Google click id'
+      : 'paid attribution signal'
 
   useEffect(() => {
     if (page !== safePage) onPageChange(safePage)
@@ -1734,9 +1848,16 @@ function LatestPaidJourneys({
       </div>
       <div className="pj-metrics">
         <div className="pjm green"><div className="l">CONVERSION RATE</div><div className="v">{cr.toFixed(1)}%</div></div>
-        <div className="pjm blue"><div className="l">PAID CLICKS</div><div className="v">{clicks}</div></div>
+        <div className="pjm blue"><div className="l">PAID CLICKS</div><div className="v">{paidClicks}</div></div>
+        <div className="pjm purple"><div className="l">SESSION REPLAYS</div><div className="v">{clicks}</div></div>
         <div className="pjm red"><div className="l">CONVERSIONS</div><div className="v">{conversions}</div></div>
       </div>
+      {unmatchedClicks > 0 ? (
+        <div className="pj-gap">
+          <b>{formatNum(unmatchedClicks)} {sourceLabel} click{unmatchedClicks === 1 ? '' : 's'} imported without a replayable website session.</b>
+          <span>Journey rows appear only after the landing page sends a tracking event. This usually means the visitor bounced before the page loaded, blocked tracking, or the click arrived without the expected {attributionHint}.</span>
+        </div>
+      ) : null}
       <div className="pj-controls">
         <div className="pj-tabs">
           <button className={filter === 'all' ? 'on' : ''} onClick={() => onFilterChange('all')} type="button">All</button>
@@ -1763,7 +1884,12 @@ function LatestPaidJourneys({
         </div>
       </div>
       <div className="paid-list">
-        {rows.map((session) => {
+        {rows.length === 0 ? (
+          <div className="pj-empty">
+            <b>No replayable sessions for this filter yet.</b>
+            <span>{paidClicks > 0 ? `${formatNum(paidClicks)} platform click${paidClicks === 1 ? '' : 's'} imported, but no matching on-site journey is available for this source and period.` : 'Platform clicks and on-site journeys will appear here after paid traffic reaches the landing page.'}</span>
+          </div>
+        ) : rows.map((session) => {
           const progress = microProgress(session.progress)
           const currentStep = microStepName(session, progress - 1)
           return (
@@ -2434,6 +2560,7 @@ export function AdsCommandPage() {
   const leads = adsData?.leads ?? LEADS
   const outbox = adsData?.outbox ?? OUTBOX
   const paidSessions = adsData?.paidSessions ?? PAID_SESSIONS
+  const captureHealth = adsData?.captureHealth ?? EMPTY_CLICK_CAPTURE_HEALTH
   const trafficQuality = adsData?.trafficQuality ?? EMPTY_TRAFFIC_QUALITY_REPORT
   const campaignOptions = useMemo(() => campaigns.map((campaign) => campaign.name), [campaigns])
   const reportingPeriod = periodState.trend
@@ -2640,6 +2767,10 @@ export function AdsCommandPage() {
       return <TrafficQualityPanel report={trafficQuality} />
     }
 
+    if (id === 'clickCaptureHealth') {
+      return <ClickCaptureHealthPanel health={captureHealth} />
+    }
+
     if (id === 'campaigns') {
       return (
         <CampaignChart
@@ -2740,6 +2871,8 @@ export function AdsCommandPage() {
         onLimitChange={(limit) => { setPjLimit(limit); setPjPage(0) }}
         onPageChange={setPjPage}
         onOpenSession={setSelectedSession}
+        source={paidSourceFilter}
+        platformClicks={kpiValue(kpi, 'Clicks')}
       />
     )
   }
@@ -3069,6 +3202,8 @@ const ADS_COMMAND_STYLES = `
 .ads-command .schip.disabled { opacity:.5; cursor:not-allowed; }
 .ads-command .chartbox { position:relative; height:260px; }
 .ads-command .chartbox.sm { height:238px; }
+.ads-command .chart-note { position:absolute; inset:auto 14px 12px 174px; border:1px solid rgba(96,165,250,.26); background:rgba(12,18,28,.78); backdrop-filter:blur(8px); border-radius:var(--radius-lg); padding:10px 12px; color:var(--text-secondary); font-size:11.5px; line-height:1.35; box-shadow:var(--shadow-sm); pointer-events:none; }
+.ads-command .chart-note b { display:block; color:var(--text); font-size:12px; margin-bottom:2px; }
 .ads-command .campaign-source-list { display:flex; flex-direction:column; gap:7px; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
 .ads-command .campaign-source-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:30px; color:var(--text-secondary); font-size:12px; }
 .ads-command .campaign-source-row > span { min-width:0; display:flex; align-items:center; gap:8px; font-weight:750; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -3176,6 +3311,27 @@ const ADS_COMMAND_STYLES = `
 .ads-command .openai-export-strip { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; padding-top:14px; border-top:1px solid var(--line); }
 .ads-command .openai-export-strip > span { display:inline-flex; align-items:center; gap:6px; min-height:28px; border:1px solid var(--line); border-radius:999px; padding:5px 10px; color:var(--text-secondary); background:var(--surface-2); font-size:12px; font-weight:750; }
 .ads-command .openai-health-error { color:var(--danger) !important; border-color:rgba(248,113,113,.35) !important; background:rgba(248,113,113,.08) !important; max-width:100%; overflow-wrap:anywhere; }
+.ads-command .click-capture-panel { overflow:hidden; }
+.ads-command .capture-health-banner { border:1px solid; border-radius:14px; padding:13px 15px; margin-bottom:14px; }
+.ads-command .capture-health-banner b { display:block; color:var(--text); font-size:14px; line-height:1.35; }
+.ads-command .capture-health-banner small { display:block; color:var(--text-tertiary); font-size:12px; line-height:1.4; margin-top:4px; }
+.ads-command .capture-health-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; margin-bottom:14px; }
+.ads-command .capture-health-metric { min-width:0; border:1px solid var(--line); border-radius:14px; background:var(--surface-2); padding:13px 14px; }
+.ads-command .capture-health-metric span { display:block; color:var(--text-tertiary); font-size:10px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.ads-command .capture-health-metric b { display:block; margin-top:8px; color:var(--text); font-size:26px; line-height:1; letter-spacing:-.04em; }
+.ads-command .capture-source-list { display:flex; flex-direction:column; gap:12px; }
+.ads-command .capture-source-row { min-width:0; border:1px solid var(--line); border-radius:18px; background:var(--surface-2); padding:15px; }
+.ads-command .capture-source-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:13px; }
+.ads-command .capture-source-head b { display:block; color:var(--text); font-size:15px; line-height:1.2; }
+.ads-command .capture-source-head span { display:block; margin-top:4px; color:var(--text-secondary); font-size:12.5px; line-height:1.4; }
+.ads-command .capture-source-head em { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-height:26px; border:1px solid; border-radius:999px; padding:4px 10px; font-size:10px; font-style:normal; font-weight:900; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
+.ads-command .capture-stage-list { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:7px; }
+.ads-command .capture-stage { min-width:0; border:1px solid rgba(255,255,255,.06); border-radius:12px; background:rgba(255,255,255,.028); padding:10px; }
+.ads-command .capture-stage span { display:block; color:var(--text-tertiary); font-size:9.5px; font-weight:850; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ads-command .capture-stage b { display:block; margin-top:6px; color:var(--text); font-size:21px; line-height:1; }
+.ads-command .capture-stage small { display:block; min-height:28px; margin-top:5px; color:var(--text-tertiary); font-size:10.5px; line-height:1.3; }
+.ads-command .capture-gap-line { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); color:var(--text-secondary); font-size:12px; line-height:1.35; }
+.ads-command .capture-gap-line span:first-child { color:var(--text); font-weight:800; }
 .ads-command .outbox-panel { margin-top:14px; }
 .ads-command .outbox-summary { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
 .ads-command .outbox-summary > div { background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-lg); padding:11px 12px; }
@@ -3201,13 +3357,18 @@ const ADS_COMMAND_STYLES = `
 .ads-command .outbox-event-line small { display:block; color:var(--text-tertiary); font-family:var(--font-mono); margin-top:3px; }
 .ads-command .sec-title { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 .ads-command .sec-title h2 { font-size:17px; font-weight:700; margin:0; letter-spacing:-.3px; }
-.ads-command .pj-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; }
+.ads-command .pj-metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
 .ads-command .pjm { background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-lg); padding:18px 20px; text-align:center; }
 .ads-command .pjm .l { font-size:12px; color:var(--text-tertiary); font-weight:600; letter-spacing:.02em; }
 .ads-command .pjm .v { font-weight:800; font-size:38px; line-height:1; margin-top:4px; letter-spacing:-1.5px; }
 .ads-command .pjm.green .v { color:var(--success); }
 .ads-command .pjm.blue .v { color:var(--info); }
+.ads-command .pjm.purple .v { color:#a78bfa; }
 .ads-command .pjm.red .v { color:var(--accent); }
+.ads-command .pj-gap { border:1px solid rgba(167,139,250,.35); background:rgba(167,139,250,.08); border-radius:var(--radius-lg); padding:13px 16px; margin:-6px 0 16px; display:flex; align-items:flex-start; gap:10px; color:var(--text-secondary); font-size:12.5px; line-height:1.45; }
+.ads-command .pj-gap b { color:var(--text); overflow-wrap:anywhere; }
+.ads-command .pj-empty { border:1px dashed var(--line-2); border-radius:var(--radius-lg); background:var(--surface-2); padding:28px 18px; color:var(--text-secondary); display:flex; flex-direction:column; gap:6px; text-align:center; }
+.ads-command .pj-empty b { color:var(--text); }
 .ads-command .pj-controls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
 .ads-command .pj-tabs { display:inline-flex; border:1px solid var(--line); border-radius:var(--radius-md); overflow:hidden; background:var(--surface-2); }
 .ads-command .pj-tabs button { background:none; border:0; color:var(--text-secondary); font-size:12.5px; font-weight:600; padding:8px 15px; cursor:pointer; }
@@ -3273,6 +3434,7 @@ const ADS_COMMAND_STYLES = `
 .ads-command .ss { font-weight:700; font-size:18px; margin-top:3px; }
 .ads-command .green { color:#22c55e; }
 .ads-command .blue { color:#60a5fa; }
+.ads-command .purple { color:#a78bfa; }
 .ads-command .gold { color:#eab308; }
 .ads-command .red { color:#f87171; }
 .ads-command .journey-log { margin-top:14px; font-size:12px; }
@@ -3327,6 +3489,8 @@ const ADS_COMMAND_STYLES = `
 @media (min-width:1101px) { .ads-command .layout-grid { grid-template-columns:minmax(0,1fr) minmax(0,1.28fr); } .ads-command .layout-section.full { grid-column:1/-1; } .ads-command .layout-section.half { grid-column:auto / span 1; } }
 @media (max-width:1280px) { .ads-command .kpis { grid-template-columns:repeat(4,1fr); } .ads-command .source-drilldown-context { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:1100px) { .ads-command .roster { grid-template-columns:repeat(2,1fr); } .ads-command .campaign-keyword-grid, .ads-command .funnel-v2, .ads-command .funnel-content { grid-template-columns:1fr; } .ads-command .source-drilldown-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:1100px) { .ads-command .capture-health-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ads-command .capture-stage-list { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+@media (max-width:780px) { .ads-command .capture-health-grid, .ads-command .capture-stage-list { grid-template-columns:repeat(2,minmax(0,1fr)); } .ads-command .capture-source-head, .ads-command .capture-gap-line { flex-direction:column; align-items:flex-start; } }
 @media (max-width:920px) { .ads-command .stage-top { grid-template-columns:1fr; align-items:flex-start; } .ads-command .qbadges { margin-left:0; } .ads-command .stage-body, .ads-command .micro-body { grid-template-columns:1fr; } .ads-command .statside, .ads-command .micro-side { display:none; } .ads-command .stage { inset:10px; width:auto; } }
 @media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .panel { padding:20px 16px; overflow:hidden; } .ads-command .source-filter { width:100%; border-radius:14px; align-items:flex-start; } .ads-command .source-filter-buttons { flex-wrap:wrap; } .ads-command .source-drilldown-head { flex-direction:column; } .ads-command .source-drilldown-metrics, .ads-command .source-drilldown-context { grid-template-columns:1fr; } .ads-command .source-drilldown-actions button { width:100%; justify-content:space-between; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .openai-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .campaign-source-row { align-items:flex-start; flex-direction:column; gap:4px; } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
 @media (max-width:640px) { .ads-command .roster { grid-template-columns:1fr; } .ads-command .live-pill { font-size:11px; } }

@@ -9,6 +9,7 @@ import { sendPpcTrackingEvent } from '@/lib/ppc/tracking-client'
 import { getAttribution } from '@/lib/ppc/attribution'
 import { ppcCampaignNameForContext, ppcPageVariantForPath } from '@/lib/ppc/campaigns'
 import { sendOpenAIAdsPixelEvent } from '@/lib/ppc/openai-ads-client'
+import { paidSourceSlug } from '@/lib/marketing/paid-source'
 
 export type ConversionEvent =
   | 'lead_quiz_started'
@@ -117,6 +118,7 @@ function isSmokeTestMode(
     attribution?.gbraid,
     attribution?.wbraid,
     attribution?.oppref,
+    attribution?.skc_openai_click_id,
   ]
 
   return values.some((value) => typeof value === 'string' && TEST_MARKER_RE.test(value))
@@ -151,11 +153,17 @@ export function firePpcTrackingEvent(
 
   const pageContext = currentPageContext()
   const attribution = safeAttribution()
+  const sourceContext = {
+    ...(attribution ?? {}),
+    page_location: pageContext.page_location,
+    landingUrl: attribution?.landingUrl ?? pageContext.page_location,
+    referrer: attribution?.referrer ?? (typeof document !== 'undefined' ? document.referrer : undefined),
+  }
   const dataLayerEvent = cleanPayload({
     event,
     event_id: makeEventId(event),
     event_time: new Date().toISOString(),
-    traffic_source: 'google_ads',
+    traffic_source: paidSourceSlug(sourceContext),
     campaign: ppcCampaignNameForContext({
       attribution: attribution ? { ...attribution } : null,
       pagePath: pageContext.page_path,

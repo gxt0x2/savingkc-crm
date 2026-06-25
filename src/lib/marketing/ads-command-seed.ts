@@ -24,6 +24,7 @@ export type CampaignRow = {
   name: string
   source?: string
   leads: number
+  clicks?: number
   spend: number
   call: number
   form: number

@@ -12,6 +12,25 @@ describe('paid source attribution', () => {
     expect(paidSourceIdentifierType(attribution)).toBe('oppref')
   })
 
+  it('labels OpenAI Ads from ChatGPT source and referrer signals even without oppref', () => {
+    expect(paidSourceKey({ utm_source: 'chatgpt', landingUrl: 'https://savingkc.com/ppc?utm_source=chatgpt' })).toBe('openai_ads')
+    expect(paidSourceKey({ referrer: 'https://chatgpt.com/c/seller-search', landingUrl: 'https://savingkc.com/ppc' })).toBe('openai_ads')
+    expect(paidSourceIdentifier({ referrer: 'https://chatgpt.com/c/seller-search' })).toBe('')
+    expect(paidSourceIdentifierType({ referrer: 'https://chatgpt.com/c/seller-search' })).toBe('--')
+  })
+
+  it('uses the first-party OpenAI click id when OpenAI does not pass oppref', () => {
+    const attribution = {
+      skc_openai_click_id: 'skc_openai_abc',
+      utm_source: 'chatgpt',
+      landingUrl: 'https://savingkc.com/ppc?utm_source=chatgpt',
+    }
+
+    expect(paidSourceKey(attribution)).toBe('openai_ads')
+    expect(paidSourceIdentifier(attribution)).toBe('skc_openai_abc')
+    expect(paidSourceIdentifierType(attribution)).toBe('skc_openai_click_id')
+  })
+
   it('keeps Google Ads as the default paid-search source', () => {
     const attribution = { gclid: 'gclid_123', utm_source: 'google' }
 

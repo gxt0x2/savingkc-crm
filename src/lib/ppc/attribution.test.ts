@@ -103,4 +103,22 @@ describe('ppc attribution persistence', () => {
       oppref: 'openai-cookie-456',
     })
   })
+
+  it('captures the first-party OpenAI click id from query and cookie fallback', () => {
+    const direct = stubBrowser('?utm_source=chatgpt&skc_openai_click_id=skc_openai_123')
+
+    expect(captureAttribution()).toMatchObject({
+      utm_source: 'chatgpt',
+      skc_openai_click_id: 'skc_openai_123',
+      landingUrl: 'https://savingkc.com/ppc?utm_source=chatgpt&skc_openai_click_id=skc_openai_123',
+    })
+    expect(direct.setItem).toHaveBeenCalledWith('skc.ppc.attribution.v1', expect.stringContaining('skc_openai_123'))
+
+    vi.unstubAllGlobals()
+    stubBrowser('', '__skc_openai_click_id=skc_openai_cookie_456; Path=/')
+
+    expect(captureAttribution()).toMatchObject({
+      skc_openai_click_id: 'skc_openai_cookie_456',
+    })
+  })
 })
