@@ -20,12 +20,14 @@ export async function POST(req: Request) {
       prospectPhoneId,
       heirName,
       heirRelation,
+      prospectOwnerName,
     } = json
     const activitySource = typeof source === 'string' && source.trim() ? source.trim() : undefined
     const prospectMetadata = {
       ...(typeof prospectPhoneId === 'string' && prospectPhoneId.trim() ? { prospect_phone_id: prospectPhoneId.trim() } : {}),
       ...(typeof heirName === 'string' && heirName.trim() ? { heir_name: heirName.trim() } : {}),
       ...(typeof heirRelation === 'string' && heirRelation.trim() ? { heir_relation: heirRelation.trim() } : {}),
+      ...(typeof prospectOwnerName === 'string' && prospectOwnerName.trim() ? { prospect_owner_name: prospectOwnerName.trim() } : {}),
     }
 
     if (mode === 'email') {

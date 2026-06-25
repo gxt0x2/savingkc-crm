@@ -154,6 +154,7 @@ export async function POST(req: Request) {
           prospect_id: prospectMatch.prospect_id,
           heir_name: prospectMatch.contact_name,
           heir_relation: prospectMatch.relationship,
+          prospect_owner_name: prospectMatch.owner_1,
         } : {}),
         direction: 'received',
         from,

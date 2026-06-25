@@ -261,6 +261,60 @@ function displayName(lead: HubLead | null, phone: string | null): string {
   return formatPhone(phone || lead?.phone || '') || 'Unknown Seller'
 }
 
+function activityHeirName(activity: HubActivity): string | null {
+  const meta = activityMetadata(activity)
+  return textValue(meta.heir_name) || textValue(meta.contact_name)
+}
+
+function activityDecedentName(activity: HubActivity): string | null {
+  const meta = activityMetadata(activity)
+  return textValue(meta.prospect_owner_name) ||
+    textValue(meta.decedent_name) ||
+    textValue(meta.deceased_owner_name) ||
+    textValue(meta.owner_1) ||
+    textValue(meta.owner_name)
+}
+
+function sameName(a: string | null | undefined, b: string | null | undefined): boolean {
+  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase())
+}
+
+function threadHeirName(thread: HubThread | null): string | null {
+  if (!thread) return null
+  return thread.prospectPhone?.contact_name ||
+    thread.activities.map(activityHeirName).find(Boolean) ||
+    (thread.prospectPhone?.relationship && !sameName(thread.name, thread.prospectPhone.owner_1) ? thread.name : null)
+}
+
+function threadDecedentName(thread: HubThread | null): string | null {
+  if (!thread) return null
+  return thread.prospectPhone?.owner_1 ||
+    thread.activities.map(activityDecedentName).find(Boolean) ||
+    null
+}
+
+function threadRelationship(thread: HubThread | null): string | null {
+  if (!thread) return null
+  return thread.prospectPhone?.relationship ||
+    thread.activities.map((activity) => textValue(activityMetadata(activity).heir_relation)).find(Boolean) ||
+    null
+}
+
+function threadIdentityParts(thread: HubThread | null): string[] {
+  const heir = threadHeirName(thread)
+  const relation = threadRelationship(thread)
+  const decedent = threadDecedentName(thread)
+  const parts: string[] = []
+  if (heir) parts.push(`Heir: ${toProperCase(heir)}${relation ? ` (${toProperCase(relation)})` : ''}`)
+  if (decedent && !sameName(decedent, heir)) parts.push(`${thread?.prospectPhone?.is_deceased === false ? 'Owner' : 'Decedent'}: ${toProperCase(decedent)}`)
+  return parts
+}
+
+function threadIdentitySummary(thread: HubThread | null): string | null {
+  const parts = threadIdentityParts(thread)
+  return parts.length > 0 ? parts.join(' - ') : null
+}
+
 function timeAgo(iso: string | null | undefined): string {
   if (!iso) return ''
   const date = new Date(iso)
@@ -833,8 +887,10 @@ export function DialerConversationHub({
           thread.name,
           thread.phone,
           thread.prospectPhone?.contact_name,
+          thread.prospectPhone?.owner_1,
           thread.prospectPhone?.relationship,
           prospectLabel(thread.prospectPhone),
+          threadIdentitySummary(thread),
           thread.lead?.email,
           thread.lead?.property_address,
           thread.lead?.city,
@@ -1008,6 +1064,7 @@ export function DialerConversationHub({
               prospectPhoneId: activeThread.prospectPhone?.id || undefined,
               heirName: activeThread.prospectPhone?.contact_name || undefined,
               heirRelation: activeThread.prospectPhone?.relationship || undefined,
+              prospectOwnerName: activeThread.prospectPhone?.owner_1 || undefined,
             }
           : {
               leadId: activeLeadId,
@@ -1020,6 +1077,7 @@ export function DialerConversationHub({
               prospectPhoneId: activeThread.prospectPhone?.id || undefined,
               heirName: activeThread.prospectPhone?.contact_name || undefined,
               heirRelation: activeThread.prospectPhone?.relationship || undefined,
+              prospectOwnerName: activeThread.prospectPhone?.owner_1 || undefined,
             }),
       })
       const payload = await response.json().catch(() => ({}))
@@ -1236,6 +1294,7 @@ export function DialerConversationHub({
             ) : (
               filteredThreads.map((thread) => {
                 const active = thread.id === activeThread?.id
+                const identitySummary = threadIdentitySummary(thread)
                 return (
                   <button
                     key={thread.id}
@@ -1257,7 +1316,7 @@ export function DialerConversationHub({
                       </span>
                       <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{threadSnippet(thread.lastActivity)}</span>
                       <span className="mt-1 block truncate text-[10px] text-[var(--ck-text-dim)]">
-                        {threadStatus(thread)} - {[prospectLabel(thread.prospectPhone), thread.lead?.property_address || formatPhone(thread.phone || '')].filter(Boolean).join(' - ') || 'Prospecting conversation'}
+                        {threadStatus(thread)} - {[identitySummary || prospectLabel(thread.prospectPhone), thread.lead?.property_address || formatPhone(thread.phone || '')].filter(Boolean).join(' - ') || 'Prospecting conversation'}
                       </span>
                     </span>
                     <span className="pt-0.5 text-right text-[10px] font-bold text-[var(--ck-text-dim)]">{timeAgo(thread.lastActivity?.created_at || thread.lead?.updated_at || thread.lead?.created_at)}</span>
@@ -1274,6 +1333,11 @@ export function DialerConversationHub({
               <header className="flex shrink-0 flex-col gap-3 border-b border-[var(--ck-border)] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="truncate text-lg font-black text-[var(--ck-text)]">{activeThread.name}</p>
+                  {threadIdentitySummary(activeThread) && (
+                    <p className="mt-1 truncate text-xs font-bold text-[var(--ck-text)]">
+                      {threadIdentitySummary(activeThread)}
+                    </p>
+                  )}
                   <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">
                     {formatPhone(threadPhone || '') || 'No phone'}{activeThread.lead?.property_address ? ` - ${activeThread.lead.property_address}` : ''}
                   </p>
@@ -1313,7 +1377,13 @@ export function DialerConversationHub({
                           <div className="h-px flex-1 bg-[var(--ck-border)]" />
                         </div>
                         {group.items.map((activity) => (
-                          <ConversationEvent key={activity.id} activity={activity} initials={activeThread.initials} phone={threadPhone} />
+                          <ConversationEvent
+                            key={activity.id}
+                            activity={activity}
+                            initials={activeThread.initials}
+                            phone={threadPhone}
+                            participantName={threadHeirName(activeThread) || activeThread.name}
+                          />
                         ))}
                       </div>
                     ))}
@@ -1782,10 +1852,21 @@ function ChecklistItem({ ok, label, detail }: { ok: boolean; label: string; deta
   )
 }
 
-function ConversationEvent({ activity, initials, phone }: { activity: HubActivity; initials: string; phone: string | null }) {
+function ConversationEvent({
+  activity,
+  initials,
+  phone,
+  participantName,
+}: {
+  activity: HubActivity
+  initials: string
+  phone: string | null
+  participantName: string | null
+}) {
   const inbound = activityDirection(activity) === 'inbound'
   const body = activityBody(activity)
   const meta = activityMetadata(activity)
+  const speakerName = activityHeirName(activity) || participantName || 'Seller'
 
   if (activity.activity_type === 'note' || activity.activity_type === 'status_change' || activity.activity_type === 'outcome' || activity.activity_type === 'appointment' || activity.activity_type === 'task') {
     const icon = activity.activity_type === 'note'
@@ -1858,7 +1939,7 @@ function ConversationEvent({ activity, initials, phone }: { activity: HubActivit
             <p className="line-clamp-3 break-words">{body || '[empty message]'}</p>
           </div>
           <p className={`mt-1 px-1 text-[10px] text-[var(--ck-text-dim)] ${inbound ? 'text-left' : 'text-right'}`}>
-            {inbound ? 'Seller' : activity.agent || 'Saving KC'} - {fullTime(activity.created_at)}
+            {inbound ? toProperCase(speakerName) : activity.agent || 'Saving KC'} - {fullTime(activity.created_at)}
           </p>
         </div>
       </div>
@@ -1893,6 +1974,9 @@ function SellerRail({
   const mapHref = mapsUrl(lead)
   const zillowHref = zillowUrl(lead)
   const hasPhone = Boolean(thread.phone || lead?.phone)
+  const heirName = threadHeirName(thread)
+  const relation = threadRelationship(thread)
+  const decedentName = threadDecedentName(thread)
 
   async function handleAddNote() {
     const content = note.trim()
@@ -2030,12 +2114,15 @@ function SellerRail({
           {thread.initials}
         </div>
         <p className="mt-3 truncate text-lg font-black text-[var(--ck-text)]">{thread.name}</p>
-        <p className="mt-1 text-xs font-semibold text-[var(--ck-text-muted)]">{prospectLabel(thread.prospectPhone) || lead?.assigned_agent || 'Prospecting'}</p>
+        <p className="mt-1 text-xs font-semibold text-[var(--ck-text-muted)]">{threadIdentitySummary(thread) || prospectLabel(thread.prospectPhone) || lead?.assigned_agent || 'Prospecting'}</p>
       </div>
 
       <div className="space-y-2 border-t border-[var(--ck-border)] pt-4">
         <RailLine icon="call" value={formatPhone(thread.phone || lead?.phone || '') || 'No phone'} />
-        {thread.prospectPhone?.owner_1 && <RailLine icon="person_search" value={`Owner: ${thread.prospectPhone.owner_1}`} />}
+        {heirName && <RailLine icon="person" value={`Heir: ${toProperCase(heirName)}${relation ? ` (${toProperCase(relation)})` : ''}`} />}
+        {decedentName && !sameName(decedentName, heirName) && (
+          <RailLine icon="person_search" value={`${thread.prospectPhone?.is_deceased === false ? 'Owner' : 'Decedent'}: ${toProperCase(decedentName)}`} />
+        )}
         <RailLine icon="mail" value={lead?.email || 'No email'} />
         <RailLine icon="location_on" value={[lead?.property_address, lead?.city, lead?.state].filter(Boolean).join(', ') || 'No property'} />
         <RailLine icon="sell" value={lead?.station ? lead.station.replace(/_/g, ' ') : 'No stage'} />

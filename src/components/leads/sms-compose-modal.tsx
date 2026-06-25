@@ -106,6 +106,7 @@ interface ComposeModalProps {
   prospectPhoneId?: string | null
   heirName?: string | null
   heirRelation?: string | null
+  prospectOwnerName?: string | null
 }
 
 export function SmsComposeModal({
@@ -117,6 +118,7 @@ export function SmsComposeModal({
   prospectPhoneId = null,
   heirName = null,
   heirRelation = null,
+  prospectOwnerName = null,
 }: ComposeModalProps) {
   const { user } = useAuth()
   const agentName = getAgentFromEmail(user?.email)
@@ -271,6 +273,7 @@ export function SmsComposeModal({
           prospectPhoneId,
           heirName,
           heirRelation,
+          prospectOwnerName,
         }),
       })
 

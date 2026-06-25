@@ -65,7 +65,7 @@ interface HeirsSectionProps {
   onAutoStartHandled?: () => void
   onAutoStartEmpty?: () => void
   /** When provided, a chat-bubble button appears next to each phone and calls this with the heir phone context. */
-  onSmsPhone?: (args: { heirName: string; relation: string; phone: string; prospectPhoneId: string }) => void
+  onSmsPhone?: (args: { heirName: string; relation: string; phone: string; prospectPhoneId: string; deceasedOwnerName: string }) => void
   /** Rings to allow before giving up; flows to the Twilio Dial timeout. */
   ringCount?: number | null
 }
@@ -402,6 +402,7 @@ export function HeirsSection({
                 relation: heir.relationship,
                 phone: phone.number,
                 prospectPhoneId: phone.id,
+                deceasedOwnerName,
               }) : undefined}
             />
           ))}
