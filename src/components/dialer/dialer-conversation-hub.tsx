@@ -329,6 +329,15 @@ function displayName(lead: HubLead | null, phone: string | null): string {
   return formatPhone(phone || lead?.phone || '') || 'Unknown Seller'
 }
 
+function leadPropertySummary(lead: HubLead | null): string | null {
+  if (!lead) return null
+  const address = textValue(lead.property_address)
+  const locality = [textValue(lead.city), textValue(lead.state)].filter(Boolean).join(', ')
+  if (!address) return locality || null
+  if (locality && !address.toLowerCase().includes(locality.toLowerCase())) return `${address}, ${locality}`
+  return address
+}
+
 function activityHeirName(activity: HubActivity): string | null {
   const meta = activityMetadata(activity)
   return textValue(meta.heir_name) || textValue(meta.contact_name)
@@ -1425,7 +1434,7 @@ export function DialerConversationHub({
                       </span>
                       <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{threadSnippet(thread.lastActivity)}</span>
                       <span className="mt-1 block truncate text-[10px] text-[var(--ck-text-dim)]">
-                        {threadStatus(thread)} - {[secondaryTitle || prospectLabel(thread.prospectPhone), thread.lead?.property_address || formatPhone(thread.phone || '')].filter(Boolean).join(' - ') || 'Prospecting conversation'}
+                        {threadStatus(thread)} - {[secondaryTitle || prospectLabel(thread.prospectPhone), leadPropertySummary(thread.lead) || formatPhone(thread.phone || '')].filter(Boolean).join(' - ') || 'Prospecting conversation'}
                       </span>
                     </span>
                     <span className="pt-0.5 text-right text-[10px] font-bold text-[var(--ck-text-dim)]">{timeAgo(thread.lastActivity?.created_at || thread.lead?.updated_at || thread.lead?.created_at)}</span>
@@ -1448,7 +1457,7 @@ export function DialerConversationHub({
                     </p>
                   )}
                   <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">
-                    {formatPhone(threadPhone || '') || 'No phone'}{activeThread.lead?.property_address ? ` - ${activeThread.lead.property_address}` : ''}
+                    {[formatPhone(threadPhone || '') || 'No phone', leadPropertySummary(activeThread.lead)].filter(Boolean).join(' - ')}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -2235,7 +2244,7 @@ function SellerRail({
           <RailLine icon="person_search" value={threadSecondaryTitle(thread) || ''} />
         )}
         <RailLine icon="mail" value={lead?.email || 'No email'} />
-        <RailLine icon="location_on" value={[lead?.property_address, lead?.city, lead?.state].filter(Boolean).join(', ') || 'No property'} />
+        <RailLine icon="location_on" value={leadPropertySummary(lead) || 'No property'} />
         <RailLine icon="sell" value={lead?.station ? lead.station.replace(/_/g, ' ') : 'No stage'} />
         <RailLine icon="verified" value={`Phone: ${PHONE_STATUS_LABELS[phoneStatus]}`} />
       </div>
