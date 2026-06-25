@@ -13,6 +13,13 @@ import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { supabase } from '@/lib/supabase-lazy'
 
 const DEFAULT_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+const SMS_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound']
+
+type SmsActivityRow = {
+  activity_type: string
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
 
 export type SendLeadSmsResult =
   | { status: 'sent'; sid: string | undefined; from: string }
@@ -32,8 +39,8 @@ export interface SendLeadSmsInput {
 
 /**
  * Pick the Twilio number to send from. Prefer the number this lead/phone last
- * texted us on (keeps the thread on one number); otherwise the explicit
- * override; otherwise the default line.
+ * used with this contact (keeps the thread on one number); otherwise the
+ * explicit override; otherwise the default line.
  */
 export async function resolveSmsFromNumber(
   leadId: string | null | undefined,
@@ -42,30 +49,88 @@ export async function resolveSmsFromNumber(
 ): Promise<string> {
   if (fromPhone) return fromPhone
 
+  function textValue(value: unknown): string | null {
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+  }
+
+  function phoneKey(value: string | null | undefined): string {
+    const digits = (value || '').replace(/\D/g, '')
+    if (!digits) return ''
+    return digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+  }
+
+  function phoneVariants(raw: string): string[] {
+    const digits = raw.replace(/\D/g, '')
+    const variants = new Set<string>()
+    if (raw.trim()) variants.add(raw.trim())
+    const national = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+    if (national.length === 10) {
+      variants.add(`+1${national}`)
+      variants.add(national)
+      variants.add(`${national.slice(0, 3)}-${national.slice(3, 6)}-${national.slice(6)}`)
+      variants.add(`(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}`)
+    }
+    return Array.from(variants)
+  }
+
+  function activityDirection(row: SmsActivityRow): 'inbound' | 'outbound' {
+    const direction = textValue(row.metadata?.direction)?.toLowerCase()
+    if (direction === 'inbound' || direction === 'received' || direction === 'in') return 'inbound'
+    if (row.activity_type === 'sms_received' || row.activity_type === 'sms_inbound') return 'inbound'
+    return 'outbound'
+  }
+
+  function contactPhone(row: SmsActivityRow): string | null {
+    const from = textValue(row.metadata?.from)
+    const to = textValue(row.metadata?.to)
+    return activityDirection(row) === 'inbound' ? from || to : to || from
+  }
+
+  function linePhone(row: SmsActivityRow): string | null {
+    const from = textValue(row.metadata?.from)
+    const to = textValue(row.metadata?.to)
+    return activityDirection(row) === 'inbound' ? to : from
+  }
+
+  const targetKey = phoneKey(phone)
+
   if (leadId) {
     const { data } = await supabase
       .from('lead_activities')
-      .select('metadata')
+      .select('activity_type, metadata, created_at')
       .eq('lead_id', leadId)
-      .eq('activity_type', 'sms')
-      .eq('metadata->>direction', 'received')
+      .in('activity_type', SMS_ACTIVITY_TYPES)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-    if (data?.metadata?.to) return data.metadata.to as string
+      .limit(200)
+    const rows = (data || []) as SmsActivityRow[]
+    const match = rows.find((row) => phoneKey(contactPhone(row)) === targetKey && linePhone(row))
+    const detectedLine = match ? linePhone(match) : null
+    if (detectedLine) return detectedLine
   }
 
   if (phone) {
-    const { data } = await supabase
-      .from('lead_activities')
-      .select('metadata')
-      .eq('activity_type', 'sms')
-      .eq('metadata->>direction', 'received')
-      .eq('metadata->>from', phone)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-    if (data?.metadata?.to) return data.metadata.to as string
+    const variants = phoneVariants(phone)
+    const [{ data: fromRows }, { data: toRows }] = await Promise.all([
+      supabase
+        .from('lead_activities')
+        .select('activity_type, metadata, created_at')
+        .in('activity_type', SMS_ACTIVITY_TYPES)
+        .in('metadata->>from', variants)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('lead_activities')
+        .select('activity_type, metadata, created_at')
+        .in('activity_type', SMS_ACTIVITY_TYPES)
+        .in('metadata->>to', variants)
+        .order('created_at', { ascending: false })
+        .limit(20),
+    ])
+    const rows = ([...(fromRows || []), ...(toRows || [])] as SmsActivityRow[])
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    const match = rows.find((row) => phoneKey(contactPhone(row)) === targetKey && linePhone(row))
+    const detectedLine = match ? linePhone(match) : null
+    if (detectedLine) return detectedLine
   }
 
   return DEFAULT_TWILIO_PHONE

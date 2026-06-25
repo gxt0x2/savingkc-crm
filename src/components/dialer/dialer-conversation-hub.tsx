@@ -207,6 +207,12 @@ function activityPhone(activity: HubActivity, fallback: string | null): string |
   return textValue(meta.to) || textValue(meta.from) || fallback
 }
 
+function activityLinePhone(activity: HubActivity): string | null {
+  const meta = activityMetadata(activity)
+  if (activityDirection(activity) === 'inbound') return textValue(meta.to)
+  return textValue(meta.from)
+}
+
 function prospectSource(activity: HubActivity): string | null {
   const meta = activityMetadata(activity)
   return textValue(meta.source) || textValue(meta.trigger)
@@ -845,12 +851,11 @@ export function DialerConversationHub({
   }, [filter, search, threads])
 
   const replyFromPhone = useMemo(() => {
-    const lastInbound = activeActivities.slice().reverse().find((activity) => (
+    const lastSms = activeActivities.slice().reverse().find((activity) => (
       isSmsActivity(activity) &&
-      activityDirection(activity) === 'inbound' &&
-      textValue(activityMetadata(activity).to)
+      activityLinePhone(activity)
     ))
-    return textValue(lastInbound ? activityMetadata(lastInbound).to : null) || defaultFromPhone || DEFAULT_FROM_PHONE
+    return (lastSms ? activityLinePhone(lastSms) : null) || defaultFromPhone || DEFAULT_FROM_PHONE
   }, [activeActivities, defaultFromPhone])
 
   useEffect(() => {
