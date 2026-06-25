@@ -42,9 +42,39 @@ interface HubActivity {
   created_at: string
 }
 
+interface ProspectPhoneContext {
+  id: string | null
+  phone: string | null
+  contact_name: string | null
+  relationship: string | null
+  lead_id: string | null
+  owner_1: string | null
+  is_deceased: boolean | null
+  delinquent_years_category: string | null
+}
+
+interface ProspectPhoneRow {
+  id: string | null
+  phone: string | null
+  contact_name: string | null
+  relationship: string | null
+  prospects: {
+    lead_id: string | null
+    owner_1: string | null
+    is_deceased: boolean | null
+    delinquent_years_category: string | null
+  } | Array<{
+    lead_id: string | null
+    owner_1: string | null
+    is_deceased: boolean | null
+    delinquent_years_category: string | null
+  }> | null
+}
+
 interface HubThread {
   id: string
   lead: HubLead | null
+  prospectPhone: ProspectPhoneContext | null
   phone: string | null
   name: string
   initials: string
@@ -88,9 +118,15 @@ interface SmsSegmentMetric {
   remaining: number
 }
 
-const COMM_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'note', 'status_change', 'outcome', 'appointment', 'task']
+const PROSPECTING_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'note', 'status_change']
 const SMS_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound'])
 const CONVERSATION_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail'])
+const PROSPECTING_ACTIVITY_SOURCES = new Set([
+  'heir_dialer',
+  'prospect_sms_alert',
+  'tax_delinquent_inbound_sms',
+  'tax_delinquent_inbound_call',
+])
 const DEFAULT_FROM_PHONE = CONVERSATION_TWILIO_NUMBERS[0]?.value || '+18163077835'
 const RESTRICTED_WORDS = ['guaranteed', 'free cash', 'risk-free', 'urgent', 'act now', 'limited time', 'government', 'irs']
 const NEGATIVE_KEYWORDS = ['lawsuit', 'foreclosure rescue', 'loan modification', 'credit repair', 'covid', 'bankruptcy attorney']
@@ -156,9 +192,54 @@ function activityBody(activity: HubActivity): string {
   return textValue(meta.body) || textValue(meta.message) || activity.description || ''
 }
 
+function phoneKey(value: string | null | undefined): string {
+  const digits = (value || '').replace(/\D/g, '')
+  if (!digits) return ''
+  if (digits.length === 11 && digits.startsWith('1')) return digits.slice(1)
+  return digits
+}
+
 function activityPhone(activity: HubActivity, fallback: string | null): string | null {
   const meta = activityMetadata(activity)
-  return textValue(meta.from) || textValue(meta.to) || fallback
+  const statusPhone = textValue(meta.phone)
+  if (statusPhone) return statusPhone
+  if (activityDirection(activity) === 'inbound') return textValue(meta.from) || textValue(meta.to) || fallback
+  return textValue(meta.to) || textValue(meta.from) || fallback
+}
+
+function prospectSource(activity: HubActivity): string | null {
+  const meta = activityMetadata(activity)
+  return textValue(meta.source) || textValue(meta.trigger)
+}
+
+function isSystemAlert(activity: HubActivity): boolean {
+  const direction = textValue(activityMetadata(activity).direction)?.toLowerCase()
+  return direction === 'outbound_alert'
+}
+
+function normalizeProspectPhone(row: ProspectPhoneRow): ProspectPhoneContext | null {
+  const prospect = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects
+  if (!prospect?.lead_id && !row.phone) return null
+  return {
+    id: row.id,
+    phone: row.phone,
+    contact_name: row.contact_name,
+    relationship: row.relationship,
+    lead_id: prospect?.lead_id || null,
+    owner_1: prospect?.owner_1 || null,
+    is_deceased: prospect?.is_deceased ?? null,
+    delinquent_years_category: prospect?.delinquent_years_category || null,
+  }
+}
+
+function prospectLabel(context: ProspectPhoneContext | null): string | null {
+  if (!context) return null
+  const labels = [
+    context.relationship ? toProperCase(context.relationship) : null,
+    context.is_deceased ? 'Heir outreach' : 'Prospect',
+    context.delinquent_years_category === '3yr_plus' ? '3yr+' : context.delinquent_years_category,
+  ].filter(Boolean)
+  return labels.length ? labels.join(' - ') : null
 }
 
 function getInitials(name: string | null | undefined): string {
@@ -233,35 +314,33 @@ function groupByDay(activities: HubActivity[]): Array<{ day: string; items: HubA
   return groups
 }
 
-function buildThreadForLead(lead: HubLead, activities: HubActivity[]): HubThread {
+function buildThreadForProspectPhone({
+  id,
+  phone,
+  lead,
+  prospectPhone,
+  activities,
+}: {
+  id: string
+  phone: string | null
+  lead: HubLead | null
+  prospectPhone: ProspectPhoneContext | null
+  activities: HubActivity[]
+}): HubThread {
   const sorted = activities.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   const lastActivity = sorted[0] || null
   const lastConversation = sorted.find(isConversationActivity) || null
+  const display = prospectPhone?.contact_name || displayName(lead, phone || prospectPhone?.phone || null)
   return {
-    id: lead.id,
+    id,
     lead,
-    phone: lead.phone,
-    name: displayName(lead, lead.phone),
-    initials: getInitials(lead.full_name || lead.phone),
+    prospectPhone,
+    phone: phone || prospectPhone?.phone || lead?.phone || null,
+    name: display,
+    initials: getInitials(display || phone || lead?.full_name || lead?.phone),
     lastActivity,
     unread: Boolean(lastConversation && activityDirection(lastConversation) === 'inbound'),
-    starred: lead.priority === 'hot' || lead.priority === 'high',
-    activities: sorted,
-  }
-}
-
-function buildUnmatchedThread(phone: string, activities: HubActivity[]): HubThread {
-  const sorted = activities.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  const lastConversation = sorted.find(isConversationActivity) || null
-  return {
-    id: `unmatched:${phone}`,
-    lead: null,
-    phone,
-    name: formatPhone(phone) || phone,
-    initials: getInitials(phone),
-    lastActivity: sorted[0] || null,
-    unread: Boolean(lastConversation && activityDirection(lastConversation) === 'inbound'),
-    starred: false,
+    starred: lead?.priority === 'hot' || lead?.priority === 'high',
     activities: sorted,
   }
 }
@@ -458,6 +537,14 @@ function zillowUrl(lead: HubLead | null): string | null {
   return query ? `https://www.zillow.com/homes/${encodeURIComponent(query)}_rb/` : null
 }
 
+function chunks<T>(items: T[], size: number): T[][] {
+  const result: T[][] = []
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size))
+  }
+  return result
+}
+
 export function DialerConversationHub({
   agent = 'Ernest',
   defaultFromPhone,
@@ -495,53 +582,136 @@ export function DialerConversationHub({
     return threads.find((thread) => thread.id === activeThreadId) || threads[0] || null
   }, [activeThreadId, threads])
   const threadPhone = activeThread?.phone || activeThread?.lead?.phone || null
-  const activeLeadId = activeThread?.id.startsWith('unmatched:') ? null : activeThread?.id || null
+  const activeLeadId = activeThread?.lead?.id || activeThread?.prospectPhone?.lead_id || null
 
   const loadThreads = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const supabase = createClient()
-      const { data, error: activityError } = await supabase
-        .from('lead_activities')
-        .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-        .in('activity_type', COMM_TYPES)
-        .order('created_at', { ascending: false })
-        .limit(900)
-      if (activityError) throw new Error(activityError.message)
+      const { data: prospectRows, error: prospectError } = await supabase
+        .from('prospect_phones')
+        .select(`
+          id,
+          phone,
+          contact_name,
+          relationship,
+          prospects (
+            lead_id,
+            owner_1,
+            is_deceased,
+            delinquent_years_category
+          )
+        `)
+        .not('phone', 'is', null)
+        .limit(5000)
+      if (prospectError) throw new Error(prospectError.message)
 
-      const activityRows = (data || []) as HubActivity[]
+      const prospectPhones = ((prospectRows || []) as ProspectPhoneRow[])
+        .map(normalizeProspectPhone)
+        .filter((row): row is ProspectPhoneContext => Boolean(row))
+      const prospectLeadIds = Array.from(new Set(prospectPhones.map((row) => row.lead_id).filter(Boolean) as string[]))
+      const prospectLeadIdSet = new Set(prospectLeadIds)
+      const prospectPhonesById = new Map(prospectPhones.filter((row) => row.id).map((row) => [row.id as string, row]))
+      const prospectPhonesByPhone = new Map<string, ProspectPhoneContext[]>()
+      for (const prospectPhone of prospectPhones) {
+        const key = phoneKey(prospectPhone.phone)
+        if (!key) continue
+        prospectPhonesByPhone.set(key, [...(prospectPhonesByPhone.get(key) || []), prospectPhone])
+      }
+
+      function contextForActivity(activity: HubActivity): ProspectPhoneContext | null {
+        const meta = activityMetadata(activity)
+        const prospectPhoneId = textValue(meta.prospect_phone_id)
+        if (prospectPhoneId && prospectPhonesById.has(prospectPhoneId)) {
+          return prospectPhonesById.get(prospectPhoneId) || null
+        }
+        const key = phoneKey(activityPhone(activity, null))
+        const matches = key ? prospectPhonesByPhone.get(key) || [] : []
+        return matches.find((match) => match.lead_id && match.lead_id === activity.lead_id) || matches[0] || null
+      }
+
+      const activityById = new Map<string, HubActivity>()
+      async function addActivityRows(rows: HubActivity[] | null | undefined) {
+        for (const row of rows || []) activityById.set(row.id, row)
+      }
+
+      for (const leadChunk of chunks(prospectLeadIds, 250)) {
+        const { data: activityRows, error: activityError } = await supabase
+          .from('lead_activities')
+          .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+          .in('lead_id', leadChunk)
+          .in('activity_type', PROSPECTING_ACTIVITY_TYPES)
+          .order('created_at', { ascending: false })
+          .limit(900)
+        if (activityError) throw new Error(activityError.message)
+        await addActivityRows((activityRows || []) as HubActivity[])
+      }
+
+      for (const source of ['heir_dialer', 'dialer_prospecting_hub', 'dialer_conversation_hub']) {
+        const { data: sourceRows } = await supabase
+          .from('lead_activities')
+          .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+          .eq('metadata->>source', source)
+          .in('activity_type', PROSPECTING_ACTIVITY_TYPES)
+          .order('created_at', { ascending: false })
+          .limit(300)
+        await addActivityRows((sourceRows || []) as HubActivity[])
+      }
+
+      const activityRows = Array.from(activityById.values())
+        .filter((activity) => !isSystemAlert(activity))
+        .filter((activity) => {
+          const source = prospectSource(activity)
+          if (source && PROSPECTING_ACTIVITY_SOURCES.has(source)) return true
+          const hasProspectLead = Boolean(activity.lead_id && prospectLeadIdSet.has(activity.lead_id))
+          const hasProspectPhone = Boolean(contextForActivity(activity))
+          return hasProspectLead || hasProspectPhone
+        })
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 1200)
+
       const leadIds = Array.from(new Set(activityRows.map((activity) => activity.lead_id).filter(Boolean) as string[]))
       let leads: HubLead[] = []
-      if (leadIds.length > 0) {
+      for (const leadChunk of chunks(leadIds, 500)) {
         const { data: leadRows, error: leadError } = await supabase
           .from('leads')
           .select('id, full_name, phone, email, property_address, city, state, zip, county, source, station, priority, assigned_agent, notes, created_at, updated_at')
-          .in('id', leadIds)
+          .in('id', leadChunk)
         if (leadError) throw new Error(leadError.message)
-        leads = (leadRows || []) as HubLead[]
+        leads = [...leads, ...((leadRows || []) as HubLead[])]
       }
-
       const leadById = new Map(leads.map((lead) => [lead.id, lead]))
-
-      const activitiesByLead = new Map<string, HubActivity[]>()
+      const threadGroups = new Map<string, { phone: string | null; leadId: string | null; prospectPhone: ProspectPhoneContext | null; activities: HubActivity[] }>()
       for (const activity of activityRows) {
-        if (!activity.lead_id) continue
-        activitiesByLead.set(activity.lead_id, [...(activitiesByLead.get(activity.lead_id) || []), activity])
-      }
-
-      const unmatchedByPhone = new Map<string, HubActivity[]>()
-      for (const activity of activityRows) {
-        if (activity.lead_id && leadById.has(activity.lead_id)) continue
+        const prospectPhone = contextForActivity(activity)
         const phone = activityPhone(activity, null)
-        if (!phone) continue
-        unmatchedByPhone.set(phone, [...(unmatchedByPhone.get(phone) || []), activity])
+        const key = phoneKey(phone || prospectPhone?.phone || null)
+        const leadId = activity.lead_id || prospectPhone?.lead_id || null
+        if (!key && !leadId) continue
+        const id = key ? `phone:${key}` : `lead:${leadId}`
+        const current = threadGroups.get(id) || {
+          phone: phone || prospectPhone?.phone || null,
+          leadId,
+          prospectPhone,
+          activities: [],
+        }
+        current.phone = current.phone || phone || prospectPhone?.phone || null
+        current.leadId = current.leadId || leadId
+        current.prospectPhone = current.prospectPhone || prospectPhone
+        current.activities.push(activity)
+        threadGroups.set(id, current)
       }
 
-      const nextThreads = [
-        ...Array.from(unmatchedByPhone.entries()).map(([phone, activities]) => buildUnmatchedThread(phone, activities)),
-        ...leads.map((lead) => buildThreadForLead(lead, activitiesByLead.get(lead.id) || [])),
-      ].sort((a, b) => {
+      const nextThreads = Array.from(threadGroups.entries()).map(([id, group]) => (
+        buildThreadForProspectPhone({
+          id,
+          phone: group.phone,
+          lead: group.leadId ? leadById.get(group.leadId) || null : null,
+          prospectPhone: group.prospectPhone,
+          activities: group.activities,
+        })
+      )).sort((a, b) => {
         const aTime = new Date(a.lastActivity?.created_at || a.lead?.updated_at || a.lead?.created_at || 0).getTime()
         const bTime = new Date(b.lastActivity?.created_at || b.lead?.updated_at || b.lead?.created_at || 0).getTime()
         return bTime - aTime
@@ -565,46 +735,7 @@ export function DialerConversationHub({
       setActiveActivities([])
       return
     }
-
-    const supabase = createClient()
-    if (activeThread.id.startsWith('unmatched:')) {
-      const orphanLeadId = activeThread.activities.find((activity) => activity.lead_id)?.lead_id
-      if (orphanLeadId) {
-        const { data } = await supabase
-          .from('lead_activities')
-          .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-          .eq('lead_id', orphanLeadId)
-          .in('activity_type', COMM_TYPES)
-          .order('created_at', { ascending: true })
-          .limit(120)
-        setActiveActivities((data || []) as HubActivity[])
-        return
-      }
-
-      const phone = activeThread.phone
-      const { data } = await supabase
-        .from('lead_activities')
-        .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-        .is('lead_id', null)
-        .in('activity_type', COMM_TYPES)
-        .order('created_at', { ascending: true })
-        .limit(120)
-      const filtered = ((data || []) as HubActivity[]).filter((activity) => {
-        const meta = activityMetadata(activity)
-        return meta.from === phone || meta.to === phone
-      })
-      setActiveActivities(filtered)
-      return
-    }
-
-    const { data } = await supabase
-      .from('lead_activities')
-      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-      .eq('lead_id', activeThread.id)
-      .in('activity_type', COMM_TYPES)
-      .order('created_at', { ascending: true })
-      .limit(120)
-    setActiveActivities((data || []) as HubActivity[])
+    setActiveActivities(sortedAscending(activeThread.activities).slice(-120))
   }, [activeThread])
 
   useEffect(() => {
@@ -644,7 +775,7 @@ export function DialerConversationHub({
           event: 'INSERT',
           schema: 'public',
           table: 'lead_activities',
-          ...(activeThread.id.startsWith('unmatched:') ? {} : { filter: `lead_id=eq.${activeThread.id}` }),
+          ...(activeLeadId ? { filter: `lead_id=eq.${activeLeadId}` } : {}),
         },
         () => {
           void loadActiveActivities()
@@ -653,7 +784,7 @@ export function DialerConversationHub({
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [activeThread, loadActiveActivities, loadThreads])
+  }, [activeLeadId, activeThread, loadActiveActivities, loadThreads])
 
   useEffect(() => {
     setMessage('')
@@ -695,6 +826,9 @@ export function DialerConversationHub({
         const haystack = [
           thread.name,
           thread.phone,
+          thread.prospectPhone?.contact_name,
+          thread.prospectPhone?.relationship,
+          prospectLabel(thread.prospectPhone),
           thread.lead?.email,
           thread.lead?.property_address,
           thread.lead?.city,
@@ -832,7 +966,7 @@ export function DialerConversationHub({
   const messageMetric = useMemo(() => smsSegmentMetric(message), [message])
   const messageWarnings = useMemo(() => composerWarnings(message), [message])
 
-  const visibleActivities = useMemo(() => activeActivities.slice(-8), [activeActivities])
+  const visibleActivities = activeActivities
   const groupedActivities = useMemo(() => groupByDay(visibleActivities), [visibleActivities])
 
   async function handleSend() {
@@ -865,6 +999,10 @@ export function DialerConversationHub({
               mode: 'sms',
               fromPhone,
               agent,
+              source: 'dialer_prospecting_hub',
+              prospectPhoneId: activeThread.prospectPhone?.id || undefined,
+              heirName: activeThread.prospectPhone?.contact_name || undefined,
+              heirRelation: activeThread.prospectPhone?.relationship || undefined,
             }
           : {
               leadId: activeLeadId,
@@ -873,6 +1011,10 @@ export function DialerConversationHub({
               mode: 'email',
               subject: 'Message from Saving KC',
               agent,
+              source: 'dialer_prospecting_hub',
+              prospectPhoneId: activeThread.prospectPhone?.id || undefined,
+              heirName: activeThread.prospectPhone?.contact_name || undefined,
+              heirRelation: activeThread.prospectPhone?.relationship || undefined,
             }),
       })
       const payload = await response.json().catch(() => ({}))
@@ -1110,7 +1252,7 @@ export function DialerConversationHub({
                       </span>
                       <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{threadSnippet(thread.lastActivity)}</span>
                       <span className="mt-1 block truncate text-[10px] text-[var(--ck-text-dim)]">
-                        {threadStatus(thread)} - {thread.lead?.property_address || formatPhone(thread.phone || '') || 'Unmatched conversation'}
+                        {threadStatus(thread)} - {[prospectLabel(thread.prospectPhone), thread.lead?.property_address || formatPhone(thread.phone || '')].filter(Boolean).join(' - ') || 'Prospecting conversation'}
                       </span>
                     </span>
                     <span className="pt-0.5 text-right text-[10px] font-bold text-[var(--ck-text-dim)]">{timeAgo(thread.lastActivity?.created_at || thread.lead?.updated_at || thread.lead?.created_at)}</span>
@@ -1761,7 +1903,13 @@ function SellerRail({
         activity_type: 'note',
         description: content,
         agent,
-        metadata: { source: 'dialer_conversation_hub' },
+        metadata: {
+          source: 'dialer_prospecting_hub',
+          phone: thread.phone || lead.phone,
+          prospect_phone_id: thread.prospectPhone?.id || undefined,
+          heir_name: thread.prospectPhone?.contact_name || undefined,
+          heir_relation: thread.prospectPhone?.relationship || undefined,
+        },
       })
       if (error) throw new Error(error.message)
 
@@ -1813,7 +1961,11 @@ function SellerRail({
         description: `${field === 'station' ? 'Stage' : 'Priority'} changed from ${lead[field] || 'unset'} to ${value}`,
         agent,
         metadata: {
-          source: 'dialer_conversation_hub',
+          source: 'dialer_prospecting_hub',
+          phone: thread.phone || lead.phone,
+          prospect_phone_id: thread.prospectPhone?.id || undefined,
+          heir_name: thread.prospectPhone?.contact_name || undefined,
+          heir_relation: thread.prospectPhone?.relationship || undefined,
           field,
           old_value: lead[field],
           new_value: value,
@@ -1848,6 +2000,8 @@ function SellerRail({
           phone,
           action,
           agent,
+          source: 'dialer_prospecting_hub',
+          prospectPhoneId: thread.prospectPhone?.id || undefined,
         }),
       })
       const payload = await response.json().catch(() => ({}))
@@ -1871,11 +2025,12 @@ function SellerRail({
           {thread.initials}
         </div>
         <p className="mt-3 truncate text-lg font-black text-[var(--ck-text)]">{thread.name}</p>
-        <p className="mt-1 text-xs font-semibold text-[var(--ck-text-muted)]">{lead?.assigned_agent || 'Unassigned'}</p>
+        <p className="mt-1 text-xs font-semibold text-[var(--ck-text-muted)]">{prospectLabel(thread.prospectPhone) || lead?.assigned_agent || 'Prospecting'}</p>
       </div>
 
       <div className="space-y-2 border-t border-[var(--ck-border)] pt-4">
         <RailLine icon="call" value={formatPhone(thread.phone || lead?.phone || '') || 'No phone'} />
+        {thread.prospectPhone?.owner_1 && <RailLine icon="person_search" value={`Owner: ${thread.prospectPhone.owner_1}`} />}
         <RailLine icon="mail" value={lead?.email || 'No email'} />
         <RailLine icon="location_on" value={[lead?.property_address, lead?.city, lead?.state].filter(Boolean).join(', ') || 'No property'} />
         <RailLine icon="sell" value={lead?.station ? lead.station.replace(/_/g, ' ') : 'No stage'} />

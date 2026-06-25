@@ -149,6 +149,12 @@ export async function POST(req: Request) {
       description: messageBody,
       agent: 'system',
       metadata: {
+        ...(prospectMatch ? {
+          source: 'tax_delinquent_inbound_sms',
+          prospect_id: prospectMatch.prospect_id,
+          heir_name: prospectMatch.contact_name,
+          heir_relation: prospectMatch.relationship,
+        } : {}),
         direction: 'received',
         from,
         to,

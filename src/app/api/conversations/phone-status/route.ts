@@ -32,6 +32,8 @@ export async function POST(req: Request) {
     const phone = typeof body?.phone === 'string' && body.phone.trim() ? body.phone.trim() : ''
     const action = cleanAction(body?.action)
     const agent = typeof body?.agent === 'string' && body.agent.trim() ? body.agent.trim() : 'System'
+    const source = typeof body?.source === 'string' && body.source.trim() ? body.source.trim() : 'dialer_prospecting_hub'
+    const prospectPhoneId = typeof body?.prospectPhoneId === 'string' && body.prospectPhoneId.trim() ? body.prospectPhoneId.trim() : null
 
     if (!phone || !action) {
       return NextResponse.json({ error: 'phone and action are required' }, { status: 400 })
@@ -49,8 +51,9 @@ export async function POST(req: Request) {
       description,
       agent,
       metadata: {
-        source: 'dialer_conversation_hub',
+        source,
         phone,
+        ...(prospectPhoneId ? { prospect_phone_id: prospectPhoneId } : {}),
         phone_status: action,
         sms_suppressed: Boolean(reason),
       },

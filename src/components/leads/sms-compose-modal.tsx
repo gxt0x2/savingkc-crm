@@ -84,9 +84,22 @@ interface ComposeModalProps {
   onClose: () => void
   onSent?: () => void
   initialTab?: 'sms' | 'email'
+  conversationSource?: string
+  prospectPhoneId?: string | null
+  heirName?: string | null
+  heirRelation?: string | null
 }
 
-export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: ComposeModalProps) {
+export function SmsComposeModal({
+  lead,
+  onClose,
+  onSent,
+  initialTab = 'sms',
+  conversationSource,
+  prospectPhoneId = null,
+  heirName = null,
+  heirRelation = null,
+}: ComposeModalProps) {
   const { user } = useAuth()
   const agentName = getAgentFromEmail(user?.email)
 
@@ -227,6 +240,10 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
           mode: 'sms',
           fromPhone,
           agent: agentName,
+          source: conversationSource,
+          prospectPhoneId,
+          heirName,
+          heirRelation,
         }),
       })
 

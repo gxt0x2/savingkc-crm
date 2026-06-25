@@ -513,7 +513,7 @@ function DialerPageInner() {
   const [autoQueueLeadId, setAutoQueueLeadId] = useState<string | null>(null)
 
   // SMS compose state
-  const [smsTarget, setSmsTarget] = useState<{ heirName: string; relation: string; phone: string } | null>(null)
+  const [smsTarget, setSmsTarget] = useState<{ heirName: string; relation: string; phone: string; prospectPhoneId: string } | null>(null)
 
   // Session tally (Mojo-style HUD) + mark-lead-dead dialog
   const [sessionDials, setSessionDials] = useState(0)
@@ -1362,6 +1362,10 @@ function DialerPageInner() {
             zip: currentLead.zip,
           }}
           initialTab="sms"
+          conversationSource="heir_dialer"
+          prospectPhoneId={smsTarget.prospectPhoneId}
+          heirName={smsTarget.heirName}
+          heirRelation={smsTarget.relation}
           onClose={() => setSmsTarget(null)}
           onSent={() => { setSmsTarget(null); refreshActivities() }}
         />

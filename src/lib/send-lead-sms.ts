@@ -26,6 +26,8 @@ export interface SendLeadSmsInput {
   /** Force a specific Twilio sending number; otherwise auto-detected. */
   fromPhone?: string
   agent?: string
+  source?: string
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -70,7 +72,7 @@ export async function resolveSmsFromNumber(
 }
 
 export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsResult> {
-  const { leadId, phone, fromPhone, agent } = input
+  const { leadId, phone, fromPhone, agent, source, metadata } = input
   const body = input.body.trim()
 
   if (await isOptedOut(phone)) return { status: 'skipped', reason: 'opted_out' }
@@ -85,7 +87,14 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
     activity_type: 'sms',
     description: body,
     agent: agent || 'System',
-    metadata: { direction: 'outbound', from, to: phone, message_sid: msg.sid },
+    metadata: {
+      ...(metadata || {}),
+      ...(source ? { source } : {}),
+      direction: 'outbound',
+      from,
+      to: phone,
+      message_sid: msg.sid,
+    },
   })
 
   logSmsSend(phone, body, from, leadId || undefined).catch((err) => console.error('[SMS-DEDUP] Failed:', err))
