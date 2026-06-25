@@ -10,7 +10,7 @@ import { formatPhone, toProperCase } from '@/lib/format'
 type HubView = 'dashboard' | 'inbox' | 'templates'
 type HubFilter = 'needs_reply' | 'unanswered' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
 type ComposeMode = 'sms' | 'email'
-type TemplateCategory = 'intro' | 'follow_up' | 'nurture' | 'ghost_protocol' | 'missed_call'
+type TemplateCategory = 'prospecting_intro' | 'prospecting_reply' | 'prospecting_follow_up' | 'prospecting_wrong_number' | 'prospecting_opt_out'
 type PhoneQualityStatus = 'unknown' | 'verified' | 'wrong_number' | 'dnc' | 'spam' | 'blocked'
 
 interface HubLead {
@@ -130,14 +130,72 @@ const PROSPECTING_ACTIVITY_SOURCES = new Set([
 const DEFAULT_FROM_PHONE = CONVERSATION_TWILIO_NUMBERS[0]?.value || '+18163077835'
 const RESTRICTED_WORDS = ['guaranteed', 'free cash', 'risk-free', 'urgent', 'act now', 'limited time', 'government', 'irs']
 const NEGATIVE_KEYWORDS = ['lawsuit', 'foreclosure rescue', 'loan modification', 'credit repair', 'covid', 'bankruptcy attorney']
-const DEFAULT_TEMPLATE_BODY = 'Hi {firstName}, this is Casey with Saving KC Homebuyers. I was reaching out about {propertyAddress}. Would you be open to a quick conversation?'
-const TEMPLATE_CATEGORIES: TemplateCategory[] = ['intro', 'follow_up', 'nurture', 'ghost_protocol', 'missed_call']
+const DEFAULT_TEMPLATE_BODY = 'Hi {firstName}, this is {agentName} with Saving KC Homebuyers. I was reaching out about {propertyAddress}. Are you the right person to talk with about it? Reply STOP to opt out.'
+const TEMPLATE_CATEGORIES: TemplateCategory[] = ['prospecting_intro', 'prospecting_reply', 'prospecting_follow_up', 'prospecting_wrong_number', 'prospecting_opt_out']
+const TEMPLATE_CATEGORY_LABELS: Record<TemplateCategory, string> = {
+  prospecting_intro: 'Initial prospecting',
+  prospecting_reply: 'Seller reply',
+  prospecting_follow_up: 'Follow-up',
+  prospecting_wrong_number: 'Wrong number',
+  prospecting_opt_out: 'Opt-out',
+}
 const QUICK_REPLIES = [
-  { label: 'Still interested?', body: 'Hi {firstName}, just checking back on {propertyAddress}. Are you still open to talking through options?' },
-  { label: 'Call me', body: 'I can help with that. What is a good time today for a quick call?' },
-  { label: 'Need details', body: 'Thanks for getting back to me. What is the best number to reach you, and what is your timeline?' },
-  { label: 'Wrong number', body: 'Sorry about that. I will update our records so we do not keep reaching out.' },
-  { label: 'Opt-out', body: 'Understood. We will stop texting this number.' },
+  { label: 'Right person?', body: 'Thanks for getting back to me, {firstName}. Are you the right person to speak with about {propertyAddress}, or should I update our notes?' },
+  { label: 'Can call', body: 'I can help with that. Is this the best number to call, or is there a better time today?' },
+  { label: 'Need context', body: 'Thanks for letting me know. I was reaching out about {propertyAddress}. Are you connected to that property?' },
+  { label: 'Wrong person', body: 'Sorry about that. I will update our notes so we do not keep reaching out about this property.' },
+  { label: 'Opt-out', body: 'Understood. I will stop texting this number.' },
+]
+const PROSPECTING_TEMPLATE_CATEGORY_SET = new Set<string>(TEMPLATE_CATEGORIES)
+const PROSPECTING_TEMPLATE_SEEDS: SmsTemplateRow[] = [
+  {
+    id: 'prospecting-seed-right-person',
+    name: 'heir_right_person',
+    category: 'prospecting_reply',
+    body: 'Thanks for getting back to me, {firstName}. Are you the right person to speak with about {propertyAddress}, or should I update our notes?',
+    merge_fields: ['firstName', 'propertyAddress'],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-connected',
+    name: 'confirm_property_connection',
+    category: 'prospecting_reply',
+    body: 'I was reaching out about {propertyAddress}. Are you connected to that property, or did we reach the wrong person?',
+    merge_fields: ['propertyAddress'],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-call-window',
+    name: 'ask_best_call_time',
+    category: 'prospecting_reply',
+    body: 'Got it. Is this the best number to call, or is there a better time today for a quick conversation?',
+    merge_fields: [],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-soft-follow-up',
+    name: 'soft_follow_up',
+    category: 'prospecting_follow_up',
+    body: 'Hi {firstName}, just checking back on {propertyAddress}. If you are not the right person, I can update our notes. Reply STOP to opt out.',
+    merge_fields: ['firstName', 'propertyAddress'],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-wrong-number',
+    name: 'wrong_number_cleanup',
+    category: 'prospecting_wrong_number',
+    body: 'Sorry about that. I will update our records so we do not keep reaching out about this property.',
+    merge_fields: [],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-opt-out',
+    name: 'opt_out_acknowledgement',
+    category: 'prospecting_opt_out',
+    body: 'Understood. I will stop texting this number.',
+    merge_fields: [],
+    usage_count: 0,
+  },
 ]
 const STAGE_OPTIONS = [
   { value: 'new', label: 'New' },
@@ -654,6 +712,21 @@ function templateCompliance(body: string) {
   }
 }
 
+function templateCategoryLabel(category: string): string {
+  return TEMPLATE_CATEGORY_LABELS[category as TemplateCategory] || category.replace(/_/g, ' ')
+}
+
+function isProspectingTemplate(template: SmsTemplateRow): boolean {
+  return PROSPECTING_TEMPLATE_CATEGORY_SET.has(template.category)
+}
+
+function prospectingTemplateLibrary(savedTemplates: SmsTemplateRow[]): SmsTemplateRow[] {
+  const prospectingTemplates = savedTemplates.filter(isProspectingTemplate)
+  const savedNames = new Set(prospectingTemplates.map((template) => template.name.trim().toLowerCase()))
+  const seedTemplates = PROSPECTING_TEMPLATE_SEEDS.filter((template) => !savedNames.has(template.name.trim().toLowerCase()))
+  return [...prospectingTemplates, ...seedTemplates]
+}
+
 function renderSpinnerPreview(body: string): string {
   return body.replace(/\{([^{}|]+(?:\|[^{}|]+)+)\}/g, (_, group: string) => {
     return group.split('|').map((part) => part.trim()).filter(Boolean)[0] || ''
@@ -661,7 +734,7 @@ function renderSpinnerPreview(body: string): string {
 }
 
 function firstNameForThread(thread: HubThread | null): string {
-  const name = thread?.lead?.full_name || thread?.name || ''
+  const name = threadHeirName(thread) || thread?.lead?.full_name || thread?.name || ''
   const first = name.trim().split(/\s+/)[0]
   return first && !first.includes('(') ? toProperCase(first) : 'there'
 }
@@ -751,8 +824,8 @@ export function DialerConversationHub({
   const [filter, setFilter] = useState<HubFilter>('needs_reply')
   const [search, setSearch] = useState('')
   const [templates, setTemplates] = useState<SmsTemplateRow[]>([])
-  const [templateName, setTemplateName] = useState('Initial seller outreach')
-  const [templateCategory, setTemplateCategory] = useState<TemplateCategory>('intro')
+  const [templateName, setTemplateName] = useState('Initial heir outreach')
+  const [templateCategory, setTemplateCategory] = useState<TemplateCategory>('prospecting_intro')
   const [templateBody, setTemplateBody] = useState(DEFAULT_TEMPLATE_BODY)
   const [templateSaving, setTemplateSaving] = useState(false)
   const [templateStatus, setTemplateStatus] = useState<string | null>(null)
@@ -935,9 +1008,9 @@ export function DialerConversationHub({
     try {
       const response = await fetch('/api/sms-templates', { cache: 'no-store' })
       const payload = await response.json()
-      setTemplates((payload.templates || []) as SmsTemplateRow[])
+      setTemplates(prospectingTemplateLibrary((payload.templates || []) as SmsTemplateRow[]))
     } catch {
-      setTemplates([])
+      setTemplates(PROSPECTING_TEMPLATE_SEEDS)
     }
   }, [])
 
@@ -1354,7 +1427,7 @@ export function DialerConversationHub({
           onLoadTemplate={(template) => {
             const category = template.category as TemplateCategory
             setTemplateName(template.name)
-            setTemplateCategory(TEMPLATE_CATEGORIES.includes(category) ? category : 'intro')
+            setTemplateCategory(TEMPLATE_CATEGORIES.includes(category) ? category : 'prospecting_intro')
             setTemplateBody(template.body)
             setTemplateStatus(null)
           }}
@@ -1577,10 +1650,10 @@ export function DialerConversationHub({
                       </div>
                     </div>
                     <div>
-                      <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Saved Templates</p>
+                      <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Prospecting Templates</p>
                       <div className="grid max-h-32 gap-1 overflow-y-auto pr-1">
                         {templates.length === 0 ? (
-                          <p className="text-xs text-[var(--ck-text-muted)]">No saved templates.</p>
+                          <p className="text-xs text-[var(--ck-text-muted)]">No prospecting templates.</p>
                         ) : templates.slice(0, 8).map((template) => (
                           <button
                             key={template.id}
@@ -1870,7 +1943,7 @@ function TemplateBuilder({
               className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
             >
               {TEMPLATE_CATEGORIES.map((category) => (
-                <option key={category} value={category}>{category.replace(/_/g, ' ')}</option>
+                <option key={category} value={category}>{templateCategoryLabel(category)}</option>
               ))}
             </select>
           </label>
@@ -1942,10 +2015,10 @@ function TemplateBuilder({
       </section>
 
       <aside className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-        <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Saved Templates</p>
+        <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Prospecting Templates</p>
         <div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1">
           {templates.length === 0 ? (
-            <p className="py-8 text-center text-sm text-[var(--ck-text-muted)]">No templates loaded.</p>
+            <p className="py-8 text-center text-sm text-[var(--ck-text-muted)]">No prospecting templates loaded.</p>
           ) : templates.map((template) => (
             <button
               key={template.id}
@@ -1954,7 +2027,7 @@ function TemplateBuilder({
               className="w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-3 text-left transition-colors hover:border-[#E32E2E]/45"
             >
               <span className="block truncate text-sm font-black text-[var(--ck-text)]">{template.name}</span>
-              <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{template.category} - used {(template.usage_count || 0).toLocaleString()} times</span>
+              <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{templateCategoryLabel(template.category)} - used {(template.usage_count || 0).toLocaleString()} times</span>
               <span className="mt-2 line-clamp-2 block text-xs text-[var(--ck-text-dim)]">{template.body}</span>
             </button>
           ))}
