@@ -332,9 +332,15 @@ function displayName(lead: HubLead | null, phone: string | null): string {
 function leadPropertySummary(lead: HubLead | null): string | null {
   if (!lead) return null
   const address = textValue(lead.property_address)
-  const locality = [textValue(lead.city), textValue(lead.state)].filter(Boolean).join(', ')
+  const city = textValue(lead.city)
+  const state = textValue(lead.state)
+  const locality = [city, state].filter(Boolean).join(', ')
   if (!address) return locality || null
-  if (locality && !address.toLowerCase().includes(locality.toLowerCase())) return `${address}, ${locality}`
+  const addressLower = address.toLowerCase()
+  const addressTokens = address.toUpperCase().split(/[^A-Z0-9]+/)
+  const alreadyHasCity = Boolean(city && addressLower.includes(city.toLowerCase()))
+  const alreadyHasState = Boolean(state && addressTokens.includes(state.toUpperCase()))
+  if (locality && !alreadyHasCity && !alreadyHasState) return `${address}, ${locality}`
   return address
 }
 
