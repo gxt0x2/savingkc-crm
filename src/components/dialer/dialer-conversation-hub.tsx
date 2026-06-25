@@ -213,6 +213,33 @@ function activityLinePhone(activity: HubActivity): string | null {
   return textValue(meta.from)
 }
 
+function activitySmsRouteLabel(activity: HubActivity, fallbackPhone: string | null): string {
+  const meta = activityMetadata(activity)
+  const direction = activityDirection(activity)
+  const from = textValue(meta.from)
+  const to = textValue(meta.to)
+  const contactPhone = activityPhone(activity, fallbackPhone)
+  const linePhone = activityLinePhone(activity)
+  const formattedFrom = formatPhone(from || '') || (from ? from : null)
+  const formattedTo = formatPhone(to || '') || (to ? to : null)
+
+  if (formattedFrom || formattedTo) {
+    return `${direction === 'inbound' ? 'In' : 'Out'}: ${formattedFrom || 'Unknown'} -> ${formattedTo || 'Unknown'}`
+  }
+
+  if (linePhone && contactPhone) {
+    const formattedLine = formatPhone(linePhone) || linePhone
+    const formattedContact = formatPhone(contactPhone) || contactPhone
+    return direction === 'inbound'
+      ? `In: ${formattedContact} -> ${formattedLine}`
+      : `Out: ${formattedLine} -> ${formattedContact}`
+  }
+
+  if (linePhone) return `Line: ${formatPhone(linePhone) || linePhone}`
+  if (contactPhone) return `Contact: ${formatPhone(contactPhone) || contactPhone}`
+  return 'Phone line unknown'
+}
+
 function prospectSource(activity: HubActivity): string | null {
   const meta = activityMetadata(activity)
   return textValue(meta.source) || textValue(meta.trigger)
@@ -1867,6 +1894,7 @@ function ConversationEvent({
   const body = activityBody(activity)
   const meta = activityMetadata(activity)
   const speakerName = activityHeirName(activity) || participantName || 'Seller'
+  const smsRoute = isSmsActivity(activity) ? activitySmsRouteLabel(activity, phone) : null
 
   if (activity.activity_type === 'note' || activity.activity_type === 'status_change' || activity.activity_type === 'outcome' || activity.activity_type === 'appointment' || activity.activity_type === 'task') {
     const icon = activity.activity_type === 'note'
@@ -1941,6 +1969,11 @@ function ConversationEvent({
           <p className={`mt-1 px-1 text-[10px] text-[var(--ck-text-dim)] ${inbound ? 'text-left' : 'text-right'}`}>
             {inbound ? toProperCase(speakerName) : activity.agent || 'Saving KC'} - {fullTime(activity.created_at)}
           </p>
+          {smsRoute && (
+            <p className={`mt-0.5 max-w-full truncate px-1 font-mono text-[10px] text-[var(--ck-text-dim)] ${inbound ? 'text-left' : 'text-right'}`} title={smsRoute}>
+              {smsRoute}
+            </p>
+          )}
         </div>
       </div>
     </div>
