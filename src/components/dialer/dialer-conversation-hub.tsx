@@ -335,16 +335,20 @@ function activityMatchesThread(activity: HubActivity, thread: HubThread | null):
   return Boolean(threadLeadId && activity.lead_id === threadLeadId)
 }
 
-function preferredReplyLine(thread: HubThread | null, activeActivities: HubActivity[]): string | null {
+function preferredReplyLineActivity(thread: HubThread | null, activeActivities: HubActivity[]): HubActivity | null {
   const candidates = smsLineCandidates(thread, activeActivities)
   const latestInbound = candidates.slice().reverse().find((activity) => (
     activityDirection(activity) === 'inbound' &&
     activityLinePhone(activity)
   ))
-  if (latestInbound) return activityLinePhone(latestInbound)
+  if (latestInbound) return latestInbound
 
-  const latestSmsWithLine = candidates.slice().reverse().find((activity) => activityLinePhone(activity))
-  return latestSmsWithLine ? activityLinePhone(latestSmsWithLine) : null
+  return candidates.slice().reverse().find((activity) => activityLinePhone(activity)) || null
+}
+
+function preferredReplyLine(thread: HubThread | null, activeActivities: HubActivity[]): string | null {
+  const activity = preferredReplyLineActivity(thread, activeActivities)
+  return activity ? activityLinePhone(activity) : null
 }
 
 function prospectSource(activity: HubActivity): string | null {
@@ -860,6 +864,7 @@ export function DialerConversationHub({
   const [composeMode, setComposeMode] = useState<ComposeMode>('sms')
   const [message, setMessage] = useState('')
   const [fromPhone, setFromPhone] = useState(defaultFromPhone || DEFAULT_FROM_PHONE)
+  const [fromPhoneTouched, setFromPhoneTouched] = useState(false)
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [showReplyTools, setShowReplyTools] = useState(false)
@@ -1136,10 +1141,18 @@ export function DialerConversationHub({
   const replyFromPhone = useMemo(() => {
     return preferredReplyLine(activeThread, activeActivities) || defaultFromPhone || DEFAULT_FROM_PHONE
   }, [activeActivities, activeThread, defaultFromPhone])
+  const replyLineLabel = useMemo(() => {
+    const sourceActivity = preferredReplyLineActivity(activeThread, activeActivities)
+    if (!sourceActivity) return 'Auto: default conversation line'
+    const sourceDirection = activityDirection(sourceActivity) === 'inbound' ? 'last inbound' : 'last sent'
+    const line = activityLinePhone(sourceActivity)
+    return `Auto: ${sourceDirection} used ${formatPhone(line || '') || line || 'unknown line'}`
+  }, [activeActivities, activeThread])
 
   useEffect(() => {
     setFromPhone(replyFromPhone)
-  }, [replyFromPhone])
+    setFromPhoneTouched(false)
+  }, [activeThreadId, replyFromPhone])
 
   const fromPhoneOptions = useMemo(() => {
     const options: Array<{ label: string; value: string }> = CONVERSATION_TWILIO_NUMBERS.map(({ label, value }) => ({ label, value }))
@@ -1284,7 +1297,7 @@ export function DialerConversationHub({
               phone: threadPhone,
               body,
               mode: 'sms',
-              fromPhone,
+              fromPhone: fromPhoneTouched ? fromPhone : undefined,
               agent,
               source: 'dialer_prospecting_hub',
               prospectPhoneId: activeThread.prospectPhone?.id || undefined,
@@ -1650,15 +1663,23 @@ export function DialerConversationHub({
                     </span>
                   </button>
                   {composeMode === 'sms' && (
-                    <select
-                      value={fromPhone}
-                      onChange={(event) => setFromPhone(event.target.value)}
-                      className="ml-auto max-w-[230px] rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1.5 text-xs font-semibold text-[var(--ck-text)]"
-                    >
-                      {fromPhoneOptions.map((number) => (
-                        <option key={number.value} value={number.value}>{number.label}</option>
-                      ))}
-                    </select>
+                    <div className="ml-auto flex min-w-0 flex-col items-end gap-1">
+                      <select
+                        value={fromPhone}
+                        onChange={(event) => {
+                          setFromPhone(event.target.value)
+                          setFromPhoneTouched(true)
+                        }}
+                        className="w-full max-w-[260px] rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1.5 text-xs font-semibold text-[var(--ck-text)]"
+                      >
+                        {fromPhoneOptions.map((number) => (
+                          <option key={number.value} value={number.value}>{number.label}</option>
+                        ))}
+                      </select>
+                      <span className="max-w-[260px] truncate text-[10px] font-bold text-[var(--ck-text-dim)]" title={fromPhoneTouched ? 'Manual sender override' : replyLineLabel}>
+                        {fromPhoneTouched ? 'Manual sender override' : replyLineLabel}
+                      </span>
+                    </div>
                   )}
                 </div>
                 {showReplyTools && (
