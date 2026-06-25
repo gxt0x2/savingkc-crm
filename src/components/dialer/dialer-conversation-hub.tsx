@@ -240,6 +240,47 @@ function activitySmsRouteLabel(activity: HubActivity, fallbackPhone: string | nu
   return 'Phone line unknown'
 }
 
+function activitySmsFooterPhone(activity: HubActivity, fallbackPhone: string | null): string {
+  const direction = activityDirection(activity)
+  const phone = direction === 'inbound'
+    ? activityPhone(activity, fallbackPhone)
+    : activityLinePhone(activity) || activityPhone(activity, fallbackPhone)
+  return formatPhone(phone || '') || phone || 'Unknown number'
+}
+
+function smsLineCandidates(thread: HubThread | null, activeActivities: HubActivity[]): HubActivity[] {
+  const byId = new Map<string, HubActivity>()
+  for (const activity of thread?.activities || []) {
+    if (isSmsActivity(activity)) byId.set(activity.id, activity)
+  }
+  for (const activity of activeActivities) {
+    if (isSmsActivity(activity) && activityMatchesThread(activity, thread)) byId.set(activity.id, activity)
+  }
+  return sortedAscending(Array.from(byId.values()))
+}
+
+function activityMatchesThread(activity: HubActivity, thread: HubThread | null): boolean {
+  if (!thread) return false
+  const threadLeadId = thread.lead?.id || thread.prospectPhone?.lead_id || null
+  const threadPhoneKey = phoneKey(thread.phone || thread.prospectPhone?.phone || thread.lead?.phone || null)
+  const activityPhoneKey = phoneKey(activityPhone(activity, null))
+
+  if (threadPhoneKey && activityPhoneKey) return threadPhoneKey === activityPhoneKey
+  return Boolean(threadLeadId && activity.lead_id === threadLeadId)
+}
+
+function preferredReplyLine(thread: HubThread | null, activeActivities: HubActivity[]): string | null {
+  const candidates = smsLineCandidates(thread, activeActivities)
+  const latestInbound = candidates.slice().reverse().find((activity) => (
+    activityDirection(activity) === 'inbound' &&
+    activityLinePhone(activity)
+  ))
+  if (latestInbound) return activityLinePhone(latestInbound)
+
+  const latestSmsWithLine = candidates.slice().reverse().find((activity) => activityLinePhone(activity))
+  return latestSmsWithLine ? activityLinePhone(latestSmsWithLine) : null
+}
+
 function prospectSource(activity: HubActivity): string | null {
   const meta = activityMetadata(activity)
   return textValue(meta.source) || textValue(meta.trigger)
@@ -878,8 +919,7 @@ export function DialerConversationHub({
     setSendError(null)
     setShowReplyTools(false)
     setComposeMode('sms')
-    setFromPhone(defaultFromPhone || DEFAULT_FROM_PHONE)
-  }, [activeThreadId, defaultFromPhone])
+  }, [activeThreadId])
 
   useEffect(() => {
     let cancelled = false
@@ -934,12 +974,8 @@ export function DialerConversationHub({
   }, [filter, search, threads])
 
   const replyFromPhone = useMemo(() => {
-    const lastSms = activeActivities.slice().reverse().find((activity) => (
-      isSmsActivity(activity) &&
-      activityLinePhone(activity)
-    ))
-    return (lastSms ? activityLinePhone(lastSms) : null) || defaultFromPhone || DEFAULT_FROM_PHONE
-  }, [activeActivities, defaultFromPhone])
+    return preferredReplyLine(activeThread, activeActivities) || defaultFromPhone || DEFAULT_FROM_PHONE
+  }, [activeActivities, activeThread, defaultFromPhone])
 
   useEffect(() => {
     setFromPhone(replyFromPhone)
@@ -1895,6 +1931,8 @@ function ConversationEvent({
   const meta = activityMetadata(activity)
   const speakerName = activityHeirName(activity) || participantName || 'Seller'
   const smsRoute = isSmsActivity(activity) ? activitySmsRouteLabel(activity, phone) : null
+  const smsFooterPhone = isSmsActivity(activity) ? activitySmsFooterPhone(activity, phone) : null
+  const smsFooterName = inbound ? toProperCase(speakerName) : activity.agent || 'Saving KC'
 
   if (activity.activity_type === 'note' || activity.activity_type === 'status_change' || activity.activity_type === 'outcome' || activity.activity_type === 'appointment' || activity.activity_type === 'task') {
     const icon = activity.activity_type === 'note'
@@ -1966,14 +2004,9 @@ function ConversationEvent({
           <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${inbound ? 'rounded-bl-md bg-[var(--ck-surface-elev)] text-[var(--ck-text)]' : 'rounded-br-md bg-[#2787ff] text-white'}`}>
             <p className="line-clamp-3 break-words">{body || '[empty message]'}</p>
           </div>
-          <p className={`mt-1 px-1 text-[10px] text-[var(--ck-text-dim)] ${inbound ? 'text-left' : 'text-right'}`}>
-            {inbound ? toProperCase(speakerName) : activity.agent || 'Saving KC'} - {fullTime(activity.created_at)}
+          <p className={`mt-1 max-w-full truncate px-1 text-[10px] text-[var(--ck-text-dim)] ${inbound ? 'text-left' : 'text-right'}`} title={smsRoute || undefined}>
+            {smsFooterName} - {smsFooterPhone || 'Unknown number'} - {fullTime(activity.created_at)}
           </p>
-          {smsRoute && (
-            <p className={`mt-0.5 max-w-full truncate px-1 font-mono text-[10px] text-[var(--ck-text-dim)] ${inbound ? 'text-left' : 'text-right'}`} title={smsRoute}>
-              {smsRoute}
-            </p>
-          )}
         </div>
       </div>
     </div>
