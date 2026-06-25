@@ -6,9 +6,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { HeirsSection } from '@/components/leads/heirs-section'
 import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
+import { SmsThreadPanel } from '@/components/leads/sms-thread-panel'
 import { CommsTimeline, CommsSummaryBar } from '@/components/leads/comms-timeline'
 import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
 import { BulkSmsModal } from '@/components/leads/bulk-sms-modal'
+import { DialerConversationHub } from '@/components/dialer/dialer-conversation-hub'
 import { createClient } from '@/lib/supabase/client'
 import { calculateTemperature } from '@/lib/lead-temperature'
 import { toProperCase, formatPhone } from '@/lib/format'
@@ -504,14 +506,14 @@ function DialerPageInner() {
   // Activity feed for current lead
   const [activities, setActivities] = useState<Activity[]>([])
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
-  const [leftTab, setLeftTab] = useState<'activity' | 'recent_calls'>('activity')
+  const [leftTab, setLeftTab] = useState<'texts' | 'activity' | 'recent_calls'>('texts')
 
   // Live queue state from telephony-bar
   const [queueState, setQueueState] = useState<QueueState | null>(null)
   const [autoQueueLeadId, setAutoQueueLeadId] = useState<string | null>(null)
 
   // SMS compose state
-  const [smsTarget, setSmsTarget] = useState<{ heirName: string; relation: string; phone: string } | null>(null)
+  const [smsTarget, setSmsTarget] = useState<{ heirName: string; relation: string; phone: string; prospectPhoneId: string; deceasedOwnerName: string } | null>(null)
 
   // Session tally (Mojo-style HUD) + mark-lead-dead dialog
   const [sessionDials, setSessionDials] = useState(0)
@@ -1159,10 +1161,21 @@ function DialerPageInner() {
             </div>
           </section>
 
-          {/* Activity + recent call history */}
+          {/* Text thread + activity + recent call history */}
           <section className="ck-card p-5">
             <div className="flex items-center justify-between mb-3 gap-3">
               <div className="inline-flex rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setLeftTab('texts')}
+                  className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md transition-colors ${
+                    leftTab === 'texts'
+                      ? 'bg-[#E32E2E] text-white'
+                      : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'
+                  }`}
+                >
+                  Text Hub
+                </button>
                 <button
                   type="button"
                   onClick={() => setLeftTab('activity')}
@@ -1187,10 +1200,25 @@ function DialerPageInner() {
                 </button>
               </div>
               <span className="text-[10px] text-[var(--ck-text-dim)]">
-                {leftTab === 'activity' ? `${commsEvents.length} touches` : `${recentCalls.length} recent`}
+                {leftTab === 'texts'
+                  ? `${commsSummary.sms} texts`
+                  : leftTab === 'activity'
+                  ? `${commsEvents.length} touches`
+                  : `${recentCalls.length} recent`}
               </span>
             </div>
-            {leftTab === 'activity' ? (
+            {leftTab === 'texts' && currentLeadId ? (
+              <SmsThreadPanel
+                leadId={currentLeadId}
+                leadName={ownerName}
+                phone={currentLead?.phone}
+                propertyAddress={situsAddress}
+                activities={activities}
+                defaultFromPhone={sessionCallerId || null}
+                agent="Ernest"
+                onRefresh={refreshActivities}
+              />
+            ) : leftTab === 'activity' ? (
               <div className="space-y-3">
                 <CommsSummaryBar summary={commsSummary} />
                 <div className="border-t border-[var(--ck-border)] pt-3">
@@ -1334,6 +1362,11 @@ function DialerPageInner() {
             zip: currentLead.zip,
           }}
           initialTab="sms"
+          conversationSource="heir_dialer"
+          prospectPhoneId={smsTarget.prospectPhoneId}
+          heirName={smsTarget.heirName}
+          heirRelation={smsTarget.relation}
+          prospectOwnerName={smsTarget.deceasedOwnerName}
           onClose={() => setSmsTarget(null)}
           onSent={() => { setSmsTarget(null); refreshActivities() }}
         />
@@ -1450,8 +1483,8 @@ function DialerHome() {
   const [useCallHammer, setUseCallHammer] = useState(true)
   const [useVoicemailCallHammer, setUseVoicemailCallHammer] = useState(false)
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
-  const [pacing, setPacing] = useState(18)
   const [showBulkSms, setShowBulkSms] = useState(false)
+  const [homeTab, setHomeTab] = useState<'queue' | 'conversations'>('queue')
 
   useEffect(() => {
     if (!callerId && DEFAULT_DIALER_CALLER_ID) {
@@ -1764,10 +1797,8 @@ function DialerHome() {
 
     if (dialerMode === 'click_to_call') {
       setMode('power')
-      setPacing((current) => Math.max(current, 18))
     } else {
       setMode('predictive')
-      setPacing((current) => Math.min(current, 12))
     }
 
     if (activeSavedQueueId) {
@@ -2050,8 +2081,31 @@ function DialerHome() {
     })
   }, [callerId])
 
+  const homeTabSwitcher = (
+    <div className="inline-flex overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
+      <button
+        type="button"
+        onClick={() => setHomeTab('queue')}
+        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+          homeTab === 'queue' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+        }`}
+      >
+        <Icon name="phone_in_talk" size="text-base" /> Call Queue
+      </button>
+      <button
+        type="button"
+        onClick={() => setHomeTab('conversations')}
+        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+          homeTab === 'conversations' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+        }`}
+      >
+        <Icon name="forum" size="text-base" /> Conversations
+      </button>
+    </div>
+  )
+
   return (
-    <div className="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
+    <div className={`mx-auto px-4 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'flex h-[calc(100dvh-4rem)] max-w-[1440px] flex-col py-4' : 'max-w-[1180px] py-6 pb-24'}`}>
       <BulkSmsModal
         open={showBulkSms}
         onClose={() => setShowBulkSms(false)}
@@ -2059,26 +2113,33 @@ function DialerHome() {
         agent={agent}
         fromPhone={callerId}
       />
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">Calling Command Center</h1>
-          <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick who to call, the number to call from, and how — then start.</p>
-        </div>
-        <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3.5 py-1.5 text-sm font-bold text-[var(--ck-text)] sm:self-auto">
-          <span className={`h-2 w-2 rounded-full ${loading ? 'bg-[var(--ck-text-dim)]' : queue.length ? 'bg-[#1E9E68]' : 'bg-[#E32E2E]'}`} />
-          {loading ? 'Loading queue…' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} ready`}
-        </div>
-      </div>
-
-      {error && (
-        <div className="mb-4 rounded-lg border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-4 text-sm text-[#ffb4b4]">
-          {error}
+      {homeTab === 'queue' && (
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-4">{homeTabSwitcher}</div>
+            <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">Calling Command Center</h1>
+            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick who to call, the number to call from, and how — then start.</p>
+          </div>
+          <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3.5 py-1.5 text-sm font-bold text-[var(--ck-text)] sm:self-auto">
+            <span className={`h-2 w-2 rounded-full ${loading ? 'bg-[var(--ck-text-dim)]' : queue.length ? 'bg-[#1E9E68]' : 'bg-[#E32E2E]'}`} />
+            {loading ? 'Loading queue…' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} ready`}
+          </div>
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
-        {/* ── WHO: pick the queue, refine, preview ── */}
-        <main className="space-y-5">
+      {homeTab === 'conversations' ? (
+        <DialerConversationHub agent={agent} defaultFromPhone={callerId} homeTabSwitcher={homeTabSwitcher} />
+      ) : (
+        <>
+          {error && (
+            <div className="mb-4 rounded-lg border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-4 text-sm text-[#ffb4b4]">
+              {error}
+            </div>
+          )}
+
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
+            {/* ── WHO: pick the queue, refine, preview ── */}
+            <main className="space-y-5">
           <section className="ck-card p-5">
             <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E32E2E]/15 text-[#ff7777]">1</span>
@@ -2540,10 +2601,12 @@ function DialerHome() {
               )}
             </div>
           </section>
-        </aside>
-      </div>
+            </aside>
+          </div>
+        </>
+      )}
 
-      {showOptionalFilters && (
+      {homeTab === 'queue' && showOptionalFilters && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
           <button
             type="button"
@@ -2733,27 +2796,6 @@ function DarkSelect({ label, value, onChange, options }: { label: string; value:
         ))}
       </select>
     </label>
-  )
-}
-
-function SegmentedControl({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return (
-    <div>
-      <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Mode</span>
-      <div className="mt-2 grid grid-cols-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
-        {['power', 'predictive'].map((option) => (
-          <button
-            key={option}
-            onClick={() => onChange(option)}
-            className={`rounded-md px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
-              value === option ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
-            }`}
-          >
-            {option}
-          </button>
-        ))}
-      </div>
-    </div>
   )
 }
 

@@ -37,6 +37,7 @@ export async function POST(req: Request) {
       heir_name,
       heir_relation,
       prospect_phone_id,
+      prospect_owner_name,
       agent_identity,
       from_number,
       status,
@@ -95,7 +96,7 @@ export async function POST(req: Request) {
           agent_identity: agent_identity || null,
           status: 'initiated',
           source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
-          ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id }),
+          ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id, prospect_owner_name }),
         }
       })
     } else if (event === 'ended') {
@@ -116,7 +117,7 @@ export async function POST(req: Request) {
           disposition: finalDisposition,
           duration: finalDuration,
           source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
-          ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id }),
+          ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id, prospect_owner_name }),
         }
       })
     }

@@ -606,6 +606,7 @@ export function DialerPanel({
             heir_name: activeQueueItemRef.current.heirName,
             heir_relation: activeQueueItemRef.current.relation,
             prospect_phone_id: activeQueueItemRef.current.prospect_phone_id,
+            prospect_owner_name: activeQueueItemRef.current.deceasedOwnerName,
           }
         : null
       fetch('/api/call-log', {

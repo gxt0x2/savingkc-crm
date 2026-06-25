@@ -7,7 +7,28 @@ import { supabase } from '@/lib/supabase-lazy'
 export async function POST(req: Request) {
   try {
     const json = await req.json()
-    const { leadId, phone, body, mode, fromPhone, agent, to, subject } = json
+    const {
+      leadId,
+      phone,
+      body,
+      mode,
+      fromPhone,
+      agent,
+      to,
+      subject,
+      source,
+      prospectPhoneId,
+      heirName,
+      heirRelation,
+      prospectOwnerName,
+    } = json
+    const activitySource = typeof source === 'string' && source.trim() ? source.trim() : undefined
+    const prospectMetadata = {
+      ...(typeof prospectPhoneId === 'string' && prospectPhoneId.trim() ? { prospect_phone_id: prospectPhoneId.trim() } : {}),
+      ...(typeof heirName === 'string' && heirName.trim() ? { heir_name: heirName.trim() } : {}),
+      ...(typeof heirRelation === 'string' && heirRelation.trim() ? { heir_relation: heirRelation.trim() } : {}),
+      ...(typeof prospectOwnerName === 'string' && prospectOwnerName.trim() ? { prospect_owner_name: prospectOwnerName.trim() } : {}),
+    }
 
     if (mode === 'email') {
       if (!to || !body?.trim()) {
@@ -18,7 +39,15 @@ export async function POST(req: Request) {
     }
 
     if (mode === 'sms') {
-      const result = await sendLeadSms({ leadId, phone, body, fromPhone, agent })
+      const result = await sendLeadSms({
+        leadId,
+        phone,
+        body,
+        fromPhone,
+        agent,
+        source: activitySource,
+        metadata: Object.keys(prospectMetadata).length > 0 ? prospectMetadata : undefined,
+      })
 
       if (result.status === 'failed') {
         return NextResponse.json({ error: result.error }, { status: 502 })
@@ -55,6 +84,8 @@ export async function POST(req: Request) {
         description: body.trim(),
         agent: agent || 'System',
         metadata: {
+          ...(activitySource ? { source: activitySource } : {}),
+          ...prospectMetadata,
           direction: 'outbound',
           to,
           subject: emailSubject,
@@ -78,6 +109,8 @@ export async function POST(req: Request) {
         description: body.trim(),
         agent: agent || 'System',
         metadata: {
+          ...(activitySource ? { source: activitySource } : {}),
+          ...prospectMetadata,
           direction: 'outbound',
           to: phone,
           note: true,

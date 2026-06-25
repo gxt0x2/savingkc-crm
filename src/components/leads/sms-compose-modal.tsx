@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { toProperCase, formatPhone } from '@/lib/format'
@@ -67,14 +67,59 @@ interface SmsTemplate {
   merge_fields: string[]
 }
 
+const SMS_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound']
+
+function isInboundSms(activity: Activity) {
+  const direction = typeof activity.metadata?.direction === 'string'
+    ? activity.metadata.direction.toLowerCase()
+    : ''
+  return direction === 'inbound' ||
+    direction === 'received' ||
+    activity.activity_type === 'sms_received' ||
+    activity.activity_type === 'sms_inbound'
+}
+
+function phoneKey(value: unknown): string {
+  const digits = typeof value === 'string' ? value.replace(/\D/g, '') : ''
+  if (!digits) return ''
+  return digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+}
+
+function activityContactPhone(activity: Activity): string | null {
+  const from = typeof activity.metadata?.from === 'string' ? activity.metadata.from : null
+  const to = typeof activity.metadata?.to === 'string' ? activity.metadata.to : null
+  return isInboundSms(activity) ? from || to : to || from
+}
+
+function activityLinePhone(activity: Activity): string | null {
+  const from = typeof activity.metadata?.from === 'string' ? activity.metadata.from : null
+  const to = typeof activity.metadata?.to === 'string' ? activity.metadata.to : null
+  return isInboundSms(activity) ? to : from
+}
+
 interface ComposeModalProps {
   lead: Lead
   onClose: () => void
   onSent?: () => void
   initialTab?: 'sms' | 'email'
+  conversationSource?: string
+  prospectPhoneId?: string | null
+  heirName?: string | null
+  heirRelation?: string | null
+  prospectOwnerName?: string | null
 }
 
-export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: ComposeModalProps) {
+export function SmsComposeModal({
+  lead,
+  onClose,
+  onSent,
+  initialTab = 'sms',
+  conversationSource,
+  prospectPhoneId = null,
+  heirName = null,
+  heirRelation = null,
+  prospectOwnerName = null,
+}: ComposeModalProps) {
   const { user } = useAuth()
   const agentName = getAgentFromEmail(user?.email)
 
@@ -96,6 +141,13 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
   const [templates, setTemplates] = useState<SmsTemplate[]>([])
   const [showTemplates, setShowTemplates] = useState(false)
   const [propertyMeta, setPropertyMeta] = useState<PropertyMeta>({})
+  const fromPhoneOptions = useMemo(() => {
+    const options: Array<{ label: string; value: string }> = TWILIO_NUMBERS.map((number) => ({ label: number.label, value: number.value }))
+    if (fromPhone && !options.some((option) => option.value === fromPhone)) {
+      options.unshift({ label: `${formatPhone(fromPhone) || fromPhone} - active conversation line`, value: fromPhone })
+    }
+    return options
+  }, [fromPhone])
 
   // Email-specific state
   const [emailTo, setEmailTo] = useState(lead.email || '')
@@ -111,23 +163,23 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
       .from('lead_activities')
       .select('id, activity_type, description, agent, metadata, created_at')
       .eq('lead_id', lead.id)
-      .in('activity_type', ['sms_sent', 'sms_received', 'sms_inbound'])
+      .in('activity_type', SMS_ACTIVITY_TYPES)
       .order('created_at', { ascending: true })
       .limit(50)
     if (data) setMessages(data)
   }
 
-  // ── Auto-detect reply number from last inbound SMS (only if user hasn't manually changed) ──
+  // ── Auto-detect reply number from the active SMS thread unless manually changed ──
   useEffect(() => {
     if (fromPhoneOverridden) return
-    const lastInbound = [...messages].reverse().find(
-      m => m.activity_type === 'sms_received' || m.activity_type === 'sms_inbound'
-    )
-    if (lastInbound?.metadata?.to) {
-      const matchedNumber = TWILIO_NUMBERS.find(n => n.value === lastInbound.metadata!.to)
-      if (matchedNumber) setFromPhone(matchedNumber.value)
-    }
-  }, [messages, fromPhoneOverridden])
+    const targetKey = phoneKey(lead.phone)
+    const lastThreadSms = [...messages].reverse().find((activity) => {
+      if (!targetKey) return Boolean(activityLinePhone(activity))
+      return phoneKey(activityContactPhone(activity)) === targetKey && Boolean(activityLinePhone(activity))
+    })
+    const detectedLine = lastThreadSms ? activityLinePhone(lastThreadSms) : null
+    if (detectedLine) setFromPhone(detectedLine)
+  }, [lead.phone, messages, fromPhoneOverridden])
 
   // ── Load history + templates + property meta on mount ──
   useEffect(() => {
@@ -171,7 +223,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
         },
         (payload: { new?: { activity_type?: string } }) => {
           const type = payload.new?.activity_type
-          if (type === 'sms_sent' || type === 'sms_received' || type === 'sms_inbound') {
+          if (type && SMS_ACTIVITY_TYPES.includes(type)) {
             fetchHistory()
           }
         }
@@ -217,6 +269,11 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
           mode: 'sms',
           fromPhone,
           agent: agentName,
+          source: conversationSource,
+          prospectPhoneId,
+          heirName,
+          heirRelation,
+          prospectOwnerName,
         }),
       })
 
@@ -306,7 +363,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
     }
   }
 
-  const isOutbound = (m: Activity) => m.activity_type === 'sms_sent'
+  const isOutbound = (m: Activity) => !isInboundSms(m)
 
   return (
     <>
@@ -427,7 +484,7 @@ export function SmsComposeModal({ lead, onClose, onSent, initialTab = 'sms' }: C
                     onChange={(e) => { setFromPhone(e.target.value); setFromPhoneOverridden(true) }}
                     className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700"
                   >
-                    {TWILIO_NUMBERS.map((n) => (
+                    {fromPhoneOptions.map((n) => (
                       <option key={n.value} value={n.value}>{n.label}</option>
                     ))}
                   </select>
