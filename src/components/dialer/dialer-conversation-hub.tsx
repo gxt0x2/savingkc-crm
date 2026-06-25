@@ -1152,8 +1152,8 @@ export function DialerConversationHub({
   ]
 
   return (
-    <section className={`overflow-hidden rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] ${
-      view === 'inbox' ? 'flex h-[calc(100vh-190px)] min-h-[520px] max-h-[calc(100vh-190px)] flex-col' : ''
+    <section className={`flex min-h-0 flex-1 flex-col rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] ${
+      view === 'inbox' ? 'overflow-hidden' : 'overflow-y-auto'
     }`}>
       <div className="shrink-0 border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center">

@@ -2105,7 +2105,7 @@ function DialerHome() {
   )
 
   return (
-    <div className={`mx-auto px-4 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'max-w-[1440px] py-4 pb-4' : 'max-w-[1180px] py-6 pb-24'}`}>
+    <div className={`mx-auto px-4 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'flex h-[calc(100dvh-4rem)] max-w-[1440px] flex-col py-4' : 'max-w-[1180px] py-6 pb-24'}`}>
       <BulkSmsModal
         open={showBulkSms}
         onClose={() => setShowBulkSms(false)}
