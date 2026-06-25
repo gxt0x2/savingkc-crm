@@ -344,7 +344,31 @@ function activityDecedentName(activity: HubActivity): string | null {
 }
 
 function sameName(a: string | null | undefined, b: string | null | undefined): boolean {
-  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase())
+  const first = personDisplayName(a)
+  const second = personDisplayName(b)
+  return Boolean(first && second && first.toLowerCase() === second.toLowerCase())
+}
+
+function withoutSingleLetterMiddleInitials(parts: string[]): string[] {
+  if (parts.length < 3) return parts
+  return parts.filter((part, index) => index === 0 || index === parts.length - 1 || !/^[A-Za-z]\.?$/.test(part))
+}
+
+function personDisplayName(value: string | null | undefined): string | null {
+  const name = textValue(value)
+  if (!name) return null
+  const normalized = name.replace(/\s+/g, ' ').trim()
+  const commaIndex = normalized.indexOf(',')
+
+  if (commaIndex > 0) {
+    const lastName = normalized.slice(0, commaIndex).replace(/[.,]+$/g, '').trim()
+    const firstSide = normalized.slice(commaIndex + 1).trim()
+    const firstParts = withoutSingleLetterMiddleInitials(firstSide.split(/\s+/).filter(Boolean))
+    const firstName = firstParts[0]
+    if (firstName && lastName) return toProperCase(`${firstName} ${lastName}`)
+  }
+
+  return toProperCase(withoutSingleLetterMiddleInitials(normalized.split(/\s+/).filter(Boolean)).join(' '))
 }
 
 function threadHeirName(thread: HubThread | null): string | null {
@@ -368,19 +392,41 @@ function threadRelationship(thread: HubThread | null): string | null {
     null
 }
 
+function threadRelationshipLabel(thread: HubThread | null): string {
+  return personDisplayName(threadRelationship(thread)) || 'Unknown'
+}
+
+function threadPrimaryName(thread: HubThread | null): string {
+  if (!thread) return 'Unknown Seller'
+  return personDisplayName(threadHeirName(thread)) || personDisplayName(thread.name) || thread.name || 'Unknown Seller'
+}
+
+function threadPrimaryTitle(thread: HubThread | null): string {
+  if (!thread) return 'Unknown Seller'
+  const heir = personDisplayName(threadHeirName(thread))
+  if (heir) return `${threadPrimaryName(thread)} (${threadRelationshipLabel(thread)})`
+  return threadPrimaryName(thread)
+}
+
+function threadSecondaryTitle(thread: HubThread | null): string | null {
+  if (!thread) return null
+  const decedent = personDisplayName(threadDecedentName(thread))
+  if (!decedent || sameName(decedent, threadHeirName(thread))) return null
+  return `${decedent} (${thread.prospectPhone?.is_deceased === false ? 'Owner' : 'Decedent'})`
+}
+
 function threadIdentityParts(thread: HubThread | null): string[] {
-  const heir = threadHeirName(thread)
-  const relation = threadRelationship(thread)
-  const decedent = threadDecedentName(thread)
-  const parts: string[] = []
-  if (heir) parts.push(`Heir: ${toProperCase(heir)}${relation ? ` (${toProperCase(relation)})` : ''}`)
-  if (decedent && !sameName(decedent, heir)) parts.push(`${thread?.prospectPhone?.is_deceased === false ? 'Owner' : 'Decedent'}: ${toProperCase(decedent)}`)
-  return parts
+  if (!thread) return []
+  return [threadPrimaryTitle(thread), threadSecondaryTitle(thread)].filter(Boolean) as string[]
 }
 
 function threadIdentitySummary(thread: HubThread | null): string | null {
   const parts = threadIdentityParts(thread)
   return parts.length > 0 ? parts.join(' - ') : null
+}
+
+function threadDisplayInitials(thread: HubThread): string {
+  return getInitials(threadPrimaryName(thread))
 }
 
 function timeAgo(iso: string | null | undefined): string {
@@ -1357,7 +1403,7 @@ export function DialerConversationHub({
             ) : (
               filteredThreads.map((thread) => {
                 const active = thread.id === activeThread?.id
-                const identitySummary = threadIdentitySummary(thread)
+                const secondaryTitle = threadSecondaryTitle(thread)
                 return (
                   <button
                     key={thread.id}
@@ -1370,16 +1416,16 @@ export function DialerConversationHub({
                     <span className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black ${
                       thread.unread ? 'bg-cyan-500/20 text-cyan-200' : 'bg-[var(--ck-surface-hi)] text-[var(--ck-text-muted)]'
                     }`}>
-                      {thread.initials}
+                      {threadDisplayInitials(thread)}
                     </span>
                     <span className="min-w-0">
                       <span className="flex items-center gap-2">
-                        <span className="truncate text-sm font-black text-[var(--ck-text)]">{thread.name}</span>
+                        <span className="truncate text-sm font-black text-[var(--ck-text)]">{threadPrimaryTitle(thread)}</span>
                         {thread.starred && <Icon name="star" size="text-xs" className="text-amber-300" filled />}
                       </span>
                       <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{threadSnippet(thread.lastActivity)}</span>
                       <span className="mt-1 block truncate text-[10px] text-[var(--ck-text-dim)]">
-                        {threadStatus(thread)} - {[identitySummary || prospectLabel(thread.prospectPhone), thread.lead?.property_address || formatPhone(thread.phone || '')].filter(Boolean).join(' - ') || 'Prospecting conversation'}
+                        {threadStatus(thread)} - {[secondaryTitle || prospectLabel(thread.prospectPhone), thread.lead?.property_address || formatPhone(thread.phone || '')].filter(Boolean).join(' - ') || 'Prospecting conversation'}
                       </span>
                     </span>
                     <span className="pt-0.5 text-right text-[10px] font-bold text-[var(--ck-text-dim)]">{timeAgo(thread.lastActivity?.created_at || thread.lead?.updated_at || thread.lead?.created_at)}</span>
@@ -1395,10 +1441,10 @@ export function DialerConversationHub({
             <>
               <header className="flex shrink-0 flex-col gap-3 border-b border-[var(--ck-border)] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="truncate text-lg font-black text-[var(--ck-text)]">{activeThread.name}</p>
-                  {threadIdentitySummary(activeThread) && (
+                  <p className="truncate text-lg font-black text-[var(--ck-text)]">{threadPrimaryTitle(activeThread)}</p>
+                  {threadSecondaryTitle(activeThread) && (
                     <p className="mt-1 truncate text-xs font-bold text-[var(--ck-text)]">
-                      {threadIdentitySummary(activeThread)}
+                      {threadSecondaryTitle(activeThread)}
                     </p>
                   )}
                   <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">
@@ -1443,9 +1489,9 @@ export function DialerConversationHub({
                           <ConversationEvent
                             key={activity.id}
                             activity={activity}
-                            initials={activeThread.initials}
+                            initials={threadDisplayInitials(activeThread)}
                             phone={threadPhone}
-                            participantName={threadHeirName(activeThread) || activeThread.name}
+                            participantName={personDisplayName(threadHeirName(activeThread)) || personDisplayName(activeThread.name) || activeThread.name}
                           />
                         ))}
                       </div>
@@ -2041,7 +2087,6 @@ function SellerRail({
   const zillowHref = zillowUrl(lead)
   const hasPhone = Boolean(thread.phone || lead?.phone)
   const heirName = threadHeirName(thread)
-  const relation = threadRelationship(thread)
   const decedentName = threadDecedentName(thread)
 
   async function handleAddNote() {
@@ -2177,17 +2222,17 @@ function SellerRail({
     <div className="space-y-5">
       <div className="text-center">
         <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-cyan-500/20 text-2xl font-black text-cyan-100">
-          {thread.initials}
+          {threadDisplayInitials(thread)}
         </div>
-        <p className="mt-3 truncate text-lg font-black text-[var(--ck-text)]">{thread.name}</p>
-        <p className="mt-1 text-xs font-semibold text-[var(--ck-text-muted)]">{threadIdentitySummary(thread) || prospectLabel(thread.prospectPhone) || lead?.assigned_agent || 'Prospecting'}</p>
+        <p className="mt-3 truncate text-lg font-black text-[var(--ck-text)]">{threadPrimaryTitle(thread)}</p>
+        <p className="mt-1 text-xs font-semibold text-[var(--ck-text-muted)]">{threadSecondaryTitle(thread) || prospectLabel(thread.prospectPhone) || lead?.assigned_agent || 'Prospecting'}</p>
       </div>
 
       <div className="space-y-2 border-t border-[var(--ck-border)] pt-4">
         <RailLine icon="call" value={formatPhone(thread.phone || lead?.phone || '') || 'No phone'} />
-        {heirName && <RailLine icon="person" value={`Heir: ${toProperCase(heirName)}${relation ? ` (${toProperCase(relation)})` : ''}`} />}
+        {heirName && <RailLine icon="person" value={threadPrimaryTitle(thread)} />}
         {decedentName && !sameName(decedentName, heirName) && (
-          <RailLine icon="person_search" value={`${thread.prospectPhone?.is_deceased === false ? 'Owner' : 'Decedent'}: ${toProperCase(decedentName)}`} />
+          <RailLine icon="person_search" value={threadSecondaryTitle(thread) || ''} />
         )}
         <RailLine icon="mail" value={lead?.email || 'No email'} />
         <RailLine icon="location_on" value={[lead?.property_address, lead?.city, lead?.state].filter(Boolean).join(', ') || 'No property'} />
