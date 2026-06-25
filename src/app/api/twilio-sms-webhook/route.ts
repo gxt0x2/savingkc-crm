@@ -24,6 +24,15 @@ const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
 const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
+const TWIML_HEADERS = { 'Content-Type': 'text/xml' }
+
+function emptyTwimlResponse(status = 200): NextResponse {
+  return new NextResponse(EMPTY_TWIML, {
+    status,
+    headers: TWIML_HEADERS,
+  })
+}
 
 function isOfficeHours(): boolean {
   const now = new Date()
@@ -105,7 +114,7 @@ export async function POST(req: Request) {
 <Response>
   <Message>You have been unsubscribed from Saving KC messages. Reply START to re-subscribe.</Message>
 </Response>`
-      return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+      return new NextResponse(twiml, { headers: TWIML_HEADERS })
     }
 
     // --- TCPA: START keyword handling ---
@@ -115,7 +124,7 @@ export async function POST(req: Request) {
 <Response>
   <Message>You have been re-subscribed to Saving KC messages. Reply STOP to unsubscribe.</Message>
 </Response>`
-      return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+      return new NextResponse(twiml, { headers: TWIML_HEADERS })
     }
 
     // --- "YES" from opted-out number = opt-in, not seller confirmation ---
@@ -125,7 +134,7 @@ export async function POST(req: Request) {
 <Response>
   <Message>You have been re-subscribed to Saving KC messages. Reply STOP to unsubscribe.</Message>
 </Response>`
-      return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
+      return new NextResponse(twiml, { headers: TWIML_HEADERS })
     }
 
     // Match sender phone number to a lead in the database. Twilio sends E.164,
@@ -170,9 +179,7 @@ export async function POST(req: Request) {
     }
 
     if (isHardBlockedReason(suppressionReason)) {
-      return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-        headers: { 'Content-Type': 'text/xml' },
-      })
+      return emptyTwimlResponse()
     }
 
     // ── Team numbers: log + notify, but skip auto-reply/lead creation ──
@@ -210,9 +217,7 @@ export async function POST(req: Request) {
         })
       } catch {}
 
-      return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-        headers: { 'Content-Type': 'text/xml' },
-      })
+      return emptyTwimlResponse()
     }
 
     if (isGoogleAdsSms) {
@@ -252,12 +257,10 @@ export async function POST(req: Request) {
         },
       )
 
-      return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-        headers: { 'Content-Type': 'text/xml' },
-      })
+      return emptyTwimlResponse()
     }
 
-    // ── Keyword detection & auto-reply logic ────────────────
+    // ── Keyword detection and internal escalation ───────────
     const msg = messageBody.trim().toUpperCase()
 
     // ── Quick-confirm: if lead has active appointment, low-friction keywords confirm it ──
@@ -307,10 +310,7 @@ export async function POST(req: Request) {
 
           regenerateBriefing(leadId, 'appointment_confirmed').catch(() => {})
 
-          return new NextResponse(
-            `<?xml version="1.0" encoding="UTF-8"?><Response><Message>You're all set! We'll see you then. — Saving KC</Message></Response>`,
-            { headers: { 'Content-Type': 'text/xml' } }
-          )
+          return emptyTwimlResponse()
         } catch (err) {
           console.error('Quick-confirm failed:', err)
           // Fall through to normal YES handling
@@ -415,11 +415,7 @@ export async function POST(req: Request) {
         regenerateBriefing(yesLeadId, 'yes_reply').catch(() => {})
       }
 
-      // Reply to seller
-      return new NextResponse(
-        `<?xml version="1.0" encoding="UTF-8"?><Response><Message>Perfect! We'll call you right back in just a few minutes. — Saving KC Homebuyers</Message></Response>`,
-        { headers: { 'Content-Type': 'text/xml' } }
-      )
+      return emptyTwimlResponse()
     }
 
     // ── CONFIRM/CONFIRMED keyword (Sprint 1 S1-04) ──
@@ -487,11 +483,7 @@ export async function POST(req: Request) {
           // Eager briefing regen — appointment confirmation is high-value
           regenerateBriefing(leadId, 'appointment_confirmed').catch(() => {})
 
-          // Send acknowledgment reply
-          return new NextResponse(
-            `<?xml version="1.0" encoding="UTF-8"?><Response><Message>Perfect! Your appointment is confirmed. We'll see you then! — Saving KC</Message></Response>`,
-            { headers: { 'Content-Type': 'text/xml' } }
-          )
+          return emptyTwimlResponse()
         } catch (err) {
           console.error('Failed to process CONFIRM keyword:', err)
         }
@@ -602,9 +594,7 @@ export async function POST(req: Request) {
         })
       }
       // Don't reply — Twilio sends its own STOP confirmation
-      return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-        headers: { 'Content-Type': 'text/xml' },
-      })
+      return emptyTwimlResponse()
     }
 
     // ── Known lead replies (any message = alert BOTH agents) ──
@@ -766,20 +756,14 @@ export async function POST(req: Request) {
         } catch {}
       }
 
-      // Generic unknown/prospect texts are human takeover only. Missed-call and
-      // explicit YES flows can still acknowledge in their scoped handlers above.
+      // Generic unknown/prospect texts are human takeover only.
     }
 
     // No auto-reply for general messages from known leads — keep it human
-    return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-      headers: { 'Content-Type': 'text/xml' },
-    })
+    return emptyTwimlResponse()
 
   } catch (err) {
     console.error('Twilio SMS webhook error:', err)
-    return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-      status: 200, // Return 200 so Twilio doesn't retry
-      headers: { 'Content-Type': 'text/xml' },
-    })
+    return emptyTwimlResponse()
   }
 }
