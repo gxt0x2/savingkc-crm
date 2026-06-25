@@ -7,9 +7,17 @@ import { createClient } from '@/lib/supabase/client'
 import { CONVERSATION_TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { formatPhone, toProperCase } from '@/lib/format'
 
-type HubView = 'dashboard' | 'inbox' | 'templates'
+type HubView = 'dashboard' | 'inbox' | 'campaigns' | 'templates'
 type HubFilter = 'needs_reply' | 'unanswered' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
 type ComposeMode = 'sms' | 'email'
+type CampaignListKey =
+  | 'all_prospecting'
+  | 'heir_prospecting'
+  | 'pre_auction_delinquent'
+  | 'excess_proceeds'
+  | 'general_two_year_delinquent'
+  | 'three_plus_delinquent'
+type CampaignStatusFilter = HubFilter | 'ready'
 type TemplateCategory =
   | 'prospecting_intro'
   | 'list_pre_auction_delinquent'
@@ -127,6 +135,45 @@ interface SmsSegmentMetric {
   remaining: number
 }
 
+interface CampaignDraft {
+  name: string
+  listKey: CampaignListKey
+  templateCategory: TemplateCategory
+  dailyCap: number
+  statusFilter: CampaignStatusFilter
+  startWindow: string
+  stopWindow: string
+}
+
+interface CampaignTrackerRow {
+  id: CampaignListKey
+  label: string
+  description: string
+  templateCategory: TemplateCategory
+  audience: number
+  sent: number
+  replies: number
+  needsReply: number
+  unanswered: number
+  dripReady: number
+  suppressed: number
+  responseRate: number
+  lastTouchAt: string | null
+  status: string
+}
+
+interface CampaignDraftMetrics {
+  audience: number
+  sent: number
+  replies: number
+  needsReply: number
+  unanswered: number
+  dripReady: number
+  suppressed: number
+  responseRate: number
+  batches: number
+}
+
 const PROSPECTING_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'note', 'status_change']
 const SMS_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound'])
 const CONVERSATION_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail'])
@@ -196,6 +243,56 @@ const TEMPLATE_CATEGORY_HINTS: Record<TemplateCategory, string> = {
   prospecting_wrong_number: 'Cleanup language when the recipient is not connected.',
   prospecting_opt_out: 'Compliance-safe confirmation after a stop request.',
 }
+const CAMPAIGN_LIST_OPTIONS: Array<{
+  id: CampaignListKey
+  label: string
+  description: string
+  templateCategory: TemplateCategory
+  preset: string
+}> = [
+  {
+    id: 'all_prospecting',
+    label: 'All Prospecting',
+    description: 'All loaded prospecting conversations and seller outreach activity.',
+    templateCategory: 'prospecting_intro',
+    preset: 'custom',
+  },
+  {
+    id: 'heir_prospecting',
+    label: 'Heir Prospecting',
+    description: 'Heir, estate, deceased-owner, and related tax-prospect conversations.',
+    templateCategory: 'prospecting_intro',
+    preset: 'deceased_3yr',
+  },
+  {
+    id: 'pre_auction_delinquent',
+    label: 'Pre-Auction Delinquent',
+    description: 'Tax-sale or auction deadline outreach with deadline-sensitive scripts.',
+    templateCategory: 'list_pre_auction_delinquent',
+    preset: 'tax_2yr',
+  },
+  {
+    id: 'excess_proceeds',
+    label: 'Excess Proceeds',
+    description: 'Surplus, overage, and excess-proceeds review conversations.',
+    templateCategory: 'list_excess_proceeds',
+    preset: 'custom',
+  },
+  {
+    id: 'general_two_year_delinquent',
+    label: 'General 2 Yr Delinquent',
+    description: 'Standard two-year delinquent tax prospecting list.',
+    templateCategory: 'list_general_two_year_delinquent',
+    preset: 'tax_2yr',
+  },
+  {
+    id: 'three_plus_delinquent',
+    label: '3+ Yr Delinquent',
+    description: 'Older delinquent-tax list requiring softer follow-up language.',
+    templateCategory: 'list_three_year_delinquent',
+    preset: 'deceased_3yr',
+  },
+]
 const INBOX_FILTER_HELP: Record<HubFilter, string> = {
   needs_reply: 'Latest conversation touch is inbound from the prospect, with no newer agent response.',
   unanswered: 'Latest SMS attempt is outbound, and no newer inbound reply has arrived.',
@@ -205,6 +302,15 @@ const INBOX_FILTER_HELP: Record<HubFilter, string> = {
   recents: 'Most recent prospecting calls, texts, and emails.',
   all: 'Every prospecting conversation loaded into this hub.',
 }
+const CAMPAIGN_STATUS_OPTIONS: Array<{ id: CampaignStatusFilter; label: string; detail: string }> = [
+  { id: 'ready', label: 'Ready to send', detail: 'Not suppressed, no waiting seller reply, and ready for the next touch.' },
+  { id: 'needs_reply', label: 'Needs reply', detail: INBOX_FILTER_HELP.needs_reply },
+  { id: 'unanswered', label: 'Unanswered', detail: INBOX_FILTER_HELP.unanswered },
+  { id: 'drip_ready', label: 'Drip ready', detail: INBOX_FILTER_HELP.drip_ready },
+  { id: 'hot', label: 'Hot', detail: INBOX_FILTER_HELP.hot },
+  { id: 'unassigned', label: 'Unassigned', detail: INBOX_FILTER_HELP.unassigned },
+  { id: 'all', label: 'All matching', detail: 'All conversations that match this campaign list.' },
+]
 const QUICK_REPLIES = [
   { label: 'Right person?', body: 'Thanks for getting back to me, {firstName}. Are you the right person to speak with about {propertyAddress}, or should I update our notes?' },
   { label: 'Can call', body: 'I can help with that. Is this the best number to call, or is there a better time today?' },
@@ -935,6 +1041,207 @@ function phoneStatusFromActivities(activities: HubActivity[]): PhoneQualityStatu
   return status === 'verified' || status === 'wrong_number' || status === 'dnc' || status === 'spam' || status === 'blocked' ? status : 'unknown'
 }
 
+function campaignListOption(id: CampaignListKey) {
+  return CAMPAIGN_LIST_OPTIONS.find((option) => option.id === id) || CAMPAIGN_LIST_OPTIONS[0]
+}
+
+function defaultCampaignDraft(): CampaignDraft {
+  const option = campaignListOption('heir_prospecting')
+  return {
+    name: `${option.label} Campaign`,
+    listKey: option.id,
+    templateCategory: option.templateCategory,
+    dailyCap: 125,
+    statusFilter: 'ready',
+    startWindow: '9:00 AM',
+    stopWindow: '6:00 PM',
+  }
+}
+
+function campaignSignalText(thread: HubThread): string {
+  const activityBits = thread.activities.flatMap((activity) => {
+    const meta = activityMetadata(activity)
+    return [
+      activity.activity_type,
+      activity.description,
+      activityBody(activity),
+      prospectSource(activity),
+      textValue(meta.source),
+      textValue(meta.trigger),
+      textValue(meta.campaign),
+      textValue(meta.campaign_name),
+      textValue(meta.list),
+      textValue(meta.list_name),
+      textValue(meta.template_category),
+      textValue(meta.prospect_owner_name),
+      textValue(meta.decedent_name),
+      textValue(meta.owner_1),
+      textValue(meta.heir_name),
+      textValue(meta.heir_relation),
+    ]
+  })
+  return [
+    thread.name,
+    thread.phone,
+    thread.prospectPhone?.contact_name,
+    thread.prospectPhone?.relationship,
+    thread.prospectPhone?.owner_1,
+    thread.prospectPhone?.delinquent_years_category,
+    thread.prospectPhone?.is_deceased ? 'deceased decedent estate heir' : null,
+    thread.lead?.full_name,
+    thread.lead?.source,
+    thread.lead?.station,
+    thread.lead?.priority,
+    thread.lead?.county,
+    thread.lead?.notes,
+    thread.lead?.property_address,
+    ...activityBits,
+  ].filter(Boolean).join(' ').toLowerCase()
+}
+
+function threadMatchesCampaignList(thread: HubThread, listKey: CampaignListKey): boolean {
+  if (listKey === 'all_prospecting') return true
+
+  const signal = campaignSignalText(thread)
+  const delinquentCategory = thread.prospectPhone?.delinquent_years_category || ''
+
+  if (listKey === 'heir_prospecting') {
+    return Boolean(
+      thread.prospectPhone ||
+      threadRelationship(thread) ||
+      signal.includes('heir') ||
+      signal.includes('estate') ||
+      signal.includes('deceased') ||
+      signal.includes('decedent'),
+    )
+  }
+
+  if (listKey === 'pre_auction_delinquent') {
+    return [
+      'pre auction',
+      'pre-auction',
+      'auction',
+      'tax sale',
+      'tax-sale',
+      'sheriff sale',
+      'sale list',
+    ].some((term) => signal.includes(term))
+  }
+
+  if (listKey === 'excess_proceeds') {
+    return ['excess', 'proceeds', 'surplus', 'overage'].some((term) => signal.includes(term))
+  }
+
+  if (listKey === 'general_two_year_delinquent') {
+    return delinquentCategory === '2yr' || [
+      '2yr',
+      '2 yr',
+      '2-year',
+      '2 year',
+      'two year',
+      'two-year',
+    ].some((term) => signal.includes(term))
+  }
+
+  if (listKey === 'three_plus_delinquent') {
+    return delinquentCategory === '3yr_plus' || [
+      '3yr',
+      '3 yr',
+      '3+',
+      '3-year',
+      '3 year',
+      'three year',
+      'three-year',
+      'older delinquent',
+    ].some((term) => signal.includes(term))
+  }
+
+  return false
+}
+
+function threadMatchesHubFilter(thread: HubThread, nextFilter: HubFilter): boolean {
+  if (nextFilter === 'needs_reply') return threadNeedsReply(thread)
+  if (nextFilter === 'unanswered') return threadIsUnanswered(thread)
+  if (nextFilter === 'hot') return thread.starred
+  if (nextFilter === 'drip_ready') return threadIsDripReady(thread)
+  if (nextFilter === 'unassigned') return !thread.lead?.assigned_agent
+  return true
+}
+
+function threadMatchesCampaignStatus(thread: HubThread, statusFilter: CampaignStatusFilter): boolean {
+  if (statusFilter === 'ready') {
+    const phoneStatus = phoneStatusFromActivities(thread.activities)
+    return !SUPPRESSED_PHONE_STATUSES.has(phoneStatus) && !threadNeedsReply(thread) && (!latestOutbound(thread) || threadIsDripReady(thread))
+  }
+  return threadMatchesHubFilter(thread, statusFilter)
+}
+
+function filterCampaignThreads(threads: HubThread[], draft: CampaignDraft): HubThread[] {
+  return threads.filter((thread) => (
+    threadMatchesCampaignList(thread, draft.listKey) &&
+    threadMatchesCampaignStatus(thread, draft.statusFilter)
+  ))
+}
+
+function campaignLastTouch(threads: HubThread[]): string | null {
+  const latest = threads.reduce<number | null>((current, thread) => {
+    const at = new Date(thread.lastActivity?.created_at || thread.lead?.updated_at || thread.lead?.created_at || 0).getTime()
+    if (!Number.isFinite(at)) return current
+    return current == null ? at : Math.max(current, at)
+  }, null)
+  return latest == null ? null : new Date(latest).toISOString()
+}
+
+function campaignDraftMetrics(threads: HubThread[], dailyCap: number): CampaignDraftMetrics {
+  const sent = threads.reduce((sum, thread) => sum + smsActivities(thread).filter((activity) => activityDirection(activity) === 'outbound').length, 0)
+  const replies = threads.reduce((sum, thread) => sum + smsActivities(thread).filter((activity) => activityDirection(activity) === 'inbound').length, 0)
+  const needsReply = threads.filter(threadNeedsReply).length
+  const unanswered = threads.filter(threadIsUnanswered).length
+  const dripReady = threads.filter(threadIsDripReady).length
+  const suppressed = threads.filter((thread) => SUPPRESSED_PHONE_STATUSES.has(phoneStatusFromActivities(thread.activities))).length
+  return {
+    audience: threads.length,
+    sent,
+    replies,
+    needsReply,
+    unanswered,
+    dripReady,
+    suppressed,
+    responseRate: sent > 0 ? replies / sent : 0,
+    batches: Math.max(1, Math.ceil(threads.length / Math.max(1, dailyCap))),
+  }
+}
+
+function campaignTrackerRows(threads: HubThread[]): CampaignTrackerRow[] {
+  return CAMPAIGN_LIST_OPTIONS.map((option) => {
+    const matchingThreads = threads.filter((thread) => threadMatchesCampaignList(thread, option.id))
+    const metrics = campaignDraftMetrics(matchingThreads, 125)
+    const status = metrics.needsReply > 0
+      ? 'Needs replies'
+      : metrics.dripReady > 0
+        ? 'Follow-up ready'
+        : metrics.sent === 0
+          ? 'Ready'
+          : 'Tracking'
+    return {
+      id: option.id,
+      label: option.label,
+      description: option.description,
+      templateCategory: option.templateCategory,
+      audience: metrics.audience,
+      sent: metrics.sent,
+      replies: metrics.replies,
+      needsReply: metrics.needsReply,
+      unanswered: metrics.unanswered,
+      dripReady: metrics.dripReady,
+      suppressed: metrics.suppressed,
+      responseRate: metrics.responseRate,
+      lastTouchAt: campaignLastTouch(matchingThreads),
+      status,
+    }
+  })
+}
+
 function addressQuery(lead: HubLead | null): string {
   return [lead?.property_address, lead?.city, lead?.state, lead?.zip].filter(Boolean).join(', ')
 }
@@ -979,6 +1286,9 @@ export function DialerConversationHub({
   const [templateBody, setTemplateBody] = useState(DEFAULT_TEMPLATE_BODY)
   const [templateSaving, setTemplateSaving] = useState(false)
   const [templateStatus, setTemplateStatus] = useState<string | null>(null)
+  const [campaignDraft, setCampaignDraft] = useState<CampaignDraft>(() => defaultCampaignDraft())
+  const [campaignSaving, setCampaignSaving] = useState(false)
+  const [campaignStatus, setCampaignStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [composeMode, setComposeMode] = useState<ComposeMode>('sms')
@@ -1294,6 +1604,14 @@ export function DialerConversationHub({
   const unassignedCount = useMemo(() => threads.filter((thread) => !thread.lead?.assigned_agent).length, [threads])
   const hotCount = useMemo(() => threads.filter((thread) => thread.starred).length, [threads])
   const replyMetric = useMemo(() => averageReplyMetric(threads), [threads])
+  const trackerRows = useMemo(() => campaignTrackerRows(threads), [threads])
+  const selectedCampaignThreads = useMemo(() => filterCampaignThreads(threads, campaignDraft), [campaignDraft, threads])
+  const selectedCampaignMetrics = useMemo(() => (
+    campaignDraftMetrics(selectedCampaignThreads, campaignDraft.dailyCap)
+  ), [campaignDraft.dailyCap, selectedCampaignThreads])
+  const selectedCampaignTemplates = useMemo(() => (
+    templates.filter((template) => template.category === campaignDraft.templateCategory)
+  ), [campaignDraft.templateCategory, templates])
 
   const recentSmsActivities = useMemo(() => {
     return threads.flatMap((thread) => smsActivities(thread))
@@ -1487,6 +1805,73 @@ export function DialerConversationHub({
     }
   }
 
+  function updateCampaignDraft(patch: Partial<CampaignDraft>) {
+    setCampaignStatus(null)
+    setCampaignDraft((current) => {
+      const next = { ...current, ...patch }
+      if (patch.listKey && patch.listKey !== current.listKey) {
+        const option = campaignListOption(patch.listKey)
+        next.name = `${option.label} Campaign`
+        next.templateCategory = option.templateCategory
+      }
+      if (patch.dailyCap != null) {
+        next.dailyCap = Math.max(1, Math.min(500, Math.floor(Number(patch.dailyCap) || 1)))
+      }
+      return next
+    })
+  }
+
+  async function handleSaveCampaignPlan() {
+    const name = campaignDraft.name.trim()
+    if (!name || campaignSaving) return
+
+    setCampaignSaving(true)
+    setCampaignStatus(null)
+    try {
+      const option = campaignListOption(campaignDraft.listKey)
+      const sessionLeadIds = Array.from(new Set(
+        selectedCampaignThreads
+          .map((thread) => thread.lead?.id || thread.prospectPhone?.lead_id)
+          .filter((id): id is string => Boolean(id)),
+      ))
+      const response = await fetch('/api/dialer/saved-lists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          agent,
+          preset: option.preset,
+          campaign: option.id,
+          statusFilter: campaignDraft.statusFilter === 'ready' ? 'all' : campaignDraft.statusFilter,
+          priorityFilter: 'all',
+          minMotivation: 0,
+          search: '',
+          sortBy: 'recommended',
+          visibleLimit: 25,
+          sessionLeadIds,
+          optionalFilters: {
+            attemptsFrom: '',
+            attemptsTo: '',
+            notDialed: 'none',
+            notContactedDays: campaignDraft.statusFilter === 'drip_ready' ? '3' : 'none',
+            createDateFrom: '',
+            createDateTo: '',
+            statusChangeFrom: '',
+            statusChangeTo: '',
+            callOldestToNewest: false,
+          },
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || 'Could not save campaign list')
+      setCampaignStatus(`Saved ${name} with ${sessionLeadIds.length.toLocaleString()} matched lead${sessionLeadIds.length === 1 ? '' : 's'}.`)
+    } catch (err) {
+      setCampaignStatus(err instanceof Error ? err.message : 'Could not save campaign list')
+    } finally {
+      setCampaignSaving(false)
+    }
+  }
+
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault()
@@ -1497,6 +1882,7 @@ export function DialerConversationHub({
   const viewTabs: Array<{ id: HubView; label: string; icon: string }> = [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
     { id: 'inbox', label: 'Inbox', icon: 'inbox' },
+    { id: 'campaigns', label: 'Campaigns', icon: 'campaign' },
     { id: 'templates', label: 'Templates', icon: 'edit_note' },
   ]
 
@@ -1568,6 +1954,27 @@ export function DialerConversationHub({
           onOpenInbox={(nextFilter) => {
             setFilter(nextFilter)
             setView('inbox')
+          }}
+        />
+      )}
+
+      {view === 'campaigns' && (
+        <CampaignBuilder
+          draft={campaignDraft}
+          metrics={selectedCampaignMetrics}
+          trackerRows={trackerRows}
+          templates={selectedCampaignTemplates}
+          saving={campaignSaving}
+          status={campaignStatus}
+          onDraftChange={updateCampaignDraft}
+          onSave={() => void handleSaveCampaignPlan()}
+          onOpenInbox={(nextFilter) => {
+            setFilter(nextFilter)
+            setView('inbox')
+          }}
+          onOpenTemplates={(category) => {
+            setTemplateCategory(category)
+            setView('templates')
           }}
         />
       )}
@@ -2030,6 +2437,288 @@ function HubDashboard({
           </div>
         </section>
       </div>
+    </div>
+  )
+}
+
+function CampaignBuilder({
+  draft,
+  metrics,
+  trackerRows,
+  templates,
+  saving,
+  status,
+  onDraftChange,
+  onSave,
+  onOpenInbox,
+  onOpenTemplates,
+}: {
+  draft: CampaignDraft
+  metrics: CampaignDraftMetrics
+  trackerRows: CampaignTrackerRow[]
+  templates: SmsTemplateRow[]
+  saving: boolean
+  status: string | null
+  onDraftChange: (patch: Partial<CampaignDraft>) => void
+  onSave: () => void
+  onOpenInbox: (filter: HubFilter) => void
+  onOpenTemplates: (category: TemplateCategory) => void
+}) {
+  const selectedList = campaignListOption(draft.listKey)
+  const statusHelp = CAMPAIGN_STATUS_OPTIONS.find((option) => option.id === draft.statusFilter)?.detail || ''
+  const inboxFilter = draft.statusFilter === 'ready' ? 'all' : draft.statusFilter
+  const topTemplate = templates[0]
+
+  return (
+    <div className="space-y-4 p-4 sm:p-5">
+      <div className="grid gap-4 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.05fr)]">
+        <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+          <div className="flex flex-col gap-2 border-b border-[var(--ck-border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Campaign Builder</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ck-text-muted)]">Build prospecting campaigns from the same heir-dialer conversations and list templates.</p>
+            </div>
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-200">
+              <Icon name="verified" size="text-sm" /> Prospecting only
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <label className="block md:col-span-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Campaign Name</span>
+              <input
+                value={draft.name}
+                onChange={(event) => onDraftChange({ name: event.target.value })}
+                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">List Type</span>
+              <select
+                value={draft.listKey}
+                onChange={(event) => onDraftChange({ listKey: event.target.value as CampaignListKey })}
+                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+              >
+                {CAMPAIGN_LIST_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+              <span className="mt-2 block text-[11px] font-semibold leading-snug text-[var(--ck-text-muted)]">{selectedList.description}</span>
+            </label>
+
+            <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Template Type</span>
+              <select
+                value={draft.templateCategory}
+                onChange={(event) => onDraftChange({ templateCategory: event.target.value as TemplateCategory })}
+                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+              >
+                {TEMPLATE_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>{templateCategoryLabel(category)}</option>
+                ))}
+              </select>
+              <span className="mt-2 block text-[11px] font-semibold leading-snug text-[var(--ck-text-muted)]">{TEMPLATE_CATEGORY_HINTS[draft.templateCategory]}</span>
+            </label>
+
+            <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Audience Status</span>
+              <select
+                value={draft.statusFilter}
+                onChange={(event) => onDraftChange({ statusFilter: event.target.value as CampaignStatusFilter })}
+                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+              >
+                {CAMPAIGN_STATUS_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+              <span className="mt-2 block text-[11px] font-semibold leading-snug text-[var(--ck-text-muted)]">{statusHelp}</span>
+            </label>
+
+            <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Daily Cap</span>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={draft.dailyCap}
+                onChange={(event) => onDraftChange({ dailyCap: Number(event.target.value) })}
+                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+              />
+              <span className="mt-2 block text-[11px] font-semibold leading-snug text-[var(--ck-text-muted)]">{metrics.batches} day{metrics.batches === 1 ? '' : 's'} at this cap.</span>
+            </label>
+
+            <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Start Window</span>
+              <input
+                value={draft.startWindow}
+                onChange={(event) => onDraftChange({ startWindow: event.target.value })}
+                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Stop Window</span>
+              <input
+                value={draft.stopWindow}
+                onChange={(event) => onDraftChange({ stopWindow: event.target.value })}
+                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving || draft.name.trim().length === 0}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#E32E2E] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon name={saving ? 'progress_activity' : 'playlist_add'} size="text-base" className={saving ? 'animate-spin' : ''} />
+              {saving ? 'Saving...' : 'Save List'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenInbox(inboxFilter)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--ck-border)] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
+            >
+              <Icon name="inbox" size="text-base" /> Open Inbox
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenTemplates(draft.templateCategory)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--ck-border)] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
+            >
+              <Icon name="edit_note" size="text-base" /> Templates
+            </button>
+          </div>
+          {status && <p className={`mt-3 text-xs font-bold ${status.startsWith('Saved') ? 'text-emerald-300' : 'text-[#ff7777]'}`}>{status}</p>}
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <CampaignMetricCard icon="groups" label="Audience" value={metrics.audience.toLocaleString()} detail={`${metrics.suppressed.toLocaleString()} suppressed`} tone="text-cyan-200" />
+            <CampaignMetricCard icon="send" label="Texts Sent" value={metrics.sent.toLocaleString()} detail={`${metrics.unanswered.toLocaleString()} unanswered`} tone="text-blue-200" />
+            <CampaignMetricCard icon="mark_chat_unread" label="Replies" value={metrics.replies.toLocaleString()} detail={`${metrics.needsReply.toLocaleString()} need reply`} tone="text-emerald-200" />
+            <CampaignMetricCard icon="percent" label="Response Rate" value={formatPercent(metrics.replies, metrics.sent)} detail={`${metrics.dripReady.toLocaleString()} drip ready`} tone="text-amber-200" />
+          </div>
+
+          <aside className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{templateCategoryLabel(draft.templateCategory)} Templates</p>
+                <p className="mt-1 text-[11px] font-semibold text-[var(--ck-text-muted)]">{templates.length.toLocaleString()} prospecting script{templates.length === 1 ? '' : 's'} matched.</p>
+              </div>
+              <Icon name="edit_note" size="text-lg" className="text-[var(--ck-text-dim)]" />
+            </div>
+            <div className="mt-3 space-y-2">
+              {topTemplate ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenTemplates(draft.templateCategory)}
+                  className="w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-3 text-left transition-colors hover:border-[#E32E2E]/45"
+                >
+                  <span className="block truncate text-sm font-black text-[var(--ck-text)]">{templateDisplayName(topTemplate.name)}</span>
+                  <span className="mt-2 line-clamp-4 block text-xs leading-relaxed text-[var(--ck-text-muted)]">{topTemplate.body}</span>
+                </button>
+              ) : (
+                <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-8 text-center text-sm text-[var(--ck-text-muted)]">
+                  No templates for this type yet.
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => onOpenTemplates(draft.templateCategory)}
+                className="w-full rounded-xl border border-[var(--ck-border)] px-3 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
+              >
+                Manage Template Type
+              </button>
+            </div>
+          </aside>
+        </section>
+      </div>
+
+      <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
+        <div className="flex flex-col gap-2 border-b border-[var(--ck-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Campaign Tracker</p>
+            <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Live rollup by prospecting list, using the communication hub thread history.</p>
+          </div>
+          <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">
+            {trackerRows.length.toLocaleString()} tracked lists
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[920px] text-left text-xs">
+            <thead className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
+              <tr className="border-b border-[var(--ck-border)]">
+                <th className="px-4 py-3">Campaign</th>
+                <th className="px-3 py-3 text-right">Audience</th>
+                <th className="px-3 py-3 text-right">Sent</th>
+                <th className="px-3 py-3 text-right">Replies</th>
+                <th className="px-3 py-3 text-right">Needs Reply</th>
+                <th className="px-3 py-3 text-right">Drip Ready</th>
+                <th className="px-3 py-3 text-right">Suppressed</th>
+                <th className="px-3 py-3 text-right">Rate</th>
+                <th className="px-4 py-3 text-right">Last Touch</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trackerRows.map((row) => (
+                <tr key={row.id} className={`border-b border-[var(--ck-border)] transition-colors hover:bg-white/[0.03] ${row.id === draft.listKey ? 'bg-[#E32E2E]/8' : ''}`}>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => onDraftChange({ listKey: row.id })}
+                      className="block max-w-[300px] text-left"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="truncate font-black text-[var(--ck-text)]">{row.label}</span>
+                        <span className="rounded-full border border-[var(--ck-border)] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{row.status}</span>
+                      </span>
+                      <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{row.description}</span>
+                      <span className="mt-1 block truncate text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)]">{templateCategoryLabel(row.templateCategory)}</span>
+                    </button>
+                  </td>
+                  <td className="px-3 py-3 text-right font-bold text-[var(--ck-text)]">{row.audience.toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right text-[var(--ck-text-muted)]">{row.sent.toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right text-emerald-200">{row.replies.toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right text-cyan-200">{row.needsReply.toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right text-blue-200">{row.dripReady.toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right text-[#ff9b9b]">{row.suppressed.toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right font-bold text-[var(--ck-text)]">{Math.round(row.responseRate * 100)}%</td>
+                  <td className="px-4 py-3 text-right text-[var(--ck-text-muted)]">{row.lastTouchAt ? timeAgo(row.lastTouchAt) : 'No touch'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function CampaignMetricCard({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  icon: string
+  label: string
+  value: string
+  detail: string
+  tone: string
+}) {
+  return (
+    <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <Icon name={icon} size="text-xl" className={tone} />
+        <span className="text-2xl font-black text-[var(--ck-text)]">{value}</span>
+      </div>
+      <p className="mt-3 text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{label}</p>
+      <p className="mt-1 text-xs text-[var(--ck-text-muted)]">{detail}</p>
     </div>
   )
 }

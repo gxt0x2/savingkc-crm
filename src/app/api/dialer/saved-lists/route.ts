@@ -175,6 +175,7 @@ function normalizeBody(body: Record<string, unknown>) {
   const optionalFilters = normalizeOptionalFilters(body?.optionalFilters)
   const useCallHammer = Boolean(body?.useCallHammer)
   const useVoicemailCallHammer = Boolean(body?.useVoicemailCallHammer)
+  const sessionLeadIds = normalizeLeadIds(body?.sessionLeadIds)
 
   return {
     id: typeof body?.id === 'string' && body.id ? body.id : undefined,
@@ -197,6 +198,7 @@ function normalizeBody(body: Record<string, unknown>) {
     search: typeof body?.search === 'string' ? body.search.trim() : '',
     sort_by: sortBy,
     visible_limit: visibleLimit,
+    session_lead_ids: sessionLeadIds,
   }
 }
 
@@ -238,6 +240,7 @@ export async function POST(req: NextRequest) {
     'optional_filters',
     'call_hammer',
     'voicemail_call_hammer',
+    'session_lead_ids',
   ]
   const hasModernColumnError = modernColumns.some((column) => hasMissingColumnError(error, column))
 
@@ -272,6 +275,7 @@ export async function POST(req: NextRequest) {
     optional_filters: row.optional_filters,
     call_hammer: row.call_hammer,
     voicemail_call_hammer: row.voicemail_call_hammer,
+    session_lead_ids: row.session_lead_ids,
   } as DialerSavedListRow
 
   return NextResponse.json({ savedList: toClient(mergedRow), schemaFallback: true })
