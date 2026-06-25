@@ -149,6 +149,14 @@ const QUICK_REPLIES = [
 const PROSPECTING_TEMPLATE_CATEGORY_SET = new Set<string>(TEMPLATE_CATEGORIES)
 const PROSPECTING_TEMPLATE_SEEDS: SmsTemplateRow[] = [
   {
+    id: 'prospecting-seed-initial-heir-outreach',
+    name: 'initial_heir_outreach',
+    category: 'prospecting_intro',
+    body: DEFAULT_TEMPLATE_BODY,
+    merge_fields: ['firstName', 'agentName', 'propertyAddress'],
+    usage_count: 0,
+  },
+  {
     id: 'prospecting-seed-right-person',
     name: 'heir_right_person',
     category: 'prospecting_reply',
@@ -728,6 +736,10 @@ function templateCompliance(body: string) {
 
 function templateCategoryLabel(category: string): string {
   return TEMPLATE_CATEGORY_LABELS[category as TemplateCategory] || category.replace(/_/g, ' ')
+}
+
+function templateDisplayName(name: string): string {
+  return toProperCase(name.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim())
 }
 
 function isProspectingTemplate(template: SmsTemplateRow): boolean {
@@ -1443,7 +1455,7 @@ export function DialerConversationHub({
           onBodyChange={setTemplateBody}
           onLoadTemplate={(template) => {
             const category = template.category as TemplateCategory
-            setTemplateName(template.name)
+            setTemplateName(templateDisplayName(template.name))
             setTemplateCategory(TEMPLATE_CATEGORIES.includes(category) ? category : 'prospecting_intro')
             setTemplateBody(template.body)
             setTemplateStatus(null)
@@ -1678,7 +1690,7 @@ export function DialerConversationHub({
                             onClick={() => insertComposerBody(template.body)}
                             className="truncate rounded-lg border border-[var(--ck-border)] px-2.5 py-1.5 text-left text-[11px] font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[#2787ff]/50 hover:text-[var(--ck-text)]"
                           >
-                            {template.name}
+                            {templateDisplayName(template.name)}
                           </button>
                         ))}
                       </div>
@@ -1940,6 +1952,8 @@ function TemplateBuilder({
   onSave: () => void
 }) {
   const canSave = templateName.trim().length > 0 && templateBody.trim().length > 0 && templateValidation.restricted.length === 0
+  const filteredTemplates = templates.filter((template) => template.category === templateCategory)
+  const templateTypeLabel = templateCategoryLabel(templateCategory)
   return (
     <div className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
@@ -2032,18 +2046,23 @@ function TemplateBuilder({
       </section>
 
       <aside className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-        <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Prospecting Templates</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{templateTypeLabel} Templates</p>
+          <span className="shrink-0 rounded-full border border-[var(--ck-border)] px-2 py-1 text-[10px] font-black text-[var(--ck-text-dim)]">
+            {filteredTemplates.length}
+          </span>
+        </div>
         <div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1">
-          {templates.length === 0 ? (
-            <p className="py-8 text-center text-sm text-[var(--ck-text-muted)]">No prospecting templates loaded.</p>
-          ) : templates.map((template) => (
+          {filteredTemplates.length === 0 ? (
+            <p className="py-8 text-center text-sm text-[var(--ck-text-muted)]">No {templateTypeLabel.toLowerCase()} templates loaded.</p>
+          ) : filteredTemplates.map((template) => (
             <button
               key={template.id}
               type="button"
               onClick={() => onLoadTemplate(template)}
               className="w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-3 text-left transition-colors hover:border-[#E32E2E]/45"
             >
-              <span className="block truncate text-sm font-black text-[var(--ck-text)]">{template.name}</span>
+              <span className="block truncate text-sm font-black text-[var(--ck-text)]">{templateDisplayName(template.name)}</span>
               <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{templateCategoryLabel(template.category)} - used {(template.usage_count || 0).toLocaleString()} times</span>
               <span className="mt-2 line-clamp-2 block text-xs text-[var(--ck-text-dim)]">{template.body}</span>
             </button>
