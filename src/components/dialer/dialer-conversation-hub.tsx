@@ -10,7 +10,16 @@ import { formatPhone, toProperCase } from '@/lib/format'
 type HubView = 'dashboard' | 'inbox' | 'templates'
 type HubFilter = 'needs_reply' | 'unanswered' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
 type ComposeMode = 'sms' | 'email'
-type TemplateCategory = 'prospecting_intro' | 'prospecting_reply' | 'prospecting_follow_up' | 'prospecting_wrong_number' | 'prospecting_opt_out'
+type TemplateCategory =
+  | 'prospecting_intro'
+  | 'list_pre_auction_delinquent'
+  | 'list_excess_proceeds'
+  | 'list_general_two_year_delinquent'
+  | 'list_three_year_delinquent'
+  | 'prospecting_reply'
+  | 'prospecting_follow_up'
+  | 'prospecting_wrong_number'
+  | 'prospecting_opt_out'
 type PhoneQualityStatus = 'unknown' | 'verified' | 'wrong_number' | 'dnc' | 'spam' | 'blocked'
 
 interface HubLead {
@@ -129,21 +138,78 @@ const PROSPECTING_ACTIVITY_SOURCES = new Set([
 ])
 const DEFAULT_FROM_PHONE = CONVERSATION_TWILIO_NUMBERS[0]?.value || '+18163077835'
 const RESTRICTED_WORDS = ['guaranteed', 'free cash', 'risk-free', 'urgent', 'act now', 'limited time', 'government', 'irs']
-const NEGATIVE_KEYWORDS = ['lawsuit', 'foreclosure rescue', 'loan modification', 'credit repair', 'covid', 'bankruptcy attorney']
-const DEFAULT_TEMPLATE_BODY = 'Hi {firstName}, this is {agentName} with Saving KC Homebuyers. I was reaching out about {propertyAddress}. Are you the right person to talk with about it? Reply STOP to opt out.'
-const TEMPLATE_CATEGORIES: TemplateCategory[] = ['prospecting_intro', 'prospecting_reply', 'prospecting_follow_up', 'prospecting_wrong_number', 'prospecting_opt_out']
+const NEGATIVE_KEYWORDS = [
+  'lawsuit',
+  'foreclosure rescue',
+  'loan modification',
+  'credit repair',
+  'covid',
+  'bankruptcy attorney',
+  'sell',
+  'selling',
+  'buyer',
+  'buying',
+  'cash',
+  'offer',
+  'offers',
+  'sorry',
+  'apologies',
+  'apologize',
+  'we buy houses',
+  'your house',
+  'your home',
+  'are you the owner',
+  'is this the owner',
+  'do you own',
+]
+const DEFAULT_TEMPLATE_BODY = '{firstName}, this is {agentName} with {companyName}. I had a note tied to {propertyAddress}. Are you the right person to speak with? Reply STOP to opt out.'
+const TEMPLATE_CATEGORIES: TemplateCategory[] = [
+  'prospecting_intro',
+  'list_pre_auction_delinquent',
+  'list_excess_proceeds',
+  'list_general_two_year_delinquent',
+  'list_three_year_delinquent',
+  'prospecting_reply',
+  'prospecting_follow_up',
+  'prospecting_wrong_number',
+  'prospecting_opt_out',
+]
 const TEMPLATE_CATEGORY_LABELS: Record<TemplateCategory, string> = {
   prospecting_intro: 'Initial prospecting',
+  list_pre_auction_delinquent: 'Pre-Auction Delinquent',
+  list_excess_proceeds: 'Excess Proceeds',
+  list_general_two_year_delinquent: 'General 2 Yr Delinquent',
+  list_three_year_delinquent: '3+ Yr Delinquent',
   prospecting_reply: 'Seller reply',
   prospecting_follow_up: 'Follow-up',
   prospecting_wrong_number: 'Wrong number',
   prospecting_opt_out: 'Opt-out',
 }
+const TEMPLATE_CATEGORY_HINTS: Record<TemplateCategory, string> = {
+  prospecting_intro: 'Heir or owner first-touch scripts for general prospecting.',
+  list_pre_auction_delinquent: 'Messages for properties approaching tax sale or auction deadlines.',
+  list_excess_proceeds: 'Messages for surplus/excess-proceeds outreach after a sale event.',
+  list_general_two_year_delinquent: 'Messages for standard 2-year delinquent tax outreach.',
+  list_three_year_delinquent: 'Messages for older delinquent lists that need a softer tone.',
+  prospecting_reply: 'Replies after a prospect answers the first message.',
+  prospecting_follow_up: 'Manual follow-ups after silence or incomplete conversations.',
+  prospecting_wrong_number: 'Cleanup language when the recipient is not connected.',
+  prospecting_opt_out: 'Compliance-safe confirmation after a stop request.',
+}
+const INBOX_FILTER_HELP: Record<HubFilter, string> = {
+  needs_reply: 'Latest conversation touch is inbound from the prospect, with no newer agent response.',
+  unanswered: 'Latest SMS attempt is outbound, and no newer inbound reply has arrived.',
+  hot: 'High-priority or starred prospecting conversations.',
+  drip_ready: 'Outbound SMS is unanswered for 3+ days and ready for another touch.',
+  unassigned: 'Prospecting conversations without an assigned agent.',
+  recents: 'Most recent prospecting calls, texts, and emails.',
+  all: 'Every prospecting conversation loaded into this hub.',
+}
 const QUICK_REPLIES = [
   { label: 'Right person?', body: 'Thanks for getting back to me, {firstName}. Are you the right person to speak with about {propertyAddress}, or should I update our notes?' },
   { label: 'Can call', body: 'I can help with that. Is this the best number to call, or is there a better time today?' },
   { label: 'Need context', body: 'Thanks for letting me know. I was reaching out about {propertyAddress}. Are you connected to that property?' },
-  { label: 'Wrong person', body: 'Sorry about that. I will update our notes so we do not keep reaching out about this property.' },
+  { label: 'Wrong person', body: 'Understood. I will update our notes so we do not keep reaching out about this property.' },
   { label: 'Opt-out', body: 'Understood. I will stop texting this number.' },
 ]
 const PROSPECTING_TEMPLATE_CATEGORY_SET = new Set<string>(TEMPLATE_CATEGORIES)
@@ -153,7 +219,7 @@ const PROSPECTING_TEMPLATE_SEEDS: SmsTemplateRow[] = [
     name: 'initial_heir_outreach',
     category: 'prospecting_intro',
     body: DEFAULT_TEMPLATE_BODY,
-    merge_fields: ['firstName', 'agentName', 'propertyAddress'],
+    merge_fields: ['firstName', 'agentName', 'companyName', 'propertyAddress'],
     usage_count: 0,
   },
   {
@@ -161,6 +227,54 @@ const PROSPECTING_TEMPLATE_SEEDS: SmsTemplateRow[] = [
     name: 'heir_right_person',
     category: 'prospecting_reply',
     body: 'Thanks for getting back to me, {firstName}. Are you the right person to speak with about {propertyAddress}, or should I update our notes?',
+    merge_fields: ['firstName', 'propertyAddress'],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-pre-auction-delinquent',
+    name: 'pre_auction_delinquent_intro',
+    category: 'list_pre_auction_delinquent',
+    body: '{firstName}, this is {agentName} with {companyName}. I had a note tied to {propertyAddress} from the upcoming tax-sale list. Are you the right person to speak with? Reply STOP to opt out.',
+    merge_fields: ['firstName', 'agentName', 'companyName', 'propertyAddress'],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-pre-auction-follow-up',
+    name: 'pre_auction_delinquent_follow_up',
+    category: 'list_pre_auction_delinquent',
+    body: '{firstName}, following up on my note about {propertyAddress}. If someone else handles this property, I can update our records. Reply STOP to opt out.',
+    merge_fields: ['firstName', 'propertyAddress'],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-excess-proceeds-intro',
+    name: 'excess_proceeds_review',
+    category: 'list_excess_proceeds',
+    body: '{firstName}, this is {agentName} with {companyName}. I had a note connected to {propertyAddress} from an excess-proceeds review. Are you the best contact for that file? Reply STOP to opt out.',
+    merge_fields: ['firstName', 'agentName', 'companyName', 'propertyAddress'],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-two-year-delinquent',
+    name: 'general_2_yr_delinquent_intro',
+    category: 'list_general_two_year_delinquent',
+    body: '{firstName}, this is {agentName} with {companyName}. I was reviewing 2-year delinquent records and had a note tied to {propertyAddress}. Are you the right contact? Reply STOP to opt out.',
+    merge_fields: ['firstName', 'agentName', 'companyName', 'propertyAddress'],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-three-year-delinquent',
+    name: 'three_plus_year_delinquent_intro',
+    category: 'list_three_year_delinquent',
+    body: '{firstName}, this is {agentName} with {companyName}. I had a note tied to {propertyAddress} from an older delinquent-tax list. Is this something you still handle? Reply STOP to opt out.',
+    merge_fields: ['firstName', 'agentName', 'companyName', 'propertyAddress'],
+    usage_count: 0,
+  },
+  {
+    id: 'prospecting-seed-three-year-soft-follow-up',
+    name: 'three_plus_year_delinquent_follow_up',
+    category: 'list_three_year_delinquent',
+    body: '{firstName}, checking back on {propertyAddress}. If this is no longer connected to you, I can clean up our notes. Reply STOP to opt out.',
     merge_fields: ['firstName', 'propertyAddress'],
     usage_count: 0,
   },
@@ -184,7 +298,7 @@ const PROSPECTING_TEMPLATE_SEEDS: SmsTemplateRow[] = [
     id: 'prospecting-seed-soft-follow-up',
     name: 'soft_follow_up',
     category: 'prospecting_follow_up',
-    body: 'Hi {firstName}, just checking back on {propertyAddress}. If you are not the right person, I can update our notes. Reply STOP to opt out.',
+    body: '{firstName}, checking back on {propertyAddress}. If you are not the right person, I can update our notes. Reply STOP to opt out.',
     merge_fields: ['firstName', 'propertyAddress'],
     usage_count: 0,
   },
@@ -192,7 +306,7 @@ const PROSPECTING_TEMPLATE_SEEDS: SmsTemplateRow[] = [
     id: 'prospecting-seed-wrong-number',
     name: 'wrong_number_cleanup',
     category: 'prospecting_wrong_number',
-    body: 'Sorry about that. I will update our records so we do not keep reaching out about this property.',
+    body: 'Understood. I will update our records so we do not keep reaching out about this property.',
     merge_fields: [],
     usage_count: 0,
   },
@@ -739,7 +853,7 @@ function templateCompliance(body: string) {
 }
 
 function templateCategoryLabel(category: string): string {
-  return TEMPLATE_CATEGORY_LABELS[category as TemplateCategory] || category.replace(/_/g, ' ')
+  return TEMPLATE_CATEGORY_LABELS[category as TemplateCategory] || templateDisplayName(category)
 }
 
 function templateDisplayName(name: string): string {
@@ -754,7 +868,13 @@ function prospectingTemplateLibrary(savedTemplates: SmsTemplateRow[]): SmsTempla
   const prospectingTemplates = savedTemplates.filter(isProspectingTemplate)
   const savedNames = new Set(prospectingTemplates.map((template) => template.name.trim().toLowerCase()))
   const seedTemplates = PROSPECTING_TEMPLATE_SEEDS.filter((template) => !savedNames.has(template.name.trim().toLowerCase()))
-  return [...prospectingTemplates, ...seedTemplates]
+  return [...prospectingTemplates, ...seedTemplates].sort((a, b) => {
+    const aIndex = TEMPLATE_CATEGORIES.indexOf(a.category as TemplateCategory)
+    const bIndex = TEMPLATE_CATEGORIES.indexOf(b.category as TemplateCategory)
+    const categoryDiff = (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex)
+    if (categoryDiff !== 0) return categoryDiff
+    return templateDisplayName(a.name).localeCompare(templateDisplayName(b.name))
+  })
 }
 
 function renderSpinnerPreview(body: string): string {
@@ -1487,6 +1607,7 @@ export function DialerConversationHub({
                     key={tab.id}
                     type="button"
                     onClick={() => setFilter(tab.id)}
+                    title={INBOX_FILTER_HELP[tab.id]}
                     className={`shrink-0 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
                       filter === tab.id
                         ? 'bg-[#E32E2E] text-white'
@@ -1497,6 +1618,9 @@ export function DialerConversationHub({
                   </button>
                 ))}
               </div>
+              <p className="text-xs font-semibold text-[var(--ck-text-muted)] xl:max-w-[420px]">
+                {INBOX_FILTER_HELP[filter]}
+              </p>
               <div className="relative w-full xl:max-w-[320px]">
                 <Icon name="search" size="text-base" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
                 <input
@@ -1773,7 +1897,7 @@ export function DialerConversationHub({
                 void loadActiveActivities()
                 void loadThreads()
               }}
-              onPhoneSuppressed={() => setPhoneOptedOut(true)}
+              onPhoneSuppressionChange={setPhoneOptedOut}
             />
           ) : (
             <p className="text-sm text-[var(--ck-text-muted)]">No seller selected.</p>
@@ -1998,6 +2122,9 @@ function TemplateBuilder({
                 <option key={category} value={category}>{templateCategoryLabel(category)}</option>
               ))}
             </select>
+            <span className="mt-2 block text-[11px] font-semibold leading-snug text-[var(--ck-text-muted)]">
+              {TEMPLATE_CATEGORY_HINTS[templateCategory]}
+            </span>
           </label>
         </div>
 
@@ -2068,7 +2195,10 @@ function TemplateBuilder({
 
       <aside className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{templateTypeLabel} Templates</p>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{templateTypeLabel} Templates</p>
+            <p className="mt-1 text-[11px] font-semibold text-[var(--ck-text-muted)]">{TEMPLATE_CATEGORY_HINTS[templateCategory]}</p>
+          </div>
           <span className="shrink-0 rounded-full border border-[var(--ck-border)] px-2 py-1 text-[10px] font-black text-[var(--ck-text-dim)]">
             {filteredTemplates.length}
           </span>
@@ -2211,7 +2341,7 @@ function SellerRail({
   phoneOptedOut,
   onOpenLead,
   onRefresh,
-  onPhoneSuppressed,
+  onPhoneSuppressionChange,
 }: {
   thread: HubThread
   activities: HubActivity[]
@@ -2219,20 +2349,25 @@ function SellerRail({
   phoneOptedOut: boolean
   onOpenLead: () => void
   onRefresh: () => void
-  onPhoneSuppressed: () => void
+  onPhoneSuppressionChange: (isSuppressed: boolean) => void
 }) {
   const lead = thread.lead
   const [note, setNote] = useState('')
   const [savingAction, setSavingAction] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionTone, setActionTone] = useState<'success' | 'error' | null>(null)
+  const [optimisticPhoneStatus, setOptimisticPhoneStatus] = useState<PhoneQualityStatus | null>(null)
   const loggedPhoneStatus = phoneStatusFromActivities(activities)
-  const phoneStatus = loggedPhoneStatus !== 'unknown' ? loggedPhoneStatus : phoneOptedOut ? 'dnc' : 'unknown'
+  const phoneStatus = optimisticPhoneStatus || (loggedPhoneStatus !== 'unknown' ? loggedPhoneStatus : phoneOptedOut ? 'dnc' : 'unknown')
   const mapHref = mapsUrl(lead)
   const zillowHref = zillowUrl(lead)
   const hasPhone = Boolean(thread.phone || lead?.phone)
   const heirName = threadHeirName(thread)
   const decedentName = threadDecedentName(thread)
+
+  useEffect(() => {
+    setOptimisticPhoneStatus(null)
+  }, [thread.id, loggedPhoneStatus])
 
   async function handleAddNote() {
     const content = note.trim()
@@ -2351,9 +2486,11 @@ function SellerRail({
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload?.error || 'Could not update phone status.')
+      setOptimisticPhoneStatus(action)
       setActionMessage(payload?.message || 'Phone status updated.')
       setActionTone('success')
-      if (SUPPRESSED_PHONE_STATUSES.has(action)) onPhoneSuppressed()
+      if (typeof payload?.smsSuppressed === 'boolean') onPhoneSuppressionChange(payload.smsSuppressed)
+      else onPhoneSuppressionChange(SUPPRESSED_PHONE_STATUSES.has(action))
       onRefresh()
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : 'Could not update phone status.')
