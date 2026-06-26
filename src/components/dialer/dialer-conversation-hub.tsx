@@ -2441,7 +2441,6 @@ export function DialerConversationHub({
                     <span className="min-w-0">
                       <span className="flex items-center gap-2">
                         <span className="truncate text-sm font-black text-[var(--ck-text)]">{threadPrimaryTitle(thread)}</span>
-                        {thread.starred && <Icon name="star" size="text-xs" className="text-amber-300" filled />}
                       </span>
                       <ThreadRowIndicators thread={thread} />
                       <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{threadSnippet(thread.lastActivity)}</span>
@@ -2830,46 +2829,46 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
 }
 
 function ThreadRowIndicators({ thread }: { thread: HubThread }) {
-  const signals = threadRowSignals(thread)
+  const signals = threadRowSignals(thread).filter((signal) => signal.active)
+  const visibleSignals = signals.slice(0, 3)
   const tagIds = threadTagIds(thread)
-  const tags = tagIds.slice(0, 2).map((tagId, index) => conversationTagOption(tagId, index))
-  const hiddenTagCount = Math.max(0, tagIds.length - tags.length)
+  const tags = tagIds.slice(0, 1).map((tagId, index) => conversationTagOption(tagId, index))
+  const hiddenCount = Math.max(0, signals.length - visibleSignals.length) + Math.max(0, tagIds.length - tags.length)
+
+  if (visibleSignals.length === 0 && tags.length === 0) return null
 
   return (
-    <span className="mt-1 flex min-w-0 items-center gap-1.5">
-      <span className="flex shrink-0 items-center gap-1">
-        {signals.map((signal) => (
-          <span
-            key={signal.id}
-            title={signal.label}
-            className={`inline-flex h-4 w-4 items-center justify-center rounded-full border text-[9px] ${
-              signal.active
-                ? 'border-transparent text-white'
-                : 'border-[var(--ck-border)] bg-transparent text-[var(--ck-text-dim)]'
-            }`}
-            style={signal.active ? { background: signal.color } : undefined}
-          >
-            <Icon name={signal.icon} size="text-[10px]" filled={signal.active} />
-          </span>
-        ))}
-      </span>
-      {tags.length > 0 && (
-        <span className="flex min-w-0 items-center gap-1">
-          {tags.map((tag) => (
+    <span className="mt-1 flex min-w-0 max-w-full items-center gap-1 overflow-hidden whitespace-nowrap">
+      {visibleSignals.length > 0 && (
+        <span className="flex shrink-0 items-center gap-1">
+          {visibleSignals.map((signal) => (
             <span
-              key={tag.id}
-              className="inline-flex min-w-0 max-w-[88px] items-center gap-1 rounded-sm border border-[var(--ck-border)] bg-white/[0.03] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--ck-text-muted)]"
-              title={tag.label}
+              key={signal.id}
+              title={signal.label}
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-transparent text-[9px] text-white"
+              style={{ background: signal.color }}
             >
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tag.color }} />
-              <span className="truncate">{conversationTagCompactLabel(tag.id)}</span>
+              <Icon name={signal.icon} size="text-[10px]" filled />
             </span>
           ))}
-          {hiddenTagCount > 0 && (
-            <span className="shrink-0 rounded-sm border border-[var(--ck-border)] px-1 py-0.5 text-[9px] font-black leading-none text-[var(--ck-text-dim)]">
-              +{hiddenTagCount}
-            </span>
-          )}
+        </span>
+      )}
+      {tags.map((tag) => (
+        <span
+          key={tag.id}
+          className="inline-flex min-w-0 max-w-[76px] items-center gap-1 rounded-sm border border-[var(--ck-border)] bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--ck-text-muted)]"
+          title={tag.label}
+        >
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tag.color }} />
+          <span className="truncate">{conversationTagCompactLabel(tag.id)}</span>
+        </span>
+      ))}
+      {hiddenCount > 0 && (
+        <span
+          className="shrink-0 rounded-sm border border-[var(--ck-border)] bg-white/[0.03] px-1 py-0.5 text-[9px] font-black leading-none text-[var(--ck-text-dim)]"
+          title={`${hiddenCount} more row signals or tags`}
+        >
+          +{hiddenCount}
         </span>
       )}
     </span>
