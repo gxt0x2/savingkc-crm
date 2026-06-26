@@ -8,7 +8,7 @@ import { CONVERSATION_TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { formatPhone, toProperCase } from '@/lib/format'
 
 type HubView = 'dashboard' | 'inbox' | 'campaigns' | 'templates'
-type HubFilter = 'needs_reply' | 'unanswered' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
+type HubFilter = 'unread' | 'needs_reply' | 'unanswered' | 'reminders' | 'no_status' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
 type ComposeMode = 'sms' | 'email'
 type CampaignListKey =
   | 'all_prospecting'
@@ -138,6 +138,8 @@ interface SmsSegmentMetric {
 interface CampaignDraft {
   name: string
   listKey: CampaignListKey
+  market: string
+  callForwardingNumber: string
   templateCategory: TemplateCategory
   dailyCap: number
   statusFilter: CampaignStatusFilter
@@ -174,7 +176,7 @@ interface CampaignDraftMetrics {
   batches: number
 }
 
-const PROSPECTING_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'note', 'status_change']
+const PROSPECTING_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'note', 'status_change', 'task', 'appointment']
 const SMS_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound'])
 const CONVERSATION_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail'])
 const PROSPECTING_ACTIVITY_SOURCES = new Set([
@@ -293,9 +295,13 @@ const CAMPAIGN_LIST_OPTIONS: Array<{
     preset: 'deceased_3yr',
   },
 ]
+const CAMPAIGN_MARKETS = ['Kansas City', 'Johnson County', 'Jackson County', 'Clay County', 'Wyandotte County']
 const INBOX_FILTER_HELP: Record<HubFilter, string> = {
+  unread: 'Unread prospect messages that need real-time review.',
   needs_reply: 'Latest conversation touch is inbound from the prospect, with no newer agent response.',
   unanswered: 'Latest SMS attempt is outbound, and no newer inbound reply has arrived.',
+  reminders: 'Follow-up reminders and drip-ready conversations that should be reviewed today.',
+  no_status: 'Prospects that have not been given a meaningful lead status yet.',
   hot: 'High-priority or starred prospecting conversations.',
   drip_ready: 'Outbound SMS is unanswered for 3+ days and ready for another touch.',
   unassigned: 'Prospecting conversations without an assigned agent.',
@@ -304,8 +310,11 @@ const INBOX_FILTER_HELP: Record<HubFilter, string> = {
 }
 const CAMPAIGN_STATUS_OPTIONS: Array<{ id: CampaignStatusFilter; label: string; detail: string }> = [
   { id: 'ready', label: 'Ready to send', detail: 'Not suppressed, no waiting seller reply, and ready for the next touch.' },
+  { id: 'unread', label: 'Unread', detail: INBOX_FILTER_HELP.unread },
   { id: 'needs_reply', label: 'Needs reply', detail: INBOX_FILTER_HELP.needs_reply },
   { id: 'unanswered', label: 'Unanswered', detail: INBOX_FILTER_HELP.unanswered },
+  { id: 'reminders', label: 'Reminders', detail: INBOX_FILTER_HELP.reminders },
+  { id: 'no_status', label: 'No Status', detail: INBOX_FILTER_HELP.no_status },
   { id: 'drip_ready', label: 'Drip ready', detail: INBOX_FILTER_HELP.drip_ready },
   { id: 'hot', label: 'Hot', detail: INBOX_FILTER_HELP.hot },
   { id: 'unassigned', label: 'Unassigned', detail: INBOX_FILTER_HELP.unassigned },
@@ -868,8 +877,24 @@ function threadIsDripReady(thread: HubThread): boolean {
   return days >= 3
 }
 
+function threadHasReminder(thread: HubThread): boolean {
+  return threadIsDripReady(thread) || thread.activities.some((activity) => {
+    const meta = activityMetadata(activity)
+    return activity.activity_type === 'task' ||
+      activity.activity_type === 'appointment' ||
+      Boolean(textValue(meta.reminder_at) || textValue(meta.next_follow_up_at) || textValue(meta.follow_up_at))
+  })
+}
+
+function threadHasNoStatus(thread: HubThread): boolean {
+  const station = (thread.lead?.station || '').trim().toLowerCase()
+  return !station || station === 'new' || station === 'no_status' || station === 'no status'
+}
+
 function threadStatus(thread: HubThread): string {
   if (threadNeedsReply(thread)) return 'Needs reply'
+  if (threadHasReminder(thread)) return 'Reminder'
+  if (threadHasNoStatus(thread)) return 'No Status'
   if (threadIsDripReady(thread)) return 'Drip ready'
   if (threadIsUnanswered(thread)) return 'Unanswered'
   if (!thread.lead?.assigned_agent) return 'Unassigned'
@@ -1050,6 +1075,8 @@ function defaultCampaignDraft(): CampaignDraft {
   return {
     name: `${option.label} Campaign`,
     listKey: option.id,
+    market: CAMPAIGN_MARKETS[0],
+    callForwardingNumber: '',
     templateCategory: option.templateCategory,
     dailyCap: 125,
     statusFilter: 'ready',
@@ -1160,8 +1187,11 @@ function threadMatchesCampaignList(thread: HubThread, listKey: CampaignListKey):
 }
 
 function threadMatchesHubFilter(thread: HubThread, nextFilter: HubFilter): boolean {
+  if (nextFilter === 'unread') return thread.unread
   if (nextFilter === 'needs_reply') return threadNeedsReply(thread)
   if (nextFilter === 'unanswered') return threadIsUnanswered(thread)
+  if (nextFilter === 'reminders') return threadHasReminder(thread)
+  if (nextFilter === 'no_status') return threadHasNoStatus(thread)
   if (nextFilter === 'hot') return thread.starred
   if (nextFilter === 'drip_ready') return threadIsDripReady(thread)
   if (nextFilter === 'unassigned') return !thread.lead?.assigned_agent
@@ -1289,6 +1319,11 @@ export function DialerConversationHub({
   const [campaignDraft, setCampaignDraft] = useState<CampaignDraft>(() => defaultCampaignDraft())
   const [campaignSaving, setCampaignSaving] = useState(false)
   const [campaignStatus, setCampaignStatus] = useState<string | null>(null)
+  const [campaignModalOpen, setCampaignModalOpen] = useState(false)
+  const [campaignModalKind, setCampaignModalKind] = useState<'initial' | 'follow_up'>('initial')
+  const [campaignScope, setCampaignScope] = useState<CampaignListKey | 'all_campaigns'>('all_campaigns')
+  const [agentScope, setAgentScope] = useState('all')
+  const [tagScope, setTagScope] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [composeMode, setComposeMode] = useState<ComposeMode>('sms')
@@ -1539,11 +1574,18 @@ export function DialerConversationHub({
   const filteredThreads = useMemo(() => {
     const query = search.trim().toLowerCase()
     return threads.filter((thread) => {
-      if (filter === 'needs_reply' && !threadNeedsReply(thread)) return false
-      if (filter === 'unanswered' && !threadIsUnanswered(thread)) return false
-      if (filter === 'hot' && !thread.starred) return false
-      if (filter === 'drip_ready' && !threadIsDripReady(thread)) return false
-      if (filter === 'unassigned' && thread.lead?.assigned_agent) return false
+      if (!threadMatchesHubFilter(thread, filter)) return false
+      if (campaignScope !== 'all_campaigns' && !threadMatchesCampaignList(thread, campaignScope)) return false
+      if (agentScope !== 'all' && (thread.lead?.assigned_agent || 'Unassigned') !== agentScope) return false
+      if (tagScope !== 'all') {
+        const tags = [
+          thread.lead?.priority || null,
+          thread.lead?.station || null,
+          threadStatus(thread),
+          prospectLabel(thread.prospectPhone),
+        ].filter(Boolean).join(' ').toLowerCase()
+        if (!tags.includes(tagScope.toLowerCase())) return false
+      }
       if (query) {
         const haystack = [
           thread.name,
@@ -1566,7 +1608,7 @@ export function DialerConversationHub({
       }
       return true
     })
-  }, [filter, search, threads])
+  }, [agentScope, campaignScope, filter, search, tagScope, threads])
 
   const replyFromPhone = useMemo(() => {
     return preferredReplyLine(activeThread, activeActivities) || defaultFromPhone || DEFAULT_FROM_PHONE
@@ -1598,12 +1640,31 @@ export function DialerConversationHub({
     return options
   }, [defaultFromPhone, replyFromPhone])
 
+  const unreadCount = useMemo(() => threads.filter((thread) => thread.unread).length, [threads])
   const needsReplyCount = useMemo(() => threads.filter(threadNeedsReply).length, [threads])
   const unansweredCount = useMemo(() => threads.filter(threadIsUnanswered).length, [threads])
+  const remindersCount = useMemo(() => threads.filter(threadHasReminder).length, [threads])
+  const noStatusCount = useMemo(() => threads.filter(threadHasNoStatus).length, [threads])
   const dripReadyCount = useMemo(() => threads.filter(threadIsDripReady).length, [threads])
   const unassignedCount = useMemo(() => threads.filter((thread) => !thread.lead?.assigned_agent).length, [threads])
   const hotCount = useMemo(() => threads.filter((thread) => thread.starred).length, [threads])
   const replyMetric = useMemo(() => averageReplyMetric(threads), [threads])
+  const agentOptions = useMemo(() => {
+    return Array.from(new Set(threads.map((thread) => thread.lead?.assigned_agent || 'Unassigned')))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+  }, [threads])
+  const tagOptions = useMemo(() => {
+    const tags = new Set<string>()
+    threads.forEach((thread) => {
+      if (thread.lead?.priority) tags.add(thread.lead.priority)
+      if (thread.lead?.station) tags.add(thread.lead.station.replace(/_/g, ' '))
+      tags.add(threadStatus(thread))
+      const prospect = prospectLabel(thread.prospectPhone)
+      if (prospect) tags.add(prospect)
+    })
+    return Array.from(tags).sort((a, b) => a.localeCompare(b)).slice(0, 30)
+  }, [threads])
   const trackerRows = useMemo(() => campaignTrackerRows(threads), [threads])
   const selectedCampaignThreads = useMemo(() => filterCampaignThreads(threads, campaignDraft), [campaignDraft, threads])
   const selectedCampaignMetrics = useMemo(() => (
@@ -1841,6 +1902,7 @@ export function DialerConversationHub({
           name,
           agent,
           preset: option.preset,
+          callerId: campaignDraft.callForwardingNumber,
           campaign: option.id,
           statusFilter: campaignDraft.statusFilter === 'ready' ? 'all' : campaignDraft.statusFilter,
           priorityFilter: 'all',
@@ -1865,6 +1927,7 @@ export function DialerConversationHub({
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload?.error || 'Could not save campaign list')
       setCampaignStatus(`Saved ${name} with ${sessionLeadIds.length.toLocaleString()} matched lead${sessionLeadIds.length === 1 ? '' : 's'}.`)
+      setCampaignModalOpen(false)
     } catch (err) {
       setCampaignStatus(err instanceof Error ? err.message : 'Could not save campaign list')
     } finally {
@@ -1887,8 +1950,11 @@ export function DialerConversationHub({
   ]
 
   const inboxTabs: Array<{ id: HubFilter; label: string; count?: number }> = [
-    { id: 'needs_reply', label: 'Needs reply', count: needsReplyCount },
+    { id: 'unread', label: 'Unread', count: unreadCount },
     { id: 'unanswered', label: 'Unanswered', count: unansweredCount },
+    { id: 'reminders', label: 'Reminders', count: remindersCount },
+    { id: 'no_status', label: 'No Status', count: noStatusCount },
+    { id: 'needs_reply', label: 'Needs reply', count: needsReplyCount },
     { id: 'hot', label: 'Hot', count: hotCount },
     { id: 'drip_ready', label: 'Drip ready', count: dripReadyCount },
     { id: 'unassigned', label: 'Unassigned', count: unassignedCount },
@@ -1897,34 +1963,21 @@ export function DialerConversationHub({
   ]
 
   return (
-    <section className={`flex min-h-0 flex-1 flex-col rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] ${
-      view === 'inbox' ? 'overflow-hidden' : 'overflow-y-auto'
-    }`}>
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)]">
       <div className="shrink-0 border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center">
-          <div className="inline-flex w-full justify-self-start overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1 sm:w-auto">
-            {viewTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setView(tab.id)}
-                className={`flex-1 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors sm:flex-none ${
-                  view === tab.id
-                    ? 'bg-[#E32E2E] text-white'
-                    : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'
-                }`}
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <Icon name={tab.icon} size="text-base" />
-                  {tab.label}
-                </span>
-              </button>
-            ))}
-          </div>
-          {homeTabSwitcher && <div className="justify-self-center">{homeTabSwitcher}</div>}
+          <div className="justify-self-start">{homeTabSwitcher}</div>
+          <MissionControlBar
+            unreadCount={unreadCount}
+            unansweredCount={unansweredCount}
+            remindersCount={remindersCount}
+            noStatusCount={noStatusCount}
+            onOpen={(nextFilter) => {
+              setFilter(nextFilter)
+              setView('inbox')
+            }}
+          />
           <div className="flex flex-wrap items-center gap-2 justify-self-end text-[11px] font-bold text-[var(--ck-text-muted)]">
-            <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-1.5">{needsReplyCount} need reply</span>
-            <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-1.5">{dripReadyCount} drip ready</span>
             <button
               type="button"
               onClick={() => {
@@ -1939,12 +1992,16 @@ export function DialerConversationHub({
         </div>
       </div>
 
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[76px_minmax(0,1fr)]">
+        <HubSideNav tabs={viewTabs} activeView={view} onViewChange={setView} />
+        <div className={`${view === 'inbox' ? 'min-h-0 overflow-hidden' : 'min-h-0 overflow-y-auto'}`}>
       {view === 'dashboard' && (
         <HubDashboard
           totalThreads={threads.length}
-          needsReplyCount={needsReplyCount}
+          unreadCount={unreadCount}
           unansweredCount={unansweredCount}
-          dripReadyCount={dripReadyCount}
+          remindersCount={remindersCount}
+          noStatusCount={noStatusCount}
           replyMetric={replyMetric}
           campaignMetrics={campaignMetrics}
           textActivity={textActivity}
@@ -1961,6 +2018,8 @@ export function DialerConversationHub({
       {view === 'campaigns' && (
         <CampaignBuilder
           draft={campaignDraft}
+          modalOpen={campaignModalOpen}
+          modalKind={campaignModalKind}
           metrics={selectedCampaignMetrics}
           trackerRows={trackerRows}
           templates={selectedCampaignTemplates}
@@ -1968,6 +2027,19 @@ export function DialerConversationHub({
           status={campaignStatus}
           onDraftChange={updateCampaignDraft}
           onSave={() => void handleSaveCampaignPlan()}
+          onOpenCreate={(kind) => {
+            setCampaignModalKind(kind)
+            const nextDraft = defaultCampaignDraft()
+            if (kind === 'follow_up') {
+              nextDraft.name = 'Follow-up Campaign'
+              nextDraft.templateCategory = 'prospecting_follow_up'
+              nextDraft.statusFilter = 'drip_ready'
+            }
+            setCampaignDraft(nextDraft)
+            setCampaignStatus(null)
+            setCampaignModalOpen(true)
+          }}
+          onCloseCreate={() => setCampaignModalOpen(false)}
           onOpenInbox={(nextFilter) => {
             setFilter(nextFilter)
             setView('inbox')
@@ -2007,28 +2079,69 @@ export function DialerConversationHub({
       {view === 'inbox' && (
         <>
           <div className="shrink-0 border-b border-[var(--ck-border)] px-4 py-3 sm:px-5">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex gap-1 overflow-x-auto rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
-                {inboxTabs.map((tab) => (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                  <label className="block">
+                    <span className="sr-only">Status</span>
+                    <select
+                      value={filter}
+                      onChange={(event) => setFilter(event.target.value as HubFilter)}
+                      className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-xs font-black uppercase tracking-wider text-[var(--ck-text)]"
+                    >
+                      {inboxTabs.map((tab) => (
+                        <option key={tab.id} value={tab.id}>{tab.label}{typeof tab.count === 'number' ? ` ${tab.count}` : ''}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="sr-only">Campaigns</span>
+                    <select
+                      value={campaignScope}
+                      onChange={(event) => setCampaignScope(event.target.value as CampaignListKey | 'all_campaigns')}
+                      className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-xs font-black uppercase tracking-wider text-[var(--ck-text)]"
+                    >
+                      <option value="all_campaigns">Campaigns</option>
+                      {CAMPAIGN_LIST_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="sr-only">Users</span>
+                    <select
+                      value={agentScope}
+                      onChange={(event) => setAgentScope(event.target.value)}
+                      className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-xs font-black uppercase tracking-wider text-[var(--ck-text)]"
+                    >
+                      <option value="all">Users</option>
+                      {agentOptions.map((agentName) => <option key={agentName} value={agentName}>{agentName}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="sr-only">Tags</span>
+                    <select
+                      value={tagScope}
+                      onChange={(event) => setTagScope(event.target.value)}
+                      className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-xs font-black uppercase tracking-wider text-[var(--ck-text)]"
+                    >
+                      <option value="all">Tags</option>
+                      {tagOptions.map((tag) => <option key={tag} value={tag}>{templateDisplayName(tag)}</option>)}
+                    </select>
+                  </label>
                   <button
-                    key={tab.id}
                     type="button"
-                    onClick={() => setFilter(tab.id)}
-                    title={INBOX_FILTER_HELP[tab.id]}
-                    className={`shrink-0 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
-                      filter === tab.id
-                        ? 'bg-[#E32E2E] text-white'
-                        : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'
+                    onClick={() => setFilter('reminders')}
+                    className={`h-10 rounded-xl border px-3 text-xs font-black uppercase tracking-wider transition-colors ${
+                      filter === 'reminders'
+                        ? 'border-[#E32E2E]/45 bg-[#E32E2E] text-white'
+                        : 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
                     }`}
                   >
-                    {tab.label}{typeof tab.count === 'number' ? ` ${tab.count}` : ''}
+                    Reminders
                   </button>
-                ))}
-              </div>
-              <p className="text-xs font-semibold text-[var(--ck-text-muted)] xl:max-w-[420px]">
-                {INBOX_FILTER_HELP[filter]}
-              </p>
-              <div className="relative w-full xl:max-w-[320px]">
+                </div>
+                <div className="relative w-full xl:max-w-[320px]">
                 <Icon name="search" size="text-base" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
                 <input
                   value={search}
@@ -2036,6 +2149,31 @@ export function DialerConversationHub({
                   placeholder="Search conversations"
                   className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] pl-9 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
                 />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-[var(--ck-text-muted)]">
+                <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Active Filters:</span>
+                <FilterChip label={inboxTabs.find((tab) => tab.id === filter)?.label || 'All'} onClear={() => setFilter('all')} />
+                {campaignScope !== 'all_campaigns' && <FilterChip label={campaignListOption(campaignScope).label} onClear={() => setCampaignScope('all_campaigns')} />}
+                {agentScope !== 'all' && <FilterChip label={agentScope} onClear={() => setAgentScope('all')} />}
+                {tagScope !== 'all' && <FilterChip label={templateDisplayName(tagScope)} onClear={() => setTagScope('all')} />}
+                {search.trim() && <FilterChip label={`Search: ${search.trim()}`} onClear={() => setSearch('')} />}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilter('all')
+                    setCampaignScope('all_campaigns')
+                    setAgentScope('all')
+                    setTagScope('all')
+                    setSearch('')
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]"
+                >
+                  <Icon name="restart_alt" size="text-sm" /> Reset
+                </button>
+                <span className="ml-auto hidden text-xs font-semibold text-[var(--ck-text-muted)] xl:block">
+                  {INBOX_FILTER_HELP[filter]}
+                </span>
               </div>
             </div>
           </div>
@@ -2313,15 +2451,113 @@ export function DialerConversationHub({
       </div>
         </>
       )}
+        </div>
+      </div>
     </section>
+  )
+}
+
+function MissionControlBar({
+  unreadCount,
+  unansweredCount,
+  remindersCount,
+  noStatusCount,
+  onOpen,
+}: {
+  unreadCount: number
+  unansweredCount: number
+  remindersCount: number
+  noStatusCount: number
+  onOpen: (filter: HubFilter) => void
+}) {
+  const items: Array<{ label: string; filter: HubFilter; count: number; icon: string; tone: string; help: string }> = [
+    { label: 'Unread', filter: 'unread', count: unreadCount, icon: 'mail', tone: 'bg-[#5867E8]', help: 'Unread messages' },
+    { label: 'Unanswered', filter: 'unanswered', count: unansweredCount, icon: 'hourglass_empty', tone: 'bg-[#2EA8E5]', help: 'Outbound texts waiting on an answer' },
+    { label: 'Reminders', filter: 'reminders', count: remindersCount, icon: 'notifications', tone: 'bg-[#EF4D6D]', help: 'Follow-up reminders' },
+    { label: 'No Status', filter: 'no_status', count: noStatusCount, icon: 'question_mark', tone: 'bg-[#F7B955]', help: 'Prospects with no status' },
+  ]
+
+  return (
+    <div className="flex justify-center">
+      <div className="inline-flex items-center gap-3 rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-4 py-2 shadow-sm">
+        {items.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            onClick={() => onOpen(item.filter)}
+            className="group relative flex h-10 w-10 items-center justify-center rounded-full text-white shadow-sm transition-transform hover:-translate-y-0.5"
+            title={`${item.label}: ${item.help}`}
+          >
+            <span className={`absolute inset-0 rounded-full ${item.tone}`} />
+            <Icon name={item.icon} size="text-lg" className="relative z-10" />
+            <span className="absolute -right-1 -top-1 z-20 min-w-5 rounded-full bg-[#6377FF] px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white ring-2 ring-[var(--ck-surface-elev)]">
+              {item.count > 99 ? '99+' : item.count}
+            </span>
+            <span className="pointer-events-none absolute left-1/2 top-[calc(100%+8px)] z-30 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2 py-1 text-[11px] font-bold text-[var(--ck-text)] shadow-lg group-hover:block">
+              {item.label}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function HubSideNav({
+  tabs,
+  activeView,
+  onViewChange,
+}: {
+  tabs: Array<{ id: HubView; label: string; icon: string }>
+  activeView: HubView
+  onViewChange: (view: HubView) => void
+}) {
+  return (
+    <aside className="hidden border-r border-[var(--ck-border)] bg-[var(--ck-surface-elev)] py-3 lg:block">
+      <nav className="flex flex-col items-center gap-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onViewChange(tab.id)}
+            className={`group flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${
+              activeView === tab.id
+                ? 'bg-[#E32E2E] text-white'
+                : 'text-[var(--ck-text-dim)] hover:bg-white/[0.04] hover:text-[var(--ck-text)]'
+            }`}
+            title={tab.label}
+            aria-label={tab.label}
+          >
+            <Icon name={tab.icon} size="text-xl" />
+          </button>
+        ))}
+      </nav>
+    </aside>
+  )
+}
+
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2.5 py-1">
+      {label}
+      <button
+        type="button"
+        onClick={onClear}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]"
+        aria-label={`Clear ${label}`}
+      >
+        <Icon name="close" size="text-xs" />
+      </button>
+    </span>
   )
 }
 
 function HubDashboard({
   totalThreads,
-  needsReplyCount,
+  unreadCount,
   unansweredCount,
-  dripReadyCount,
+  remindersCount,
+  noStatusCount,
   replyMetric,
   campaignMetrics,
   textActivity,
@@ -2331,9 +2567,10 @@ function HubDashboard({
   onOpenInbox,
 }: {
   totalThreads: number
-  needsReplyCount: number
+  unreadCount: number
   unansweredCount: number
-  dripReadyCount: number
+  remindersCount: number
+  noStatusCount: number
   replyMetric: ReplyMetric
   campaignMetrics: CampaignMetric[]
   textActivity: Array<{ label: string; sent: number; replies: number }>
@@ -2345,12 +2582,18 @@ function HubDashboard({
   const leadTotal = Math.max(1, leadBreakdown.reduce((sum, item) => sum + item.value, 0))
   return (
     <div className="space-y-4 p-4 sm:p-5">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <DashboardStat icon="mark_chat_unread" label="Needs Reply" value={needsReplyCount} detail="Inbound seller messages waiting" tone="text-cyan-200" onClick={() => onOpenInbox('needs_reply')} />
-          <DashboardStat icon="schedule" label="Unanswered" value={unansweredCount} detail="Outbound texts with no reply yet" tone="text-amber-200" onClick={() => onOpenInbox('unanswered')} />
-          <DashboardStat icon="automation" label="Drip Ready" value={dripReadyCount} detail="No reply after 3+ days" tone="text-blue-200" onClick={() => onOpenInbox('drip_ready')} />
-          <DashboardStat icon="forum" label="Active Threads" value={totalThreads} detail="Recent calls, texts, emails" tone="text-emerald-200" onClick={() => onOpenInbox('recents')} />
+      <div className="grid gap-4 xl:grid-cols-[minmax(420px,0.85fr)_minmax(0,1fr)_minmax(320px,0.85fr)]">
+        <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">What is On Your Plate</p>
+            <Icon name="info" size="text-sm" className="text-[var(--ck-text-dim)]" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <PlateCard icon="mail" label="Unread" value={unreadCount} action="respond now" tone="bg-[#5867E8]" onClick={() => onOpenInbox('unread')} />
+            <PlateCard icon="hourglass_empty" label="Unanswered" value={unansweredCount} action="reply now" tone="bg-[#2EA8E5]" onClick={() => onOpenInbox('unanswered')} />
+            <PlateCard icon="notifications" label="Reminders" value={remindersCount} action="view reminders" tone="bg-[#EF4D6D]" onClick={() => onOpenInbox('reminders')} />
+            <PlateCard icon="question_mark" label="No Status" value={noStatusCount} action="view inbox" tone="bg-[#F7B955]" onClick={() => onOpenInbox('no_status')} />
+          </div>
         </section>
 
         <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
@@ -2372,6 +2615,27 @@ function HubDashboard({
                 <span className="text-right font-bold text-[var(--ck-text)]">{item.value}</span>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Lead Breakdown</p>
+            <Icon name="donut_large" size="text-lg" className="text-[var(--ck-text-dim)]" />
+          </div>
+          <div className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-4">
+            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border-[14px] border-[#7D9BFF] text-center text-xl font-black text-[var(--ck-text)]" style={{ borderTopColor: '#E32E2E', borderRightColor: '#F7B955', borderBottomColor: '#72D398' }}>
+              {leadTotal}
+            </div>
+            <div className="space-y-2">
+              {leadBreakdown.map((item) => (
+                <div key={item.label} className="grid grid-cols-[10px_minmax(0,1fr)_34px] items-center gap-2 text-xs">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+                  <span className="truncate text-[var(--ck-text-muted)]">{item.label}</span>
+                  <span className="text-right font-bold text-[var(--ck-text)]">{item.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       </div>
@@ -2443,6 +2707,8 @@ function HubDashboard({
 
 function CampaignBuilder({
   draft,
+  modalOpen,
+  modalKind,
   metrics,
   trackerRows,
   templates,
@@ -2450,10 +2716,14 @@ function CampaignBuilder({
   status,
   onDraftChange,
   onSave,
+  onOpenCreate,
+  onCloseCreate,
   onOpenInbox,
   onOpenTemplates,
 }: {
   draft: CampaignDraft
+  modalOpen: boolean
+  modalKind: 'initial' | 'follow_up'
   metrics: CampaignDraftMetrics
   trackerRows: CampaignTrackerRow[]
   templates: SmsTemplateRow[]
@@ -2461,280 +2731,288 @@ function CampaignBuilder({
   status: string | null
   onDraftChange: (patch: Partial<CampaignDraft>) => void
   onSave: () => void
+  onOpenCreate: (kind: 'initial' | 'follow_up') => void
+  onCloseCreate: () => void
   onOpenInbox: (filter: HubFilter) => void
   onOpenTemplates: (category: TemplateCategory) => void
 }) {
-  const selectedList = campaignListOption(draft.listKey)
-  const statusHelp = CAMPAIGN_STATUS_OPTIONS.find((option) => option.id === draft.statusFilter)?.detail || ''
-  const inboxFilter = draft.statusFilter === 'ready' ? 'all' : draft.statusFilter
+  const [tableSearch, setTableSearch] = useState('')
+  const [tableFilter, setTableFilter] = useState<CampaignListKey | 'all'>('all')
   const topTemplate = templates[0]
+  const visibleRows = trackerRows.filter((row) => {
+    if (tableFilter !== 'all' && row.id !== tableFilter) return false
+    const query = tableSearch.trim().toLowerCase()
+    if (!query) return true
+    return [row.label, row.description, templateCategoryLabel(row.templateCategory), row.status]
+      .join(' ')
+      .toLowerCase()
+      .includes(query)
+  })
 
   return (
     <div className="space-y-4 p-4 sm:p-5">
-      <div className="grid gap-4 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.05fr)]">
-        <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-          <div className="flex flex-col gap-2 border-b border-[var(--ck-border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Campaign Builder</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--ck-text-muted)]">Build prospecting campaigns from the same heir-dialer conversations and list templates.</p>
-            </div>
-            <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-200">
-              <Icon name="verified" size="text-sm" /> Prospecting only
-            </span>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <label className="block md:col-span-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Campaign Name</span>
-              <input
-                value={draft.name}
-                onChange={(event) => onDraftChange({ name: event.target.value })}
-                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">List Type</span>
-              <select
-                value={draft.listKey}
-                onChange={(event) => onDraftChange({ listKey: event.target.value as CampaignListKey })}
-                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-              >
-                {CAMPAIGN_LIST_OPTIONS.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </select>
-              <span className="mt-2 block text-[11px] font-semibold leading-snug text-[var(--ck-text-muted)]">{selectedList.description}</span>
-            </label>
-
-            <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Template Type</span>
-              <select
-                value={draft.templateCategory}
-                onChange={(event) => onDraftChange({ templateCategory: event.target.value as TemplateCategory })}
-                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-              >
-                {TEMPLATE_CATEGORIES.map((category) => (
-                  <option key={category} value={category}>{templateCategoryLabel(category)}</option>
-                ))}
-              </select>
-              <span className="mt-2 block text-[11px] font-semibold leading-snug text-[var(--ck-text-muted)]">{TEMPLATE_CATEGORY_HINTS[draft.templateCategory]}</span>
-            </label>
-
-            <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Audience Status</span>
-              <select
-                value={draft.statusFilter}
-                onChange={(event) => onDraftChange({ statusFilter: event.target.value as CampaignStatusFilter })}
-                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-              >
-                {CAMPAIGN_STATUS_OPTIONS.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </select>
-              <span className="mt-2 block text-[11px] font-semibold leading-snug text-[var(--ck-text-muted)]">{statusHelp}</span>
-            </label>
-
-            <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Daily Cap</span>
-              <input
-                type="number"
-                min={1}
-                max={500}
-                value={draft.dailyCap}
-                onChange={(event) => onDraftChange({ dailyCap: Number(event.target.value) })}
-                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-              />
-              <span className="mt-2 block text-[11px] font-semibold leading-snug text-[var(--ck-text-muted)]">{metrics.batches} day{metrics.batches === 1 ? '' : 's'} at this cap.</span>
-            </label>
-
-            <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Start Window</span>
-              <input
-                value={draft.startWindow}
-                onChange={(event) => onDraftChange({ startWindow: event.target.value })}
-                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Stop Window</span>
-              <input
-                value={draft.stopWindow}
-                onChange={(event) => onDraftChange({ stopWindow: event.target.value })}
-                className="mt-2 h-11 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
-              />
-            </label>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={saving || draft.name.trim().length === 0}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#E32E2E] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Icon name={saving ? 'progress_activity' : 'playlist_add'} size="text-base" className={saving ? 'animate-spin' : ''} />
-              {saving ? 'Saving...' : 'Save List'}
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpenInbox(inboxFilter)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--ck-border)] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
-            >
-              <Icon name="inbox" size="text-base" /> Open Inbox
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpenTemplates(draft.templateCategory)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--ck-border)] px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
-            >
-              <Icon name="edit_note" size="text-base" /> Templates
-            </button>
-          </div>
-          {status && <p className={`mt-3 text-xs font-bold ${status.startsWith('Saved') ? 'text-emerald-300' : 'text-[#ff7777]'}`}>{status}</p>}
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <CampaignMetricCard icon="groups" label="Audience" value={metrics.audience.toLocaleString()} detail={`${metrics.suppressed.toLocaleString()} suppressed`} tone="text-cyan-200" />
-            <CampaignMetricCard icon="send" label="Texts Sent" value={metrics.sent.toLocaleString()} detail={`${metrics.unanswered.toLocaleString()} unanswered`} tone="text-blue-200" />
-            <CampaignMetricCard icon="mark_chat_unread" label="Replies" value={metrics.replies.toLocaleString()} detail={`${metrics.needsReply.toLocaleString()} need reply`} tone="text-emerald-200" />
-            <CampaignMetricCard icon="percent" label="Response Rate" value={formatPercent(metrics.replies, metrics.sent)} detail={`${metrics.dripReady.toLocaleString()} drip ready`} tone="text-amber-200" />
-          </div>
-
-          <aside className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{templateCategoryLabel(draft.templateCategory)} Templates</p>
-                <p className="mt-1 text-[11px] font-semibold text-[var(--ck-text-muted)]">{templates.length.toLocaleString()} prospecting script{templates.length === 1 ? '' : 's'} matched.</p>
-              </div>
-              <Icon name="edit_note" size="text-lg" className="text-[var(--ck-text-dim)]" />
-            </div>
-            <div className="mt-3 space-y-2">
-              {topTemplate ? (
-                <button
-                  type="button"
-                  onClick={() => onOpenTemplates(draft.templateCategory)}
-                  className="w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-3 text-left transition-colors hover:border-[#E32E2E]/45"
-                >
-                  <span className="block truncate text-sm font-black text-[var(--ck-text)]">{templateDisplayName(topTemplate.name)}</span>
-                  <span className="mt-2 line-clamp-4 block text-xs leading-relaxed text-[var(--ck-text-muted)]">{topTemplate.body}</span>
-                </button>
-              ) : (
-                <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-8 text-center text-sm text-[var(--ck-text-muted)]">
-                  No templates for this type yet.
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => onOpenTemplates(draft.templateCategory)}
-                className="w-full rounded-xl border border-[var(--ck-border)] px-3 py-2.5 text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
-              >
-                Manage Template Type
-              </button>
-            </div>
-          </aside>
-        </section>
-      </div>
-
       <section className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
-        <div className="flex flex-col gap-2 border-b border-[var(--ck-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Campaign Tracker</p>
-            <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Live rollup by prospecting list, using the communication hub thread history.</p>
+        <div className="flex flex-col gap-3 border-b border-[var(--ck-border)] px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <p className="text-xl font-black text-[var(--ck-text)]">Campaigns</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--ck-text-muted)]">Create, monitor, and follow up on prospecting campaigns.</p>
           </div>
-          <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">
-            {trackerRows.length.toLocaleString()} tracked lists
-          </span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenCreate('initial')}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#5867E8] px-4 py-2.5 text-xs font-black text-white transition-colors hover:bg-[#4655c9]"
+            >
+              <Icon name="add" size="text-base" /> Create New Campaign
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenCreate('follow_up')}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#5867E8] px-4 py-2.5 text-xs font-black text-white transition-colors hover:bg-[#4655c9]"
+            >
+              <Icon name="event_repeat" size="text-base" /> Create Follow-up Campaign
+            </button>
+          </div>
         </div>
+
+        <div className="flex flex-col gap-3 border-b border-[var(--ck-border)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <label className="w-full lg:max-w-[220px]">
+            <span className="sr-only">Filter campaigns</span>
+            <select
+              value={tableFilter}
+              onChange={(event) => setTableFilter(event.target.value as CampaignListKey | 'all')}
+              className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 text-xs font-black uppercase tracking-wider text-[var(--ck-text)]"
+            >
+              <option value="all">Filter</option>
+              {CAMPAIGN_LIST_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
+          <div className="relative w-full lg:max-w-[340px]">
+            <Icon name="search" size="text-base" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
+            <input
+              value={tableSearch}
+              onChange={(event) => setTableSearch(event.target.value)}
+              placeholder="Search campaigns"
+              className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] pl-9 pr-3 text-sm text-[var(--ck-text)] outline-none focus:border-[#5867E8]"
+            />
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-left text-xs">
+          <table className="w-full min-w-[1120px] text-left text-xs">
             <thead className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
               <tr className="border-b border-[var(--ck-border)]">
-                <th className="px-4 py-3">Campaign</th>
+                <th className="px-4 py-3">Campaign Name</th>
+                <th className="px-3 py-3">Market</th>
                 <th className="px-3 py-3 text-right">Audience</th>
                 <th className="px-3 py-3 text-right">Sent</th>
                 <th className="px-3 py-3 text-right">Replies</th>
                 <th className="px-3 py-3 text-right">Needs Reply</th>
-                <th className="px-3 py-3 text-right">Drip Ready</th>
-                <th className="px-3 py-3 text-right">Suppressed</th>
-                <th className="px-3 py-3 text-right">Rate</th>
-                <th className="px-4 py-3 text-right">Last Touch</th>
+                <th className="px-3 py-3 text-right">Drip</th>
+                <th className="px-3 py-3 text-right">Deliverability</th>
+                <th className="px-3 py-3 text-right">Response</th>
+                <th className="px-3 py-3 text-right">Created</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {trackerRows.map((row) => (
-                <tr key={row.id} className={`border-b border-[var(--ck-border)] transition-colors hover:bg-white/[0.03] ${row.id === draft.listKey ? 'bg-[#E32E2E]/8' : ''}`}>
-                  <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => onDraftChange({ listKey: row.id })}
-                      className="block max-w-[300px] text-left"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="truncate font-black text-[var(--ck-text)]">{row.label}</span>
-                        <span className="rounded-full border border-[var(--ck-border)] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{row.status}</span>
-                      </span>
-                      <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{row.description}</span>
-                      <span className="mt-1 block truncate text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)]">{templateCategoryLabel(row.templateCategory)}</span>
-                    </button>
-                  </td>
-                  <td className="px-3 py-3 text-right font-bold text-[var(--ck-text)]">{row.audience.toLocaleString()}</td>
-                  <td className="px-3 py-3 text-right text-[var(--ck-text-muted)]">{row.sent.toLocaleString()}</td>
-                  <td className="px-3 py-3 text-right text-emerald-200">{row.replies.toLocaleString()}</td>
-                  <td className="px-3 py-3 text-right text-cyan-200">{row.needsReply.toLocaleString()}</td>
-                  <td className="px-3 py-3 text-right text-blue-200">{row.dripReady.toLocaleString()}</td>
-                  <td className="px-3 py-3 text-right text-[#ff9b9b]">{row.suppressed.toLocaleString()}</td>
-                  <td className="px-3 py-3 text-right font-bold text-[var(--ck-text)]">{Math.round(row.responseRate * 100)}%</td>
-                  <td className="px-4 py-3 text-right text-[var(--ck-text-muted)]">{row.lastTouchAt ? timeAgo(row.lastTouchAt) : 'No touch'}</td>
+              {visibleRows.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="px-4 py-10 text-center text-sm text-[var(--ck-text-muted)]">No campaigns match.</td>
                 </tr>
-              ))}
+              ) : visibleRows.map((row) => {
+                const deliverability = row.sent > 0 ? Math.max(0, Math.round(((row.sent - row.suppressed) / row.sent) * 100)) : null
+                return (
+                  <tr key={row.id} className="border-b border-[var(--ck-border)] transition-colors hover:bg-white/[0.03]">
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => onDraftChange({ listKey: row.id })}
+                        className="max-w-[300px] text-left"
+                      >
+                        <span className="block truncate text-sm font-bold text-[var(--ck-text)]">{row.label}</span>
+                        <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{row.description}</span>
+                      </button>
+                    </td>
+                    <td className="px-3 py-3 text-[var(--ck-text-muted)]">Kansas City</td>
+                    <td className="px-3 py-3 text-right font-bold text-[var(--ck-text)]">{row.audience.toLocaleString()}</td>
+                    <td className="px-3 py-3 text-right text-[var(--ck-text-muted)]">{row.sent.toLocaleString()}</td>
+                    <td className="px-3 py-3 text-right text-emerald-200">{row.replies.toLocaleString()}</td>
+                    <td className="px-3 py-3 text-right text-cyan-200">{row.needsReply.toLocaleString()}</td>
+                    <td className="px-3 py-3 text-right text-blue-200">{row.dripReady.toLocaleString()}</td>
+                    <td className="px-3 py-3 text-right text-amber-200">{deliverability == null ? '--' : `${deliverability}%`}</td>
+                    <td className="px-3 py-3 text-right text-amber-200">{Math.round(row.responseRate * 100)}%</td>
+                    <td className="px-3 py-3 text-right text-[var(--ck-text-muted)]">{row.lastTouchAt ? new Date(row.lastTouchAt).toLocaleDateString('en-US') : '--'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onDraftChange({ listKey: row.id, templateCategory: row.templateCategory })
+                          onOpenInbox('all')
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ck-text-dim)] hover:bg-white/[0.04] hover:text-[var(--ck-text)]"
+                        title="Open matching inbox"
+                        aria-label="Open matching inbox"
+                      >
+                        <Icon name="more_vert" size="text-base" />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       </section>
+
+      {status && <p className={`text-xs font-bold ${status.startsWith('Saved') ? 'text-emerald-300' : 'text-[#ff7777]'}`}>{status}</p>}
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 py-10 backdrop-blur-sm">
+          <section className="w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] shadow-2xl">
+            <header className="flex items-center justify-between border-b border-[var(--ck-border)] px-5 py-4">
+              <p className="text-lg font-bold text-[var(--ck-text)]">{modalKind === 'follow_up' ? 'Create Follow-up Campaign' : 'Create New Campaign'}</p>
+              <button
+                type="button"
+                onClick={onCloseCreate}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ck-text-dim)] hover:bg-white/[0.04] hover:text-[var(--ck-text)]"
+                aria-label="Close"
+              >
+                <Icon name="close" size="text-base" />
+              </button>
+            </header>
+
+            <div className="grid gap-5 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+              <div className="grid gap-4">
+                <label className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center">
+                  <span className="text-sm font-semibold text-[var(--ck-text-muted)]">Enter Campaign Name</span>
+                  <input
+                    value={draft.name}
+                    onChange={(event) => onDraftChange({ name: event.target.value })}
+                    placeholder="Oct Dallas High Equity"
+                    className="h-11 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#5867E8]"
+                  />
+                </label>
+                <label className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center">
+                  <span className="text-sm font-semibold text-[var(--ck-text-muted)]">Select Market</span>
+                  <select
+                    value={draft.market}
+                    onChange={(event) => onDraftChange({ market: event.target.value })}
+                    className="h-11 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#5867E8]"
+                  >
+                    {CAMPAIGN_MARKETS.map((market) => <option key={market} value={market}>{market}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center">
+                  <span className="text-sm font-semibold text-[var(--ck-text-muted)]">Call Forwarding Number</span>
+                  <input
+                    value={draft.callForwardingNumber}
+                    onChange={(event) => onDraftChange({ callForwardingNumber: event.target.value })}
+                    placeholder="(816) 307-7835"
+                    className="h-11 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#5867E8]"
+                  />
+                </label>
+                <label className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center">
+                  <span className="text-sm font-semibold text-[var(--ck-text-muted)]">List Type</span>
+                  <select
+                    value={draft.listKey}
+                    onChange={(event) => onDraftChange({ listKey: event.target.value as CampaignListKey })}
+                    className="h-11 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#5867E8]"
+                  >
+                    {CAMPAIGN_LIST_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center">
+                  <span className="text-sm font-semibold text-[var(--ck-text-muted)]">Template Type</span>
+                  <select
+                    value={draft.templateCategory}
+                    onChange={(event) => onDraftChange({ templateCategory: event.target.value as TemplateCategory })}
+                    className="h-11 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#5867E8]"
+                  >
+                    {TEMPLATE_CATEGORIES.map((category) => <option key={category} value={category}>{templateCategoryLabel(category)}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center">
+                  <span className="text-sm font-semibold text-[var(--ck-text-muted)]">Audience</span>
+                  <select
+                    value={draft.statusFilter}
+                    onChange={(event) => onDraftChange({ statusFilter: event.target.value as CampaignStatusFilter })}
+                    className="h-11 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#5867E8]"
+                  >
+                    {CAMPAIGN_STATUS_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <aside className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Campaign Preview</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <MiniMetric label="Audience" value={metrics.audience} />
+                  <MiniMetric label="Days" value={metrics.batches} />
+                  <MiniMetric label="Replies" value={metrics.replies} />
+                  <MiniMetric label="Suppressed" value={metrics.suppressed} />
+                </div>
+                <div className="mt-4 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{templateCategoryLabel(draft.templateCategory)}</p>
+                  <p className="mt-2 line-clamp-5 text-xs leading-relaxed text-[var(--ck-text-muted)]">
+                    {topTemplate?.body || TEMPLATE_CATEGORY_HINTS[draft.templateCategory]}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenTemplates(draft.templateCategory)}
+                  className="mt-3 w-full rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]"
+                >
+                  Manage Templates
+                </button>
+              </aside>
+            </div>
+
+            <footer className="flex justify-end gap-2 border-t border-[var(--ck-border)] px-5 py-4">
+              <button
+                type="button"
+                onClick={onCloseCreate}
+                className="rounded-lg border border-[var(--ck-border)] px-4 py-2 text-sm font-bold text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={saving || draft.name.trim().length === 0}
+                className="rounded-lg bg-[#5867E8] px-4 py-2 text-sm font-bold text-white hover:bg-[#4655c9] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
     </div>
   )
 }
 
-function CampaignMetricCard({
-  icon,
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  icon: string
-  label: string
-  value: string
-  detail: string
-  tone: string
-}) {
+function MiniMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4">
-      <div className="flex items-center justify-between gap-3">
-        <Icon name={icon} size="text-xl" className={tone} />
-        <span className="text-2xl font-black text-[var(--ck-text)]">{value}</span>
-      </div>
-      <p className="mt-3 text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{label}</p>
-      <p className="mt-1 text-xs text-[var(--ck-text-muted)]">{detail}</p>
+    <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2 py-2 text-center">
+      <p className="text-lg font-black leading-none text-[var(--ck-text)]">{value.toLocaleString()}</p>
+      <p className="mt-1 text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{label}</p>
     </div>
   )
 }
 
-function DashboardStat({
+function PlateCard({
   icon,
   label,
   value,
-  detail,
+  action,
   tone,
   onClick,
 }: {
   icon: string
   label: string
   value: number
-  detail: string
+  action: string
   tone: string
   onClick: () => void
 }) {
@@ -2742,14 +3020,16 @@ function DashboardStat({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4 text-left transition-colors hover:border-[#E32E2E]/45"
+      className="grid grid-cols-[48px_minmax(0,1fr)] items-center gap-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-3 text-left transition-colors hover:border-[#E32E2E]/45"
     >
-      <div className="flex items-center justify-between gap-3">
-        <Icon name={icon} size="text-2xl" className={tone} />
-        <span className="text-2xl font-black text-[var(--ck-text)]">{value.toLocaleString()}</span>
-      </div>
-      <p className="mt-3 text-xs font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{label}</p>
-      <p className="mt-1 text-xs text-[var(--ck-text-muted)]">{detail}</p>
+      <span className={`flex h-11 w-11 items-center justify-center rounded-full text-white ${tone}`}>
+        <Icon name={icon} size="text-xl" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-2xl font-black leading-none text-[var(--ck-text)]">{value.toLocaleString()}</span>
+        <span className="mt-1 block text-sm font-bold text-[var(--ck-text)]">{label}</span>
+        <span className="mt-0.5 block truncate text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{action}</span>
+      </span>
     </button>
   )
 }
