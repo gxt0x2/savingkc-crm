@@ -29,6 +29,7 @@ type TemplateCategory =
   | 'prospecting_wrong_number'
   | 'prospecting_opt_out'
 type PhoneQualityStatus = 'unknown' | 'verified' | 'wrong_number' | 'dnc' | 'spam' | 'blocked'
+type ThreadWorkflowAction = 'mark_read' | 'mark_unread' | 'reminder_created' | 'reminder_completed'
 
 interface HubLead {
   id: string
@@ -99,6 +100,12 @@ interface HubThread {
   unread: boolean
   starred: boolean
   activities: HubActivity[]
+}
+
+interface ThreadReminderState {
+  active: boolean
+  dueAt: string | null
+  note: string | null
 }
 
 interface SmsTemplateRow {
@@ -450,6 +457,7 @@ const PRIORITY_OPTIONS = [
   { value: 'low', label: 'Cold' },
 ]
 const SUPPRESSED_PHONE_STATUSES = new Set<PhoneQualityStatus>(['wrong_number', 'dnc', 'spam', 'blocked'])
+const THREAD_WORKFLOW_ACTIONS = new Set<ThreadWorkflowAction>(['mark_read', 'mark_unread', 'reminder_created', 'reminder_completed'])
 const PHONE_STATUS_LABELS: Record<PhoneQualityStatus, string> = {
   unknown: 'unknown',
   verified: 'verified',
@@ -588,6 +596,71 @@ function prospectSource(activity: HubActivity): string | null {
 function isSystemAlert(activity: HubActivity): boolean {
   const direction = textValue(activityMetadata(activity).direction)?.toLowerCase()
   return direction === 'outbound_alert'
+}
+
+function activityTimeMs(activity: HubActivity | null | undefined): number {
+  if (!activity) return 0
+  const time = new Date(activity.created_at).getTime()
+  return Number.isFinite(time) ? time : 0
+}
+
+function hubWorkflowAction(activity: HubActivity): ThreadWorkflowAction | null {
+  const action = textValue(activityMetadata(activity).hub_action)
+  return action && THREAD_WORKFLOW_ACTIONS.has(action as ThreadWorkflowAction) ? action as ThreadWorkflowAction : null
+}
+
+function isHubWorkflowActivity(activity: HubActivity): boolean {
+  return Boolean(hubWorkflowAction(activity))
+}
+
+function latestHubWorkflowAt(thread: HubThread, action: ThreadWorkflowAction): number {
+  return thread.activities.reduce((latest, activity) => (
+    hubWorkflowAction(activity) === action ? Math.max(latest, activityTimeMs(activity)) : latest
+  ), 0)
+}
+
+function latestInboundConversationAt(thread: HubThread): number {
+  return thread.activities.reduce((latest, activity) => {
+    if (!isConversationActivity(activity) || activityDirection(activity) !== 'inbound') return latest
+    return Math.max(latest, activityTimeMs(activity))
+  }, 0)
+}
+
+function threadIsUnread(thread: HubThread): boolean {
+  const readAt = latestHubWorkflowAt(thread, 'mark_read')
+  const unreadAt = latestHubWorkflowAt(thread, 'mark_unread')
+  const inboundAt = latestInboundConversationAt(thread)
+  return unreadAt > readAt || inboundAt > readAt
+}
+
+function activeReminderActivity(thread: HubThread): HubActivity | null {
+  const completedAt = latestHubWorkflowAt(thread, 'reminder_completed')
+  return thread.activities
+    .filter((activity) => hubWorkflowAction(activity) === 'reminder_created' && activityTimeMs(activity) > completedAt)
+    .sort((a, b) => activityTimeMs(b) - activityTimeMs(a))[0] || null
+}
+
+function threadReminderState(thread: HubThread): ThreadReminderState {
+  const activity = activeReminderActivity(thread)
+  if (!activity) return { active: false, dueAt: null, note: null }
+  const meta = activityMetadata(activity)
+  return {
+    active: true,
+    dueAt: textValue(meta.reminder_due_at),
+    note: textValue(meta.reminder_note),
+  }
+}
+
+function reminderDueLabel(dueAt: string | null): string {
+  if (!dueAt) return 'soon'
+  const date = new Date(dueAt)
+  if (Number.isNaN(date.getTime())) return 'soon'
+  const today = new Date()
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+  if (date.toDateString() === today.toDateString()) return `today at ${fullTime(dueAt)}`
+  if (date.toDateString() === tomorrow.toDateString()) return `tomorrow at ${fullTime(dueAt)}`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function normalizeProspectPhone(row: ProspectPhoneRow): ProspectPhoneContext | null {
@@ -816,10 +889,10 @@ function buildThreadForProspectPhone({
   activities: HubActivity[]
 }): HubThread {
   const sorted = activities.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  const lastActivity = sorted[0] || null
+  const lastActivity = sorted.find((activity) => !isHubWorkflowActivity(activity)) || sorted[0] || null
   const lastConversation = sorted.find(isConversationActivity) || null
   const display = prospectPhone?.contact_name || displayName(lead, phone || prospectPhone?.phone || null)
-  return {
+  const thread = {
     id,
     lead,
     prospectPhone,
@@ -831,6 +904,7 @@ function buildThreadForProspectPhone({
     starred: lead?.priority === 'hot' || lead?.priority === 'high',
     activities: sorted,
   }
+  return { ...thread, unread: threadIsUnread(thread) }
 }
 
 function sortedAscending(activities: HubActivity[]): HubActivity[] {
@@ -878,7 +952,8 @@ function threadIsDripReady(thread: HubThread): boolean {
 }
 
 function threadHasReminder(thread: HubThread): boolean {
-  return threadIsDripReady(thread) || thread.activities.some((activity) => {
+  if (threadReminderState(thread).active || threadIsDripReady(thread)) return true
+  return thread.activities.some((activity) => {
     const meta = activityMetadata(activity)
     return activity.activity_type === 'task' ||
       activity.activity_type === 'appointment' ||
@@ -1334,6 +1409,8 @@ export function DialerConversationHub({
   const [sendError, setSendError] = useState<string | null>(null)
   const [showReplyTools, setShowReplyTools] = useState(false)
   const [phoneOptedOut, setPhoneOptedOut] = useState(false)
+  const [workflowBusy, setWorkflowBusy] = useState<ThreadWorkflowAction | null>(null)
+  const [workflowStatus, setWorkflowStatus] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const activeThread = useMemo(() => {
@@ -1341,6 +1418,7 @@ export function DialerConversationHub({
   }, [activeThreadId, threads])
   const threadPhone = activeThread?.phone || activeThread?.lead?.phone || null
   const activeLeadId = activeThread?.lead?.id || activeThread?.prospectPhone?.lead_id || null
+  const activeReminder = useMemo(() => activeThread ? threadReminderState(activeThread) : null, [activeThread])
 
   const loadThreads = useCallback(async () => {
     setLoading(true)
@@ -1547,6 +1625,7 @@ export function DialerConversationHub({
   useEffect(() => {
     setMessage('')
     setSendError(null)
+    setWorkflowStatus(null)
     setShowReplyTools(false)
     setComposeMode('sms')
   }, [activeThreadId])
@@ -1828,6 +1907,47 @@ export function DialerConversationHub({
       setSendError(err instanceof Error ? err.message : 'Send failed')
     } finally {
       setSending(false)
+    }
+  }
+
+  async function handleThreadWorkflow(action: ThreadWorkflowAction, dueInDays?: number) {
+    if (!activeThread || workflowBusy) return
+    const dueAt = action === 'reminder_created'
+      ? new Date(Date.now() + (dueInDays ?? 1) * 86_400_000).toISOString()
+      : undefined
+
+    setWorkflowBusy(action)
+    setWorkflowStatus(null)
+    try {
+      const response = await fetch('/api/conversations/thread-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: activeLeadId,
+          phone: threadPhone,
+          action,
+          dueAt,
+          agent,
+          source: 'dialer_prospecting_hub',
+          prospectPhoneId: activeThread.prospectPhone?.id || undefined,
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || 'Could not update conversation state.')
+
+      const message = action === 'reminder_created'
+        ? `Reminder set for ${reminderDueLabel(dueAt || null)}.`
+        : action === 'reminder_completed'
+          ? 'Reminder completed.'
+          : action === 'mark_read'
+            ? 'Marked read.'
+            : 'Marked unread.'
+      setWorkflowStatus(message)
+      await loadThreads()
+    } catch (err) {
+      setWorkflowStatus(err instanceof Error ? err.message : 'Could not update conversation state.')
+    } finally {
+      setWorkflowBusy(null)
     }
   }
 
@@ -2250,24 +2370,78 @@ export function DialerConversationHub({
                     {[formatPhone(threadPhone || '') || 'No phone', leadPropertySummary(activeThread.lead)].filter(Boolean).join(' - ')}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  {activeLeadId && (
+                <div className="flex flex-col items-start gap-2 sm:items-end">
+                  <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
                     <button
                       type="button"
-                      onClick={() => router.push(`/leads/${activeLeadId}`)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
+                      onClick={() => void handleThreadWorkflow(activeThread.unread ? 'mark_read' : 'mark_unread')}
+                      disabled={Boolean(workflowBusy)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-45"
                     >
-                      <Icon name="open_in_new" size="text-sm" /> Lead
+                      <Icon name={workflowBusy === 'mark_read' || workflowBusy === 'mark_unread' ? 'progress_activity' : activeThread.unread ? 'mark_email_read' : 'mark_email_unread'} size="text-sm" className={workflowBusy === 'mark_read' || workflowBusy === 'mark_unread' ? 'animate-spin' : ''} />
+                      {activeThread.unread ? 'Mark Read' : 'Mark Unread'}
                     </button>
-                  )}
-                  {activeLeadId && (
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/dialer?lead_ids=${activeLeadId}&return_to=/dialer`)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#E32E2E] px-3 py-2 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626]"
-                    >
-                      <Icon name="call" size="text-sm" /> Dial
-                    </button>
+                    {activeReminder?.active ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleThreadWorkflow('reminder_completed')}
+                        disabled={Boolean(workflowBusy)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100 transition-colors hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <Icon name={workflowBusy === 'reminder_completed' ? 'progress_activity' : 'task_alt'} size="text-sm" className={workflowBusy === 'reminder_completed' ? 'animate-spin' : ''} /> Done
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void handleThreadWorkflow('reminder_created', 1)}
+                          disabled={Boolean(workflowBusy)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-amber-300/45 hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <Icon name={workflowBusy === 'reminder_created' ? 'progress_activity' : 'notifications'} size="text-sm" className={workflowBusy === 'reminder_created' ? 'animate-spin' : ''} /> 1d
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleThreadWorkflow('reminder_created', 3)}
+                          disabled={Boolean(workflowBusy)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-amber-300/45 hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <Icon name={workflowBusy === 'reminder_created' ? 'progress_activity' : 'event'} size="text-sm" className={workflowBusy === 'reminder_created' ? 'animate-spin' : ''} /> 3d
+                        </button>
+                      </>
+                    )}
+                    {activeLeadId && (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/leads/${activeLeadId}`)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ck-border)] px-3 py-2 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
+                      >
+                        <Icon name="open_in_new" size="text-sm" /> Lead
+                      </button>
+                    )}
+                    {activeLeadId && (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/dialer?lead_ids=${activeLeadId}&return_to=/dialer`)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#E32E2E] px-3 py-2 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626]"
+                      >
+                        <Icon name="call" size="text-sm" /> Dial
+                      </button>
+                    )}
+                  </div>
+                  {(activeReminder?.active || workflowStatus) && (
+                    <div className="max-w-full text-right text-[11px] font-bold text-[var(--ck-text-muted)]">
+                      {activeReminder?.active && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-amber-100">
+                          <Icon name="notifications" size="text-xs" /> Reminder {reminderDueLabel(activeReminder.dueAt)}
+                        </span>
+                      )}
+                      {workflowStatus && (
+                        <span className="ml-2 inline-flex rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[var(--ck-text-muted)]">
+                          {workflowStatus}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               </header>
