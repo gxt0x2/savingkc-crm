@@ -88,4 +88,32 @@ describe('conversation thread state actions', () => {
       },
     })
   })
+
+  it('logs tag add and normalizes the tag', async () => {
+    const response = await POST(makeRequest({
+      action: 'tag_added',
+      tag: 'Appointment Made',
+    }))
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.tag).toBe('appointment_made')
+    expect(insertedActivities[0]).toMatchObject({
+      description: expect.stringContaining('Appointment Made'),
+      metadata: {
+        hub_action: 'tag_added',
+        hub_tag: 'appointment_made',
+        hub_tag_label: 'Appointment Made',
+      },
+    })
+  })
+
+  it('requires a valid tag for tag actions', async () => {
+    const response = await POST(makeRequest({ action: 'tag_removed', tag: ' ' }))
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain('tag')
+    expect(insertedActivities).toHaveLength(0)
+  })
 })

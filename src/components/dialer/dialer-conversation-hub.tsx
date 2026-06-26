@@ -29,7 +29,7 @@ type TemplateCategory =
   | 'prospecting_wrong_number'
   | 'prospecting_opt_out'
 type PhoneQualityStatus = 'unknown' | 'verified' | 'wrong_number' | 'dnc' | 'spam' | 'blocked'
-type ThreadWorkflowAction = 'mark_read' | 'mark_unread' | 'reminder_created' | 'reminder_completed'
+type ThreadWorkflowAction = 'mark_read' | 'mark_unread' | 'reminder_created' | 'reminder_completed' | 'tag_added' | 'tag_removed'
 
 interface HubLead {
   id: string
@@ -106,6 +106,12 @@ interface ThreadReminderState {
   active: boolean
   dueAt: string | null
   note: string | null
+}
+
+interface ConversationTagOption {
+  id: string
+  label: string
+  color: string
 }
 
 interface SmsTemplateRow {
@@ -457,7 +463,20 @@ const PRIORITY_OPTIONS = [
   { value: 'low', label: 'Cold' },
 ]
 const SUPPRESSED_PHONE_STATUSES = new Set<PhoneQualityStatus>(['wrong_number', 'dnc', 'spam', 'blocked'])
-const THREAD_WORKFLOW_ACTIONS = new Set<ThreadWorkflowAction>(['mark_read', 'mark_unread', 'reminder_created', 'reminder_completed'])
+const THREAD_WORKFLOW_ACTIONS = new Set<ThreadWorkflowAction>(['mark_read', 'mark_unread', 'reminder_created', 'reminder_completed', 'tag_added', 'tag_removed'])
+const DEFAULT_CONVERSATION_TAGS: ConversationTagOption[] = [
+  { id: 'call_scheduled', label: 'Call Scheduled', color: '#42A5F5' },
+  { id: 'voicemail', label: 'Voicemail', color: '#F7B955' },
+  { id: 'too_high', label: 'Too High', color: '#7D9BFF' },
+  { id: 'buyer', label: 'Buyer', color: '#8D7DFF' },
+  { id: 'sold', label: 'Sold', color: '#B8C2CC' },
+  { id: 'closed_deal', label: 'Closed Deal', color: '#EF4D6D' },
+  { id: 'under_contract', label: 'Under Contract', color: '#F7B955' },
+  { id: 'realtor_referral', label: 'Realtor Referral', color: '#72D398' },
+  { id: 'appointment_made', label: 'Appointment Made', color: '#26C6DA' },
+]
+const TAG_COLOR_FALLBACKS = ['#42A5F5', '#F7B955', '#72D398', '#EF4D6D', '#8D7DFF', '#B8C2CC']
+const DEFAULT_CONVERSATION_TAG_MAP = new Map(DEFAULT_CONVERSATION_TAGS.map((tag) => [tag.id, tag]))
 const PHONE_STATUS_LABELS: Record<PhoneQualityStatus, string> = {
   unknown: 'unknown',
   verified: 'verified',
@@ -469,6 +488,31 @@ const PHONE_STATUS_LABELS: Record<PhoneQualityStatus, string> = {
 
 function textValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+function normalizeTagId(value: string | null | undefined): string {
+  return (value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function conversationTagLabel(tagId: string): string {
+  return DEFAULT_CONVERSATION_TAG_MAP.get(tagId)?.label || templateDisplayName(tagId)
+}
+
+function conversationTagColor(tagId: string, index = 0): string {
+  return DEFAULT_CONVERSATION_TAG_MAP.get(tagId)?.color || TAG_COLOR_FALLBACKS[index % TAG_COLOR_FALLBACKS.length]
+}
+
+function conversationTagOption(tagId: string, index = 0): ConversationTagOption {
+  const normalized = normalizeTagId(tagId)
+  return DEFAULT_CONVERSATION_TAG_MAP.get(normalized) || {
+    id: normalized,
+    label: conversationTagLabel(normalized),
+    color: conversationTagColor(normalized, index),
+  }
 }
 
 function activityMetadata(activity: HubActivity): Record<string, unknown> {
@@ -613,6 +657,11 @@ function isHubWorkflowActivity(activity: HubActivity): boolean {
   return Boolean(hubWorkflowAction(activity))
 }
 
+function activityTagId(activity: HubActivity): string | null {
+  const meta = activityMetadata(activity)
+  return normalizeTagId(textValue(meta.hub_tag) || textValue(meta.tag) || textValue(meta.tag_name) || '')
+}
+
 function latestHubWorkflowAt(thread: HubThread, action: ThreadWorkflowAction): number {
   return thread.activities.reduce((latest, activity) => (
     hubWorkflowAction(activity) === action ? Math.max(latest, activityTimeMs(activity)) : latest
@@ -661,6 +710,39 @@ function reminderDueLabel(dueAt: string | null): string {
   if (date.toDateString() === today.toDateString()) return `today at ${fullTime(dueAt)}`
   if (date.toDateString() === tomorrow.toDateString()) return `tomorrow at ${fullTime(dueAt)}`
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function explicitThreadTagIds(thread: HubThread): string[] {
+  const tags = new Set<string>()
+  for (const activity of sortedAscending(thread.activities)) {
+    const action = hubWorkflowAction(activity)
+    if (action !== 'tag_added' && action !== 'tag_removed') continue
+    const tag = activityTagId(activity)
+    if (!tag) continue
+    if (action === 'tag_removed') tags.delete(tag)
+    else tags.add(tag)
+  }
+  return Array.from(tags)
+}
+
+function derivedThreadTagIds(thread: HubThread): string[] {
+  const tags = new Set<string>()
+  const station = normalizeTagId(thread.lead?.station || '')
+  if (station === 'appointment_set' || station === 'appt_set') tags.add('appointment_made')
+  if (station === 'under_contract' || station === 'contract_signed') tags.add('under_contract')
+  if (station === 'closed' || station === 'closed_won') tags.add('closed_deal')
+  if (station === 'closed_lost' || station === 'dead' || station === 'not_interested') tags.add('sold')
+  if (thread.activities.some((activity) => activity.activity_type === 'voicemail')) tags.add('voicemail')
+  return Array.from(tags)
+}
+
+function threadTagIds(thread: HubThread): string[] {
+  return Array.from(new Set([...explicitThreadTagIds(thread), ...derivedThreadTagIds(thread)]))
+}
+
+function threadMatchesTag(thread: HubThread, tagId: string): boolean {
+  const normalized = normalizeTagId(tagId)
+  return Boolean(normalized && threadTagIds(thread).includes(normalized))
 }
 
 function normalizeProspectPhone(row: ProspectPhoneRow): ProspectPhoneContext | null {
@@ -1657,13 +1739,7 @@ export function DialerConversationHub({
       if (campaignScope !== 'all_campaigns' && !threadMatchesCampaignList(thread, campaignScope)) return false
       if (agentScope !== 'all' && (thread.lead?.assigned_agent || 'Unassigned') !== agentScope) return false
       if (tagScope !== 'all') {
-        const tags = [
-          thread.lead?.priority || null,
-          thread.lead?.station || null,
-          threadStatus(thread),
-          prospectLabel(thread.prospectPhone),
-        ].filter(Boolean).join(' ').toLowerCase()
-        if (!tags.includes(tagScope.toLowerCase())) return false
+        if (!threadMatchesTag(thread, tagScope)) return false
       }
       if (query) {
         const haystack = [
@@ -1733,16 +1809,16 @@ export function DialerConversationHub({
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b))
   }, [threads])
-  const tagOptions = useMemo(() => {
-    const tags = new Set<string>()
+  const tagOptions = useMemo<ConversationTagOption[]>(() => {
+    const tagIds = new Set<string>(DEFAULT_CONVERSATION_TAGS.map((tag) => tag.id))
     threads.forEach((thread) => {
-      if (thread.lead?.priority) tags.add(thread.lead.priority)
-      if (thread.lead?.station) tags.add(thread.lead.station.replace(/_/g, ' '))
-      tags.add(threadStatus(thread))
-      const prospect = prospectLabel(thread.prospectPhone)
-      if (prospect) tags.add(prospect)
+      threadTagIds(thread).forEach((tag) => tagIds.add(tag))
     })
-    return Array.from(tags).sort((a, b) => a.localeCompare(b)).slice(0, 30)
+    const dynamic = Array.from(tagIds)
+      .filter((tag) => !DEFAULT_CONVERSATION_TAG_MAP.has(tag))
+      .sort((a, b) => conversationTagLabel(a).localeCompare(conversationTagLabel(b)))
+      .map((tag, index) => conversationTagOption(tag, index))
+    return [...DEFAULT_CONVERSATION_TAGS, ...dynamic].slice(0, 30)
   }, [threads])
   const trackerRows = useMemo(() => campaignTrackerRows(threads), [threads])
   const selectedCampaignThreads = useMemo(() => filterCampaignThreads(threads, campaignDraft), [campaignDraft, threads])
@@ -1797,22 +1873,14 @@ export function DialerConversationHub({
   }, [threads])
 
   const tagMetrics = useMemo<TagMetric[]>(() => {
-    const colors = ['#F7B955', '#7D9BFF', '#72D398', '#FF8A8A', '#B987FF', '#6DD5ED']
     const counts = new Map<string, number>()
     threads.forEach((thread) => {
-      const tags = [
-        thread.lead?.priority ? `${thread.lead.priority} priority` : null,
-        thread.lead?.station ? thread.lead.station.replace(/_/g, ' ') : null,
-        thread.lead?.county ? `${thread.lead.county} county` : null,
-        thread.lead?.source || null,
-        threadStatus(thread),
-      ].filter(Boolean) as string[]
-      tags.forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1))
+      threadTagIds(thread).forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1))
     })
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
-      .map(([label, count], index) => ({ label, count, tone: colors[index % colors.length] }))
+      .map(([tag, count], index) => ({ label: conversationTagLabel(tag), count, tone: conversationTagColor(tag, index) }))
   }, [threads])
 
   const leadBreakdown = useMemo(() => {
@@ -2112,9 +2180,9 @@ export function DialerConversationHub({
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[76px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[76px_minmax(0,1fr)]">
         <HubSideNav tabs={viewTabs} activeView={view} onViewChange={setView} />
-        <div className={`${view === 'inbox' ? 'min-h-0 overflow-hidden' : 'min-h-0 overflow-y-auto'}`}>
+        <div className={`${view === 'inbox' ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'h-full min-h-0 overflow-y-auto'}`}>
       {view === 'dashboard' && (
         <HubDashboard
           totalThreads={threads.length}
@@ -2238,17 +2306,11 @@ export function DialerConversationHub({
                       {agentOptions.map((agentName) => <option key={agentName} value={agentName}>{agentName}</option>)}
                     </select>
                   </label>
-                  <label className="block">
-                    <span className="sr-only">Tags</span>
-                    <select
-                      value={tagScope}
-                      onChange={(event) => setTagScope(event.target.value)}
-                      className="h-10 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-xs font-black uppercase tracking-wider text-[var(--ck-text)]"
-                    >
-                      <option value="all">Tags</option>
-                      {tagOptions.map((tag) => <option key={tag} value={tag}>{templateDisplayName(tag)}</option>)}
-                    </select>
-                  </label>
+                  <TagFilterDropdown
+                    options={tagOptions}
+                    selectedTag={tagScope}
+                    onSelect={setTagScope}
+                  />
                   <button
                     type="button"
                     onClick={() => setFilter('reminders')}
@@ -2276,7 +2338,7 @@ export function DialerConversationHub({
                 <FilterChip label={inboxTabs.find((tab) => tab.id === filter)?.label || 'All'} onClear={() => setFilter('all')} />
                 {campaignScope !== 'all_campaigns' && <FilterChip label={campaignListOption(campaignScope).label} onClear={() => setCampaignScope('all_campaigns')} />}
                 {agentScope !== 'all' && <FilterChip label={agentScope} onClear={() => setAgentScope('all')} />}
-                {tagScope !== 'all' && <FilterChip label={templateDisplayName(tagScope)} onClear={() => setTagScope('all')} />}
+                {tagScope !== 'all' && <FilterChip label={conversationTagLabel(tagScope)} onClear={() => setTagScope('all')} />}
                 {search.trim() && <FilterChip label={`Search: ${search.trim()}`} onClear={() => setSearch('')} />}
                 <button
                   type="button"
@@ -2611,6 +2673,7 @@ export function DialerConversationHub({
               activities={activeActivities}
               agent={agent}
               phoneOptedOut={phoneOptedOut}
+              tagOptions={tagOptions}
               onOpenLead={() => activeLeadId && router.push(`/leads/${activeLeadId}`)}
               onRefresh={() => {
                 void loadActiveActivities()
@@ -2723,6 +2786,66 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
         <Icon name="close" size="text-xs" />
       </button>
     </span>
+  )
+}
+
+function TagFilterDropdown({
+  options,
+  selectedTag,
+  onSelect,
+}: {
+  options: ConversationTagOption[]
+  selectedTag: string
+  onSelect: (tag: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const selected = selectedTag !== 'all' ? conversationTagOption(selectedTag) : null
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-10 w-full items-center justify-between gap-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-xs font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[var(--ck-border-strong)]"
+      >
+        <span className="inline-flex min-w-0 items-center gap-2 truncate">
+          {selected && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: selected.color }} />}
+          <span className="truncate">{selected?.label || 'Tags'}</span>
+        </span>
+        <Icon name="expand_more" size="text-base" className={`shrink-0 text-[var(--ck-text-dim)] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-[calc(100%+6px)] z-50 w-56 overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] shadow-xl">
+          <button
+            type="button"
+            onClick={() => {
+              onSelect('all')
+              setOpen(false)
+            }}
+            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-bold transition-colors hover:bg-white/[0.04] ${selectedTag === 'all' ? 'text-[var(--ck-text)]' : 'text-[var(--ck-text-muted)]'}`}
+          >
+            <span className="h-2.5 w-2.5 rounded-full border border-[var(--ck-border)]" />
+            All Tags
+          </button>
+          <div className="max-h-72 overflow-y-auto py-1">
+            {options.map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => {
+                  onSelect(tag.id)
+                  setOpen(false)
+                }}
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-bold transition-colors hover:bg-white/[0.04] ${selectedTag === tag.id ? 'bg-white/[0.05] text-[var(--ck-text)]' : 'text-[var(--ck-text-muted)]'}`}
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: tag.color }} />
+                <span className="truncate">{tag.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -3482,6 +3605,7 @@ function SellerRail({
   activities,
   agent,
   phoneOptedOut,
+  tagOptions,
   onOpenLead,
   onRefresh,
   onPhoneSuppressionChange,
@@ -3490,6 +3614,7 @@ function SellerRail({
   activities: HubActivity[]
   agent: string
   phoneOptedOut: boolean
+  tagOptions: ConversationTagOption[]
   onOpenLead: () => void
   onRefresh: () => void
   onPhoneSuppressionChange: (isSuppressed: boolean) => void
@@ -3500,8 +3625,10 @@ function SellerRail({
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionTone, setActionTone] = useState<'success' | 'error' | null>(null)
   const [optimisticPhoneStatus, setOptimisticPhoneStatus] = useState<PhoneQualityStatus | null>(null)
+  const [customTag, setCustomTag] = useState('')
   const loggedPhoneStatus = phoneStatusFromActivities(activities)
   const phoneStatus = optimisticPhoneStatus || (loggedPhoneStatus !== 'unknown' ? loggedPhoneStatus : phoneOptedOut ? 'dnc' : 'unknown')
+  const currentTagIds = threadTagIds(thread)
   const mapHref = mapsUrl(lead)
   const zillowHref = zillowUrl(lead)
   const hasPhone = Boolean(thread.phone || lead?.phone)
@@ -3643,6 +3770,44 @@ function SellerRail({
     }
   }
 
+  async function handleTagAction(tagId: string, nextActive?: boolean) {
+    const normalized = normalizeTagId(tagId)
+    if (!normalized || savingAction) return
+    const isActive = currentTagIds.includes(normalized)
+    const shouldAdd = nextActive ?? !isActive
+    const action: ThreadWorkflowAction = shouldAdd ? 'tag_added' : 'tag_removed'
+
+    setSavingAction(`tag:${normalized}`)
+    setActionMessage(null)
+    setActionTone(null)
+    try {
+      const response = await fetch('/api/conversations/thread-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: lead?.id || thread.prospectPhone?.lead_id || null,
+          phone: thread.phone || lead?.phone,
+          action,
+          tag: normalized,
+          agent,
+          source: 'dialer_prospecting_hub',
+          prospectPhoneId: thread.prospectPhone?.id || undefined,
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || 'Could not update tag.')
+      if (action === 'tag_added') setCustomTag('')
+      setActionMessage(`${conversationTagLabel(normalized)} ${action === 'tag_added' ? 'tag added.' : 'tag removed.'}`)
+      setActionTone('success')
+      onRefresh()
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : 'Could not update tag.')
+      setActionTone('error')
+    } finally {
+      setSavingAction(null)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="text-center">
@@ -3663,6 +3828,71 @@ function SellerRail({
         <RailLine icon="location_on" value={leadPropertySummary(lead) || 'No property'} />
         <RailLine icon="sell" value={lead?.station ? lead.station.replace(/_/g, ' ') : 'No stage'} />
         <RailLine icon="verified" value={`Phone: ${PHONE_STATUS_LABELS[phoneStatus]}`} />
+      </div>
+
+      <div className="space-y-3 border-t border-[var(--ck-border)] pt-4">
+        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Tags</p>
+        <div className="flex flex-wrap gap-1.5">
+          {currentTagIds.length === 0 ? (
+            <span className="rounded-full border border-[var(--ck-border)] px-2 py-1 text-[10px] font-bold text-[var(--ck-text-dim)]">No tags</span>
+          ) : currentTagIds.map((tag, index) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => void handleTagAction(tag, false)}
+              disabled={Boolean(savingAction)}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[10px] font-bold text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] disabled:cursor-not-allowed disabled:opacity-50"
+              title={`Remove ${conversationTagLabel(tag)}`}
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: conversationTagColor(tag, index) }} />
+              {conversationTagLabel(tag)}
+              <Icon name="close" size="text-xs" />
+            </button>
+          ))}
+        </div>
+        <div className="grid max-h-36 grid-cols-1 gap-1 overflow-y-auto pr-1">
+          {tagOptions.slice(0, 10).map((tag) => {
+            const active = currentTagIds.includes(tag.id)
+            const busy = savingAction === `tag:${tag.id}`
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => void handleTagAction(tag.id)}
+                disabled={Boolean(savingAction)}
+                className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                  active
+                    ? 'border-[#2787ff]/45 bg-[#2787ff]/12 text-[var(--ck-text)]'
+                    : 'border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+                }`}
+              >
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: tag.color }} />
+                  <span className="truncate">{tag.label}</span>
+                </span>
+                <Icon name={busy ? 'progress_activity' : active ? 'check' : 'add'} size="text-sm" className={busy ? 'animate-spin' : ''} />
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={customTag}
+            onChange={(event) => setCustomTag(event.target.value)}
+            placeholder="Custom tag"
+            className="h-9 min-w-0 flex-1 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 text-xs font-semibold text-[var(--ck-text)] placeholder:text-[var(--ck-text-dim)] outline-none focus:border-[#2787ff]"
+          />
+          <button
+            type="button"
+            onClick={() => void handleTagAction(customTag, true)}
+            disabled={!normalizeTagId(customTag) || Boolean(savingAction)}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#2787ff] text-white transition-colors hover:bg-[#126fe5] disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Add custom tag"
+            title="Add custom tag"
+          >
+            <Icon name="add" size="text-base" />
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 border-t border-[var(--ck-border)] pt-4">
