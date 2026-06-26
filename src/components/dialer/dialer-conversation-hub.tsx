@@ -114,6 +114,14 @@ interface ConversationTagOption {
   color: string
 }
 
+interface ThreadRowSignal {
+  id: string
+  label: string
+  icon: string
+  active: boolean
+  color: string
+}
+
 interface SmsTemplateRow {
   id: string
   name: string
@@ -500,6 +508,17 @@ function normalizeTagId(value: string | null | undefined): string {
 
 function conversationTagLabel(tagId: string): string {
   return DEFAULT_CONVERSATION_TAG_MAP.get(tagId)?.label || templateDisplayName(tagId)
+}
+
+function conversationTagCompactLabel(tagId: string): string {
+  const compactLabels: Record<string, string> = {
+    appointment_made: 'Appt Made',
+    call_scheduled: 'CallSched',
+    closed_deal: 'Closed',
+    realtor_referral: 'Realtor',
+    under_contract: 'Contract',
+  }
+  return compactLabels[tagId] || conversationTagLabel(tagId)
 }
 
 function conversationTagColor(tagId: string, index = 0): string {
@@ -1056,6 +1075,26 @@ function threadStatus(thread: HubThread): string {
   if (threadIsUnanswered(thread)) return 'Unanswered'
   if (!thread.lead?.assigned_agent) return 'Unassigned'
   return 'Nurturing'
+}
+
+function threadRowSignals(thread: HubThread): ThreadRowSignal[] {
+  const phoneStatus = phoneStatusFromActivities(thread.activities)
+  const suppressed = SUPPRESSED_PHONE_STATUSES.has(phoneStatus)
+  return [
+    { id: 'unread', label: 'Unread', icon: 'mail', active: thread.unread, color: '#5867E8' },
+    { id: 'unanswered', label: 'Unanswered', icon: 'hourglass_empty', active: threadIsUnanswered(thread), color: '#2EA8E5' },
+    { id: 'hot', label: 'Hot', icon: 'local_fire_department', active: thread.starred, color: '#EF4D6D' },
+    { id: 'reminder', label: 'Reminder', icon: 'notifications', active: threadHasReminder(thread), color: '#EF4D6D' },
+    { id: 'drip', label: 'Drip ready', icon: 'water_drop', active: threadIsDripReady(thread), color: '#7D9BFF' },
+    { id: 'no_status', label: 'No Status', icon: 'question_mark', active: threadHasNoStatus(thread), color: '#F7B955' },
+    {
+      id: 'phone_quality',
+      label: suppressed ? PHONE_STATUS_LABELS[phoneStatus] : 'Phone OK',
+      icon: suppressed ? 'block' : 'check',
+      active: suppressed || phoneStatus === 'verified',
+      color: suppressed ? '#EF4D6D' : '#72D398',
+    },
+  ]
 }
 
 function averageReplyMetric(threads: HubThread[]): ReplyMetric {
@@ -2404,6 +2443,7 @@ export function DialerConversationHub({
                         <span className="truncate text-sm font-black text-[var(--ck-text)]">{threadPrimaryTitle(thread)}</span>
                         {thread.starred && <Icon name="star" size="text-xs" className="text-amber-300" filled />}
                       </span>
+                      <ThreadRowIndicators thread={thread} />
                       <span className="mt-1 block truncate text-[11px] text-[var(--ck-text-muted)]">{threadSnippet(thread.lastActivity)}</span>
                       <span className="mt-1 block truncate text-[10px] text-[var(--ck-text-dim)]">
                         {threadStatus(thread)} - {[secondaryTitle || prospectLabel(thread.prospectPhone), leadPropertySummary(thread.lead) || formatPhone(thread.phone || '')].filter(Boolean).join(' - ') || 'Prospecting conversation'}
@@ -2785,6 +2825,53 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
       >
         <Icon name="close" size="text-xs" />
       </button>
+    </span>
+  )
+}
+
+function ThreadRowIndicators({ thread }: { thread: HubThread }) {
+  const signals = threadRowSignals(thread)
+  const tagIds = threadTagIds(thread)
+  const tags = tagIds.slice(0, 2).map((tagId, index) => conversationTagOption(tagId, index))
+  const hiddenTagCount = Math.max(0, tagIds.length - tags.length)
+
+  return (
+    <span className="mt-1 flex min-w-0 items-center gap-1.5">
+      <span className="flex shrink-0 items-center gap-1">
+        {signals.map((signal) => (
+          <span
+            key={signal.id}
+            title={signal.label}
+            className={`inline-flex h-4 w-4 items-center justify-center rounded-full border text-[9px] ${
+              signal.active
+                ? 'border-transparent text-white'
+                : 'border-[var(--ck-border)] bg-transparent text-[var(--ck-text-dim)]'
+            }`}
+            style={signal.active ? { background: signal.color } : undefined}
+          >
+            <Icon name={signal.icon} size="text-[10px]" filled={signal.active} />
+          </span>
+        ))}
+      </span>
+      {tags.length > 0 && (
+        <span className="flex min-w-0 items-center gap-1">
+          {tags.map((tag) => (
+            <span
+              key={tag.id}
+              className="inline-flex min-w-0 max-w-[88px] items-center gap-1 rounded-sm border border-[var(--ck-border)] bg-white/[0.03] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--ck-text-muted)]"
+              title={tag.label}
+            >
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tag.color }} />
+              <span className="truncate">{conversationTagCompactLabel(tag.id)}</span>
+            </span>
+          ))}
+          {hiddenTagCount > 0 && (
+            <span className="shrink-0 rounded-sm border border-[var(--ck-border)] px-1 py-0.5 text-[9px] font-black leading-none text-[var(--ck-text-dim)]">
+              +{hiddenTagCount}
+            </span>
+          )}
+        </span>
+      )}
     </span>
   )
 }
