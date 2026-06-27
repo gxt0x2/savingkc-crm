@@ -44,10 +44,10 @@ async function handle(req: NextRequest) {
 
   const url = new URL(req.url)
   const dryRun = parseBool(url.searchParams.get('dryRun'))
-  const latestCompletedDate = addDays(chicagoDate(), -1)
+  const latestReportableDate = chicagoDate()
   const lookbackDays = readLookbackDays(url.searchParams.get('lookbackDays'))
-  const requestedUntil = parseDate(url.searchParams.get('until')) || latestCompletedDate
-  const until = requestedUntil > latestCompletedDate ? latestCompletedDate : requestedUntil
+  const requestedUntil = parseDate(url.searchParams.get('until')) || latestReportableDate
+  const until = requestedUntil > latestReportableDate ? latestReportableDate : requestedUntil
   const since = parseDate(url.searchParams.get('since')) || addDays(until, -(lookbackDays - 1))
 
   try {
