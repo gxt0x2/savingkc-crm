@@ -27,6 +27,7 @@ import {
 } from '@/lib/marketing/ads-command-seed'
 import { getMojoHealth } from '@/lib/marketing/mojo-health'
 import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceKey, paidSourceLabel, type PaidSourceKey } from '@/lib/marketing/paid-source'
+import { paidClickCount } from '@/lib/marketing/paid-click-count'
 import { buildClickCaptureHealth, type ClickCaptureHealth } from '@/lib/marketing/click-capture-health'
 import { isBotOnlyPaidSession } from '@/lib/marketing/paid-session-filter'
 import { buildTrafficQualityReport, type TrafficQualityReport } from '@/lib/marketing/traffic-quality'
@@ -614,7 +615,7 @@ function buildSeries(
 
   for (const [date, trackedClicks] of trackedClicksByDate) {
     const current = byDate.get(date) || seriesRowForDate(date)
-    current.clicks = Math.max(current.clicks, trackedClicks.size)
+    current.clicks = paidClickCount(current.clicks, trackedClicks.size)
     byDate.set(date, current)
   }
 
@@ -760,7 +761,7 @@ function buildFunnel(
 
   const qualified = leadRows.filter((lead) => QUALIFIED_STAGES.has(normalizeStation(lead.station))).length
   const submittedLeads = leadRows.length
-  const clickCount = Math.max(adTotals.clicks, sessions.size)
+  const clickCount = paidClickCount(adTotals.clicks, sessions.size)
   const clickBreakdown = campaignClicks.size > 0 ? campaignClicks : trackedCampaignClicks
   const live: FunnelRow[] = [
     {
@@ -866,7 +867,7 @@ function buildKpis(
 ): KpiItem[] {
   const current = totals(currentRows)
   const previous = totals(previousRows)
-  const currentClicks = Math.max(current.clicks, livePaidClickIds(trackingRows).size)
+  const currentClicks = paidClickCount(current.clicks, livePaidClickIds(trackingRows).size)
   const leads = leadRows.length
   const previousLeads = previousLeadRows.length
   const qualified = leadRows.filter((lead) => QUALIFIED_STAGES.has(normalizeStation(lead.station))).length
