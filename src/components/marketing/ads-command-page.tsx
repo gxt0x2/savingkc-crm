@@ -88,6 +88,11 @@ type DashboardSectionSize = 'full' | 'half'
 
 const SEARCH_TERM_PAGE_SIZE = 10
 const OUTBOX_PAGE_SIZE = 5
+const PAID_SOURCE_QUERY_ALIAS: Record<PaidSourceFilter, string> = {
+  all: 'all',
+  google_ads: 'g',
+  openai_ads: 'oai',
+}
 const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
 const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
 const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trafficQuality', 'clickCaptureHealth', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'openAIAdsHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
@@ -2596,12 +2601,12 @@ export function AdsCommandPage() {
     async function loadAdsData() {
       controller?.abort()
       controller = new AbortController()
-      const params = new URLSearchParams({ period: reportingPeriod, source: paidSourceFilter })
+      const params = new URLSearchParams({ period: reportingPeriod, src: PAID_SOURCE_QUERY_ALIAS[paidSourceFilter] })
       const previewToken = new URLSearchParams(window.location.search).get('adsPreviewToken')
       if (previewToken) params.set('previewToken', previewToken)
 
       try {
-        const response = await fetch(`/data/live?${params.toString()}`, { cache: 'no-store', signal: controller.signal })
+        const response = await fetch(`/read-model?${params.toString()}`, { cache: 'no-store', signal: controller.signal })
         if (!response.ok) return
         const data = await response.json() as AdsCommandData
         if (!cancelled) setAdsData(data)
