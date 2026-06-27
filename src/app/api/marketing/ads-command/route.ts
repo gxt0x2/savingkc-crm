@@ -324,6 +324,12 @@ function readPaidSourceFilter(value: string | null): PaidSourceFilter {
   return 'all'
 }
 
+function readPaidSourceAlias(value: string | null): PaidSourceFilter {
+  if (value === 'g') return 'google_ads'
+  if (value === 'oai') return 'openai_ads'
+  return readPaidSourceFilter(value)
+}
+
 function paidSourceMatches(filter: PaidSourceFilter, source: PaidSourceKey): boolean {
   return filter === 'all' || filter === source
 }
@@ -1635,7 +1641,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const period = readPeriod(url.searchParams.get('period'))
-    const paidSourceFilter = readPaidSourceFilter(url.searchParams.get('source'))
+    const paidSourceFilter = readPaidSourceAlias(url.searchParams.get('src') || url.searchParams.get('source'))
     const rows = await fetchRows(period, paidSourceFilter)
     const mojoHealth = await getMojoHealth(supabaseAdmin(), {
       periodSinceIso: isoStart(rows.range.since),
