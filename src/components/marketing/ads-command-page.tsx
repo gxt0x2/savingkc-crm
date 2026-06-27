@@ -51,6 +51,7 @@ import {
   type SeriesRow,
 } from '@/lib/marketing/ads-command-seed'
 import { EMPTY_CLICK_CAPTURE_HEALTH, type ClickCaptureHealth, type ClickCaptureSourceHealth } from '@/lib/marketing/click-capture-health'
+import { paidClickCount } from '@/lib/marketing/paid-click-count'
 import { EMPTY_TRAFFIC_QUALITY_REPORT, type TrafficQualityReport, type TrafficQualityStatus } from '@/lib/marketing/traffic-quality'
 
 type MetricKey = 'spend' | 'cpl' | 'leads' | 'qualified' | 'clicks' | 'conversions'
@@ -1831,8 +1832,9 @@ function LatestPaidJourneys({
   const rows = filtered.slice(start, start + limit)
   const clicks = filtered.length
   const conversions = filtered.filter((session) => session.converted).length
-  const paidClicks = Math.max(platformClicks, clicks)
-  const unmatchedClicks = Math.max(0, paidClicks - clicks)
+  const paidClicks = paidClickCount(platformClicks, clicks)
+  const unmatchedClicks = platformClicks > 0 ? Math.max(0, platformClicks - clicks) : 0
+  const extraTrackedSessions = platformClicks > 0 ? Math.max(0, clicks - platformClicks) : 0
   const cr = paidClicks ? (conversions / paidClicks) * 100 : 0
   const sourceLabel = source === 'openai_ads' ? 'OpenAI Ads' : source === 'google_ads' ? 'Google Ads' : 'paid ads'
   const attributionHint = source === 'openai_ads'
@@ -1861,6 +1863,11 @@ function LatestPaidJourneys({
         <div className="pj-gap">
           <b>{formatNum(unmatchedClicks)} {sourceLabel} click{unmatchedClicks === 1 ? '' : 's'} imported without a replayable website session.</b>
           <span>Journey rows appear only after the landing page sends a tracking event. This usually means the visitor bounced before the page loaded, blocked tracking, or the click arrived without the expected {attributionHint}.</span>
+        </div>
+      ) : extraTrackedSessions > 0 ? (
+        <div className="pj-gap">
+          <b>{formatNum(extraTrackedSessions)} replayable {sourceLabel} session{extraTrackedSessions === 1 ? '' : 's'} exceed imported platform clicks.</b>
+          <span>The click total is kept aligned to the ad platform. Extra sessions are first-party CRM attribution signals and may include refreshes, previews, or browser sessions the platform report did not count as billable clicks.</span>
         </div>
       ) : null}
       <div className="pj-controls">
@@ -1892,7 +1899,7 @@ function LatestPaidJourneys({
         {rows.length === 0 ? (
           <div className="pj-empty">
             <b>No replayable sessions for this filter yet.</b>
-            <span>{paidClicks > 0 ? `${formatNum(paidClicks)} platform click${paidClicks === 1 ? '' : 's'} imported, but no matching on-site journey is available for this source and period.` : 'Platform clicks and on-site journeys will appear here after paid traffic reaches the landing page.'}</span>
+            <span>{platformClicks > 0 ? `${formatNum(platformClicks)} platform click${platformClicks === 1 ? '' : 's'} imported, but no matching on-site journey is available for this source and period.` : 'Platform clicks and on-site journeys will appear here after paid traffic reaches the landing page.'}</span>
           </div>
         ) : rows.map((session) => {
           const progress = microProgress(session.progress)
