@@ -227,6 +227,7 @@ const CAMPAIGN_COLORS = ['#14b8a6', '#60a5fa', '#22c55e', '#eab308', '#f87171', 
 const QUALIFIED_STAGES = new Set(['qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'contract_signed', 'closed'])
 const PPC_LEAD_SOURCES = ['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'openai_ads', 'openai-ads', 'paid-search']
 const OPENAI_ADS_EXPORTABLE_EVENTS = new Set(['lead_submitted', 'qualified_lead', 'appointment_booked', 'call_connected_60s', 'call_connected_2m', 'call_connected_5m'])
+const TRACKING_EVENT_DASHBOARD_LIMIT = 10_000
 const TEST_MARKER_RE = /(^|[^a-z0-9])(codex|dummy|probe|smoke|test|internaltesting|internal-testing|internal_filter|internalfilter|filtercheck|hashcheck|finalhash)([^a-z0-9]|$)/i
 const CHICAGO_TIME_ZONE = 'America/Chicago'
 
@@ -1462,7 +1463,7 @@ async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter
     db.from('openai_ads_campaign_daily').select('date,account_id,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', range.since).lte('date', range.until).order('date', { ascending: true }),
     db.from('openai_ads_campaign_daily').select('date,account_id,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', previousRange.since).lte('date', previousRange.until),
     db.from('google_ads_search_term_daily').select('date,campaign_id,campaign_name,ad_group_id,ad_group_name,search_term,keyword_text,keyword_match_type,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', range.since).lte('date', range.until).order('clicks', { ascending: false }).limit(500),
-    db.from('ppc_tracking_events').select('id,event_id,event_name,event_category,event_time,session_id,visitor_id,lead_id,page_path,page_location,page_referrer,traffic_source,campaign,utm_source,utm_medium,utm_campaign,utm_term,utm_content,gclid,gbraid,wbraid,gad_source,gad_campaignid,gad_adgroupid,form_step,form_status,situation_raw,timeline_raw,condition_raw,phone_number,is_test,payload,created_at').gte('event_time', isoStart(range.since)).lt('event_time', isoAfter(range.until)).order('event_time', { ascending: true }).limit(5000),
+    db.from('ppc_tracking_events').select('id,event_id,event_name,event_category,event_time,session_id,visitor_id,lead_id,page_path,page_location,page_referrer,traffic_source,campaign,utm_source,utm_medium,utm_campaign,utm_term,utm_content,gclid,gbraid,wbraid,gad_source,gad_campaignid,gad_adgroupid,form_step,form_status,situation_raw,timeline_raw,condition_raw,phone_number,is_test,payload,created_at').gte('event_time', isoStart(range.since)).lt('event_time', isoAfter(range.until)).order('event_time', { ascending: false }).limit(TRACKING_EVENT_DASHBOARD_LIMIT),
     db.from('leads').select('id,full_name,source,station,priority,property_address,city,county,classification,opportunity_score,created_at').in('source', PPC_LEAD_SOURCES).gte('created_at', isoStart(range.since)).lt('created_at', isoAfter(range.until)).limit(2000),
     db.from('leads').select('id,full_name,source,station,priority,property_address,city,county,classification,opportunity_score,created_at').in('source', PPC_LEAD_SOURCES).gte('created_at', isoStart(previousRange.since)).lt('created_at', isoAfter(previousRange.until)).limit(2000),
     db.from('ppc_conversion_outbox').select('id,event_name,event_category,dedupe_key,status,approved_for_google_ads,optimization_role,event_time,lead_id,conversion_value,click_id,click_id_type,attribution,payload,attempts,last_error,sent_at,created_at').gte('event_time', isoStart(range.since)).lt('event_time', isoAfter(range.until)).limit(2000),
@@ -1480,7 +1481,9 @@ async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter
   const firstError = campaignError || previousCampaignError || openAIAdsOptionalError || searchError || trackingError || leadError || previousLeadError || outboxError || activityError || revenueError || syncRunError
   if (firstError) throw new Error(firstError.message)
 
-  const cleanTrackingRows = ((trackingRows ?? []) as PpcTrackingSummaryRow[]).filter(isExternalTrackingRow)
+  const cleanTrackingRows = ((trackingRows ?? []) as PpcTrackingSummaryRow[])
+    .filter(isExternalTrackingRow)
+    .sort((a, b) => Date.parse(eventTimestamp(a)) - Date.parse(eventTimestamp(b)))
   const cleanOutboxRows = ((outboxRows ?? []) as PpcOutboxSummaryRow[]).filter(isExternalOutboxRow)
   const cleanActivityRows = (activityRows ?? []) as PpcActivitySummaryRow[]
   const cleanLeadRows = ((leadRows ?? []) as PpcLeadSummaryRow[]).filter((lead) => isExternalLeadRow(lead, cleanActivityRows))
