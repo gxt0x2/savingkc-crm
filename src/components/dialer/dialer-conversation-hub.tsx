@@ -8,7 +8,7 @@ import { CONVERSATION_TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { formatPhone, toProperCase } from '@/lib/format'
 
 type HubView = 'dashboard' | 'inbox' | 'campaigns' | 'templates'
-type HubFilter = 'unread' | 'needs_reply' | 'unanswered' | 'reminders' | 'no_status' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
+type HubFilter = 'unread' | 'needs_reply' | 'unanswered' | 'missed_calls' | 'reminders' | 'no_status' | 'hot' | 'drip_ready' | 'unassigned' | 'recents' | 'all'
 type ComposeMode = 'sms' | 'email'
 type CampaignListKey =
   | 'all_prospecting'
@@ -197,6 +197,16 @@ interface CampaignDraftMetrics {
   batches: number
 }
 
+interface MarketLimitMetric {
+  areaCode: string
+  market: string
+  numbers: number
+  sentToday: number
+  sentMonth: number
+  segmentsToday: number
+  segmentsMonth: number
+}
+
 const PROSPECTING_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'note', 'status_change', 'task', 'appointment']
 const SMS_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound'])
 const CONVERSATION_TYPES = new Set(['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail'])
@@ -317,10 +327,16 @@ const CAMPAIGN_LIST_OPTIONS: Array<{
   },
 ]
 const CAMPAIGN_MARKETS = ['Kansas City', 'Johnson County', 'Jackson County', 'Clay County', 'Wyandotte County']
+const MARKET_LABEL_BY_AREA_CODE: Record<string, string> = {
+  '816': 'Kansas City',
+  '913': 'Johnson County',
+  '785': 'Kansas',
+}
 const INBOX_FILTER_HELP: Record<HubFilter, string> = {
   unread: 'Unread prospect messages that need real-time review.',
   needs_reply: 'Latest conversation touch is inbound from the prospect, with no newer agent response.',
   unanswered: 'Latest SMS attempt is outbound, and no newer inbound reply has arrived.',
+  missed_calls: 'Inbound prospect calls that still need a return call.',
   reminders: 'Follow-up reminders and drip-ready conversations that should be reviewed today.',
   no_status: 'Prospects that have not been given a meaningful lead status yet.',
   hot: 'High-priority or starred prospecting conversations.',
@@ -334,6 +350,7 @@ const CAMPAIGN_STATUS_OPTIONS: Array<{ id: CampaignStatusFilter; label: string; 
   { id: 'unread', label: 'Unread', detail: INBOX_FILTER_HELP.unread },
   { id: 'needs_reply', label: 'Needs reply', detail: INBOX_FILTER_HELP.needs_reply },
   { id: 'unanswered', label: 'Unanswered', detail: INBOX_FILTER_HELP.unanswered },
+  { id: 'missed_calls', label: 'Missed calls', detail: INBOX_FILTER_HELP.missed_calls },
   { id: 'reminders', label: 'Reminders', detail: INBOX_FILTER_HELP.reminders },
   { id: 'no_status', label: 'No Status', detail: INBOX_FILTER_HELP.no_status },
   { id: 'drip_ready', label: 'Drip ready', detail: INBOX_FILTER_HELP.drip_ready },
@@ -578,6 +595,31 @@ function isSmsActivity(activity: HubActivity): boolean {
 
 function isConversationActivity(activity: HubActivity): boolean {
   return CONVERSATION_TYPES.has(activity.activity_type)
+}
+
+function isVoiceActivity(activity: HubActivity): boolean {
+  return activity.activity_type === 'call' || activity.activity_type === 'voicemail'
+}
+
+function isOutboundVoiceActivity(activity: HubActivity): boolean {
+  return isVoiceActivity(activity) && activityDirection(activity) === 'outbound'
+}
+
+function isMissedVoiceActivity(activity: HubActivity): boolean {
+  if (!isVoiceActivity(activity)) return false
+  const meta = activityMetadata(activity)
+  const description = activity.description || ''
+  const stateText = [
+    textValue(meta.status),
+    textValue(meta.outcome),
+    textValue(meta.disposition),
+    textValue(meta.callStatus),
+    textValue(meta.dialStatus),
+    description,
+  ].filter(Boolean).join(' ').toLowerCase()
+  const inbound = activityDirection(activity) === 'inbound' || /inbound|missed inbound|voicemail/i.test(description)
+  const missed = activity.activity_type === 'voicemail' || /missed|no[-_\s]?answer|voicemail|busy|cancelled|canceled/.test(stateText)
+  return inbound && missed
 }
 
 function activityBody(activity: HubActivity): string {
@@ -1061,7 +1103,19 @@ function latestConversation(thread: HubThread): HubActivity | null {
 
 function threadNeedsReply(thread: HubThread): boolean {
   const last = latestConversation(thread)
+  if (last && isMissedVoiceActivity(last)) return false
   return Boolean(last && activityDirection(last) === 'inbound' && (isSmsActivity(last) || last.activity_type === 'email' || last.activity_type === 'call'))
+}
+
+function threadHasOpenMissedCall(thread: HubThread): boolean {
+  const missedAt = thread.activities.reduce((latest, activity) => (
+    isMissedVoiceActivity(activity) ? Math.max(latest, activityTimeMs(activity)) : latest
+  ), 0)
+  if (!missedAt) return false
+  const callbackAt = thread.activities.reduce((latest, activity) => (
+    isOutboundVoiceActivity(activity) ? Math.max(latest, activityTimeMs(activity)) : latest
+  ), 0)
+  return callbackAt <= missedAt
 }
 
 function threadIsUnanswered(thread: HubThread): boolean {
@@ -1096,6 +1150,7 @@ function threadHasNoStatus(thread: HubThread): boolean {
 
 function threadStatus(thread: HubThread): string {
   if (threadNeedsReply(thread)) return 'Needs reply'
+  if (threadHasOpenMissedCall(thread)) return 'Missed call'
   if (threadHasReminder(thread)) return 'Reminder'
   if (threadHasNoStatus(thread)) return 'No Status'
   if (threadIsDripReady(thread)) return 'Drip ready'
@@ -1110,6 +1165,7 @@ function threadRowSignals(thread: HubThread): ThreadRowSignal[] {
   return [
     { id: 'unread', label: 'Unread', icon: 'mail', active: thread.unread, color: '#5867E8' },
     { id: 'unanswered', label: 'Unanswered', icon: 'hourglass_empty', active: threadIsUnanswered(thread), color: '#2EA8E5' },
+    { id: 'missed_call', label: 'Missed Call', icon: 'phone_missed', active: threadHasOpenMissedCall(thread), color: '#F7B955' },
     { id: 'hot', label: 'Hot', icon: 'local_fire_department', active: thread.starred, color: '#EF4D6D' },
     { id: 'reminder', label: 'Reminder', icon: 'notifications', active: threadHasReminder(thread), color: '#EF4D6D' },
     { id: 'drip', label: 'Drip ready', icon: 'water_drop', active: threadIsDripReady(thread), color: '#7D9BFF' },
@@ -1268,6 +1324,72 @@ function smsSegmentMetric(body: string): SmsSegmentMetric {
   }
 }
 
+function areaCodeForPhone(value: string | null | undefined): string {
+  const digits = phoneKey(value)
+  return digits.length >= 3 ? digits.slice(0, 3) : 'Unknown'
+}
+
+function marketLabelForAreaCode(areaCode: string): string {
+  if (areaCode === 'Unknown') return 'Unknown Market'
+  return MARKET_LABEL_BY_AREA_CODE[areaCode] || `${areaCode} Market`
+}
+
+function emptyMarketLimitMetric(areaCode: string): MarketLimitMetric {
+  return {
+    areaCode,
+    market: marketLabelForAreaCode(areaCode),
+    numbers: 0,
+    sentToday: 0,
+    sentMonth: 0,
+    segmentsToday: 0,
+    segmentsMonth: 0,
+  }
+}
+
+function marketLimitMetrics(threads: HubThread[]): MarketLimitMetric[] {
+  const now = new Date()
+  const todayStart = new Date(now)
+  todayStart.setHours(0, 0, 0, 0)
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const metrics = new Map<string, MarketLimitMetric>()
+
+  CONVERSATION_TWILIO_NUMBERS
+    .filter((number) => number.conversationEligible || number.dialerEligible)
+    .forEach((number) => {
+      const areaCode = areaCodeForPhone(number.value)
+      const current = metrics.get(areaCode) || emptyMarketLimitMetric(areaCode)
+      current.numbers += 1
+      metrics.set(areaCode, current)
+    })
+
+  threads.forEach((thread) => {
+    smsActivities(thread).forEach((activity) => {
+      if (activityDirection(activity) !== 'outbound') return
+      const linePhone = activityLinePhone(activity) || activityPhone(activity, null)
+      const areaCode = areaCodeForPhone(linePhone)
+      const current = metrics.get(areaCode) || emptyMarketLimitMetric(areaCode)
+      const at = activityTimeMs(activity)
+      const segments = Math.max(1, smsSegmentMetric(activityBody(activity)).segments)
+
+      if (at >= todayStart.getTime()) {
+        current.sentToday += 1
+        current.segmentsToday += segments
+      }
+      if (at >= monthStart.getTime()) {
+        current.sentMonth += 1
+        current.segmentsMonth += segments
+      }
+      metrics.set(areaCode, current)
+    })
+  })
+
+  return Array.from(metrics.values()).sort((a, b) => {
+    if (a.areaCode === 'Unknown') return 1
+    if (b.areaCode === 'Unknown') return -1
+    return a.areaCode.localeCompare(b.areaCode)
+  })
+}
+
 function composerWarnings(body: string): string[] {
   const keywordText = keywordScanText(body)
   const restricted = RESTRICTED_WORDS.filter((word) => keywordMatches(keywordText, word))
@@ -1413,6 +1535,7 @@ function threadMatchesHubFilter(thread: HubThread, nextFilter: HubFilter): boole
   if (nextFilter === 'unread') return thread.unread
   if (nextFilter === 'needs_reply') return threadNeedsReply(thread)
   if (nextFilter === 'unanswered') return threadIsUnanswered(thread)
+  if (nextFilter === 'missed_calls') return threadHasOpenMissedCall(thread)
   if (nextFilter === 'reminders') return threadHasReminder(thread)
   if (nextFilter === 'no_status') return threadHasNoStatus(thread)
   if (nextFilter === 'hot') return thread.starred
@@ -1507,6 +1630,15 @@ function mapsUrl(lead: HubLead | null): string | null {
 function zillowUrl(lead: HubLead | null): string | null {
   const query = addressQuery(lead)
   return query ? `https://www.zillow.com/homes/${encodeURIComponent(query)}_rb/` : null
+}
+
+function conversationDialerUrl(leadId: string, callerId?: string | null): string {
+  const params = new URLSearchParams({
+    lead_ids: leadId,
+    return_to: '/dialer',
+  })
+  if (callerId) params.set('caller_id', callerId)
+  return `/dialer?${params.toString()}`
 }
 
 function chunks<T>(items: T[], size: number): T[][] {
@@ -1912,6 +2044,16 @@ export function DialerConversationHub({
       return true
     })
   }, [agentScope, campaignScope, filter, search, tagScope, threads])
+  const activeThreadInFilteredResults = useMemo(() => (
+    Boolean(activeThread && filteredThreads.some((thread) => thread.id === activeThread.id))
+  ), [activeThread, filteredThreads])
+
+  useEffect(() => {
+    if (filteredThreads.length === 0) return
+    if (!activeThreadId || !filteredThreads.some((thread) => thread.id === activeThreadId)) {
+      setActiveThreadId(filteredThreads[0].id)
+    }
+  }, [activeThreadId, filteredThreads])
 
   const replyFromPhone = useMemo(() => {
     return preferredReplyLine(activeThread, activeActivities) || defaultFromPhone || DEFAULT_FROM_PHONE
@@ -1946,6 +2088,7 @@ export function DialerConversationHub({
   const unreadCount = useMemo(() => threads.filter((thread) => thread.unread).length, [threads])
   const needsReplyCount = useMemo(() => threads.filter(threadNeedsReply).length, [threads])
   const unansweredCount = useMemo(() => threads.filter(threadIsUnanswered).length, [threads])
+  const missedCallCount = useMemo(() => threads.filter(threadHasOpenMissedCall).length, [threads])
   const remindersCount = useMemo(() => threads.filter(threadHasReminder).length, [threads])
   const noStatusCount = useMemo(() => threads.filter(threadHasNoStatus).length, [threads])
   const dripReadyCount = useMemo(() => threads.filter(threadIsDripReady).length, [threads])
@@ -1980,6 +2123,7 @@ export function DialerConversationHub({
   const selectedCampaignMetrics = useMemo(() => (
     campaignDraftMetrics(selectedCampaignThreads, campaignDraft.dailyCap)
   ), [campaignDraft.dailyCap, selectedCampaignThreads])
+  const marketLimits = useMemo(() => marketLimitMetrics(threads), [threads])
   const selectedCampaignTemplates = useMemo(() => (
     templates.filter((template) => template.category === campaignDraft.templateCategory)
   ), [campaignDraft.templateCategory, templates])
@@ -2298,6 +2442,7 @@ export function DialerConversationHub({
   const inboxTabs: Array<{ id: HubFilter; label: string; count?: number }> = [
     { id: 'unread', label: 'Unread', count: unreadCount },
     { id: 'unanswered', label: 'Unanswered', count: unansweredCount },
+    { id: 'missed_calls', label: 'Missed Calls', count: missedCallCount },
     { id: 'reminders', label: 'Reminders', count: remindersCount },
     { id: 'no_status', label: 'No Status', count: noStatusCount },
     { id: 'needs_reply', label: 'Needs reply', count: needsReplyCount },
@@ -2316,6 +2461,7 @@ export function DialerConversationHub({
           <MissionControlBar
             unreadCount={unreadCount}
             unansweredCount={unansweredCount}
+            missedCallCount={missedCallCount}
             remindersCount={remindersCount}
             noStatusCount={noStatusCount}
             onOpen={(nextFilter) => {
@@ -2346,6 +2492,7 @@ export function DialerConversationHub({
           totalThreads={threads.length}
           unreadCount={unreadCount}
           unansweredCount={unansweredCount}
+          missedCallCount={missedCallCount}
           remindersCount={remindersCount}
           noStatusCount={noStatusCount}
           replyMetric={replyMetric}
@@ -2367,6 +2514,7 @@ export function DialerConversationHub({
           modalOpen={campaignModalOpen}
           modalKind={campaignModalKind}
           metrics={selectedCampaignMetrics}
+          marketLimits={marketLimits}
           trackerRows={trackerRows}
           templates={selectedCampaignTemplates}
           saving={campaignSaving}
@@ -2577,7 +2725,7 @@ export function DialerConversationHub({
         </aside>
 
         <main className="flex min-h-0 min-w-0 flex-col border-b border-[var(--ck-border)] lg:border-b-0 lg:border-r">
-          {activeThread ? (
+          {activeThread && activeThreadInFilteredResults ? (
             <>
               <header className="flex shrink-0 flex-col gap-3 border-b border-[var(--ck-border)] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
@@ -2643,8 +2791,9 @@ export function DialerConversationHub({
                     {activeLeadId && (
                       <button
                         type="button"
-                        onClick={() => router.push(`/dialer?lead_ids=${activeLeadId}&return_to=/dialer`)}
+                        onClick={() => router.push(conversationDialerUrl(activeLeadId, replyFromPhone))}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-[#E32E2E] px-3 py-2 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626]"
+                        title={`Dial using ${formatPhone(replyFromPhone) || replyFromPhone}`}
                       >
                         <Icon name="call" size="text-sm" /> Dial
                       </button>
@@ -2826,7 +2975,7 @@ export function DialerConversationHub({
         </main>
 
         <aside className="min-h-0 overflow-y-auto bg-[var(--ck-surface)] px-5 py-4">
-          {activeThread ? (
+          {activeThread && activeThreadInFilteredResults ? (
             <SellerRail
               thread={activeThread}
               activities={activeActivities}
@@ -2836,6 +2985,7 @@ export function DialerConversationHub({
               onEnsureTag={ensureConversationTag}
               onManageTags={() => setTagManagerOpen(true)}
               onOpenLead={() => activeLeadId && router.push(`/leads/${activeLeadId}`)}
+              dialerCallerId={replyFromPhone}
               onRefresh={() => {
                 void loadActiveActivities()
                 void loadThreads()
@@ -2867,12 +3017,14 @@ export function DialerConversationHub({
 function MissionControlBar({
   unreadCount,
   unansweredCount,
+  missedCallCount,
   remindersCount,
   noStatusCount,
   onOpen,
 }: {
   unreadCount: number
   unansweredCount: number
+  missedCallCount: number
   remindersCount: number
   noStatusCount: number
   onOpen: (filter: HubFilter) => void
@@ -2880,6 +3032,7 @@ function MissionControlBar({
   const items: Array<{ label: string; filter: HubFilter; count: number; icon: string; tone: string; help: string }> = [
     { label: 'Unread', filter: 'unread', count: unreadCount, icon: 'mail', tone: 'bg-[#5867E8]', help: 'Unread messages' },
     { label: 'Unanswered', filter: 'unanswered', count: unansweredCount, icon: 'hourglass_empty', tone: 'bg-[#2EA8E5]', help: 'Outbound texts waiting on an answer' },
+    { label: 'Missed Calls', filter: 'missed_calls', count: missedCallCount, icon: 'phone_missed', tone: 'bg-[#F7B955]', help: 'Inbound calls to return' },
     { label: 'Reminders', filter: 'reminders', count: remindersCount, icon: 'notifications', tone: 'bg-[#EF4D6D]', help: 'Follow-up reminders' },
     { label: 'No Status', filter: 'no_status', count: noStatusCount, icon: 'question_mark', tone: 'bg-[#F7B955]', help: 'Prospects with no status' },
   ]
@@ -3250,6 +3403,7 @@ function HubDashboard({
   totalThreads,
   unreadCount,
   unansweredCount,
+  missedCallCount,
   remindersCount,
   noStatusCount,
   replyMetric,
@@ -3263,6 +3417,7 @@ function HubDashboard({
   totalThreads: number
   unreadCount: number
   unansweredCount: number
+  missedCallCount: number
   remindersCount: number
   noStatusCount: number
   replyMetric: ReplyMetric
@@ -3285,6 +3440,7 @@ function HubDashboard({
           <div className="grid gap-3 sm:grid-cols-2">
             <PlateCard icon="mail" label="Unread" value={unreadCount} action="respond now" tone="bg-[#5867E8]" onClick={() => onOpenInbox('unread')} />
             <PlateCard icon="hourglass_empty" label="Unanswered" value={unansweredCount} action="reply now" tone="bg-[#2EA8E5]" onClick={() => onOpenInbox('unanswered')} />
+            <PlateCard icon="phone_missed" label="Missed Calls" value={missedCallCount} action="call back" tone="bg-[#F7B955]" onClick={() => onOpenInbox('missed_calls')} />
             <PlateCard icon="notifications" label="Reminders" value={remindersCount} action="view reminders" tone="bg-[#EF4D6D]" onClick={() => onOpenInbox('reminders')} />
             <PlateCard icon="question_mark" label="No Status" value={noStatusCount} action="view inbox" tone="bg-[#F7B955]" onClick={() => onOpenInbox('no_status')} />
           </div>
@@ -3404,6 +3560,7 @@ function CampaignBuilder({
   modalOpen,
   modalKind,
   metrics,
+  marketLimits,
   trackerRows,
   templates,
   saving,
@@ -3419,6 +3576,7 @@ function CampaignBuilder({
   modalOpen: boolean
   modalKind: 'initial' | 'follow_up'
   metrics: CampaignDraftMetrics
+  marketLimits: MarketLimitMetric[]
   trackerRows: CampaignTrackerRow[]
   templates: SmsTemplateRow[]
   saving: boolean
@@ -3467,6 +3625,32 @@ function CampaignBuilder({
               <Icon name="event_repeat" size="text-base" /> Create Follow-up Campaign
             </button>
           </div>
+        </div>
+
+        <div className="grid border-b border-[var(--ck-border)] text-xs sm:grid-cols-2 xl:grid-cols-4">
+          {marketLimits.slice(0, 4).map((metric) => (
+            <div key={metric.areaCode} className="border-b border-[var(--ck-border)] px-4 py-3 sm:border-r sm:last:border-r-0 xl:border-b-0">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">{metric.areaCode} Market</p>
+                <span className="rounded-full border border-[var(--ck-border)] px-2 py-0.5 text-[10px] font-black text-[var(--ck-text-muted)]">
+                  {metric.numbers} line{metric.numbers === 1 ? '' : 's'}
+                </span>
+              </div>
+              <p className="mt-2 truncate text-sm font-black text-[var(--ck-text)]">{metric.market}</p>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] font-bold text-[var(--ck-text-muted)]">
+                <div>
+                  <span className="block text-[var(--ck-text-dim)]">Today</span>
+                  <span className="mt-0.5 block text-[var(--ck-text)]">{metric.sentToday.toLocaleString()} sent</span>
+                  <span className="block">{metric.segmentsToday.toLocaleString()} seg</span>
+                </div>
+                <div>
+                  <span className="block text-[var(--ck-text-dim)]">Month</span>
+                  <span className="mt-0.5 block text-[var(--ck-text)]">{metric.sentMonth.toLocaleString()} sent</span>
+                  <span className="block">{metric.segmentsMonth.toLocaleString()} seg</span>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
         <div className="flex flex-col gap-3 border-b border-[var(--ck-border)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
@@ -4006,6 +4190,7 @@ function SellerRail({
   onEnsureTag,
   onManageTags,
   onOpenLead,
+  dialerCallerId,
   onRefresh,
   onPhoneSuppressionChange,
 }: {
@@ -4017,6 +4202,7 @@ function SellerRail({
   onEnsureTag: (labelOrId: string) => Promise<ConversationTagOption | null>
   onManageTags: () => void
   onOpenLead: () => void
+  dialerCallerId: string | null
   onRefresh: () => void
   onPhoneSuppressionChange: (isSuppressed: boolean) => void
 }) {
@@ -4342,8 +4528,9 @@ function SellerRail({
         )}
         {lead && (
           <a
-            href={`/dialer?lead_ids=${lead.id}&return_to=/dialer`}
+            href={conversationDialerUrl(lead.id, dialerCallerId)}
             className="rounded-xl bg-[#E32E2E] px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626]"
+            title={dialerCallerId ? `Start dialer using ${formatPhone(dialerCallerId) || dialerCallerId}` : undefined}
           >
             Start Dialer
           </a>
