@@ -2601,7 +2601,7 @@ export function AdsCommandPage() {
       if (previewToken) params.set('previewToken', previewToken)
 
       try {
-        const response = await fetch(`/api/dashboard-data?${params.toString()}`, { cache: 'no-store', signal: controller.signal })
+        const response = await fetch(`/data/live?${params.toString()}`, { cache: 'no-store', signal: controller.signal })
         if (!response.ok) return
         const data = await response.json() as AdsCommandData
         if (!cancelled) setAdsData(data)
