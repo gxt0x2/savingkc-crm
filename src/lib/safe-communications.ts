@@ -11,7 +11,6 @@ import twilio from 'twilio'
 import { supabase } from '@/lib/supabase-lazy'
 
 const TEST_MODE = process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'development'
-const TWILIO_MESSAGING_SERVICE = cleanTwilioEnv('TWILIO_MESSAGING_SERVICE')
 
 function cleanTwilioEnv(name: string): string {
   return process.env[name]
@@ -20,20 +19,47 @@ function cleanTwilioEnv(name: string): string {
     .trim() ?? ''
 }
 
-// Twilio client (only initialized if not in test mode)
 let twilioClient: ReturnType<typeof twilio> | null = null
+let twilioInitError: string | null = null
 
-if (!TEST_MODE) {
+function initTwilioClient(): ReturnType<typeof twilio> | null {
+  if (TEST_MODE) return null
+
   const accountSid = cleanTwilioEnv('TWILIO_ACCOUNT_SID')
   const apiKey = cleanTwilioEnv('TWILIO_API_KEY')
   const apiSecret = cleanTwilioEnv('TWILIO_API_SECRET')
   const authToken = cleanTwilioEnv('TWILIO_AUTH_TOKEN')
 
-  if (accountSid && apiKey && apiSecret) {
-    twilioClient = twilio(apiKey, apiSecret, { accountSid })
-  } else if (accountSid && authToken) {
-    twilioClient = twilio(accountSid, authToken)
+  if (!accountSid) {
+    twilioInitError = 'Twilio SMS is not configured: missing TWILIO_ACCOUNT_SID'
+    return null
   }
+
+  if (accountSid && apiKey && apiSecret) {
+    twilioInitError = null
+    return twilio(apiKey, apiSecret, { accountSid })
+  }
+
+  if (accountSid && authToken) {
+    twilioInitError = null
+    return twilio(accountSid, authToken)
+  }
+
+  twilioInitError = 'Twilio SMS is not configured: missing TWILIO_API_KEY/TWILIO_API_SECRET or TWILIO_AUTH_TOKEN'
+  return null
+}
+
+function getConfiguredTwilioClient(): ReturnType<typeof twilio> | null {
+  if (!twilioClient) {
+    twilioClient = initTwilioClient()
+  }
+  return twilioClient
+}
+
+function getTwilioErrorField(error: unknown, field: 'message' | 'code' | 'status'): unknown {
+  return typeof error === 'object' && error !== null && field in error
+    ? (error as Record<typeof field, unknown>)[field]
+    : undefined
 }
 
 // Supabase client for logging
@@ -89,17 +115,19 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
     }
   }
 
-  if (!twilioClient) {
-    const error = 'Twilio client not initialized'
+  const client = getConfiguredTwilioClient()
+  if (!client) {
+    const error = twilioInitError || 'Twilio client not initialized'
     console.error(`[SMS-ERROR] ${error}`)
     await logSMSAttempt({ ...params, success: false, error })
     return { success: false, error, ...params }
   }
 
   try {
-    const message = await twilioClient.messages.create({
+    const messagingServiceSid = cleanTwilioEnv('TWILIO_MESSAGING_SERVICE')
+    const message = await client.messages.create({
       ...params,
-      ...(TWILIO_MESSAGING_SERVICE ? { messagingServiceSid: TWILIO_MESSAGING_SERVICE } : {}),
+      ...(messagingServiceSid ? { messagingServiceSid } : {}),
     })
     const duration = Date.now() - startTime
 
@@ -120,11 +148,14 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
       from: params.from,
       body: params.body,
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     const duration = Date.now() - startTime
-    const errorMsg = error?.message || 'Unknown error'
-    const twilioCode = error?.code
-    const twilioStatus = error?.status
+    const message = getTwilioErrorField(error, 'message')
+    const code = getTwilioErrorField(error, 'code')
+    const status = getTwilioErrorField(error, 'status')
+    const errorMsg = typeof message === 'string' && message ? message : 'Unknown error'
+    const twilioCode = typeof code === 'number' ? code : undefined
+    const twilioStatus = typeof status === 'number' ? status : undefined
 
     console.error(`[SMS-ERROR] Failed to send to ${params.to} (${duration}ms)`)
     console.error(`  Error: ${errorMsg}`)
@@ -190,7 +221,7 @@ export function getTwilioClient() {
     console.warn('⚠️  [TEST_MODE] Twilio client requested but TEST_MODE is active')
     return null
   }
-  return twilioClient
+  return getConfiguredTwilioClient()
 }
 
 /**
