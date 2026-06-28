@@ -94,6 +94,25 @@ const PAID_SOURCE_QUERY_ALIAS: Record<PaidSourceFilter, string> = {
   google_ads: 'g',
   openai_ads: 'oai',
 }
+function paidSourceFilterFromValue(value: string | null): PaidSourceFilter {
+  const normalized = (value ?? '').trim().toLowerCase()
+  if (['oai', 'openai', 'openai_ads', 'openai-ads', 'chatgpt'].includes(normalized)) return 'openai_ads'
+  if (['g', 'google', 'google_ads', 'google-ads'].includes(normalized)) return 'google_ads'
+  return 'all'
+}
+function initialPaidSourceFilter(): PaidSourceFilter {
+  if (typeof window === 'undefined') return 'all'
+  const params = new URLSearchParams(window.location.search)
+  return paidSourceFilterFromValue(params.get('src') || params.get('source'))
+}
+function writePaidSourceFilterToUrl(next: PaidSourceFilter) {
+  if (typeof window === 'undefined') return
+  const params = new URLSearchParams(window.location.search)
+  params.set('src', PAID_SOURCE_QUERY_ALIAS[next])
+  params.delete('source')
+  const query = params.toString()
+  window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`)
+}
 const SECTION_ORDER_STORAGE_KEY = 'ads-command-section-order-v1'
 const SECTION_COLLAPSE_STORAGE_KEY = 'ads-command-section-collapse-v1'
 const DEFAULT_SECTION_ORDER: DashboardSectionId[] = ['kpis', 'trafficQuality', 'clickCaptureHealth', 'trend', 'campaigns', 'searchTerms', 'funnel', 'exportHealth', 'openAIAdsHealth', 'mojoHealth', 'heatmaps', 'roster', 'outbox', 'paidJourneys']
@@ -2567,7 +2586,7 @@ export function AdsCommandPage() {
   const [kwCampaign, setKwCampaign] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('leads')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const [paidSourceFilter, setPaidSourceFilter] = useState<PaidSourceFilter>('all')
+  const [paidSourceFilter, setPaidSourceFilter] = useState<PaidSourceFilter>(initialPaidSourceFilter)
   const [pjFilter, setPjFilter] = useState<PaidFilter>('all')
   const [pjRange, setPjRange] = useState<PaidRange>('month')
   const [pjLimit, setPjLimit] = useState(10)
@@ -2678,6 +2697,7 @@ export function AdsCommandPage() {
   }
 
   function handlePaidSourceFilter(next: PaidSourceFilter) {
+    writePaidSourceFilterToUrl(next)
     setPaidSourceFilter(next)
     setKwCampaign('all')
     setPjPage(0)
