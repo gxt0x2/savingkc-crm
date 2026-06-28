@@ -32,6 +32,10 @@ function addDays(date: string, days: number): string {
   return next.toISOString().slice(0, 10)
 }
 
+function latestCompletedChicagoDate(): string {
+  return addDays(chicagoDate(), -1)
+}
+
 function readLookbackDays(value: string | null): number {
   const parsed = Number(value || process.env.OPENAI_ADS_REPORTING_SYNC_LOOKBACK_DAYS || DEFAULT_LOOKBACK_DAYS)
   if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_LOOKBACK_DAYS
@@ -44,7 +48,8 @@ async function handle(req: NextRequest) {
 
   const url = new URL(req.url)
   const dryRun = parseBool(url.searchParams.get('dryRun'))
-  const latestReportableDate = chicagoDate()
+  // OpenAI Ads rejects reporting windows whose end date is still in progress.
+  const latestReportableDate = latestCompletedChicagoDate()
   const lookbackDays = readLookbackDays(url.searchParams.get('lookbackDays'))
   const requestedUntil = parseDate(url.searchParams.get('until')) || latestReportableDate
   const until = requestedUntil > latestReportableDate ? latestReportableDate : requestedUntil
