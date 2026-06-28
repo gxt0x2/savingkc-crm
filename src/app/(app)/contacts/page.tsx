@@ -22,7 +22,6 @@ interface ContactRow {
   fullName: string | null
   phone: string | null
   source: string | null
-  priority: string | null
   address: string | null
   city: string | null
   station: DealStage
@@ -49,8 +48,8 @@ type TabKey = 'all' | 'hot' | 'new' | 'contacted' | 'qualified' | 'appointment_s
 
 const LEAD_GROUP_SESSION_KEY = 'savingkc:lead-group:v1'
 
-const TABS: { key: TabKey; label: string; station?: DealStage; minScore?: number }[] = [
-  { key: 'hot', label: 'Hot', minScore: 75 },
+const TABS: { key: TabKey; label: string; station?: DealStage }[] = [
+  { key: 'hot', label: 'Hot' },
   { key: 'new', label: 'New', station: 'new' },
   { key: 'contacted', label: 'Leads', station: 'contacted' },
   { key: 'qualified', label: 'Opportunities', station: 'qualified' },
@@ -146,11 +145,8 @@ export default function ContactsPage() {
   // shows the total active lead count and list.
   const acquisitionOnly = useMemo(() => items.filter((i) => i.station !== 'under_contract'), [items])
 
-  // Hot = composite score ≥ 75 OR manually starred (is_favorite).
-  // The star on the lead page is the canonical manual-hot signal.
-  const isHot = useCallback((row: ContactRow) => (
-    row.score >= 75 || row.isFavorite || row.priority === 'hot'
-  ), [])
+  // Hot is intentionally manual-only: the lead star is the canonical signal.
+  const isHot = useCallback((row: ContactRow) => row.isFavorite, [])
 
   const counts = useMemo<Record<TabKey, number>>(() => {
     return {

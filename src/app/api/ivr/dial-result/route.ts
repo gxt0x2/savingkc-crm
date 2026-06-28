@@ -129,7 +129,6 @@ async function ensureDirectInboundContact(lead: LeadContext, phone: string): Pro
 
   if (lead.id) {
     const patch: Record<string, unknown> = {
-      priority: 'hot',
       is_parked: false,
       updated_at: new Date().toISOString(),
     }
@@ -147,7 +146,6 @@ async function ensureDirectInboundContact(lead: LeadContext, phone: string): Pro
       phone,
       source: 'inbound_call',
       station: 'contacted',
-      priority: 'hot',
       is_parked: false,
     })
     .select('id, full_name, station, is_parked')
