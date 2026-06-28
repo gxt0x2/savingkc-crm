@@ -177,6 +177,7 @@ type AdsCommandData = {
     googleAdsSyncStatus: string | null
     googleAdsSyncFinishedAt: string | null
     openAIAdsImportedAt: string | null
+    openAIAdsReportThroughDate: string | null
     openAIAdsSyncStatus: string | null
     openAIAdsSyncFinishedAt: string | null
   }
@@ -335,6 +336,17 @@ function formatFreshness(value: string | null | undefined): string {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+  })
+}
+
+function formatReportDate(value: string | null | undefined): string {
+  if (!value) return 'last completed day'
+  const date = new Date(`${value}T12:00:00Z`)
+  if (Number.isNaN(date.getTime())) return 'last completed day'
+  return date.toLocaleDateString('en-US', {
+    timeZone: DASHBOARD_TIME_ZONE,
+    month: 'short',
+    day: 'numeric',
   })
 }
 
@@ -1793,6 +1805,7 @@ function LatestPaidJourneys({
   sessions,
   source,
   platformClicks,
+  reportThroughDate,
   filter,
   range,
   limit,
@@ -1806,6 +1819,7 @@ function LatestPaidJourneys({
   sessions: PaidSessionRow[]
   source: PaidSourceFilter
   platformClicks: number
+  reportThroughDate?: string | null
   filter: PaidFilter
   range: PaidRange
   limit: number
@@ -1837,6 +1851,7 @@ function LatestPaidJourneys({
   const extraTrackedSessions = platformClicks > 0 ? Math.max(0, clicks - platformClicks) : 0
   const cr = paidClicks ? (conversions / paidClicks) * 100 : 0
   const sourceLabel = source === 'openai_ads' ? 'OpenAI Ads' : source === 'google_ads' ? 'Google Ads' : 'paid ads'
+  const openAIReportThrough = source === 'openai_ads' ? formatReportDate(reportThroughDate) : ''
   const attributionHint = source === 'openai_ads'
     ? 'OpenAI attribution signal'
     : source === 'google_ads'
@@ -1859,6 +1874,12 @@ function LatestPaidJourneys({
         <div className="pjm purple"><div className="l">SESSION REPLAYS</div><div className="v">{clicks}</div></div>
         <div className="pjm red"><div className="l">CONVERSIONS</div><div className="v">{conversions}</div></div>
       </div>
+      {source === 'openai_ads' ? (
+        <div className="pj-window-note">
+          <b>OpenAI platform clicks imported through {openAIReportThrough}.</b>
+          <span>Ads Manager can show today's in-progress clicks first; CRM session replays update live as visitors land.</span>
+        </div>
+      ) : null}
       {unmatchedClicks > 0 ? (
         <div className="pj-gap">
           <b>{formatNum(unmatchedClicks)} {sourceLabel} click{unmatchedClicks === 1 ? '' : 's'} imported without a replayable website session.</b>
@@ -1867,7 +1888,7 @@ function LatestPaidJourneys({
       ) : extraTrackedSessions > 0 ? (
         <div className="pj-gap">
           <b>{formatNum(extraTrackedSessions)} replayable {sourceLabel} session{extraTrackedSessions === 1 ? '' : 's'} exceed imported platform clicks.</b>
-          <span>The click total is kept aligned to the ad platform. Extra sessions are first-party CRM attribution signals and may include refreshes, previews, or browser sessions the platform report did not count as billable clicks.</span>
+          <span>{source === 'openai_ads' ? 'This usually means live CRM sessions include today while OpenAI platform clicks are still reported through the completed-day window.' : 'The click total is kept aligned to the ad platform. Extra sessions are first-party CRM attribution signals and may include refreshes, previews, or browser sessions the platform report did not count as billable clicks.'}</span>
         </div>
       ) : null}
       <div className="pj-controls">
@@ -2885,6 +2906,7 @@ export function AdsCommandPage() {
         onOpenSession={setSelectedSession}
         source={paidSourceFilter}
         platformClicks={kpiValue(kpi, 'Clicks')}
+        reportThroughDate={adsData?.freshness.openAIAdsReportThroughDate}
       />
     )
   }
@@ -3377,6 +3399,8 @@ const ADS_COMMAND_STYLES = `
 .ads-command .pjm.blue .v { color:var(--info); }
 .ads-command .pjm.purple .v { color:#a78bfa; }
 .ads-command .pjm.red .v { color:var(--accent); }
+.ads-command .pj-window-note { border:1px solid rgba(96,165,250,.28); background:rgba(96,165,250,.07); border-radius:var(--radius-lg); padding:12px 16px; margin:-6px 0 16px; display:flex; align-items:flex-start; gap:10px; color:var(--text-secondary); font-size:12.5px; line-height:1.45; }
+.ads-command .pj-window-note b { color:var(--text); overflow-wrap:anywhere; }
 .ads-command .pj-gap { border:1px solid rgba(167,139,250,.35); background:rgba(167,139,250,.08); border-radius:var(--radius-lg); padding:13px 16px; margin:-6px 0 16px; display:flex; align-items:flex-start; gap:10px; color:var(--text-secondary); font-size:12.5px; line-height:1.45; }
 .ads-command .pj-gap b { color:var(--text); overflow-wrap:anywhere; }
 .ads-command .pj-empty { border:1px dashed var(--line-2); border-radius:var(--radius-lg); background:var(--surface-2); padding:28px 18px; color:var(--text-secondary); display:flex; flex-direction:column; gap:6px; text-align:center; }

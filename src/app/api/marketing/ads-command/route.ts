@@ -173,6 +173,8 @@ type OpenAIAdsSyncRunRow = {
   status: string | null
   started_at: string | null
   finished_at: string | null
+  since_date?: string | null
+  until_date?: string | null
   error: string | null
 }
 
@@ -183,6 +185,7 @@ type AdsCommandFreshness = {
   googleAdsSyncStatus: string | null
   googleAdsSyncFinishedAt: string | null
   openAIAdsImportedAt: string | null
+  openAIAdsReportThroughDate: string | null
   openAIAdsSyncStatus: string | null
   openAIAdsSyncFinishedAt: string | null
 }
@@ -1471,7 +1474,7 @@ async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter
     db.from('lead_activities').select('lead_id,activity_type,description,metadata,created_at').gte('created_at', isoStart(range.since)).lt('created_at', isoAfter(range.until)).limit(5000),
     db.from('revenue_transactions').select('deal_id,amount').gte('date', range.since).lte('date', range.until).limit(2000),
     db.from('google_ads_reporting_sync_runs').select('status,started_at,finished_at,error').order('started_at', { ascending: false }).limit(1),
-    db.from('openai_ads_reporting_sync_runs').select('status,started_at,finished_at,error').order('started_at', { ascending: false }).limit(1),
+    db.from('openai_ads_reporting_sync_runs').select('status,started_at,finished_at,since_date,until_date,error').order('started_at', { ascending: false }).limit(1),
   ])
 
   const openAIAdsOptionalError = [
@@ -1575,6 +1578,7 @@ function buildFreshness(
     ]),
     openAIAdsSyncStatus: latestOpenAIAdsSyncRun?.status ?? null,
     openAIAdsSyncFinishedAt: latestOpenAIAdsSyncRun?.finished_at ?? null,
+    openAIAdsReportThroughDate: latestOpenAIAdsSyncRun?.until_date ?? null,
   }
 }
 
