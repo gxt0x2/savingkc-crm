@@ -125,6 +125,24 @@ async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | nul
   return null
 }
 
+async function resolveLeadIdFromCallActivity(callSid: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('lead_activities')
+    .select('lead_id')
+    .eq('metadata->>callSid', callSid)
+    .not('lead_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[recording-callback] call activity lookup failed', error.message)
+    return null
+  }
+
+  return typeof data?.lead_id === 'string' ? data.lead_id : null
+}
+
 async function logPlayableRecordingActivity({
   leadId,
   recordingSid,
@@ -297,7 +315,16 @@ export async function POST(req: Request) {
       }
     }
 
-    // Fallback: WebRTC parent legs have empty To — look at child legs via Twilio
+    // Prefer the CRM call event when it already resolved the lead. Falling
+    // through to child legs can match an internal agent phone on inbound calls.
+    if (!leadId && callSid) {
+      leadId = await resolveLeadIdFromCallActivity(callSid)
+      if (leadId) {
+        console.log(`[recording-callback] Resolved lead ${leadId} via call activity lookup`)
+      }
+    }
+
+    // Fallback: WebRTC parent legs have empty To — look at child legs via Twilio.
     if (!leadId && callSid) {
       leadId = await resolveLeadIdFromChildLegs(callSid)
       if (leadId) {

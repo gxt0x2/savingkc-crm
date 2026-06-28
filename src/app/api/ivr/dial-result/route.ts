@@ -50,7 +50,14 @@ function callerPhoneLabel(raw: string): string {
   return formatPhone(raw) || raw
 }
 
-async function resolveProspectLeadContext(phone: string): Promise<{ id: string | null; name: string | null }> {
+type LeadContext = {
+  id: string | null
+  name: string | null
+  station?: string | null
+  isParked?: boolean | null
+}
+
+async function resolveProspectLeadContext(phone: string): Promise<LeadContext> {
   for (const variant of phoneLookupVariants(phone)) {
     const matches = await lookupProspectByPhone(variant)
     const linked = matches.find((match) => match.lead_id)
@@ -58,42 +65,105 @@ async function resolveProspectLeadContext(phone: string): Promise<{ id: string |
 
     const { data } = await supabase
       .from('leads')
-      .select('id, full_name')
+      .select('id, full_name, station, is_parked')
       .eq('id', linked.lead_id)
       .limit(1)
       .maybeSingle()
 
-    if (data?.id) return { id: data.id, name: data.full_name || null }
+    if (data?.id) {
+      return {
+        id: data.id,
+        name: data.full_name || null,
+        station: data.station || null,
+        isParked: Boolean(data.is_parked),
+      }
+    }
     return { id: linked.lead_id, name: linked.owner_1 || null }
   }
 
   return { id: null, name: null }
 }
 
-async function resolveLeadContext(explicitLeadId: string, phone: string): Promise<{ id: string | null; name: string | null }> {
+async function resolveLeadContext(explicitLeadId: string, phone: string): Promise<LeadContext> {
   if (explicitLeadId) {
     const { data } = await supabase
       .from('leads')
-      .select('id, full_name')
+      .select('id, full_name, station, is_parked')
       .eq('id', explicitLeadId)
       .limit(1)
       .maybeSingle()
-    if (data?.id) return { id: data.id, name: data.full_name || null }
+    if (data?.id) {
+      return {
+        id: data.id,
+        name: data.full_name || null,
+        station: data.station || null,
+        isParked: Boolean(data.is_parked),
+      }
+    }
     return { id: explicitLeadId, name: null }
   }
 
   for (const variant of phoneLookupVariants(phone)) {
     const { data } = await supabase
       .from('leads')
-      .select('id, full_name')
+      .select('id, full_name, station, is_parked')
       .eq('phone', variant)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    if (data?.id) return { id: data.id, name: data.full_name || null }
+    if (data?.id) {
+      return {
+        id: data.id,
+        name: data.full_name || null,
+        station: data.station || null,
+        isParked: Boolean(data.is_parked),
+      }
+    }
   }
 
   return resolveProspectLeadContext(phone)
+}
+
+async function ensureDirectInboundContact(lead: LeadContext, phone: string): Promise<LeadContext> {
+  if (!phone) return lead
+
+  if (lead.id) {
+    const patch: Record<string, unknown> = {
+      priority: 'hot',
+      is_parked: false,
+      updated_at: new Date().toISOString(),
+    }
+    const inactiveStation = !lead.station || ['dead', 'closed_lost'].includes(lead.station)
+    if (inactiveStation) patch.station = 'contacted'
+
+    await supabase.from('leads').update(patch).eq('id', lead.id)
+    return { ...lead, station: inactiveStation ? 'contacted' : lead.station, isParked: false }
+  }
+
+  const { data: created, error } = await supabase
+    .from('leads')
+    .insert({
+      full_name: `Direct Caller ${callerPhoneLabel(phone)}`,
+      phone,
+      source: 'inbound_call',
+      station: 'contacted',
+      priority: 'hot',
+      is_parked: false,
+    })
+    .select('id, full_name, station, is_parked')
+    .single()
+
+  if (error) {
+    console.error('[DIAL-RESULT] Failed to create direct inbound contact:', error)
+    return lead
+  }
+
+  return {
+    id: created?.id || null,
+    name: created?.full_name || null,
+    station: created?.station || null,
+    isParked: Boolean(created?.is_parked),
+  }
 }
 
 type InboundCallQualityInput = {
@@ -224,11 +294,15 @@ export async function POST(req: Request) {
 
     const routing = getAgentRouting(calledNumber)
     const isDirect = type === 'direct'
-    const lead = await resolveLeadContext(leadId, from)
+    let lead = await resolveLeadContext(leadId, from)
     const isPpcCall = isPpcTrackingNumber(calledNumber)
     const isGoogleAdsCall = isPpcCall || type === 'google_ads'
     const isInternalTestCaller = isInternalTestPhone(from)
     const googleAdsProfile = getGoogleAdsPhoneProfile(calledNumber)
+    if (isDirect && from && !isInternalTestCaller) {
+      lead = await ensureDirectInboundContact(lead, from)
+    }
+
     let resolvedLeadId = isGoogleAdsCall && isInternalTestCaller ? null : lead.id
     let callerLabel = lead.name || callerPhoneLabel(from)
 

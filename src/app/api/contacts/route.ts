@@ -22,6 +22,7 @@ export interface ContactRow {
   fullName: string | null
   phone: string | null
   source: string | null
+  priority: string | null
   address: string | null
   city: string | null
   station: DealStage
@@ -109,7 +110,7 @@ export async function GET() {
 
   const { data: leads, error: leadsErr } = await db
     .from('leads')
-    .select('id, full_name, phone, source, station, property_address, city, created_at, updated_at, is_parked, is_favorite')
+    .select('id, full_name, phone, source, priority, station, property_address, city, created_at, updated_at, is_parked, is_favorite')
     .eq('is_parked', false)
     .order('updated_at', { ascending: false })
 
@@ -180,6 +181,7 @@ export async function GET() {
       fullName: lead.full_name,
       phone: lead.phone,
       source: lead.source,
+      priority: lead.priority,
       address: lead.property_address,
       city: lead.city,
       station,

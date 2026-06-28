@@ -22,6 +22,7 @@ interface ContactRow {
   fullName: string | null
   phone: string | null
   source: string | null
+  priority: string | null
   address: string | null
   city: string | null
   station: DealStage
@@ -147,7 +148,9 @@ export default function ContactsPage() {
 
   // Hot = composite score ≥ 75 OR manually starred (is_favorite).
   // The star on the lead page is the canonical manual-hot signal.
-  const isHot = useCallback((row: ContactRow) => row.score >= 75 || row.isFavorite, [])
+  const isHot = useCallback((row: ContactRow) => (
+    row.score >= 75 || row.isFavorite || row.priority === 'hot'
+  ), [])
 
   const counts = useMemo<Record<TabKey, number>>(() => {
     return {
