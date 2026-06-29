@@ -56,7 +56,7 @@ if (!deliveryStatus) {
     console.log(`  Error: ${casey.error}`)
   }
 
-  console.log(`\nErnest (+18162262552):`)
+  console.log(`\nErnest (+19137179716):`)
   console.log(`  Success: ${ernest.success ? '✅' : '❌'}`)
   if (ernest.success) {
     console.log(`  Twilio SID: ${ernest.sid}`)

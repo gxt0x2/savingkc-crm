@@ -1,3 +1,5 @@
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+
 /**
  * Agent Routing by Twilio Number
  * Determines which agent is primary/secondary for a given inbound number.
@@ -6,8 +8,8 @@
  * All other numbers -> Ernest first, Casey second.
  */
 
-const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
-const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
+const CASEY_PHONE = normalizePhoneToE164(process.env.CASEY_PHONE) || '+18167564943'
+const ERNEST_PHONE = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+19137179716'
 const CASEY_NUMBERS = ['+18167277667', '+18163754666'] // company + old cell
 const CASEY_COMPANY = '+18167277667'
 const ERNEST_COMPANY = '+18166088588'

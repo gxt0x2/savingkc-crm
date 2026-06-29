@@ -20,6 +20,7 @@ import {
 } from '@/lib/ppc/exportable-events'
 import { ppcCampaignNameForContext, ppcCampaignForPageLocation } from '@/lib/ppc/campaigns'
 import { readUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { safeSendSMS } from '@/lib/safe-communications'
 
 const DEFAULT_BATCH_SIZE = 25
@@ -429,8 +430,8 @@ function createDefaultNotifier(client: SupabaseClient): PpcConversionExportNotif
     async notifyQualifiedLeadExport(row, destinations, now) {
       if (!shouldNotifyQualifiedLeadExport(row, destinations)) return null
 
-      const from = process.env.TWILIO_PHONE_NUMBER
-      const to = process.env.ERNEST_PHONE || '+18162262552'
+      const from = normalizePhoneToE164(process.env.TWILIO_PHONE_NUMBER)
+      const to = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+19137179716'
       const hasUserIdentifiers = rowHasUserIdentifiers(row)
 
       if (!from) {

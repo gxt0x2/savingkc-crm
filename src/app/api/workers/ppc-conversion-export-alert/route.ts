@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const DEFAULT_TWILIO_PHONE = '+18163077835'
-const DEFAULT_ERNEST_PHONE = '+18162262552'
+const DEFAULT_ERNEST_PHONE = '+19137179716'
 
 async function handle(req: NextRequest) {
   const unauthorized = await requireAdminOrSecret(req)

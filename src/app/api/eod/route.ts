@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 
@@ -30,18 +31,26 @@ export async function POST(req: NextRequest) {
 
     // SMS to Casey and Ernest
     const smsBody = `EOD from ${team_member || 'team'}: ${went_right || ''}`
-    await Promise.allSettled([
-      safeSendSMS({
+    const fromNumber = normalizePhoneToE164(process.env.TWILIO_PHONE_NUMBER)
+    const caseyPhone = normalizePhoneToE164(process.env.CASEY_PHONE)
+    const ernestPhone = normalizePhoneToE164(process.env.ERNEST_PHONE)
+    const messages: Array<ReturnType<typeof safeSendSMS>> = []
+    if (fromNumber && caseyPhone) {
+      messages.push(safeSendSMS({
         body: smsBody,
-        from: process.env.TWILIO_PHONE_NUMBER!,
-        to: process.env.CASEY_PHONE!,
-      }),
-      safeSendSMS({
+        from: fromNumber,
+        to: caseyPhone,
+      }))
+    }
+    if (fromNumber && ernestPhone) {
+      messages.push(safeSendSMS({
         body: smsBody,
-        from: process.env.TWILIO_PHONE_NUMBER!,
-        to: process.env.ERNEST_PHONE!,
-      }),
-    ])
+        from: fromNumber,
+        to: ernestPhone,
+      }))
+    }
+
+    await Promise.allSettled(messages)
 
     console.log(`EOD submitted — ${smsBody}`)
 

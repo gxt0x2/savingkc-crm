@@ -31,7 +31,7 @@ export function isCaseyLeadAlertWindow(now = new Date()): boolean {
 }
 
 export function getLeadAlertRecipients(now = new Date()): LeadAlertRecipient[] {
-  const ernestPhone = cleanPhone(process.env.ERNEST_PHONE) || '+18162262552'
+  const ernestPhone = cleanPhone(process.env.ERNEST_PHONE) || '+19137179716'
   const caseyPhone = cleanPhone(process.env.CASEY_PHONE) || '+18167564943'
 
   const recipients: LeadAlertRecipient[] = [

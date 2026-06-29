@@ -14,7 +14,7 @@ const supabase = createClient(
 )
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
-const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
+const ERNEST_PHONE = process.env.ERNEST_PHONE || '+19137179716'
 const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3002'
 

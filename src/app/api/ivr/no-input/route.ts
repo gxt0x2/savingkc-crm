@@ -10,7 +10,7 @@ const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
 const TEAM_NUMBERS = new Set([
-  '+18167564943', '+18167277667', '+18166088588', '+18162262552',
+  '+18167564943', '+18167277667', '+18166088588', '+19137179716',
 ])
 
 /**
@@ -117,7 +117,7 @@ export async function POST(req: Request) {
     const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="15">
-    <Number>+18162262552</Number>
+    <Number>+19137179716</Number>
     <Number>+18167564943</Number>
   </Dial>
 </Response>`
