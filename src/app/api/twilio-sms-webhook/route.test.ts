@@ -143,7 +143,7 @@ describe('twilio SMS webhook seller responses', () => {
     vi.clearAllMocks()
     inserts = []
     process.env.CASEY_PHONE = '+18167564943'
-    process.env.ERNEST_PHONE = '+19137179716'
+    process.env.ERNEST_PHONE = '+18162262552'
     process.env.TWILIO_PHONE_NUMBER = '+18163077835'
     mocks.validateTwilioWebhook.mockResolvedValue(true)
     mocks.rateLimit.mockReturnValue({ allowed: true })

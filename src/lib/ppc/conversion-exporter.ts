@@ -431,7 +431,7 @@ function createDefaultNotifier(client: SupabaseClient): PpcConversionExportNotif
       if (!shouldNotifyQualifiedLeadExport(row, destinations)) return null
 
       const from = normalizePhoneToE164(process.env.TWILIO_PHONE_NUMBER)
-      const to = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+19137179716'
+      const to = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+18162262552'
       const hasUserIdentifiers = rowHasUserIdentifiers(row)
 
       if (!from) {

@@ -25,7 +25,7 @@ const TEAM_NUMBERS = new Set([
   '+18167564943', // Casey personal
   '+18167277667', // Casey company
   '+18166088588', // Ernest company
-  '+19137179716', // Ernest personal
+  '+18162262552', // Ernest forwarding
 ])
 
 const DIRECT_RING_NUMBERS = new Set([

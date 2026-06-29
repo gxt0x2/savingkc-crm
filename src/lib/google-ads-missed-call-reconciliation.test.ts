@@ -21,7 +21,7 @@ function task(overrides: Partial<GoogleAdsMissedCallTaskRow> = {}): GoogleAdsMis
       primary_agent_name: 'Casey',
       primary_agent_phone: '+18167564943',
       secondary_agent_name: 'Ernest',
-      secondary_agent_phone: '+19137179716',
+      secondary_agent_phone: '+18162262552',
       callSid: 'CA123',
     },
     ...overrides,
