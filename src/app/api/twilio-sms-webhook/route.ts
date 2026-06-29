@@ -22,7 +22,7 @@ import {
 } from '@/lib/google-ads-phone'
 
 const CASEY_PHONE = normalizePhoneToE164(process.env.CASEY_PHONE) || '+18167564943'
-const ERNEST_PHONE = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+19137179716'
+const ERNEST_PHONE = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+18162262552'
 const TWILIO_PHONE = normalizePhoneToE164(process.env.TWILIO_PHONE_NUMBER) || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
@@ -47,7 +47,7 @@ const TEAM_NUMBERS = new Set([
   '+18167564943', // Casey personal
   '+18167277667', // Casey company
   '+18166088588', // Ernest company
-  '+19137179716', // Ernest personal
+  '+18162262552', // Ernest forwarding
 ])
 
 type SmsSuppressionReason = 'SPAM' | 'BLOCKED' | 'DNC' | 'WRONG_NUMBER' | string

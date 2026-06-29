@@ -43,8 +43,8 @@ describe('ppc export failure alert', () => {
   })
 
   it('normalizes Ernest alert phone values', () => {
-    expect(cleanAlertPhone('(913) 717-9716')).toBe('+19137179716')
-    expect(cleanAlertPhone('19137179716')).toBe('+19137179716')
-    expect(cleanAlertPhone('+19137179716')).toBe('+19137179716')
+    expect(cleanAlertPhone('(816) 226-2552')).toBe('+18162262552')
+    expect(cleanAlertPhone('18162262552')).toBe('+18162262552')
+    expect(cleanAlertPhone('+18162262552')).toBe('+18162262552')
   })
 })

@@ -14,11 +14,11 @@ const supabase = createClient(
 console.log('🔍 Sprint 1 Appointment Verification\n')
 
 // 1. Check Ernest's lead for CONFIRM test
-console.log('1️⃣ CONFIRM Test (Ernest +19137179716)')
+console.log('1️⃣ CONFIRM Test (Ernest +18162262552)')
 const { data: ernestLead } = await supabase
   .from('leads')
   .select('id, full_name, phone')
-  .eq('phone', '+19137179716')
+  .eq('phone', '+18162262552')
   .single()
 
 if (ernestLead) {
@@ -61,7 +61,7 @@ if (ernestLead) {
     })
   }
 } else {
-  console.log(`   ❌ Lead not found for +19137179716`)
+  console.log(`   ❌ Lead not found for +18162262552`)
 }
 
 // 2. Check in-person appointment for April 14th
