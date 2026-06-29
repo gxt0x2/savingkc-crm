@@ -18,6 +18,9 @@ const NO_STORE_HEADERS: HeadersInit = {
   Vary: 'Authorization, Cookie',
 }
 
+const TWIML_APP_FRIENDLY_NAME = 'SavingKC CRM'
+const CANONICAL_VOICE_URL = 'https://crm.savingkc.com/api/twiml-voice'
+
 // Map email → outbound caller ID
 const AGENT_CALLER_IDS: Record<string, string> = {
   'ernest@savingkc.com': '+18166088588', // Ernest's company number
@@ -44,13 +47,19 @@ function requireTwilioEnv(name: string, expectedPrefix?: string): string {
   return value
 }
 
-async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
+function isProductionRuntime(): boolean {
+  const appUrl = env('NEXT_PUBLIC_APP_URL').replace(/\/$/, '')
+  return env('VERCEL_ENV') === 'production' || appUrl === 'https://crm.savingkc.com'
+}
+
+async function getTwimlAppSid(): Promise<string | undefined> {
+  const configuredSid = twilioEnv('TWILIO_TWIML_APP_SID')
+  if (configuredSid) return configuredSid
+
   const accountSid = requireTwilioEnv('TWILIO_ACCOUNT_SID', 'AC')
-  // Use API Key credentials (more reliable than rotating auth tokens)
   const apiKey = requireTwilioEnv('TWILIO_API_KEY', 'SK')
   const apiSecret = requireTwilioEnv('TWILIO_API_SECRET')
   const creds = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
-  const voiceUrl = `${env('NEXT_PUBLIC_APP_URL') || 'https://crm.savingkc.com'}/api/twiml-voice`
 
   try {
     const listRes = await fetch(
@@ -59,20 +68,16 @@ async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
     )
     const listData = await listRes.json()
     const existing = listData.applications?.find(
-      (a: { friendly_name: string; sid: string }) => a.friendly_name === 'SavingKC CRM'
+      (a: { friendly_name: string; sid: string }) => a.friendly_name === TWIML_APP_FRIENDLY_NAME
     )
     if (existing) {
-      // Update VoiceUrl in case it's stale (e.g. old tunnel URL)
-      await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Applications/${existing.sid}.json`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ VoiceUrl: voiceUrl, VoiceMethod: 'POST' }).toString(),
-        }
-      )
       return existing.sid
     }
+
+    // Normal token generation must not let preview deployments rewrite shared
+    // voice routing. Only production may create the canonical app if it is
+    // missing; explicit repair belongs in /api/setup-twilio.
+    if (!isProductionRuntime()) return undefined
 
     const createRes = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Applications.json`,
@@ -83,8 +88,8 @@ async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-          FriendlyName: 'SavingKC CRM',
-          VoiceUrl: voiceUrl,
+          FriendlyName: TWIML_APP_FRIENDLY_NAME,
+          VoiceUrl: CANONICAL_VOICE_URL,
           VoiceMethod: 'POST',
         }).toString(),
       }
@@ -92,8 +97,7 @@ async function getOrCreateTwimlAppSid(): Promise<string | undefined> {
     const data = await createRes.json()
     return data.sid
   } catch {
-    // Fallback to known SID if API call fails
-    return twilioEnv('TWILIO_TWIML_APP_SID')
+    return undefined
   }
 }
 
@@ -127,7 +131,10 @@ export async function GET() {
     const identity = email.includes('casey') ? 'casey' : email.includes('ernest') ? 'ernest' : 'crm-user'
     const callerId = AGENT_CALLER_IDS[email] || DEFAULT_CALLER_ID
 
-    const twimlAppSid = await getOrCreateTwimlAppSid()
+    const twimlAppSid = await getTwimlAppSid()
+    if (!twimlAppSid) {
+      throw new Error('SavingKC CRM TwiML App is not configured')
+    }
     const voiceGrant = new VoiceGrant({
       outgoingApplicationSid: twimlAppSid,
       incomingAllow: true,

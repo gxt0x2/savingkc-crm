@@ -20,13 +20,13 @@ describe('marketing lead alert helpers', () => {
   it('normalizes delivery status across website, PPC, and Google Ads call paths', () => {
     expect(normalizeLeadAlertDelivery({
       to_agents: ['Ernest', 'Casey'],
-      to_agent_phones: ['+18162262552', '+18167564943'],
+      to_agent_phones: ['+19137179716', '+18167564943'],
       delivery_status: [
-        { target: 'Ernest', to: '+18162262552', success: true, sid: 'SM1' },
+        { target: 'Ernest', to: '+19137179716', success: true, sid: 'SM1' },
         { status: 'fulfilled', value: { to: '+18167564943', success: false, error: 'blocked' } },
       ],
     })).toEqual([
-      { target: 'Ernest', to: '+18162262552', success: true, sid: 'SM1', error: null, status: null },
+      { target: 'Ernest', to: '+19137179716', success: true, sid: 'SM1', error: null, status: null },
       { target: 'Casey', to: '+18167564943', success: false, sid: null, error: 'blocked', status: 'fulfilled' },
     ])
   })
@@ -36,7 +36,7 @@ describe('marketing lead alert helpers', () => {
       form_agent_callback: {
         started: true,
         batchId: 'lead-1-123',
-        calls: [{ agentName: 'Ernest', to: '+18162262552', started: true, sid: 'CA1' }],
+        calls: [{ agentName: 'Ernest', to: '+19137179716', started: true, sid: 'CA1' }],
       },
     })
 
@@ -67,10 +67,10 @@ describe('marketing lead alert helpers', () => {
       {
         recipients: ['Ernest', 'Casey'],
         delivery: [
-          { target: 'Ernest', to: '+18162262552', success: true, sid: 'SM1', error: null, status: null },
+          { target: 'Ernest', to: '+19137179716', success: true, sid: 'SM1', error: null, status: null },
           { target: 'Casey', to: '+18167564943', success: false, sid: null, error: 'blocked', status: null },
         ],
-        callback: { started: true, sid: 'CA1', to: '+18162262552', batchId: 'b1', calls: [], error: null },
+        callback: { started: true, sid: 'CA1', to: '+19137179716', batchId: 'b1', calls: [], error: null },
         callbackResolution: { claimedBy: 'Ernest', claimedAt: '2026-06-04T14:00:00.000Z', outcome: 'connected', outcomeAt: '2026-06-04T14:03:00.000Z', dialStatus: 'completed' },
         trigger: 'ppc_lead_alert',
         trafficSource: 'google_ads',

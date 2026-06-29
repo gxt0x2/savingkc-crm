@@ -138,7 +138,7 @@ async function checkTwilioToken() {
 async function checkTwimlVoice() {
   const url = `${baseUrl}/api/twiml-voice`
   const params = new URLSearchParams({
-    To: '+18162262552',
+    To: '+19137179716',
     From: 'client:ernest',
     CallerId: '+18166088588',
   })
@@ -159,7 +159,7 @@ async function checkTwimlVoice() {
   const twiml = await res.text()
   assert(/<Dial\b/i.test(twiml), 'twiml-voice endpoint: missing <Dial> in TwiML response')
   // Allow optional attributes on <Number> (we add statusCallback for outbound).
-  assert(/<Number\b[^>]*>\+18162262552<\/Number>/i.test(twiml), 'twiml-voice endpoint: destination number mismatch')
+  assert(/<Number\b[^>]*>\+19137179716<\/Number>/i.test(twiml), 'twiml-voice endpoint: destination number mismatch')
 
   return {
     status: res.status,
