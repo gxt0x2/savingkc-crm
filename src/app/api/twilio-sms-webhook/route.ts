@@ -64,6 +64,12 @@ export async function POST(req: Request) {
       return new NextResponse('Missing required fields', { status: 400 })
     }
 
+    // Mirror every inbound into the SmarterContact unified inbox (fire-and-forget,
+    // never affects the response below).
+    import('@/lib/smartercontact/inbound')
+      .then((m) => m.recordScInbound({ from, to, body: messageBody, sid: messageSid }))
+      .catch((e) => console.error('[SC] inbound bridge failed:', e))
+
     const trimmedUpper = messageBody.trim().toUpperCase()
 
     // --- TCPA: STOP keyword handling (before ANY processing) ---

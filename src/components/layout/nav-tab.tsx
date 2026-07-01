@@ -7,13 +7,19 @@ import { useAppMode } from '@/hooks/use-app-mode'
 
 const acquisitionTabs = [
   { label: 'ARI', href: '/ari', icon: 'assistant' },
+  { label: 'Ops', href: '/ops', icon: 'manufacturing' },
   { label: 'Hot Opps', href: '/opportunities', icon: 'local_fire_department' },
+  { label: 'Texting', href: '/messenger', icon: 'sms' },
   { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },
   { label: 'KPIs', href: '/dashboard', icon: 'insights' },
   { label: 'Calendar', href: '/calendar', icon: 'calendar_today' },
 ]
 
+// Routes that belong to the SmarterContact texting suite (highlight "Texting").
+const TEXTING_ROUTES = ['/messenger', '/contacts', '/campaigns', '/workflows', '/skiptrace', '/reporting']
+
 const dispoTabs = [
+  { label: 'Ops', href: '/ops', icon: 'manufacturing' },
   { label: 'Pipeline', href: '/dispo/pipeline', icon: 'route' },
   { label: 'Deal Pages', href: '/dispo/deals', icon: 'description' },
   { label: 'Buyers & Vendors', href: '/dispo/buyers', icon: 'group' },
@@ -35,7 +41,9 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
   function isActive(href: string): boolean {
     if (pathname === href) return true
     if (href === '/ari' && pathname?.startsWith('/ari')) return true
+    if (href === '/ops' && pathname?.startsWith('/ops')) return true
     if (href === '/opportunities' && (pathname?.startsWith('/opportunities') || pathname?.startsWith('/leads'))) return true
+    if (href === '/messenger' && TEXTING_ROUTES.some((r) => pathname?.startsWith(r))) return true
     if (href === '/dialer' && pathname?.startsWith('/dialer')) return true
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
     if (href === '/calendar' && pathname?.startsWith('/calendar')) return true
