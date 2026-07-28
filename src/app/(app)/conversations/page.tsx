@@ -263,11 +263,14 @@ export default function ConversationsPage() {
     }))
 
     const allLeads = [...virtualLeads, ...rows]
+    const requestedLeadId = new URLSearchParams(window.location.search).get('lead')
     setLeads(allLeads)
     setActiveLeadId((current) =>
       current && allLeads.some((lead) => lead.id === current)
         ? current
-        : allLeads[0]?.id ?? null,
+        : requestedLeadId && allLeads.some((lead) => lead.id === requestedLeadId)
+          ? requestedLeadId
+          : allLeads[0]?.id ?? null,
     )
     setLoading(false)
   }, [])

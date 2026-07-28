@@ -7,6 +7,7 @@ import { useAppMode } from '@/hooks/use-app-mode'
 const acquisitionTabs = [
   { label: 'ARI', href: '/ari', icon: 'assistant' },
   { label: 'Contacts', href: '/contacts', icon: 'contacts' },
+  { label: 'Conversations', href: '/conversations', icon: 'forum' },
   { label: 'Workflows', href: '/workflows', icon: 'account_tree' },
   { label: 'Calendar', href: '/calendar?department=acquisitions', icon: 'calendar_today' },
   { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },
@@ -66,6 +67,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
       pathname?.startsWith('/leads')
     )) return true
     if (href === '/workflows' && pathname?.startsWith('/workflows')) return true
+    if (href === '/conversations' && pathname?.startsWith('/conversations')) return true
     if (href === '/dialer' && pathname?.startsWith('/dialer')) return true
     if (href === '/marketing' && pathname?.startsWith('/marketing')) return true
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
