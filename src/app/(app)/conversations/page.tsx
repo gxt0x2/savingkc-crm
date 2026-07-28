@@ -270,7 +270,10 @@ export default function ConversationsPage() {
       primaryNextAction: null,
     }))
 
-    const allLeads = [...virtualLeads, ...rows]
+    // Open the workspace on a fully identified seller so the operator lands in
+    // a useful thread with property, ownership, and opportunity context. Keep
+    // unmatched callers in the same inbox, immediately after known contacts.
+    const allLeads = [...rows, ...virtualLeads]
     const requestedLeadId = new URLSearchParams(window.location.search).get('lead')
     setLeads(allLeads)
     setActiveLeadId((current) =>
