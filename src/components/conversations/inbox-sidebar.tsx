@@ -29,7 +29,7 @@ export interface ThreadPreview {
   } | null
 }
 
-type TabFilter = 'all' | 'unread' | 'recents' | 'starred'
+type TabFilter = 'all' | 'unread' | 'mine' | 'unassigned'
 
 export function InboxSidebar({
   threads,
@@ -42,95 +42,84 @@ export function InboxSidebar({
   onSelectThread: (id: string) => void
   onNewMessage?: () => void
 }) {
-  const [activeTab, setActiveTab] = useState<TabFilter>('all')
+  const [activeTab, setActiveTab] = useState<TabFilter>('unread')
   const [search, setSearch] = useState('')
 
   const filteredThreads = threads.filter((t) => {
     if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false
     if (activeTab === 'unread') return t.unread
-    if (activeTab === 'starred') return t.starred
+    if (activeTab === 'mine') return Boolean(t.owner)
+    if (activeTab === 'unassigned') return !t.owner
     return true
   })
 
-  const tabs: { key: TabFilter; label: string; dot?: boolean }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'unread', label: 'Unread', dot: threads.some((t) => t.unread) },
-    { key: 'recents', label: 'Recents' },
-    { key: 'starred', label: 'Starred' },
+  const tabs: { key: TabFilter; label: string; count: number }[] = [
+    { key: 'unread', label: 'Inbox', count: threads.filter((thread) => thread.unread).length },
+    { key: 'mine', label: 'Mine', count: threads.filter((thread) => thread.owner).length },
+    { key: 'unassigned', label: 'Unassigned', count: threads.filter((thread) => !thread.owner).length },
+    { key: 'all', label: 'All', count: threads.length },
   ]
 
   return (
-    <aside className="w-80 bg-slate-100 flex flex-col h-full border-r border-slate-200/50 text-sm font-semibold">
-      <div className="p-4 space-y-4">
+    <aside className="flex h-full w-[330px] flex-col border-r border-[#dde2e8] bg-white text-sm font-semibold">
+      <div className="border-b border-[#e4e8ed]">
         {/* Header */}
-        <div className="flex items-center justify-between px-2">
-          <div>
-            <h1 className="text-lg font-bold text-slate-900">Inbox</h1>
-            <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 font-bold">
-              Unified Messaging
-            </p>
-          </div>
-          <button className="p-2 bg-white rounded-lg shadow-sm" onClick={onNewMessage}>
-            <Icon name="edit_square" className="text-primary" />
+        <div className="flex h-[76px] items-center justify-between px-5">
+          <h1 className="text-[22px] font-bold text-[#111827]">Conversations</h1>
+          <button className="flex h-9 items-center gap-1 rounded-md bg-[#e32e2e] px-3 text-xs font-bold text-white shadow-sm hover:bg-[#c42626]" onClick={onNewMessage}>
+            <Icon name="add" className="text-[18px]" /> New
           </button>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Icon
-            name="search"
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50 text-sm"
-          />
-          <input
-            className="w-full bg-surface-container-high/50 border-none rounded-xl pl-9 py-2.5 text-xs focus:ring-1 focus:ring-primary/20 focus:outline-none"
-            placeholder="Search contacts..."
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        {/* Quick Tabs */}
-        <div className="flex gap-1 p-1 bg-surface-container-high/40 rounded-xl">
+        <div className="flex px-4">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                'flex-1 py-1.5 rounded-lg text-[11px] relative transition-all duration-200',
-                activeTab === tab.key
-                  ? 'bg-white text-slate-950 shadow-sm'
-                  : 'text-slate-500 hover:bg-slate-200/50'
+                'flex-1 border-b-2 px-1 py-3 text-xs transition-colors',
+                activeTab === tab.key ? 'border-[#e32e2e] text-[#c42626]' : 'border-transparent text-slate-500',
               )}
             >
-              {tab.label}
-              {tab.dot && activeTab !== tab.key && (
-                <span className="absolute top-0 right-1 w-1.5 h-1.5 bg-on-tertiary-container rounded-full" />
-              )}
+              {tab.label} <span className="ml-1 text-[10px]">{tab.count}</span>
             </button>
           ))}
+        </div>
+
+        <div className="relative mx-4 my-3">
+          <Icon
+            name="search"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400"
+          />
+          <input
+            className="w-full rounded-md border border-[#d9dee5] bg-white py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none focus:border-[#e32e2e]"
+            placeholder="Search conversations"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2 border-t border-[#eef1f4] px-4 py-2">
+          <button className="flex h-8 items-center gap-1 rounded border border-[#d9dee5] px-3 text-[11px] text-slate-600">All channels <Icon name="expand_more" /></button>
+          <button className="flex h-8 items-center rounded border border-[#d9dee5] px-3 text-[11px] text-slate-600">Needs reply</button>
+          <button className="ml-auto flex h-8 w-8 items-center justify-center rounded border border-[#d9dee5] text-slate-500"><Icon name="filter_list" /></button>
         </div>
       </div>
 
       {/* Thread List */}
-      <div className="flex-1 overflow-y-auto px-2 space-y-1">
+      <div className="flex-1 overflow-y-auto">
         {filteredThreads.map((thread) => {
           const isActive = thread.id === activeThreadId
           return (
             <div
               key={thread.id}
               onClick={() => onSelectThread(thread.id)}
-              className={cn(
-                'p-3 rounded-lg cursor-pointer transition-transform duration-200',
-                isActive
-                  ? 'bg-white text-slate-950 shadow-sm translate-x-1'
-                  : 'hover:bg-slate-200/50'
-              )}
+              className={cn('cursor-pointer border-b border-[#edf0f3] px-4 py-4 transition-colors', isActive ? 'bg-[#fff5f5]' : 'bg-white hover:bg-[#f8fafb]')}
             >
               <div className="flex items-start gap-3">
                 <div
                   className={cn(
-                    'w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold',
+                    'h-11 w-11 flex-shrink-0 rounded-full flex items-center justify-center text-xs font-bold',
                     thread.avatarBg,
                     thread.avatarText
                   )}
@@ -144,22 +133,13 @@ export function InboxSidebar({
                       {thread.timestamp}
                     </span>
                   </div>
-                  {thread.address && (
-                    <div className="text-[11px] text-primary/70 mb-1 flex items-center gap-1">
-                      {isActive && <Icon name="location_on" className="text-[12px]" />}
-                      {!isActive && (
-                        <span className="text-on-surface-variant/70">{thread.address}</span>
-                      )}
-                      {isActive && thread.address}
-                    </div>
-                  )}
-                  <div className="flex gap-2 mb-2">
+                  <div className="mb-1 flex gap-2">
                     {thread.attentionState !== 'resolved' && (
                       <span
                         className={cn(
                           'px-2 py-0.5 text-[9px] rounded-full uppercase tracking-tighter',
                           thread.attentionState === 'needs_reply'
-                            ? 'bg-red-100 text-red-800'
+                            ? 'bg-[#ffe5e6] text-[#a71922]'
                             : 'bg-amber-100 text-amber-800'
                         )}
                       >
@@ -192,14 +172,7 @@ export function InboxSidebar({
                       </span>
                     ))}
                   </div>
-                  <p
-                    className={cn(
-                      'text-[12px] text-on-surface-variant line-clamp-1 font-normal',
-                      isActive ? 'italic' : 'opacity-60'
-                    )}
-                  >
-                    {isActive ? `"${thread.lastMessage}"` : thread.lastMessage}
-                  </p>
+                  <p className="line-clamp-2 text-[12px] font-normal leading-4 text-slate-500">{thread.lastMessage}</p>
                   {(thread.nextAction || thread.owner) && (
                     <div className="mt-2 flex items-center justify-between gap-2 text-[10px]">
                       <span className={cn(

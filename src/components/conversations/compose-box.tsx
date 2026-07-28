@@ -88,8 +88,8 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
   }
 
   return (
-    <div className="p-8 pt-0 relative z-10 flex-shrink-0">
-      <div className="bg-white rounded-3xl shadow-[0px_8px_32px_rgba(0,0,0,0.08)] border border-outline-variant/10 overflow-hidden">
+    <div className="relative z-10 flex-shrink-0 border-t border-[#dde2e8] bg-white p-4">
+      <div className="overflow-hidden rounded-lg border border-[#ccd3dc] bg-white">
         {/* Toggle Tabs */}
         <div className="flex border-b border-outline-variant/5">
           {modes.map((mode) => (
@@ -97,10 +97,10 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
               key={mode.key}
               onClick={() => setActiveMode(mode.key)}
               className={cn(
-                'px-8 py-4 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all',
+                'flex items-center gap-2 border-b-2 px-5 py-2.5 text-xs font-bold transition-all',
                 activeMode === mode.key
-                  ? 'border-b-2 border-primary text-primary'
-                  : 'text-on-surface-variant/40 hover:text-on-surface-variant'
+                  ? 'border-[#e32e2e] text-[#c42626]'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
               )}
             >
               <Icon name={mode.icon} className="text-sm" />
@@ -137,13 +137,13 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
         )}
 
         {/* Input Area */}
-        <div className="p-4 flex items-end gap-4">
+        <div className="flex items-end gap-3 p-3">
           <div className="flex-1">
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="w-full border-none focus:ring-0 text-sm p-2 resize-none h-20 bg-transparent focus:outline-none"
+              className="h-14 w-full resize-none border-none bg-transparent p-2 text-sm text-slate-700 focus:outline-none focus:ring-0"
               placeholder={
                 activeMode === 'sms'
                   ? 'Type your message... (Enter to send)'
@@ -189,10 +189,10 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
             onClick={handleSend}
             disabled={sending || !message.trim()}
             className={cn(
-              'w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-lg mb-2',
+              'mb-2 flex h-10 w-16 items-center justify-center rounded-md text-sm font-bold transition-all',
               sending || !message.trim()
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-primary text-on-primary hover:scale-[1.02] active:scale-95'
+                : 'bg-[#e32e2e] text-white hover:bg-[#c42626]'
             )}
           >
             {sending

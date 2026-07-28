@@ -76,10 +76,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const isConversationWorkspace = pathname?.startsWith('/conversations') ?? false
   const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
-  const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings)
+  const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings || isConversationWorkspace)
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
   const useUserLightTheme = hydrated && !useTcLightTheme && userTheme === 'light'
   const useLightLogo = useTcLightTheme || useUserLightTheme
@@ -236,6 +237,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     loadProfile()
   }, [user?.email])
+
+  if (isConversationWorkspace) {
+    return (
+      <div className="min-h-screen bg-[#f4f6f8] text-[#152033]">
+        {children}
+      </div>
+    )
+  }
 
   return (
     <div

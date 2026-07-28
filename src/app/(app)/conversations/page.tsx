@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import { ThreadView } from '@/components/conversations/thread-view'
+import { WorkspaceNav } from '@/components/conversations/workspace-nav'
+import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
 import type { Message } from '@/components/conversations/message-bubble'
 import { toProperCase, formatPhone } from '@/lib/format'
 
@@ -17,6 +19,12 @@ interface LeadRow {
   station: string | null
   priority: string | null
   assigned_agent: string | null
+  county?: string | null
+  source?: string | null
+  motivation_score?: number | null
+  arv?: number | null
+  offer_amount?: number | null
+  appointment_date?: string | null
   created_at: string
   attentionState?: 'needs_reply' | 'waiting_on_contact' | 'resolved'
   owner?: string | null
@@ -386,7 +394,7 @@ export default function ConversationsPage() {
   }
 
   return (
-    <div className="relative flex h-[calc(100vh-4rem)]">
+    <div className="relative flex h-screen overflow-hidden bg-[#f4f6f8] text-[#152033]">
       {showNewMessage && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center" onClick={() => setShowNewMessage(false)}>
           <div className="bg-white rounded-xl p-6 shadow-2xl w-96 max-w-[90vw] max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -408,6 +416,8 @@ export default function ConversationsPage() {
         </div>
       )}
 
+      <WorkspaceNav needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length} />
+
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div
@@ -427,7 +437,7 @@ export default function ConversationsPage() {
       </div>
 
       {/* Thread view - full width on mobile, flex-1 on desktop */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col bg-white">
         {/* Mobile header with menu button */}
         <div className="md:hidden flex items-center gap-3 p-4 border-b border-slate-200 bg-white">
           <button
@@ -450,6 +460,8 @@ export default function ConversationsPage() {
           onConversationChanged={refreshConversation}
         />
       </div>
+
+      <ContactDetailsPanel contact={activeLead || null} />
 
       {/* Toast notifications */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">

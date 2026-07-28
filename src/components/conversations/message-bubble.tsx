@@ -53,10 +53,10 @@ function SmsBubble({ message }: { message: Message }) {
         <div className="flex-1">
           <div
             className={cn(
-              'rounded-2xl p-4 text-sm leading-snug shadow-sm',
+              'rounded-xl border p-3 text-sm leading-snug shadow-sm',
               isSent
-                ? 'bg-primary text-on-primary rounded-tr-none shadow-md'
-                : 'bg-surface-container-high text-on-surface rounded-tl-none'
+                ? 'rounded-tr-none border-[#ef9da2] bg-[#fff4f4] text-[#3b2022]'
+                : 'rounded-tl-none border-[#d9dee5] bg-white text-[#253247]'
             )}
           >
             {message.content}
@@ -182,10 +182,10 @@ function CallCard({ message }: { message: Message }) {
 
         {/* Audio player card */}
         <div className={cn(
-          'rounded-2xl p-4 shadow-sm border',
-          isSent
-            ? 'bg-primary text-on-primary border-transparent'
-            : 'bg-surface-container-high text-on-surface border-outline-variant/10'
+            'rounded-xl border p-4 shadow-sm',
+            isSent
+            ? 'border-[#ef9da2] bg-[#fff4f4] text-[#3b2022]'
+            : 'border-[#d9dee5] bg-white text-[#253247]'
         )}>
           {message.recordingUrl ? (
             <>

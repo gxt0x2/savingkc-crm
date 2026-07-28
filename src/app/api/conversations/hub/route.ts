@@ -25,7 +25,7 @@ export async function GET() {
   const db = supabaseAdmin()
   const { data: leads, error: leadsError } = await db
     .from('leads')
-    .select('id, full_name, phone, email, property_address, city, station, priority, assigned_agent, created_at')
+    .select('id, full_name, phone, email, property_address, city, county, station, priority, assigned_agent, source, motivation_score, arv, offer_amount, appointment_date, created_at')
     .not('station', 'eq', 'dead')
     .order('created_at', { ascending: false })
     .limit(100)

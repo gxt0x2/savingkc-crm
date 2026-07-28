@@ -10,6 +10,12 @@ export interface ConversationHubLead {
   station: string | null
   priority: string | null
   assigned_agent: string | null
+  county?: string | null
+  source?: string | null
+  motivation_score?: number | null
+  arv?: number | null
+  offer_amount?: number | null
+  appointment_date?: string | null
   created_at: string
 }
 
