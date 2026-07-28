@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { MessageBubble, type Message } from './message-bubble'
 import { ComposeBox } from './compose-box'
@@ -14,6 +14,15 @@ interface ThreadContact {
   verified?: boolean
   assignedAgent?: string | null
   toPhone?: string
+  attentionState: 'needs_reply' | 'waiting_on_contact' | 'resolved'
+  owner: string | null
+  nextAction: {
+    id: string
+    title: string
+    dueAt: string | null
+    owner: string | null
+    overdue: boolean
+  } | null
 }
 
 interface DateGroup {
@@ -37,20 +46,46 @@ export function ThreadView({
   leadId,
   phone,
   onSent,
+  onConversationChanged,
 }: {
   contact: ThreadContact
   dateGroups: DateGroup[]
   leadId?: string
   phone?: string
   onSent?: () => void
+  onConversationChanged?: () => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [completingTask, setCompletingTask] = useState(false)
+  const [taskError, setTaskError] = useState<string | null>(null)
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [dateGroups])
+
+  async function completePrimaryAction() {
+    if (!contact.nextAction || completingTask) return
+    setCompletingTask(true)
+    setTaskError(null)
+    try {
+      const response = await fetch(`/api/leads/tasks/${contact.nextAction.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' }),
+      })
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string }
+        throw new Error(payload.error || 'Unable to complete the action')
+      }
+      onConversationChanged?.()
+    } catch (error) {
+      setTaskError(error instanceof Error ? error.message : 'Unable to complete the action')
+    } finally {
+      setCompletingTask(false)
+    }
+  }
 
   return (
     <section className="flex-1 flex flex-col bg-surface min-w-0">
@@ -96,7 +131,7 @@ export function ThreadView({
                 </span>
                 {/* Assigned agent pill */}
                 <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded border border-slate-200">
-                  👤 {contact.assignedAgent || 'Unassigned'}
+                  👤 {contact.owner || contact.assignedAgent || 'Unassigned'}
                 </span>
               </div>
             </div>
@@ -114,6 +149,45 @@ export function ThreadView({
           </button>
         </div>
       </header>
+
+      {(contact.attentionState !== 'resolved' || contact.nextAction) && (
+        <div className="mx-8 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className={
+              contact.attentionState === 'needs_reply'
+                ? 'rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-red-800'
+                : 'rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-800'
+            }>
+              {contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Waiting on contact'}
+            </span>
+            <div>
+              <p className="text-sm font-bold text-slate-900">
+                {contact.nextAction?.title || 'Review this conversation'}
+              </p>
+              <p className="text-xs text-slate-500">
+                Owner: {contact.nextAction?.owner || contact.owner || 'Unassigned'}
+                {contact.nextAction?.dueAt
+                  ? ` · Due ${new Date(contact.nextAction.dueAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                  : ''}
+              </p>
+            </div>
+          </div>
+          {contact.nextAction?.overdue && (
+            <span className="text-xs font-black uppercase tracking-wide text-red-700">Overdue</span>
+          )}
+          {contact.nextAction && (
+            <button
+              type="button"
+              onClick={completePrimaryAction}
+              disabled={completingTask}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {completingTask ? 'Completing…' : 'Mark complete'}
+            </button>
+          )}
+          {taskError && <p className="w-full text-xs font-medium text-red-700">{taskError}</p>}
+        </div>
+      )}
 
       {/* Chat Content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-8 space-y-8 scroll-smooth">

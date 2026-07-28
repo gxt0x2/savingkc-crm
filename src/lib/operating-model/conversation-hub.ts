@@ -1,0 +1,146 @@
+import type { ConversationAttentionState } from './types'
+
+export interface ConversationHubLead {
+  id: string
+  full_name: string | null
+  phone: string | null
+  email: string | null
+  property_address: string | null
+  city: string | null
+  station: string | null
+  priority: string | null
+  assigned_agent: string | null
+  created_at: string
+}
+
+export interface ConversationHubActivity {
+  id: string
+  lead_id: string | null
+  activity_type: string
+  description: string | null
+  agent: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface ConversationHubThread extends ConversationHubLead {
+  attentionState: ConversationAttentionState
+  owner: string | null
+  unread: boolean
+  lastMessage: string
+  lastActivityAt: string
+  primaryNextAction: {
+    id: string
+    title: string
+    dueAt: string | null
+    owner: string | null
+    overdue: boolean
+  } | null
+}
+
+const COMM_TYPES = new Set(['call', 'sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'voicemail'])
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function direction(activity: ConversationHubActivity): 'inbound' | 'outbound' | null {
+  if (!COMM_TYPES.has(activity.activity_type)) return null
+  const raw = text(activity.metadata?.direction)?.toLowerCase()
+  if (raw === 'inbound' || raw === 'received' || raw === 'in') return 'inbound'
+  if (raw === 'outbound' || raw === 'sent' || raw === 'out') return 'outbound'
+  if (activity.activity_type === 'sms_received' || activity.activity_type === 'sms_inbound' || activity.activity_type === 'voicemail') {
+    return 'inbound'
+  }
+  return 'outbound'
+}
+
+function latestFirst(a: ConversationHubActivity, b: ConversationHubActivity): number {
+  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+}
+
+export function buildConversationHubThread(
+  lead: ConversationHubLead,
+  activities: ConversationHubActivity[],
+  now = new Date(),
+): ConversationHubThread {
+  const sorted = [...activities].sort(latestFirst)
+  const operatingState = sorted.find((activity) =>
+    activity.activity_type === 'status_change' &&
+    activity.metadata?.workflow_id === 'seller-form-intake',
+  )
+  const latestHubState = sorted.find((activity) =>
+    activity.activity_type === 'status_change' &&
+    ['mark_read', 'mark_unread'].includes(String(activity.metadata?.hub_action ?? '')),
+  )
+  const latestComm = sorted.find((activity) => direction(activity) !== null)
+
+  let attentionState: ConversationAttentionState =
+    operatingState?.metadata?.conversation_attention === 'needs_reply'
+      ? 'needs_reply'
+      : 'resolved'
+
+  if (latestComm) {
+    attentionState = direction(latestComm) === 'inbound' ? 'needs_reply' : 'waiting_on_contact'
+  }
+
+  if (latestHubState && (!latestComm || new Date(latestHubState.created_at) > new Date(latestComm.created_at))) {
+    attentionState = latestHubState.metadata?.hub_action === 'mark_unread' ? 'needs_reply' : 'resolved'
+  }
+
+  const primaryTask = sorted.find((activity) =>
+    activity.activity_type === 'task' &&
+    activity.metadata?.primary_next_action === true &&
+    activity.metadata?.status === 'pending',
+  )
+  const dueAt = text(primaryTask?.metadata?.due_date)
+  const owner =
+    text(lead.assigned_agent) ??
+    text(primaryTask?.metadata?.assigned_to) ??
+    text(operatingState?.metadata?.owner_name)
+
+  return {
+    ...lead,
+    attentionState,
+    owner,
+    unread: attentionState === 'needs_reply',
+    lastMessage: latestComm?.description || (
+      attentionState === 'needs_reply' ? 'New seller needs a response' : 'No communication yet'
+    ),
+    lastActivityAt: sorted[0]?.created_at || lead.created_at,
+    primaryNextAction: primaryTask ? {
+      id: primaryTask.id,
+      title: primaryTask.description || 'Next action',
+      dueAt,
+      owner: text(primaryTask.metadata?.assigned_to) ?? owner,
+      overdue: Boolean(dueAt && new Date(dueAt) < now),
+    } : null,
+  }
+}
+
+export function buildConversationHubThreads(
+  leads: ConversationHubLead[],
+  activities: ConversationHubActivity[],
+  now = new Date(),
+): ConversationHubThread[] {
+  const byLead = new Map<string, ConversationHubActivity[]>()
+  for (const activity of activities) {
+    if (!activity.lead_id) continue
+    const items = byLead.get(activity.lead_id) ?? []
+    items.push(activity)
+    byLead.set(activity.lead_id, items)
+  }
+
+  const attentionOrder: Record<ConversationAttentionState, number> = {
+    needs_reply: 0,
+    waiting_on_contact: 1,
+    resolved: 2,
+  }
+
+  return leads
+    .map((lead) => buildConversationHubThread(lead, byLead.get(lead.id) ?? [], now))
+    .sort((a, b) =>
+      attentionOrder[a.attentionState] - attentionOrder[b.attentionState] ||
+      new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime(),
+    )
+}

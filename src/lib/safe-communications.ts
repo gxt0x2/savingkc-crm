@@ -9,8 +9,9 @@
 
 import twilio from 'twilio'
 import { supabase } from '@/lib/supabase-lazy'
+import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 
-const TEST_MODE = process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'development'
+const TEST_MODE = externalSideEffectsDisabled()
 
 function cleanTwilioEnv(name: string): string {
   return process.env[name]

@@ -18,6 +18,15 @@ export interface ThreadPreview {
   timestamp: string
   unread?: boolean
   starred?: boolean
+  attentionState: 'needs_reply' | 'waiting_on_contact' | 'resolved'
+  owner: string | null
+  nextAction: {
+    id: string
+    title: string
+    dueAt: string | null
+    owner: string | null
+    overdue: boolean
+  } | null
 }
 
 type TabFilter = 'all' | 'unread' | 'recents' | 'starred'
@@ -145,6 +154,18 @@ export function InboxSidebar({
                     </div>
                   )}
                   <div className="flex gap-2 mb-2">
+                    {thread.attentionState !== 'resolved' && (
+                      <span
+                        className={cn(
+                          'px-2 py-0.5 text-[9px] rounded-full uppercase tracking-tighter',
+                          thread.attentionState === 'needs_reply'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-800'
+                        )}
+                      >
+                        {thread.attentionState === 'needs_reply' ? 'Needs reply' : 'Waiting'}
+                      </span>
+                    )}
                     {thread.personality && (
                       <span
                         className={cn(
@@ -179,6 +200,17 @@ export function InboxSidebar({
                   >
                     {isActive ? `"${thread.lastMessage}"` : thread.lastMessage}
                   </p>
+                  {(thread.nextAction || thread.owner) && (
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[10px]">
+                      <span className={cn(
+                        'truncate',
+                        thread.nextAction?.overdue ? 'font-bold text-red-700' : 'text-slate-500',
+                      )}>
+                        {thread.nextAction?.title || 'No primary action'}
+                      </span>
+                      <span className="shrink-0 text-slate-400">{thread.owner || 'Unassigned'}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

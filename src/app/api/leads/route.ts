@@ -8,6 +8,8 @@ import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { DEAD_REASONS, cleanDeadReason, deadReasonLabel } from '@/lib/lead-outcomes'
 import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
+import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
+import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -480,7 +482,23 @@ export async function POST(req: NextRequest) {
       isGoogleAds,
     })
 
-    if (isGoogleAds) {
+    try {
+      await recordSellerIntakeOperatingState({
+        leadId: resolvedLeadId,
+        formSource,
+        submissionKey: sessionId,
+        phone: normalizedPhone || phone,
+        email,
+        address,
+        smsConsent,
+      })
+    } catch (err) {
+      // The operating-model projection is additive during migration. Preserve
+      // successful lead capture while making projection failures observable.
+      console.error('[website-lead] operating state projection failed:', err)
+    }
+
+    if (isGoogleAds && !externalSideEffectsDisabled()) {
       await enqueuePpcConversion({
         eventName: 'lead_submitted',
         eventCategory: 'form',
@@ -500,18 +518,20 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    try {
-      await triggerWebsiteLeadSideEffects({
-        leadId: resolvedLeadId,
-        fullName: name,
-        address,
-        phone: normalizedPhone || phone,
-        source: leadSource,
-        formSource,
-        isGoogleAds,
-      })
-    } catch (err) {
-      console.error('[website-lead] side effects failed:', err)
+    if (!externalSideEffectsDisabled()) {
+      try {
+        await triggerWebsiteLeadSideEffects({
+          leadId: resolvedLeadId,
+          fullName: name,
+          address,
+          phone: normalizedPhone || phone,
+          source: leadSource,
+          formSource,
+          isGoogleAds,
+        })
+      } catch (err) {
+        console.error('[website-lead] side effects failed:', err)
+      }
     }
 
     return NextResponse.json({ success: true, leadId: resolvedLeadId, manifestId }, { headers: corsHeaders })

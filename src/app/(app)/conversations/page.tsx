@@ -18,6 +18,18 @@ interface LeadRow {
   priority: string | null
   assigned_agent: string | null
   created_at: string
+  attentionState?: 'needs_reply' | 'waiting_on_contact' | 'resolved'
+  owner?: string | null
+  unread?: boolean
+  lastMessage?: string
+  lastActivityAt?: string
+  primaryNextAction?: {
+    id: string
+    title: string
+    dueAt: string | null
+    owner: string | null
+    overdue: boolean
+  } | null
 }
 
 interface ActivityRow {
@@ -28,6 +40,10 @@ interface ActivityRow {
   agent: string | null
   metadata: Record<string, unknown> | null
   created_at: string
+}
+
+interface DatabaseActivityRow extends Omit<ActivityRow, 'type'> {
+  activity_type: string
 }
 
 // Simple toast type
@@ -160,13 +176,6 @@ export default function ConversationsPage() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastCounter = useRef(0)
 
-  // Expose fetchActivities as a stable ref so realtime + onSent can both call it
-  const activeLeadIdRef = useRef<string | null>(null)
-  activeLeadIdRef.current = activeLeadId
-
-  const leadsRef = useRef<LeadRow[]>([])
-  leadsRef.current = leads
-
   function addToast(msg: string) {
     const id = ++toastCounter.current
     setToasts((prev) => [...prev, { id, message: msg }])
@@ -180,7 +189,7 @@ export default function ConversationsPage() {
   }
 
   const fetchActivities = useCallback(async () => {
-    const currentLeadId = activeLeadIdRef.current
+    const currentLeadId = activeLeadId
     if (!currentLeadId) return
     const supabase = createClient()
 
@@ -190,82 +199,93 @@ export default function ConversationsPage() {
         .from('lead_activities')
         .select('id, lead_id, activity_type, description, agent, metadata, created_at')
         .is('lead_id', null)
-        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'task', 'status_change', 'letter_tracking', 'ghost_protocol_enrollment', 'followup_enrollment'])
+        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'letter_tracking'])
         .order('created_at', { ascending: true })
         .limit(100)
-      const filtered = (data || []).filter((a: any) => {
+      const filtered = ((data || []) as DatabaseActivityRow[]).filter((a) => {
         const meta = a.metadata || {}
         return meta.from === phone || meta.to === phone
       })
-      setActivities(filtered.map((a: any) => ({ ...a, type: a.activity_type })) as unknown as ActivityRow[])
+      setActivities(filtered.map((a) => ({ ...a, type: a.activity_type })))
     } else {
       const { data } = await supabase
         .from('lead_activities')
         .select('id, lead_id, activity_type, description, agent, metadata, created_at')
         .eq('lead_id', currentLeadId)
-        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'task', 'status_change', 'letter_tracking', 'ghost_protocol_enrollment', 'followup_enrollment'])
+        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'letter_tracking'])
         .order('created_at', { ascending: true })
         .limit(100)
-      setActivities((data || []).map((a: any) => ({ ...a, type: a.activity_type })) as unknown as ActivityRow[])
+      setActivities(((data || []) as DatabaseActivityRow[]).map((a) => ({ ...a, type: a.activity_type })))
     }
-  }, [])
+  }, [activeLeadId])
 
-  useEffect(() => {
-    async function fetchLeads() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('leads')
-        .select('id, full_name, phone, email, property_address, city, station, priority, assigned_agent, created_at')
-        .not('station', 'eq', 'dead')
-        .order('created_at', { ascending: false })
-        .limit(100)
-      const rows = (data as LeadRow[]) || []
-
-      // Also fetch unmatched conversations (lead_id is null)
-      const { data: unmatchedData } = await supabase
+  const fetchThreads = useCallback(async () => {
+    const supabase = createClient()
+    const [response, unmatchedResult] = await Promise.all([
+      fetch('/api/conversations/hub', { cache: 'no-store' }),
+      supabase
         .from('lead_activities')
         .select('id, lead_id, activity_type, description, agent, metadata, created_at')
         .is('lead_id', null)
         .in('activity_type', ['call', 'sms', 'voicemail'])
         .order('created_at', { ascending: false })
-        .limit(50)
-      const unmatched = (unmatchedData || []) as unknown as ActivityRow[]
+        .limit(50),
+    ])
+    const payload = response.ok ? await response.json() as { items?: LeadRow[] } : { items: [] }
+    const rows = payload.items || []
+    const unmatched = (unmatchedResult.data || []) as unknown as ActivityRow[]
 
-      // Group unmatched by phone number to create virtual threads
-      const phoneMap = new Map<string, ActivityRow[]>()
-      for (const act of unmatched) {
-        const phone = (act.metadata?.from as string) || (act.metadata?.to as string) || 'unknown'
-        if (!phoneMap.has(phone)) phoneMap.set(phone, [])
-        phoneMap.get(phone)!.push(act)
-      }
-
-      // Create virtual lead entries for unmatched numbers
-      const virtualLeads: LeadRow[] = Array.from(phoneMap.entries()).map(([phone, acts]) => ({
-        id: `unmatched:${phone}`,
-        full_name: phone,
-        phone,
-        email: null,
-        property_address: null,
-        city: null,
-        station: 'unmatched',
-        priority: 'normal',
-        assigned_agent: null,
-        created_at: acts[0].created_at,
-      }))
-
-      const allLeads = [...virtualLeads, ...rows]
-      setLeads(allLeads)
-      if (allLeads.length > 0) setActiveLeadId(allLeads[0].id)
-      setLoading(false)
+    const phoneMap = new Map<string, ActivityRow[]>()
+    for (const act of unmatched) {
+      const phone = (act.metadata?.from as string) || (act.metadata?.to as string) || 'unknown'
+      const items = phoneMap.get(phone) ?? []
+      items.push(act)
+      phoneMap.set(phone, items)
     }
-    fetchLeads()
+
+    const virtualLeads: LeadRow[] = Array.from(phoneMap.entries()).map(([phone, acts]) => ({
+      id: `unmatched:${phone}`,
+      full_name: phone,
+      phone,
+      email: null,
+      property_address: null,
+      city: null,
+      station: 'unmatched',
+      priority: 'normal',
+      assigned_agent: null,
+      created_at: acts[0].created_at,
+      attentionState: 'needs_reply',
+      owner: null,
+      unread: true,
+      lastMessage: acts[0].description || 'Inbound call — not yet a contact',
+      lastActivityAt: acts[0].created_at,
+      primaryNextAction: null,
+    }))
+
+    const allLeads = [...virtualLeads, ...rows]
+    setLeads(allLeads)
+    setActiveLeadId((current) =>
+      current && allLeads.some((lead) => lead.id === current)
+        ? current
+        : allLeads[0]?.id ?? null,
+    )
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchThreads()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [fetchThreads])
 
   useEffect(() => {
     if (!activeLeadId) return
     const supabase = createClient()
 
-    fetchActivities()
+    const refreshTimer = window.setTimeout(() => {
+      void fetchActivities()
+    }, 0)
 
     // Realtime subscription — new activities appear without refresh
     const channel = supabase
@@ -278,16 +298,15 @@ export default function ConversationsPage() {
           table: 'lead_activities',
           ...(activeLeadId.startsWith('unmatched:') ? {} : { filter: `lead_id=eq.${activeLeadId}` }),
         },
-        (payload: any) => {
-          fetchActivities()
+        (payload) => {
+          void Promise.all([fetchActivities(), fetchThreads()])
 
           // Toast notification for inbound messages
           const meta = payload.new?.metadata || {}
           const direction = (meta.direction as string) || ''
           const isInbound = direction === 'inbound' || direction === 'received'
           if (isInbound) {
-            const currentLeads = leadsRef.current
-            const lead = currentLeads.find((l) => l.id === activeLeadId)
+            const lead = leads.find((l) => l.id === activeLeadId)
             const name = lead?.full_name && lead.full_name !== lead.phone
               ? toProperCase(lead.full_name)
               : formatPhone(lead?.phone)
@@ -297,8 +316,15 @@ export default function ConversationsPage() {
       )
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
-  }, [activeLeadId, fetchActivities])
+    return () => {
+      window.clearTimeout(refreshTimer)
+      supabase.removeChannel(channel)
+    }
+  }, [activeLeadId, fetchActivities, fetchThreads, leads])
+
+  const refreshConversation = useCallback(() => {
+    void Promise.all([fetchActivities(), fetchThreads()])
+  }, [fetchActivities, fetchThreads])
 
   const activeLead = leads.find((l) => l.id === activeLeadId)
 
@@ -315,10 +341,13 @@ export default function ConversationsPage() {
     address: [lead.property_address, lead.city].filter(Boolean).join(', ') || (lead.station === 'unmatched' ? formatPhone(lead.phone) : '—'),
     personality: null,
     tags: lead.priority === 'hot' ? [{ label: 'Hot Lead', variant: 'hot' as const }] : lead.station === 'unmatched' ? [{ label: 'New Call', variant: 'hot' as const }] : [],
-    lastMessage: lead.station === 'unmatched' ? 'Inbound call — not yet a lead' : lead.station ? `Stage: ${lead.station.replace(/_/g, ' ')}` : 'No activity yet',
-    timestamp: new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    unread: lead.station === 'unmatched',
+    lastMessage: lead.lastMessage || (lead.station === 'unmatched' ? 'Inbound call — not yet a contact' : 'No communication yet'),
+    timestamp: new Date(lead.lastActivityAt || lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    unread: lead.unread ?? lead.station === 'unmatched',
     starred: lead.priority === 'hot',
+    attentionState: lead.attentionState || (lead.station === 'unmatched' ? 'needs_reply' : 'resolved'),
+    owner: lead.owner || lead.assigned_agent,
+    nextAction: lead.primaryNextAction || null,
   }))
 
   const commActivities = activities
@@ -339,8 +368,11 @@ export default function ConversationsPage() {
         verified: false,
         assignedAgent: activeLead.assigned_agent,
         toPhone,
+        attentionState: activeLead.attentionState || 'resolved',
+        owner: activeLead.owner || activeLead.assigned_agent,
+        nextAction: activeLead.primaryNextAction || null,
       }
-    : { name: 'Select a contact', initials: '—', address: '—', county: '—', tags: [], verified: false, assignedAgent: null, toPhone: '+18163077835' }
+    : { name: 'Select a contact', initials: '—', address: '—', county: '—', tags: [], verified: false, assignedAgent: null, toPhone: '+18163077835', attentionState: 'resolved' as const, owner: null, nextAction: null }
 
   if (loading) {
     return (
@@ -411,7 +443,8 @@ export default function ConversationsPage() {
           dateGroups={dateGroups.length > 0 ? dateGroups : [{ label: 'No messages yet', messages: [] }]}
           leadId={activeLeadId || undefined}
           phone={activeLead?.phone || undefined}
-          onSent={fetchActivities}
+          onSent={refreshConversation}
+          onConversationChanged={refreshConversation}
         />
       </div>
 

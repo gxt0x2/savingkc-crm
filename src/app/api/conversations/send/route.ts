@@ -3,6 +3,7 @@ import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { sendLeadSms } from '@/lib/send-lead-sms'
 import { supabase } from '@/lib/supabase-lazy'
+import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 
 export async function POST(req: Request) {
   try {
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
       const emailSubject = subject || 'Message from Saving KC'
       let sent = false
 
-      if (process.env.RESEND_API_KEY) {
+      if (!externalSideEffectsDisabled() && process.env.RESEND_API_KEY) {
         const { Resend } = await import('resend')
         const resend = new Resend(process.env.RESEND_API_KEY)
         const fromEmail = process.env.RESEND_FROM_EMAIL || 'ernest@savingkc.com'

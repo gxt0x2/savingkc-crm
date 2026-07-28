@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server'
 import { resolvePpcTrackingEndpoint } from '@/lib/ppc/tracking-endpoint'
+import { previewWriteBlocked } from '@/lib/preview-safety'
 
 // Routes that don't require authentication
 const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', '/deals', '/ppc']
@@ -390,6 +391,16 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
 
   if (isPaidLandingPageRequest(request)) {
     paidLandingCookies = queuePaidLandingRequest(request, event)
+  }
+
+  if (previewWriteBlocked(request.method, pathname)) {
+    return NextResponse.json(
+      {
+        error: 'Preview is read-only until a staging database is connected.',
+        previewReadOnly: true,
+      },
+      { status: 403 },
+    )
   }
 
   if (hasTestBypass(request)) {
