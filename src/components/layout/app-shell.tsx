@@ -246,6 +246,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <div className="min-h-screen bg-[#f4f6f8] text-[#152033]">
         {children}
+        <DialerPanel
+          open={showDialer}
+          onClose={() => {
+            setShowDialer(false)
+            setPendingDialLead(null)
+            setPendingQueue(null)
+            setPendingQueueCallerId(null)
+            setPendingQueueCallerPlan(null)
+            setPendingQueueAutoDial(false)
+            setPendingQueueRingCount(null)
+          }}
+          onStatusChange={handleDialerStatusChange}
+          pendingDial={pendingDialLead}
+          pendingQueue={pendingQueue}
+          pendingQueueCallerId={pendingQueueCallerId}
+          pendingQueueCallerPlan={pendingQueueCallerPlan}
+          pendingQueueAutoDial={pendingQueueAutoDial}
+          pendingQueueRingCount={pendingQueueRingCount}
+          presentation={dialerPresentation}
+        />
       </div>
     )
   }
