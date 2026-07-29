@@ -9,7 +9,8 @@ function luminanceFromRgb(cssColor: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-const routes = ['/ari', '/leads', '/dispo/pipeline'];
+const routes = ['/ari', '/dispo/pipeline'];
+const crmWorkspaceRoutes = ['/leads', '/contacts', '/conversations'];
 const artifactDir = path.join(process.cwd(), 'test-results', 'smoke');
 
 for (const route of routes) {
@@ -41,6 +42,26 @@ for (const route of routes) {
         `Mode switcher looks too light (${switcherBg}) on route ${route}.`
       ).toBeLessThan(140);
     }
+
+    await page.screenshot({
+      path: path.join(artifactDir, `${route.replace(/\//g, '_') || 'root'}.png`),
+      fullPage: true,
+    });
+  });
+}
+
+for (const route of crmWorkspaceRoutes) {
+  test(`approved CRM workspace smoke: ${route}`, async ({ page }) => {
+    mkdirSync(artifactDir, { recursive: true });
+
+    await page.goto(route, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1200);
+
+    await expect(page.locator('body.ck-dark')).toHaveCount(0);
+    await expect(page.getByPlaceholder('Search contacts, properties, or messages...')).toBeVisible();
+    await expect(page.getByRole('link', { name: /Conversations/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Contacts' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Dispositions' })).toHaveAttribute('href', '/dispo/pipeline');
 
     await page.screenshot({
       path: path.join(artifactDir, `${route.replace(/\//g, '_') || 'root'}.png`),
