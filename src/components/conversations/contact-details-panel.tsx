@@ -75,7 +75,7 @@ export function ContactDetailsPanel({ contact }: { contact: ContactDetails | nul
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="truncate text-xl font-bold text-[#111827]">{name}</h3>
               {contact.priority === 'hot' ? (
-                <span className="rounded border border-[#e32e2e] px-1.5 py-0.5 text-[10px] font-bold text-[#c42626]">Hot Lead</span>
+                <span className="rounded border border-[#df4a4f] px-1.5 py-0.5 text-[10px] font-bold text-[#c92c33]">Hot Lead</span>
               ) : null}
             </div>
             <p className="mt-2 flex items-center gap-2 text-sm text-slate-600"><Icon name="call" className="text-[17px]" />{formatPhone(contact.phone)}</p>
@@ -84,7 +84,7 @@ export function ContactDetailsPanel({ contact }: { contact: ContactDetails | nul
             <p className="mt-1 flex items-center gap-2 text-sm text-slate-600"><Icon name="person" className="text-[17px]" />Owner: {contact.owner || contact.assigned_agent || 'Unassigned'}</p>
           </div>
         </div>
-        <Link href={`/leads/${contact.id}`} className="mt-4 flex h-9 items-center justify-center rounded-md border border-[#e32e2e] text-sm font-bold text-[#c42626] hover:bg-[#fff4f4]">
+        <Link href={`/leads/${contact.id}`} className="mt-4 flex h-9 items-center justify-center rounded-md border border-[#138a42] text-sm font-bold text-[#0f7136] hover:bg-[#f3faf5]">
           Open contact
         </Link>
       </section>
@@ -93,13 +93,13 @@ export function ContactDetailsPanel({ contact }: { contact: ContactDetails | nul
         <h3 className="mb-3 text-sm font-bold text-[#152033]">Opportunity</h3>
         <div className="flex overflow-hidden rounded">
           {stages.map((stage, index) => (
-            <div key={stage} className={`flex-1 py-2 text-center text-[10px] font-bold ${index === currentStage ? 'bg-[#e32e2e] text-white' : 'bg-[#edf0f3] text-slate-500'}`}>
+            <div key={stage} className={`flex-1 py-2 text-center text-[10px] font-bold ${index === currentStage ? 'bg-[#138a42] text-white' : 'bg-[#edf0f3] text-slate-500'}`}>
               {stage}
             </div>
           ))}
         </div>
         <dl className="mt-4 space-y-2 text-sm">
-          <div className="flex justify-between"><dt className="text-slate-500">Motivation score</dt><dd className="font-bold text-[#c42626]">{contact.motivation_score ?? '—'}{contact.motivation_score ? '/100' : ''}</dd></div>
+          <div className="flex justify-between"><dt className="text-slate-500">Motivation score</dt><dd className="font-bold text-[#0f7136]">{contact.motivation_score ?? '—'}{contact.motivation_score ? '/100' : ''}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Estimated value</dt><dd className="font-semibold">{money(contact.arv)}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Target offer</dt><dd className="font-semibold">{money(contact.offer_amount)}</dd></div>
         </dl>
@@ -107,7 +107,7 @@ export function ContactDetailsPanel({ contact }: { contact: ContactDetails | nul
 
       <section className="border-b border-[#e4e8ed] p-5">
         <h3 className="mb-3 text-sm font-bold text-[#152033]">Next action</h3>
-        <div className={`rounded-lg border p-3 ${contact.primaryNextAction?.overdue ? 'border-[#e32e2e] bg-[#fff7f7]' : 'border-[#f0b34a] bg-[#fffbf2]'}`}>
+        <div className={`rounded-lg border p-3 ${contact.primaryNextAction?.overdue ? 'border-[#df4a4f] bg-[#fff7f7]' : 'border-[#f0b34a] bg-[#fffbf2]'}`}>
           <div className="flex items-start gap-2">
             <Icon name="schedule" className="text-[#d89418]" />
             <div>
@@ -130,7 +130,7 @@ export function ContactDetailsPanel({ contact }: { contact: ContactDetails | nul
       <section className="p-5">
         <h3 className="mb-3 text-sm font-bold text-[#152033]">Tags</h3>
         <div className="flex flex-wrap gap-2">
-          {tags.length ? tags.map((tag) => <span key={tag} className="rounded border border-[#e6a6a9] bg-[#fff7f7] px-2 py-1 text-xs font-semibold text-[#9f1e26]">{tag}</span>) : <span className="text-sm text-slate-400">No tags</span>}
+          {tags.length ? tags.map((tag) => <span key={tag} className="rounded border border-[#81bd91] bg-[#f3faf5] px-2 py-1 text-xs font-semibold text-[#0f7136]">{tag}</span>) : <span className="text-sm text-slate-400">No tags</span>}
         </div>
       </section>
     </aside>

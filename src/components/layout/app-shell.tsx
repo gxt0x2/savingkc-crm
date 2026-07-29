@@ -76,7 +76,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const isConversationWorkspace = pathname?.startsWith('/conversations') ?? false
+  const isConversationWorkspace =
+    (pathname?.startsWith('/conversations') ?? false) ||
+    (pathname?.startsWith('/contacts') ?? false) ||
+    (pathname?.startsWith('/leads') ?? false)
   const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')

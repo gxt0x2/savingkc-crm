@@ -66,7 +66,7 @@ export function InboxSidebar({
         {/* Header */}
         <div className="flex h-[76px] items-center justify-between px-5">
           <h1 className="text-[22px] font-bold text-[#111827]">Conversations</h1>
-          <button className="flex h-9 items-center gap-1 rounded-md bg-[#e32e2e] px-3 text-xs font-bold text-white shadow-sm hover:bg-[#c42626]" onClick={onNewMessage}>
+          <button className="flex h-9 items-center gap-1 rounded-md bg-[#138a42] px-3 text-xs font-bold text-white shadow-sm hover:bg-[#0f7136]" onClick={onNewMessage}>
             <Icon name="add" className="text-[18px]" /> New
           </button>
         </div>
@@ -78,7 +78,7 @@ export function InboxSidebar({
               onClick={() => setActiveTab(tab.key)}
               className={cn(
                 'flex-1 border-b-2 px-1 py-3 text-xs transition-colors',
-                activeTab === tab.key ? 'border-[#e32e2e] text-[#c42626]' : 'border-transparent text-slate-500',
+                activeTab === tab.key ? 'border-[#138a42] text-[#0f7136]' : 'border-transparent text-slate-500',
               )}
             >
               {tab.label} <span className="ml-1 text-[10px]">{tab.count}</span>
@@ -92,7 +92,7 @@ export function InboxSidebar({
             className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400"
           />
           <input
-            className="w-full rounded-md border border-[#d9dee5] bg-white py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none focus:border-[#e32e2e]"
+            className="w-full rounded-md border border-[#d9dee5] bg-white py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none focus:border-[#138a42]"
             placeholder="Search conversations"
             type="text"
             value={search}
@@ -114,7 +114,7 @@ export function InboxSidebar({
             <div
               key={thread.id}
               onClick={() => onSelectThread(thread.id)}
-              className={cn('cursor-pointer border-b border-[#edf0f3] px-4 py-4 transition-colors', isActive ? 'bg-[#fff5f5]' : 'bg-white hover:bg-[#f8fafb]')}
+              className={cn('cursor-pointer border-b border-[#edf0f3] px-4 py-4 transition-colors', isActive ? 'bg-[#f3faf5]' : 'bg-white hover:bg-[#f8fafb]')}
             >
               <div className="flex items-start gap-3">
                 <div
@@ -139,7 +139,7 @@ export function InboxSidebar({
                         className={cn(
                           'px-2 py-0.5 text-[9px] rounded-full uppercase tracking-tighter',
                           thread.attentionState === 'needs_reply'
-                            ? 'bg-[#ffe5e6] text-[#a71922]'
+                            ? 'bg-[#e5f5ea] text-[#0e7135]'
                             : 'bg-amber-100 text-amber-800'
                         )}
                       >

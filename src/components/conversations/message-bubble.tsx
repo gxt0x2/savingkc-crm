@@ -55,7 +55,7 @@ function SmsBubble({ message }: { message: Message }) {
             className={cn(
               'rounded-xl border p-3 text-sm leading-snug shadow-sm',
               isSent
-                ? 'rounded-tr-none border-[#ef9da2] bg-[#fff4f4] text-[#3b2022]'
+                ? 'rounded-tr-none border-[#7ab98d] bg-[#f3faf5] text-[#183326]'
                 : 'rounded-tl-none border-[#d9dee5] bg-white text-[#253247]'
             )}
           >
@@ -184,7 +184,7 @@ function CallCard({ message }: { message: Message }) {
         <div className={cn(
             'rounded-xl border p-4 shadow-sm',
             isSent
-            ? 'border-[#ef9da2] bg-[#fff4f4] text-[#3b2022]'
+            ? 'border-[#cfd6dd] bg-white text-[#253247]'
             : 'border-[#d9dee5] bg-white text-[#253247]'
         )}>
           {message.recordingUrl ? (
@@ -204,7 +204,7 @@ function CallCard({ message }: { message: Message }) {
                   onClick={togglePlay}
                   className={cn(
                     'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
-                    isSent ? 'bg-white/20 hover:bg-white/30' : 'bg-primary hover:bg-primary/90'
+                    isSent ? 'bg-[#138a42] hover:bg-[#0f7136]' : 'bg-primary hover:bg-primary/90'
                   )}
                 >
                   <Icon
@@ -217,7 +217,7 @@ function CallCard({ message }: { message: Message }) {
                 {/* Waveform / progress bar */}
                 <div className="flex-1 flex flex-col gap-1">
                   <div
-                    className={cn('w-full h-1.5 rounded-full cursor-pointer', isSent ? 'bg-white/20' : 'bg-slate-200')}
+                    className={cn('w-full h-1.5 rounded-full cursor-pointer', isSent ? 'bg-slate-200' : 'bg-slate-200')}
                     onClick={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect()
                       const pct = (e.clientX - rect.left) / rect.width
@@ -227,11 +227,11 @@ function CallCard({ message }: { message: Message }) {
                     }}
                   >
                     <div
-                      className={cn('h-full rounded-full transition-all', isSent ? 'bg-white' : 'bg-primary')}
+                      className={cn('h-full rounded-full transition-all', isSent ? 'bg-[#138a42]' : 'bg-primary')}
                       style={{ width: `${progress}%` }}
                     />
                   </div>
-                  <div className={cn('flex justify-between text-[10px]', isSent ? 'text-white/60' : 'text-on-surface-variant/50')}>
+                  <div className={cn('flex justify-between text-[10px]', isSent ? 'text-slate-500' : 'text-on-surface-variant/50')}>
                     <span>{fmtTime(currentTime)}</span>
                     <span>{duration > 0 ? fmtTime(duration) : message.callDuration || '—'}</span>
                   </div>
@@ -241,13 +241,13 @@ function CallCard({ message }: { message: Message }) {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={cycleSpeed}
-                    className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded', isSent ? 'text-white/70 hover:text-white' : 'text-on-surface-variant hover:text-on-surface')}
+                    className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded', isSent ? 'text-slate-600 hover:text-slate-900' : 'text-on-surface-variant hover:text-on-surface')}
                   >
                     {speed}x
                   </button>
                   <button
                     onClick={handleDownload}
-                    className={cn('p-1 rounded hover:bg-black/5', isSent ? 'text-white/70 hover:text-white' : 'text-on-surface-variant')}
+                    className={cn('p-1 rounded hover:bg-black/5', isSent ? 'text-slate-600 hover:text-slate-900' : 'text-on-surface-variant')}
                     title="Download"
                   >
                     <Icon name="download" className="text-base" />
@@ -260,15 +260,15 @@ function CallCard({ message }: { message: Message }) {
             <div className="flex items-center gap-3">
               <div className={cn(
                 'w-10 h-10 rounded-full flex items-center justify-center',
-                isSent ? 'bg-white/20' : 'bg-slate-200'
+                isSent ? 'bg-[#e8f5ec]' : 'bg-slate-200'
               )}>
                 <Icon name="missed_call_badge" className="text-lg" />
               </div>
               <div className="flex-1">
-                <p className={cn('text-sm font-semibold', isSent ? 'text-white' : 'text-on-surface')}>
+                <p className={cn('text-sm font-semibold', isSent ? 'text-[#203047]' : 'text-on-surface')}>
                   {message.content}
                 </p>
-                <p className={cn('text-xs mt-0.5', isSent ? 'text-white/60' : 'text-on-surface-variant/60')}>
+                <p className={cn('text-xs mt-0.5', isSent ? 'text-slate-500' : 'text-on-surface-variant/60')}>
                   Duration: {message.callDuration || '—'}
                 </p>
               </div>

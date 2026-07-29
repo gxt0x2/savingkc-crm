@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import { ThreadView } from '@/components/conversations/thread-view'
-import { WorkspaceNav } from '@/components/conversations/workspace-nav'
+import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
 import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
 import type { Message } from '@/components/conversations/message-bubble'
 import { toProperCase, formatPhone } from '@/lib/format'
@@ -397,7 +397,8 @@ export default function ConversationsPage() {
   }
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-[#f4f6f8] text-[#152033]">
+    <WorkspaceFrame needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length}>
+    <div className="relative flex h-full overflow-hidden bg-white text-[#152033]">
       {showNewMessage && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center" onClick={() => setShowNewMessage(false)}>
           <div className="bg-white rounded-xl p-6 shadow-2xl w-96 max-w-[90vw] max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -418,8 +419,6 @@ export default function ConversationsPage() {
           </div>
         </div>
       )}
-
-      <WorkspaceNav needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length} />
 
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
@@ -484,5 +483,6 @@ export default function ConversationsPage() {
         ))}
       </div>
     </div>
+    </WorkspaceFrame>
   )
 }

@@ -110,7 +110,7 @@ export function ThreadView({
                     {tag}
                   </span>
                 ))}
-                <span className="rounded border border-[#e7a6aa] bg-[#fff6f6] px-2 py-0.5 text-[10px] font-bold text-[#a71922]">{contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Active'}</span>
+                <span className="rounded border border-[#7ab98d] bg-[#f3faf5] px-2 py-0.5 text-[10px] font-bold text-[#0f7136]">{contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Active'}</span>
               </div>
             </div>
           </div>
@@ -129,7 +129,7 @@ export function ThreadView({
           <div className="flex items-center gap-3">
             <span className={
               contact.attentionState === 'needs_reply'
-                ? 'rounded-full bg-[#ffe5e6] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-[#a71922]'
+                ? 'rounded-full bg-[#e5f5ea] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-[#0e7135]'
                 : 'rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-800'
             }>
               {contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Waiting on contact'}
@@ -154,7 +154,7 @@ export function ThreadView({
               type="button"
               onClick={completePrimaryAction}
               disabled={completingTask}
-              className="rounded-md border border-[#e32e2e] bg-white px-3 py-1.5 text-xs font-bold text-[#c42626] transition-colors hover:bg-[#fff3f3] disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-md border border-[#138a42] bg-white px-3 py-1.5 text-xs font-bold text-[#0f7136] transition-colors hover:bg-[#f3faf5] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {completingTask ? 'Completing…' : 'Mark complete'}
             </button>
