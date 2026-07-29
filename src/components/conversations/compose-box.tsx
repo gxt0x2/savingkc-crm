@@ -17,13 +17,17 @@ const modes: { key: ComposeMode; label: string; icon: string }[] = [
 interface ComposeBoxProps {
   leadId?: string
   phone?: string
+  email?: string
   onSent?: () => void
   replyFromPhone?: string // Auto-select the Twilio number the lead last texted
+  draftMessage?: string
+  draftVersion?: number
 }
 
-export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBoxProps) {
+export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draftMessage, draftVersion }: ComposeBoxProps) {
   const [activeMode, setActiveMode] = useState<ComposeMode>('sms')
   const [message, setMessage] = useState('')
+  const [subject, setSubject] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fromPhone, setFromPhone] = useState(replyFromPhone || '+18163077835')
@@ -38,9 +42,18 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (draftMessage) {
+      setActiveMode('sms')
+      setMessage(draftMessage)
+    }
+  }, [draftMessage, draftVersion])
+
   async function handleSend() {
     if (!message.trim()) return
-    if (!phone) { setError('No phone number for this contact'); return }
+    if (activeMode === 'sms' && !phone) { setError('No phone number for this contact'); return }
+    if (activeMode === 'email' && !email) { setError('No email address for this contact'); return }
+    if (activeMode === 'note' && (!leadId || leadId.startsWith('unmatched:'))) { setError('Create or link this contact before adding an internal note.'); return }
 
     setSending(true)
     setError(null)
@@ -58,6 +71,8 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
         } : {
           leadId: leadId?.startsWith('unmatched:') ? null : leadId,
           phone,
+          to: activeMode === 'email' ? email : undefined,
+          subject: activeMode === 'email' ? subject.trim() || 'Message from Saving KC' : undefined,
           body: message.trim(),
           mode: activeMode,
           fromPhone: activeMode === 'sms' ? fromPhone : undefined,
@@ -69,6 +84,7 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
       if (!res.ok) throw new Error(data.error || 'Send failed')
 
       setMessage('')
+      setSubject('')
       onSent?.()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to send')
@@ -141,6 +157,11 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
             )}
           </div>
         )}
+        {activeMode === 'email' ? (
+          <div className="border-t border-[#eef1f4] px-5 py-2">
+            <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Email subject" className="h-8 w-full border-0 bg-transparent text-xs font-semibold text-slate-700 outline-none placeholder:text-slate-400" />
+          </div>
+        ) : null}
 
         {/* Input Area */}
         <div className="flex items-end gap-3 p-3">
@@ -161,13 +182,11 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
               disabled={sending}
             />
             <div className="flex gap-2 p-2">
-              <button className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
+              <button type="button" onClick={() => setMessage((value) => `${value}${value ? ' ' : ''}🙂`)} title="Add emoji" className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
                 <Icon name="mood" className="text-on-surface-variant text-lg" />
               </button>
-              <button className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
-                <Icon name="attach_file" className="text-on-surface-variant text-lg" />
-              </button>
               <button
+                type="button"
                 onClick={() => setShowTemplates(!showTemplates)}
                 className="p-1.5 hover:bg-surface-container rounded-lg transition-all relative"
                 title="Templates"

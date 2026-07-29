@@ -35,6 +35,7 @@ export interface ConversationHubThread extends ConversationHubLead {
   unread: boolean
   lastMessage: string
   lastActivityAt: string
+  lastChannel: 'call' | 'sms' | 'email' | 'voicemail' | null
   primaryNextAction: {
     id: string
     title: string
@@ -114,6 +115,15 @@ export function buildConversationHubThread(
       attentionState === 'needs_reply' ? 'New seller needs a response' : 'No communication yet'
     ),
     lastActivityAt: sorted[0]?.created_at || lead.created_at,
+    lastChannel: latestComm
+      ? latestComm.activity_type.includes('sms')
+        ? 'sms'
+        : latestComm.activity_type === 'voicemail'
+          ? 'voicemail'
+          : latestComm.activity_type === 'email'
+            ? 'email'
+            : 'call'
+      : null,
     primaryNextAction: primaryTask ? {
       id: primaryTask.id,
       title: primaryTask.description || 'Next action',

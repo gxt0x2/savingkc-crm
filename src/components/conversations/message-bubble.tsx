@@ -115,6 +115,7 @@ function CallCard({ message }: { message: Message }) {
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [speed, setSpeed] = useState(1)
+  const [showTranscript, setShowTranscript] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
 
   function togglePlay() {
@@ -278,9 +279,12 @@ function CallCard({ message }: { message: Message }) {
 
         {/* View Transcript link */}
         {message.transcript && (
-          <button className="mt-1.5 px-1 text-xs font-bold text-primary hover:underline">
-            View Transcript
-          </button>
+          <>
+            <button type="button" onClick={() => setShowTranscript((value) => !value)} aria-expanded={showTranscript} className="mt-1.5 px-1 text-xs font-bold text-[#b91c26] hover:underline">
+              {showTranscript ? 'Hide transcript' : 'View transcript'}
+            </button>
+            {showTranscript ? <div className="mt-2 rounded-lg border border-[#d9dee5] bg-white p-3 text-xs leading-5 text-[#475467]">{message.transcript}</div> : null}
+          </>
         )}
       </div>
     </div>

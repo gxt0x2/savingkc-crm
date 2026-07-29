@@ -15,6 +15,7 @@ export interface ThreadPreview {
   personality: PersonalityType | null
   tags: { label: string; variant: 'hot' | 'default' }[]
   lastMessage: string
+  lastChannel: 'call' | 'sms' | 'email' | 'voicemail' | null
   timestamp: string
   unread?: boolean
   starred?: boolean
@@ -44,13 +45,22 @@ export function InboxSidebar({
 }) {
   const [activeTab, setActiveTab] = useState<TabFilter>('unread')
   const [search, setSearch] = useState('')
+  const [channel, setChannel] = useState('')
+  const [needsReplyOnly, setNeedsReplyOnly] = useState(false)
+  const [sortOrder, setSortOrder] = useState<'priority' | 'recent'>('priority')
 
   const filteredThreads = threads.filter((t) => {
     if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false
+    if (channel && t.lastChannel !== channel) return false
+    if (needsReplyOnly && t.attentionState !== 'needs_reply') return false
     if (activeTab === 'unread') return t.unread
     if (activeTab === 'mine') return Boolean(t.owner)
     if (activeTab === 'unassigned') return !t.owner
     return true
+  }).sort((a, b) => {
+    if (sortOrder === 'recent') return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    const rank = (thread: ThreadPreview) => thread.attentionState === 'needs_reply' ? 0 : thread.nextAction?.overdue ? 1 : 2
+    return rank(a) - rank(b)
   })
 
   const tabs: { key: TabFilter; label: string; count: number }[] = [
@@ -100,14 +110,30 @@ export function InboxSidebar({
           />
         </div>
         <div className="flex items-center gap-2 border-t border-[#eef1f4] px-4 py-2">
-          <button className="flex h-8 items-center gap-1 rounded border border-[#d9dee5] px-3 text-[11px] text-slate-600">All channels <Icon name="expand_more" /></button>
-          <button className="flex h-8 items-center rounded border border-[#d9dee5] px-3 text-[11px] text-slate-600">Needs reply</button>
-          <button className="ml-auto flex h-8 w-8 items-center justify-center rounded border border-[#d9dee5] text-slate-500"><Icon name="filter_list" /></button>
+          <select aria-label="Filter by channel" value={channel} onChange={(event) => setChannel(event.target.value)} className="h-8 rounded border border-[#d9dee5] px-2 text-[11px] text-slate-600">
+            <option value="">All channels</option>
+            <option value="sms">SMS</option>
+            <option value="call">Calls</option>
+            <option value="email">Email</option>
+            <option value="voicemail">Voicemail</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setNeedsReplyOnly((value) => !value)}
+            aria-pressed={needsReplyOnly}
+            className={cn('flex h-8 items-center rounded border px-3 text-[11px]', needsReplyOnly ? 'border-[#efb4b8] bg-[#fff7f7] text-[#b91c26]' : 'border-[#d9dee5] text-slate-600')}
+          >
+            Needs reply
+          </button>
+          <button type="button" onClick={() => setSortOrder((value) => value === 'priority' ? 'recent' : 'priority')} title={`Sort: ${sortOrder}`} className="ml-auto flex h-8 w-8 items-center justify-center rounded border border-[#d9dee5] text-slate-500 hover:text-[#b91c26]"><Icon name={sortOrder === 'priority' ? 'filter_list' : 'schedule'} /></button>
         </div>
       </div>
 
       {/* Thread List */}
       <div className="flex-1 overflow-y-auto">
+        {filteredThreads.length === 0 ? (
+          <div className="px-6 py-12 text-center text-xs font-medium text-slate-500">No conversations match these filters.</div>
+        ) : null}
         {filteredThreads.map((thread) => {
           const isActive = thread.id === activeThreadId
           return (

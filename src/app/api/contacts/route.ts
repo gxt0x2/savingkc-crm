@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getContactSignal, isOutboundAttempt, type ContactActivityLike, type ContactSignal } from '@/lib/contact-display'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
@@ -21,6 +21,7 @@ export interface ContactRow {
   id: string
   fullName: string | null
   phone: string | null
+  email: string | null
   source: string | null
   address: string | null
   city: string | null
@@ -109,7 +110,7 @@ export async function GET() {
 
   const { data: leads, error: leadsErr } = await db
     .from('leads')
-    .select('id, full_name, phone, source, station, property_address, city, created_at, updated_at, is_parked, is_favorite')
+    .select('id, full_name, phone, email, source, station, property_address, city, created_at, updated_at, is_parked, is_favorite')
     .eq('is_parked', false)
     .order('updated_at', { ascending: false })
 
@@ -179,6 +180,7 @@ export async function GET() {
       id: lead.id,
       fullName: lead.full_name,
       phone: lead.phone,
+      email: lead.email,
       source: lead.source,
       address: lead.property_address,
       city: lead.city,
@@ -196,4 +198,58 @@ export async function GET() {
   }
 
   return NextResponse.json({ items })
+}
+
+function cleanText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function normalizeContactPhone(value: unknown): string | null {
+  const raw = cleanText(value)
+  if (!raw) return null
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return raw
+}
+
+/**
+ * POST /api/contacts
+ *
+ * Creates a manual CRM contact without firing website-intake alerts,
+ * automated outreach, or advertising conversion events.
+ */
+export async function POST(request: NextRequest) {
+  const payload = await request.json().catch(() => null) as Record<string, unknown> | null
+  if (!payload) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+
+  const fullName = cleanText(payload.fullName)
+  const phone = normalizeContactPhone(payload.phone)
+  const email = cleanText(payload.email)?.toLowerCase() ?? null
+  const address = cleanText(payload.address)
+  if (!fullName && !phone && !email) {
+    return NextResponse.json({ error: 'Add a name, phone number, or email address.' }, { status: 400 })
+  }
+
+  const db = supabaseAdmin()
+  const { data, error } = await db
+    .from('leads')
+    .insert({
+      full_name: fullName,
+      phone,
+      email,
+      property_address: address,
+      city: cleanText(payload.city),
+      state: cleanText(payload.state),
+      zip: cleanText(payload.zip),
+      source: cleanText(payload.source) ?? 'manual_crm',
+      station: 'new',
+      priority: 'warm',
+      is_parked: false,
+    })
+    .select('id')
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true, id: data.id }, { status: 201 })
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { StageSelector } from '@/components/leads/stage-selector'
@@ -62,7 +62,19 @@ interface LeadWorkspaceProps {
   onOpenProperty: () => void
   onRefresh: () => void
   onStageChange: (station: string) => void
+  sectionPanels?: Partial<Record<LeadWorkspaceSection, React.ReactNode>>
 }
+
+export type LeadWorkspaceSection = 'overview' | 'property' | 'documents' | 'ai' | 'marketing' | 'activity'
+
+const WORKSPACE_SECTIONS: { key: LeadWorkspaceSection; icon: string; label: string }[] = [
+  { key: 'overview', icon: 'grid_view', label: 'Overview' },
+  { key: 'property', icon: 'home_work', label: 'Property details' },
+  { key: 'documents', icon: 'description', label: 'Documents' },
+  { key: 'ai', icon: 'auto_awesome', label: 'AI insights' },
+  { key: 'marketing', icon: 'campaign', label: 'Marketing' },
+  { key: 'activity', icon: 'history', label: 'Activity log' },
+]
 
 const STAGES = [
   { keys: ['new'], label: 'New' },
@@ -128,13 +140,16 @@ export function LeadWorkspace({
   onOpenProperty,
   onRefresh,
   onStageChange,
+  sectionPanels,
 }: LeadWorkspaceProps) {
+  const [activeSection, setActiveSection] = useState<LeadWorkspaceSection>('overview')
   const [composeMode, setComposeMode] = useState<'sms' | 'email' | 'note'>('sms')
   const [message, setMessage] = useState('')
   const [emailSubject, setEmailSubject] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [imageFailed, setImageFailed] = useState(false)
+  const sectionHeadingRef = useRef<HTMLDivElement>(null)
   const name = toProperCase(lead.full_name) || 'Unknown contact'
   const firstName = name.split(/\s+/)[0]
   const initials = name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase()
@@ -172,6 +187,13 @@ export function LeadWorkspace({
     : appointment
       ? `Appointment ${new Date(appointment.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
     : nextTask?.description || 'Define the next action'
+
+  function selectSection(section: LeadWorkspaceSection) {
+    setActiveSection(section)
+    window.requestAnimationFrame(() => {
+      sectionHeadingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
 
   async function sendMessage() {
     if (!message.trim()) return
@@ -293,6 +315,27 @@ export function LeadWorkspace({
           </div>
         </header>
 
+        <nav ref={sectionHeadingRef} className="sticky top-0 z-20 mt-4 grid scroll-mt-4 grid-cols-3 overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)] md:grid-cols-6" aria-label="Lead workspace sections">
+          {WORKSPACE_SECTIONS.map(({ key, icon, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => selectSection(key)}
+              aria-current={activeSection === key ? 'page' : undefined}
+              className={cn(
+                'flex h-14 items-center justify-center gap-2 border-b-2 px-2 text-xs font-semibold transition-colors md:text-sm',
+                activeSection === key
+                  ? 'border-[#df3038] bg-[#fff8f8] text-[#b91c26]'
+                  : 'border-transparent text-[#475467] hover:bg-[#f8f9fa] hover:text-[#111827]',
+              )}
+            >
+              <Icon name={icon} className="text-[18px]" />
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        {activeSection === 'overview' ? (
         <main className="mt-4 grid gap-4 xl:grid-cols-[0.92fr_1.45fr_1.05fr]">
           <section className="overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)]">
             <CardHeader title="Contact & Property" icon="person" onMore={onEdit} />
@@ -385,8 +428,14 @@ export function LeadWorkspace({
                 />
                 {sendError ? <p className="px-4 pb-2 text-xs font-semibold text-[#c9232d]">{sendError}</p> : null}
                 <div className="flex items-center gap-2 border-t border-[#edf0f2] px-3 py-2.5">
-                  <button className="flex items-center gap-1.5 text-xs font-semibold text-[#667085]"><Icon name="attach_file" className="text-[18px]" />Attach</button>
-                  <button className="flex items-center gap-1.5 text-xs font-semibold text-[#667085]"><Icon name="bolt" className="text-[18px]" />Templates</button>
+                  <button type="button" onClick={() => selectSection('documents')} className="flex items-center gap-1.5 text-xs font-semibold text-[#667085] hover:text-[#b91c26]"><Icon name="attach_file" className="text-[18px]" />Add document</button>
+                  <button
+                    type="button"
+                    onClick={() => setMessage(`Hi ${firstName}, I’m following up about ${lead.property_address || 'your property'}. What time works best for a quick conversation?`)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-[#667085] hover:text-[#b91c26]"
+                  >
+                    <Icon name="bolt" className="text-[18px]" />Use follow-up
+                  </button>
                   <button onClick={sendMessage} disabled={sending || !message.trim()} className="ml-auto flex h-9 items-center gap-2 rounded-md bg-[#df3038] px-4 text-sm font-bold text-white hover:bg-[#c9232d] disabled:cursor-not-allowed disabled:bg-[#e3a5a9]">
                     <Icon name={sending ? 'hourglass_empty' : 'send'} className="text-[17px]" />
                     {composeMode === 'note' ? 'Add note' : 'Send'}
@@ -457,22 +506,31 @@ export function LeadWorkspace({
             </div>
           </section>
         </main>
-
-        <nav className="mt-4 grid grid-cols-3 overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)] md:grid-cols-6" aria-label="Lead workspace sections">
-          {[
-            ['grid_view', 'Overview'],
-            ['home_work', 'Property details'],
-            ['description', 'Documents'],
-            ['auto_awesome', 'AI insights'],
-            ['campaign', 'Marketing'],
-            ['history', 'Activity log'],
-          ].map(([icon, label], index) => (
-            <button key={label} onClick={index === 1 ? onOpenProperty : undefined} className={cn('flex h-14 items-center justify-center gap-2 border-b-2 text-xs font-semibold md:text-sm', index === 0 ? 'border-[#df3038] text-[#b91c26]' : 'border-transparent text-[#475467] hover:bg-[#f8f9fa]')}>
-              <Icon name={icon} className="text-[18px]" />
-              {label}
-            </button>
-          ))}
-        </nav>
+        ) : (
+          <section
+            aria-labelledby={`lead-section-${activeSection}`}
+            className="mt-4 min-h-[520px] overflow-hidden rounded-xl border border-[#d9dfe6] bg-white p-5 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-6"
+          >
+            <div className="mb-5 flex items-center justify-between border-b border-[#e4e7ec] pb-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.1em] text-[#b91c26]">Lead workspace</p>
+                <h2 id={`lead-section-${activeSection}`} className="mt-1 text-xl font-black text-[#172033]">
+                  {WORKSPACE_SECTIONS.find((section) => section.key === activeSection)?.label}
+                </h2>
+              </div>
+              <button type="button" onClick={() => selectSection('overview')} className="flex items-center gap-2 rounded-md border border-[#cfd6de] px-3 py-2 text-xs font-bold text-[#344054] hover:bg-[#f7f8fa]">
+                <Icon name="grid_view" className="text-[17px]" />
+                Back to overview
+              </button>
+            </div>
+            {sectionPanels?.[activeSection] || (
+              <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
+                <Icon name="construction" className="text-[34px] text-[#98a2b3]" />
+                <p className="mt-3 font-bold text-[#172033]">This workspace section is not available yet.</p>
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   )

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 
@@ -20,8 +21,9 @@ const items = [
 
 export function WorkspaceNav({ needsReply }: { needsReply: number }) {
   const pathname = usePathname()
+  const [collapsed, setCollapsed] = useState(false)
   return (
-    <aside className="hidden w-[230px] shrink-0 flex-col bg-[#15171b] text-white lg:flex">
+    <aside className={cn('hidden shrink-0 flex-col bg-[#15171b] text-white transition-[width] duration-200 lg:flex', collapsed ? 'w-[76px]' : 'w-[230px]')}>
       <svg width="0" height="0" aria-hidden="true">
         <filter id="crm-logo-dark" colorInterpolationFilters="sRGB">
           <feColorMatrix
@@ -33,15 +35,15 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
           />
         </filter>
       </svg>
-      <Link href="/contacts" className="flex h-[82px] items-center border-b border-white/10 px-5">
-        <Image
+      <Link href="/contacts" className={cn('flex h-[82px] items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-5')}>
+        {collapsed ? <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/20 text-sm font-black text-white">SKC</span> : <Image
           src="/logo.png"
           alt="Saving KC Homebuyers"
           width={489}
           height={141}
           className="h-auto w-[155px] object-contain"
           style={{ filter: 'url(#crm-logo-dark)' }}
-        />
+        />}
       </Link>
       <nav className="flex-1 space-y-1 px-3 py-5">
         {items.map((item, index) => {
@@ -52,6 +54,7 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
               href={item.href}
               className={cn(
                 'flex items-center gap-3 rounded-lg px-3 py-3 text-[13px] font-semibold transition-colors',
+                collapsed && 'justify-center',
                 active
                   ? 'bg-white/10 text-white shadow-[inset_3px_0_0_#df3038]'
                   : 'text-white/72 hover:bg-white/8 hover:text-white',
@@ -59,7 +62,7 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
               )}
             >
               <Icon name={item.icon} className={cn('text-[20px]', active ? 'text-white' : 'text-white/70')} />
-              <span className="min-w-0 flex-1">{item.label}</span>
+              <span className={cn('min-w-0 flex-1', collapsed && 'sr-only')}>{item.label}</span>
               {item.label === 'Conversations' && needsReply > 0 ? (
                 <span className="rounded-full bg-[#df3038] px-2 py-0.5 text-[10px] font-black text-white">
                   {needsReply}
@@ -69,9 +72,9 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
           )
         })}
       </nav>
-      <button className="m-4 flex items-center gap-2 border-t border-white/10 pt-4 text-xs font-semibold text-white/70">
-        <Icon name="chevron_left" />
-        Collapse
+      <button type="button" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'} className={cn('m-4 flex items-center gap-2 border-t border-white/10 pt-4 text-xs font-semibold text-white/70 hover:text-white', collapsed && 'justify-center')}>
+        <Icon name={collapsed ? 'chevron_right' : 'chevron_left'} />
+        {collapsed ? <span className="sr-only">Expand</span> : 'Collapse'}
       </button>
     </aside>
   )

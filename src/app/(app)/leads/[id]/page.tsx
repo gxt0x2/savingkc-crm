@@ -746,9 +746,11 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
     assigned_agent: lead.assigned_agent ?? '',
   })
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   async function handleSave() {
     setSaving(true)
+    setSaveError(null)
     try {
       const res = await fetch('/api/leads', {
         method: 'PATCH',
@@ -757,15 +759,14 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
-        console.error('Failed to save lead:', data.error)
-        return
+        throw new Error(data.error || 'Lead could not be saved')
       }
       onSaved(data.lead || form)
-    } catch (err) {
-      console.error('Failed to save lead:', err)
+      onClose()
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Lead could not be saved')
     } finally {
       setSaving(false)
-      onClose()
     }
   }
 
@@ -787,23 +788,17 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40" onClick={onClose} />
-      <div
-        className="fixed right-0 top-0 bottom-0 w-[400px] shadow-2xl z-50 flex flex-col overflow-hidden border-l"
-        style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
-      >
-        <div
-          className="flex items-center justify-between px-6 py-4 border-b"
-          style={{ borderColor: 'var(--ck-border)' }}
-        >
+      <div className="fixed inset-0 z-40 bg-[#111827]/45 backdrop-blur-[1px]" onClick={onClose} />
+      <div className="fixed bottom-0 right-0 top-0 z-50 flex w-full max-w-[430px] flex-col overflow-hidden border-l border-[#d9dfe6] bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#e4e7ec] px-6 py-4">
           <div className="flex items-center gap-2">
-            <Icon name="edit" className="!text-base !text-[color:var(--ck-accent)]" />
-            <h2 className="text-lg font-bold text-white">Edit Lead</h2>
+            <Icon name="edit" className="!text-base text-[#df3038]" />
+            <h2 className="text-lg font-bold text-[#172033]">Edit lead</h2>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
-            style={{ background: 'var(--ck-surface-elev)', color: 'var(--ck-text)' }}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f2f4f7] text-[#475467] transition-colors hover:bg-[#fff1f2] hover:text-[#b91c26]"
+            aria-label="Close edit lead"
           >
             <Icon name="close" className="!text-base" />
           </button>
@@ -812,8 +807,7 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
           {fields.map(({ key, label, type, multiline }) => (
             <div key={key}>
               <label
-                className="ck-microlabel mb-1 block !text-[10px]"
-                style={{ color: 'var(--ck-text-muted)' }}
+                className="mb-1 block text-[10px] font-black uppercase tracking-[0.08em] text-[#667085]"
               >
                 {label}
               </label>
@@ -822,49 +816,31 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
                   rows={4}
                   value={form[key]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--ck-accent)]"
-                  style={{
-                    background: 'var(--ck-surface-elev)',
-                    border: '1px solid var(--ck-border)',
-                    color: 'var(--ck-text)',
-                  }}
+                  className="w-full rounded-lg border border-[#ccd4dd] bg-white px-3 py-2 text-sm text-[#172033] outline-none focus:border-[#df3038]"
                 />
               ) : (
                 <input
                   type={type ?? 'text'}
                   value={form[key]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--ck-accent)]"
-                  style={{
-                    background: 'var(--ck-surface-elev)',
-                    border: '1px solid var(--ck-border)',
-                    color: 'var(--ck-text)',
-                  }}
+                  className="w-full rounded-lg border border-[#ccd4dd] bg-white px-3 py-2 text-sm text-[#172033] outline-none focus:border-[#df3038]"
                 />
               )}
             </div>
           ))}
+          {saveError ? <p role="alert" className="rounded-md bg-[#fff1f2] p-3 text-sm font-semibold text-[#b91c26]">{saveError}</p> : null}
         </div>
-        <div
-          className="px-6 py-4 border-t flex gap-3"
-          style={{ borderColor: 'var(--ck-border)' }}
-        >
+        <div className="flex gap-3 border-t border-[#e4e7ec] px-6 py-4">
           <button
             onClick={onClose}
-            className="flex-1 rounded-lg py-2 text-sm font-bold transition-all"
-            style={{
-              background: 'var(--ck-surface-elev)',
-              border: '1px solid var(--ck-border)',
-              color: 'var(--ck-text)',
-            }}
+            className="flex-1 rounded-lg border border-[#ccd4dd] bg-white py-2 text-sm font-bold text-[#344054] transition-all hover:bg-[#f7f8fa]"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex-1 rounded-lg py-2 text-sm font-bold text-white disabled:opacity-50 transition-all"
-            style={{ background: 'var(--ck-accent)' }}
+            className="flex-1 rounded-lg bg-[#df3038] py-2 text-sm font-bold text-white transition-all hover:bg-[#c9232d] disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
@@ -1895,6 +1871,52 @@ export default function LeadDetailPage() {
     return null
   })()
 
+  const workspacePropertyDetails = (() => {
+    const mp = manifestProperty || {}
+    const pick = <T,>(a: T | null | undefined, b: T | null | undefined): T | null =>
+      (a !== null && a !== undefined ? a : (b !== null && b !== undefined ? b : null))
+    const taxCollector = mp.taxCollector || {}
+    const explicitDelinquentYear =
+      taxCollector.firstDelinquentYear ??
+      taxCollector.firstYearDelinquent ??
+      taxCollector.delinquentSince ??
+      taxCollector.oldestDelinquentYear
+    let firstDelinquentYear: number | null = null
+    if (typeof explicitDelinquentYear === 'number' && explicitDelinquentYear > 1900) {
+      firstDelinquentYear = explicitDelinquentYear
+    } else if (typeof explicitDelinquentYear === 'string') {
+      const parsed = parseInt(explicitDelinquentYear.slice(0, 4), 10)
+      if (parsed > 1900) firstDelinquentYear = parsed
+    } else if (typeof taxCollector.yearsDelinquent === 'number' && taxCollector.yearsDelinquent > 0) {
+      firstDelinquentYear = new Date().getFullYear() - taxCollector.yearsDelinquent
+    }
+
+    return {
+      beds: pick(lead.beds, mp.beds),
+      baths_full: pick(lead.baths_full, mp.baths_full ?? mp.bathsFull),
+      baths_half: pick(lead.baths_half, mp.baths_half ?? mp.bathsHalf),
+      sqft: pick(lead.sqft, mp.sqft ?? mp.squareFeet),
+      lot_size: pick(lead.lot_size, mp.lot_size ?? mp.lotSize),
+      year_built: pick(lead.year_built, mp.year_built ?? mp.yearBuilt),
+      basement_type: pick(lead.basement_type, mp.basement_type ?? mp.basement),
+      stories: pick(lead.stories, mp.stories),
+      garage_spaces: pick(lead.garage_spaces, mp.garage_spaces ?? mp.garage),
+      roof_type: pick(lead.roof_type, mp.roof_type ?? mp.roof),
+      heating: pick(lead.heating, mp.heating),
+      cooling: pick(lead.cooling, mp.cooling),
+      property_type: pick(lead.property_type, mp.property_type ?? mp.propertyType),
+      zoning: pick(lead.zoning, mp.zoning),
+      hoa_amount: pick(lead.hoa_amount, mp.hoa_amount),
+      tax_assessment: pick(lead.tax_assessment, mp.assessment?.totalValue ?? mp.tax_assessment),
+      tax_owed: taxCollector.totalOwed ?? taxCollector.delinquentAmount ?? null,
+      first_delinquent_year: firstDelinquentYear,
+      last_sale_date: pick(lead.last_sale_date, mp.last_sale_date ?? mp.lastSaleDate),
+      last_sale_price: pick(lead.last_sale_price, mp.last_sale_price ?? mp.lastSalePrice),
+      data_source: pick(lead.data_source, mp.assessment?.source ?? mp.data_source),
+      data_enriched_at: pick(lead.data_enriched_at, mp.assessment?.fetchedAt ?? mp.data_enriched_at),
+    }
+  })()
+
   return (
     <>
       <LeadWorkspace
@@ -1924,6 +1946,103 @@ export default function LeadDetailPage() {
         onOpenProperty={() => setDetailsExpanded(true)}
         onRefresh={refreshAll}
         onStageChange={(station) => setLead((current) => current ? { ...current, station } : current)}
+        sectionPanels={{
+          property: (
+            <div className="mx-auto max-w-4xl">
+              <PropertyDetailsCard details={workspacePropertyDetails} />
+            </div>
+          ),
+          documents: (
+            <DocumentManager
+              entityType="lead"
+              entityId={id}
+              side="acquisitions"
+              defaultDocType="purchase_contract"
+              title="Lead Documents"
+            />
+          ),
+          ai: (
+            <div className="grid gap-5 lg:grid-cols-2">
+              <AriBriefing
+                leadId={lead.id}
+                manifestId={manifestRowId ?? undefined}
+                personalityType={null}
+                tacticalApproach={lead.notes || null}
+                notes={lead.notes}
+                sellerSituation={lead.seller_situation}
+                motivationScore={lead.motivation_score}
+                activities={activities}
+              />
+              <PainPoints
+                leadId={lead.id}
+                notes={lead.notes}
+                sellerSituation={lead.seller_situation}
+                motivationScore={lead.motivation_score}
+                activities={activities}
+              />
+              <FavoriteOrFool
+                leadId={lead.id}
+                manifestId={manifestRowId ?? undefined}
+                motivationScore={lead.motivation_score}
+                arv={lead.arv}
+                offerAmount={lead.offer_amount}
+                repairEstimate={lead.repair_estimate}
+                station={lead.station}
+                notes={lead.notes}
+                sellerSituation={lead.seller_situation}
+                classification={lead.classification}
+                priority={lead.priority}
+                isFavorite={lead.is_favorite}
+                opportunityScore={lead.opportunity_score}
+                activities={activities}
+              />
+              <DiscoveryQuestions
+                leadId={lead.id}
+                notes={lead.notes}
+                sellerSituation={lead.seller_situation}
+                offerAmount={lead.offer_amount}
+                sqft={lead.sqft}
+                yearBuilt={lead.year_built}
+                activities={activities}
+              />
+            </div>
+          ),
+          marketing: (
+            <div className="grid gap-5 lg:grid-cols-2">
+              <AdsSignalReceipt leadId={lead.id} variant="sidebar" />
+              <MailTracker leadId={lead.id} leadName={lead.full_name ?? undefined} onLogged={refreshAll} />
+              <div className="lg:col-span-2">
+                <EmailThread leadId={id} />
+              </div>
+            </div>
+          ),
+          activity: (
+            <ActivityFeed
+              activities={feedActivities}
+              leadPhone={lead.phone ?? undefined}
+              leadEmail={lead.email ?? undefined}
+              leadId={id}
+              prominent
+              onCompose={(type) => {
+                if (type === 'call') {
+                  openLeadDialer()
+                } else {
+                  setComposeTab(type)
+                  setSmsModalOpen(true)
+                }
+              }}
+              onEditNote={(noteId, currentContent) => {
+                setEditNoteId(noteId)
+                setEditNoteContent(currentContent)
+              }}
+              onEditTask={(taskId, currentTitle, metadata) => {
+                setEditTaskId(taskId)
+                setEditTaskTitle(currentTitle)
+                setEditTaskMetadata(metadata)
+              }}
+            />
+          ),
+        }}
       />
 
       {false && ((lead: Lead, ghostProtocolStatus: { phase: number; status: string } | null) => (

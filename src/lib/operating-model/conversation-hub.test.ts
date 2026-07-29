@@ -80,6 +80,27 @@ describe('conversation hub read model', () => {
     expect(thread.attentionState).toBe('waiting_on_contact')
     expect(thread.unread).toBe(false)
     expect(thread.lastMessage).toBe('Yes, calling shortly.')
+    expect(thread.lastChannel).toBe('sms')
+  })
+
+  it('exposes the most recent communication channel for inbox filters', () => {
+    const thread = buildConversationHubThread(lead, [
+      activity({
+        id: 'email',
+        activity_type: 'email',
+        description: 'Offer details',
+        created_at: '2026-07-28T15:13:00.000Z',
+        metadata: { direction: 'outbound' },
+      }),
+      activity({
+        id: 'older-call',
+        activity_type: 'call',
+        created_at: '2026-07-28T15:10:00.000Z',
+        metadata: { direction: 'inbound' },
+      }),
+    ])
+
+    expect(thread.lastChannel).toBe('email')
   })
 
   it('honors an explicit read action only when it is newer than communication', () => {

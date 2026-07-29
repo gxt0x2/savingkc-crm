@@ -31,6 +31,7 @@ interface LeadRow {
   unread?: boolean
   lastMessage?: string
   lastActivityAt?: string
+  lastChannel?: 'call' | 'sms' | 'email' | 'voicemail' | null
   primaryNextAction?: {
     id: string
     title: string
@@ -196,6 +197,24 @@ export default function ConversationsPage() {
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }
 
+  function selectConversation(id: string) {
+    setActiveLeadId(id)
+    const url = new URL(window.location.href)
+    url.searchParams.set('lead', id)
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+  }
+
+  function openActiveDialer() {
+    if (!activeLead?.phone) return
+    window.dispatchEvent(new CustomEvent('open-dialer', {
+      detail: {
+        leadId: activeLead.id.startsWith('unmatched:') ? null : activeLead.id,
+        phone: activeLead.phone,
+        name: activeLead.full_name || formatPhone(activeLead.phone),
+      },
+    }))
+  }
+
   const fetchActivities = useCallback(async () => {
     const currentLeadId = activeLeadId
     if (!currentLeadId) return
@@ -267,6 +286,7 @@ export default function ConversationsPage() {
       unread: true,
       lastMessage: acts[0].description || 'Inbound call — not yet a contact',
       lastActivityAt: acts[0].created_at,
+      lastChannel: acts[0].type === 'voicemail' ? 'voicemail' : acts[0].type === 'sms' ? 'sms' : 'call',
       primaryNextAction: null,
     }))
 
@@ -356,6 +376,7 @@ export default function ConversationsPage() {
     personality: null,
     tags: lead.priority === 'hot' ? [{ label: 'Hot Lead', variant: 'hot' as const }] : lead.station === 'unmatched' ? [{ label: 'New Call', variant: 'hot' as const }] : [],
     lastMessage: lead.lastMessage || (lead.station === 'unmatched' ? 'Inbound call — not yet a contact' : 'No communication yet'),
+    lastChannel: lead.lastChannel || null,
     timestamp: new Date(lead.lastActivityAt || lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     unread: lead.unread ?? lead.station === 'unmatched',
     starred: lead.priority === 'hot',
@@ -408,7 +429,7 @@ export default function ConversationsPage() {
               {leads.map((lead) => (
                 <button
                   key={lead.id}
-                  onClick={() => { setActiveLeadId(lead.id); setShowNewMessage(false); setSidebarOpen(false) }}
+                  onClick={() => { selectConversation(lead.id); setShowNewMessage(false); setSidebarOpen(false) }}
                   className="w-full text-left p-3 rounded-lg hover:bg-slate-50 border border-slate-100 transition-colors"
                 >
                   <div className="font-semibold text-sm">{lead.full_name || '(no name)'}</div>
@@ -433,7 +454,7 @@ export default function ConversationsPage() {
         <InboxSidebar
           threads={threads}
           activeThreadId={activeLeadId || ''}
-          onSelectThread={(id) => { setActiveLeadId(id); setSidebarOpen(false) }}
+          onSelectThread={(id) => { selectConversation(id); setSidebarOpen(false) }}
           onNewMessage={() => setShowNewMessage(true)}
         />
       </div>
@@ -458,6 +479,8 @@ export default function ConversationsPage() {
           dateGroups={dateGroups.length > 0 ? dateGroups : [{ label: 'No messages yet', messages: [] }]}
           leadId={activeLeadId || undefined}
           phone={activeLead?.phone || undefined}
+          email={activeLead?.email || undefined}
+          onCall={openActiveDialer}
           onSent={refreshConversation}
           onConversationChanged={refreshConversation}
         />

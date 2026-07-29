@@ -10,7 +10,7 @@ function luminanceFromRgb(cssColor: string): number {
 }
 
 const routes = ['/ari', '/dispo/pipeline'];
-const crmWorkspaceRoutes = ['/leads', '/contacts', '/conversations'];
+const crmWorkspaceRoutes = ['/leads', '/contacts', '/conversations', '/workflows'];
 const artifactDir = path.join(process.cwd(), 'test-results', 'smoke');
 
 for (const route of routes) {
@@ -49,6 +49,28 @@ for (const route of routes) {
     });
   });
 }
+
+test('CRM controls are interactive instead of decorative', async ({ page }) => {
+  await page.goto('/contacts', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Add contact' }).click();
+  await expect(page.getByRole('dialog', { name: 'Add contact' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('dialog', { name: 'Add contact' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Import' }).click();
+  await expect(page.getByRole('dialog', { name: 'Import contacts' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  await page.goto('/workflows', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'New workflow' }).click();
+  await expect(page.getByRole('dialog', { name: 'Workflow safety requirements' })).toBeVisible();
+  await page.getByRole('button', { name: 'Understood' }).click();
+  await expect(page.getByRole('dialog', { name: 'Workflow safety requirements' })).toHaveCount(0);
+
+  const firstWorkflow = page.getByRole('row').nth(1);
+  await firstWorkflow.click();
+  await expect(page.getByRole('dialog', { name: /workflow details/i })).toBeVisible();
+});
 
 for (const route of crmWorkspaceRoutes) {
   test(`approved CRM workspace smoke: ${route}`, async ({ page }) => {
