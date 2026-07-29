@@ -56,6 +56,7 @@ interface LeadWorkspaceProps {
   onText: () => void
   onEmail: () => void
   onAppointment: () => void
+  onAppointmentOutcome: () => void
   onTask: () => void
   onContract: () => void
   onOpenProperty: () => void
@@ -103,6 +104,13 @@ function directionFor(activity: LeadWorkspaceActivity) {
   return ''
 }
 
+function activityText(activity: LeadWorkspaceActivity) {
+  const raw = activity.description?.trim() || ''
+  const notification = raw.match(/just texted:\s*["“]([\s\S]*?)["”]\s*(?:—|$)/i)
+  if (notification?.[1]) return notification[1].trim()
+  return raw || (activity.activity_type === 'call' ? 'Call activity' : 'No details recorded')
+}
+
 export function LeadWorkspace({
   lead,
   activities,
@@ -114,6 +122,7 @@ export function LeadWorkspace({
   onText,
   onEmail,
   onAppointment,
+  onAppointmentOutcome,
   onTask,
   onContract,
   onOpenProperty,
@@ -133,10 +142,35 @@ export function LeadWorkspace({
   const address = [lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', ')
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${encodeURIComponent(address)}&fov=90&pitch=4&key=${process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''}`
   const stageIndex = Math.max(0, STAGES.findIndex((stage) => stage.keys.includes((lead.station || 'new').toLowerCase())))
-  const visibleActivities = useMemo(() => activities.slice(0, 10), [activities])
+  const visibleActivities = useMemo(() => {
+    const communicationTypes = new Set(['sms', 'call', 'voicemail', 'email', 'note', 'agent_note'])
+    const normalized: LeadWorkspaceActivity[] = []
+    for (const activity of activities) {
+      if (!communicationTypes.has(activity.activity_type)) continue
+      const body = activityText(activity).toLowerCase().replace(/\s+/g, ' ')
+      const timestamp = new Date(activity.created_at).getTime()
+      const duplicateIndex = normalized.findIndex((candidate) => {
+        const candidateTime = new Date(candidate.created_at).getTime()
+        return candidate.activity_type === activity.activity_type
+          && activityText(candidate).toLowerCase().replace(/\s+/g, ' ') === body
+          && Math.abs(candidateTime - timestamp) < 120_000
+      })
+      if (duplicateIndex < 0) {
+        normalized.push(activity)
+        continue
+      }
+      const candidateHasDirection = Boolean(normalized[duplicateIndex].metadata?.direction)
+      const activityHasDirection = Boolean(activity.metadata?.direction)
+      if (activityHasDirection && !candidateHasDirection) normalized[duplicateIndex] = activity
+    }
+    return normalized.slice(0, 10)
+  }, [activities])
   const nextTask = activities.find((activity) => activity.activity_type === 'task')
-  const nextAction = appointment
-    ? `Appointment ${new Date(appointment.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+  const appointmentIsPast = Boolean(appointment && new Date(appointment.scheduledAt).getTime() < Date.now())
+  const nextAction = appointmentIsPast
+    ? 'Record appointment outcome'
+    : appointment
+      ? `Appointment ${new Date(appointment.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
     : nextTask?.description || 'Define the next action'
 
   async function sendMessage() {
@@ -251,7 +285,7 @@ export function LeadWorkspace({
               </span>
             </SummaryItem>
             <SummaryItem label="Next action">
-              <button onClick={appointment ? onAppointment : onTask} className="flex items-center gap-2 rounded-md bg-[#fff5e5] px-3 py-2 text-sm font-bold text-[#9a5800] hover:bg-[#ffedcc]">
+              <button onClick={appointmentIsPast ? onAppointmentOutcome : appointment ? onAppointment : onTask} className="flex items-center gap-2 rounded-md bg-[#fff5e5] px-3 py-2 text-sm font-bold text-[#9a5800] hover:bg-[#ffedcc]">
                 <Icon name="schedule" className="text-[18px]" />
                 {nextAction}
               </button>
@@ -314,7 +348,7 @@ export function LeadWorkspace({
             </div>
           </section>
 
-          <section className="flex min-h-[720px] flex-col overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)]">
+          <section className="flex h-[calc(100vh-375px)] min-h-[540px] max-h-[720px] flex-col overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)]">
             <CardHeader title="Conversation" icon="forum" />
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
               {visibleActivities.length ? visibleActivities.map((activity) => (
@@ -392,15 +426,19 @@ export function LeadWorkspace({
               <SectionLabel>Next steps</SectionLabel>
               <div className="mt-3 space-y-2">
                 <NextStep label="Call seller" value={lead.phone ? 'Ready now' : 'Phone missing'} onClick={onCall} />
-                <NextStep label="Schedule appointment" value={appointment ? 'Scheduled' : 'Not set'} onClick={onAppointment} />
+                <NextStep
+                  label={appointmentIsPast ? 'Record appointment outcome' : 'Schedule appointment'}
+                  value={appointmentIsPast ? 'Required' : appointment ? 'Scheduled' : 'Not set'}
+                  onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment}
+                />
                 <NextStep label="Review offer" value={lead.offer_amount ? formatMoney(lead.offer_amount) : 'Not set'} onClick={onContract} />
               </div>
 
               {appointment ? (
-                <button onClick={onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[#efb4b8] bg-[#fff9f9] p-4 text-left hover:bg-[#fff1f2]">
+                <button onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[#efb4b8] bg-[#fff9f9] p-4 text-left hover:bg-[#fff1f2]">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#df3038] text-white"><Icon name="calendar_month" /></span>
                   <span>
-                    <span className="block text-xs font-black uppercase tracking-[0.08em] text-[#b91c26]">Appointment scheduled</span>
+                    <span className="block text-xs font-black uppercase tracking-[0.08em] text-[#b91c26]">{appointmentIsPast ? 'Appointment outcome required' : 'Appointment scheduled'}</span>
                     <span className="mt-1 block text-sm font-bold text-[#172033]">{new Date(appointment.scheduledAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                     <span className="mt-0.5 block text-xs text-[#667085]">{appointment.address || lead.property_address}</span>
                   </span>
@@ -486,7 +524,7 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
   const direction = directionFor(activity)
   const isOutbound = direction === 'Outbound'
   const isCall = activity.activity_type === 'call'
-  const text = activity.description || (isCall ? 'Call activity' : 'No details recorded')
+  const text = activityText(activity)
   return (
     <article className="grid grid-cols-[92px_34px_1fr] gap-3">
       <time className="pt-1 text-right text-[11px] leading-4 text-[#667085]">{formatActivityDate(activity.created_at)}</time>

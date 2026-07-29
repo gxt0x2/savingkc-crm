@@ -1175,7 +1175,6 @@ export default function LeadDetailPage() {
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [showNewTask, setShowNewTask] = useState(false)
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false)
-  const [outcomeModalDismissed, setOutcomeModalDismissed] = useState(false)
   const [manifestAppointment, setManifestAppointment] = useState<any>(null)
   const [nextAppointment, setNextAppointment] = useState<AppointmentState | null>(null)
   const [manifestScore, setManifestScore] = useState<number | null>(null)
@@ -1232,17 +1231,6 @@ export default function LeadDetailPage() {
       setLeadGroup(null)
     }
   }, [id])
-
-  // ── Auto-show appointment outcome modal when appointment time has passed ──
-  useEffect(() => {
-    if (outcomeModalDismissed || outcomeModalOpen) return
-    if (!activeAppointment?.scheduledAt) return
-    const activeStatuses = ['scheduled', 'confirmed', 'reconfirmed']
-    if (!activeStatuses.includes(activeAppointment.status)) return
-    if (new Date(activeAppointment.scheduledAt).getTime() < Date.now()) {
-      setOutcomeModalOpen(true)
-    }
-  }, [activeAppointment, outcomeModalDismissed, outcomeModalOpen])
 
   // ── Data fetching (runs on mount + after user actions) ──
   const [refreshTick, setRefreshTick] = useState(0)
@@ -1930,6 +1918,7 @@ export default function LeadDetailPage() {
           setSmsModalOpen(true)
         }}
         onAppointment={() => setAppointmentModalOpen(true)}
+        onAppointmentOutcome={() => setOutcomeModalOpen(true)}
         onTask={() => setShowNewTask(true)}
         onContract={() => setContractModalOpen(true)}
         onOpenProperty={() => setDetailsExpanded(true)}
@@ -2494,7 +2483,7 @@ export default function LeadDetailPage() {
         <AppointmentOutcomeModal
           lead={lead}
           appointment={activeAppointment}
-          onClose={() => { setOutcomeModalOpen(false); setOutcomeModalDismissed(true) }}
+          onClose={() => setOutcomeModalOpen(false)}
           onSuccess={() => { refreshAll() }}
         />
       )}
