@@ -105,7 +105,7 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
               className={cn(
                 'flex items-center gap-2 border-b-2 px-5 py-2.5 text-xs font-bold transition-all',
                 activeMode === mode.key
-                  ? 'border-[#138a42] text-[#0f7136]'
+                  ? 'border-[#df3038] text-[#b91c26]'
                   : 'border-transparent text-slate-500 hover:text-slate-700'
               )}
             >
@@ -198,7 +198,7 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
               'mb-2 flex h-10 w-16 items-center justify-center rounded-md text-sm font-bold transition-all',
               sending || !message.trim()
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-[#138a42] text-white hover:bg-[#0f7136]'
+                : 'bg-[#df3038] text-white hover:bg-[#c9232d]'
             )}
           >
             {sending

@@ -84,7 +84,7 @@ export function ContactDetailsPanel({ contact }: { contact: ContactDetails | nul
             <p className="mt-1 flex items-center gap-2 text-sm text-slate-600"><Icon name="person" className="text-[17px]" />Owner: {contact.owner || contact.assigned_agent || 'Unassigned'}</p>
           </div>
         </div>
-        <Link href={`/leads/${contact.id}`} className="mt-4 flex h-9 items-center justify-center rounded-md border border-[#138a42] text-sm font-bold text-[#0f7136] hover:bg-[#f3faf5]">
+        <Link href={`/leads/${contact.id}`} className="mt-4 flex h-9 items-center justify-center rounded-md border border-[#df3038] text-sm font-bold text-[#b91c26] hover:bg-[#fff7f7]">
           Open contact
         </Link>
       </section>
@@ -93,13 +93,13 @@ export function ContactDetailsPanel({ contact }: { contact: ContactDetails | nul
         <h3 className="mb-3 text-sm font-bold text-[#152033]">Opportunity</h3>
         <div className="flex overflow-hidden rounded">
           {stages.map((stage, index) => (
-            <div key={stage} className={`flex-1 py-2 text-center text-[10px] font-bold ${index === currentStage ? 'bg-[#138a42] text-white' : 'bg-[#edf0f3] text-slate-500'}`}>
+            <div key={stage} className={`flex-1 py-2 text-center text-[10px] font-bold ${index === currentStage ? 'bg-[#df3038] text-white' : 'bg-[#edf0f3] text-slate-500'}`}>
               {stage}
             </div>
           ))}
         </div>
         <dl className="mt-4 space-y-2 text-sm">
-          <div className="flex justify-between"><dt className="text-slate-500">Motivation score</dt><dd className="font-bold text-[#0f7136]">{contact.motivation_score ?? '—'}{contact.motivation_score ? '/100' : ''}</dd></div>
+          <div className="flex justify-between"><dt className="text-slate-500">Motivation score</dt><dd className="font-bold text-[#b91c26]">{contact.motivation_score ?? '—'}{contact.motivation_score ? '/100' : ''}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Estimated value</dt><dd className="font-semibold">{money(contact.arv)}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Target offer</dt><dd className="font-semibold">{money(contact.offer_amount)}</dd></div>
         </dl>
@@ -130,7 +130,7 @@ export function ContactDetailsPanel({ contact }: { contact: ContactDetails | nul
       <section className="p-5">
         <h3 className="mb-3 text-sm font-bold text-[#152033]">Tags</h3>
         <div className="flex flex-wrap gap-2">
-          {tags.length ? tags.map((tag) => <span key={tag} className="rounded border border-[#81bd91] bg-[#f3faf5] px-2 py-1 text-xs font-semibold text-[#0f7136]">{tag}</span>) : <span className="text-sm text-slate-400">No tags</span>}
+          {tags.length ? tags.map((tag) => <span key={tag} className="rounded border border-[#efb4b8] bg-[#fff7f7] px-2 py-1 text-xs font-semibold text-[#b91c26]">{tag}</span>) : <span className="text-sm text-slate-400">No tags</span>}
         </div>
       </section>
     </aside>

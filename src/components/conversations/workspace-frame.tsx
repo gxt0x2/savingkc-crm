@@ -19,7 +19,7 @@ export function WorkspaceFrame({
             <span className="sr-only">Search contacts, properties, or messages</span>
             <Icon name="search" className="absolute left-4 top-1/2 -translate-y-1/2 text-[21px] text-[#566579]" />
             <input
-              className="h-11 w-full rounded-md border border-[#ccd4dd] bg-white pl-12 pr-4 text-sm text-[#26374d] outline-none placeholder:text-[#7a8797] focus:border-[#138a42] focus:ring-2 focus:ring-[#138a42]/10"
+              className="h-11 w-full rounded-md border border-[#ccd4dd] bg-white pl-12 pr-4 text-sm text-[#26374d] outline-none placeholder:text-[#7a8797] focus:border-[#df3038] focus:ring-2 focus:ring-[#df3038]/10"
               placeholder="Search contacts, properties, or messages..."
             />
           </label>

@@ -36,6 +36,7 @@ import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { formatDurationBetween, isOutboundAttempt } from '@/lib/contact-display'
 import { DEAD_REASONS } from '@/lib/lead-outcomes'
+import { LeadWorkspace } from '@/components/leads/lead-workspace'
 
 type LeadTriageValue = 'opportunity' | 'lead' | 'dead'
 
@@ -1907,7 +1908,37 @@ export default function LeadDetailPage() {
   })()
 
   return (
-    <div className="lead-cockpit max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-20">
+    <>
+      <LeadWorkspace
+        lead={lead}
+        activities={activities}
+        appointment={activeAppointment ? {
+          scheduledAt: activeAppointment.scheduledAt,
+          address: activeAppointment.address,
+          type: activeAppointment.type,
+        } : null}
+        score={manifestScore ?? lead.motivation_score}
+        assessedValue={assessedValue ?? lead.tax_assessment}
+        onCall={openLeadDialer}
+        onEdit={() => setEditPanelOpen(true)}
+        onText={() => {
+          setComposeTab('sms')
+          setSmsModalOpen(true)
+        }}
+        onEmail={() => {
+          setComposeTab('email')
+          setSmsModalOpen(true)
+        }}
+        onAppointment={() => setAppointmentModalOpen(true)}
+        onTask={() => setShowNewTask(true)}
+        onContract={() => setContractModalOpen(true)}
+        onOpenProperty={() => setDetailsExpanded(true)}
+        onRefresh={refreshAll}
+        onStageChange={(station) => setLead((current) => current ? { ...current, station } : current)}
+      />
+
+      {false && ((lead: Lead, ghostProtocolStatus: { phase: number; status: string } | null) => (
+      <div className="lead-cockpit max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-20">
       {showLeadTriage && (
         <LeadTriageStrip
           lead={lead}
@@ -2160,7 +2191,7 @@ export default function LeadDetailPage() {
                 <div className="px-2 py-0.5 bg-purple-500/15 border border-purple-500/40 rounded-full flex items-center gap-1">
                   <Icon name="psychology" className="!text-[11px] text-purple-300" />
                   <span className="text-[10px] font-black uppercase tracking-wider text-purple-300">
-                    Ghost · P{ghostProtocolStatus.phase}
+                    Ghost · P{ghostProtocolStatus!.phase}
                   </span>
                 </div>
               </>
@@ -2411,6 +2442,8 @@ export default function LeadDetailPage() {
           />
         </div>
       </div>
+      </div>
+      ))(lead!, ghostProtocolStatus)}
 
       {/* Modals */}
       {emailModalOpen && lead.email && (
@@ -2634,6 +2667,6 @@ export default function LeadDetailPage() {
           )
         })()}
       </CockpitModal>
-    </div>
+    </>
   )
 }

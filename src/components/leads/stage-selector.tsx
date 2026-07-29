@@ -22,6 +22,7 @@ interface StageSelectorProps {
   onChange?: (next: DealStage) => void
   onAppointmentRequired?: () => void
   size?: 'sm' | 'md'
+  variant?: 'cockpit' | 'workspace'
 }
 
 /**
@@ -29,7 +30,14 @@ interface StageSelectorProps {
  * (admin/session auth) and cascades through updateManifestAndCascade so
  * scoring + audit stay in sync.
  */
-export function StageSelector({ leadId, station, onChange, onAppointmentRequired, size = 'md' }: StageSelectorProps) {
+export function StageSelector({
+  leadId,
+  station,
+  onChange,
+  onAppointmentRequired,
+  size = 'md',
+  variant = 'cockpit',
+}: StageSelectorProps) {
   const [value, setValue] = useState<string>(station || 'new')
   const [pending, setPending] = useState(false)
   const [deadDialogOpen, setDeadDialogOpen] = useState(false)
@@ -84,6 +92,9 @@ export function StageSelector({ leadId, station, onChange, onAppointmentRequired
   const sizeClasses = size === 'sm'
     ? 'text-xs px-2 py-1'
     : 'text-sm px-3 py-1.5'
+  const variantClasses = variant === 'workspace'
+    ? 'border-[#efb4b8] bg-[#fff7f7] text-[#b91c26] hover:border-[#df3038] focus:border-[#df3038]'
+    : 'bg-[var(--ck-surface-elev)] border-[var(--ck-border)] hover:border-[#E32E2E]/40 text-[var(--ck-text)] focus:border-[#E32E2E]'
 
   return (
     <>
@@ -92,7 +103,7 @@ export function StageSelector({ leadId, station, onChange, onAppointmentRequired
         onChange={handleChange}
         onClick={(e) => e.stopPropagation()}
         disabled={pending}
-        className={`bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[#E32E2E]/40 text-[var(--ck-text)] rounded cursor-pointer focus:outline-none focus:border-[#E32E2E] disabled:opacity-50 font-medium ${sizeClasses}`}
+        className={`rounded border cursor-pointer focus:outline-none disabled:opacity-50 font-semibold ${variantClasses} ${sizeClasses}`}
         aria-label="Change lead stage"
         title="Change stage"
       >

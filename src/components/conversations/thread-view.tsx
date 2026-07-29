@@ -110,7 +110,7 @@ export function ThreadView({
                     {tag}
                   </span>
                 ))}
-                <span className="rounded border border-[#7ab98d] bg-[#f3faf5] px-2 py-0.5 text-[10px] font-bold text-[#0f7136]">{contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Active'}</span>
+                <span className="rounded border border-[#efb4b8] bg-[#fff7f7] px-2 py-0.5 text-[10px] font-bold text-[#b91c26]">{contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Active'}</span>
               </div>
             </div>
           </div>
@@ -154,7 +154,7 @@ export function ThreadView({
               type="button"
               onClick={completePrimaryAction}
               disabled={completingTask}
-              className="rounded-md border border-[#138a42] bg-white px-3 py-1.5 text-xs font-bold text-[#0f7136] transition-colors hover:bg-[#f3faf5] disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-md border border-[#df3038] bg-white px-3 py-1.5 text-xs font-bold text-[#b91c26] transition-colors hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {completingTask ? 'Completing…' : 'Mark complete'}
             </button>
@@ -189,7 +189,7 @@ export function ThreadView({
           <button
             key={reply}
             type="button"
-            className="rounded-md border border-[#138a42] bg-white px-3 py-1.5 text-xs font-semibold text-[#0f7136] hover:bg-[#f3faf5]"
+            className="rounded-md border border-[#df3038] bg-white px-3 py-1.5 text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7]"
           >
             {reply}
           </button>

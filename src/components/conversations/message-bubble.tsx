@@ -173,7 +173,7 @@ function CallCard({ message }: { message: Message }) {
             </div>
           )}
           <div className="flex items-center gap-1.5 text-xs text-on-surface-variant font-medium">
-            <Icon name={isSent ? 'call_made' : 'call_received'} className="text-sm text-green-600" />
+            <Icon name={isSent ? 'call_made' : 'call_received'} className="text-sm text-[#df3038]" />
             <span>{isSent ? `Outgoing call${message.agentName ? ` by ${message.agentName}` : ''}` : 'Incoming call'}</span>
             <span className="text-on-surface-variant/40">·</span>
             <span>{message.timestamp}</span>
@@ -204,7 +204,7 @@ function CallCard({ message }: { message: Message }) {
                   onClick={togglePlay}
                   className={cn(
                     'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
-                    isSent ? 'bg-[#138a42] hover:bg-[#0f7136]' : 'bg-primary hover:bg-primary/90'
+                    isSent ? 'bg-[#df3038] hover:bg-[#c9232d]' : 'bg-primary hover:bg-primary/90'
                   )}
                 >
                   <Icon
@@ -227,7 +227,7 @@ function CallCard({ message }: { message: Message }) {
                     }}
                   >
                     <div
-                      className={cn('h-full rounded-full transition-all', isSent ? 'bg-[#138a42]' : 'bg-primary')}
+                      className={cn('h-full rounded-full transition-all', isSent ? 'bg-[#df3038]' : 'bg-primary')}
                       style={{ width: `${progress}%` }}
                     />
                   </div>

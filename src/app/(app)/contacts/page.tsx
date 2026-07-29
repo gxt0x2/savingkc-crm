@@ -193,7 +193,7 @@ export default function ContactsPage() {
             </div>
             <div className="flex gap-3">
               <button className="flex h-10 items-center gap-2 rounded-md border border-[#cbd3dc] px-4 text-sm font-semibold"><Icon name="upload" />Import</button>
-              <button className="flex h-10 items-center gap-2 rounded-md bg-[#138a42] px-5 text-sm font-semibold text-white"><Icon name="add" />Add contact</button>
+              <button className="flex h-10 items-center gap-2 rounded-md bg-[#df3038] px-5 text-sm font-semibold text-white hover:bg-[#c9232d]"><Icon name="add" />Add contact</button>
             </div>
           </header>
 
@@ -206,7 +206,7 @@ export default function ContactsPage() {
                 ['hot', 'Hot Opportunities', counts.hot],
                 ['unassigned', 'Unassigned', counts.unassigned],
               ].map(([id, label, count]) => (
-                <button key={id} onClick={() => setSmartList(id as SmartList)} className={`border-b-2 py-4 text-sm font-semibold ${smartList === id ? 'border-[#138a42] text-[#0f7136]' : 'border-transparent text-[#24354a]'}`}>
+                <button key={id} onClick={() => setSmartList(id as SmartList)} className={`border-b-2 py-4 text-sm font-semibold ${smartList === id ? 'border-[#df3038] text-[#b91c26]' : 'border-transparent text-[#24354a]'}`}>
                   {label} <span className="ml-1 rounded-full bg-[#eef1f4] px-2 py-0.5 text-[11px]">{count}</span>
                 </button>
               ))}
@@ -218,13 +218,13 @@ export default function ContactsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <label className="relative w-52">
                 <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[#65748a]" />
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="h-9 w-full rounded-md border border-[#ccd4dd] pl-9 pr-3 text-xs outline-none focus:border-[#138a42]" />
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="h-9 w-full rounded-md border border-[#ccd4dd] pl-9 pr-3 text-xs outline-none focus:border-[#df3038]" />
               </label>
               {['Owner', 'Stage', 'Source', 'Tags', 'Last activity', 'More filters'].map((filter) => <button key={filter} className="flex h-9 items-center gap-1.5 rounded-md border border-[#ccd4dd] px-3 text-xs font-semibold text-[#34445a]">{filter}<Icon name="expand_more" /></button>)}
               <button onClick={() => void refetch()} className="ml-auto flex h-9 items-center gap-1.5 rounded-md border border-[#ccd4dd] px-3 text-xs font-semibold text-[#34445a]"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} />Recently active</button>
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <span className="rounded-md border border-[#79b98b] bg-[#f3faf5] px-3 py-1.5 text-xs font-semibold text-[#0f7136]">Active leads ×</span>
+              <span className="rounded-md border border-[#efb4b8] bg-[#fff7f7] px-3 py-1.5 text-xs font-semibold text-[#b91c26]">Active leads ×</span>
               <span className="text-sm text-[#536277]">{visible.length} results</span>
             </div>
 
@@ -252,7 +252,7 @@ export default function ContactsPage() {
                 )
               }) : null}
             </div>
-            <div className="mt-7 flex items-center text-xs text-[#69778a]"><span>Showing 1 to {Math.min(10, visible.length)} of {visible.length} results</span><div className="ml-auto flex gap-2">{['‹', '1', '2', '3', '…', '›'].map((page) => <button key={page} className={`h-8 min-w-8 rounded border px-2 ${page === '1' ? 'border-[#138a42] text-[#0f7136]' : 'border-[#d6dde4]'}`}>{page}</button>)}</div></div>
+            <div className="mt-7 flex items-center text-xs text-[#69778a]"><span>Showing 1 to {Math.min(10, visible.length)} of {visible.length} results</span><div className="ml-auto flex gap-2">{['‹', '1', '2', '3', '…', '›'].map((page) => <button key={page} className={`h-8 min-w-8 rounded border px-2 ${page === '1' ? 'border-[#df3038] text-[#b91c26]' : 'border-[#d6dde4]'}`}>{page}</button>)}</div></div>
           </div>
         </section>
 
@@ -264,12 +264,12 @@ export default function ContactsPage() {
                 <div className="min-w-0"><h2 className="truncate text-xl font-bold">{getDisplayLeadName(selected.fullName, selected.phone)}</h2><p className="mt-1 text-sm text-[#58677c]">{[selected.address, selected.city].filter(Boolean).join(', ') || 'No property linked'}</p></div>
                 <Icon name="close" className="ml-auto text-[#6c798b]" />
               </div>
-              <div className="mt-5 grid grid-cols-3 gap-2">{['Call', 'Text', 'Email'].map((action) => <Link key={action} href={action === 'Text' ? `/conversations?lead=${selected.id}` : '#'} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#0f7136]"><Icon name={action === 'Call' ? 'call' : action === 'Text' ? 'sms' : 'mail'} />{action}</Link>)}</div>
-              <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className="rounded bg-[#eef8f1] px-2 py-1 font-semibold text-[#0f7136]">{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="font-semibold text-[#0f7136]">{selected.score} / 100</dd></div></dl></div>
+              <div className="mt-5 grid grid-cols-3 gap-2">{['Call', 'Text', 'Email'].map((action) => <Link key={action} href={action === 'Text' ? `/conversations?lead=${selected.id}` : '#'} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7]"><Icon name={action === 'Call' ? 'call' : action === 'Text' ? 'sms' : 'mail'} />{action}</Link>)}</div>
+              <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className="rounded bg-[#fff1f2] px-2 py-1 font-semibold text-[#b91c26]">{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="font-semibold text-[#b91c26]">{selected.score} / 100</dd></div></dl></div>
               <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Next action</h3><p className="mt-3 flex items-center gap-2 text-xs text-[#b16e00]"><Icon name="schedule" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>
               <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Recent conversation</h3><p className="mt-3 rounded bg-[#f5f7f9] p-3 text-xs leading-5 text-[#44536a]">{selected.lastMessage || 'No recent message'}</p></div>
               <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Contact details</h3><p className="mt-3 text-sm text-[#526177]">{formatPhone(selected.phone)}</p><p className="mt-2 text-sm text-[#526177]">Owner: {selected.owner || 'Unassigned'}</p></div>
-              <Link href={`/leads/${selected.id}`} className="mt-7 flex h-11 items-center justify-center rounded-md border border-[#138a42] text-sm font-bold text-[#0f7136]">Open full workspace →</Link>
+              <Link href={`/leads/${selected.id}`} className="mt-7 flex h-11 items-center justify-center rounded-md border border-[#df3038] text-sm font-bold text-[#b91c26] hover:bg-[#fff7f7]">Open full workspace →</Link>
             </>
           ) : <p className="text-sm text-[#728094]">Select a contact</p>}
         </aside>

@@ -66,7 +66,7 @@ export function InboxSidebar({
         {/* Header */}
         <div className="flex h-[76px] items-center justify-between px-5">
           <h1 className="text-[22px] font-bold text-[#111827]">Conversations</h1>
-          <button className="flex h-9 items-center gap-1 rounded-md bg-[#138a42] px-3 text-xs font-bold text-white shadow-sm hover:bg-[#0f7136]" onClick={onNewMessage}>
+          <button className="flex h-9 items-center gap-1 rounded-md bg-[#df3038] px-3 text-xs font-bold text-white shadow-sm hover:bg-[#c9232d]" onClick={onNewMessage}>
             <Icon name="add" className="text-[18px]" /> New
           </button>
         </div>
@@ -78,7 +78,7 @@ export function InboxSidebar({
               onClick={() => setActiveTab(tab.key)}
               className={cn(
                 'flex-1 border-b-2 px-1 py-3 text-xs transition-colors',
-                activeTab === tab.key ? 'border-[#138a42] text-[#0f7136]' : 'border-transparent text-slate-500',
+                activeTab === tab.key ? 'border-[#df3038] text-[#b91c26]' : 'border-transparent text-slate-500',
               )}
             >
               {tab.label} <span className="ml-1 text-[10px]">{tab.count}</span>
@@ -92,7 +92,7 @@ export function InboxSidebar({
             className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400"
           />
           <input
-            className="w-full rounded-md border border-[#d9dee5] bg-white py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none focus:border-[#138a42]"
+            className="w-full rounded-md border border-[#d9dee5] bg-white py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none focus:border-[#df3038]"
             placeholder="Search conversations"
             type="text"
             value={search}

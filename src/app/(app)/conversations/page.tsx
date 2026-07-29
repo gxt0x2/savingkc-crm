@@ -470,7 +470,7 @@ export default function ConversationsPage() {
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className="flex items-center gap-3 bg-green-600 text-white px-4 py-3 rounded-xl shadow-xl text-sm font-semibold pointer-events-auto"
+            className="flex items-center gap-3 bg-[#df3038] text-white px-4 py-3 rounded-xl shadow-xl text-sm font-semibold pointer-events-auto"
           >
             <span>{toast.message}</span>
             <button
