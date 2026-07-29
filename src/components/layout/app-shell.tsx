@@ -79,7 +79,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isConversationWorkspace =
     (pathname?.startsWith('/conversations') ?? false) ||
     (pathname?.startsWith('/contacts') ?? false) ||
-    (pathname?.startsWith('/leads') ?? false)
+    (pathname?.startsWith('/leads') ?? false) ||
+    (pathname?.startsWith('/workflows') ?? false)
   const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
