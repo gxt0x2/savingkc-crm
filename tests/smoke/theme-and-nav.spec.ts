@@ -32,13 +32,14 @@ test('CRM controls are interactive instead of decorative', async ({ page }) => {
   await page.getByRole('button', { name: 'Understood' }).click();
   await expect(page.getByRole('dialog', { name: 'Workflow safety requirements' })).toHaveCount(0);
 
-  const firstWorkflow = page.getByRole('row').nth(1);
+  const firstWorkflow = page.getByRole('button', { name: /open .* workflow details/i }).first();
   await firstWorkflow.click();
   await expect(page.getByRole('dialog', { name: /workflow details/i })).toBeVisible();
 });
 
 test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) => {
-  await page.goto('/contacts', { waitUntil: 'domcontentloaded' });
+  await page.goto('/workflows', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.crm-workspace-shell')).toBeVisible();
 
   const expectedLinks = new Map([
     ['Conversations', '/conversations'],
@@ -53,7 +54,8 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
   ]);
 
   for (const [name, href] of expectedLinks) {
-    await expect(page.getByRole('link', { name: new RegExp(`^${name}`) })).toHaveAttribute('href', href);
+    const destination = page.locator(`a[href="${href}"]`).filter({ hasText: name });
+    await expect(destination).toBeVisible();
   }
 
   await expect(page.locator('a[href="#"]')).toHaveCount(0);
@@ -74,7 +76,7 @@ for (const route of crmWorkspaceRoutes) {
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
     await page.screenshot({
-      path: path.join(artifactDir, `${route.replace(/\//g, '_') || 'root'}.png`),
+      path: path.join(artifactDir, `${route.replace(/[^a-z0-9_-]+/gi, '_') || 'root'}.png`),
       fullPage: true,
     });
   });
