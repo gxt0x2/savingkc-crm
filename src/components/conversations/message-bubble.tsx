@@ -202,36 +202,38 @@ function CallCard({ message }: { message: Message }) {
               <div className="flex items-center gap-3">
                 {/* Play/pause */}
                 <button
+                  type="button"
                   onClick={togglePlay}
+                  aria-label={playing ? 'Pause call recording' : 'Play call recording'}
                   className={cn(
                     'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
-                    isSent ? 'bg-[#df3038] hover:bg-[#c9232d]' : 'bg-primary hover:bg-primary/90'
+                    'bg-[#df3038] hover:bg-[#c9232d]'
                   )}
                 >
                   <Icon
                     name={playing ? 'pause' : 'play_arrow'}
-                    className={cn('text-lg', isSent ? 'text-white' : 'text-on-primary')}
+                    className="text-lg text-white"
                     filled
                   />
                 </button>
 
                 {/* Waveform / progress bar */}
                 <div className="flex-1 flex flex-col gap-1">
-                  <div
-                    className={cn('w-full h-1.5 rounded-full cursor-pointer', isSent ? 'bg-slate-200' : 'bg-slate-200')}
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      const pct = (e.clientX - rect.left) / rect.width
-                      if (audioRef.current) {
-                        audioRef.current.currentTime = pct * (audioRef.current.duration || 0)
-                      }
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration || 0}
+                    step={0.1}
+                    value={Math.min(currentTime, duration || 0)}
+                    onChange={(event) => {
+                      const nextTime = Number(event.target.value)
+                      setCurrentTime(nextTime)
+                      if (audioRef.current) audioRef.current.currentTime = nextTime
                     }}
-                  >
-                    <div
-                      className={cn('h-full rounded-full transition-all', isSent ? 'bg-[#df3038]' : 'bg-primary')}
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
+                    aria-label="Call recording position"
+                    className="h-1.5 w-full cursor-pointer accent-[#df3038]"
+                    style={{ backgroundSize: `${progress}% 100%` }}
+                  />
                   <div className={cn('flex justify-between text-[10px]', isSent ? 'text-slate-500' : 'text-on-surface-variant/50')}>
                     <span>{fmtTime(currentTime)}</span>
                     <span>{duration > 0 ? fmtTime(duration) : message.callDuration || '—'}</span>
@@ -241,13 +243,17 @@ function CallCard({ message }: { message: Message }) {
                 {/* Controls */}
                 <div className="flex items-center gap-1">
                   <button
+                    type="button"
                     onClick={cycleSpeed}
+                    aria-label={`Playback speed ${speed} times`}
                     className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded', isSent ? 'text-slate-600 hover:text-slate-900' : 'text-on-surface-variant hover:text-on-surface')}
                   >
                     {speed}x
                   </button>
                   <button
+                    type="button"
                     onClick={handleDownload}
+                    aria-label="Download call recording"
                     className={cn('p-1 rounded hover:bg-black/5', isSent ? 'text-slate-600 hover:text-slate-900' : 'text-on-surface-variant')}
                     title="Download"
                   >

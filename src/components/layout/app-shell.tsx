@@ -76,11 +76,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const isAcquisitionsCalendar =
+    (pathname?.startsWith('/calendar') ?? false) &&
+    (searchParams.get('department') === 'acquisitions' || (!searchParams.get('department') && mode === 'acquisitions'))
+  const isAcquisitionsSettings =
+    (pathname?.startsWith('/settings') ?? false) &&
+    searchParams.get('portal') !== 'tc' &&
+    mode !== 'tc'
   const isConversationWorkspace =
     (pathname?.startsWith('/conversations') ?? false) ||
     (pathname?.startsWith('/contacts') ?? false) ||
     (pathname?.startsWith('/leads') ?? false) ||
-    (pathname?.startsWith('/workflows') ?? false)
+    (pathname?.startsWith('/workflows') ?? false) ||
+    (pathname?.startsWith('/opportunities') ?? false) ||
+    isAcquisitionsCalendar ||
+    (pathname?.startsWith('/marketing') ?? false) ||
+    (pathname?.startsWith('/dispo/pipeline') ?? false) ||
+    (pathname?.startsWith('/dashboard') ?? false) ||
+    isAcquisitionsSettings
   const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')

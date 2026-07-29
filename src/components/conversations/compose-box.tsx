@@ -22,10 +22,11 @@ interface ComposeBoxProps {
   replyFromPhone?: string // Auto-select the Twilio number the lead last texted
   draftMessage?: string
   draftVersion?: number
+  initialMode?: ComposeMode
 }
 
-export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draftMessage, draftVersion }: ComposeBoxProps) {
-  const [activeMode, setActiveMode] = useState<ComposeMode>('sms')
+export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draftMessage, draftVersion, initialMode = 'sms' }: ComposeBoxProps) {
+  const [activeMode, setActiveMode] = useState<ComposeMode>(initialMode)
   const [message, setMessage] = useState('')
   const [subject, setSubject] = useState('')
   const [sending, setSending] = useState(false)
@@ -48,6 +49,10 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
       setMessage(draftMessage)
     }
   }, [draftMessage, draftVersion])
+
+  useEffect(() => {
+    setActiveMode(initialMode)
+  }, [initialMode])
 
   async function handleSend() {
     if (!message.trim()) return
@@ -117,7 +122,9 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
           {modes.map((mode) => (
             <button
               key={mode.key}
+              type="button"
               onClick={() => setActiveMode(mode.key)}
+              aria-pressed={activeMode === mode.key}
               className={cn(
                 'flex items-center gap-2 border-b-2 px-5 py-2.5 text-xs font-bold transition-all',
                 activeMode === mode.key
@@ -146,6 +153,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
               </span>
             ) : (
               <select
+                aria-label="Sending phone number"
                 value={fromPhone}
                 onChange={(e) => setFromPhone(e.target.value)}
                 className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700"
@@ -159,7 +167,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
         )}
         {activeMode === 'email' ? (
           <div className="border-t border-[#eef1f4] px-5 py-2">
-            <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Email subject" className="h-8 w-full border-0 bg-transparent text-xs font-semibold text-slate-700 outline-none placeholder:text-slate-400" />
+            <input aria-label="Email subject" value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Email subject" className="h-8 w-full border-0 bg-transparent text-xs font-semibold text-slate-700 outline-none placeholder:text-slate-400" />
           </div>
         ) : null}
 
@@ -200,6 +208,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
                 {templates.map((t) => (
                   <button
                     key={t.id}
+                    type="button"
                     onClick={() => handleTemplateSelect(t)}
                     className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-50 last:border-0"
                   >
@@ -211,7 +220,9 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
             )}
           </div>
           <button
+            type="button"
             onClick={handleSend}
+            aria-label={activeMode === 'note' ? 'Add internal note' : activeMode === 'email' ? 'Send email' : 'Send text message'}
             disabled={sending || !message.trim()}
             className={cn(
               'mb-2 flex h-10 w-16 items-center justify-center rounded-md text-sm font-bold transition-all',

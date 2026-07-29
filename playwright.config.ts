@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3002';
+const playwrightPort = process.env.PLAYWRIGHT_PORT || '3002';
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${playwrightPort}`;
 const useManagedWebServer = !process.env.PLAYWRIGHT_BASE_URL;
 const authProxyTestBypassSecret = 'playwright-smoke-bypass';
 const playwrightEnv = {
@@ -37,7 +38,7 @@ export default defineConfig({
   ],
   webServer: useManagedWebServer
     ? {
-        command: 'npm run start -- --port 3002',
+        command: `npm run start -- --port ${playwrightPort}`,
         env: playwrightEnv,
         url: baseURL,
         reuseExistingServer: !process.env.CI,

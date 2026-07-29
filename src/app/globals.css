@@ -56,6 +56,53 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Approved SavingKC operating workspace: one light token contract for every
+   nested page, panel, modal, button, and link reached from the rebuilt shell. */
+.crm-workspace-shell {
+  --ck-bg: #f6f7f9;
+  --ck-surface: #ffffff;
+  --ck-surface-elev: #f8f9fb;
+  --ck-surface-hi: #eef1f4;
+  --ck-border: #d9dfe6;
+  --ck-border-strong: #b9c3cf;
+  --ck-text: #172033;
+  --ck-text-muted: #526173;
+  --ck-text-dim: #7a8798;
+  --ck-accent: #df3038;
+  --ck-accent-bright: #c9232d;
+  --ck-warn: #a15c00;
+  --ck-success: #047857;
+  --ck-info: #344054;
+  color-scheme: light;
+}
+
+/* A few reusable legacy dialogs opt into `.ck-dark`. Inside the rebuilt CRM
+   they inherit the approved light operating-system contract instead. */
+.crm-workspace-shell .ck-dark {
+  --ck-bg: #f6f7f9;
+  --ck-surface: #ffffff;
+  --ck-surface-elev: #f8f9fb;
+  --ck-surface-hi: #eef1f4;
+  --ck-border: #d9dfe6;
+  --ck-border-strong: #b9c3cf;
+  --ck-text: #172033;
+  --ck-text-muted: #526173;
+  --ck-text-dim: #7a8798;
+  --ck-accent: #df3038;
+  --ck-accent-bright: #c9232d;
+  color-scheme: light;
+}
+
+.crm-workspace-shell :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid #df3038;
+  outline-offset: 2px;
+}
+
+.crm-workspace-shell :is(button, a)[aria-disabled="true"],
+.crm-workspace-shell :is(button, a):disabled {
+  cursor: not-allowed;
+}
+
 /* SavingKC CRM — Apple-inspired dialer/disposition tokens */
 :root {
   --skc-brand: #e11d2a;

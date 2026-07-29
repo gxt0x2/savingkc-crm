@@ -23,6 +23,7 @@
     "gate:proxy": "node scripts/ci/check-proxy-registration.mjs",
     "gate:theme": "node scripts/ci/check-theme-guard.mjs",
     "gate:routes": "node scripts/ci/check-route-integrity.mjs",
+    "gate:crm-controls": "node scripts/ci/check-crm-control-integrity.mjs",
     "gate:twilio": "node scripts/ci/check-twilio-token-health.mjs",
     "gate:edge": "node scripts/ci/check-edge-integrity.mjs",
     "gate:dialer": "node scripts/ci/check-dialer-ringback.mjs"

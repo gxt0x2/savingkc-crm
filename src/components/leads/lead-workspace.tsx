@@ -266,14 +266,14 @@ export function LeadWorkspace({
                       <Icon name="local_fire_department" className="text-[15px]" />
                       {(lead.priority || '').toLowerCase() === 'hot' ? 'Hot Lead' : 'Active Lead'}
                     </span>
-                    <button onClick={onEdit} className="text-[#667085] hover:text-[#df3038]" aria-label="Edit contact">
+                    <button type="button" onClick={onEdit} className="flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#df3038]" aria-label="Edit contact">
                       <Icon name="edit" className="text-[19px]" />
                     </button>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-[#475467]">
                     {address ? <span className="flex items-center gap-1.5"><Icon name="location_on" className="text-[18px]" />{address}</span> : null}
-                    {lead.phone ? <a href={`tel:${lead.phone}`} className="flex items-center gap-1.5 hover:text-[#c9232d]"><Icon name="call" className="text-[17px]" />{formatPhone(lead.phone)}</a> : null}
-                    {lead.email ? <a href={`mailto:${lead.email}`} className="flex items-center gap-1.5 hover:text-[#c9232d]"><Icon name="mail" className="text-[17px]" />{lead.email}</a> : null}
+                    {lead.phone ? <button type="button" onClick={onCall} className="flex items-center gap-1.5 hover:text-[#c9232d]" aria-label={`Call ${name}`}><Icon name="call" className="text-[17px]" />{formatPhone(lead.phone)}</button> : null}
+                    {lead.email ? <button type="button" onClick={onEmail} className="flex items-center gap-1.5 hover:text-[#c9232d]" aria-label={`Email ${name}`}><Icon name="mail" className="text-[17px]" />{lead.email}</button> : null}
                   </div>
                 </div>
               </div>
@@ -282,7 +282,7 @@ export function LeadWorkspace({
               <ActionButton icon="call" label="Call" onClick={onCall} disabled={!lead.phone} />
               <ActionButton icon="chat_bubble" label="Text" onClick={onText} disabled={!lead.phone} />
               <ActionButton icon="mail" label="Email" onClick={onEmail} disabled={!lead.email} />
-              <button onClick={onContract} className="flex h-11 items-center gap-2 rounded-md bg-[#df3038] px-4 text-sm font-bold text-white shadow-[0_4px_12px_rgba(223,48,56,0.18)] hover:bg-[#c9232d]">
+              <button type="button" onClick={onContract} className="flex h-11 items-center gap-2 rounded-md bg-[#df3038] px-4 text-sm font-bold text-white shadow-[0_4px_12px_rgba(223,48,56,0.18)] hover:bg-[#c9232d]">
                 <Icon name="description" className="text-[19px]" />
                 Create contract
               </button>
@@ -307,7 +307,7 @@ export function LeadWorkspace({
               </span>
             </SummaryItem>
             <SummaryItem label="Next action">
-              <button onClick={appointmentIsPast ? onAppointmentOutcome : appointment ? onAppointment : onTask} className="flex items-center gap-2 rounded-md bg-[#fff5e5] px-3 py-2 text-sm font-bold text-[#9a5800] hover:bg-[#ffedcc]">
+              <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : appointment ? onAppointment : onTask} className="flex items-center gap-2 rounded-md bg-[#fff5e5] px-3 py-2 text-sm font-bold text-[#9a5800] hover:bg-[#ffedcc]">
                 <Icon name="schedule" className="text-[18px]" />
                 {nextAction}
               </button>
@@ -350,7 +350,7 @@ export function LeadWorkspace({
 
               <div className="my-5 border-t border-[#e4e7ec]" />
               <SectionLabel>Property snapshot</SectionLabel>
-              <button onClick={onOpenProperty} className="mt-3 w-full overflow-hidden rounded-lg border border-[#e2e6eb] text-left hover:border-[#efb4b8]">
+              <button type="button" onClick={onOpenProperty} className="mt-3 w-full overflow-hidden rounded-lg border border-[#e2e6eb] text-left hover:border-[#efb4b8]" aria-label="Open property details">
                 {!imageFailed && address ? (
                   // Google Street View is a signed dynamic image URL and is intentionally not routed through next/image.
                   // eslint-disable-next-line @next/next/no-img-element
@@ -412,7 +412,7 @@ export function LeadWorkspace({
                     ['email', 'Email'],
                     ['note', 'Internal note'],
                   ] as const).map(([key, label]) => (
-                    <button key={key} onClick={() => setComposeMode(key)} className={cn('border-b-2 px-4 py-2.5 text-xs font-bold', composeMode === key ? 'border-[#df3038] text-[#b91c26]' : 'border-transparent text-[#667085]')}>
+                    <button key={key} type="button" onClick={() => setComposeMode(key)} aria-pressed={composeMode === key} className={cn('border-b-2 px-4 py-2.5 text-xs font-bold', composeMode === key ? 'border-[#df3038] text-[#b91c26]' : 'border-transparent text-[#667085]')}>
                       {label}
                     </button>
                   ))}
@@ -428,7 +428,7 @@ export function LeadWorkspace({
                 />
                 {sendError ? <p className="px-4 pb-2 text-xs font-semibold text-[#c9232d]">{sendError}</p> : null}
                 <div className="flex items-center gap-2 border-t border-[#edf0f2] px-3 py-2.5">
-                  <button type="button" onClick={() => selectSection('documents')} className="flex items-center gap-1.5 text-xs font-semibold text-[#667085] hover:text-[#b91c26]"><Icon name="attach_file" className="text-[18px]" />Add document</button>
+                  <button type="button" onClick={() => selectSection('documents')} className="flex items-center gap-1.5 text-xs font-semibold text-[#667085] hover:text-[#b91c26]"><Icon name="attach_file" className="text-[18px]" />Open documents</button>
                   <button
                     type="button"
                     onClick={() => setMessage(`Hi ${firstName}, I’m following up about ${lead.property_address || 'your property'}. What time works best for a quick conversation?`)}
@@ -436,7 +436,7 @@ export function LeadWorkspace({
                   >
                     <Icon name="bolt" className="text-[18px]" />Use follow-up
                   </button>
-                  <button onClick={sendMessage} disabled={sending || !message.trim()} className="ml-auto flex h-9 items-center gap-2 rounded-md bg-[#df3038] px-4 text-sm font-bold text-white hover:bg-[#c9232d] disabled:cursor-not-allowed disabled:bg-[#e3a5a9]">
+                  <button type="button" onClick={sendMessage} disabled={sending || !message.trim()} className="ml-auto flex h-9 items-center gap-2 rounded-md bg-[#df3038] px-4 text-sm font-bold text-white hover:bg-[#c9232d] disabled:cursor-not-allowed disabled:bg-[#e3a5a9]">
                     <Icon name={sending ? 'hourglass_empty' : 'send'} className="text-[17px]" />
                     {composeMode === 'note' ? 'Add note' : 'Send'}
                   </button>
@@ -474,7 +474,7 @@ export function LeadWorkspace({
               <div className="my-6 border-t border-[#e4e7ec]" />
               <SectionLabel>Next steps</SectionLabel>
               <div className="mt-3 space-y-2">
-                <NextStep label="Call seller" value={lead.phone ? 'Ready now' : 'Phone missing'} onClick={onCall} />
+                <NextStep label="Call seller" value={lead.phone ? 'Ready now' : 'Phone missing'} onClick={onCall} disabled={!lead.phone} />
                 <NextStep
                   label={appointmentIsPast ? 'Record appointment outcome' : 'Schedule appointment'}
                   value={appointmentIsPast ? 'Required' : appointment ? 'Scheduled' : 'Not set'}
@@ -484,7 +484,7 @@ export function LeadWorkspace({
               </div>
 
               {appointment ? (
-                <button onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[#efb4b8] bg-[#fff9f9] p-4 text-left hover:bg-[#fff1f2]">
+                <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[#efb4b8] bg-[#fff9f9] p-4 text-left hover:bg-[#fff1f2]">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#df3038] text-white"><Icon name="calendar_month" /></span>
                   <span>
                     <span className="block text-xs font-black uppercase tracking-[0.08em] text-[#b91c26]">{appointmentIsPast ? 'Appointment outcome required' : 'Appointment scheduled'}</span>
@@ -493,15 +493,15 @@ export function LeadWorkspace({
                   </span>
                 </button>
               ) : (
-                <button onClick={onAppointment} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#efb4b8] px-4 py-4 text-sm font-bold text-[#b91c26] hover:bg-[#fff7f7]">
+                <button type="button" onClick={onAppointment} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#efb4b8] px-4 py-4 text-sm font-bold text-[#b91c26] hover:bg-[#fff7f7]">
                   <Icon name="event" />
                   Schedule appointment
                 </button>
               )}
 
               <div className="mt-5 grid grid-cols-2 gap-2">
-                <button onClick={onTask} className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cfd6de] text-xs font-bold text-[#344054] hover:bg-[#f7f8fa]"><Icon name="add_task" />New task</button>
-                <button onClick={onEdit} className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cfd6de] text-xs font-bold text-[#344054] hover:bg-[#f7f8fa]"><Icon name="edit" />More details</button>
+                <button type="button" onClick={onTask} className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cfd6de] text-xs font-bold text-[#344054] hover:bg-[#f7f8fa]"><Icon name="add_task" />New task</button>
+                <button type="button" onClick={onEdit} className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cfd6de] text-xs font-bold text-[#344054] hover:bg-[#f7f8fa]"><Icon name="edit" />More details</button>
               </div>
             </div>
           </section>
@@ -538,7 +538,7 @@ export function LeadWorkspace({
 
 function ActionButton({ icon, label, onClick, disabled }: { icon: string; label: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick} disabled={disabled} className="flex h-11 min-w-[104px] items-center justify-center gap-2 rounded-md border border-[#df3038] bg-white px-4 text-sm font-bold text-[#b91c26] hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:border-[#d5dae0] disabled:text-[#98a2b3]">
+    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className="flex h-11 min-w-[104px] items-center justify-center gap-2 rounded-md border border-[#df3038] bg-white px-4 text-sm font-bold text-[#b91c26] hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:border-[#d5dae0] disabled:text-[#98a2b3]">
       <Icon name={icon} className="text-[19px]" />
       {label}
     </button>
@@ -559,7 +559,7 @@ function CardHeader({ title, icon, onMore }: { title: string; icon: string; onMo
     <div className="flex h-13 items-center border-b border-[#dfe3e8] px-5">
       <Icon name={icon} className="mr-2 text-[19px] text-[#df3038]" />
       <h2 className="text-base font-black text-[#172033]">{title}</h2>
-      {onMore ? <button onClick={onMore} className="ml-auto text-[#667085] hover:text-[#df3038]"><Icon name="more_vert" /></button> : null}
+      {onMore ? <button type="button" onClick={onMore} aria-label={`Edit ${title}`} className="ml-auto flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#df3038]"><Icon name="more_vert" /></button> : null}
     </div>
   )
 }
@@ -583,6 +583,13 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
   const isOutbound = direction === 'Outbound'
   const isCall = activity.activity_type === 'call'
   const text = activityText(activity)
+  const recordingUrl = typeof activity.metadata?.recording_url === 'string'
+    ? activity.metadata.recording_url
+    : typeof activity.metadata?.recordingUrl === 'string'
+      ? activity.metadata.recordingUrl
+      : typeof activity.metadata?.recordingSid === 'string'
+        ? `/api/recordings/${activity.metadata.recordingSid}`
+        : null
   return (
     <article className="grid grid-cols-[92px_34px_1fr] gap-3">
       <time className="pt-1 text-right text-[11px] leading-4 text-[#667085]">{formatActivityDate(activity.created_at)}</time>
@@ -596,10 +603,14 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
           {activity.agent ? <span className="text-[10px] text-[#667085]">by {toProperCase(activity.agent)}</span> : null}
         </div>
         <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-[#344054]">{text}</p>
-        {isCall ? (
-          <div className="mt-3 flex items-center gap-2 rounded-md border border-[#e2e6eb] bg-white px-3 py-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#df3038] text-white"><Icon name="play_arrow" className="text-[17px]" /></span>
-            <span className="h-5 flex-1 opacity-55" style={{ backgroundImage: 'repeating-linear-gradient(90deg,#9aa4b2 0,#9aa4b2 1px,transparent 1px,transparent 5px)', clipPath: 'polygon(0 45%,5% 20%,10% 65%,15% 35%,20% 75%,25% 25%,30% 60%,35% 15%,40% 70%,45% 35%,50% 80%,55% 25%,60% 60%,65% 40%,70% 75%,75% 20%,80% 65%,85% 35%,90% 70%,95% 25%,100% 50%,100% 55%,0 55%)' }} />
+        {isCall ? recordingUrl ? (
+          <audio className="mt-3 w-full accent-[#df3038]" controls preload="metadata" src={recordingUrl}>
+            Your browser does not support call recording playback.
+          </audio>
+        ) : (
+          <div className="mt-3 flex items-center gap-2 rounded-md border border-[#e2e6eb] bg-[#f8f9fb] px-3 py-2 text-xs font-semibold text-[#667085]">
+            <Icon name="phone_in_talk" className="text-[17px] text-[#b91c26]" />
+            No recording available
           </div>
         ) : null}
       </div>
@@ -607,9 +618,9 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
   )
 }
 
-function NextStep({ label, value, onClick }: { label: string; value: string; onClick: () => void }) {
+function NextStep({ label, value, onClick, disabled }: { label: string; value: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-[#f7f8fa]">
+    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-[#f7f8fa] disabled:cursor-not-allowed disabled:opacity-55">
       <span className="h-5 w-5 rounded-full border-2 border-[#b9c1cc]" />
       <span className="text-sm font-semibold text-[#344054]">{label}</span>
       <span className="ml-auto text-xs font-medium text-[#b91c26]">{value}</span>

@@ -37,11 +37,13 @@ export function InboxSidebar({
   activeThreadId,
   onSelectThread,
   onNewMessage,
+  currentUserName = 'Ernest',
 }: {
   threads: ThreadPreview[]
   activeThreadId: string
   onSelectThread: (id: string) => void
   onNewMessage?: () => void
+  currentUserName?: string
 }) {
   const [activeTab, setActiveTab] = useState<TabFilter>('unread')
   const [search, setSearch] = useState('')
@@ -54,7 +56,7 @@ export function InboxSidebar({
     if (channel && t.lastChannel !== channel) return false
     if (needsReplyOnly && t.attentionState !== 'needs_reply') return false
     if (activeTab === 'unread') return t.unread
-    if (activeTab === 'mine') return Boolean(t.owner)
+    if (activeTab === 'mine') return Boolean(t.owner && t.owner.toLowerCase().startsWith(currentUserName.toLowerCase()))
     if (activeTab === 'unassigned') return !t.owner
     return true
   }).sort((a, b) => {
@@ -65,7 +67,7 @@ export function InboxSidebar({
 
   const tabs: { key: TabFilter; label: string; count: number }[] = [
     { key: 'unread', label: 'Inbox', count: threads.filter((thread) => thread.unread).length },
-    { key: 'mine', label: 'Mine', count: threads.filter((thread) => thread.owner).length },
+    { key: 'mine', label: 'Mine', count: threads.filter((thread) => thread.owner?.toLowerCase().startsWith(currentUserName.toLowerCase())).length },
     { key: 'unassigned', label: 'Unassigned', count: threads.filter((thread) => !thread.owner).length },
     { key: 'all', label: 'All', count: threads.length },
   ]
@@ -76,7 +78,7 @@ export function InboxSidebar({
         {/* Header */}
         <div className="flex h-[76px] items-center justify-between px-5">
           <h1 className="text-[22px] font-bold text-[#111827]">Conversations</h1>
-          <button className="flex h-9 items-center gap-1 rounded-md bg-[#df3038] px-3 text-xs font-bold text-white shadow-sm hover:bg-[#c9232d]" onClick={onNewMessage}>
+          <button type="button" className="flex h-9 items-center gap-1 rounded-md bg-[#df3038] px-3 text-xs font-bold text-white shadow-sm hover:bg-[#c9232d]" onClick={onNewMessage}>
             <Icon name="add" className="text-[18px]" /> New
           </button>
         </div>
@@ -85,7 +87,9 @@ export function InboxSidebar({
           {tabs.map((tab) => (
             <button
               key={tab.key}
+              type="button"
               onClick={() => setActiveTab(tab.key)}
+              aria-pressed={activeTab === tab.key}
               className={cn(
                 'flex-1 border-b-2 px-1 py-3 text-xs transition-colors',
                 activeTab === tab.key ? 'border-[#df3038] text-[#b91c26]' : 'border-transparent text-slate-500',
@@ -102,6 +106,7 @@ export function InboxSidebar({
             className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400"
           />
           <input
+            aria-label="Search conversations"
             className="w-full rounded-md border border-[#d9dee5] bg-white py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none focus:border-[#df3038]"
             placeholder="Search conversations"
             type="text"
@@ -125,7 +130,7 @@ export function InboxSidebar({
           >
             Needs reply
           </button>
-          <button type="button" onClick={() => setSortOrder((value) => value === 'priority' ? 'recent' : 'priority')} title={`Sort: ${sortOrder}`} className="ml-auto flex h-8 w-8 items-center justify-center rounded border border-[#d9dee5] text-slate-500 hover:text-[#b91c26]"><Icon name={sortOrder === 'priority' ? 'filter_list' : 'schedule'} /></button>
+          <button type="button" onClick={() => setSortOrder((value) => value === 'priority' ? 'recent' : 'priority')} aria-label={`Sort conversations by ${sortOrder === 'priority' ? 'recent activity' : 'priority'}`} title={`Sort: ${sortOrder}`} className="ml-auto flex h-8 w-8 items-center justify-center rounded border border-[#d9dee5] text-slate-500 hover:text-[#b91c26]"><Icon name={sortOrder === 'priority' ? 'filter_list' : 'schedule'} /></button>
         </div>
       </div>
 
@@ -137,10 +142,12 @@ export function InboxSidebar({
         {filteredThreads.map((thread) => {
           const isActive = thread.id === activeThreadId
           return (
-            <div
+            <button
               key={thread.id}
+              type="button"
               onClick={() => onSelectThread(thread.id)}
-              className={cn('cursor-pointer border-b border-[#edf0f3] px-4 py-4 transition-colors', isActive ? 'bg-[#f3faf5]' : 'bg-white hover:bg-[#f8fafb]')}
+              aria-pressed={isActive}
+              className={cn('w-full border-b border-[#edf0f3] px-4 py-4 text-left transition-colors', isActive ? 'bg-[#fff8f8]' : 'bg-white hover:bg-[#f8fafb]')}
             >
               <div className="flex items-start gap-3">
                 <div
@@ -212,7 +219,7 @@ export function InboxSidebar({
                   )}
                 </div>
               </div>
-            </div>
+            </button>
           )
         })}
       </div>

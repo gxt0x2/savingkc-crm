@@ -35,8 +35,15 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
           />
         </filter>
       </svg>
-      <Link href="/contacts" className={cn('flex h-[82px] items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-5')}>
-        {collapsed ? <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/20 text-sm font-black text-white">SKC</span> : <Image
+      <Link href="/conversations" aria-label="Saving KC CRM home" className={cn('flex h-[82px] items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-5')}>
+        {collapsed ? <Image
+          src="/logo.png"
+          alt=""
+          width={489}
+          height={141}
+          className="h-auto w-[58px] object-contain"
+          style={{ filter: 'url(#crm-logo-dark)' }}
+        /> : <Image
           src="/logo.png"
           alt="Saving KC Homebuyers"
           width={489}
@@ -52,6 +59,8 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
             <Link
               key={item.label}
               href={item.href}
+              aria-current={active ? 'page' : undefined}
+              title={collapsed ? item.label : undefined}
               className={cn(
                 'flex items-center gap-3 rounded-lg px-3 py-3 text-[13px] font-semibold transition-colors',
                 collapsed && 'justify-center',

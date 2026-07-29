@@ -240,6 +240,8 @@ export default function ContactsPage() {
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize))
   const currentPage = Math.min(page, pageCount)
   const pageItems = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const paginationStart = Math.min(Math.max(1, currentPage - 2), Math.max(1, pageCount - 4))
+  const paginationPages = Array.from({ length: Math.min(pageCount, 5) }, (_, index) => paginationStart + index)
   const selected = items.find((item) => item.id === selectedId) ?? pageItems[0] ?? null
 
   function clearFilters() {
@@ -378,8 +380,8 @@ export default function ContactsPage() {
             </div>
 
             <div className="mt-5 overflow-x-auto rounded-md border border-[#d9e0e6]">
-              <div className="grid min-w-[970px] grid-cols-[34px_1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] border-b border-[#d9e0e6] bg-[#fbfcfd] px-3 py-3 text-[11px] font-bold text-[#425269]">
-                <span>□</span><span>Contact</span><span>Property</span><span>Stage</span><span>Next Action</span><span>Owner</span><span>Last Activity</span><span>Source</span>
+              <div className="grid min-w-[936px] grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] border-b border-[#d9e0e6] bg-[#fbfcfd] px-3 py-3 text-[11px] font-bold text-[#425269]">
+                <span>Contact</span><span>Property</span><span>Stage</span><span>Next Action</span><span>Owner</span><span>Last Activity</span><span>Source</span>
               </div>
               {isLoading ? <ContactSkeleton /> : null}
               {error ? <div className="p-8 text-center text-sm text-red-600">Contacts could not be loaded. <button type="button" onClick={() => void refetch()} className="font-bold underline">Try again</button></div> : null}
@@ -389,8 +391,7 @@ export default function ContactsPage() {
                 const property = [row.address, row.city].filter(Boolean).join(', ') || 'No property linked'
                 const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || 'Define next action'
                 return (
-                  <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} className={`grid min-w-[970px] w-full grid-cols-[34px_1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-[#e3e7eb] px-3 py-4 text-left text-xs last:border-0 ${detailsOpen && selected?.id === row.id ? 'bg-[#fff8f8]' : 'hover:bg-[#fafbfc]'}`}>
-                    <span className="text-[#9aa5b2]">□</span>
+                  <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} aria-pressed={detailsOpen && selected?.id === row.id} className={`grid min-w-[936px] w-full grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-[#e3e7eb] px-3 py-4 text-left text-xs last:border-0 ${detailsOpen && selected?.id === row.id ? 'bg-[#fff8f8]' : 'hover:bg-[#fafbfc]'}`}>
                     <span className="flex min-w-0 items-center gap-2.5"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#feecef] font-bold text-[#9f1d27]">{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[#1d2c40]">{displayName}</strong><small className="text-[#627087]">{formatPhone(row.phone)}</small></span></span>
                     <span className="min-w-0"><strong className="block truncate font-medium text-[#2d3d52]">{property}</strong><small className="text-[#7b8796]">{row.city || ''}</small></span>
                     <span><span className="rounded border border-[#efb4b8] bg-[#fff1f2] px-2 py-1 font-semibold text-[#b91c26]">{STAGE_LABELS[row.station]}</span></span>
@@ -404,8 +405,8 @@ export default function ContactsPage() {
               <span>Showing {visible.length ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, visible.length)} of {visible.length} results</span>
               <div className="ml-auto flex items-center gap-2">
                 <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="h-8 min-w-8 rounded border border-[#d6dde4] px-2 disabled:opacity-40" aria-label="Previous page">‹</button>
-                {Array.from({ length: Math.min(pageCount, 5) }, (_, index) => index + 1).map((pageNumber) => <button type="button" key={pageNumber} onClick={() => setPage(pageNumber)} className={`h-8 min-w-8 rounded border px-2 ${pageNumber === currentPage ? 'border-[#df3038] text-[#b91c26]' : 'border-[#d6dde4]'}`}>{pageNumber}</button>)}
-                {pageCount > 5 ? <span>… {pageCount}</span> : null}
+                {paginationPages.map((pageNumber) => <button type="button" key={pageNumber} onClick={() => setPage(pageNumber)} aria-current={pageNumber === currentPage ? 'page' : undefined} aria-label={`Page ${pageNumber}`} className={`h-8 min-w-8 rounded border px-2 ${pageNumber === currentPage ? 'border-[#df3038] text-[#b91c26]' : 'border-[#d6dde4]'}`}>{pageNumber}</button>)}
+                <span className="sr-only">Page {currentPage} of {pageCount}</span>
                 <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="h-8 min-w-8 rounded border border-[#d6dde4] px-2 disabled:opacity-40" aria-label="Next page">›</button>
               </div>
             </div>
@@ -421,8 +422,8 @@ export default function ContactsPage() {
             </div>
             <div className="mt-5 grid grid-cols-3 gap-2">
               <button type="button" disabled={!selected.phone} onClick={() => openDialer(selected)} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" />Call</button>
-              <Link aria-disabled={!selected.phone} href={selected.phone ? `/conversations?lead=${selected.id}` : '#'} className={`flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7] ${!selected.phone ? 'pointer-events-none opacity-40' : ''}`}><Icon name="sms" />Text</Link>
-              <a aria-disabled={!selected.email} href={selected.email ? `mailto:${selected.email}` : undefined} className={`flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7] ${!selected.email ? 'pointer-events-none opacity-40' : ''}`}><Icon name="mail" />Email</a>
+              {selected.phone ? <Link href={`/conversations?lead=${selected.id}&compose=sms`} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7]"><Icon name="sms" />Text</Link> : <button type="button" disabled aria-label="Text unavailable because this contact has no phone number" className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] opacity-40"><Icon name="sms" />Text</button>}
+              {selected.email ? <Link href={`/conversations?lead=${selected.id}&compose=email`} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7]"><Icon name="mail" />Email</Link> : <button type="button" disabled aria-label="Email unavailable because this contact has no email address" className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] opacity-40"><Icon name="mail" />Email</button>}
             </div>
             <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className="rounded bg-[#fff1f2] px-2 py-1 font-semibold text-[#b91c26]">{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="font-semibold text-[#b91c26]">{selected.score} / 100</dd></div></dl></div>
             <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Next action</h3><p className="mt-3 flex items-center gap-2 text-xs text-[#b16e00]"><Icon name="schedule" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>

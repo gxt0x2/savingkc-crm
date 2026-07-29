@@ -40,6 +40,9 @@ export function ThreadView({
   onCall,
   onSent,
   onConversationChanged,
+  contactDetailsOpen = true,
+  onToggleContactDetails,
+  initialComposeMode = 'sms',
 }: {
   contact: ThreadContact
   dateGroups: DateGroup[]
@@ -49,6 +52,9 @@ export function ThreadView({
   onCall?: () => void
   onSent?: () => void
   onConversationChanged?: () => void
+  contactDetailsOpen?: boolean
+  onToggleContactDetails?: () => void
+  initialComposeMode?: 'sms' | 'email' | 'note'
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [completingTask, setCompletingTask] = useState(false)
@@ -158,7 +164,18 @@ export function ThreadView({
         </div>
         <div className="relative flex shrink-0 items-center gap-2">
           <button type="button" onClick={onCall} disabled={!phone} className="flex h-9 items-center gap-1.5 rounded-md border border-[#cfd5dc] bg-white px-3 text-xs font-bold text-[#253247] hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" className="text-[17px]" /> Call</button>
-          {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} title="Open full contact workspace" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#cfd5dc] bg-white hover:bg-[#fff7f7]"><Icon name="open_in_new" className="text-[18px]" /></Link> : null}
+          {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} aria-label="Open full contact workspace" title="Open full contact workspace" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#cfd5dc] bg-white hover:bg-[#fff7f7]"><Icon name="open_in_new" className="text-[18px]" /></Link> : null}
+          {onToggleContactDetails ? (
+            <button
+              type="button"
+              onClick={onToggleContactDetails}
+              aria-pressed={contactDetailsOpen}
+              aria-label={contactDetailsOpen ? 'Hide contact details' : 'Show contact details'}
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-[#cfd5dc] bg-white text-[#344054] hover:bg-[#fff7f7] hover:text-[#b91c26]"
+            >
+              <Icon name="dock_to_right" className="text-[18px]" />
+            </button>
+          ) : null}
           <button type="button" onClick={() => setMenuOpen((value) => !value)} aria-expanded={menuOpen} aria-label="Conversation actions" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#cfd5dc] bg-white hover:bg-[#fff7f7]">
             <Icon name="more_vert" className="text-on-surface-variant" />
           </button>
@@ -248,7 +265,7 @@ export function ThreadView({
       </div>
 
       {/* Compose Box — reply from the same number the lead texted */}
-      <ComposeBox leadId={leadId} phone={phone} email={email} onSent={onSent} replyFromPhone={contact.toPhone} draftMessage={quickDraft} draftVersion={quickDraftVersion} />
+      <ComposeBox leadId={leadId} phone={phone} email={email} onSent={onSent} replyFromPhone={contact.toPhone} draftMessage={quickDraft} draftVersion={quickDraftVersion} initialMode={initialComposeMode} />
     </section>
   )
 }

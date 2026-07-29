@@ -182,6 +182,14 @@ export default function ConversationsPage() {
   const [showNewMessage, setShowNewMessage] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [contactDetailsOpen, setContactDetailsOpen] = useState(true)
+  const [initialComposeMode] = useState<'sms' | 'email' | 'note'>(() => {
+    if (typeof window === 'undefined') return 'sms'
+    const requestedMode = new URLSearchParams(window.location.search).get('compose')
+    return requestedMode === 'email' || requestedMode === 'note' || requestedMode === 'sms'
+      ? requestedMode
+      : 'sms'
+  })
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastCounter = useRef(0)
 
@@ -421,9 +429,12 @@ export default function ConversationsPage() {
     <WorkspaceFrame needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length}>
     <div className="relative flex h-full overflow-hidden bg-white text-[#152033]">
       {showNewMessage && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center" onClick={() => setShowNewMessage(false)}>
-          <div className="bg-white rounded-xl p-6 shadow-2xl w-96 max-w-[90vw] max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h2 className="font-bold text-lg mb-4">Start New Conversation</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowNewMessage(false)}>
+          <section role="dialog" aria-modal="true" aria-label="Start new conversation" className="max-h-[70vh] w-96 max-w-[90vw] overflow-y-auto rounded-xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-bold">Start New Conversation</h2>
+              <button type="button" onClick={() => setShowNewMessage(false)} aria-label="Close new conversation dialog" className="flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#b91c26]">✕</button>
+            </div>
             <p className="text-sm text-slate-500 mb-4">Select a lead to open their conversation thread:</p>
             <div className="space-y-2">
               {leads.map((lead) => (
@@ -437,7 +448,7 @@ export default function ConversationsPage() {
                 </button>
               ))}
             </div>
-          </div>
+          </section>
         </div>
       )}
 
@@ -464,7 +475,9 @@ export default function ConversationsPage() {
         {/* Mobile header with menu button */}
         <div className="md:hidden flex items-center gap-3 p-4 border-b border-slate-200 bg-white">
           <button
+            type="button"
             onClick={() => setSidebarOpen(true)}
+            aria-label="Open conversation inbox"
             className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -483,10 +496,13 @@ export default function ConversationsPage() {
           onCall={openActiveDialer}
           onSent={refreshConversation}
           onConversationChanged={refreshConversation}
+          contactDetailsOpen={contactDetailsOpen}
+          onToggleContactDetails={() => setContactDetailsOpen((value) => !value)}
+          initialComposeMode={initialComposeMode}
         />
       </div>
 
-      <ContactDetailsPanel contact={activeLead || null} />
+      {contactDetailsOpen ? <ContactDetailsPanel contact={activeLead || null} onClose={() => setContactDetailsOpen(false)} /> : null}
 
       {/* Toast notifications */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
@@ -497,7 +513,9 @@ export default function ConversationsPage() {
           >
             <span>{toast.message}</span>
             <button
+              type="button"
               onClick={() => dismissToast(toast.id)}
+              aria-label="Dismiss notification"
               className="ml-1 text-white/80 hover:text-white leading-none"
             >
               ✕

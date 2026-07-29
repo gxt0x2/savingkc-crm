@@ -42,7 +42,13 @@ function initials(name?: string | null) {
 
 const stages = ['New', 'Contacted', 'Qualified', 'Offer']
 
-export function ContactDetailsPanel({ contact }: { contact: ContactDetails | null }) {
+export function ContactDetailsPanel({
+  contact,
+  onClose,
+}: {
+  contact: ContactDetails | null
+  onClose?: () => void
+}) {
   if (!contact) {
     return (
       <aside className="hidden w-[330px] shrink-0 items-center justify-center border-l border-[#dde2e8] bg-white p-8 text-sm text-slate-400 xl:flex">
@@ -63,7 +69,11 @@ export function ContactDetailsPanel({ contact }: { contact: ContactDetails | nul
     <aside className="hidden w-[330px] shrink-0 overflow-y-auto border-l border-[#dde2e8] bg-white xl:block">
       <div className="flex h-[76px] items-center justify-between border-b border-[#e4e8ed] px-5">
         <h2 className="text-[17px] font-bold text-[#152033]">Contact details</h2>
-        <Icon name="close" className="text-slate-400" />
+        {onClose ? (
+          <button type="button" onClick={onClose} aria-label="Close contact details" className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-[#fff7f7] hover:text-[#b91c26]">
+            <Icon name="close" />
+          </button>
+        ) : null}
       </div>
 
       <section className="border-b border-[#e4e8ed] p-5">
