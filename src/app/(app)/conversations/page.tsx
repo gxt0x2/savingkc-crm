@@ -439,7 +439,7 @@ export default function ConversationsPage() {
       </div>
 
       {/* Thread view - full width on mobile, flex-1 on desktop */}
-      <div className="flex min-w-0 flex-1 flex-col bg-white">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
         {/* Mobile header with menu button */}
         <div className="md:hidden flex items-center gap-3 p-4 border-b border-slate-200 bg-white">
           <button

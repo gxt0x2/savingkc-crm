@@ -78,7 +78,7 @@ export function ThreadView({
   }
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-[#fbfcfd]">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#fbfcfd]">
       {/* Thread Header */}
       <header className="flex h-[76px] flex-shrink-0 items-center justify-between border-b border-[#dde2e8] bg-white px-5">
         <div className="flex min-w-0 items-center gap-3">
@@ -181,6 +181,18 @@ export function ThreadView({
               <MessageBubble key={msg.id} message={msg} />
             ))}
           </div>
+        ))}
+      </div>
+
+      <div className="flex shrink-0 gap-2 border-t border-[#e1e6eb] bg-white px-4 pt-3">
+        {['I can call at 2:30', 'Send property details', 'Book appointment'].map((reply) => (
+          <button
+            key={reply}
+            type="button"
+            className="rounded-md border border-[#138a42] bg-white px-3 py-1.5 text-xs font-semibold text-[#0f7136] hover:bg-[#f3faf5]"
+          >
+            {reply}
+          </button>
         ))}
       </div>
 
