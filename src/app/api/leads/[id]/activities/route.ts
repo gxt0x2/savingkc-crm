@@ -34,3 +34,39 @@ export async function GET(
     return NextResponse.json({ success: false, activities: [], error: 'Internal error' }, { status: 500 })
   }
 }
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const body = await req.json() as { description?: string; agent?: string }
+    const description = body.description?.trim()
+
+    if (!id || !description) {
+      return NextResponse.json({ success: false, error: 'lead id and description required' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('lead_activities')
+      .insert({
+        lead_id: id,
+        activity_type: 'note',
+        description,
+        agent: body.agent?.trim() || 'Unknown',
+        metadata: { internal: true },
+      })
+      .select('id, activity_type, description, agent, metadata, created_at')
+      .single()
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, activity: data }, { status: 201 })
+  } catch (err) {
+    console.error('[leads/:id/activities] create note failed:', err)
+    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500 })
+  }
+}

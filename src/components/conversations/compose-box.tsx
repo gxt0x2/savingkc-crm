@@ -6,12 +6,12 @@ import { Icon } from '@/components/ui/icon'
 import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { formatPhone } from '@/lib/format'
 
-type ComposeMode = 'sms' | 'email' | 'call'
+type ComposeMode = 'sms' | 'email' | 'note'
 
 const modes: { key: ComposeMode; label: string; icon: string }[] = [
   { key: 'sms', label: 'SMS', icon: 'sms' },
   { key: 'email', label: 'Email', icon: 'mail' },
-  { key: 'call', label: 'Call', icon: 'call' },
+  { key: 'note', label: 'Internal note', icon: 'edit_note' },
 ]
 
 interface ComposeBoxProps {
@@ -46,10 +46,16 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
     setError(null)
 
     try {
-      const res = await fetch('/api/conversations/send', {
+      const isInternalNote = activeMode === 'note'
+      const res = await fetch(
+        isInternalNote ? `/api/leads/${leadId}/activities` : '/api/conversations/send',
+        {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify(isInternalNote ? {
+          description: message.trim(),
+          agent: 'Ernest',
+        } : {
           leadId: leadId?.startsWith('unmatched:') ? null : leadId,
           phone,
           body: message.trim(),
@@ -149,7 +155,7 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
                   ? 'Type your message... (Enter to send)'
                   : activeMode === 'email'
                     ? 'Compose email...'
-                    : 'Add call notes...'
+                  : 'Add an internal note...'
               }
               spellCheck={false}
               disabled={sending}
