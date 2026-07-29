@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import type { DispoDeal, DispoStage } from '@/types/dispo'
@@ -279,14 +280,14 @@ function DealDetail({
           {deal.deal_page && (
             <div className="bg-white/5 rounded-lg p-3">
               <p className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase mb-1">Deal Page</p>
-              <a
+              <Link
                 href={`/deals/${deal.deal_page.slug}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-[#f87171] hover:text-[#fca5a5] underline"
               >
                 crm.savingkc.com/deals/{deal.deal_page.slug}
-              </a>
+              </Link>
             </div>
           )}
 

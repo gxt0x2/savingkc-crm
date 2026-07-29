@@ -2,9 +2,14 @@ import fs from 'node:fs'
 import ts from 'typescript'
 
 const files = [
+  'src/app/(app)/calendar/page.tsx',
   'src/app/(app)/contacts/page.tsx',
   'src/app/(app)/conversations/page.tsx',
+  'src/app/(app)/dashboard/page.tsx',
+  'src/app/(app)/dispo/pipeline/page.tsx',
   'src/app/(app)/leads/[id]/page.tsx',
+  'src/app/(app)/opportunities/page.tsx',
+  'src/app/(app)/settings/page.tsx',
   'src/app/(app)/workflows/page.tsx',
   'src/components/documents/document-manager.tsx',
   'src/components/conversations/compose-box.tsx',
@@ -24,6 +29,7 @@ const files = [
   'src/components/leads/mail-tracker.tsx',
   'src/components/leads/pain-points.tsx',
   'src/components/leads/property-details-card.tsx',
+  'src/components/marketing/ads-command-page.tsx',
 ]
 
 const failures = []
@@ -66,7 +72,8 @@ for (const file of files) {
 
       if (tag === 'button') {
         const type = attrs.get('type')?.getText(sourceFile) ?? ''
-        if (!attrs.has('onClick') && !type.includes('submit') && !type.includes('reset') && !attrs.has('disabled')) {
+        const hasInteraction = ['onClick', 'onDragStart', 'onPointerDown', 'onKeyDown'].some((name) => attrs.has(name))
+        if (!hasInteraction && !type.includes('submit') && !type.includes('reset') && !attrs.has('disabled')) {
           fail(opening, 'button has no action, submit behavior, or disabled state')
         }
         if (!attrs.has('aria-label') && !attrs.has('title') && !hasReadableText(node, sourceFile)) {

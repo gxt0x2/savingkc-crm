@@ -1896,7 +1896,7 @@ function LatestPaidJourneys({
       {source === 'openai_ads' ? (
         <div className="pj-window-note">
           <b>OpenAI platform clicks imported through {openAIReportThrough}.</b>
-          <span>Ads Manager can show today's in-progress clicks first; CRM session replays update live as visitors land.</span>
+          <span>Ads Manager can show today&apos;s in-progress clicks first; CRM session replays update live as visitors land.</span>
         </div>
       ) : null}
       {unmatchedClicks > 0 ? (
@@ -2254,8 +2254,20 @@ function MicroReplayOverlay({
               <div className="side-cta nolead">
                 <div>No conversion</div>
                 <div className="side-buttons">
-                  <button type="button">+ Retarget</button>
-                  <button type="button">Flag</button>
+                  <button
+                    type="button"
+                    disabled
+                    title="Retargeting is unavailable until the paid-journey workflow is configured"
+                  >
+                    + Retarget
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    title="Flagging is unavailable until the review workflow is configured"
+                  >
+                    Flag
+                  </button>
                 </div>
               </div>
             )}
@@ -2935,7 +2947,7 @@ export function AdsCommandPage() {
     return (
       <>
         <style>{ADS_COMMAND_STYLES}</style>
-        <div className="ads-command" data-theme="dark" suppressHydrationWarning>
+        <div className="ads-command" data-theme="light" suppressHydrationWarning>
           <div className="wrap">
             <header className="bar live-only">
               <span className="live-pill"><span className="live-dot" /> LIVE • loading</span>
@@ -2966,7 +2978,7 @@ export function AdsCommandPage() {
   return (
     <>
       <style>{ADS_COMMAND_STYLES}</style>
-      <div className="ads-command" data-theme="dark" suppressHydrationWarning>
+      <div className="ads-command" data-theme="light" suppressHydrationWarning>
         <div className="wrap">
           <header className="bar live-only">
             <span className="live-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'LIVE • preview data'}</span>
@@ -3527,6 +3539,7 @@ const ADS_COMMAND_STYLES = `
 .ads-command .side-cta button { margin-top:10px; background:#22c55e; color:#111; border:0; padding:9px 18px; border-radius:999px; font-weight:700; font-size:12.5px; cursor:pointer; }
 .ads-command .side-buttons { display:flex; gap:6px; margin-top:10px; }
 .ads-command .side-buttons button { margin-top:0; background:#3f1c1c; color:#f87171; border:1px solid #f87171; padding:7px 14px; border-radius:999px; font-size:12px; }
+.ads-command .side-buttons button:disabled { cursor:not-allowed; opacity:.5; }
 .ads-command .breakdown-modal { position:absolute; inset:auto 24px; top:50%; left:50%; width:min(720px,calc(100vw - 32px)); max-height:calc(100vh - 48px); transform:translate(-50%,-50%); background:var(--surface); border:1px solid var(--line); border-radius:20px; overflow:hidden; box-shadow:var(--shadow-xl); display:flex; flex-direction:column; }
 .ads-command .breakdown-body { padding:24px 26px 28px; overflow:auto; }
 .ads-command .breakdown-total { display:grid; grid-template-columns:1fr auto auto; align-items:end; gap:10px; border:1px solid var(--line); background:var(--surface-2); border-radius:14px; padding:14px 16px; margin-bottom:14px; }
