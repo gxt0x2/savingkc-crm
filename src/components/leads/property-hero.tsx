@@ -67,7 +67,9 @@ export function PropertyHero({
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`
   const zillowUrl = `https://www.zillow.com/homes/${encodeURIComponent(fullAddress || property.address)}`
   const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''
-  const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x320&location=${encodedAddress}&fov=90&pitch=5&key=${GMAPS_KEY}`
+  const streetViewUrl =
+    `https://maps.googleapis.com/maps/api/streetview?size=640x360&scale=2` +
+    `&location=${encodedAddress}&fov=82&pitch=4&source=outdoor&return_error_code=true&key=${GMAPS_KEY}`
   const [showStreetView, setShowStreetView] = useState(false)
   const [mounted, setMounted] = useState(false)
 
@@ -135,8 +137,11 @@ export function PropertyHero({
           <img
             src={streetViewUrl}
             alt={`Street view of ${fullAddress || property.address}`}
-            className="block w-full h-[220px] sm:h-[260px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+            width={1280}
+            height={720}
+            className="block aspect-[16/9] w-full object-cover transition-transform duration-500 group-hover:scale-[1.015]"
             loading="lazy"
+            decoding="async"
           />
           {/* subtle vignette */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/10 pointer-events-none" />
