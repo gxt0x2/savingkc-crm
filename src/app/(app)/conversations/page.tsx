@@ -427,10 +427,10 @@ export default function ConversationsPage() {
 
   return (
     <WorkspaceFrame needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length}>
-    <div className="relative flex h-full overflow-hidden bg-white text-[#152033]">
+    <div className="relative flex h-full overflow-hidden bg-[var(--crm-canvas)] text-[#152033]">
       {showNewMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowNewMessage(false)}>
-          <section role="dialog" aria-modal="true" aria-label="Start new conversation" className="max-h-[70vh] w-96 max-w-[90vw] overflow-y-auto rounded-xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <section role="dialog" aria-modal="true" aria-label="Start new conversation" className="max-h-[70vh] w-96 max-w-[90vw] overflow-y-auto rounded-2xl border border-[#ded9d1] bg-white p-6 shadow-[0_22px_60px_rgba(11,41,66,0.22)]" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-lg font-bold">Start New Conversation</h2>
               <button type="button" onClick={() => setShowNewMessage(false)} aria-label="Close new conversation dialog" className="flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#b91c26]">✕</button>
@@ -441,7 +441,7 @@ export default function ConversationsPage() {
                 <button
                   key={lead.id}
                   onClick={() => { selectConversation(lead.id); setShowNewMessage(false); setSidebarOpen(false) }}
-                  className="w-full text-left p-3 rounded-lg hover:bg-slate-50 border border-slate-100 transition-colors"
+                  className="w-full rounded-lg border border-[#e1ddd7] p-3 text-left transition-colors hover:border-[#a9c5f4] hover:bg-[#edf4ff]"
                 >
                   <div className="font-semibold text-sm">{lead.full_name || '(no name)'}</div>
                   <div className="text-xs text-slate-400">{lead.property_address || '—'}</div>
@@ -471,7 +471,7 @@ export default function ConversationsPage() {
       </div>
 
       {/* Thread view - full width on mobile, flex-1 on desktop */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--crm-canvas)]">
         {/* Mobile header with menu button */}
         <div className="md:hidden flex items-center gap-3 p-4 border-b border-slate-200 bg-white">
           <button

@@ -59,37 +59,52 @@ body {
 /* Approved SavingKC operating workspace: one light token contract for every
    nested page, panel, modal, button, and link reached from the rebuilt shell. */
 .crm-workspace-shell {
-  --ck-bg: #f6f7f9;
+  --ck-bg: #f7f4ef;
   --ck-surface: #ffffff;
-  --ck-surface-elev: #f8f9fb;
-  --ck-surface-hi: #eef1f4;
-  --ck-border: #d9dfe6;
-  --ck-border-strong: #b9c3cf;
-  --ck-text: #172033;
-  --ck-text-muted: #526173;
-  --ck-text-dim: #7a8798;
-  --ck-accent: #df3038;
-  --ck-accent-bright: #c9232d;
-  --ck-warn: #a15c00;
-  --ck-success: #047857;
-  --ck-info: #344054;
+  --ck-surface-elev: #fbfaf8;
+  --ck-surface-hi: #f0ece6;
+  --ck-border: #ded9d1;
+  --ck-border-strong: #c7beb3;
+  --ck-text: #10283f;
+  --ck-text-muted: #516274;
+  --ck-text-dim: #7a8792;
+  --ck-accent: #d92636;
+  --ck-accent-bright: #b91f2d;
+  --ck-warn: #c77700;
+  --ck-success: #087f70;
+  --ck-info: #2868d7;
+  --crm-canvas: #f7f4ef;
+  --crm-ink: #0b2942;
+  --crm-red: #d92636;
+  --crm-red-soft: #fff0f1;
+  --crm-coral: #e76f51;
+  --crm-coral-soft: #fff1ec;
+  --crm-amber: #c77700;
+  --crm-amber-soft: #fff4d8;
+  --crm-teal: #087f70;
+  --crm-teal-soft: #e8f7f3;
+  --crm-blue: #2868d7;
+  --crm-blue-soft: #edf4ff;
+  --crm-violet: #7357c7;
+  --crm-violet-soft: #f2efff;
+  --crm-shadow: 0 12px 32px rgba(16, 40, 63, 0.08);
   color-scheme: light;
 }
 
 /* A few reusable legacy dialogs opt into `.ck-dark`. Inside the rebuilt CRM
    they inherit the approved light operating-system contract instead. */
 .crm-workspace-shell .ck-dark {
-  --ck-bg: #f6f7f9;
+  --ck-bg: #f7f4ef;
   --ck-surface: #ffffff;
-  --ck-surface-elev: #f8f9fb;
-  --ck-surface-hi: #eef1f4;
-  --ck-border: #d9dfe6;
-  --ck-border-strong: #b9c3cf;
-  --ck-text: #172033;
-  --ck-text-muted: #526173;
-  --ck-text-dim: #7a8798;
-  --ck-accent: #df3038;
-  --ck-accent-bright: #c9232d;
+  --ck-surface-elev: #fbfaf8;
+  --ck-surface-hi: #f0ece6;
+  --ck-border: #ded9d1;
+  --ck-border-strong: #c7beb3;
+  --ck-text: #10283f;
+  --ck-text-muted: #516274;
+  --ck-text-dim: #7a8792;
+  --ck-accent: #d92636;
+  --ck-accent-bright: #b91f2d;
   color-scheme: light;
 }
 

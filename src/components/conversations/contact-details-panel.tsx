@@ -66,9 +66,9 @@ export function ContactDetailsPanel({
   ].filter((tag): tag is string => Boolean(tag))
 
   return (
-    <aside className="hidden w-[330px] shrink-0 overflow-y-auto border-l border-[#dde2e8] bg-white xl:block">
-      <div className="flex h-[76px] items-center justify-between border-b border-[#e4e8ed] px-5">
-        <h2 className="text-[17px] font-bold text-[#152033]">Contact details</h2>
+    <aside className="hidden w-[330px] shrink-0 overflow-y-auto border-l border-[#ded9d1] bg-[#fffdfb] xl:block">
+      <div className="flex h-[76px] items-center justify-between border-b border-t-[3px] border-b-[#e4e0da] border-t-[#2868d7] bg-[linear-gradient(90deg,#ffffff,#f3f7ff)] px-5">
+        <h2 className="flex items-center gap-2 text-[17px] font-bold text-[#152033]"><Icon name="contact_page" className="text-[20px] text-[#2868d7]" />Contact details</h2>
         {onClose ? (
           <button type="button" onClick={onClose} aria-label="Close contact details" className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-[#fff7f7] hover:text-[#b91c26]">
             <Icon name="close" />
@@ -94,32 +94,32 @@ export function ContactDetailsPanel({
             <p className="mt-1 flex items-center gap-2 text-sm text-slate-600"><Icon name="person" className="text-[17px]" />Owner: {contact.owner || contact.assigned_agent || 'Unassigned'}</p>
           </div>
         </div>
-        <Link href={`/leads/${contact.id}`} className="mt-4 flex h-9 items-center justify-center rounded-md border border-[#df3038] text-sm font-bold text-[#b91c26] hover:bg-[#fff7f7]">
+        <Link href={`/leads/${contact.id}`} className="mt-4 flex h-9 items-center justify-center rounded-md border border-[#9dbcf1] bg-[#f3f7ff] text-sm font-bold text-[#2868d7] hover:bg-[#e7f0ff]">
           Open contact
         </Link>
       </section>
 
-      <section className="border-b border-[#e4e8ed] p-5">
-        <h3 className="mb-3 text-sm font-bold text-[#152033]">Opportunity</h3>
+      <section className="border-b border-[#e4e8ed] bg-[linear-gradient(180deg,#ffffff,#f5fbf9)] p-5">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[#152033]"><Icon name="trending_up" className="text-[18px] text-[#087f70]" />Opportunity</h3>
         <div className="flex overflow-hidden rounded">
           {stages.map((stage, index) => (
-            <div key={stage} className={`flex-1 py-2 text-center text-[10px] font-bold ${index === currentStage ? 'bg-[#df3038] text-white' : 'bg-[#edf0f3] text-slate-500'}`}>
+            <div key={stage} className={`flex-1 py-2 text-center text-[10px] font-bold ${index === currentStage ? 'bg-[#087f70] text-white' : index < currentStage ? 'bg-[#d9f1eb] text-[#087f70]' : 'bg-[#edf0f3] text-slate-500'}`}>
               {stage}
             </div>
           ))}
         </div>
         <dl className="mt-4 space-y-2 text-sm">
-          <div className="flex justify-between"><dt className="text-slate-500">Motivation score</dt><dd className="font-bold text-[#b91c26]">{contact.motivation_score ?? '—'}{contact.motivation_score ? '/100' : ''}</dd></div>
+          <div className="flex justify-between"><dt className="text-slate-500">Motivation score</dt><dd className="rounded-full bg-[#f2efff] px-2 py-0.5 font-black text-[#7357c7]">{contact.motivation_score ?? '—'}{contact.motivation_score ? '/100' : ''}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Estimated value</dt><dd className="font-semibold">{money(contact.arv)}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Target offer</dt><dd className="font-semibold">{money(contact.offer_amount)}</dd></div>
         </dl>
       </section>
 
       <section className="border-b border-[#e4e8ed] p-5">
-        <h3 className="mb-3 text-sm font-bold text-[#152033]">Next action</h3>
-        <div className={`rounded-lg border p-3 ${contact.primaryNextAction?.overdue ? 'border-[#df4a4f] bg-[#fff7f7]' : 'border-[#f0b34a] bg-[#fffbf2]'}`}>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[#152033]"><Icon name="bolt" className="text-[18px] text-[#c77700]" />Next action</h3>
+        <div className={`rounded-xl border-l-4 p-3 shadow-[0_4px_12px_rgba(16,40,63,0.05)] ${contact.primaryNextAction?.overdue ? 'border border-[#ef9da4] border-l-[#d92636] bg-[#fff0f1]' : 'border border-[#efd59b] border-l-[#c77700] bg-[#fff4d8]'}`}>
           <div className="flex items-start gap-2">
-            <Icon name="schedule" className="text-[#d89418]" />
+            <Icon name="schedule" className={contact.primaryNextAction?.overdue ? 'text-[#d92636]' : 'text-[#c77700]'} />
             <div>
               <p className="text-sm font-semibold">{contact.primaryNextAction?.title || 'Define the next action'}</p>
               <p className="mt-1 text-xs text-slate-500">
@@ -140,7 +140,7 @@ export function ContactDetailsPanel({
       <section className="p-5">
         <h3 className="mb-3 text-sm font-bold text-[#152033]">Tags</h3>
         <div className="flex flex-wrap gap-2">
-          {tags.length ? tags.map((tag) => <span key={tag} className="rounded border border-[#efb4b8] bg-[#fff7f7] px-2 py-1 text-xs font-semibold text-[#b91c26]">{tag}</span>) : <span className="text-sm text-slate-400">No tags</span>}
+          {tags.length ? tags.map((tag, index) => <span key={tag} className={`rounded border px-2 py-1 text-xs font-semibold ${index === 0 ? 'border-[#efb4b8] bg-[#fff0f1] text-[#b91c26]' : index === 1 ? 'border-[#a9c5f4] bg-[#edf4ff] text-[#2868d7]' : 'border-[#efd59b] bg-[#fff4d8] text-[#975800]'}`}>{tag}</span>) : <span className="text-sm text-slate-400">No tags</span>}
         </div>
       </section>
     </aside>

@@ -32,6 +32,13 @@ export interface ThreadPreview {
 
 type TabFilter = 'all' | 'unread' | 'mine' | 'unassigned'
 
+const CHANNEL_META = {
+  call: { icon: 'call', tone: 'text-[#d92636]' },
+  sms: { icon: 'chat_bubble', tone: 'text-[#087f70]' },
+  email: { icon: 'mail', tone: 'text-[#2868d7]' },
+  voicemail: { icon: 'voicemail', tone: 'text-[#7357c7]' },
+} as const
+
 export function InboxSidebar({
   threads,
   activeThreadId,
@@ -73,12 +80,12 @@ export function InboxSidebar({
   ]
 
   return (
-    <aside className="flex h-full w-[330px] flex-col border-r border-[#dde2e8] bg-white text-sm font-semibold">
-      <div className="border-b border-[#e4e8ed]">
+    <aside className="flex h-full w-[330px] flex-col border-r border-[#ded9d1] bg-[#fffdfb] text-sm font-semibold">
+      <div className="border-b border-[#e7e1da] bg-[linear-gradient(180deg,#ffffff_0%,#fffaf7_100%)]">
         {/* Header */}
         <div className="flex h-[76px] items-center justify-between px-5">
           <h1 className="text-[22px] font-bold text-[#111827]">Conversations</h1>
-          <button type="button" className="flex h-9 items-center gap-1 rounded-md bg-[#df3038] px-3 text-xs font-bold text-white shadow-sm hover:bg-[#c9232d]" onClick={onNewMessage}>
+          <button type="button" className="flex h-9 items-center gap-1 rounded-lg bg-[linear-gradient(135deg,#d92636,#e76f51)] px-3 text-xs font-bold text-white shadow-[0_5px_14px_rgba(217,38,54,0.22)] hover:brightness-95" onClick={onNewMessage}>
             <Icon name="add" className="text-[18px]" /> New
           </button>
         </div>
@@ -92,7 +99,7 @@ export function InboxSidebar({
               aria-pressed={activeTab === tab.key}
               className={cn(
                 'flex-1 border-b-2 px-1 py-3 text-xs transition-colors',
-                activeTab === tab.key ? 'border-[#df3038] text-[#b91c26]' : 'border-transparent text-slate-500',
+                activeTab === tab.key ? 'border-[#d92636] text-[#b91f2d]' : 'border-transparent text-slate-500 hover:text-[#0b2942]',
               )}
             >
               {tab.label} <span className="ml-1 text-[10px]">{tab.count}</span>
@@ -126,7 +133,7 @@ export function InboxSidebar({
             type="button"
             onClick={() => setNeedsReplyOnly((value) => !value)}
             aria-pressed={needsReplyOnly}
-            className={cn('flex h-8 items-center rounded border px-3 text-[11px]', needsReplyOnly ? 'border-[#efb4b8] bg-[#fff7f7] text-[#b91c26]' : 'border-[#d9dee5] text-slate-600')}
+            className={cn('flex h-8 items-center rounded border px-3 text-[11px]', needsReplyOnly ? 'border-[#f3a5aa] bg-[#fff0f1] text-[#b91f2d] shadow-[0_2px_8px_rgba(217,38,54,0.08)]' : 'border-[#d9dee5] text-slate-600')}
           >
             Needs reply
           </button>
@@ -147,14 +154,20 @@ export function InboxSidebar({
               type="button"
               onClick={() => onSelectThread(thread.id)}
               aria-pressed={isActive}
-              className={cn('w-full border-b border-[#edf0f3] px-4 py-4 text-left transition-colors', isActive ? 'bg-[#fff8f8]' : 'bg-white hover:bg-[#f8fafb]')}
+              className={cn(
+                'w-full border-b border-l-4 border-b-[#ede8e2] px-4 py-4 text-left transition-all',
+                isActive
+                  ? 'border-l-[#d92636] bg-[linear-gradient(90deg,#fff0f1_0%,#fffaf8_62%,#ffffff_100%)] shadow-[inset_0_1px_0_rgba(217,38,54,0.04)]'
+                  : 'border-l-transparent bg-[#fffdfb] hover:border-l-[#2868d7] hover:bg-[#f7faff]',
+              )}
             >
               <div className="flex items-start gap-3">
                 <div
                   className={cn(
                     'h-11 w-11 flex-shrink-0 rounded-full flex items-center justify-center text-xs font-bold',
                     thread.avatarBg,
-                    thread.avatarText
+                    thread.avatarText,
+                    isActive && 'ring-2 ring-[#d92636]/20 ring-offset-2'
                   )}
                 >
                   {thread.initials}
@@ -172,8 +185,8 @@ export function InboxSidebar({
                         className={cn(
                           'px-2 py-0.5 text-[9px] rounded-full uppercase tracking-tighter',
                           thread.attentionState === 'needs_reply'
-                            ? 'bg-[#e5f5ea] text-[#0e7135]'
-                            : 'bg-amber-100 text-amber-800'
+                            ? 'bg-[#ffe5e7] text-[#ad1e2b]'
+                            : 'bg-[#fff0c7] text-[#975800]'
                         )}
                       >
                         {thread.attentionState === 'needs_reply' ? 'Needs reply' : 'Waiting'}
@@ -197,7 +210,7 @@ export function InboxSidebar({
                         className={cn(
                           'px-2 py-0.5 text-[9px] rounded-full uppercase tracking-tighter',
                           tag.variant === 'hot'
-                            ? 'bg-error-container text-on-error-container'
+                            ? 'bg-[#fff0e9] text-[#c64f35]'
                             : 'bg-surface-container-highest text-on-surface-variant'
                         )}
                       >
@@ -205,7 +218,10 @@ export function InboxSidebar({
                       </span>
                     ))}
                   </div>
-                  <p className="line-clamp-2 text-[12px] font-normal leading-4 text-slate-500">{thread.lastMessage}</p>
+                  <p className="flex items-start gap-1.5 text-[12px] font-normal leading-4 text-slate-500">
+                    {thread.lastChannel ? <Icon name={CHANNEL_META[thread.lastChannel].icon} className={cn('mt-0.5 shrink-0 text-[14px]', CHANNEL_META[thread.lastChannel].tone)} /> : null}
+                    <span className="line-clamp-2">{thread.lastMessage}</span>
+                  </p>
                   {(thread.nextAction || thread.owner) && (
                     <div className="mt-2 flex items-center justify-between gap-2 text-[10px]">
                       <span className={cn(

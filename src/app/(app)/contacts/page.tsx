@@ -71,6 +71,27 @@ const STAGE_LABELS: Record<DealStage, string> = {
   dead: 'Dead',
 }
 
+const SMART_LIST_TONES: Record<SmartList, { active: string; count: string }> = {
+  all: { active: 'border-[#2868d7] text-[#2868d7]', count: 'bg-[#edf4ff] text-[#2868d7]' },
+  new: { active: 'border-[#2868d7] text-[#2868d7]', count: 'bg-[#edf4ff] text-[#2868d7]' },
+  needs_reply: { active: 'border-[#d92636] text-[#b91f2d]', count: 'bg-[#fff0f1] text-[#b91f2d]' },
+  overdue: { active: 'border-[#d92636] text-[#b91f2d]', count: 'bg-[#fff0f1] text-[#b91f2d]' },
+  hot: { active: 'border-[#e76f51] text-[#c64f35]', count: 'bg-[#fff1ec] text-[#c64f35]' },
+  unassigned: { active: 'border-[#c77700] text-[#975800]', count: 'bg-[#fff4d8] text-[#975800]' },
+}
+
+const STAGE_TONES: Record<DealStage, string> = {
+  new: 'border-[#b5c9e8] bg-[#edf4ff] text-[#2868d7]',
+  contacted: 'border-[#a9c5f4] bg-[#edf4ff] text-[#2868d7]',
+  qualified: 'border-[#94d2c8] bg-[#e8f7f3] text-[#087f70]',
+  appointment_set: 'border-[#c9bdf0] bg-[#f2efff] text-[#7357c7]',
+  offer_made: 'border-[#efd59b] bg-[#fff4d8] text-[#975800]',
+  under_contract: 'border-[#8bc9bf] bg-[#e8f7f3] text-[#087f70]',
+  closed_won: 'border-[#8cc9a1] bg-[#ecf9f0] text-[#147a3d]',
+  closed_lost: 'border-[#efb4b8] bg-[#fff0f1] text-[#b91f2d]',
+  dead: 'border-[#cdd3da] bg-[#f1f3f5] text-[#596579]',
+}
+
 const EMPTY_CONTACT = { fullName: '', phone: '', email: '', address: '', city: '', state: '', zip: '', source: 'manual_crm' }
 
 function formatPhone(phone: string | null): string {
@@ -334,17 +355,17 @@ export default function ContactsPage() {
 
   return (
     <WorkspaceFrame needsReply={counts.needs_reply}>
-      <main className="flex h-full min-w-0 bg-white">
+      <main className="flex h-full min-w-0 bg-[var(--crm-canvas)]">
         <section className="min-w-0 flex-1 overflow-y-auto">
-          <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#e0e5ea] px-8 py-6">
-            <div><h1 className="text-[26px] font-bold text-[#132238]">Contacts</h1><p className="mt-1 text-sm text-[#66758a]">People and properties in one searchable workspace</p></div>
+          <header className="flex flex-wrap items-center justify-between gap-4 border-b border-t-[3px] border-b-[#ded9d1] border-t-[#2868d7] bg-[linear-gradient(100deg,#ffffff_0%,#f4f8ff_68%,#fff5f1_100%)] px-8 py-6">
+            <div><p className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#2868d7]">Relationship intelligence</p><h1 className="text-[26px] font-black text-[#0b2942]">Contacts</h1><p className="mt-1 text-sm text-[#66758a]">People, property, ownership, and next action in one searchable workspace</p></div>
             <div className="flex gap-3">
               <button type="button" onClick={() => { setDialogError(null); setDialog('import') }} className="flex h-10 items-center gap-2 rounded-md border border-[#cbd3dc] px-4 text-sm font-semibold hover:bg-[#f8fafb]"><Icon name="upload" />Import</button>
               <button type="button" onClick={() => { setDialogError(null); setDialog('add') }} className="flex h-10 items-center gap-2 rounded-md bg-[#df3038] px-5 text-sm font-semibold text-white hover:bg-[#c9232d]"><Icon name="add" />Add contact</button>
             </div>
           </header>
 
-          <div className="overflow-x-auto border-b border-[#e0e5ea] px-7">
+          <div className="overflow-x-auto border-b border-[#e0ddd7] bg-white px-7 shadow-[0_4px_14px_rgba(16,40,63,0.035)]">
             <nav className="flex min-w-max gap-7">
               {([
                 ['all', 'All Contacts', counts.all],
@@ -353,8 +374,8 @@ export default function ContactsPage() {
                 ['hot', 'Hot Opportunities', counts.hot],
                 ['unassigned', 'Unassigned', counts.unassigned],
               ] as [SmartList, string, number][]).map(([id, label, count]) => (
-                <button key={id} type="button" onClick={() => setSmartList(id)} className={`border-b-2 py-4 text-sm font-semibold ${smartList === id ? 'border-[#df3038] text-[#b91c26]' : 'border-transparent text-[#24354a]'}`}>
-                  {label} <span className="ml-1 rounded-full bg-[#eef1f4] px-2 py-0.5 text-[11px]">{count}</span>
+                <button key={id} type="button" onClick={() => setSmartList(id)} className={`border-b-[3px] py-4 text-sm font-semibold transition-colors ${smartList === id ? SMART_LIST_TONES[id].active : 'border-transparent text-[#526177] hover:text-[#0b2942]'}`}>
+                  {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${smartList === id ? SMART_LIST_TONES[id].count : 'bg-[#f0eeea] text-[#68768a]'}`}>{count}</span>
                 </button>
               ))}
               {savedViews.map((view) => <button type="button" key={view.id} onClick={() => applyView(view)} className="border-b-2 border-transparent py-4 text-sm font-semibold text-[#24354a] hover:text-[#b91c26]">{view.label}</button>)}
@@ -379,8 +400,8 @@ export default function ContactsPage() {
               <span className="text-sm text-[#536277]">{visible.length} results</span>
             </div>
 
-            <div className="mt-5 overflow-x-auto rounded-md border border-[#d9e0e6]">
-              <div className="grid min-w-[936px] grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] border-b border-[#d9e0e6] bg-[#fbfcfd] px-3 py-3 text-[11px] font-bold text-[#425269]">
+            <div className="mt-5 overflow-x-auto rounded-xl border border-[#d9d5cf] bg-white shadow-[0_10px_26px_rgba(16,40,63,0.07)]">
+              <div className="grid min-w-[936px] grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] border-b border-[#d9e0e6] bg-[linear-gradient(90deg,#eef4fb,#f7f5f1)] px-3 py-3 text-[11px] font-black uppercase tracking-[0.06em] text-[#31465d]">
                 <span>Contact</span><span>Property</span><span>Stage</span><span>Next Action</span><span>Owner</span><span>Last Activity</span><span>Source</span>
               </div>
               {isLoading ? <ContactSkeleton /> : null}
@@ -390,12 +411,23 @@ export default function ContactsPage() {
                 const displayName = getDisplayLeadName(row.fullName, row.phone)
                 const property = [row.address, row.city].filter(Boolean).join(', ') || 'No property linked'
                 const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || 'Define next action'
+                const selectedRow = detailsOpen && selected?.id === row.id
+                const rowAttention = row.primaryNextAction?.overdue
+                  ? 'border-l-[#d92636]'
+                  : row.attentionState === 'needs_reply'
+                    ? 'border-l-[#e76f51]'
+                    : 'border-l-transparent'
+                const avatarTone = row.isFavorite || row.attentionState === 'needs_reply'
+                  ? 'bg-[#fff0f1] text-[#b91f2d]'
+                  : row.station === 'qualified' || row.station === 'under_contract'
+                    ? 'bg-[#e8f7f3] text-[#087f70]'
+                    : 'bg-[#edf4ff] text-[#2868d7]'
                 return (
-                  <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} aria-pressed={detailsOpen && selected?.id === row.id} className={`grid min-w-[936px] w-full grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-[#e3e7eb] px-3 py-4 text-left text-xs last:border-0 ${detailsOpen && selected?.id === row.id ? 'bg-[#fff8f8]' : 'hover:bg-[#fafbfc]'}`}>
-                    <span className="flex min-w-0 items-center gap-2.5"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#feecef] font-bold text-[#9f1d27]">{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[#1d2c40]">{displayName}</strong><small className="text-[#627087]">{formatPhone(row.phone)}</small></span></span>
+                  <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} aria-pressed={selectedRow} className={`grid min-w-[936px] w-full grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-l-4 border-b-[#e7e3de] px-3 py-4 text-left text-xs transition-all last:border-b-0 ${selectedRow ? 'border-l-[#2868d7] bg-[linear-gradient(90deg,#edf4ff,#ffffff_38%)]' : `${rowAttention} hover:bg-[#fbfaf8]`}`}>
+                    <span className="flex min-w-0 items-center gap-2.5"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[#1d2c40]">{displayName}</strong><small className="text-[#627087]">{formatPhone(row.phone)}</small></span></span>
                     <span className="min-w-0"><strong className="block truncate font-medium text-[#2d3d52]">{property}</strong><small className="text-[#7b8796]">{row.city || ''}</small></span>
-                    <span><span className="rounded border border-[#efb4b8] bg-[#fff1f2] px-2 py-1 font-semibold text-[#b91c26]">{STAGE_LABELS[row.station]}</span></span>
-                    <span className={row.primaryNextAction?.overdue ? 'font-semibold text-red-600' : 'text-[#28394f]'}>{nextAction}</span>
+                    <span><span className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[row.station]}`}>{STAGE_LABELS[row.station]}</span></span>
+                    <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[#b91f2d]' : 'font-semibold text-[#8d5700]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className={`mt-[-1px] shrink-0 text-[15px] ${row.primaryNextAction?.overdue ? 'text-[#d92636]' : 'text-[#c77700]'}`} />{nextAction}</span>
                     <span>{row.owner || 'Unassigned'}</span><span className="text-[#68768a]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[#526177]">{formatLeadSource(row.source)}</span>
                   </button>
                 )
@@ -413,23 +445,23 @@ export default function ContactsPage() {
           </div>
         </section>
 
-        {detailsOpen ? <aside className="hidden w-[350px] shrink-0 overflow-y-auto border-l border-[#dde3e9] bg-white p-6 xl:block">
+        {detailsOpen ? <aside className="hidden w-[350px] shrink-0 overflow-y-auto border-l border-[#ded9d1] bg-[linear-gradient(180deg,#ffffff,#fffdf9)] p-6 shadow-[-10px_0_28px_rgba(16,40,63,0.05)] xl:block">
           {selected ? <>
             <div className="flex items-start gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#feecef] text-lg font-bold text-[#9f1d27]">{getAvatarLabel(selected.fullName, selected.phone, selected.source)}</div>
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#2868d7,#0b2942)] text-lg font-bold text-white shadow-[0_4px_14px_rgba(40,104,215,0.22)]">{getAvatarLabel(selected.fullName, selected.phone, selected.source)}</div>
               <div className="min-w-0"><h2 className="truncate text-xl font-bold">{getDisplayLeadName(selected.fullName, selected.phone)}</h2><p className="mt-1 text-sm text-[#58677c]">{[selected.address, selected.city].filter(Boolean).join(', ') || 'No property linked'}</p></div>
               <button type="button" onClick={() => setDetailsOpen(false)} className="ml-auto text-[#6c798b] hover:text-[#b91c26]" aria-label="Close contact details"><Icon name="close" /></button>
             </div>
             <div className="mt-5 grid grid-cols-3 gap-2">
-              <button type="button" disabled={!selected.phone} onClick={() => openDialer(selected)} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" />Call</button>
-              {selected.phone ? <Link href={`/conversations?lead=${selected.id}&compose=sms`} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7]"><Icon name="sms" />Text</Link> : <button type="button" disabled aria-label="Text unavailable because this contact has no phone number" className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] opacity-40"><Icon name="sms" />Text</button>}
-              {selected.email ? <Link href={`/conversations?lead=${selected.id}&compose=email`} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] hover:bg-[#fff7f7]"><Icon name="mail" />Email</Link> : <button type="button" disabled aria-label="Email unavailable because this contact has no email address" className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#b91c26] opacity-40"><Icon name="mail" />Email</button>}
+              <button type="button" disabled={!selected.phone} onClick={() => openDialer(selected)} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#8bc9bf] bg-[#e8f7f3] text-xs font-semibold text-[#087f70] hover:bg-[#d9f1eb] disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" />Call</button>
+              {selected.phone ? <Link href={`/conversations?lead=${selected.id}&compose=sms`} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#a9c5f4] bg-[#edf4ff] text-xs font-semibold text-[#2868d7] hover:bg-[#e1ecff]"><Icon name="sms" />Text</Link> : <button type="button" disabled aria-label="Text unavailable because this contact has no phone number" className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#2868d7] opacity-40"><Icon name="sms" />Text</button>}
+              {selected.email ? <Link href={`/conversations?lead=${selected.id}&compose=email`} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#c9bdf0] bg-[#f2efff] text-xs font-semibold text-[#7357c7] hover:bg-[#e9e3ff]"><Icon name="mail" />Email</Link> : <button type="button" disabled aria-label="Email unavailable because this contact has no email address" className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#7357c7] opacity-40"><Icon name="mail" />Email</button>}
             </div>
-            <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className="rounded bg-[#fff1f2] px-2 py-1 font-semibold text-[#b91c26]">{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="font-semibold text-[#b91c26]">{selected.score} / 100</dd></div></dl></div>
-            <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Next action</h3><p className="mt-3 flex items-center gap-2 text-xs text-[#b16e00]"><Icon name="schedule" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>
-            <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Recent conversation</h3><p className="mt-3 rounded bg-[#f5f7f9] p-3 text-xs leading-5 text-[#44536a]">{selected.lastMessage || 'No recent message'}</p></div>
+            <div className="mt-6 rounded-xl border border-[#b9ded7] bg-[#f2fbf8] p-4"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="trending_up" className="text-[18px] text-[#087f70]" />Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[selected.station]}`}>{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="rounded-full bg-[#f2efff] px-2 py-0.5 font-black text-[#7357c7]">{selected.score} / 100</dd></div></dl></div>
+            <div className="mt-5 rounded-xl border border-[#efd59b] border-l-4 border-l-[#c77700] bg-[#fff4d8] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[#6f4500]"><Icon name="bolt" className="text-[18px] text-[#c77700]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[#8d5700]"><Icon name="schedule" className="mt-0.5" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>
+            <div className="mt-5 border-t border-[#e0e5ea] pt-5"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="forum" className="text-[18px] text-[#2868d7]" />Recent conversation</h3><p className="mt-3 rounded-lg border border-[#ccdcf5] bg-[#f3f7ff] p-3 text-xs leading-5 text-[#44536a]">{selected.lastMessage || 'No recent message'}</p></div>
             <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Contact details</h3><p className="mt-3 text-sm text-[#526177]">{formatPhone(selected.phone)}</p><p className="mt-2 break-all text-sm text-[#526177]">{selected.email || 'No email'}</p><p className="mt-2 text-sm text-[#526177]">Owner: {selected.owner || 'Unassigned'}</p></div>
-            <Link href={`/leads/${selected.id}`} className="mt-7 flex h-11 items-center justify-center rounded-md border border-[#df3038] text-sm font-bold text-[#b91c26] hover:bg-[#fff7f7]">Open full workspace →</Link>
+            <Link href={`/leads/${selected.id}`} className="mt-7 flex h-11 items-center justify-center rounded-md bg-[linear-gradient(135deg,#2868d7,#0b2942)] text-sm font-bold text-white shadow-[0_5px_14px_rgba(40,104,215,0.2)] hover:brightness-105">Open full workspace →</Link>
           </> : <p className="text-sm text-[#728094]">Select a contact</p>}
         </aside> : null}
       </main>

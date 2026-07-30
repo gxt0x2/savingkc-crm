@@ -67,13 +67,13 @@ interface LeadWorkspaceProps {
 
 export type LeadWorkspaceSection = 'overview' | 'property' | 'documents' | 'ai' | 'marketing' | 'activity'
 
-const WORKSPACE_SECTIONS: { key: LeadWorkspaceSection; icon: string; label: string }[] = [
-  { key: 'overview', icon: 'grid_view', label: 'Overview' },
-  { key: 'property', icon: 'home_work', label: 'Property details' },
-  { key: 'documents', icon: 'description', label: 'Documents' },
-  { key: 'ai', icon: 'auto_awesome', label: 'AI insights' },
-  { key: 'marketing', icon: 'campaign', label: 'Marketing' },
-  { key: 'activity', icon: 'history', label: 'Activity log' },
+const WORKSPACE_SECTIONS: { key: LeadWorkspaceSection; icon: string; label: string; activeTone: string; iconTone: string }[] = [
+  { key: 'overview', icon: 'grid_view', label: 'Overview', activeTone: 'border-[#d92636] bg-[#fff0f1] text-[#b91f2d]', iconTone: 'text-[#d92636]' },
+  { key: 'property', icon: 'home_work', label: 'Property details', activeTone: 'border-[#c77700] bg-[#fff4d8] text-[#8d5700]', iconTone: 'text-[#c77700]' },
+  { key: 'documents', icon: 'description', label: 'Documents', activeTone: 'border-[#2868d7] bg-[#edf4ff] text-[#2868d7]', iconTone: 'text-[#2868d7]' },
+  { key: 'ai', icon: 'auto_awesome', label: 'AI insights', activeTone: 'border-[#7357c7] bg-[#f2efff] text-[#7357c7]', iconTone: 'text-[#7357c7]' },
+  { key: 'marketing', icon: 'campaign', label: 'Marketing', activeTone: 'border-[#e76f51] bg-[#fff1ec] text-[#c64f35]', iconTone: 'text-[#e76f51]' },
+  { key: 'activity', icon: 'history', label: 'Activity log', activeTone: 'border-[#087f70] bg-[#e8f7f3] text-[#087f70]', iconTone: 'text-[#087f70]' },
 ]
 
 const STAGES = [
@@ -247,16 +247,17 @@ export function LeadWorkspace({
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-[#f6f7f9]">
+    <div className="h-full overflow-y-auto bg-[radial-gradient(circle_at_75%_0%,rgba(40,104,215,0.07),transparent_28%),linear-gradient(180deg,#f7f4ef,#f3f0eb)]">
       <div className="mx-auto max-w-[1560px] px-5 pb-8 pt-6 xl:px-8">
-        <header className="rounded-xl border border-[#d9dfe6] bg-white px-6 py-5 shadow-[0_1px_3px_rgba(16,24,40,0.04)]">
+        <header className="relative overflow-hidden rounded-2xl border border-[#ded9d1] bg-[linear-gradient(105deg,#ffffff_0%,#fff9f6_58%,#f4f8ff_100%)] px-6 py-5 shadow-[0_12px_32px_rgba(16,40,63,0.08)]">
+          <span className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#d92636,#e76f51_36%,#c77700_62%,#2868d7)]" aria-hidden="true" />
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-3">
                 <Link href="/contacts" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#d4dae1] text-[#344054] hover:bg-[#f7f8fa]" aria-label="Back to contacts">
                   <Icon name="arrow_back" />
                 </Link>
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#df3038] text-base font-black text-white shadow-[0_0_0_4px_#fff0f1]">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#d92636,#e76f51)] text-base font-black text-white shadow-[0_0_0_4px_#fff0f1,0_6px_16px_rgba(217,38,54,0.2)]">
                   {initials || 'SK'}
                 </div>
                 <div>
@@ -279,10 +280,10 @@ export function LeadWorkspace({
               </div>
             </div>
             <div className="flex flex-wrap gap-2.5">
-              <ActionButton icon="call" label="Call" onClick={onCall} disabled={!lead.phone} />
-              <ActionButton icon="chat_bubble" label="Text" onClick={onText} disabled={!lead.phone} />
-              <ActionButton icon="mail" label="Email" onClick={onEmail} disabled={!lead.email} />
-              <button type="button" onClick={onContract} className="flex h-11 items-center gap-2 rounded-md bg-[#df3038] px-4 text-sm font-bold text-white shadow-[0_4px_12px_rgba(223,48,56,0.18)] hover:bg-[#c9232d]">
+              <ActionButton icon="call" label="Call" onClick={onCall} disabled={!lead.phone} tone="teal" />
+              <ActionButton icon="chat_bubble" label="Text" onClick={onText} disabled={!lead.phone} tone="blue" />
+              <ActionButton icon="mail" label="Email" onClick={onEmail} disabled={!lead.email} tone="violet" />
+              <button type="button" onClick={onContract} className="flex h-11 items-center gap-2 rounded-lg bg-[linear-gradient(135deg,#d92636,#e76f51)] px-4 text-sm font-bold text-white shadow-[0_6px_16px_rgba(217,38,54,0.24)] hover:brightness-95">
                 <Icon name="description" className="text-[19px]" />
                 Create contract
               </button>
@@ -290,7 +291,7 @@ export function LeadWorkspace({
           </div>
 
           <div className="mt-5 grid gap-3 border-t border-[#e4e7ec] pt-4 md:grid-cols-3">
-            <SummaryItem label="Stage">
+            <SummaryItem label="Stage" tone="teal">
               <StageSelector
                 leadId={lead.id}
                 station={lead.station}
@@ -300,14 +301,14 @@ export function LeadWorkspace({
                 onChange={(next) => onStageChange(next)}
               />
             </SummaryItem>
-            <SummaryItem label="Owner">
+            <SummaryItem label="Owner" tone="blue">
               <span className="flex items-center gap-2 font-semibold text-[#1f2937]">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#17191d] text-[10px] font-bold text-white">{owner.slice(0, 2).toUpperCase()}</span>
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[linear-gradient(135deg,#2868d7,#0b2942)] text-[10px] font-bold text-white">{owner.slice(0, 2).toUpperCase()}</span>
                 {owner}
               </span>
             </SummaryItem>
-            <SummaryItem label="Next action">
-              <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : appointment ? onAppointment : onTask} className="flex items-center gap-2 rounded-md bg-[#fff5e5] px-3 py-2 text-sm font-bold text-[#9a5800] hover:bg-[#ffedcc]">
+            <SummaryItem label="Next action" tone="amber">
+              <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : appointment ? onAppointment : onTask} className="flex items-center gap-2 rounded-lg border border-[#efd59b] bg-[#fff4d8] px-3 py-2 text-sm font-black text-[#8d5700] shadow-[0_3px_9px_rgba(199,119,0,0.09)] hover:bg-[#ffedc3]">
                 <Icon name="schedule" className="text-[18px]" />
                 {nextAction}
               </button>
@@ -316,7 +317,7 @@ export function LeadWorkspace({
         </header>
 
         <nav ref={sectionHeadingRef} className="sticky top-0 z-20 mt-4 grid scroll-mt-4 grid-cols-3 overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)] md:grid-cols-6" aria-label="Lead workspace sections">
-          {WORKSPACE_SECTIONS.map(({ key, icon, label }) => (
+          {WORKSPACE_SECTIONS.map(({ key, icon, label, activeTone, iconTone }) => (
             <button
               key={key}
               type="button"
@@ -325,11 +326,11 @@ export function LeadWorkspace({
               className={cn(
                 'flex h-14 items-center justify-center gap-2 border-b-2 px-2 text-xs font-semibold transition-colors md:text-sm',
                 activeSection === key
-                  ? 'border-[#df3038] bg-[#fff8f8] text-[#b91c26]'
+                  ? activeTone
                   : 'border-transparent text-[#475467] hover:bg-[#f8f9fa] hover:text-[#111827]',
               )}
             >
-              <Icon name={icon} className="text-[18px]" />
+              <Icon name={icon} className={cn('text-[18px]', activeSection === key ? iconTone : 'text-[#7b8796]')} />
               {label}
             </button>
           ))}
@@ -337,7 +338,7 @@ export function LeadWorkspace({
 
         {activeSection === 'overview' ? (
         <main className="mt-4 grid gap-4 xl:grid-cols-[0.92fr_1.45fr_1.05fr]">
-          <section className="overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)]">
+          <section className="overflow-hidden rounded-xl border border-t-[3px] border-[#d9dfe6] border-t-[#2868d7] bg-white shadow-[0_9px_24px_rgba(16,40,63,0.07)]">
             <CardHeader title="Contact & Property" icon="person" onMore={onEdit} />
             <div className="p-5">
               <SectionLabel>Contact</SectionLabel>
@@ -391,7 +392,7 @@ export function LeadWorkspace({
             </div>
           </section>
 
-          <section className="flex h-[calc(100vh-375px)] min-h-[540px] max-h-[720px] flex-col overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)]">
+          <section className="flex h-[calc(100vh-375px)] min-h-[540px] max-h-[720px] flex-col overflow-hidden rounded-xl border border-t-[3px] border-[#d9dfe6] border-t-[#087f70] bg-white shadow-[0_9px_24px_rgba(16,40,63,0.07)]">
             <CardHeader title="Conversation" icon="forum" />
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
               {visibleActivities.length ? visibleActivities.map((activity) => (
@@ -445,7 +446,7 @@ export function LeadWorkspace({
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)]">
+          <section className="overflow-hidden rounded-xl border border-t-[3px] border-[#d9dfe6] border-t-[#c77700] bg-white shadow-[0_9px_24px_rgba(16,40,63,0.07)]">
             <CardHeader title="Opportunity" icon="paid" />
             <div className="p-5">
               <SectionLabel>Deal stage</SectionLabel>
@@ -455,11 +456,11 @@ export function LeadWorkspace({
                   const current = index === stageIndex
                   return (
                     <div key={stage.label} className="relative flex flex-1 flex-col items-center">
-                      {index > 0 ? <span className={cn('absolute right-1/2 top-3 h-0.5 w-full', index <= stageIndex ? 'bg-[#df3038]' : 'bg-[#d9dfe6]')} /> : null}
-                      <span className={cn('relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-bold', complete ? 'border-[#df3038] bg-[#df3038] text-white' : current ? 'border-[#df3038] bg-white text-[#df3038]' : 'border-[#cfd6de] bg-white text-[#98a2b3]')}>
-                        {complete ? <Icon name="check" className="text-[14px]" /> : current ? <span className="h-2 w-2 rounded-full bg-[#df3038]" /> : null}
+                      {index > 0 ? <span className={cn('absolute right-1/2 top-3 h-0.5 w-full', index <= stageIndex ? 'bg-[#087f70]' : 'bg-[#d9dfe6]')} /> : null}
+                      <span className={cn('relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-bold', complete ? 'border-[#087f70] bg-[#087f70] text-white' : current ? 'border-[#087f70] bg-[#e8f7f3] text-[#087f70]' : 'border-[#cfd6de] bg-white text-[#98a2b3]')}>
+                        {complete ? <Icon name="check" className="text-[14px]" /> : current ? <span className="h-2 w-2 rounded-full bg-[#087f70]" /> : null}
                       </span>
-                      <span className={cn('mt-2 text-center text-[10px] font-semibold', current ? 'text-[#b91c26]' : 'text-[#667085]')}>{stage.label}</span>
+                      <span className={cn('mt-2 text-center text-[10px] font-semibold', current ? 'text-[#087f70]' : 'text-[#667085]')}>{stage.label}</span>
                     </div>
                   )
                 })}
@@ -484,10 +485,10 @@ export function LeadWorkspace({
               </div>
 
               {appointment ? (
-                <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[#efb4b8] bg-[#fff9f9] p-4 text-left hover:bg-[#fff1f2]">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#df3038] text-white"><Icon name="calendar_month" /></span>
+                <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[#c9bdf0] bg-[#f6f3ff] p-4 text-left hover:bg-[#eee9ff]">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#7357c7] text-white"><Icon name="calendar_month" /></span>
                   <span>
-                    <span className="block text-xs font-black uppercase tracking-[0.08em] text-[#b91c26]">{appointmentIsPast ? 'Appointment outcome required' : 'Appointment scheduled'}</span>
+                    <span className="block text-xs font-black uppercase tracking-[0.08em] text-[#7357c7]">{appointmentIsPast ? 'Appointment outcome required' : 'Appointment scheduled'}</span>
                     <span className="mt-1 block text-sm font-bold text-[#172033]">{new Date(appointment.scheduledAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                     <span className="mt-0.5 block text-xs text-[#667085]">{appointment.address || lead.property_address}</span>
                   </span>
@@ -536,18 +537,28 @@ export function LeadWorkspace({
   )
 }
 
-function ActionButton({ icon, label, onClick, disabled }: { icon: string; label: string; onClick: () => void; disabled?: boolean }) {
+function ActionButton({ icon, label, onClick, disabled, tone }: { icon: string; label: string; onClick: () => void; disabled?: boolean; tone: 'teal' | 'blue' | 'violet' }) {
+  const toneClass = {
+    teal: 'border-[#8bc9bf] bg-[#e8f7f3] text-[#087f70] hover:bg-[#d9f1eb]',
+    blue: 'border-[#a9c5f4] bg-[#edf4ff] text-[#2868d7] hover:bg-[#e1ecff]',
+    violet: 'border-[#c9bdf0] bg-[#f2efff] text-[#7357c7] hover:bg-[#e9e3ff]',
+  }[tone]
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className="flex h-11 min-w-[104px] items-center justify-center gap-2 rounded-md border border-[#df3038] bg-white px-4 text-sm font-bold text-[#b91c26] hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:border-[#d5dae0] disabled:text-[#98a2b3]">
+    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className={cn('flex h-11 min-w-[104px] items-center justify-center gap-2 rounded-lg border px-4 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:border-[#d5dae0] disabled:bg-white disabled:text-[#98a2b3]', toneClass)}>
       <Icon name={icon} className="text-[19px]" />
       {label}
     </button>
   )
 }
 
-function SummaryItem({ label, children }: { label: string; children: React.ReactNode }) {
+function SummaryItem({ label, children, tone }: { label: string; children: React.ReactNode; tone: 'teal' | 'blue' | 'amber' }) {
+  const toneClass = {
+    teal: 'border-l-[#087f70] bg-[#f2fbf8]',
+    blue: 'border-l-[#2868d7] bg-[#f3f7ff]',
+    amber: 'border-l-[#c77700] bg-[#fffbef]',
+  }[tone]
   return (
-    <div className="flex min-h-11 items-center gap-4 border-r border-[#e4e7ec] last:border-r-0 md:px-4 first:pl-0">
+    <div className={cn('flex min-h-14 items-center gap-4 rounded-lg border border-[#e4e0da] border-l-4 px-4', toneClass)}>
       <span className="text-xs font-bold uppercase tracking-[0.08em] text-[#667085]">{label}</span>
       <div className="ml-auto">{children}</div>
     </div>
@@ -555,9 +566,14 @@ function SummaryItem({ label, children }: { label: string; children: React.React
 }
 
 function CardHeader({ title, icon, onMore }: { title: string; icon: string; onMore?: () => void }) {
+  const iconTone = icon === 'person'
+    ? 'bg-[#edf4ff] text-[#2868d7]'
+    : icon === 'forum'
+      ? 'bg-[#e8f7f3] text-[#087f70]'
+      : 'bg-[#fff4d8] text-[#c77700]'
   return (
     <div className="flex h-13 items-center border-b border-[#dfe3e8] px-5">
-      <Icon name={icon} className="mr-2 text-[19px] text-[#df3038]" />
+      <span className={cn('mr-2 flex h-8 w-8 items-center justify-center rounded-lg', iconTone)}><Icon name={icon} className="text-[18px]" /></span>
       <h2 className="text-base font-black text-[#172033]">{title}</h2>
       {onMore ? <button type="button" onClick={onMore} aria-label={`Edit ${title}`} className="ml-auto flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#df3038]"><Icon name="more_vert" /></button> : null}
     </div>
@@ -572,7 +588,7 @@ function DataRow({ label, value, accent, compact }: { label: string; value: stri
   return (
     <div className={cn('flex items-start justify-between gap-3', compact && 'flex-col gap-0.5')}>
       <dt className="text-[#667085]">{label}</dt>
-      <dd className={cn('min-w-0 break-all text-right font-semibold text-[#1f2937]', accent && 'text-[#b91c26]', compact && 'text-left')}>{value}</dd>
+      <dd className={cn('min-w-0 break-all text-right font-semibold text-[#1f2937]', accent && 'text-[#2868d7]', compact && 'text-left')}>{value}</dd>
     </div>
   )
 }
@@ -623,7 +639,7 @@ function NextStep({ label, value, onClick, disabled }: { label: string; value: s
     <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-[#f7f8fa] disabled:cursor-not-allowed disabled:opacity-55">
       <span className="h-5 w-5 rounded-full border-2 border-[#b9c1cc]" />
       <span className="text-sm font-semibold text-[#344054]">{label}</span>
-      <span className="ml-auto text-xs font-medium text-[#b91c26]">{value}</span>
+      <span className="ml-auto text-xs font-bold text-[#8d5700]">{value}</span>
     </button>
   )
 }
