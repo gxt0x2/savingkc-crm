@@ -72,24 +72,24 @@ const STAGE_LABELS: Record<DealStage, string> = {
 }
 
 const SMART_LIST_TONES: Record<SmartList, { active: string; count: string }> = {
-  all: { active: 'border-[#2868d7] text-[#2868d7]', count: 'bg-[#edf4ff] text-[#2868d7]' },
-  new: { active: 'border-[#2868d7] text-[#2868d7]', count: 'bg-[#edf4ff] text-[#2868d7]' },
-  needs_reply: { active: 'border-[#d92636] text-[#b91f2d]', count: 'bg-[#fff0f1] text-[#b91f2d]' },
-  overdue: { active: 'border-[#d92636] text-[#b91f2d]', count: 'bg-[#fff0f1] text-[#b91f2d]' },
-  hot: { active: 'border-[#e76f51] text-[#c64f35]', count: 'bg-[#fff1ec] text-[#c64f35]' },
-  unassigned: { active: 'border-[#c77700] text-[#975800]', count: 'bg-[#fff4d8] text-[#975800]' },
+  all: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
+  new: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
+  needs_reply: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
+  overdue: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' },
+  hot: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
+  unassigned: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' },
 }
 
 const STAGE_TONES: Record<DealStage, string> = {
-  new: 'border-[#b5c9e8] bg-[#edf4ff] text-[#2868d7]',
-  contacted: 'border-[#a9c5f4] bg-[#edf4ff] text-[#2868d7]',
-  qualified: 'border-[#94d2c8] bg-[#e8f7f3] text-[#087f70]',
-  appointment_set: 'border-[#c9bdf0] bg-[#f2efff] text-[#7357c7]',
-  offer_made: 'border-[#efd59b] bg-[#fff4d8] text-[#975800]',
-  under_contract: 'border-[#8bc9bf] bg-[#e8f7f3] text-[#087f70]',
-  closed_won: 'border-[#8cc9a1] bg-[#ecf9f0] text-[#147a3d]',
-  closed_lost: 'border-[#efb4b8] bg-[#fff0f1] text-[#b91f2d]',
-  dead: 'border-[#cdd3da] bg-[#f1f3f5] text-[#596579]',
+  new: 'border-[var(--crm-border-strong)] bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]',
+  contacted: 'border-[var(--crm-border-strong)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]',
+  qualified: 'border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+  appointment_set: 'border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]',
+  offer_made: 'border-[var(--crm-border-strong)] bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+  under_contract: 'border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+  closed_won: 'border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+  closed_lost: 'border-[var(--crm-brand-border)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]',
+  dead: 'border-[var(--crm-border-strong)] bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]',
 }
 
 const EMPTY_CONTACT = { fullName: '', phone: '', email: '', address: '', city: '', state: '', zip: '', source: 'manual_crm' }
@@ -177,7 +177,7 @@ function parseCsv(value: string): Record<string, string>[] {
 }
 
 function ContactSkeleton() {
-  return <div className="space-y-2 p-4" aria-label="Loading contacts">{[0, 1, 2, 3, 4].map((item) => <div key={item} className="h-20 animate-pulse rounded-lg bg-[#f2f4f7]" />)}</div>
+  return <div className="space-y-2 p-4" aria-label="Loading contacts">{[0, 1, 2, 3, 4].map((item) => <div key={item} className="h-20 animate-pulse rounded-lg bg-[var(--crm-surface-subtle)]" />)}</div>
 }
 
 export default function ContactsPage() {
@@ -357,15 +357,15 @@ export default function ContactsPage() {
     <WorkspaceFrame needsReply={counts.needs_reply}>
       <main className="flex h-full min-w-0 bg-[var(--crm-canvas)]">
         <section className="min-w-0 flex-1 overflow-y-auto">
-          <header className="flex flex-wrap items-center justify-between gap-4 border-b border-t-[3px] border-b-[#ded9d1] border-t-[#2868d7] bg-[linear-gradient(100deg,#ffffff_0%,#f4f8ff_68%,#fff5f1_100%)] px-8 py-6">
-            <div><p className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#2868d7]">Relationship intelligence</p><h1 className="text-[26px] font-black text-[#0b2942]">Contacts</h1><p className="mt-1 text-sm text-[#66758a]">People, property, ownership, and next action in one searchable workspace</p></div>
+          <header className="crm-page-header flex flex-wrap items-center justify-between gap-4 border-b px-8 py-6">
+            <div><p className="crm-eyebrow mb-1">Relationship intelligence</p><h1 className="text-[26px] font-bold tracking-[-0.02em] text-[var(--crm-ink)]">Contacts</h1><p className="mt-1 text-sm text-[var(--crm-text-muted)]">People, property, ownership, and next action in one searchable workspace</p></div>
             <div className="flex gap-3">
-              <button type="button" onClick={() => { setDialogError(null); setDialog('import') }} className="flex h-10 items-center gap-2 rounded-md border border-[#cbd3dc] px-4 text-sm font-semibold hover:bg-[#f8fafb]"><Icon name="upload" />Import</button>
-              <button type="button" onClick={() => { setDialogError(null); setDialog('add') }} className="flex h-10 items-center gap-2 rounded-md bg-[#df3038] px-5 text-sm font-semibold text-white hover:bg-[#c9232d]"><Icon name="add" />Add contact</button>
+              <button type="button" onClick={() => { setDialogError(null); setDialog('import') }} className="crm-secondary-button flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold"><Icon name="upload" />Import</button>
+              <button type="button" onClick={() => { setDialogError(null); setDialog('add') }} className="crm-primary-button flex h-10 items-center gap-2 rounded-lg px-5 text-sm font-semibold"><Icon name="add" />Add contact</button>
             </div>
           </header>
 
-          <div className="overflow-x-auto border-b border-[#e0ddd7] bg-white px-7 shadow-[0_4px_14px_rgba(16,40,63,0.035)]">
+          <div className="overflow-x-auto border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
             <nav className="flex min-w-max gap-7">
               {([
                 ['all', 'All Contacts', counts.all],
@@ -374,125 +374,125 @@ export default function ContactsPage() {
                 ['hot', 'Hot Opportunities', counts.hot],
                 ['unassigned', 'Unassigned', counts.unassigned],
               ] as [SmartList, string, number][]).map(([id, label, count]) => (
-                <button key={id} type="button" onClick={() => setSmartList(id)} className={`border-b-[3px] py-4 text-sm font-semibold transition-colors ${smartList === id ? SMART_LIST_TONES[id].active : 'border-transparent text-[#526177] hover:text-[#0b2942]'}`}>
-                  {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${smartList === id ? SMART_LIST_TONES[id].count : 'bg-[#f0eeea] text-[#68768a]'}`}>{count}</span>
+                <button key={id} type="button" onClick={() => setSmartList(id)} className={`border-b-[3px] py-4 text-sm font-semibold transition-colors ${smartList === id ? SMART_LIST_TONES[id].active : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'}`}>
+                  {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${smartList === id ? SMART_LIST_TONES[id].count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{count}</span>
                 </button>
               ))}
-              {savedViews.map((view) => <button type="button" key={view.id} onClick={() => applyView(view)} className="border-b-2 border-transparent py-4 text-sm font-semibold text-[#24354a] hover:text-[#b91c26]">{view.label}</button>)}
-              <button type="button" onClick={() => setDialog('view')} className="py-4 text-sm font-semibold text-[#24354a] hover:text-[#b91c26]">＋ New view</button>
+              {savedViews.map((view) => <button type="button" key={view.id} onClick={() => applyView(view)} className="border-b-2 border-transparent py-4 text-sm font-semibold text-[var(--crm-text)] hover:text-[var(--crm-brand)]">{view.label}</button>)}
+              <button type="button" onClick={() => setDialog('view')} className="py-4 text-sm font-semibold text-[var(--crm-text)] hover:text-[var(--crm-brand)]">＋ New view</button>
             </nav>
           </div>
 
           <div className="px-7 py-5">
             <div className="flex flex-wrap items-center gap-2">
-              <label className="relative w-52"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[#65748a]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="h-9 w-full rounded-md border border-[#ccd4dd] pl-9 pr-3 text-xs outline-none focus:border-[#df3038]" /></label>
+              <label className="relative w-52"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-9 w-full rounded-lg pl-9 pr-3 text-xs outline-none" /></label>
               <FilterSelect label="Owner" value={ownerFilter} onChange={setOwnerFilter} options={[['__unassigned', 'Unassigned'], ...owners.map((value) => [value, value] as [string, string])]} />
               <FilterSelect label="Stage" value={stageFilter} onChange={setStageFilter} options={Object.entries(STAGE_LABELS)} />
               <FilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter} options={sources.map((value) => [value, formatLeadSource(value)])} />
               <FilterSelect label="Tags" value={tagFilter} onChange={setTagFilter} options={tags.map((value) => [value, value])} />
               <FilterSelect label="Last activity" value={activityFilter} onChange={setActivityFilter} options={[['day', 'Past 24 hours'], ['week', 'Past 7 days'], ['stale', 'More than 7 days']]} />
               <FilterSelect label="More filters" value={attentionFilter} onChange={setAttentionFilter} options={[['needs_reply', 'Needs reply'], ['waiting_on_contact', 'Waiting on contact'], ['resolved', 'Resolved']]} />
-              <select aria-label="Sort contacts" value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)} className="ml-auto h-9 rounded-md border border-[#ccd4dd] px-3 text-xs font-semibold text-[#34445a]"><option value="priority">Priority first</option><option value="recent">Recently active</option><option value="name">Name A–Z</option></select>
-              <button type="button" onClick={() => void refetch()} aria-label="Refresh contacts" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#ccd4dd] text-[#34445a]"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
+              <select aria-label="Sort contacts" value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)} className="crm-field ml-auto h-9 rounded-lg px-3 text-xs font-semibold"><option value="priority">Priority first</option><option value="recent">Recently active</option><option value="name">Name A–Z</option></select>
+              <button type="button" onClick={() => void refetch()} aria-label="Refresh contacts" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
             </div>
             <div className="mt-4 flex items-center gap-3">
-              {hasFilters ? <button type="button" onClick={clearFilters} className="rounded-md border border-[#efb4b8] bg-[#fff7f7] px-3 py-1.5 text-xs font-semibold text-[#b91c26]">Clear filters ×</button> : null}
-              <span className="text-sm text-[#536277]">{visible.length} results</span>
+              {hasFilters ? <button type="button" onClick={clearFilters} className="rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear filters ×</button> : null}
+              <span className="text-sm text-[var(--crm-text-muted)]">{visible.length} results</span>
             </div>
 
-            <div className="mt-5 overflow-x-auto rounded-xl border border-[#d9d5cf] bg-white shadow-[0_10px_26px_rgba(16,40,63,0.07)]">
-              <div className="grid min-w-[936px] grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] border-b border-[#d9e0e6] bg-[linear-gradient(90deg,#eef4fb,#f7f5f1)] px-3 py-3 text-[11px] font-black uppercase tracking-[0.06em] text-[#31465d]">
+            <div className="crm-panel mt-5 overflow-x-auto rounded-xl">
+              <div className="crm-table-header grid min-w-[936px] grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] border-b px-3 py-3 text-[11px] font-bold uppercase tracking-[0.06em]">
                 <span>Contact</span><span>Property</span><span>Stage</span><span>Next Action</span><span>Owner</span><span>Last Activity</span><span>Source</span>
               </div>
               {isLoading ? <ContactSkeleton /> : null}
               {error ? <div className="p-8 text-center text-sm text-red-600">Contacts could not be loaded. <button type="button" onClick={() => void refetch()} className="font-bold underline">Try again</button></div> : null}
-              {!isLoading && !error && pageItems.length === 0 ? <div className="p-12 text-center text-sm text-[#66758a]">No contacts match these filters.</div> : null}
+              {!isLoading && !error && pageItems.length === 0 ? <div className="p-12 text-center text-sm text-[var(--crm-text-muted)]">No contacts match these filters.</div> : null}
               {!isLoading && !error ? pageItems.map((row) => {
                 const displayName = getDisplayLeadName(row.fullName, row.phone)
                 const property = [row.address, row.city].filter(Boolean).join(', ') || 'No property linked'
                 const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || 'Define next action'
                 const selectedRow = detailsOpen && selected?.id === row.id
                 const rowAttention = row.primaryNextAction?.overdue
-                  ? 'border-l-[#d92636]'
+                  ? 'border-l-[var(--crm-danger)]'
                   : row.attentionState === 'needs_reply'
-                    ? 'border-l-[#e76f51]'
+                    ? 'border-l-[var(--crm-warning)]'
                     : 'border-l-transparent'
                 const avatarTone = row.isFavorite || row.attentionState === 'needs_reply'
-                  ? 'bg-[#fff0f1] text-[#b91f2d]'
+                  ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'
                   : row.station === 'qualified' || row.station === 'under_contract'
-                    ? 'bg-[#e8f7f3] text-[#087f70]'
-                    : 'bg-[#edf4ff] text-[#2868d7]'
+                    ? 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'
+                    : 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
                 return (
-                  <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} aria-pressed={selectedRow} className={`grid min-w-[936px] w-full grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-l-4 border-b-[#e7e3de] px-3 py-4 text-left text-xs transition-all last:border-b-0 ${selectedRow ? 'border-l-[#2868d7] bg-[linear-gradient(90deg,#edf4ff,#ffffff_38%)]' : `${rowAttention} hover:bg-[#fbfaf8]`}`}>
-                    <span className="flex min-w-0 items-center gap-2.5"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[#1d2c40]">{displayName}</strong><small className="text-[#627087]">{formatPhone(row.phone)}</small></span></span>
-                    <span className="min-w-0"><strong className="block truncate font-medium text-[#2d3d52]">{property}</strong><small className="text-[#7b8796]">{row.city || ''}</small></span>
+                  <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} aria-pressed={selectedRow} className={`grid min-w-[936px] w-full grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-l-4 border-b-[var(--crm-border)] px-3 py-4 text-left text-xs transition-colors last:border-b-0 ${selectedRow ? 'border-l-[var(--crm-brand)] bg-[var(--crm-surface-selected)]' : `${rowAttention} hover:bg-[var(--crm-surface-subtle)]`}`}>
+                    <span className="flex min-w-0 items-center gap-2.5"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[var(--crm-ink)]">{displayName}</strong><small className="text-[var(--crm-text-muted)]">{formatPhone(row.phone)}</small></span></span>
+                    <span className="min-w-0"><strong className="block truncate font-medium text-[var(--crm-text)]">{property}</strong><small className="text-[var(--crm-text-dim)]">{row.city || ''}</small></span>
                     <span><span className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[row.station]}`}>{STAGE_LABELS[row.station]}</span></span>
-                    <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[#b91f2d]' : 'font-semibold text-[#8d5700]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className={`mt-[-1px] shrink-0 text-[15px] ${row.primaryNextAction?.overdue ? 'text-[#d92636]' : 'text-[#c77700]'}`} />{nextAction}</span>
-                    <span>{row.owner || 'Unassigned'}</span><span className="text-[#68768a]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[#526177]">{formatLeadSource(row.source)}</span>
+                    <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-warning)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>
+                    <span>{row.owner || 'Unassigned'}</span><span className="text-[var(--crm-text-muted)]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[var(--crm-text-muted)]">{formatLeadSource(row.source)}</span>
                   </button>
                 )
               }) : null}
             </div>
-            <div className="mt-7 flex items-center text-xs text-[#69778a]">
+            <div className="mt-7 flex items-center text-xs text-[var(--crm-text-muted)]">
               <span>Showing {visible.length ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, visible.length)} of {visible.length} results</span>
               <div className="ml-auto flex items-center gap-2">
-                <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="h-8 min-w-8 rounded border border-[#d6dde4] px-2 disabled:opacity-40" aria-label="Previous page">‹</button>
-                {paginationPages.map((pageNumber) => <button type="button" key={pageNumber} onClick={() => setPage(pageNumber)} aria-current={pageNumber === currentPage ? 'page' : undefined} aria-label={`Page ${pageNumber}`} className={`h-8 min-w-8 rounded border px-2 ${pageNumber === currentPage ? 'border-[#df3038] text-[#b91c26]' : 'border-[#d6dde4]'}`}>{pageNumber}</button>)}
+                <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="h-8 min-w-8 rounded border border-[var(--crm-border)] px-2 disabled:opacity-40" aria-label="Previous page">‹</button>
+                {paginationPages.map((pageNumber) => <button type="button" key={pageNumber} onClick={() => setPage(pageNumber)} aria-current={pageNumber === currentPage ? 'page' : undefined} aria-label={`Page ${pageNumber}`} className={`h-8 min-w-8 rounded border px-2 ${pageNumber === currentPage ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)]'}`}>{pageNumber}</button>)}
                 <span className="sr-only">Page {currentPage} of {pageCount}</span>
-                <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="h-8 min-w-8 rounded border border-[#d6dde4] px-2 disabled:opacity-40" aria-label="Next page">›</button>
+                <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="h-8 min-w-8 rounded border border-[var(--crm-border)] px-2 disabled:opacity-40" aria-label="Next page">›</button>
               </div>
             </div>
           </div>
         </section>
 
-        {detailsOpen ? <aside className="hidden w-[350px] shrink-0 overflow-y-auto border-l border-[#ded9d1] bg-[linear-gradient(180deg,#ffffff,#fffdf9)] p-6 shadow-[-10px_0_28px_rgba(16,40,63,0.05)] xl:block">
+        {detailsOpen ? <aside className="hidden w-[360px] shrink-0 overflow-y-auto border-l border-[var(--crm-border)] bg-[var(--crm-surface)] p-6 xl:block">
           {selected ? <>
             <div className="flex items-start gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#2868d7,#0b2942)] text-lg font-bold text-white shadow-[0_4px_14px_rgba(40,104,215,0.22)]">{getAvatarLabel(selected.fullName, selected.phone, selected.source)}</div>
-              <div className="min-w-0"><h2 className="truncate text-xl font-bold">{getDisplayLeadName(selected.fullName, selected.phone)}</h2><p className="mt-1 text-sm text-[#58677c]">{[selected.address, selected.city].filter(Boolean).join(', ') || 'No property linked'}</p></div>
-              <button type="button" onClick={() => setDetailsOpen(false)} className="ml-auto text-[#6c798b] hover:text-[#b91c26]" aria-label="Close contact details"><Icon name="close" /></button>
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-lg font-bold text-[var(--crm-surface)]">{getAvatarLabel(selected.fullName, selected.phone, selected.source)}</div>
+              <div className="min-w-0"><h2 className="truncate text-xl font-bold">{getDisplayLeadName(selected.fullName, selected.phone)}</h2><p className="mt-1 text-sm text-[var(--crm-text-muted)]">{[selected.address, selected.city].filter(Boolean).join(', ') || 'No property linked'}</p></div>
+              <button type="button" onClick={() => setDetailsOpen(false)} className="ml-auto text-[var(--crm-text-muted)] hover:text-[var(--crm-brand)]" aria-label="Close contact details"><Icon name="close" /></button>
             </div>
             <div className="mt-5 grid grid-cols-3 gap-2">
-              <button type="button" disabled={!selected.phone} onClick={() => openDialer(selected)} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#8bc9bf] bg-[#e8f7f3] text-xs font-semibold text-[#087f70] hover:bg-[#d9f1eb] disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" />Call</button>
-              {selected.phone ? <Link href={`/conversations?lead=${selected.id}&compose=sms`} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#a9c5f4] bg-[#edf4ff] text-xs font-semibold text-[#2868d7] hover:bg-[#e1ecff]"><Icon name="sms" />Text</Link> : <button type="button" disabled aria-label="Text unavailable because this contact has no phone number" className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#2868d7] opacity-40"><Icon name="sms" />Text</button>}
-              {selected.email ? <Link href={`/conversations?lead=${selected.id}&compose=email`} className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#c9bdf0] bg-[#f2efff] text-xs font-semibold text-[#7357c7] hover:bg-[#e9e3ff]"><Icon name="mail" />Email</Link> : <button type="button" disabled aria-label="Email unavailable because this contact has no email address" className="flex h-9 items-center justify-center gap-1 rounded-md border border-[#cbd4dc] text-xs font-semibold text-[#7357c7] opacity-40"><Icon name="mail" />Email</button>}
+              <button type="button" disabled={!selected.phone} onClick={() => openDialer(selected)} className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-xs font-semibold text-[var(--crm-success)] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" />Call</button>
+              {selected.phone ? <Link href={`/conversations?lead=${selected.id}&compose=sms`} className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-info-soft)] text-xs font-semibold text-[var(--crm-info)] hover:brightness-95"><Icon name="sms" />Text</Link> : <button type="button" disabled aria-label="Text unavailable because this contact has no phone number" className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border)] text-xs font-semibold text-[var(--crm-info)] opacity-40"><Icon name="sms" />Text</button>}
+              {selected.email ? <Link href={`/conversations?lead=${selected.id}&compose=email`} className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] text-xs font-semibold text-[var(--crm-violet)] hover:brightness-95"><Icon name="mail" />Email</Link> : <button type="button" disabled aria-label="Email unavailable because this contact has no email address" className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border)] text-xs font-semibold text-[var(--crm-violet)] opacity-40"><Icon name="mail" />Email</button>}
             </div>
-            <div className="mt-6 rounded-xl border border-[#b9ded7] bg-[#f2fbf8] p-4"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="trending_up" className="text-[18px] text-[#087f70]" />Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[selected.station]}`}>{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="rounded-full bg-[#f2efff] px-2 py-0.5 font-black text-[#7357c7]">{selected.score} / 100</dd></div></dl></div>
-            <div className="mt-5 rounded-xl border border-[#efd59b] border-l-4 border-l-[#c77700] bg-[#fff4d8] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[#6f4500]"><Icon name="bolt" className="text-[18px] text-[#c77700]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[#8d5700]"><Icon name="schedule" className="mt-0.5" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>
-            <div className="mt-5 border-t border-[#e0e5ea] pt-5"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="forum" className="text-[18px] text-[#2868d7]" />Recent conversation</h3><p className="mt-3 rounded-lg border border-[#ccdcf5] bg-[#f3f7ff] p-3 text-xs leading-5 text-[#44536a]">{selected.lastMessage || 'No recent message'}</p></div>
-            <div className="mt-6 border-t border-[#e0e5ea] pt-5"><h3 className="text-sm font-bold">Contact details</h3><p className="mt-3 text-sm text-[#526177]">{formatPhone(selected.phone)}</p><p className="mt-2 break-all text-sm text-[#526177]">{selected.email || 'No email'}</p><p className="mt-2 text-sm text-[#526177]">Owner: {selected.owner || 'Unassigned'}</p></div>
-            <Link href={`/leads/${selected.id}`} className="mt-7 flex h-11 items-center justify-center rounded-md bg-[linear-gradient(135deg,#2868d7,#0b2942)] text-sm font-bold text-white shadow-[0_5px_14px_rgba(40,104,215,0.2)] hover:brightness-105">Open full workspace →</Link>
-          </> : <p className="text-sm text-[#728094]">Select a contact</p>}
+            <div className="crm-panel mt-6 rounded-xl p-4"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="trending_up" className="text-[18px] text-[var(--crm-success)]" />Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[selected.station]}`}>{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-0.5 font-black text-[var(--crm-violet)]">{selected.score} / 100</dd></div></dl></div>
+            <div className="mt-5 rounded-xl border border-[var(--crm-border-strong)] border-l-4 border-l-[var(--crm-warning)] bg-[var(--crm-warning-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-warning)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5"><Icon name="schedule" className="mt-0.5" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>
+            <div className="mt-5 border-t border-[var(--crm-border)] pt-5"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="forum" className="text-[18px] text-[var(--crm-info)]" />Recent conversation</h3><p className="mt-3 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-info-soft)] p-3 text-xs leading-5 text-[var(--crm-text)]">{selected.lastMessage || 'No recent message'}</p></div>
+            <div className="mt-6 border-t border-[var(--crm-border)] pt-5"><h3 className="text-sm font-bold">Contact details</h3><p className="mt-3 text-sm text-[var(--crm-text-muted)]">{formatPhone(selected.phone)}</p><p className="mt-2 break-all text-sm text-[var(--crm-text-muted)]">{selected.email || 'No email'}</p><p className="mt-2 text-sm text-[var(--crm-text-muted)]">Owner: {selected.owner || 'Unassigned'}</p></div>
+            <Link href={`/leads/${selected.id}`} className="crm-primary-button mt-7 flex h-11 items-center justify-center rounded-lg text-sm font-bold">Open full workspace →</Link>
+          </> : <p className="text-sm text-[var(--crm-text-dim)]">Select a contact</p>}
         </aside> : null}
       </main>
 
       {dialog ? <ContactModal title={dialog === 'add' ? 'Add contact' : dialog === 'import' ? 'Import contacts' : 'Save current view'} onClose={() => { if (!saving) setDialog(null) }}>
         {dialog === 'add' ? <form onSubmit={submitAddContact} className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">{Object.entries({ fullName: 'Full name', phone: 'Phone', email: 'Email', address: 'Property address', city: 'City', state: 'State', zip: 'ZIP', source: 'Source' }).map(([key, label]) => <label key={key} className={key === 'address' ? 'sm:col-span-2' : ''}><span className="mb-1 block text-xs font-bold text-[#475467]">{label}</span><input type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'} value={contactForm[key as keyof typeof contactForm]} onChange={(event) => setContactForm((current) => ({ ...current, [key]: event.target.value }))} className="h-10 w-full rounded-md border border-[#ccd4dd] px-3 text-sm outline-none focus:border-[#df3038]" /></label>)}</div>
-          {dialogError ? <p className="text-sm font-semibold text-[#c9232d]">{dialogError}</p> : null}
+          <div className="grid gap-3 sm:grid-cols-2">{Object.entries({ fullName: 'Full name', phone: 'Phone', email: 'Email', address: 'Property address', city: 'City', state: 'State', zip: 'ZIP', source: 'Source' }).map(([key, label]) => <label key={key} className={key === 'address' ? 'sm:col-span-2' : ''}><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">{label}</span><input type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'} value={contactForm[key as keyof typeof contactForm]} onChange={(event) => setContactForm((current) => ({ ...current, [key]: event.target.value }))} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label>)}</div>
+          {dialogError ? <p className="text-sm font-semibold text-[var(--ck-accent)]">{dialogError}</p> : null}
           <ModalActions saving={saving} submitLabel="Create contact" onCancel={() => setDialog(null)} />
         </form> : null}
         {dialog === 'import' ? <div className="space-y-4">
-          <p className="text-sm leading-6 text-[#667085]">Upload a CSV with any of these columns: name, phone, email, address, city, state, ZIP, or source.</p>
-          <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#cbd3dc] bg-[#fafbfc] text-sm font-semibold text-[#475467] hover:border-[#df3038]"><Icon name="upload_file" className="mb-2 text-[28px] text-[#df3038]" />Choose CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={async (event) => { const file = event.target.files?.[0]; if (file) setCsvRows(parseCsv(await file.text())) }} /></label>
-          {csvRows.length ? <p className="rounded-md bg-[#fff1f2] p-3 text-sm font-semibold text-[#b91c26]">{csvRows.length} contact{csvRows.length === 1 ? '' : 's'} ready to import.</p> : null}
-          {dialogError ? <p className="text-sm font-semibold text-[#c9232d]">{dialogError}</p> : null}
-          <div className="flex gap-3"><button type="button" disabled={saving} onClick={() => setDialog(null)} className="h-10 flex-1 rounded-md border border-[#cbd3dc] text-sm font-bold">Cancel</button><button type="button" disabled={saving || !csvRows.length} onClick={() => void submitImport()} className="h-10 flex-1 rounded-md bg-[#df3038] text-sm font-bold text-white disabled:opacity-50">{saving ? 'Importing…' : 'Import contacts'}</button></div>
+          <p className="text-sm leading-6 text-[var(--ck-text-muted)]">Upload a CSV with any of these columns: name, phone, email, address, city, state, ZIP, or source.</p>
+          <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--ck-border-strong)] bg-[var(--ck-surface-elev)] text-sm font-semibold text-[var(--ck-text-muted)] hover:border-[var(--ck-accent)]"><Icon name="upload_file" className="mb-2 text-[28px] text-[var(--ck-accent)]" />Choose CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={async (event) => { const file = event.target.files?.[0]; if (file) setCsvRows(parseCsv(await file.text())) }} /></label>
+          {csvRows.length ? <p className="rounded-md bg-[var(--ck-surface-elev)] p-3 text-sm font-semibold text-[var(--ck-accent)]">{csvRows.length} contact{csvRows.length === 1 ? '' : 's'} ready to import.</p> : null}
+          {dialogError ? <p className="text-sm font-semibold text-[var(--ck-accent)]">{dialogError}</p> : null}
+          <div className="flex gap-3"><button type="button" disabled={saving} onClick={() => setDialog(null)} className="h-10 flex-1 rounded-lg border border-[var(--ck-border-strong)] text-sm font-bold">Cancel</button><button type="button" disabled={saving || !csvRows.length} onClick={() => void submitImport()} className="h-10 flex-1 rounded-lg bg-[var(--ck-accent)] text-sm font-bold text-white disabled:opacity-50">{saving ? 'Importing…' : 'Import contacts'}</button></div>
         </div> : null}
-        {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[#667085]">Save the current owner, stage, source, tag, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[#475467]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-md border border-[#ccd4dd] px-3 text-sm outline-none focus:border-[#df3038]" /></label><ModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
+        {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[var(--ck-text-muted)]">Save the current owner, stage, source, tag, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label><ModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
       </ContactModal> : null}
     </WorkspaceFrame>
   )
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: [string, string][] }) {
-  return <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className={`h-9 rounded-md border px-3 text-xs font-semibold ${value ? 'border-[#efb4b8] bg-[#fff7f7] text-[#b91c26]' : 'border-[#ccd4dd] text-[#34445a]'}`}><option value="">{label}</option>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select>
+  return <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className={`h-9 rounded-lg border px-3 text-xs font-semibold ${value ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'crm-field'}`}><option value="">{label}</option>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select>
 }
 
 function ContactModal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#111827]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section role="dialog" aria-modal="true" aria-label={title} className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-[#d9dfe6] bg-white shadow-2xl"><header className="flex items-center justify-between border-b border-[#e4e7ec] px-6 py-4"><h2 className="text-lg font-black text-[#172033]">{title}</h2><button type="button" onClick={onClose} aria-label="Close dialog" className="text-[#667085] hover:text-[#b91c26]"><Icon name="close" /></button></header><div className="p-6">{children}</div></section></div>
+  return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#111827]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section role="dialog" aria-modal="true" aria-label={title} className="crm-modal-surface max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] shadow-2xl"><header className="flex items-center justify-between border-b border-[var(--ck-border)] px-6 py-4"><h2 className="text-lg font-bold text-[var(--ck-text)]">{title}</h2><button type="button" onClick={onClose} aria-label="Close dialog" className="text-[var(--ck-text-muted)] hover:text-[var(--ck-accent)]"><Icon name="close" /></button></header><div className="p-6">{children}</div></section></div>
 }
 
 function ModalActions({ saving, submitLabel, onCancel }: { saving: boolean; submitLabel: string; onCancel: () => void }) {
-  return <div className="flex gap-3 pt-2"><button type="button" disabled={saving} onClick={onCancel} className="h-10 flex-1 rounded-md border border-[#cbd3dc] text-sm font-bold">Cancel</button><button type="submit" disabled={saving} className="h-10 flex-1 rounded-md bg-[#df3038] text-sm font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : submitLabel}</button></div>
+  return <div className="flex gap-3 pt-2"><button type="button" disabled={saving} onClick={onCancel} className="h-10 flex-1 rounded-lg border border-[var(--ck-border-strong)] text-sm font-bold">Cancel</button><button type="submit" disabled={saving} className="h-10 flex-1 rounded-lg bg-[var(--ck-accent)] text-sm font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : submitLabel}</button></div>
 }

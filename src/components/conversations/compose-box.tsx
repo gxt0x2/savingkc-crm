@@ -115,8 +115,8 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
   }
 
   return (
-    <div className="relative z-10 flex-shrink-0 border-t border-[#dde2e8] bg-white p-4">
-      <div className="overflow-hidden rounded-lg border border-[#ccd3dc] bg-white">
+    <div className="relative z-10 flex-shrink-0 border-t border-[var(--crm-border)] bg-[var(--crm-surface)] p-4">
+      <div className="overflow-hidden rounded-xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)]">
         {/* Toggle Tabs */}
         <div className="flex border-b border-outline-variant/5">
           {modes.map((mode) => (
@@ -128,8 +128,8 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
               className={cn(
                 'flex items-center gap-2 border-b-2 px-5 py-2.5 text-xs font-bold transition-all',
                 activeMode === mode.key
-                  ? 'border-[#df3038] text-[#b91c26]'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
+                  ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]'
+                  : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'
               )}
             >
               <Icon name={mode.icon} className="text-sm" />
@@ -148,7 +148,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
           <div className="px-6 pt-3 flex items-center gap-2">
             <span className="text-xs text-on-surface-variant/60 font-medium">From:</span>
             {replyFromPhone ? (
-              <span className="text-xs font-medium text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
+              <span className="rounded-lg bg-[var(--crm-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--crm-text)]">
                 {TWILIO_NUMBERS.find(n => n.value === replyFromPhone)?.label || formatPhone(replyFromPhone)}
               </span>
             ) : (
@@ -156,7 +156,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
                 aria-label="Sending phone number"
                 value={fromPhone}
                 onChange={(e) => setFromPhone(e.target.value)}
-                className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700"
+                className="crm-field rounded-lg px-2 py-1 text-xs"
               >
                 {TWILIO_NUMBERS.map((n) => (
                   <option key={n.value} value={n.value}>{n.label}</option>
@@ -167,7 +167,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
         )}
         {activeMode === 'email' ? (
           <div className="border-t border-[#eef1f4] px-5 py-2">
-            <input aria-label="Email subject" value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Email subject" className="h-8 w-full border-0 bg-transparent text-xs font-semibold text-slate-700 outline-none placeholder:text-slate-400" />
+            <input aria-label="Email subject" value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Email subject" className="h-8 w-full border-0 bg-transparent text-xs font-semibold text-[var(--crm-text)] outline-none placeholder:text-[var(--crm-text-dim)]" />
           </div>
         ) : null}
 
@@ -178,7 +178,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="h-14 w-full resize-none border-none bg-transparent p-2 text-sm text-slate-700 focus:outline-none focus:ring-0"
+              className="h-14 w-full resize-none border-none bg-transparent p-2 text-sm text-[var(--crm-text)] focus:outline-none focus:ring-0"
               placeholder={
                 activeMode === 'sms'
                   ? 'Type your message... (Enter to send)'
@@ -203,7 +203,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
               </button>
             </div>
             {showTemplates && templates.length > 0 && (
-              <div className="absolute bottom-full left-0 mb-2 w-80 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50">
+              <div className="crm-menu absolute bottom-full left-0 z-50 mb-2 max-h-60 w-80 overflow-y-auto rounded-xl">
                 <div className="p-2 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wide">Templates</div>
                 {templates.map((t) => (
                   <button
@@ -227,8 +227,8 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
             className={cn(
               'mb-2 flex h-10 w-16 items-center justify-center rounded-md text-sm font-bold transition-all',
               sending || !message.trim()
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-[#df3038] text-white hover:bg-[#c9232d]'
+                ? 'cursor-not-allowed bg-[var(--crm-surface-subtle)] text-[var(--crm-text-disabled)]'
+                : 'crm-primary-button'
             )}
           >
             {sending

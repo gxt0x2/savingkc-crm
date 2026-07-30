@@ -55,8 +55,8 @@ function SmsBubble({ message }: { message: Message }) {
             className={cn(
               'rounded-xl border p-3 text-sm leading-snug shadow-sm',
               isSent
-                ? 'rounded-tr-none border-[#7ab98d] bg-[#f3faf5] text-[#183326]'
-                : 'rounded-tl-none border-[#d9dee5] bg-white text-[#253247]'
+                ? 'rounded-tr-none border-[var(--crm-border-strong)] bg-[var(--crm-info-soft)] text-[var(--crm-text)]'
+                : 'rounded-tl-none border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-text)]'
             )}
           >
             {message.content}
@@ -82,7 +82,7 @@ function EmailCard({ message }: { message: Message }) {
   const isSent = message.direction === 'sent'
   return (
     <div className="flex justify-start">
-      <div className="max-w-2xl w-full bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-5 shadow-sm">
+      <div className="w-full max-w-2xl rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             {isSent && message.agentName ? (
@@ -174,7 +174,7 @@ function CallCard({ message }: { message: Message }) {
             </div>
           )}
           <div className="flex items-center gap-1.5 text-xs text-on-surface-variant font-medium">
-            <Icon name={isSent ? 'call_made' : 'call_received'} className="text-sm text-[#df3038]" />
+                <Icon name={isSent ? 'call_made' : 'call_received'} className="text-sm text-[var(--crm-info)]" />
             <span>{isSent ? `Outgoing call${message.agentName ? ` by ${message.agentName}` : ''}` : 'Incoming call'}</span>
             <span className="text-on-surface-variant/40">·</span>
             <span>{message.timestamp}</span>
@@ -185,8 +185,8 @@ function CallCard({ message }: { message: Message }) {
         <div className={cn(
             'rounded-xl border p-4 shadow-sm',
             isSent
-            ? 'border-[#cfd6dd] bg-white text-[#253247]'
-            : 'border-[#d9dee5] bg-white text-[#253247]'
+            ? 'border-[var(--crm-border-strong)] bg-[var(--crm-info-soft)] text-[var(--crm-text)]'
+            : 'border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-text)]'
         )}>
           {message.recordingUrl ? (
             <>
@@ -207,7 +207,7 @@ function CallCard({ message }: { message: Message }) {
                   aria-label={playing ? 'Pause call recording' : 'Play call recording'}
                   className={cn(
                     'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
-                    'bg-[#df3038] hover:bg-[#c9232d]'
+                    'bg-[var(--crm-brand)] hover:bg-[var(--crm-brand-hover)]'
                   )}
                 >
                   <Icon
@@ -231,7 +231,7 @@ function CallCard({ message }: { message: Message }) {
                       if (audioRef.current) audioRef.current.currentTime = nextTime
                     }}
                     aria-label="Call recording position"
-                    className="h-1.5 w-full cursor-pointer accent-[#df3038]"
+                    className="h-1.5 w-full cursor-pointer accent-[var(--crm-brand)]"
                     style={{ backgroundSize: `${progress}% 100%` }}
                   />
                   <div className={cn('flex justify-between text-[10px]', isSent ? 'text-slate-500' : 'text-on-surface-variant/50')}>
@@ -286,10 +286,10 @@ function CallCard({ message }: { message: Message }) {
         {/* View Transcript link */}
         {message.transcript && (
           <>
-            <button type="button" onClick={() => setShowTranscript((value) => !value)} aria-expanded={showTranscript} className="mt-1.5 px-1 text-xs font-bold text-[#b91c26] hover:underline">
+            <button type="button" onClick={() => setShowTranscript((value) => !value)} aria-expanded={showTranscript} className="mt-1.5 px-1 text-xs font-bold text-[var(--crm-brand)] hover:underline">
               {showTranscript ? 'Hide transcript' : 'View transcript'}
             </button>
-            {showTranscript ? <div className="mt-2 rounded-lg border border-[#d9dee5] bg-white p-3 text-xs leading-5 text-[#475467]">{message.transcript}</div> : null}
+            {showTranscript ? <div className="mt-2 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-xs leading-5 text-[var(--crm-text)]">{message.transcript}</div> : null}
           </>
         )}
       </div>

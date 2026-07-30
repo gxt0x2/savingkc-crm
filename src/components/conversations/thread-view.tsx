@@ -126,16 +126,16 @@ export function ThreadView({
   }
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,#fbfaf8_0%,#f5f2ed_100%)]">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--crm-canvas)]">
       {/* Thread Header */}
-      <header className="flex h-[76px] flex-shrink-0 items-center justify-between border-b border-t-[3px] border-b-[#e2ddd6] border-t-[#d92636] bg-[linear-gradient(90deg,#ffffff_0%,#fff8f6_100%)] px-5">
+      <header className="flex h-[76px] flex-shrink-0 items-center justify-between border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0a2138] text-sm font-black text-white">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-sm font-bold text-[var(--crm-surface)]">
             {contact.initials}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="truncate text-[17px] font-bold text-[#111827]">
+              <h2 className="truncate text-[17px] font-bold text-[var(--crm-ink)]">
                 {contact.name}
               </h2>
               {contact.verified && (
@@ -158,35 +158,35 @@ export function ThreadView({
                     {tag}
                   </span>
                 ))}
-                <span className="rounded border border-[#efb4b8] bg-[#fff7f7] px-2 py-0.5 text-[10px] font-bold text-[#b91c26]">{contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Active'}</span>
+                <span className="rounded border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--crm-brand)]">{contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Active'}</span>
               </div>
             </div>
           </div>
         </div>
         <div className="relative flex shrink-0 items-center gap-2">
-          <button type="button" onClick={onCall} disabled={!phone} className="flex h-9 items-center gap-1.5 rounded-md border border-[#8bc9bf] bg-[#e8f7f3] px-3 text-xs font-bold text-[#087f70] hover:bg-[#d9f1eb] disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" className="text-[17px]" /> Call</button>
-          {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} aria-label="Open full contact workspace" title="Open full contact workspace" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#cfd5dc] bg-white hover:bg-[#fff7f7]"><Icon name="open_in_new" className="text-[18px]" /></Link> : null}
+          <button type="button" onClick={onCall} disabled={!phone} className="flex h-9 items-center gap-1.5 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] px-3 text-xs font-bold text-[var(--crm-success)] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" className="text-[17px]" /> Call</button>
+          {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} aria-label="Open full contact workspace" title="Open full contact workspace" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="open_in_new" className="text-[18px]" /></Link> : null}
           {onToggleContactDetails ? (
             <button
               type="button"
               onClick={onToggleContactDetails}
               aria-pressed={contactDetailsOpen}
               aria-label={contactDetailsOpen ? 'Hide contact details' : 'Show contact details'}
-              className="flex h-9 w-9 items-center justify-center rounded-md border border-[#cfd5dc] bg-white text-[#344054] hover:bg-[#fff7f7] hover:text-[#b91c26]"
+              className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"
             >
               <Icon name="dock_to_right" className="text-[18px]" />
             </button>
           ) : null}
-          <button type="button" onClick={() => setMenuOpen((value) => !value)} aria-expanded={menuOpen} aria-label="Conversation actions" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#cfd5dc] bg-white hover:bg-[#fff7f7]">
+          <button type="button" onClick={() => setMenuOpen((value) => !value)} aria-expanded={menuOpen} aria-label="Conversation actions" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg">
             <Icon name="more_vert" className="text-on-surface-variant" />
           </button>
           {menuOpen ? (
-            <div className="absolute right-0 top-11 z-40 w-48 overflow-hidden rounded-lg border border-[#d9dfe6] bg-white py-1 shadow-xl">
-              <button type="button" disabled={updatingThread} onClick={() => void updateThreadState(contact.attentionState === 'needs_reply' ? 'mark_read' : 'mark_unread')} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-[#344054] hover:bg-[#f7f8fa] disabled:opacity-50">
+            <div className="crm-menu absolute right-0 top-11 z-40 w-48 overflow-hidden rounded-xl py-1">
+              <button type="button" disabled={updatingThread} onClick={() => void updateThreadState(contact.attentionState === 'needs_reply' ? 'mark_read' : 'mark_unread')} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold hover:bg-[var(--crm-surface-subtle)] disabled:opacity-50">
                 <Icon name={contact.attentionState === 'needs_reply' ? 'mark_email_read' : 'mark_email_unread'} className="text-[17px]" />
                 {contact.attentionState === 'needs_reply' ? 'Mark resolved' : 'Mark needs reply'}
               </button>
-              {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#344054] hover:bg-[#f7f8fa]"><Icon name="person" className="text-[17px]" />Open contact</Link> : null}
+              {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="person" className="text-[17px]" />Open contact</Link> : null}
             </div>
           ) : null}
         </div>
@@ -194,16 +194,16 @@ export function ThreadView({
 
       {(contact.attentionState !== 'resolved' || contact.nextAction) && (
         <div className={cn(
-          'mx-5 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border-l-4 px-4 py-3 shadow-[0_5px_16px_rgba(16,40,63,0.06)]',
+          'mx-5 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border-l-4 px-4 py-3',
           contact.attentionState === 'needs_reply'
-            ? 'border border-[#f3b0b5] border-l-[#d92636] bg-[linear-gradient(90deg,#fff0f1,#fff9f7)]'
-            : 'border border-[#efd59b] border-l-[#c77700] bg-[linear-gradient(90deg,#fff4d8,#fffbef)]',
+            ? 'border border-[var(--crm-brand-border)] border-l-[var(--crm-brand)] bg-[var(--crm-brand-soft)]'
+            : 'border border-[var(--crm-border-strong)] border-l-[var(--crm-warning)] bg-[var(--crm-warning-soft)]',
         )}>
           <div className="flex items-center gap-3">
             <span className={
               contact.attentionState === 'needs_reply'
-                ? 'rounded-full bg-[#d92636] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white shadow-[0_3px_8px_rgba(217,38,54,0.22)]'
-                : 'rounded-full bg-[#c77700] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white'
+                ? 'rounded-full bg-[var(--crm-brand)] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white'
+                : 'rounded-full bg-[var(--crm-warning)] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white'
             }>
               {contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Waiting on contact'}
             </span>
@@ -227,7 +227,7 @@ export function ThreadView({
               type="button"
               onClick={completePrimaryAction}
               disabled={completingTask}
-              className="rounded-md border border-[#df3038] bg-white px-3 py-1.5 text-xs font-bold text-[#b91c26] transition-colors hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-60"
+              className="crm-secondary-button rounded-lg px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60"
             >
               {completingTask ? 'Completing…' : 'Mark complete'}
             </button>
@@ -237,7 +237,7 @@ export function ThreadView({
       )}
 
       {/* Chat Content */}
-      <div ref={scrollRef} className="flex-1 space-y-6 overflow-y-auto bg-[radial-gradient(circle_at_50%_0%,rgba(40,104,215,0.055),transparent_32%),linear-gradient(180deg,#fbfaf8,#f5f2ed)] px-6 py-5 scroll-smooth">
+      <div ref={scrollRef} className="flex-1 space-y-6 overflow-y-auto bg-[var(--crm-canvas)] px-6 py-5 scroll-smooth">
         {dateGroups.map((group) => (
           <div key={group.label} className="space-y-5">
             {/* Date Divider */}
@@ -257,11 +257,11 @@ export function ThreadView({
         ))}
       </div>
 
-      <div className="flex shrink-0 gap-2 border-t border-[#e1ddd7] bg-white px-4 pt-3">
+      <div className="flex shrink-0 gap-2 border-t border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 pt-3">
         {[
-          { label: 'I can call at 2:30', tone: 'border-[#8bc9bf] bg-[#eefaf7] text-[#087f70] hover:bg-[#ddf4ee]' },
-          { label: 'Send property details', tone: 'border-[#a9c5f4] bg-[#f2f7ff] text-[#2868d7] hover:bg-[#e5efff]' },
-          { label: 'Book appointment', tone: 'border-[#c9bdf0] bg-[#f6f3ff] text-[#7357c7] hover:bg-[#ebe5ff]' },
+          { label: 'I can call at 2:30', tone: 'border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-[var(--crm-success)] hover:brightness-95' },
+          { label: 'Send property details', tone: 'border-[var(--crm-border-strong)] bg-[var(--crm-info-soft)] text-[var(--crm-info)] hover:brightness-95' },
+          { label: 'Book appointment', tone: 'border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] text-[var(--crm-violet)] hover:brightness-95' },
         ].map((reply) => (
           <button
             key={reply.label}

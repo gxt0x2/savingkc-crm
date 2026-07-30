@@ -33,10 +33,10 @@ export interface ThreadPreview {
 type TabFilter = 'all' | 'unread' | 'mine' | 'unassigned'
 
 const CHANNEL_META = {
-  call: { icon: 'call', tone: 'text-[#d92636]' },
-  sms: { icon: 'chat_bubble', tone: 'text-[#087f70]' },
-  email: { icon: 'mail', tone: 'text-[#2868d7]' },
-  voicemail: { icon: 'voicemail', tone: 'text-[#7357c7]' },
+  call: { icon: 'call', tone: 'text-[var(--crm-info)]' },
+  sms: { icon: 'chat_bubble', tone: 'text-[var(--crm-success)]' },
+  email: { icon: 'mail', tone: 'text-[var(--crm-info)]' },
+  voicemail: { icon: 'voicemail', tone: 'text-[var(--crm-violet)]' },
 } as const
 
 export function InboxSidebar({
@@ -87,12 +87,12 @@ export function InboxSidebar({
   ]
 
   return (
-    <aside className="flex h-full w-[330px] flex-col border-r border-[#ded9d1] bg-[#fffdfb] text-sm font-semibold">
-      <div className="border-b border-[#e7e1da] bg-[linear-gradient(180deg,#ffffff_0%,#fffaf7_100%)]">
+    <aside className="flex h-full w-[330px] flex-col border-r border-[var(--crm-border)] bg-[var(--crm-surface)] text-sm font-semibold">
+      <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface)]">
         {/* Header */}
         <div className="flex h-[76px] items-center justify-between px-5">
-          <h1 className="text-[22px] font-bold text-[#111827]">Conversations</h1>
-          <button type="button" className="flex h-9 items-center gap-1 rounded-lg bg-[linear-gradient(135deg,#d92636,#e76f51)] px-3 text-xs font-bold text-white shadow-[0_5px_14px_rgba(217,38,54,0.22)] hover:brightness-95" onClick={onNewMessage}>
+          <h1 className="text-[22px] font-bold text-[var(--crm-ink)]">Conversations</h1>
+          <button type="button" className="crm-primary-button flex h-9 items-center gap-1 rounded-lg px-3 text-xs font-bold" onClick={onNewMessage}>
             <Icon name="add" className="text-[18px]" /> New
           </button>
         </div>
@@ -106,7 +106,7 @@ export function InboxSidebar({
               aria-pressed={activeTab === tab.key}
               className={cn(
                 'flex-1 border-b-2 px-1 py-3 text-xs transition-colors',
-                activeTab === tab.key ? 'border-[#d92636] text-[#b91f2d]' : 'border-transparent text-slate-500 hover:text-[#0b2942]',
+                activeTab === tab.key ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]' : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]',
               )}
             >
               {tab.label} <span className="ml-1 text-[10px]">{tab.count}</span>
@@ -121,15 +121,15 @@ export function InboxSidebar({
           />
           <input
             aria-label="Search conversations"
-            className="w-full rounded-md border border-[#d9dee5] bg-white py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none focus:border-[#df3038]"
+            className="crm-field w-full rounded-lg py-2.5 pl-9 pr-3 text-xs outline-none"
             placeholder="Search conversations"
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex items-center gap-2 border-t border-[#eef1f4] px-4 py-2">
-          <select aria-label="Filter by channel" value={channel} onChange={(event) => setChannel(event.target.value)} className="h-8 rounded border border-[#d9dee5] px-2 text-[11px] text-slate-600">
+        <div className="flex items-center gap-2 border-t border-[var(--crm-border)] px-4 py-2">
+          <select aria-label="Filter by channel" value={channel} onChange={(event) => setChannel(event.target.value)} className="crm-field h-8 rounded-lg px-2 text-[11px]">
             <option value="">All channels</option>
             <option value="sms">SMS</option>
             <option value="call">Calls</option>
@@ -140,11 +140,11 @@ export function InboxSidebar({
             type="button"
             onClick={() => setNeedsReplyOnly((value) => !value)}
             aria-pressed={needsReplyOnly}
-            className={cn('flex h-8 items-center rounded border px-3 text-[11px]', needsReplyOnly ? 'border-[#f3a5aa] bg-[#fff0f1] text-[#b91f2d] shadow-[0_2px_8px_rgba(217,38,54,0.08)]' : 'border-[#d9dee5] text-slate-600')}
+            className={cn('flex h-8 items-center rounded-lg border px-3 text-[11px]', needsReplyOnly ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)] text-[var(--crm-text-muted)]')}
           >
             Needs reply
           </button>
-          <button type="button" onClick={() => setSortOrder((value) => value === 'priority' ? 'recent' : 'priority')} aria-label={`Sort conversations by ${sortOrder === 'priority' ? 'recent activity' : 'priority'}`} title={`Sort: ${sortOrder}`} className="ml-auto flex h-8 w-8 items-center justify-center rounded border border-[#d9dee5] text-slate-500 hover:text-[#b91c26]"><Icon name={sortOrder === 'priority' ? 'filter_list' : 'schedule'} /></button>
+          <button type="button" onClick={() => setSortOrder((value) => value === 'priority' ? 'recent' : 'priority')} aria-label={`Sort conversations by ${sortOrder === 'priority' ? 'recent activity' : 'priority'}`} title={`Sort: ${sortOrder}`} className="crm-icon-button ml-auto flex h-8 w-8 items-center justify-center rounded-lg"><Icon name={sortOrder === 'priority' ? 'filter_list' : 'schedule'} /></button>
         </div>
       </div>
 
@@ -162,10 +162,10 @@ export function InboxSidebar({
               onClick={() => onSelectThread(thread.id)}
               aria-pressed={isActive}
               className={cn(
-                'w-full border-b border-l-4 border-b-[#ede8e2] px-4 py-4 text-left transition-all',
+                'w-full border-b border-l-4 border-b-[var(--crm-border)] px-4 py-4 text-left transition-colors',
                 isActive
-                  ? 'border-l-[#d92636] bg-[linear-gradient(90deg,#fff0f1_0%,#fffaf8_62%,#ffffff_100%)] shadow-[inset_0_1px_0_rgba(217,38,54,0.04)]'
-                  : 'border-l-transparent bg-[#fffdfb] hover:border-l-[#2868d7] hover:bg-[#f7faff]',
+                  ? 'border-l-[var(--crm-brand)] bg-[var(--crm-surface-selected)]'
+                  : 'border-l-transparent bg-[var(--crm-surface)] hover:bg-[var(--crm-surface-subtle)]',
               )}
             >
               <div className="flex items-start gap-3">
@@ -174,7 +174,7 @@ export function InboxSidebar({
                     'h-11 w-11 flex-shrink-0 rounded-full flex items-center justify-center text-xs font-bold',
                     thread.avatarBg,
                     thread.avatarText,
-                    isActive && 'ring-2 ring-[#d92636]/20 ring-offset-2'
+                    isActive && 'ring-2 ring-[var(--crm-brand-border)] ring-offset-2'
                   )}
                 >
                   {thread.initials}
@@ -192,8 +192,8 @@ export function InboxSidebar({
                         className={cn(
                           'px-2 py-0.5 text-[9px] rounded-full uppercase tracking-tighter',
                           thread.attentionState === 'needs_reply'
-                            ? 'bg-[#ffe5e7] text-[#ad1e2b]'
-                            : 'bg-[#fff0c7] text-[#975800]'
+                            ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'
+                            : 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'
                         )}
                       >
                         {thread.attentionState === 'needs_reply' ? 'Needs reply' : 'Waiting'}
@@ -217,7 +217,7 @@ export function InboxSidebar({
                         className={cn(
                           'px-2 py-0.5 text-[9px] rounded-full uppercase tracking-tighter',
                           tag.variant === 'hot'
-                            ? 'bg-[#fff0e9] text-[#c64f35]'
+                            ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'
                             : 'bg-surface-container-highest text-on-surface-variant'
                         )}
                       >
@@ -233,7 +233,7 @@ export function InboxSidebar({
                     <div className="mt-2 flex items-center justify-between gap-2 text-[10px]">
                       <span className={cn(
                         'truncate',
-                        thread.nextAction?.overdue ? 'font-bold text-red-700' : 'text-slate-500',
+                        thread.nextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]',
                       )}>
                         {thread.nextAction?.title || 'No primary action'}
                       </span>

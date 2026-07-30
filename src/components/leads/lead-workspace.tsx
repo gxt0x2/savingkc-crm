@@ -68,12 +68,12 @@ interface LeadWorkspaceProps {
 export type LeadWorkspaceSection = 'overview' | 'property' | 'documents' | 'ai' | 'marketing' | 'activity'
 
 const WORKSPACE_SECTIONS: { key: LeadWorkspaceSection; icon: string; label: string; activeTone: string; iconTone: string }[] = [
-  { key: 'overview', icon: 'grid_view', label: 'Overview', activeTone: 'border-[#d92636] bg-[#fff0f1] text-[#b91f2d]', iconTone: 'text-[#d92636]' },
-  { key: 'property', icon: 'home_work', label: 'Property details', activeTone: 'border-[#c77700] bg-[#fff4d8] text-[#8d5700]', iconTone: 'text-[#c77700]' },
-  { key: 'documents', icon: 'description', label: 'Documents', activeTone: 'border-[#2868d7] bg-[#edf4ff] text-[#2868d7]', iconTone: 'text-[#2868d7]' },
-  { key: 'ai', icon: 'auto_awesome', label: 'AI insights', activeTone: 'border-[#7357c7] bg-[#f2efff] text-[#7357c7]', iconTone: 'text-[#7357c7]' },
-  { key: 'marketing', icon: 'campaign', label: 'Marketing', activeTone: 'border-[#e76f51] bg-[#fff1ec] text-[#c64f35]', iconTone: 'text-[#e76f51]' },
-  { key: 'activity', icon: 'history', label: 'Activity log', activeTone: 'border-[#087f70] bg-[#e8f7f3] text-[#087f70]', iconTone: 'text-[#087f70]' },
+  { key: 'overview', icon: 'grid_view', label: 'Overview', activeTone: 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]', iconTone: 'text-[var(--crm-brand)]' },
+  { key: 'property', icon: 'home_work', label: 'Property details', activeTone: 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]', iconTone: 'text-[var(--crm-brand)]' },
+  { key: 'documents', icon: 'description', label: 'Documents', activeTone: 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]', iconTone: 'text-[var(--crm-brand)]' },
+  { key: 'ai', icon: 'auto_awesome', label: 'AI insights', activeTone: 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]', iconTone: 'text-[var(--crm-brand)]' },
+  { key: 'marketing', icon: 'campaign', label: 'Marketing', activeTone: 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]', iconTone: 'text-[var(--crm-brand)]' },
+  { key: 'activity', icon: 'history', label: 'Activity log', activeTone: 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]', iconTone: 'text-[var(--crm-brand)]' },
 ]
 
 const STAGES = [
@@ -85,14 +85,14 @@ const STAGES = [
 ]
 
 const ACTIVITY_META: Record<string, { icon: string; label: string; tone: string }> = {
-  sms: { icon: 'chat_bubble', label: 'SMS', tone: 'bg-[#eaf2ff] text-[#1f5fbf]' },
-  call: { icon: 'call', label: 'Call', tone: 'bg-[#fff0f1] text-[#c9232d]' },
-  voicemail: { icon: 'voicemail', label: 'Voicemail', tone: 'bg-[#f4efff] text-[#6941c6]' },
-  email: { icon: 'mail', label: 'Email', tone: 'bg-[#edf7ff] text-[#1769aa]' },
-  note: { icon: 'description', label: 'Internal note', tone: 'bg-[#fff5dc] text-[#a15c00]' },
-  agent_note: { icon: 'description', label: 'Internal note', tone: 'bg-[#fff5dc] text-[#a15c00]' },
-  task: { icon: 'check_circle', label: 'Task', tone: 'bg-[#f1f3f5] text-[#4b5563]' },
-  appointment: { icon: 'calendar_month', label: 'Appointment', tone: 'bg-[#fff0f1] text-[#c9232d]' },
+  sms: { icon: 'chat_bubble', label: 'SMS', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
+  call: { icon: 'call', label: 'Call', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
+  voicemail: { icon: 'voicemail', label: 'Voicemail', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
+  email: { icon: 'mail', label: 'Email', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
+  note: { icon: 'description', label: 'Internal note', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' },
+  agent_note: { icon: 'description', label: 'Internal note', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' },
+  task: { icon: 'check_circle', label: 'Task', tone: 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]' },
+  appointment: { icon: 'calendar_month', label: 'Appointment', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
 }
 
 function formatMoney(value: number | null) {
@@ -247,34 +247,33 @@ export function LeadWorkspace({
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-[radial-gradient(circle_at_75%_0%,rgba(40,104,215,0.07),transparent_28%),linear-gradient(180deg,#f7f4ef,#f3f0eb)]">
+    <div className="h-full overflow-y-auto bg-[var(--crm-canvas)]">
       <div className="mx-auto max-w-[1560px] px-5 pb-8 pt-6 xl:px-8">
-        <header className="relative overflow-hidden rounded-2xl border border-[#ded9d1] bg-[linear-gradient(105deg,#ffffff_0%,#fff9f6_58%,#f4f8ff_100%)] px-6 py-5 shadow-[0_12px_32px_rgba(16,40,63,0.08)]">
-          <span className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#d92636,#e76f51_36%,#c77700_62%,#2868d7)]" aria-hidden="true" />
+        <header className="crm-panel-raised relative overflow-hidden rounded-xl px-6 py-5">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-3">
-                <Link href="/contacts" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#d4dae1] text-[#344054] hover:bg-[#f7f8fa]" aria-label="Back to contacts">
+                <Link href="/contacts" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg" aria-label="Back to contacts">
                   <Icon name="arrow_back" />
                 </Link>
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#d92636,#e76f51)] text-base font-black text-white shadow-[0_0_0_4px_#fff0f1,0_6px_16px_rgba(217,38,54,0.2)]">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--crm-brand)] text-base font-bold text-white ring-4 ring-[var(--crm-brand-soft)]">
                   {initials || 'SK'}
                 </div>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-2xl font-black tracking-[-0.03em] text-[#111827] sm:text-[30px]">{name}</h1>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-[#f7c3c6] bg-[#fff1f2] px-2 py-1 text-xs font-bold text-[#c9232d]">
+                    <h1 className="text-2xl font-bold tracking-[-0.03em] text-[var(--crm-ink)] sm:text-[30px]">{name}</h1>
+                    <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2 py-1 text-xs font-bold text-[var(--crm-brand)]">
                       <Icon name="local_fire_department" className="text-[15px]" />
                       {(lead.priority || '').toLowerCase() === 'hot' ? 'Hot Lead' : 'Active Lead'}
                     </span>
-                    <button type="button" onClick={onEdit} className="flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#df3038]" aria-label="Edit contact">
+                    <button type="button" onClick={onEdit} className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg" aria-label="Edit contact">
                       <Icon name="edit" className="text-[19px]" />
                     </button>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-[#475467]">
+                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-[var(--crm-text-muted)]">
                     {address ? <span className="flex items-center gap-1.5"><Icon name="location_on" className="text-[18px]" />{address}</span> : null}
-                    {lead.phone ? <button type="button" onClick={onCall} className="flex items-center gap-1.5 hover:text-[#c9232d]" aria-label={`Call ${name}`}><Icon name="call" className="text-[17px]" />{formatPhone(lead.phone)}</button> : null}
-                    {lead.email ? <button type="button" onClick={onEmail} className="flex items-center gap-1.5 hover:text-[#c9232d]" aria-label={`Email ${name}`}><Icon name="mail" className="text-[17px]" />{lead.email}</button> : null}
+                    {lead.phone ? <button type="button" onClick={onCall} className="flex items-center gap-1.5 hover:text-[var(--crm-brand)]" aria-label={`Call ${name}`}><Icon name="call" className="text-[17px]" />{formatPhone(lead.phone)}</button> : null}
+                    {lead.email ? <button type="button" onClick={onEmail} className="flex items-center gap-1.5 hover:text-[var(--crm-brand)]" aria-label={`Email ${name}`}><Icon name="mail" className="text-[17px]" />{lead.email}</button> : null}
                   </div>
                 </div>
               </div>
@@ -283,14 +282,14 @@ export function LeadWorkspace({
               <ActionButton icon="call" label="Call" onClick={onCall} disabled={!lead.phone} tone="teal" />
               <ActionButton icon="chat_bubble" label="Text" onClick={onText} disabled={!lead.phone} tone="blue" />
               <ActionButton icon="mail" label="Email" onClick={onEmail} disabled={!lead.email} tone="violet" />
-              <button type="button" onClick={onContract} className="flex h-11 items-center gap-2 rounded-lg bg-[linear-gradient(135deg,#d92636,#e76f51)] px-4 text-sm font-bold text-white shadow-[0_6px_16px_rgba(217,38,54,0.24)] hover:brightness-95">
+              <button type="button" onClick={onContract} className="crm-primary-button flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-bold">
                 <Icon name="description" className="text-[19px]" />
                 Create contract
               </button>
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 border-t border-[#e4e7ec] pt-4 md:grid-cols-3">
+          <div className="mt-5 grid gap-3 border-t border-[var(--crm-border)] pt-4 md:grid-cols-3">
             <SummaryItem label="Stage" tone="teal">
               <StageSelector
                 leadId={lead.id}
@@ -302,13 +301,13 @@ export function LeadWorkspace({
               />
             </SummaryItem>
             <SummaryItem label="Owner" tone="blue">
-              <span className="flex items-center gap-2 font-semibold text-[#1f2937]">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[linear-gradient(135deg,#2868d7,#0b2942)] text-[10px] font-bold text-white">{owner.slice(0, 2).toUpperCase()}</span>
+              <span className="flex items-center gap-2 font-semibold text-[var(--crm-text)]">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-[10px] font-bold text-[var(--crm-surface)]">{owner.slice(0, 2).toUpperCase()}</span>
                 {owner}
               </span>
             </SummaryItem>
             <SummaryItem label="Next action" tone="amber">
-              <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : appointment ? onAppointment : onTask} className="flex items-center gap-2 rounded-lg border border-[#efd59b] bg-[#fff4d8] px-3 py-2 text-sm font-black text-[#8d5700] shadow-[0_3px_9px_rgba(199,119,0,0.09)] hover:bg-[#ffedc3]">
+              <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : appointment ? onAppointment : onTask} className="flex items-center gap-2 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-warning)] hover:brightness-95">
                 <Icon name="schedule" className="text-[18px]" />
                 {nextAction}
               </button>
@@ -316,7 +315,7 @@ export function LeadWorkspace({
           </div>
         </header>
 
-        <nav ref={sectionHeadingRef} className="sticky top-0 z-20 mt-4 grid scroll-mt-4 grid-cols-3 overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.04)] md:grid-cols-6" aria-label="Lead workspace sections">
+        <nav ref={sectionHeadingRef} className="crm-panel sticky top-0 z-20 mt-4 grid scroll-mt-4 grid-cols-3 overflow-hidden rounded-xl md:grid-cols-6" aria-label="Lead workspace sections">
           {WORKSPACE_SECTIONS.map(({ key, icon, label, activeTone, iconTone }) => (
             <button
               key={key}
@@ -327,10 +326,10 @@ export function LeadWorkspace({
                 'flex h-14 items-center justify-center gap-2 border-b-2 px-2 text-xs font-semibold transition-colors md:text-sm',
                 activeSection === key
                   ? activeTone
-                  : 'border-transparent text-[#475467] hover:bg-[#f8f9fa] hover:text-[#111827]',
+                  : 'border-transparent text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface-subtle)] hover:text-[var(--crm-ink)]',
               )}
             >
-              <Icon name={icon} className={cn('text-[18px]', activeSection === key ? iconTone : 'text-[#7b8796]')} />
+              <Icon name={icon} className={cn('text-[18px]', activeSection === key ? iconTone : 'text-[var(--crm-text-dim)]')} />
               {label}
             </button>
           ))}
@@ -338,7 +337,7 @@ export function LeadWorkspace({
 
         {activeSection === 'overview' ? (
         <main className="mt-4 grid gap-4 xl:grid-cols-[0.92fr_1.45fr_1.05fr]">
-          <section className="overflow-hidden rounded-xl border border-t-[3px] border-[#d9dfe6] border-t-[#2868d7] bg-white shadow-[0_9px_24px_rgba(16,40,63,0.07)]">
+          <section className="crm-panel overflow-hidden rounded-xl">
             <CardHeader title="Contact & Property" icon="person" onMore={onEdit} />
             <div className="p-5">
               <SectionLabel>Contact</SectionLabel>
@@ -349,9 +348,9 @@ export function LeadWorkspace({
                 <DataRow label="Preferred contact" value={lead.phone ? 'Text or call' : lead.email ? 'Email' : 'Not set'} />
               </dl>
 
-              <div className="my-5 border-t border-[#e4e7ec]" />
+              <div className="my-5 border-t border-[var(--crm-border)]" />
               <SectionLabel>Property snapshot</SectionLabel>
-              <button type="button" onClick={onOpenProperty} className="mt-3 w-full overflow-hidden rounded-lg border border-[#e2e6eb] text-left hover:border-[#efb4b8]" aria-label="Open property details">
+              <button type="button" onClick={onOpenProperty} className="mt-3 w-full overflow-hidden rounded-lg border border-[var(--crm-border)] text-left hover:border-[var(--crm-brand-border)]" aria-label="Open property details">
                 {!imageFailed && address ? (
                   // Google Street View is a signed dynamic image URL and is intentionally not routed through next/image.
                   // eslint-disable-next-line @next/next/no-img-element
@@ -362,13 +361,13 @@ export function LeadWorkspace({
                     onError={() => setImageFailed(true)}
                   />
                 ) : (
-                  <span className="flex h-36 items-center justify-center bg-[linear-gradient(135deg,#f4f5f7,#e6e8ec)] text-[#667085]">
+                  <span className="flex h-36 items-center justify-center bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]">
                     <Icon name="home" className="text-[42px]" />
                   </span>
                 )}
                 <span className="block px-4 py-3">
-                  <span className="block font-bold text-[#111827]">{lead.property_address || 'Property address missing'}</span>
-                  <span className="mt-1 block text-xs text-[#667085]">{[lead.city, lead.state, lead.zip].filter(Boolean).join(', ')}</span>
+                  <span className="block font-bold text-[var(--crm-ink)]">{lead.property_address || 'Property address missing'}</span>
+                  <span className="mt-1 block text-xs text-[var(--crm-text-muted)]">{[lead.city, lead.state, lead.zip].filter(Boolean).join(', ')}</span>
                 </span>
               </button>
               <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -377,13 +376,13 @@ export function LeadWorkspace({
                 <DataRow label="Sq Ft" value={lead.sqft?.toLocaleString() || '—'} compact />
                 <DataRow label="Year built" value={lead.year_built?.toString() || '—'} compact />
               </dl>
-              <div className="my-5 border-t border-[#e4e7ec]" />
+              <div className="my-5 border-t border-[var(--crm-border)]" />
               <DataRow label="Source" value={lead.source || 'Unknown'} />
               <div className="mt-5">
                 <SectionLabel>Tags</SectionLabel>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {[lead.priority === 'hot' ? 'Hot Lead' : null, lead.source, lead.station].filter(Boolean).map((tag) => (
-                    <span key={tag} className="rounded-md border border-[#efb4b8] bg-[#fff7f7] px-2.5 py-1 text-xs font-semibold capitalize text-[#b91c26]">
+                    <span key={tag} className="rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2.5 py-1 text-xs font-semibold capitalize text-[var(--crm-brand)]">
                       {String(tag).replace(/_/g, ' ')}
                     </span>
                   ))}
@@ -392,52 +391,52 @@ export function LeadWorkspace({
             </div>
           </section>
 
-          <section className="flex h-[calc(100vh-375px)] min-h-[540px] max-h-[720px] flex-col overflow-hidden rounded-xl border border-t-[3px] border-[#d9dfe6] border-t-[#087f70] bg-white shadow-[0_9px_24px_rgba(16,40,63,0.07)]">
+          <section className="crm-panel flex h-[calc(100vh-375px)] min-h-[540px] max-h-[720px] flex-col overflow-hidden rounded-xl">
             <CardHeader title="Conversation" icon="forum" />
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
               {visibleActivities.length ? visibleActivities.map((activity) => (
                 <TimelineActivity key={activity.id} activity={activity} />
               )) : (
                 <div className="flex h-full min-h-72 flex-col items-center justify-center text-center">
-                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#fff0f1] text-[#df3038]"><Icon name="forum" className="text-[28px]" /></span>
-                  <h3 className="mt-4 font-bold text-[#172033]">No conversation activity yet</h3>
-                  <p className="mt-1 max-w-xs text-sm text-[#667085]">Call, text, email, and internal notes will appear together here.</p>
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--crm-info-soft)] text-[var(--crm-info)]"><Icon name="forum" className="text-[28px]" /></span>
+                  <h3 className="mt-4 font-bold text-[var(--crm-ink)]">No conversation activity yet</h3>
+                  <p className="mt-1 max-w-xs text-sm text-[var(--crm-text-muted)]">Call, text, email, and internal notes will appear together here.</p>
                 </div>
               )}
             </div>
-            <div className="border-t border-[#dfe3e8] bg-[#fbfbfc] p-4">
-              <div className="overflow-hidden rounded-lg border border-[#ccd3dc] bg-white">
-                <div className="flex border-b border-[#e4e7ec]">
+            <div className="border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4">
+              <div className="overflow-hidden rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-surface)]">
+                <div className="flex border-b border-[var(--crm-border)]">
                   {([
                     ['sms', 'Text'],
                     ['email', 'Email'],
                     ['note', 'Internal note'],
                   ] as const).map(([key, label]) => (
-                    <button key={key} type="button" onClick={() => setComposeMode(key)} aria-pressed={composeMode === key} className={cn('border-b-2 px-4 py-2.5 text-xs font-bold', composeMode === key ? 'border-[#df3038] text-[#b91c26]' : 'border-transparent text-[#667085]')}>
+                    <button key={key} type="button" onClick={() => setComposeMode(key)} aria-pressed={composeMode === key} className={cn('border-b-2 px-4 py-2.5 text-xs font-bold', composeMode === key ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]' : 'border-transparent text-[var(--crm-text-muted)]')}>
                       {label}
                     </button>
                   ))}
                 </div>
                 {composeMode === 'email' ? (
-                  <input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} placeholder="Subject" className="w-full border-b border-[#edf0f2] px-4 py-2.5 text-sm outline-none placeholder:text-[#98a2b3]" />
+                  <input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} placeholder="Subject" className="w-full border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2.5 text-sm text-[var(--crm-text)] outline-none placeholder:text-[var(--crm-text-dim)]" />
                 ) : null}
                 <textarea
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
                   placeholder={composeMode === 'note' ? 'Add context for your team...' : `Write a ${composeMode === 'sms' ? 'text' : 'message'} to ${firstName}...`}
-                  className="h-24 w-full resize-none px-4 py-3 text-sm text-[#1f2937] outline-none placeholder:text-[#98a2b3]"
+                  className="h-24 w-full resize-none bg-[var(--crm-surface)] px-4 py-3 text-sm text-[var(--crm-text)] outline-none placeholder:text-[var(--crm-text-dim)]"
                 />
-                {sendError ? <p className="px-4 pb-2 text-xs font-semibold text-[#c9232d]">{sendError}</p> : null}
-                <div className="flex items-center gap-2 border-t border-[#edf0f2] px-3 py-2.5">
-                  <button type="button" onClick={() => selectSection('documents')} className="flex items-center gap-1.5 text-xs font-semibold text-[#667085] hover:text-[#b91c26]"><Icon name="attach_file" className="text-[18px]" />Open documents</button>
+                {sendError ? <p className="px-4 pb-2 text-xs font-semibold text-[var(--crm-danger)]">{sendError}</p> : null}
+                <div className="flex items-center gap-2 border-t border-[var(--crm-border)] px-3 py-2.5">
+                  <button type="button" onClick={() => selectSection('documents')} className="flex items-center gap-1.5 text-xs font-semibold text-[var(--crm-text-muted)] hover:text-[var(--crm-brand)]"><Icon name="attach_file" className="text-[18px]" />Open documents</button>
                   <button
                     type="button"
                     onClick={() => setMessage(`Hi ${firstName}, I’m following up about ${lead.property_address || 'your property'}. What time works best for a quick conversation?`)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-[#667085] hover:text-[#b91c26]"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-[var(--crm-text-muted)] hover:text-[var(--crm-brand)]"
                   >
                     <Icon name="bolt" className="text-[18px]" />Use follow-up
                   </button>
-                  <button type="button" onClick={sendMessage} disabled={sending || !message.trim()} className="ml-auto flex h-9 items-center gap-2 rounded-md bg-[#df3038] px-4 text-sm font-bold text-white hover:bg-[#c9232d] disabled:cursor-not-allowed disabled:bg-[#e3a5a9]">
+                  <button type="button" onClick={sendMessage} disabled={sending || !message.trim()} className="crm-primary-button ml-auto flex h-9 items-center gap-2 rounded-lg px-4 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50">
                     <Icon name={sending ? 'hourglass_empty' : 'send'} className="text-[17px]" />
                     {composeMode === 'note' ? 'Add note' : 'Send'}
                   </button>
@@ -446,7 +445,7 @@ export function LeadWorkspace({
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-xl border border-t-[3px] border-[#d9dfe6] border-t-[#c77700] bg-white shadow-[0_9px_24px_rgba(16,40,63,0.07)]">
+          <section className="crm-panel overflow-hidden rounded-xl">
             <CardHeader title="Opportunity" icon="paid" />
             <div className="p-5">
               <SectionLabel>Deal stage</SectionLabel>
@@ -456,23 +455,23 @@ export function LeadWorkspace({
                   const current = index === stageIndex
                   return (
                     <div key={stage.label} className="relative flex flex-1 flex-col items-center">
-                      {index > 0 ? <span className={cn('absolute right-1/2 top-3 h-0.5 w-full', index <= stageIndex ? 'bg-[#087f70]' : 'bg-[#d9dfe6]')} /> : null}
-                      <span className={cn('relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-bold', complete ? 'border-[#087f70] bg-[#087f70] text-white' : current ? 'border-[#087f70] bg-[#e8f7f3] text-[#087f70]' : 'border-[#cfd6de] bg-white text-[#98a2b3]')}>
-                        {complete ? <Icon name="check" className="text-[14px]" /> : current ? <span className="h-2 w-2 rounded-full bg-[#087f70]" /> : null}
+                      {index > 0 ? <span className={cn('absolute right-1/2 top-3 h-0.5 w-full', index <= stageIndex ? 'bg-[var(--crm-success)]' : 'bg-[var(--crm-border)]')} /> : null}
+                      <span className={cn('relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-bold', complete ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-white' : current ? 'border-[var(--crm-success)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'border-[var(--crm-border-strong)] bg-[var(--crm-surface)] text-[var(--crm-text-dim)]')}>
+                        {complete ? <Icon name="check" className="text-[14px]" /> : current ? <span className="h-2 w-2 rounded-full bg-[var(--crm-success)]" /> : null}
                       </span>
-                      <span className={cn('mt-2 text-center text-[10px] font-semibold', current ? 'text-[#087f70]' : 'text-[#667085]')}>{stage.label}</span>
+                      <span className={cn('mt-2 text-center text-[10px] font-semibold', current ? 'text-[var(--crm-success)]' : 'text-[var(--crm-text-muted)]')}>{stage.label}</span>
                     </div>
                   )
                 })}
               </div>
 
-              <dl className="mt-7 space-y-4 border-t border-[#e4e7ec] pt-5 text-sm">
+              <dl className="mt-7 space-y-4 border-t border-[var(--crm-border)] pt-5 text-sm">
                 <DataRow label="Motivation score" value={`${score ?? lead.motivation_score ?? '—'}${score != null || lead.motivation_score != null ? ' / 100' : ''}`} accent />
                 <DataRow label="Estimated value" value={formatMoney(lead.arv ?? assessedValue)} />
                 <DataRow label="Our offer" value={formatMoney(lead.offer_amount)} />
               </dl>
 
-              <div className="my-6 border-t border-[#e4e7ec]" />
+              <div className="my-6 border-t border-[var(--crm-border)]" />
               <SectionLabel>Next steps</SectionLabel>
               <div className="mt-3 space-y-2">
                 <NextStep label="Call seller" value={lead.phone ? 'Ready now' : 'Phone missing'} onClick={onCall} disabled={!lead.phone} />
@@ -485,24 +484,24 @@ export function LeadWorkspace({
               </div>
 
               {appointment ? (
-                <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[#c9bdf0] bg-[#f6f3ff] p-4 text-left hover:bg-[#eee9ff]">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#7357c7] text-white"><Icon name="calendar_month" /></span>
+                <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] p-4 text-left hover:brightness-95">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--crm-violet)] text-white"><Icon name="calendar_month" /></span>
                   <span>
-                    <span className="block text-xs font-black uppercase tracking-[0.08em] text-[#7357c7]">{appointmentIsPast ? 'Appointment outcome required' : 'Appointment scheduled'}</span>
-                    <span className="mt-1 block text-sm font-bold text-[#172033]">{new Date(appointment.scheduledAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
-                    <span className="mt-0.5 block text-xs text-[#667085]">{appointment.address || lead.property_address}</span>
+                    <span className="block text-xs font-black uppercase tracking-[0.08em] text-[var(--crm-violet)]">{appointmentIsPast ? 'Appointment outcome required' : 'Appointment scheduled'}</span>
+                    <span className="mt-1 block text-sm font-bold text-[var(--crm-ink)]">{new Date(appointment.scheduledAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                    <span className="mt-0.5 block text-xs text-[var(--crm-text-muted)]">{appointment.address || lead.property_address}</span>
                   </span>
                 </button>
               ) : (
-                <button type="button" onClick={onAppointment} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#efb4b8] px-4 py-4 text-sm font-bold text-[#b91c26] hover:bg-[#fff7f7]">
+                <button type="button" onClick={onAppointment} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--crm-brand-border)] px-4 py-4 text-sm font-bold text-[var(--crm-brand)] hover:bg-[var(--crm-brand-soft)]">
                   <Icon name="event" />
                   Schedule appointment
                 </button>
               )}
 
               <div className="mt-5 grid grid-cols-2 gap-2">
-                <button type="button" onClick={onTask} className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cfd6de] text-xs font-bold text-[#344054] hover:bg-[#f7f8fa]"><Icon name="add_task" />New task</button>
-                <button type="button" onClick={onEdit} className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cfd6de] text-xs font-bold text-[#344054] hover:bg-[#f7f8fa]"><Icon name="edit" />More details</button>
+                <button type="button" onClick={onTask} className="crm-secondary-button flex h-10 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="add_task" />New task</button>
+                <button type="button" onClick={onEdit} className="crm-secondary-button flex h-10 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="edit" />More details</button>
               </div>
             </div>
           </section>
@@ -510,24 +509,24 @@ export function LeadWorkspace({
         ) : (
           <section
             aria-labelledby={`lead-section-${activeSection}`}
-            className="mt-4 min-h-[520px] overflow-hidden rounded-xl border border-[#d9dfe6] bg-white p-5 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-6"
+            className="crm-panel mt-4 min-h-[520px] overflow-hidden rounded-xl p-5 sm:p-6"
           >
-            <div className="mb-5 flex items-center justify-between border-b border-[#e4e7ec] pb-4">
+            <div className="mb-5 flex items-center justify-between border-b border-[var(--crm-border)] pb-4">
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.1em] text-[#b91c26]">Lead workspace</p>
-                <h2 id={`lead-section-${activeSection}`} className="mt-1 text-xl font-black text-[#172033]">
+                <p className="crm-eyebrow">Lead workspace</p>
+                <h2 id={`lead-section-${activeSection}`} className="mt-1 text-xl font-bold text-[var(--crm-ink)]">
                   {WORKSPACE_SECTIONS.find((section) => section.key === activeSection)?.label}
                 </h2>
               </div>
-              <button type="button" onClick={() => selectSection('overview')} className="flex items-center gap-2 rounded-md border border-[#cfd6de] px-3 py-2 text-xs font-bold text-[#344054] hover:bg-[#f7f8fa]">
+              <button type="button" onClick={() => selectSection('overview')} className="crm-secondary-button flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold">
                 <Icon name="grid_view" className="text-[17px]" />
                 Back to overview
               </button>
             </div>
             {sectionPanels?.[activeSection] || (
               <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
-                <Icon name="construction" className="text-[34px] text-[#98a2b3]" />
-                <p className="mt-3 font-bold text-[#172033]">This workspace section is not available yet.</p>
+                <Icon name="construction" className="text-[34px] text-[var(--crm-text-dim)]" />
+                <p className="mt-3 font-bold text-[var(--crm-ink)]">This workspace section is not available yet.</p>
               </div>
             )}
           </section>
@@ -539,12 +538,12 @@ export function LeadWorkspace({
 
 function ActionButton({ icon, label, onClick, disabled, tone }: { icon: string; label: string; onClick: () => void; disabled?: boolean; tone: 'teal' | 'blue' | 'violet' }) {
   const toneClass = {
-    teal: 'border-[#8bc9bf] bg-[#e8f7f3] text-[#087f70] hover:bg-[#d9f1eb]',
-    blue: 'border-[#a9c5f4] bg-[#edf4ff] text-[#2868d7] hover:bg-[#e1ecff]',
-    violet: 'border-[#c9bdf0] bg-[#f2efff] text-[#7357c7] hover:bg-[#e9e3ff]',
+    teal: 'border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-[var(--crm-success)] hover:brightness-95',
+    blue: 'border-[var(--crm-border-strong)] bg-[var(--crm-info-soft)] text-[var(--crm-info)] hover:brightness-95',
+    violet: 'border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] text-[var(--crm-violet)] hover:brightness-95',
   }[tone]
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className={cn('flex h-11 min-w-[104px] items-center justify-center gap-2 rounded-lg border px-4 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:border-[#d5dae0] disabled:bg-white disabled:text-[#98a2b3]', toneClass)}>
+    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className={cn('flex h-11 min-w-[104px] items-center justify-center gap-2 rounded-lg border px-4 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:border-[var(--crm-border)] disabled:bg-[var(--crm-surface)] disabled:text-[var(--crm-text-disabled)]', toneClass)}>
       <Icon name={icon} className="text-[19px]" />
       {label}
     </button>
@@ -553,13 +552,13 @@ function ActionButton({ icon, label, onClick, disabled, tone }: { icon: string; 
 
 function SummaryItem({ label, children, tone }: { label: string; children: React.ReactNode; tone: 'teal' | 'blue' | 'amber' }) {
   const toneClass = {
-    teal: 'border-l-[#087f70] bg-[#f2fbf8]',
-    blue: 'border-l-[#2868d7] bg-[#f3f7ff]',
-    amber: 'border-l-[#c77700] bg-[#fffbef]',
+    teal: 'border-l-[var(--crm-border-strong)] bg-[var(--crm-surface)]',
+    blue: 'border-l-[var(--crm-border-strong)] bg-[var(--crm-surface)]',
+    amber: 'border-l-[var(--crm-warning)] bg-[var(--crm-warning-soft)]',
   }[tone]
   return (
-    <div className={cn('flex min-h-14 items-center gap-4 rounded-lg border border-[#e4e0da] border-l-4 px-4', toneClass)}>
-      <span className="text-xs font-bold uppercase tracking-[0.08em] text-[#667085]">{label}</span>
+    <div className={cn('flex min-h-14 items-center gap-4 rounded-lg border border-[var(--crm-border)] border-l-4 px-4', toneClass)}>
+      <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">{label}</span>
       <div className="ml-auto">{children}</div>
     </div>
   )
@@ -567,34 +566,34 @@ function SummaryItem({ label, children, tone }: { label: string; children: React
 
 function CardHeader({ title, icon, onMore }: { title: string; icon: string; onMore?: () => void }) {
   const iconTone = icon === 'person'
-    ? 'bg-[#edf4ff] text-[#2868d7]'
+    ? 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
     : icon === 'forum'
-      ? 'bg-[#e8f7f3] text-[#087f70]'
-      : 'bg-[#fff4d8] text-[#c77700]'
+      ? 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
+      : 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'
   return (
-    <div className="flex h-13 items-center border-b border-[#dfe3e8] px-5">
+    <div className="flex h-13 items-center border-b border-[var(--crm-border)] px-5">
       <span className={cn('mr-2 flex h-8 w-8 items-center justify-center rounded-lg', iconTone)}><Icon name={icon} className="text-[18px]" /></span>
-      <h2 className="text-base font-black text-[#172033]">{title}</h2>
-      {onMore ? <button type="button" onClick={onMore} aria-label={`Edit ${title}`} className="ml-auto flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#df3038]"><Icon name="more_vert" /></button> : null}
+      <h2 className="text-base font-bold text-[var(--crm-ink)]">{title}</h2>
+      {onMore ? <button type="button" onClick={onMore} aria-label={`Edit ${title}`} className="crm-icon-button ml-auto flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="more_vert" /></button> : null}
     </div>
   )
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] font-black uppercase tracking-[0.1em] text-[#3d4e66]">{children}</p>
+  return <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--crm-text-muted)]">{children}</p>
 }
 
 function DataRow({ label, value, accent, compact }: { label: string; value: string; accent?: boolean; compact?: boolean }) {
   return (
     <div className={cn('flex items-start justify-between gap-3', compact && 'flex-col gap-0.5')}>
-      <dt className="text-[#667085]">{label}</dt>
-      <dd className={cn('min-w-0 break-all text-right font-semibold text-[#1f2937]', accent && 'text-[#2868d7]', compact && 'text-left')}>{value}</dd>
+      <dt className="text-[var(--crm-text-muted)]">{label}</dt>
+      <dd className={cn('min-w-0 break-all text-right font-semibold text-[var(--crm-text)]', accent && 'text-[var(--crm-info)]', compact && 'text-left')}>{value}</dd>
     </div>
   )
 }
 
 function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
-  const meta = ACTIVITY_META[activity.activity_type] || { icon: 'timeline', label: activity.activity_type.replace(/_/g, ' '), tone: 'bg-[#f1f3f5] text-[#4b5563]' }
+  const meta = ACTIVITY_META[activity.activity_type] || { icon: 'timeline', label: activity.activity_type.replace(/_/g, ' '), tone: 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]' }
   const direction = directionFor(activity)
   const isOutbound = direction === 'Outbound'
   const isCall = activity.activity_type === 'call'
@@ -608,24 +607,24 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
         : null
   return (
     <article className="grid grid-cols-[92px_34px_1fr] gap-3">
-      <time className="pt-1 text-right text-[11px] leading-4 text-[#667085]">{formatActivityDate(activity.created_at)}</time>
+      <time className="pt-1 text-right text-[11px] leading-4 text-[var(--crm-text-muted)]">{formatActivityDate(activity.created_at)}</time>
       <div className="relative flex justify-center">
-        <span className="absolute bottom-[-22px] top-8 w-px bg-[#e1e5e9]" />
+        <span className="absolute bottom-[-22px] top-8 w-px bg-[var(--crm-border)]" />
         <span className={cn('relative z-10 flex h-8 w-8 items-center justify-center rounded-full', meta.tone)}><Icon name={meta.icon} className="text-[17px]" /></span>
       </div>
-      <div className={cn('rounded-lg border p-3', activity.activity_type === 'note' || activity.activity_type === 'agent_note' ? 'border-[#f1d38d] bg-[#fff9ec]' : isOutbound ? 'border-[#efc1c4] bg-[#fff7f7]' : 'border-[#dce2e8] bg-[#f9fafb]')}>
+      <div className={cn('rounded-lg border p-3', activity.activity_type === 'note' || activity.activity_type === 'agent_note' ? 'border-[var(--crm-border-strong)] bg-[var(--crm-warning-soft)]' : isOutbound ? 'border-[var(--crm-border)] bg-[var(--crm-info-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]')}>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-black text-[#172033]">{direction ? `${direction} ${meta.label}` : meta.label}</span>
-          {activity.agent ? <span className="text-[10px] text-[#667085]">by {toProperCase(activity.agent)}</span> : null}
+          <span className="text-xs font-black text-[var(--crm-ink)]">{direction ? `${direction} ${meta.label}` : meta.label}</span>
+          {activity.agent ? <span className="text-[10px] text-[var(--crm-text-muted)]">by {toProperCase(activity.agent)}</span> : null}
         </div>
-        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-[#344054]">{text}</p>
+        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-[var(--crm-text)]">{text}</p>
         {isCall ? recordingUrl ? (
-          <audio className="mt-3 w-full accent-[#df3038]" controls preload="metadata" src={recordingUrl}>
+          <audio className="mt-3 w-full accent-[var(--crm-brand)]" controls preload="metadata" src={recordingUrl}>
             Your browser does not support call recording playback.
           </audio>
         ) : (
-          <div className="mt-3 flex items-center gap-2 rounded-md border border-[#e2e6eb] bg-[#f8f9fb] px-3 py-2 text-xs font-semibold text-[#667085]">
-            <Icon name="phone_in_talk" className="text-[17px] text-[#b91c26]" />
+          <div className="mt-3 flex items-center gap-2 rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs font-semibold text-[var(--crm-text-muted)]">
+            <Icon name="phone_in_talk" className="text-[17px] text-[var(--crm-brand)]" />
             No recording available
           </div>
         ) : null}
@@ -636,10 +635,10 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
 
 function NextStep({ label, value, onClick, disabled }: { label: string; value: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-[#f7f8fa] disabled:cursor-not-allowed disabled:opacity-55">
-      <span className="h-5 w-5 rounded-full border-2 border-[#b9c1cc]" />
-      <span className="text-sm font-semibold text-[#344054]">{label}</span>
-      <span className="ml-auto text-xs font-bold text-[#8d5700]">{value}</span>
+    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-[var(--crm-surface-subtle)] disabled:cursor-not-allowed disabled:opacity-55">
+      <span className="h-5 w-5 rounded-full border-2 border-[var(--crm-border-strong)]" />
+      <span className="text-sm font-semibold text-[var(--crm-text)]">{label}</span>
+      <span className="ml-auto text-xs font-bold text-[var(--crm-warning)]">{value}</span>
     </button>
   )
 }
