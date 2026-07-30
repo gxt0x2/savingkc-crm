@@ -150,6 +150,7 @@ export function LeadWorkspace({
   const [sendError, setSendError] = useState<string | null>(null)
   const [imageFailed, setImageFailed] = useState(false)
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
+  const [operationsPanelOpen, setOperationsPanelOpen] = useState(false)
   const sectionHeadingRef = useRef<HTMLDivElement>(null)
   const name = toProperCase(lead.full_name) || 'Unknown contact'
   const firstName = name.split(/\s+/)[0]
@@ -190,13 +191,47 @@ export function LeadWorkspace({
     : nextTask?.description || 'Define the next action'
 
   useEffect(() => {
-    if (!contextPanelOpen) return
+    if (!contextPanelOpen && !operationsPanelOpen) return
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setContextPanelOpen(false)
+      if (event.key === 'Escape') {
+        setContextPanelOpen(false)
+        setOperationsPanelOpen(false)
+      }
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [contextPanelOpen])
+  }, [contextPanelOpen, operationsPanelOpen])
+
+  function openContextPanel() {
+    setOperationsPanelOpen(false)
+    setContextPanelOpen(true)
+  }
+
+  function openOperationsPanel() {
+    setContextPanelOpen(false)
+    setOperationsPanelOpen(true)
+  }
+
+  function closePanels() {
+    setContextPanelOpen(false)
+    setOperationsPanelOpen(false)
+  }
+
+  function runNextAction() {
+    closePanels()
+    if (appointmentIsPast) {
+      onAppointmentOutcome()
+    } else if (appointment) {
+      onAppointment()
+    } else {
+      onTask()
+    }
+  }
+
+  function openPropertyDetails() {
+    closePanels()
+    onOpenProperty()
+  }
 
   function selectSection(section: LeadWorkspaceSection) {
     setActiveSection(section)
@@ -276,13 +311,29 @@ export function LeadWorkspace({
                       <Icon name="local_fire_department" className="text-[14px]" />
                       {(lead.priority || '').toLowerCase() === 'hot' ? 'Hot Lead' : 'Active Lead'}
                     </span>
+                    <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-success)]">
+                      <Icon name="flag" className="text-[13px]" />
+                      {STAGES[stageIndex]?.label || toProperCase(lead.station) || 'New'}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--crm-text-muted)]">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-[8px] font-bold text-[var(--crm-surface)]">{owner.slice(0, 2).toUpperCase()}</span>
+                      {owner}
+                    </span>
                     <button type="button" onClick={onEdit} className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg" aria-label="Edit contact">
                       <Icon name="edit" className="text-[17px]" />
                     </button>
                   </div>
                   <div className="mt-0.5 flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--crm-text-muted)]">
-                    {address ? <span className="flex max-w-[520px] items-center gap-1 truncate"><Icon name="location_on" className="shrink-0 text-[16px]" />{address}</span> : null}
+                    {address ? <button type="button" onClick={openContextPanel} className="flex max-w-[520px] items-center gap-1 truncate text-left hover:text-[var(--crm-info)]"><Icon name="location_on" className="shrink-0 text-[16px]" />{address}</button> : null}
                     {lead.phone ? <button type="button" onClick={onCall} className="flex items-center gap-1 hover:text-[var(--crm-brand)]" aria-label={`Call ${name}`}><Icon name="call" className="text-[15px]" />{formatPhone(lead.phone)}</button> : null}
+                    <button
+                      type="button"
+                      onClick={runNextAction}
+                      className="flex min-w-0 items-center gap-1 font-bold text-[var(--crm-warning)] hover:brightness-90"
+                    >
+                      <Icon name="schedule" className="shrink-0 text-[15px]" />
+                      <span className="max-w-[360px] truncate">{nextAction}</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -291,47 +342,32 @@ export function LeadWorkspace({
               <ActionButton icon="call" label="Call" onClick={onCall} disabled={!lead.phone} tone="teal" />
               <ActionButton icon="chat_bubble" label="Text" onClick={onText} disabled={!lead.phone} tone="blue" />
               <ActionButton icon="mail" label="Email" onClick={onEmail} disabled={!lead.email} tone="violet" />
+              <button
+                type="button"
+                onClick={openContextPanel}
+                aria-expanded={contextPanelOpen}
+                aria-controls="lead-context-panel"
+                className="crm-secondary-button flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold sm:text-sm"
+              >
+                <Icon name="home_work" className="text-[17px] text-[var(--crm-info)]" />
+                Property
+              </button>
+              <button
+                type="button"
+                onClick={openOperationsPanel}
+                aria-expanded={operationsPanelOpen}
+                aria-controls="lead-operations-panel"
+                aria-label="Open lead controls"
+                title="Lead controls"
+                className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"
+              >
+                <Icon name="tune" className="text-[18px]" />
+              </button>
               <button type="button" onClick={onContract} className="crm-primary-button flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-bold sm:text-sm">
                 <Icon name="description" className="text-[17px]" />
                 Create contract
               </button>
             </div>
-          </div>
-
-          <div className="mt-3 grid gap-2 border-t border-[var(--crm-border)] pt-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,0.75fr)_minmax(180px,0.55fr)_minmax(330px,1fr)_auto]">
-            <SummaryItem label="Stage" tone="teal">
-              <StageSelector
-                leadId={lead.id}
-                station={lead.station}
-                size="md"
-                variant="workspace"
-                onAppointmentRequired={onAppointment}
-                onChange={(next) => onStageChange(next)}
-              />
-            </SummaryItem>
-            <SummaryItem label="Owner" tone="blue">
-              <span className="flex items-center gap-2 font-semibold text-[var(--crm-text)]">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-[10px] font-bold text-[var(--crm-surface)]">{owner.slice(0, 2).toUpperCase()}</span>
-                {owner}
-              </span>
-            </SummaryItem>
-            <SummaryItem label="Next action" tone="amber">
-              <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : appointment ? onAppointment : onTask} className="flex items-center gap-2 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-warning)] hover:brightness-95">
-                <Icon name="schedule" className="text-[18px]" />
-                {nextAction}
-              </button>
-            </SummaryItem>
-            <button
-              type="button"
-              onClick={() => setContextPanelOpen(true)}
-              aria-expanded={contextPanelOpen}
-              aria-controls="lead-context-panel"
-              className="crm-secondary-button flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-xs font-bold"
-            >
-              <Icon name="contact_page" className="text-[18px] text-[var(--crm-info)]" />
-              Contact & property
-              <Icon name="chevron_right" className="text-[17px] text-[var(--crm-text-dim)]" />
-            </button>
           </div>
         </header>
 
@@ -355,29 +391,31 @@ export function LeadWorkspace({
           ))}
         </nav>
 
+        {contextPanelOpen || operationsPanelOpen ? (
+          <button
+            type="button"
+            className="fixed inset-0 z-40 cursor-default bg-black/35 backdrop-blur-[1px]"
+            onClick={closePanels}
+            aria-label="Close lead drawer"
+          />
+        ) : null}
+
         {contextPanelOpen ? (
-          <>
-            <button
-              type="button"
-              className="fixed inset-0 z-40 cursor-default bg-black/35 backdrop-blur-[1px]"
-              onClick={() => setContextPanelOpen(false)}
-              aria-label="Close contact and property details"
+          <aside
+            id="lead-context-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lead-context-title"
+            className="crm-panel-raised fixed bottom-3 left-3 top-3 z-50 flex w-[min(390px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl shadow-2xl"
+          >
+            <CardHeader
+              id="lead-context-title"
+              title="Contact & Property"
+              icon="person"
+              onMore={onEdit}
+              onClose={closePanels}
             />
-            <aside
-              id="lead-context-panel"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="lead-context-title"
-              className="crm-panel-raised fixed bottom-3 left-3 top-3 z-50 flex w-[min(390px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl shadow-2xl"
-            >
-              <CardHeader
-                id="lead-context-title"
-                title="Contact & Property"
-                icon="person"
-                onMore={onEdit}
-                onClose={() => setContextPanelOpen(false)}
-              />
-              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
                 <SectionLabel>Contact</SectionLabel>
                 <dl className="mt-3 space-y-3 text-sm">
                   <DataRow label="Phone" value={lead.phone ? formatPhone(lead.phone) : '—'} accent />
@@ -388,7 +426,7 @@ export function LeadWorkspace({
 
                 <div className="my-5 border-t border-[var(--crm-border)]" />
                 <SectionLabel>Property snapshot</SectionLabel>
-                <button type="button" onClick={onOpenProperty} className="mt-3 w-full overflow-hidden rounded-lg border border-[var(--crm-border)] text-left hover:border-[var(--crm-brand-border)]" aria-label="Open property details">
+                <button type="button" onClick={openPropertyDetails} className="mt-3 w-full overflow-hidden rounded-lg border border-[var(--crm-border)] text-left hover:border-[var(--crm-brand-border)]" aria-label="Open property details">
                   {!imageFailed && address ? (
                     // Google Street View is a signed dynamic image URL and is intentionally not routed through next/image.
                     // eslint-disable-next-line @next/next/no-img-element
@@ -427,8 +465,64 @@ export function LeadWorkspace({
                   </div>
                 </div>
               </div>
-            </aside>
-          </>
+          </aside>
+        ) : null}
+
+        {operationsPanelOpen ? (
+          <aside
+            id="lead-operations-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lead-operations-title"
+            className="crm-panel-raised fixed bottom-3 right-3 top-3 z-50 flex w-[min(410px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl shadow-2xl"
+          >
+            <CardHeader
+              id="lead-operations-title"
+              title="Lead controls"
+              icon="tune"
+              onClose={closePanels}
+            />
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <SectionLabel>Operating status</SectionLabel>
+              <div className="mt-3 space-y-3">
+                <SummaryItem label="Stage" tone="teal">
+                  <StageSelector
+                    leadId={lead.id}
+                    station={lead.station}
+                    size="md"
+                    variant="workspace"
+                    onAppointmentRequired={onAppointment}
+                    onChange={(next) => onStageChange(next)}
+                  />
+                </SummaryItem>
+                <SummaryItem label="Owner" tone="blue">
+                  <span className="flex items-center gap-2 font-semibold text-[var(--crm-text)]">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-[10px] font-bold text-[var(--crm-surface)]">{owner.slice(0, 2).toUpperCase()}</span>
+                    {owner}
+                  </span>
+                </SummaryItem>
+                <SummaryItem label="Next action" tone="amber">
+                  <button type="button" onClick={runNextAction} className="flex max-w-[245px] items-center gap-2 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-warning-soft)] px-3 py-2 text-left text-sm font-bold text-[var(--crm-warning)] hover:brightness-95">
+                    <Icon name="schedule" className="shrink-0 text-[18px]" />
+                    {nextAction}
+                  </button>
+                </SummaryItem>
+              </div>
+
+              <div className="my-6 border-t border-[var(--crm-border)]" />
+              <SectionLabel>Quick actions</SectionLabel>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => { closePanels(); onAppointment() }} className="crm-secondary-button flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="event" className="text-[18px]" />Appointment</button>
+                <button type="button" onClick={() => { closePanels(); onTask() }} className="crm-secondary-button flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="add_task" className="text-[18px]" />New task</button>
+                <button type="button" onClick={openContextPanel} className="crm-secondary-button flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="home_work" className="text-[18px]" />Property</button>
+                <button type="button" onClick={() => { closePanels(); onEdit() }} className="crm-secondary-button flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="edit" className="text-[18px]" />Edit lead</button>
+              </div>
+              <button type="button" onClick={() => { closePanels(); onContract() }} className="crm-primary-button mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-bold">
+                <Icon name="description" className="text-[18px]" />
+                Create contract
+              </button>
+            </div>
+          </aside>
         ) : null}
 
         {activeSection === 'overview' ? (

@@ -1964,8 +1964,27 @@ export default function LeadDetailPage() {
         onStageChange={(station) => setLead((current) => current ? { ...current, station } : current)}
         sectionPanels={{
           property: (
-            <div className="mx-auto max-w-4xl">
-              <PropertyDetailsCard details={workspacePropertyDetails} />
+            <div className="mx-auto max-w-5xl space-y-5">
+              <PropertyHero
+                property={property}
+                zestimate={zestimate}
+                redfinEstimate={redfinEstimate}
+                assessedValue={assessedValue ?? lead.tax_assessment ?? null}
+                taxOwed={
+                  manifestProperty?.taxCollector?.totalOwed ??
+                  manifestProperty?.taxCollector?.delinquentAmount ??
+                  null
+                }
+                estimateLoading={
+                  (zillowEnriching && zestimate == null) ||
+                  (redfinEnriching && redfinEstimate == null)
+                }
+                onOpenDetails={() => setDetailsExpanded(true)}
+              />
+              <PropertyDetailsCard
+                details={workspacePropertyDetails}
+                onEdit={() => setEditPanelOpen(true)}
+              />
             </div>
           ),
           documents: (
