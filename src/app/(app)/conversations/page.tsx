@@ -8,6 +8,7 @@ import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
 import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
 import type { Message } from '@/components/conversations/message-bubble'
 import { toProperCase, formatPhone } from '@/lib/format'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 
 interface LeadRow {
   id: string
@@ -180,6 +181,7 @@ export default function ConversationsPage() {
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null)
   const [activities, setActivities] = useState<ActivityRow[]>([])
   const [showNewMessage, setShowNewMessage] = useState(false)
+  const [newConversationSearch, setNewConversationSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [contactDetailsOpen, setContactDetailsOpen] = useState(true)
@@ -192,6 +194,14 @@ export default function ConversationsPage() {
   })
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastCounter = useRef(0)
+  const closeNewConversation = useCallback(() => {
+    setShowNewMessage(false)
+    setNewConversationSearch('')
+  }, [])
+  const newConversationDialogRef = useDialogAccessibility<HTMLElement>(
+    showNewMessage,
+    closeNewConversation,
+  )
 
   function addToast(msg: string) {
     const id = ++toastCounter.current
@@ -205,12 +215,16 @@ export default function ConversationsPage() {
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }
 
-  function selectConversation(id: string) {
+  const selectConversation = useCallback((id: string) => {
     setActiveLeadId(id)
     const url = new URL(window.location.href)
     url.searchParams.set('lead', id)
     window.history.replaceState(null, '', `${url.pathname}${url.search}`)
-  }
+  }, [])
+  const handleSelectConversation = useCallback((id: string) => {
+    selectConversation(id)
+    setSidebarOpen(false)
+  }, [selectConversation])
 
   function openActiveDialer() {
     if (!activeLead?.phone) return
@@ -369,6 +383,19 @@ export default function ConversationsPage() {
   }, [fetchActivities, fetchThreads])
 
   const activeLead = leads.find((l) => l.id === activeLeadId)
+  const normalizedNewConversationSearch = newConversationSearch.trim().toLowerCase()
+  const newConversationLeads = normalizedNewConversationSearch
+    ? leads.filter((lead) =>
+        [
+          lead.full_name,
+          lead.phone,
+          lead.property_address,
+          lead.city,
+          lead.owner,
+          lead.assigned_agent,
+        ].some((value) => value?.toLowerCase().includes(normalizedNewConversationSearch)),
+      )
+    : leads
 
   // Derive toPhone from last activity metadata.to, fallback to default
   const lastActivityWithTo = [...activities].reverse().find((a) => a.metadata?.to)
@@ -429,22 +456,46 @@ export default function ConversationsPage() {
     <WorkspaceFrame needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length}>
     <div className="relative flex h-full overflow-hidden bg-[var(--crm-canvas)] text-[#152033]">
       {showNewMessage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowNewMessage(false)}>
-          <section role="dialog" aria-modal="true" aria-label="Start new conversation" className="max-h-[70vh] w-96 max-w-[90vw] overflow-y-auto rounded-2xl border border-[#ded9d1] bg-white p-6 shadow-[0_22px_60px_rgba(11,41,66,0.22)]" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeNewConversation}>
+          <section ref={newConversationDialogRef} role="dialog" aria-modal="true" aria-label="Start new conversation" tabIndex={-1} className="max-h-[70vh] w-96 max-w-[90vw] overflow-y-auto rounded-2xl border border-[#ded9d1] bg-white p-6 shadow-[0_22px_60px_rgba(11,41,66,0.22)]" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-lg font-bold">Start New Conversation</h2>
-              <button type="button" onClick={() => setShowNewMessage(false)} aria-label="Close new conversation dialog" className="flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#b91c26]">✕</button>
+              <button type="button" onClick={closeNewConversation} aria-label="Close new conversation dialog" className="flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#b91c26]">✕</button>
             </div>
-            <p className="text-sm text-slate-500 mb-4">Select a lead to open their conversation thread:</p>
+            <p className="mb-3 text-sm text-slate-500">Select a lead to open their conversation thread:</p>
+            <label htmlFor="new-conversation-search" className="sr-only">Search contacts for a new conversation</label>
+            <div className="relative mb-4">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true">⌕</span>
+              <input
+                id="new-conversation-search"
+                autoFocus
+                type="search"
+                value={newConversationSearch}
+                onChange={(event) => setNewConversationSearch(event.target.value)}
+                placeholder="Search name, phone, address, or owner"
+                className="h-10 w-full rounded-lg border border-[#d9dee5] bg-white pl-9 pr-3 text-sm text-[#172033] outline-none focus:border-[#df3038] focus:ring-2 focus:ring-[#df3038]/10"
+              />
+            </div>
             <div className="space-y-2">
-              {leads.map((lead) => (
+              {newConversationLeads.length === 0 ? (
+                <p role="status" className="rounded-lg border border-dashed border-[#ccd4dd] px-4 py-6 text-center text-sm text-slate-500">
+                  No contacts match “{newConversationSearch}”.
+                </p>
+              ) : newConversationLeads.map((lead) => (
                 <button
                   key={lead.id}
-                  onClick={() => { selectConversation(lead.id); setShowNewMessage(false); setSidebarOpen(false) }}
+                  onClick={() => {
+                    selectConversation(lead.id)
+                    setShowNewMessage(false)
+                    setNewConversationSearch('')
+                    setSidebarOpen(false)
+                  }}
                   className="w-full rounded-lg border border-[#e1ddd7] p-3 text-left transition-colors hover:border-[#a9c5f4] hover:bg-[#edf4ff]"
                 >
-                  <div className="font-semibold text-sm">{lead.full_name || '(no name)'}</div>
-                  <div className="text-xs text-slate-400">{lead.property_address || '—'}</div>
+                  <div className="text-sm font-semibold">{lead.full_name || formatPhone(lead.phone) || '(no name)'}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {[lead.property_address || formatPhone(lead.phone), lead.owner || lead.assigned_agent ? `Owner: ${lead.owner || lead.assigned_agent}` : 'Unassigned'].filter(Boolean).join(' · ')}
+                  </div>
                 </button>
               ))}
             </div>
@@ -465,7 +516,7 @@ export default function ConversationsPage() {
         <InboxSidebar
           threads={threads}
           activeThreadId={activeLeadId || ''}
-          onSelectThread={(id) => { selectConversation(id); setSidebarOpen(false) }}
+          onSelectThread={handleSelectConversation}
           onNewMessage={() => setShowNewMessage(true)}
         />
       </div>

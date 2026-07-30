@@ -97,7 +97,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
-  const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings || isConversationWorkspace)
+  const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings)
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
   const useUserLightTheme = hydrated && !useTcLightTheme && userTheme === 'light'
   const useLightLogo = useTcLightTheme || useUserLightTheme
@@ -257,7 +257,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (isConversationWorkspace) {
     return (
-      <div className="min-h-screen bg-[#f4f6f8] text-[#152033]">
+      <div
+        className="min-h-screen bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
+        data-theme={userTheme}
+      >
         {children}
         <DialerPanel
           open={showDialer}

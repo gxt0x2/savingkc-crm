@@ -7,8 +7,9 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 
 type OutcomeType = 'completed' | 'no_show' | 'cancelled' | 'rescheduled'
 
@@ -66,6 +67,9 @@ export function AppointmentOutcomeModal({
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const titleId = useId()
+  const notesId = useId()
+  const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
 
   async function handleSubmit() {
     if (!selectedOutcome) return
@@ -111,6 +115,11 @@ export function AppointmentOutcomeModal({
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#111827]/55 p-4 backdrop-blur-sm">
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className="w-full max-w-lg overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -118,7 +127,7 @@ export function AppointmentOutcomeModal({
         <div className="border-b border-[#e4e7ec] px-6 pb-4 pt-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="mb-1 text-xl font-black tracking-tight text-[#111827]">
+              <h2 id={titleId} className="mb-1 text-xl font-black tracking-tight text-[#111827]">
                 Appointment Outcome
               </h2>
               <p className="text-sm text-[#475467]">
@@ -129,7 +138,9 @@ export function AppointmentOutcomeModal({
               </p>
             </div>
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close appointment outcome dialog"
               className="rounded-lg p-1.5 transition-colors hover:bg-[#f2f4f7]"
             >
               <Icon name="close" size="text-lg" className="text-[#667085]" />
@@ -184,10 +195,11 @@ export function AppointmentOutcomeModal({
 
           {/* Notes (Optional) */}
           <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-[#344054]">
+            <label htmlFor={notesId} className="mb-2 block text-xs font-bold uppercase tracking-wider text-[#344054]">
               Notes <span className="text-[#98a2b3]">(optional)</span>
             </label>
             <textarea
+              id={notesId}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Any details about the appointment..."

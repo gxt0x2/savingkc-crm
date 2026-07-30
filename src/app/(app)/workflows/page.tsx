@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { WORKFLOW_CATALOG, workflowCategoryLabel } from '@/lib/operating-model/workflow-catalog'
 import type { WorkflowAction, WorkflowDefinition } from '@/lib/operating-model/types'
 
@@ -56,6 +57,14 @@ export default function WorkflowsPage() {
   const [category, setCategory] = useState('')
   const [showSafety, setShowSafety] = useState(false)
   const selected = WORKFLOW_CATALOG.find((workflow) => workflow.id === selectedId) ?? null
+  const workflowDetailsRef = useDialogAccessibility<HTMLElement>(
+    Boolean(selected),
+    () => setSelectedId(null),
+  )
+  const safetyDialogRef = useDialogAccessibility<HTMLElement>(
+    showSafety,
+    () => setShowSafety(false),
+  )
   const activeCount = WORKFLOW_CATALOG.filter((workflow) => workflow.status === 'active').length
   const draftCount = WORKFLOW_CATALOG.filter((workflow) => workflow.status === 'draft').length
   const visible = useMemo(() => {
@@ -116,7 +125,7 @@ export default function WorkflowsPage() {
       </div>
 
       {selected ? <div className="fixed inset-0 z-[70] bg-[#111827]/35" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedId(null) }}>
-        <aside role="dialog" aria-modal="true" aria-label={`${selected.name} workflow details`} className="ml-auto flex h-full w-full max-w-xl flex-col bg-white shadow-2xl">
+        <aside ref={workflowDetailsRef} role="dialog" aria-modal="true" aria-label={`${selected.name} workflow details`} tabIndex={-1} className="ml-auto flex h-full w-full max-w-xl flex-col bg-white shadow-2xl">
           <header className="flex items-start justify-between border-b border-[#e4e7ec] px-6 py-5"><div><p className="text-xs font-black uppercase tracking-[0.1em] text-[#b91c26]">{workflowCategoryLabel(selected.category)}</p><h2 className="mt-1 text-xl font-black">{selected.name}</h2><p className="mt-2 text-sm leading-6 text-[#667085]">{selected.description}</p></div><button type="button" onClick={() => setSelectedId(null)} aria-label="Close workflow details" className="ml-4 text-[#667085] hover:text-[#b91c26]"><Icon name="close" /></button></header>
           <div className="flex-1 overflow-y-auto p-6">
             <div className="grid grid-cols-2 gap-3"><WorkflowFact label="Status" value={selected.status} /><WorkflowFact label="Health" value={selected.health.replaceAll('_', ' ')} /><WorkflowFact label="Owner" value={selected.owner.displayName} /><WorkflowFact label="Version" value={`v${selected.version}`} /></div>
@@ -124,11 +133,11 @@ export default function WorkflowsPage() {
             <section className="mt-6"><h3 className="text-xs font-black uppercase tracking-[0.1em] text-[#475467]">Actions</h3><ol className="mt-3 space-y-2">{selected.actions.map((action, index) => <li key={`${action.type}-${index}`} className="flex items-center gap-3 rounded-lg border border-[#e1e5ea] p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f1f3f5] text-xs font-black text-[#475467]">{index + 1}</span><span className="text-sm font-semibold text-[#344054]">{actionLabel(action)}</span></li>)}</ol></section>
             {selected.protectedResources?.length ? <section className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4"><h3 className="flex items-center gap-2 text-sm font-black text-amber-900"><Icon name="shield" />Protected resources</h3>{selected.protectedResources.map((resource) => <p key={resource} className="mt-2 font-mono text-sm text-amber-800">{resource}</p>)}</section> : null}
           </div>
-          <footer className="border-t border-[#e4e7ec] p-5"><button type="button" onClick={() => setShowSafety(true)} className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[#df3038] text-sm font-bold text-[#b91c26] hover:bg-[#fff7f7]"><Icon name="lock" />Editing safeguards required</button></footer>
+          <footer className="border-t border-[#e4e7ec] p-5"><button type="button" onClick={() => { setSelectedId(null); setShowSafety(true) }} className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[#df3038] text-sm font-bold text-[#b91c26] hover:bg-[#fff7f7]"><Icon name="lock" />Editing safeguards required</button></footer>
         </aside>
       </div> : null}
 
-      {showSafety ? <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#111827]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSafety(false) }}><section role="dialog" aria-modal="true" aria-label="Workflow safety requirements" className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl"><div className="flex items-start gap-4"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#fff1f2] text-[#b91c26]"><Icon name="lock" /></span><div><h2 className="text-lg font-black">Workflow editing is safely locked</h2><p className="mt-2 text-sm leading-6 text-[#667085]">Creating or changing automation can call, text, move stages, and alter ownership. The editor will unlock only after these controls are implemented:</p></div></div><ul className="mt-5 grid gap-2 sm:grid-cols-2">{['Version history', 'Dry-run preview', 'Consent enforcement', 'Rollback', 'Approval gates', 'Immutable audit log'].map((item) => <li key={item} className="flex items-center gap-2 rounded-md bg-[#f7f8fa] px-3 py-2 text-sm font-semibold"><Icon name="check_circle" className="text-[17px] text-[#b91c26]" />{item}</li>)}</ul><button type="button" onClick={() => setShowSafety(false)} className="mt-6 h-10 w-full rounded-md bg-[#df3038] text-sm font-bold text-white hover:bg-[#c9232d]">Understood</button></section></div> : null}
+      {showSafety ? <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#111827]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSafety(false) }}><section ref={safetyDialogRef} role="dialog" aria-modal="true" aria-label="Workflow safety requirements" tabIndex={-1} className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl"><div className="flex items-start gap-4"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#fff1f2] text-[#b91c26]"><Icon name="lock" /></span><div><h2 className="text-lg font-black">Workflow editing is safely locked</h2><p className="mt-2 text-sm leading-6 text-[#667085]">Creating or changing automation can call, text, move stages, and alter ownership. The editor will unlock only after these controls are implemented:</p></div></div><ul className="mt-5 grid gap-2 sm:grid-cols-2">{['Version history', 'Dry-run preview', 'Consent enforcement', 'Rollback', 'Approval gates', 'Immutable audit log'].map((item) => <li key={item} className="flex items-center gap-2 rounded-md bg-[#f7f8fa] px-3 py-2 text-sm font-semibold"><Icon name="check_circle" className="text-[17px] text-[#b91c26]" />{item}</li>)}</ul><button type="button" onClick={() => setShowSafety(false)} className="mt-6 h-10 w-full rounded-md bg-[#df3038] text-sm font-bold text-white hover:bg-[#c9232d]">Understood</button></section></div> : null}
     </main>
   )
 }

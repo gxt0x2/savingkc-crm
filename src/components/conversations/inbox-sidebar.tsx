@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
 import type { PersonalityType } from '@/types'
@@ -58,7 +58,7 @@ export function InboxSidebar({
   const [needsReplyOnly, setNeedsReplyOnly] = useState(false)
   const [sortOrder, setSortOrder] = useState<'priority' | 'recent'>('priority')
 
-  const filteredThreads = threads.filter((t) => {
+  const filteredThreads = useMemo(() => threads.filter((t) => {
     if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false
     if (channel && t.lastChannel !== channel) return false
     if (needsReplyOnly && t.attentionState !== 'needs_reply') return false
@@ -70,7 +70,14 @@ export function InboxSidebar({
     if (sortOrder === 'recent') return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     const rank = (thread: ThreadPreview) => thread.attentionState === 'needs_reply' ? 0 : thread.nextAction?.overdue ? 1 : 2
     return rank(a) - rank(b)
-  })
+  }), [activeTab, channel, currentUserName, needsReplyOnly, search, sortOrder, threads])
+
+  useEffect(() => {
+    if (filteredThreads.length === 0) return
+    if (!filteredThreads.some((thread) => thread.id === activeThreadId)) {
+      onSelectThread(filteredThreads[0].id)
+    }
+  }, [activeThreadId, filteredThreads, onSelectThread])
 
   const tabs: { key: TabFilter; label: string; count: number }[] = [
     { key: 'unread', label: 'Inbox', count: threads.filter((thread) => thread.unread).length },

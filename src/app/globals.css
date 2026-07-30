@@ -91,9 +91,118 @@ body {
   color-scheme: light;
 }
 
-/* A few reusable legacy dialogs opt into `.ck-dark`. Inside the rebuilt CRM
-   they inherit the approved light operating-system contract instead. */
-.crm-workspace-shell .ck-dark {
+.crm-workspace-shell[data-theme="dark"] {
+  --ck-bg: #0b1118;
+  --ck-surface: #121a24;
+  --ck-surface-elev: #182330;
+  --ck-surface-hi: #223142;
+  --ck-border: #2e3d4f;
+  --ck-border-strong: #45576b;
+  --ck-text: #f5f7fa;
+  --ck-text-muted: #bac5d1;
+  --ck-text-dim: #8493a5;
+  --ck-accent: #ff5f68;
+  --ck-accent-bright: #ff7d84;
+  --ck-warn: #f2ae3a;
+  --ck-success: #55cbb8;
+  --ck-info: #72a7ff;
+  --crm-canvas: #0b1118;
+  --crm-ink: #f5f7fa;
+  --crm-red: #ff5f68;
+  --crm-red-soft: #351b23;
+  --crm-coral: #ff9275;
+  --crm-coral-soft: #34211f;
+  --crm-amber: #f2ae3a;
+  --crm-amber-soft: #312817;
+  --crm-teal: #55cbb8;
+  --crm-teal-soft: #15312f;
+  --crm-blue: #72a7ff;
+  --crm-blue-soft: #182a43;
+  --crm-violet: #b29af7;
+  --crm-violet-soft: #29233f;
+  --crm-shadow: 0 14px 38px rgba(0, 0, 0, 0.28);
+  color-scheme: dark;
+}
+
+.crm-workspace-shell :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid #df3038;
+  outline-offset: 2px;
+}
+
+.crm-workspace-shell :is(button, a)[aria-disabled="true"],
+.crm-workspace-shell :is(button, a):disabled {
+  cursor: not-allowed;
+}
+
+/* The rebuilt UI still contains a handful of older hard-coded neutral
+   utilities. Keep their semantic accent colors, but remap neutral surfaces and
+   copy so the entire workspace—not just its wrapper—participates in dark mode. */
+.crm-workspace-shell[data-theme="dark"] [class*="bg-white/"],
+.crm-workspace-shell[data-theme="dark"] [class*="bg-[#fffdfb]"],
+.crm-workspace-shell[data-theme="dark"] [class*="bg-[#fbfaf8]"],
+.crm-workspace-shell[data-theme="dark"] [class*="bg-[#f8f9fa]"],
+.crm-workspace-shell[data-theme="dark"] [class*="bg-[#f7f8fa]"],
+.crm-workspace-shell[data-theme="dark"] [class*="bg-[#f4f6f8]"],
+.crm-workspace-shell[data-theme="dark"] [class*="bg-[#f2f4f7]"],
+.crm-workspace-shell[data-theme="dark"] [class*="bg-[#f1f3f5]"] {
+  background-color: var(--ck-surface) !important;
+  background-image: none !important;
+}
+
+.crm-workspace-shell[data-theme="dark"] [class*="border-[#ded9d1]"],
+.crm-workspace-shell[data-theme="dark"] [class*="border-[#e7e1da]"],
+.crm-workspace-shell[data-theme="dark"] [class*="border-[#e4e7ec]"],
+.crm-workspace-shell[data-theme="dark"] [class*="border-[#eef1f4]"],
+.crm-workspace-shell[data-theme="dark"] [class*="border-[#d9dfe6]"],
+.crm-workspace-shell[data-theme="dark"] [class*="border-[#d9dee5]"],
+.crm-workspace-shell[data-theme="dark"] [class*="border-[#d8d2ca]"],
+.crm-workspace-shell[data-theme="dark"] [class*="border-[#ccd4dd]"],
+.crm-workspace-shell[data-theme="dark"] [class*="border-[#cbd3dc]"] {
+  border-color: var(--ck-border) !important;
+}
+
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#111827]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#152033]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#172033]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#17263b]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#24354a]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#253247]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#26374d]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#344054]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#34445a]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#475467]"],
+.crm-workspace-shell[data-theme="dark"] .text-slate-700,
+.crm-workspace-shell[data-theme="dark"] .text-slate-600 {
+  color: var(--ck-text) !important;
+}
+
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#516274]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#526177]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#566579]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#596579]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#627087]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#65748a]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#667085]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#66758a]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#68768a]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#69778a]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#6c798b]"],
+.crm-workspace-shell[data-theme="dark"] [class*="text-[#7a8797]"],
+.crm-workspace-shell[data-theme="dark"] .text-slate-500,
+.crm-workspace-shell[data-theme="dark"] .text-slate-400 {
+  color: var(--ck-text-muted) !important;
+}
+
+.crm-workspace-shell[data-theme="dark"] :is(input, select, textarea) {
+  border-color: var(--ck-border);
+  background-color: var(--ck-surface-elev);
+  color: var(--ck-text);
+  color-scheme: dark;
+}
+
+/* Portaled dialogs live outside `.crm-workspace-shell`, so give them the same
+   theme contract from the document-level preference. */
+.crm-modal-surface {
   --ck-bg: #f7f4ef;
   --ck-surface: #ffffff;
   --ck-surface-elev: #fbfaf8;
@@ -105,17 +214,23 @@ body {
   --ck-text-dim: #7a8792;
   --ck-accent: #d92636;
   --ck-accent-bright: #b91f2d;
+  color: var(--ck-text);
   color-scheme: light;
 }
 
-.crm-workspace-shell :is(button, a, input, select, textarea):focus-visible {
-  outline: 2px solid #df3038;
-  outline-offset: 2px;
-}
-
-.crm-workspace-shell :is(button, a)[aria-disabled="true"],
-.crm-workspace-shell :is(button, a):disabled {
-  cursor: not-allowed;
+html.dark .crm-modal-surface {
+  --ck-bg: #0b1118;
+  --ck-surface: #121a24;
+  --ck-surface-elev: #182330;
+  --ck-surface-hi: #223142;
+  --ck-border: #2e3d4f;
+  --ck-border-strong: #45576b;
+  --ck-text: #f5f7fa;
+  --ck-text-muted: #bac5d1;
+  --ck-text-dim: #8493a5;
+  --ck-accent: #ff5f68;
+  --ck-accent-bright: #ff7d84;
+  color-scheme: dark;
 }
 
 /* SavingKC CRM — Apple-inspired dialer/disposition tokens */
@@ -156,6 +271,11 @@ body {
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   display: inline-block;
+  width: 1em;
+  min-width: 1em;
+  max-width: 1em;
+  overflow: hidden;
+  flex-shrink: 0;
   line-height: 1;
   text-transform: none;
   letter-spacing: normal;

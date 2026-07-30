@@ -65,6 +65,27 @@ describe('rebuilt conversation workspace controls', () => {
     expect(screen.queryByText('Sheila Brooks')).not.toBeInTheDocument()
   })
 
+  it('keeps the active conversation synchronized with the visible filtered list', async () => {
+    const onSelectThread = vi.fn()
+    render(<InboxSidebar
+      threads={[
+        baseThread,
+        { ...baseThread, id: 'lead-2', name: 'Sheila Brooks', owner: 'Casey' },
+      ]}
+      activeThreadId="lead-1"
+      onSelectThread={onSelectThread}
+      currentUserName="Ernest"
+    />)
+
+    fireEvent.change(screen.getByLabelText('Search conversations'), {
+      target: { value: 'Sheila' },
+    })
+
+    await waitFor(() => expect(onSelectThread).toHaveBeenCalledWith('lead-2'))
+    expect(screen.getByText('Sheila Brooks')).toBeInTheDocument()
+    expect(screen.queryByText('Marcus Johnson')).not.toBeInTheDocument()
+  })
+
   it('opens directly in the requested communication mode', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

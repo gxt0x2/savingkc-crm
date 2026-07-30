@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 
 interface ContractModalProps {
   lead: {
@@ -30,7 +31,7 @@ const DEFAULT_ESCROW_COMPANY = 'Niki Calvin'
 export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) {
   const mao = lead.arv ? Math.round(lead.arv * 0.7 - (lead.repair_estimate || 0)) : 0
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => ({
     buyerEntity: DEFAULT_BUYING_ENTITY,
     sellerName: toProperCase(lead.full_name),
     propertyAddress: [lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', '),
@@ -39,12 +40,16 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
     purchasePrice: lead.offer_amount || mao || 0,
     earnestMoney: 500,
     inspectionDays: 14,
-    closingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    closingDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0],
     escrowCompany: DEFAULT_ESCROW_COMPANY,
-    sendSms: true,
-  })
+    sendSms: false,
+  }))
   const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const titleId = useId()
+  const fieldIdPrefix = useId()
+  const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
 
   // Pull parcel + legal description from manifest if available
   useEffect(() => {
@@ -72,16 +77,21 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
   }
 
   async function handleSubmit() {
+    if (!form.propertyAddress.trim() || form.purchasePrice <= 0 || !form.closingDate) {
+      setError('Property address, purchase price, and closing date are required.')
+      return
+    }
+
     setSaving(true)
     setError('')
 
     const supabase = createClient()
 
     try {
-      await supabase.from('lead_activities').insert({
+      const { error: activityError } = await supabase.from('lead_activities').insert({
         lead_id: lead.id,
         activity_type: 'contract_sent',
-        description: `Contract generated for ${form.propertyAddress}. Purchase price: $${form.purchasePrice.toLocaleString()}. Closing date: ${form.closingDate}`,
+        description: `Contract terms recorded for ${form.propertyAddress}. Purchase price: $${form.purchasePrice.toLocaleString()}. Closing date: ${form.closingDate}`,
         agent: 'User',
         metadata: {
           buyer: form.buyerEntity,
@@ -95,8 +105,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
           escrow_company: form.escrowCompany,
         },
       })
+      if (activityError) throw activityError
 
-      await fetch('/api/leads', {
+      const leadResponse = await fetch('/api/leads', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -105,6 +116,13 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
           offer_amount: form.purchasePrice,
         }),
       })
+      if (!leadResponse.ok) {
+        const payload = await leadResponse.json().catch(() => ({}))
+        throw new Error(payload.error || 'Lead stage could not be updated')
+      }
+
+      setSaved(true)
+      onSuccess()
 
       if (form.sendSms && lead.phone) {
         const firstName = toProperCase((lead.full_name || '').split(' ')[0]) || 'there'
@@ -112,9 +130,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
         const legalLine = form.legalDescription
           ? `\nLegal: ${form.legalDescription.length > 120 ? form.legalDescription.slice(0, 117) + '…' : form.legalDescription}`
           : ''
-        const smsBody = `Hi ${firstName}, your purchase agreement from Saving KC is ready for review.\nProperty: ${form.propertyAddress}${parcelLine}${legalLine}\nClosing via ${form.escrowCompany}. Details to follow by email. Questions? (816) 307-7835.`
+        const smsBody = `Hi ${firstName}, Saving KC recorded the proposed purchase terms for your review.\nProperty: ${form.propertyAddress}${parcelLine}${legalLine}\nProposed closing via ${form.escrowCompany}. We will send the formal agreement separately. Questions? (816) 307-7835.`
         try {
-          await fetch('/api/conversations/send', {
+          const smsResponse = await fetch('/api/conversations/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -123,15 +141,20 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
               message: smsBody,
             }),
           })
+          if (!smsResponse.ok) {
+            const payload = await smsResponse.json().catch(() => ({}))
+            throw new Error(payload.error || 'Seller SMS could not be sent')
+          }
         } catch {
-          console.error('SMS send failed')
+          setError('Contract terms were saved, but the seller SMS was not sent. Send it from Conversations; do not submit these terms again.')
+          setSaving(false)
+          return
         }
       }
 
-      onSuccess()
       onClose()
-    } catch (err) {
-      setError('Failed to generate contract. Please try again.')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Contract terms could not be saved. Please try again.')
     }
 
     setSaving(false)
@@ -148,6 +171,11 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
           className="rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border"
           style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
         >
@@ -158,10 +186,17 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
           >
             <div className="flex items-center gap-2">
               <Icon name="description" className="!text-base !text-[color:var(--ck-accent)]" />
-              <h2 className="text-lg font-bold text-white">Create Contract</h2>
+              <div>
+                <h2 id={titleId} className="text-lg font-bold" style={{ color: 'var(--ck-text)' }}>Contract Terms</h2>
+                <p className="mt-0.5 text-xs" style={{ color: 'var(--ck-text-muted)' }}>
+                  Records the proposed terms. The formal agreement is generated and sent separately.
+                </p>
+              </div>
             </div>
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close contract dialog"
               className="w-8 h-8 rounded-full flex items-center justify-center"
               style={{ background: 'var(--ck-surface-elev)', color: 'var(--ck-text)' }}
             >
@@ -171,8 +206,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
 
           <div className="px-6 py-5 space-y-4">
             {/* Buyer */}
-            <Field label="Buying Entity">
+            <Field id={`${fieldIdPrefix}-buyer`} label="Buying Entity">
               <input
+                id={`${fieldIdPrefix}-buyer`}
                 type="text"
                 value={form.buyerEntity}
                 onChange={(e) => updateField('buyerEntity', e.target.value)}
@@ -182,8 +218,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
             </Field>
 
             {/* Seller */}
-            <Field label="Seller Name(s)">
+            <Field id={`${fieldIdPrefix}-seller`} label="Seller Name(s)">
               <input
+                id={`${fieldIdPrefix}-seller`}
                 type="text"
                 value={form.sellerName}
                 onChange={(e) => updateField('sellerName', e.target.value)}
@@ -193,8 +230,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
             </Field>
 
             {/* Property */}
-            <Field label="Property Address">
+            <Field id={`${fieldIdPrefix}-property`} label="Property Address">
               <input
+                id={`${fieldIdPrefix}-property`}
                 type="text"
                 value={form.propertyAddress}
                 onChange={(e) => updateField('propertyAddress', e.target.value)}
@@ -205,8 +243,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
 
             {/* Parcel ID + Escrow */}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Parcel ID">
+              <Field id={`${fieldIdPrefix}-parcel`} label="Parcel ID">
                 <input
+                  id={`${fieldIdPrefix}-parcel`}
                   type="text"
                   value={form.parcelId}
                   onChange={(e) => updateField('parcelId', e.target.value)}
@@ -215,8 +254,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
                   style={inputStyle}
                 />
               </Field>
-              <Field label="Escrow / Title Officer">
+              <Field id={`${fieldIdPrefix}-escrow`} label="Escrow / Title Officer">
                 <input
+                  id={`${fieldIdPrefix}-escrow`}
                   type="text"
                   value={form.escrowCompany}
                   onChange={(e) => updateField('escrowCompany', e.target.value)}
@@ -227,8 +267,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
             </div>
 
             {/* Legal Description */}
-            <Field label="Legal Description">
+            <Field id={`${fieldIdPrefix}-legal`} label="Legal Description">
               <textarea
+                id={`${fieldIdPrefix}-legal`}
                 rows={2}
                 value={form.legalDescription}
                 onChange={(e) => updateField('legalDescription', e.target.value)}
@@ -240,13 +281,14 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
 
             {/* Price Row */}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Purchase Price">
+              <Field id={`${fieldIdPrefix}-price`} label="Purchase Price">
                 <div className="relative">
                   <span
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-sm"
                     style={{ color: 'var(--ck-text-dim)' }}
                   >$</span>
                   <input
+                    id={`${fieldIdPrefix}-price`}
                     type="number"
                     value={form.purchasePrice || ''}
                     onChange={(e) => updateField('purchasePrice', parseFloat(e.target.value) || 0)}
@@ -255,13 +297,14 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
                   />
                 </div>
               </Field>
-              <Field label="Earnest Money">
+              <Field id={`${fieldIdPrefix}-earnest`} label="Earnest Money">
                 <div className="relative">
                   <span
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-sm"
                     style={{ color: 'var(--ck-text-dim)' }}
                   >$</span>
                   <input
+                    id={`${fieldIdPrefix}-earnest`}
                     type="number"
                     value={form.earnestMoney || ''}
                     onChange={(e) => updateField('earnestMoney', parseFloat(e.target.value) || 0)}
@@ -274,8 +317,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
 
             {/* Dates Row */}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Inspection Period (days)">
+              <Field id={`${fieldIdPrefix}-inspection`} label="Inspection Period (days)">
                 <input
+                  id={`${fieldIdPrefix}-inspection`}
                   type="number"
                   value={form.inspectionDays}
                   onChange={(e) => updateField('inspectionDays', parseInt(e.target.value) || 0)}
@@ -283,12 +327,13 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
                   style={inputStyle}
                 />
               </Field>
-              <Field label="Closing Date">
+              <Field id={`${fieldIdPrefix}-closing`} label="Closing Date">
                 <input
+                  id={`${fieldIdPrefix}-closing`}
                   type="date"
                   value={form.closingDate}
                   onChange={(e) => updateField('closingDate', e.target.value)}
-                  style={{ ...inputStyle, colorScheme: 'dark' }}
+                  style={inputStyle}
                   className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--ck-accent)]"
                 />
               </Field>
@@ -306,7 +351,7 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
                 className="mt-0.5 accent-[color:var(--ck-accent)]"
               />
               <span style={{ color: 'var(--ck-text)' }}>
-                Send SMS to seller {lead.phone && <span style={{ color: 'var(--ck-text-muted)' }}>({formatPhone(lead.phone)})</span>} — includes property address, parcel ID, and legal description
+                Notify seller by SMS after saving {lead.phone && <span style={{ color: 'var(--ck-text-muted)' }}>({formatPhone(lead.phone)})</span>} — proposed terms only; no agreement is attached
               </span>
             </label>
 
@@ -331,7 +376,7 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
             </button>
             <button
               onClick={handleSubmit}
-              disabled={saving}
+              disabled={saving || saved}
               className="flex-1 rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-50 transition-all flex items-center justify-center gap-2"
               style={{ background: 'var(--ck-accent)' }}
             >
@@ -343,7 +388,7 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
               ) : (
                 <>
                   <Icon name="send" size="text-sm" />
-                  Send Contract
+                  Save Contract Terms
                 </>
               )}
             </button>
@@ -354,10 +399,11 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
   return (
     <div>
       <label
+        htmlFor={id}
         className="ck-microlabel mb-1 block !text-[10px]"
         style={{ color: 'var(--ck-text-muted)' }}
       >

@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useId } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@/components/ui/icon'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 
 interface CockpitModalProps {
   open: boolean
@@ -24,8 +25,8 @@ const SIZE_MAP: Record<Required<CockpitModalProps>['size'], string> = {
 }
 
 /**
- * Standardized cockpit modal: dark + blurred backdrop, portaled to body,
- * ESC closes, backdrop-click closes.
+ * Standardized CRM modal: inherits the active workspace theme, traps focus,
+ * closes on ESC, and restores focus to the invoking control.
  */
 export function CockpitModal({
   open,
@@ -36,14 +37,8 @@ export function CockpitModal({
   children,
   footer,
 }: CockpitModalProps) {
-  useEffect(() => {
-    if (!open) return
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [open, onClose])
+  const titleId = useId()
+  const dialogRef = useDialogAccessibility<HTMLDivElement>(open, onClose)
 
   if (!open) return null
   if (typeof document === 'undefined') return null
@@ -57,7 +52,13 @@ export function CockpitModal({
       />
       {/* dialog */}
       <div
-        className={`relative w-full ${SIZE_MAP[size]} rounded-2xl shadow-2xl border overflow-hidden ck-dark`}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        aria-label={title ? undefined : 'Dialog'}
+        tabIndex={-1}
+        className={`crm-modal-surface relative w-full ${SIZE_MAP[size]} overflow-hidden rounded-2xl border shadow-2xl`}
         style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -70,7 +71,7 @@ export function CockpitModal({
               {icon && (
                 <Icon name={icon} className="!text-[color:var(--ck-accent)]" />
               )}
-              <h2 className="text-lg font-bold" style={{ color: 'var(--ck-text)' }}>
+              <h2 id={titleId} className="text-lg font-bold" style={{ color: 'var(--ck-text)' }}>
                 {title}
               </h2>
             </div>

@@ -56,29 +56,9 @@ export function usePushNotifications() {
       })
   }, [])
 
-  // Auto-subscribe if permission is already granted
-  useEffect(() => {
-    if (!hasVapidKey) {
-      if (!hasWarnedMissingKey.current) {
-        hasWarnedMissingKey.current = true
-        console.warn('[push] Auto-subscribe skipped: NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set')
-      }
-      return
-    }
-
-    if (isSupported && permission === 'granted' && !isSubscribed && !autoSubscribeAttempted.current) {
-      autoSubscribeAttempted.current = true
-      subscribeImpl().catch((err) => {
-        console.error('[push] Auto-subscribe failed:', err)
-      })
-    }
-  }, [hasVapidKey, isSupported, permission, isSubscribed])
-
   const subscribeImpl = useCallback(async () => {
     if (!isSupported) return
-    if (!hasVapidKey) {
-      throw new Error('NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set')
-    }
+    if (!hasVapidKey) return
 
     // Request permission if not already granted
     const perm = await Notification.requestPermission()
@@ -121,6 +101,25 @@ export function usePushNotifications() {
     console.log('[push] Subscribed successfully')
   }, [hasVapidKey, isSupported])
 
+  // Auto-subscribe if permission is already granted. A preview without a VAPID
+  // key is a supported, intentionally unconfigured state—not an application error.
+  useEffect(() => {
+    if (!hasVapidKey) {
+      if (process.env.NODE_ENV === 'development' && !hasWarnedMissingKey.current) {
+        hasWarnedMissingKey.current = true
+        console.warn('[push] Auto-subscribe skipped: NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set')
+      }
+      return
+    }
+
+    if (isSupported && permission === 'granted' && !isSubscribed && !autoSubscribeAttempted.current) {
+      autoSubscribeAttempted.current = true
+      subscribeImpl().catch((err) => {
+        console.error('[push] Auto-subscribe failed:', err)
+      })
+    }
+  }, [hasVapidKey, isSupported, permission, isSubscribed, subscribeImpl])
+
   const subscribe = useCallback(async () => {
     await subscribeImpl()
   }, [subscribeImpl])
@@ -155,5 +154,6 @@ export function usePushNotifications() {
     subscribe,
     unsubscribe,
     permission,
+    isConfigured: hasVapidKey,
   }
 }

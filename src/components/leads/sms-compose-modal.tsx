@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 
 // ── Agent → default Twilio number mapping ──
 const AGENT_DEFAULT_NUMBERS: Record<string, string> = {
@@ -122,6 +123,8 @@ export function SmsComposeModal({
 }: ComposeModalProps) {
   const { user } = useAuth()
   const agentName = getAgentFromEmail(user?.email)
+  const titleId = useId()
+  const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
 
   const [activeTab, setActiveTab] = useState<'sms' | 'email'>(initialTab)
   const [messages, setMessages] = useState<Activity[]>([])
@@ -372,14 +375,22 @@ export function SmsComposeModal({
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="ck-dark bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-lg flex flex-col border border-outline-variant/20" style={{ maxHeight: '80vh' }}>
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+          className="crm-modal-surface bg-surface-container-lowest flex w-full max-w-lg flex-col rounded-2xl border border-outline-variant/20 shadow-2xl"
+          style={{ maxHeight: '80vh', background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
+        >
 
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10">
             <div className="flex items-center gap-3">
               <Icon name={activeTab === 'sms' ? 'sms' : 'email'} className="text-primary text-xl" />
               <div>
-                <h2 className="text-lg font-bold text-primary">
+                <h2 id={titleId} className="text-lg font-bold text-primary">
                   {activeTab === 'sms' ? 'Send Text' : 'Send Email'}
                 </h2>
                 <p className="text-xs text-on-surface-variant/60">
@@ -390,7 +401,9 @@ export function SmsComposeModal({
               </div>
             </div>
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close message composer"
               className="text-on-surface-variant hover:text-primary transition-colors"
             >
               <Icon name="close" />

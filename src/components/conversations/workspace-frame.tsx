@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
+import { useThemePreference } from '@/hooks/use-theme-preference'
 import { WorkspaceNav } from './workspace-nav'
 
 export function WorkspaceFrame({
@@ -18,6 +19,7 @@ export function WorkspaceFrame({
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [hubNeedsReply, setHubNeedsReply] = useState(0)
+  const { theme, toggle: toggleTheme } = useThemePreference()
   const resolvedNeedsReply = needsReply ?? hubNeedsReply
 
   useEffect(() => {
@@ -41,7 +43,10 @@ export function WorkspaceFrame({
   }
 
   return (
-    <div className="crm-workspace-shell flex h-screen overflow-hidden bg-[var(--crm-canvas)] text-[var(--crm-ink)]">
+    <div
+      className="crm-workspace-shell flex h-screen overflow-hidden bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
+      data-theme={theme}
+    >
       <WorkspaceNav needsReply={resolvedNeedsReply} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="relative flex h-[66px] shrink-0 items-center border-b border-[#ded9d1] bg-white/95 px-6 shadow-[0_4px_18px_rgba(16,40,63,0.05)] backdrop-blur">
@@ -58,6 +63,15 @@ export function WorkspaceFrame({
             />
           </form>
           <div className="ml-auto flex items-center gap-5">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              title={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)] transition-colors hover:bg-[var(--ck-surface-hi)] hover:text-[var(--ck-text)]"
+            >
+              <Icon name={theme === 'dark' ? 'light_mode' : 'dark_mode'} className="text-[22px]" />
+            </button>
             <div className="relative">
               <button type="button" onClick={() => setNotificationsOpen((value) => !value)} aria-expanded={notificationsOpen} className="relative flex h-10 w-10 items-center justify-center rounded-full bg-[#fff0f1] text-[#b91f2d] transition-colors hover:bg-[#ffe3e6]" aria-label="Notifications">
                 <Icon name="notifications_none" className="text-[25px]" />

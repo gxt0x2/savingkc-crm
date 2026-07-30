@@ -3,7 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 const playwrightPort = process.env.PLAYWRIGHT_PORT || '3002';
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${playwrightPort}`;
 const useManagedWebServer = !process.env.PLAYWRIGHT_BASE_URL;
-const authProxyTestBypassSecret = 'playwright-smoke-bypass';
+const authProxyTestBypassSecret =
+  process.env.PLAYWRIGHT_AUTH_BYPASS_SECRET || 'playwright-smoke-bypass';
+const useAuthProxyTestBypass =
+  useManagedWebServer || Boolean(process.env.PLAYWRIGHT_AUTH_BYPASS_SECRET);
 const playwrightEnv = {
   ...process.env,
   AUTH_PROXY_TEST_BYPASS_SECRET: authProxyTestBypassSecret,
@@ -24,7 +27,7 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL,
-    extraHTTPHeaders: useManagedWebServer
+    extraHTTPHeaders: useAuthProxyTestBypass
       ? { 'x-skc-test-auth-bypass': authProxyTestBypassSecret }
       : undefined,
     trace: 'on-first-retry',

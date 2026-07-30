@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { AriBriefing } from '@/components/leads/ari-briefing'
 import { PainPoints } from '@/components/leads/pain-points'
 import { FavoriteOrFool } from '@/components/leads/favorite-or-fool'
@@ -747,6 +748,7 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
   })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
 
   async function handleSave() {
     setSaving(true)
@@ -789,11 +791,18 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-[#111827]/45 backdrop-blur-[1px]" onClick={onClose} />
-      <div className="fixed bottom-0 right-0 top-0 z-50 flex w-full max-w-[430px] flex-col overflow-hidden border-l border-[#d9dfe6] bg-white shadow-2xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-lead-title"
+        tabIndex={-1}
+        className="fixed bottom-0 right-0 top-0 z-50 flex w-full max-w-[430px] flex-col overflow-hidden border-l border-[#d9dfe6] bg-white shadow-2xl"
+      >
         <div className="flex items-center justify-between border-b border-[#e4e7ec] px-6 py-4">
           <div className="flex items-center gap-2">
             <Icon name="edit" className="!text-base text-[#df3038]" />
-            <h2 className="text-lg font-bold text-[#172033]">Edit lead</h2>
+            <h2 id="edit-lead-title" className="text-lg font-bold text-[#172033]">Edit lead</h2>
           </div>
           <button
             onClick={onClose}
@@ -807,12 +816,14 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
           {fields.map(({ key, label, type, multiline }) => (
             <div key={key}>
               <label
+                htmlFor={`edit-lead-${key}`}
                 className="mb-1 block text-[10px] font-black uppercase tracking-[0.08em] text-[#667085]"
               >
                 {label}
               </label>
               {multiline ? (
                 <textarea
+                  id={`edit-lead-${key}`}
                   rows={4}
                   value={form[key]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
@@ -820,6 +831,7 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
                 />
               ) : (
                 <input
+                  id={`edit-lead-${key}`}
                   type={type ?? 'text'}
                   value={form[key]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
@@ -1157,6 +1169,10 @@ export default function LeadDetailPage() {
   const [manifestTranscripts, setManifestTranscripts] = useState<Array<{ date: string; recordingUrl?: string }>>([])
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [notesModalOpen, setNotesModalOpen] = useState(false)
+  const notesDialogRef = useDialogAccessibility<HTMLDivElement>(
+    notesModalOpen,
+    () => setNotesModalOpen(false),
+  )
   const [smsModalOpen, setSmsModalOpen] = useState(false)
   const [composeTab, setComposeTab] = useState<'sms' | 'email'>('sms')
   const [editNoteId, setEditNoteId] = useState<string | null>(null)
@@ -2669,6 +2685,11 @@ export default function LeadDetailPage() {
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40" onClick={() => setNotesModalOpen(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
+              ref={notesDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="add-note-title"
+              tabIndex={-1}
               className="rounded-2xl shadow-2xl w-full max-w-lg border"
               style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
             >
@@ -2678,10 +2699,12 @@ export default function LeadDetailPage() {
               >
                 <div className="flex items-center gap-2">
                   <Icon name="edit_note" className="!text-[color:var(--ck-accent)]" />
-                  <h2 className="text-lg font-bold" style={{ color: 'var(--ck-text)' }}>Add Note</h2>
+                  <h2 id="add-note-title" className="text-lg font-bold" style={{ color: 'var(--ck-text)' }}>Add Note</h2>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setNotesModalOpen(false)}
+                  aria-label="Close add note dialog"
                   className="transition-colors"
                   style={{ color: 'var(--ck-text-muted)' }}
                 >
