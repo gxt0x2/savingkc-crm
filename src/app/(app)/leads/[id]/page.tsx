@@ -1964,27 +1964,31 @@ export default function LeadDetailPage() {
         onStageChange={(station) => setLead((current) => current ? { ...current, station } : current)}
         sectionPanels={{
           property: (
-            <div className="mx-auto max-w-5xl space-y-5">
-              <PropertyHero
-                property={property}
-                zestimate={zestimate}
-                redfinEstimate={redfinEstimate}
-                assessedValue={assessedValue ?? lead.tax_assessment ?? null}
-                taxOwed={
-                  manifestProperty?.taxCollector?.totalOwed ??
-                  manifestProperty?.taxCollector?.delinquentAmount ??
-                  null
-                }
-                estimateLoading={
-                  (zillowEnriching && zestimate == null) ||
-                  (redfinEnriching && redfinEstimate == null)
-                }
-                onOpenDetails={() => setDetailsExpanded(true)}
-              />
-              <PropertyDetailsCard
-                details={workspacePropertyDetails}
-                onEdit={() => setEditPanelOpen(true)}
-              />
+            <div className="mx-auto grid w-full max-w-[1380px] items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+              <div className="min-w-0">
+                <PropertyHero
+                  property={property}
+                  zestimate={zestimate}
+                  redfinEstimate={redfinEstimate}
+                  assessedValue={assessedValue ?? lead.tax_assessment ?? null}
+                  taxOwed={
+                    manifestProperty?.taxCollector?.totalOwed ??
+                    manifestProperty?.taxCollector?.delinquentAmount ??
+                    null
+                  }
+                  estimateLoading={
+                    (zillowEnriching && zestimate == null) ||
+                    (redfinEnriching && redfinEstimate == null)
+                  }
+                  onOpenDetails={() => setDetailsExpanded(true)}
+                />
+              </div>
+              <div className="min-w-0">
+                <PropertyDetailsCard
+                  details={workspacePropertyDetails}
+                  onEdit={() => setEditPanelOpen(true)}
+                />
+              </div>
             </div>
           ),
           documents: (
