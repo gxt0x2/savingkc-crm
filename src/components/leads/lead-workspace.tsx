@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { StageSelector } from '@/components/leads/stage-selector'
@@ -149,6 +149,7 @@ export function LeadWorkspace({
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [imageFailed, setImageFailed] = useState(false)
+  const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const sectionHeadingRef = useRef<HTMLDivElement>(null)
   const name = toProperCase(lead.full_name) || 'Unknown contact'
   const firstName = name.split(/\s+/)[0]
@@ -187,6 +188,15 @@ export function LeadWorkspace({
     : appointment
       ? `Appointment ${new Date(appointment.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
     : nextTask?.description || 'Define the next action'
+
+  useEffect(() => {
+    if (!contextPanelOpen) return
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setContextPanelOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [contextPanelOpen])
 
   function selectSection(section: LeadWorkspaceSection) {
     setActiveSection(section)
@@ -248,48 +258,47 @@ export function LeadWorkspace({
 
   return (
     <div className="h-full overflow-y-auto bg-[var(--crm-canvas)]">
-      <div className="mx-auto max-w-[1560px] px-5 pb-8 pt-6 xl:px-8">
-        <header className="crm-panel-raised relative overflow-hidden rounded-xl px-6 py-5">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+      <div className="mx-auto max-w-[1640px] px-4 pb-8 pt-4 xl:px-6">
+        <header className="crm-panel-raised relative overflow-hidden rounded-xl px-4 py-3.5 sm:px-5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <Link href="/contacts" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg" aria-label="Back to contacts">
+              <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                <Link href="/contacts" className="crm-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" aria-label="Back to contacts">
                   <Icon name="arrow_back" />
                 </Link>
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--crm-brand)] text-base font-bold text-white ring-4 ring-[var(--crm-brand-soft)]">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--crm-brand)] text-sm font-bold text-white ring-4 ring-[var(--crm-brand-soft)]">
                   {initials || 'SK'}
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-2xl font-bold tracking-[-0.03em] text-[var(--crm-ink)] sm:text-[30px]">{name}</h1>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2 py-1 text-xs font-bold text-[var(--crm-brand)]">
-                      <Icon name="local_fire_department" className="text-[15px]" />
+                    <h1 className="truncate text-xl font-bold tracking-[-0.03em] text-[var(--crm-ink)] sm:text-2xl">{name}</h1>
+                    <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-brand)]">
+                      <Icon name="local_fire_department" className="text-[14px]" />
                       {(lead.priority || '').toLowerCase() === 'hot' ? 'Hot Lead' : 'Active Lead'}
                     </span>
-                    <button type="button" onClick={onEdit} className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg" aria-label="Edit contact">
-                      <Icon name="edit" className="text-[19px]" />
+                    <button type="button" onClick={onEdit} className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg" aria-label="Edit contact">
+                      <Icon name="edit" className="text-[17px]" />
                     </button>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-[var(--crm-text-muted)]">
-                    {address ? <span className="flex items-center gap-1.5"><Icon name="location_on" className="text-[18px]" />{address}</span> : null}
-                    {lead.phone ? <button type="button" onClick={onCall} className="flex items-center gap-1.5 hover:text-[var(--crm-brand)]" aria-label={`Call ${name}`}><Icon name="call" className="text-[17px]" />{formatPhone(lead.phone)}</button> : null}
-                    {lead.email ? <button type="button" onClick={onEmail} className="flex items-center gap-1.5 hover:text-[var(--crm-brand)]" aria-label={`Email ${name}`}><Icon name="mail" className="text-[17px]" />{lead.email}</button> : null}
+                  <div className="mt-0.5 flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--crm-text-muted)]">
+                    {address ? <span className="flex max-w-[520px] items-center gap-1 truncate"><Icon name="location_on" className="shrink-0 text-[16px]" />{address}</span> : null}
+                    {lead.phone ? <button type="button" onClick={onCall} className="flex items-center gap-1 hover:text-[var(--crm-brand)]" aria-label={`Call ${name}`}><Icon name="call" className="text-[15px]" />{formatPhone(lead.phone)}</button> : null}
                   </div>
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap gap-2">
               <ActionButton icon="call" label="Call" onClick={onCall} disabled={!lead.phone} tone="teal" />
               <ActionButton icon="chat_bubble" label="Text" onClick={onText} disabled={!lead.phone} tone="blue" />
               <ActionButton icon="mail" label="Email" onClick={onEmail} disabled={!lead.email} tone="violet" />
-              <button type="button" onClick={onContract} className="crm-primary-button flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-bold">
-                <Icon name="description" className="text-[19px]" />
+              <button type="button" onClick={onContract} className="crm-primary-button flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-bold sm:text-sm">
+                <Icon name="description" className="text-[17px]" />
                 Create contract
               </button>
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 border-t border-[var(--crm-border)] pt-4 md:grid-cols-3">
+          <div className="mt-3 grid gap-2 border-t border-[var(--crm-border)] pt-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,0.75fr)_minmax(180px,0.55fr)_minmax(330px,1fr)_auto]">
             <SummaryItem label="Stage" tone="teal">
               <StageSelector
                 leadId={lead.id}
@@ -312,10 +321,21 @@ export function LeadWorkspace({
                 {nextAction}
               </button>
             </SummaryItem>
+            <button
+              type="button"
+              onClick={() => setContextPanelOpen(true)}
+              aria-expanded={contextPanelOpen}
+              aria-controls="lead-context-panel"
+              className="crm-secondary-button flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-xs font-bold"
+            >
+              <Icon name="contact_page" className="text-[18px] text-[var(--crm-info)]" />
+              Contact & property
+              <Icon name="chevron_right" className="text-[17px] text-[var(--crm-text-dim)]" />
+            </button>
           </div>
         </header>
 
-        <nav ref={sectionHeadingRef} className="crm-panel sticky top-0 z-20 mt-4 grid scroll-mt-4 grid-cols-3 overflow-hidden rounded-xl md:grid-cols-6" aria-label="Lead workspace sections">
+        <nav ref={sectionHeadingRef} className="crm-panel sticky top-0 z-20 mt-3 grid scroll-mt-4 grid-cols-3 overflow-hidden rounded-xl md:grid-cols-6" aria-label="Lead workspace sections">
           {WORKSPACE_SECTIONS.map(({ key, icon, label, activeTone, iconTone }) => (
             <button
               key={key}
@@ -323,7 +343,7 @@ export function LeadWorkspace({
               onClick={() => selectSection(key)}
               aria-current={activeSection === key ? 'page' : undefined}
               className={cn(
-                'flex h-14 items-center justify-center gap-2 border-b-2 px-2 text-xs font-semibold transition-colors md:text-sm',
+                'flex h-11 items-center justify-center gap-1.5 border-b-2 px-2 text-xs font-semibold transition-colors md:text-sm',
                 activeSection === key
                   ? activeTone
                   : 'border-transparent text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface-subtle)] hover:text-[var(--crm-ink)]',
@@ -335,63 +355,85 @@ export function LeadWorkspace({
           ))}
         </nav>
 
-        {activeSection === 'overview' ? (
-        <main className="mt-4 grid gap-4 xl:grid-cols-[0.92fr_1.45fr_1.05fr]">
-          <section className="crm-panel overflow-hidden rounded-xl">
-            <CardHeader title="Contact & Property" icon="person" onMore={onEdit} />
-            <div className="p-5">
-              <SectionLabel>Contact</SectionLabel>
-              <dl className="mt-3 space-y-3 text-sm">
-                <DataRow label="Phone" value={lead.phone ? formatPhone(lead.phone) : '—'} accent />
-                <DataRow label="Email" value={lead.email || '—'} accent />
-                <DataRow label="Owner" value={owner} />
-                <DataRow label="Preferred contact" value={lead.phone ? 'Text or call' : lead.email ? 'Email' : 'Not set'} />
-              </dl>
+        {contextPanelOpen ? (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-40 cursor-default bg-black/35 backdrop-blur-[1px]"
+              onClick={() => setContextPanelOpen(false)}
+              aria-label="Close contact and property details"
+            />
+            <aside
+              id="lead-context-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="lead-context-title"
+              className="crm-panel-raised fixed bottom-3 left-3 top-3 z-50 flex w-[min(390px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl shadow-2xl"
+            >
+              <CardHeader
+                id="lead-context-title"
+                title="Contact & Property"
+                icon="person"
+                onMore={onEdit}
+                onClose={() => setContextPanelOpen(false)}
+              />
+              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                <SectionLabel>Contact</SectionLabel>
+                <dl className="mt-3 space-y-3 text-sm">
+                  <DataRow label="Phone" value={lead.phone ? formatPhone(lead.phone) : '—'} accent />
+                  <DataRow label="Email" value={lead.email || '—'} accent />
+                  <DataRow label="Owner" value={owner} />
+                  <DataRow label="Preferred contact" value={lead.phone ? 'Text or call' : lead.email ? 'Email' : 'Not set'} />
+                </dl>
 
-              <div className="my-5 border-t border-[var(--crm-border)]" />
-              <SectionLabel>Property snapshot</SectionLabel>
-              <button type="button" onClick={onOpenProperty} className="mt-3 w-full overflow-hidden rounded-lg border border-[var(--crm-border)] text-left hover:border-[var(--crm-brand-border)]" aria-label="Open property details">
-                {!imageFailed && address ? (
-                  // Google Street View is a signed dynamic image URL and is intentionally not routed through next/image.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={streetViewUrl}
-                    alt={`Street view of ${address}`}
-                    className="h-36 w-full object-cover"
-                    onError={() => setImageFailed(true)}
-                  />
-                ) : (
-                  <span className="flex h-36 items-center justify-center bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]">
-                    <Icon name="home" className="text-[42px]" />
-                  </span>
-                )}
-                <span className="block px-4 py-3">
-                  <span className="block font-bold text-[var(--crm-ink)]">{lead.property_address || 'Property address missing'}</span>
-                  <span className="mt-1 block text-xs text-[var(--crm-text-muted)]">{[lead.city, lead.state, lead.zip].filter(Boolean).join(', ')}</span>
-                </span>
-              </button>
-              <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <DataRow label="Beds" value={lead.beds?.toString() || '—'} compact />
-                <DataRow label="Baths" value={((lead.baths_full || 0) + (lead.baths_half ? 0.5 : 0)).toString() || '—'} compact />
-                <DataRow label="Sq Ft" value={lead.sqft?.toLocaleString() || '—'} compact />
-                <DataRow label="Year built" value={lead.year_built?.toString() || '—'} compact />
-              </dl>
-              <div className="my-5 border-t border-[var(--crm-border)]" />
-              <DataRow label="Source" value={lead.source || 'Unknown'} />
-              <div className="mt-5">
-                <SectionLabel>Tags</SectionLabel>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {[lead.priority === 'hot' ? 'Hot Lead' : null, lead.source, lead.station].filter(Boolean).map((tag) => (
-                    <span key={tag} className="rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2.5 py-1 text-xs font-semibold capitalize text-[var(--crm-brand)]">
-                      {String(tag).replace(/_/g, ' ')}
+                <div className="my-5 border-t border-[var(--crm-border)]" />
+                <SectionLabel>Property snapshot</SectionLabel>
+                <button type="button" onClick={onOpenProperty} className="mt-3 w-full overflow-hidden rounded-lg border border-[var(--crm-border)] text-left hover:border-[var(--crm-brand-border)]" aria-label="Open property details">
+                  {!imageFailed && address ? (
+                    // Google Street View is a signed dynamic image URL and is intentionally not routed through next/image.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={streetViewUrl}
+                      alt={`Street view of ${address}`}
+                      className="h-36 w-full object-cover"
+                      onError={() => setImageFailed(true)}
+                    />
+                  ) : (
+                    <span className="flex h-36 items-center justify-center bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]">
+                      <Icon name="home" className="text-[42px]" />
                     </span>
-                  ))}
+                  )}
+                  <span className="block px-4 py-3">
+                    <span className="block font-bold text-[var(--crm-ink)]">{lead.property_address || 'Property address missing'}</span>
+                    <span className="mt-1 block text-xs text-[var(--crm-text-muted)]">{[lead.city, lead.state, lead.zip].filter(Boolean).join(', ')}</span>
+                  </span>
+                </button>
+                <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <DataRow label="Beds" value={lead.beds?.toString() || '—'} compact />
+                  <DataRow label="Baths" value={((lead.baths_full || 0) + (lead.baths_half ? 0.5 : 0)).toString() || '—'} compact />
+                  <DataRow label="Sq Ft" value={lead.sqft?.toLocaleString() || '—'} compact />
+                  <DataRow label="Year built" value={lead.year_built?.toString() || '—'} compact />
+                </dl>
+                <div className="my-5 border-t border-[var(--crm-border)]" />
+                <DataRow label="Source" value={lead.source || 'Unknown'} />
+                <div className="mt-5">
+                  <SectionLabel>Tags</SectionLabel>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {[lead.priority === 'hot' ? 'Hot Lead' : null, lead.source, lead.station].filter(Boolean).map((tag) => (
+                      <span key={tag} className="rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2.5 py-1 text-xs font-semibold capitalize text-[var(--crm-brand)]">
+                        {String(tag).replace(/_/g, ' ')}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
+            </aside>
+          </>
+        ) : null}
 
-          <section className="crm-panel flex h-[calc(100vh-375px)] min-h-[540px] max-h-[720px] flex-col overflow-hidden rounded-xl">
+        {activeSection === 'overview' ? (
+        <main className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.9fr)]">
+          <section className="crm-panel flex h-[calc(100vh-300px)] min-h-[560px] max-h-[820px] flex-col overflow-hidden rounded-xl">
             <CardHeader title="Conversation" icon="forum" />
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
               {visibleActivities.length ? visibleActivities.map((activity) => (
@@ -543,8 +585,8 @@ function ActionButton({ icon, label, onClick, disabled, tone }: { icon: string; 
     violet: 'border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] text-[var(--crm-violet)] hover:brightness-95',
   }[tone]
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className={cn('flex h-11 min-w-[104px] items-center justify-center gap-2 rounded-lg border px-4 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:border-[var(--crm-border)] disabled:bg-[var(--crm-surface)] disabled:text-[var(--crm-text-disabled)]', toneClass)}>
-      <Icon name={icon} className="text-[19px]" />
+    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className={cn('flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors sm:text-sm disabled:cursor-not-allowed disabled:border-[var(--crm-border)] disabled:bg-[var(--crm-surface)] disabled:text-[var(--crm-text-disabled)]', toneClass)}>
+      <Icon name={icon} className="text-[17px]" />
       {label}
     </button>
   )
@@ -557,14 +599,14 @@ function SummaryItem({ label, children, tone }: { label: string; children: React
     amber: 'border-l-[var(--crm-warning)] bg-[var(--crm-warning-soft)]',
   }[tone]
   return (
-    <div className={cn('flex min-h-14 items-center gap-4 rounded-lg border border-[var(--crm-border)] border-l-4 px-4', toneClass)}>
-      <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">{label}</span>
+    <div className={cn('flex min-h-11 items-center gap-3 rounded-lg border border-[var(--crm-border)] border-l-[3px] px-3', toneClass)}>
+      <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">{label}</span>
       <div className="ml-auto">{children}</div>
     </div>
   )
 }
 
-function CardHeader({ title, icon, onMore }: { title: string; icon: string; onMore?: () => void }) {
+function CardHeader({ id, title, icon, onMore, onClose }: { id?: string; title: string; icon: string; onMore?: () => void; onClose?: () => void }) {
   const iconTone = icon === 'person'
     ? 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
     : icon === 'forum'
@@ -573,8 +615,11 @@ function CardHeader({ title, icon, onMore }: { title: string; icon: string; onMo
   return (
     <div className="flex h-13 items-center border-b border-[var(--crm-border)] px-5">
       <span className={cn('mr-2 flex h-8 w-8 items-center justify-center rounded-lg', iconTone)}><Icon name={icon} className="text-[18px]" /></span>
-      <h2 className="text-base font-bold text-[var(--crm-ink)]">{title}</h2>
-      {onMore ? <button type="button" onClick={onMore} aria-label={`Edit ${title}`} className="crm-icon-button ml-auto flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="more_vert" /></button> : null}
+      <h2 id={id} className="text-base font-bold text-[var(--crm-ink)]">{title}</h2>
+      <div className="ml-auto flex items-center gap-1">
+        {onMore ? <button type="button" onClick={onMore} aria-label={`Edit ${title}`} className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="edit" className="text-[18px]" /></button> : null}
+        {onClose ? <button type="button" onClick={onClose} autoFocus aria-label={`Close ${title}`} className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="close" /></button> : null}
+      </div>
     </div>
   )
 }
