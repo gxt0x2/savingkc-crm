@@ -9,6 +9,11 @@ import { ContactDetailsPanel } from '@/components/conversations/contact-details-
 import type { Message } from '@/components/conversations/message-bubble'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
+import {
+  buildConversationHubThread,
+  type ConversationHubActivity,
+  type ConversationHubLead,
+} from '@/lib/operating-model/conversation-hub'
 
 interface LeadRow {
   id: string
@@ -282,35 +287,44 @@ export default function ConversationsPage() {
     ])
     const payload = response.ok ? await response.json() as { items?: LeadRow[] } : { items: [] }
     const rows = payload.items || []
-    const unmatched = (unmatchedResult.data || []) as unknown as ActivityRow[]
+    const unmatched = ((unmatchedResult.data || []) as DatabaseActivityRow[])
+      .map((activity) => ({ ...activity, type: activity.activity_type }))
 
     const phoneMap = new Map<string, ActivityRow[]>()
     for (const act of unmatched) {
-      const phone = (act.metadata?.from as string) || (act.metadata?.to as string) || 'unknown'
+      const rawDirection = String(act.metadata?.direction ?? '').toLowerCase()
+      const phone = rawDirection === 'outbound' || rawDirection === 'sent'
+        ? String(act.metadata?.to ?? act.metadata?.from ?? 'unknown')
+        : String(act.metadata?.from ?? act.metadata?.to ?? 'unknown')
       const items = phoneMap.get(phone) ?? []
       items.push(act)
       phoneMap.set(phone, items)
     }
 
-    const virtualLeads: LeadRow[] = Array.from(phoneMap.entries()).map(([phone, acts]) => ({
-      id: `unmatched:${phone}`,
-      full_name: phone,
-      phone,
-      email: null,
-      property_address: null,
-      city: null,
-      station: 'unmatched',
-      priority: 'normal',
-      assigned_agent: null,
-      created_at: acts[0].created_at,
-      attentionState: 'needs_reply',
-      owner: null,
-      unread: true,
-      lastMessage: acts[0].description || 'Inbound call — not yet a contact',
-      lastActivityAt: acts[0].created_at,
-      lastChannel: acts[0].type === 'voicemail' ? 'voicemail' : acts[0].type === 'sms' ? 'sms' : 'call',
-      primaryNextAction: null,
-    }))
+    const virtualLeads: LeadRow[] = Array.from(phoneMap.entries()).map(([phone, acts]) => {
+      const virtualLead: ConversationHubLead = {
+        id: `unmatched:${phone}`,
+        full_name: phone,
+        phone,
+        email: null,
+        property_address: null,
+        city: null,
+        station: 'unmatched',
+        priority: 'normal',
+        assigned_agent: null,
+        created_at: acts[0].created_at,
+      }
+      const activities: ConversationHubActivity[] = acts.map((activity) => ({
+        id: activity.id,
+        lead_id: activity.lead_id,
+        activity_type: activity.type,
+        description: activity.description,
+        agent: activity.agent,
+        metadata: activity.metadata,
+        created_at: activity.created_at,
+      }))
+      return buildConversationHubThread(virtualLead, activities)
+    })
 
     // Open the workspace on a fully identified seller so the operator lands in
     // a useful thread with property, ownership, and opportunity context. Keep

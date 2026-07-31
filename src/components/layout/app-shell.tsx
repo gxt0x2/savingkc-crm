@@ -89,6 +89,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/leads') ?? false) ||
     (pathname?.startsWith('/workflows') ?? false) ||
     (pathname?.startsWith('/opportunities') ?? false) ||
+    (pathname?.startsWith('/dialer') ?? false) ||
     isAcquisitionsCalendar ||
     (pathname?.startsWith('/marketing') ?? false) ||
     (pathname?.startsWith('/dispo/pipeline') ?? false) ||

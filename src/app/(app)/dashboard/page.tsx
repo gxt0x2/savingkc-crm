@@ -81,7 +81,7 @@ function ProgressRing({ value, max, size = 72, stroke = 6, color = '#16a34a' }: 
   const offset = circumference * (1 - pct)
   return (
     <svg width={size} height={size} className="transform -rotate-90">
-      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={stroke} className="text-slate-100" />
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={stroke} className="text-[var(--crm-surface-subtle)]" />
       <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
     </svg>
   )
@@ -141,13 +141,13 @@ export default function KpiPage() {
   const net = revenue - expenses
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-[1440px] mx-auto w-full space-y-8 pb-32">
+    <div className="mx-auto min-h-full w-full max-w-[1440px] space-y-8 bg-[var(--crm-canvas)] px-4 py-6 pb-24 sm:px-6 lg:px-8">
       {/* Header */}
       <div>
-        <span className="text-[10px] font-bold text-secondary uppercase tracking-[0.2em] mb-1 block">
-          KPIs
+        <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--crm-brand)]">
+          Reports workspace
         </span>
-        <h2 className="text-3xl font-extrabold tracking-tight text-primary">
+        <h2 className="text-3xl font-extrabold tracking-tight text-[var(--crm-ink)]">
           {ytd?.agent ? `${ytd.agent} — Year to Date` : 'Year to Date'}
         </h2>
       </div>
@@ -185,26 +185,26 @@ export default function KpiPage() {
       {ytd && ytd.monthly.length > 0 && (
         <div>
           <SectionHeader icon="bar_chart" label="Monthly Funnel" />
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
             <div className="space-y-3">
               {ytd.monthly.map((m) => {
                 const maxCalls = Math.max(...ytd.monthly.map(x => x.calls))
                 return (
                   <div key={m.month} className="flex items-center gap-3">
-                    <div className="w-16 text-xs font-bold text-slate-500">{m.month.replace(' 2026', '')}</div>
-                    <div className="flex-1 h-8 bg-slate-50 rounded-lg overflow-hidden relative">
+                    <div className="w-16 text-xs font-bold text-[var(--crm-text-muted)]">{m.month.replace(' 2026', '')}</div>
+                    <div className="relative h-8 flex-1 overflow-hidden rounded-lg bg-[var(--crm-surface-subtle)]">
                       <div
-                        className="h-full bg-gradient-to-r from-[#E32E2E] to-[#C42626] rounded-lg transition-all duration-1000 ease-out flex items-center justify-end pr-3"
+                        className="flex h-full items-center justify-end rounded-lg bg-gradient-to-r from-[var(--crm-brand)] to-[var(--crm-brand-hover)] pr-3 transition-all duration-1000 ease-out"
                         style={{ width: `${maxCalls > 0 ? (m.calls / maxCalls) * 100 : 0}%` }}
                       >
                         <span className="text-[10px] font-black text-white tabular-nums">{m.calls.toLocaleString()}</span>
                       </div>
                     </div>
                     <div className="w-32 text-right text-[10px]">
-                      <span className="font-bold text-emerald-600 tabular-nums">{m.contacts}</span>
-                      <span className="text-slate-400"> contacts · </span>
-                      <span className="font-bold text-amber-600 tabular-nums">{m.leads}</span>
-                      <span className="text-slate-400"> leads</span>
+                      <span className="font-bold tabular-nums text-[var(--crm-success)]">{m.contacts}</span>
+                      <span className="text-[var(--crm-text-dim)]"> contacts · </span>
+                      <span className="font-bold tabular-nums text-[var(--crm-warning)]">{m.leads}</span>
+                      <span className="text-[var(--crm-text-dim)]"> leads</span>
                     </div>
                   </div>
                 )
@@ -217,8 +217,8 @@ export default function KpiPage() {
       {/* ═══ 3-col tiles: Show Rate / Conversion / Financial ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* 30-day show rate */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <div className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--crm-text-dim)]">
             <Icon name="percent" size="text-xs" /> 30-Day Show Rate
           </div>
           {apptStats !== null && apptStats.totalAppointments > 0 ? (
@@ -230,37 +230,37 @@ export default function KpiPage() {
                     max={100}
                     size={72}
                     stroke={6}
-                    color={apptStats.showRate30Day >= 90 ? '#16a34a' : apptStats.showRate30Day >= 85 ? '#f59e0b' : '#E32E2E'}
+                    color={apptStats.showRate30Day >= 90 ? 'var(--crm-success)' : apptStats.showRate30Day >= 85 ? 'var(--crm-warning)' : 'var(--crm-danger)'}
                   />
-                  <span className="absolute text-lg font-black text-primary tabular-nums">{apptStats.showRate30Day}%</span>
+                  <span className="absolute text-lg font-black tabular-nums text-[var(--crm-ink)]">{apptStats.showRate30Day}%</span>
                 </div>
                 <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase">Target 90%+</div>
-                  <div className="text-sm font-semibold text-slate-700 mt-1">
+                  <div className="text-[10px] font-bold uppercase text-[var(--crm-text-dim)]">Target 90%+</div>
+                  <div className="mt-1 text-sm font-semibold text-[var(--crm-text)]">
                     {apptStats.showRate30Day >= 90 ? 'On target' : apptStats.showRate30Day >= 85 ? 'Close' : 'Below target'}
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100">
-                <StatTile label="Complete" value={apptStats.completed} color="text-emerald-600" />
-                <StatTile label="No-Shows" value={apptStats.noShows} color="text-[#E32E2E]" />
-                <StatTile label="Cancel" value={apptStats.cancelled} color="text-slate-500" />
+              <div className="grid grid-cols-3 gap-2 border-t border-[var(--crm-border)] pt-3">
+                <StatTile label="Complete" value={apptStats.completed} color="text-[var(--crm-success)]" />
+                <StatTile label="No-Shows" value={apptStats.noShows} color="text-[var(--crm-danger)]" />
+                <StatTile label="Cancel" value={apptStats.cancelled} color="text-[var(--crm-text-muted)]" />
               </div>
               {apptStats.ghostProtocolRecoveryRate > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-100 text-[10px] text-slate-500 flex items-center gap-1.5">
+                <div className="mt-3 flex items-center gap-1.5 border-t border-[var(--crm-border)] pt-3 text-[10px] text-[var(--crm-text-muted)]">
                   <Icon name="visibility_off" size="text-xs" />
-                  Ghost Protocol recovered <span className="font-bold text-slate-700 tabular-nums">{apptStats.ghostProtocolRecoveryRate}%</span>
+                  Ghost Protocol recovered <span className="font-bold tabular-nums text-[var(--crm-text)]">{apptStats.ghostProtocolRecoveryRate}%</span>
                 </div>
               )}
             </>
           ) : (
-            <div className="text-sm text-slate-400 py-4">No appointments yet</div>
+            <div className="py-4 text-sm text-[var(--crm-text-dim)]">No appointments yet</div>
           )}
         </div>
 
         {/* Conversion funnel */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <div className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--crm-text-dim)]">
             <Icon name="filter_alt" size="text-xs" /> Conversion Funnel
           </div>
           <div className="space-y-4">
@@ -268,14 +268,14 @@ export default function KpiPage() {
             <FunnelRow label="Qualified → Offer" pct={oRate} />
             <FunnelRow label="Offer → Close" pct={cRate} />
           </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] text-slate-500 tabular-nums">
+          <div className="mt-4 border-t border-[var(--crm-border)] pt-3 text-[10px] tabular-nums text-[var(--crm-text-muted)]">
             {total.toLocaleString()} total · {closed} closed
           </div>
         </div>
 
         {/* Financial health */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <div className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--crm-text-dim)]">
             <Icon name="account_balance" size="text-xs" /> Financial Health
           </div>
           <div className="space-y-3">
@@ -292,7 +292,7 @@ export default function KpiPage() {
 // ─── Presentational ──────────────────────────────────────────────
 function SectionHeader({ icon, label }: { icon: string; label: string }) {
   return (
-    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+    <h3 className="mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-[var(--crm-text-muted)]">
       <Icon name={icon} size="text-sm" /> {label}
     </h3>
   )
@@ -314,12 +314,12 @@ function HeroCard({
   accent?: boolean
 }) {
   const body = accent
-    ? 'bg-gradient-to-br from-[#E32E2E] to-[#C42626] border-[#C42626] text-white'
-    : 'bg-white border-slate-200 text-primary'
-  const labelTone = accent ? 'text-white/80' : 'text-slate-400'
-  const subTone = accent ? 'text-white/70' : 'text-slate-400'
-  const iconBg = accent ? 'bg-white/15' : 'bg-slate-50'
-  const iconTone = accent ? 'text-white/90' : 'text-slate-500'
+    ? 'border-[var(--crm-brand-hover)] bg-gradient-to-br from-[var(--crm-brand)] to-[var(--crm-brand-hover)] text-white'
+    : 'border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'
+  const labelTone = accent ? 'text-white/80' : 'text-[var(--crm-text-dim)]'
+  const subTone = accent ? 'text-white/70' : 'text-[var(--crm-text-dim)]'
+  const iconBg = accent ? 'bg-white/15' : 'bg-[var(--crm-surface-subtle)]'
+  const iconTone = accent ? 'text-white/90' : 'text-[var(--crm-text-muted)]'
 
   return (
     <div className={`relative overflow-hidden rounded-2xl p-5 shadow-sm border ${body}`}>
@@ -339,21 +339,21 @@ function StatTile({ label, value, color }: { label: string; value: number; color
   return (
     <div className="text-center">
       <div className={`text-lg font-black tabular-nums ${color}`}><AnimatedNumber value={value} /></div>
-      <div className="text-[9px] font-bold text-slate-400 uppercase">{label}</div>
+      <div className="text-[9px] font-bold uppercase text-[var(--crm-text-dim)]">{label}</div>
     </div>
   )
 }
 
 function FunnelRow({ label, pct }: { label: string; pct: number }) {
-  const color = pct > 30 ? 'bg-emerald-500' : pct > 15 ? 'bg-amber-500' : 'bg-slate-400'
-  const pctColor = pct > 30 ? 'text-emerald-600' : pct > 15 ? 'text-amber-600' : 'text-slate-500'
+  const color = pct > 30 ? 'bg-[var(--crm-success)]' : pct > 15 ? 'bg-[var(--crm-warning)]' : 'bg-[var(--crm-text-dim)]'
+  const pctColor = pct > 30 ? 'text-[var(--crm-success)]' : pct > 15 ? 'text-[var(--crm-warning)]' : 'text-[var(--crm-text-muted)]'
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1.5">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">{label}</span>
         <span className={`text-sm font-black tabular-nums ${pctColor}`}>{pct}%</span>
       </div>
-      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+      <div className="h-2 overflow-hidden rounded-full bg-[var(--crm-surface-subtle)]">
         <div className={`h-full ${color} rounded-full transition-all duration-1000 ease-out`} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
     </div>
@@ -362,14 +362,14 @@ function FunnelRow({ label, pct }: { label: string; pct: number }) {
 
 function FinancialRow({ label, value, tone, emphasis }: { label: string; value: number; tone: 'positive' | 'negative' | 'neutral'; emphasis?: boolean }) {
   const colorClass = tone === 'positive'
-    ? 'text-emerald-600'
+    ? 'text-[var(--crm-success)]'
     : tone === 'negative'
-    ? 'text-[#E32E2E]'
-    : value >= 0 ? 'text-slate-700' : 'text-[#E32E2E]'
+    ? 'text-[var(--crm-danger)]'
+    : value >= 0 ? 'text-[var(--crm-text)]' : 'text-[var(--crm-danger)]'
 
   return (
-    <div className={`flex items-baseline justify-between ${emphasis ? 'pt-2 border-t border-slate-100' : ''}`}>
-      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+    <div className={`flex items-baseline justify-between ${emphasis ? 'border-t border-[var(--crm-border)] pt-2' : ''}`}>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">{label}</span>
       <span className={`font-black tabular-nums ${emphasis ? 'text-lg' : 'text-sm'} ${colorClass}`}>
         {moneyShort(value)}
       </span>

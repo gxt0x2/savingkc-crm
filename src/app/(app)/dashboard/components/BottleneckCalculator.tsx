@@ -26,17 +26,17 @@ export function BottleneckCalculator() {
   const comparison = compareScenarios(state.current, state.optimized)
 
   return (
-    <section data-testid="bottleneck-calculator" data-control-depth="2" className="rounded-lg bg-[#0a0a0a] p-4 shadow-sm">
+    <section data-testid="bottleneck-calculator" data-control-depth="2" className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-400">Scenario Model</div>
-          <h2 className="mt-1 text-2xl font-black tracking-tight text-white">Left Main Bottleneck Calculator</h2>
+          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-success)]">Scenario Model</div>
+          <h2 className="mt-1 text-2xl font-black tracking-tight text-[var(--crm-ink)]">Left Main Bottleneck Calculator</h2>
         </div>
         <button
           type="button"
           aria-label="Reset Left Main scenario"
           onClick={() => dispatch({ type: 'reset' })}
-          className="h-9 rounded-md border border-slate-800 px-3 text-xs font-black uppercase tracking-[0.14em] text-slate-300 hover:border-slate-600"
+          className="h-9 rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 text-xs font-black uppercase tracking-[0.14em] text-[var(--crm-text-muted)] hover:border-[var(--crm-brand-border)] hover:text-[var(--crm-brand)]"
         >
           Reset
         </button>

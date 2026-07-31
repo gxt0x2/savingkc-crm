@@ -7,13 +7,13 @@ import { compareScenarios } from '../lib/bottleneck'
 import { LEFT_MAIN_FIXTURE } from '../__fixtures__/leftMain'
 
 describe('RevenueDelta', () => {
-  it('renders the revenue increase percent in #ff4d56 red', () => {
+  it('renders the revenue increase percent with the shared brand color token', () => {
     const comparison = compareScenarios(LEFT_MAIN_FIXTURE.current.inputs, LEFT_MAIN_FIXTURE.optimized.inputs)
 
     render(<RevenueDelta comparison={comparison} />)
 
     expect(screen.getByTestId('revenue-increase-percent')).toHaveTextContent('77.78%')
-    expect(screen.getByTestId('revenue-increase-percent')).toHaveStyle({ color: '#ff4d56' })
+    expect(screen.getByTestId('revenue-increase-percent')).toHaveClass('text-[var(--crm-brand)]')
   })
 
   it('renders net increase in dollars', () => {

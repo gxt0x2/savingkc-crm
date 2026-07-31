@@ -2086,8 +2086,8 @@ function DialerHome() {
       <button
         type="button"
         onClick={() => setHomeTab('queue')}
-        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
-          homeTab === 'queue' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
+          homeTab === 'queue' ? 'bg-[var(--crm-brand)] text-white shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
         }`}
       >
         <Icon name="phone_in_talk" size="text-base" /> Call Queue
@@ -2095,8 +2095,8 @@ function DialerHome() {
       <button
         type="button"
         onClick={() => setHomeTab('conversations')}
-        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
-          homeTab === 'conversations' ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
+          homeTab === 'conversations' ? 'bg-[var(--crm-brand)] text-white shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
         }`}
       >
         <Icon name="forum" size="text-base" /> Conversations
@@ -2105,7 +2105,7 @@ function DialerHome() {
   )
 
   return (
-    <div className={`mx-auto px-4 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'flex h-[calc(100dvh-4rem)] max-w-[1440px] flex-col py-4' : 'max-w-[1180px] py-6 pb-24'}`}>
+    <div className={`mx-auto w-full px-4 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'flex h-full max-w-[1440px] flex-col py-4' : 'max-w-[1440px] py-6 pb-20'}`}>
       <BulkSmsModal
         open={showBulkSms}
         onClose={() => setShowBulkSms(false)}
@@ -2116,13 +2116,14 @@ function DialerHome() {
       {homeTab === 'queue' && (
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <div className="mb-4">{homeTabSwitcher}</div>
-            <h1 className="text-2xl font-black tracking-tight text-[var(--ck-text)]">Calling Command Center</h1>
-            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Pick who to call, the number to call from, and how — then start.</p>
+            <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--crm-brand)]">Acquisitions workspace</p>
+            <h1 className="text-3xl font-black tracking-tight text-[var(--ck-text)]">Dialer</h1>
+            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Build a focused calling session in three clear steps.</p>
+            <div className="mt-4">{homeTabSwitcher}</div>
           </div>
           <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3.5 py-1.5 text-sm font-bold text-[var(--ck-text)] sm:self-auto">
-            <span className={`h-2 w-2 rounded-full ${loading ? 'bg-[var(--ck-text-dim)]' : queue.length ? 'bg-[#1E9E68]' : 'bg-[#E32E2E]'}`} />
-            {loading ? 'Loading queue…' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} ready`}
+            <span className={`h-2 w-2 rounded-full ${loading ? 'bg-[var(--ck-text-dim)]' : queue.length ? 'bg-[var(--crm-success)]' : 'bg-[var(--crm-danger)]'}`} />
+            {loading ? 'Loading queue…' : selectedCount > 0 ? `${selectedCount.toLocaleString()} selected` : `${queue.length.toLocaleString()} contacts ready`}
           </div>
         </div>
       )}
@@ -2132,18 +2133,18 @@ function DialerHome() {
       ) : (
         <>
           {error && (
-            <div className="mb-4 rounded-lg border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-4 text-sm text-[#ffb4b4]">
+            <div className="mb-4 rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-danger-soft)] p-4 text-sm text-[var(--crm-danger)]">
               {error}
             </div>
           )}
 
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
             {/* ── WHO: pick the queue, refine, preview ── */}
             <main className="space-y-5">
           <section className="ck-card p-5">
             <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E32E2E]/15 text-[#ff7777]">1</span>
-              Who to call
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]">1</span>
+              Choose the queue
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
               <label className="block">
@@ -2154,7 +2155,7 @@ function DialerHome() {
                     setPreset(event.target.value as QueuePreset)
                     setSelectedLeadIds(new Set())
                   }}
-                  className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-3 text-base font-bold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                  className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-3 text-base font-bold text-[var(--ck-text)] outline-none focus:border-[var(--crm-focus)]"
                 >
                   {QUEUE_PRESETS.map((option) => (
                     <option key={option.id} value={option.id}>{option.label}</option>
@@ -2165,7 +2166,7 @@ function DialerHome() {
                 onClick={() => setShowBulkSms(true)}
                 disabled={queue.length === 0}
                 title={selectedCount > 0 ? `Text ${selectedCount} selected leads` : 'Text the leads in this queue'}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-4 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[#E32E2E] hover:text-[#ff7777] disabled:cursor-not-allowed disabled:opacity-35"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-4 text-xs font-bold text-[var(--ck-text-muted)] transition-colors hover:border-[var(--crm-brand-border)] hover:bg-[var(--crm-brand-soft)] hover:text-[var(--crm-brand)] disabled:cursor-not-allowed disabled:opacity-35"
               >
                 <Icon name="forum" size="text-lg" /> Text
               </button>
@@ -2178,7 +2179,7 @@ function DialerHome() {
                 aria-expanded={showQueueControls}
                 className="flex items-center justify-between rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
               >
-                <span>Refine{activeFilterCount > 0 && <span className="ml-1.5 text-[#ff7777]">{activeFilterCount}</span>}</span>
+                <span>Refine{activeFilterCount > 0 && <span className="ml-1.5 text-[var(--crm-brand)]">{activeFilterCount}</span>}</span>
                 <Icon name={showQueueControls ? 'expand_less' : 'expand_more'} size="text-lg" />
               </button>
               <button
@@ -2186,7 +2187,7 @@ function DialerHome() {
                 aria-expanded={showSavedLists}
                 className="flex items-center justify-between rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]"
               >
-                <span>Saved lists{selectedSavedQueue ? <span className="ml-1.5 text-[#ff7777]">●</span> : null}</span>
+                <span>Saved lists{selectedSavedQueue ? <span className="ml-1.5 text-[var(--crm-brand)]">●</span> : null}</span>
                 <Icon name={showSavedLists ? 'expand_less' : 'expand_more'} size="text-lg" />
               </button>
             </div>
@@ -2201,7 +2202,7 @@ function DialerHome() {
                   <DarkSelect label="Show" value={String(visibleLimit)} onChange={(value) => setVisibleLimit(Number(value))} options={['25', '50', '100']} />
                   <label className="block">
                     <span className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Motivation {minMotivation}+</span>
-                    <input type="range" min="0" max="10" value={minMotivation} onChange={(e) => { setMinMotivation(Number(e.target.value)); setSelectedLeadIds(new Set()) }} className="mt-3 w-full accent-[#E32E2E]" />
+                    <input type="range" min="0" max="10" value={minMotivation} onChange={(e) => { setMinMotivation(Number(e.target.value)); setSelectedLeadIds(new Set()) }} className="mt-3 w-full accent-[var(--crm-brand)]" />
                   </label>
                 </div>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -2263,7 +2264,7 @@ function DialerHome() {
                   </label>
                   <button
                     onClick={saveCurrentQueue}
-                    className="rounded-lg border border-[#E32E2E]/45 bg-[#E32E2E]/10 px-3 py-2 text-xs font-black uppercase tracking-wider text-[#ff7777] transition-colors hover:border-[#E32E2E]"
+                    className="rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--crm-brand)] transition-colors hover:border-[var(--crm-brand)]"
                   >
                     Save
                   </button>
@@ -2276,7 +2277,7 @@ function DialerHome() {
                   </button>
                 </div>
                 {savedQueueError && (
-                  <p className="mt-3 text-xs font-bold text-[#ff7777]">{savedQueueError}</p>
+                  <p className="mt-3 text-xs font-bold text-[var(--crm-danger)]">{savedQueueError}</p>
                 )}
                 {selectedSavedQueue && !savedQueueError && (
                   <p className="mt-3 text-xs text-[var(--ck-text-muted)]">
@@ -2291,8 +2292,8 @@ function DialerHome() {
           <section className="ck-card overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-[var(--ck-border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-black text-[var(--ck-text)]">Queue Preview</p>
-                <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Showing {previewLeads.length} records. Check only the leads you want to call.</p>
+                <p className="text-sm font-black text-[var(--ck-text)]">Review the call order</p>
+                <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Showing {previewLeads.length} contacts. Select only the people this session should call.</p>
               </div>
               <div className="flex items-center gap-3 text-xs font-bold text-[var(--ck-text-muted)]">
                 <span>{selectedVisibleCount}/{previewLeads.length} shown · {selectedCount.toLocaleString()} selected</span>
@@ -2312,13 +2313,13 @@ function DialerHome() {
               </div>
             ) : (
               previewLeads.map((lead, index) => (
-                <div key={lead.id} className="grid gap-3 border-b border-[var(--ck-border)] px-5 py-4 md:grid-cols-[28px_34px_minmax(0,1fr)_145px_88px] md:items-center hover:bg-white/[0.03] transition-colors">
+                <div key={lead.id} className="grid gap-3 border-b border-[var(--ck-border)] px-5 py-4 transition-colors hover:bg-[var(--crm-surface-subtle)] md:grid-cols-[28px_34px_minmax(0,1fr)_145px_88px] md:items-center">
                   <input
                     type="checkbox"
                     checked={selectedLeadIds.has(lead.id)}
                     onChange={() => toggleLeadSelection(lead.id)}
                     aria-label={`Select ${lead.full_name || 'lead'}`}
-                    className="h-4 w-4 rounded border-[var(--ck-border)] bg-[var(--ck-surface-elev)] accent-[#E32E2E]"
+                    className="h-4 w-4 rounded border-[var(--ck-border)] bg-[var(--ck-surface-elev)] accent-[var(--crm-brand)]"
                   />
                   <div className="text-xs font-black text-[var(--ck-text-dim)]">{index + 1}</div>
                   <div className="min-w-0">
@@ -2357,8 +2358,8 @@ function DialerHome() {
         </main>
 
         {/* ── FROM · HOW · GO ── */}
-        <aside className="lg:sticky lg:top-24">
-          <section className="ck-card p-5">
+        <aside className="lg:sticky lg:top-5">
+          <section className="ck-card border-[var(--crm-brand-border)] p-5 shadow-[var(--crm-shadow-md)]">
             <div className="flex items-end justify-between gap-4 border-b border-[var(--ck-border)] pb-4">
               <div>
                 <p className="text-3xl font-black leading-none tracking-tight text-[var(--ck-text)]">{loading ? '…' : (selectedCount || queue.length).toLocaleString()}</p>
@@ -2369,8 +2370,8 @@ function DialerHome() {
 
             <div className="mt-5">
               <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E32E2E]/15 text-[#ff7777]">2</span>
-                Call from
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]">2</span>
+                Choose the calling number
               </div>
               <select
                 value={callerId}
@@ -2382,7 +2383,7 @@ function DialerHome() {
                   }
                   if (activeSavedQueueId) patchSavedListMeta(activeSavedQueueId, { callerId: value })
                 }}
-                className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-sm font-bold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2.5 text-sm font-bold text-[var(--ck-text)] outline-none focus:border-[var(--crm-focus)]"
               >
                 {TWILIO_NUMBERS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -2401,13 +2402,13 @@ function DialerHome() {
                   <div className="grid grid-cols-2 gap-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-1">
                     <button
                       onClick={() => setCallerMode('static')}
-                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${callerMode === 'static' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${callerMode === 'static' ? 'bg-[var(--crm-surface)] text-[var(--crm-ink)] shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
                     >
                       Static
                     </button>
                     <button
                       onClick={() => setCallerMode('rotation')}
-                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${callerMode === 'rotation' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${callerMode === 'rotation' ? 'bg-[var(--crm-surface)] text-[var(--crm-ink)] shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
                     >
                       Rotation
                     </button>
@@ -2434,7 +2435,7 @@ function DialerHome() {
                                 type="checkbox"
                                 checked={checked}
                                 onChange={() => toggleRotationCallerId(option.value)}
-                                className="h-3.5 w-3.5 accent-[#E32E2E]"
+                                className="h-3.5 w-3.5 accent-[var(--crm-brand)]"
                               />
                               <span className={checked ? 'text-[var(--ck-text)]' : ''}>{option.label}</span>
                             </label>
@@ -2449,7 +2450,7 @@ function DialerHome() {
                     <select
                       value={redialCallerId}
                       onChange={(event) => setRedialCallerId(event.target.value)}
-                      className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2.5 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                      className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2.5 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[var(--crm-focus)]"
                     >
                       <option value="">Use current caller</option>
                       {TWILIO_NUMBERS.map((option) => (
@@ -2463,19 +2464,19 @@ function DialerHome() {
 
             <div className="mt-5">
               <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E32E2E]/15 text-[#ff7777]">3</span>
-                How to call
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]">3</span>
+                Choose the calling method
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
                 <button
                   onClick={() => setDialMode('power_dialer')}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${dialMode === 'power_dialer' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${dialMode === 'power_dialer' ? 'bg-[var(--crm-surface)] text-[var(--crm-ink)] shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
                 >
                   Power Dialer
                 </button>
                 <button
                   onClick={() => setDialMode('click_to_call')}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${dialMode === 'click_to_call' ? 'bg-white text-black' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${dialMode === 'click_to_call' ? 'bg-[var(--crm-surface)] text-[var(--crm-ink)] shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
                 >
                   Click To Call
                 </button>
@@ -2483,11 +2484,11 @@ function DialerHome() {
 
               <div className="mt-3 space-y-1.5 text-xs text-[var(--ck-text-muted)]">
                 <label className="flex items-start gap-2">
-                  <input type="radio" name="startBehavior" checked={startBehavior === 'resume'} onChange={() => setStartBehavior('resume')} className="mt-0.5 h-3.5 w-3.5 accent-[#E32E2E]" />
+                  <input type="radio" name="startBehavior" checked={startBehavior === 'resume'} onChange={() => setStartBehavior('resume')} className="mt-0.5 h-3.5 w-3.5 accent-[var(--crm-brand)]" />
                   <span>Resume where I left off (new leads first)</span>
                 </label>
                 <label className="flex items-start gap-2">
-                  <input type="radio" name="startBehavior" checked={startBehavior === 'top'} onChange={() => setStartBehavior('top')} className="mt-0.5 h-3.5 w-3.5 accent-[#E32E2E]" />
+                  <input type="radio" name="startBehavior" checked={startBehavior === 'top'} onChange={() => setStartBehavior('top')} className="mt-0.5 h-3.5 w-3.5 accent-[var(--crm-brand)]" />
                   <span>Call top to bottom</span>
                 </label>
               </div>
@@ -2505,12 +2506,12 @@ function DialerHome() {
                   <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
                     <label className="flex items-center justify-between gap-3 text-sm text-[var(--ck-text)]">
                       <span className="font-semibold">Use Call Hammer</span>
-                      <input type="checkbox" checked={useCallHammer} onChange={(event) => setUseCallHammer(event.target.checked)} className="h-4 w-4 accent-[#E32E2E]" />
+                      <input type="checkbox" checked={useCallHammer} onChange={(event) => setUseCallHammer(event.target.checked)} className="h-4 w-4 accent-[var(--crm-brand)]" />
                     </label>
                     <p className="mt-1.5 text-[11px] text-[var(--ck-text-muted)]">On: call all numbers for each contact. Off: only the first listed number.</p>
                     <label className="mt-3 flex items-center justify-between gap-3 text-sm text-[var(--ck-text)]">
                       <span className="font-semibold">Voicemail Call Hammer</span>
-                      <input type="checkbox" checked={useVoicemailCallHammer} onChange={(event) => setUseVoicemailCallHammer(event.target.checked)} className="h-4 w-4 accent-[#E32E2E]" />
+                      <input type="checkbox" checked={useVoicemailCallHammer} onChange={(event) => setUseVoicemailCallHammer(event.target.checked)} className="h-4 w-4 accent-[var(--crm-brand)]" />
                     </label>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -2537,7 +2538,7 @@ function DialerHome() {
                   </div>
                   <button
                     onClick={() => setAutoSendEmail((current) => !current)}
-                    className={`w-full rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${autoSendEmail ? 'bg-[#E32E2E] text-white' : 'border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
+                    className={`w-full rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${autoSendEmail ? 'bg-[var(--crm-brand)] text-white' : 'border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
                   >
                     {autoSendEmail ? 'Auto Email On' : 'Auto Send Email'}
                   </button>
@@ -2549,16 +2550,16 @@ function DialerHome() {
               <button
                 onClick={() => startQueue(dialMode)}
                 disabled={!canStart}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#E32E2E] px-4 py-3.5 text-sm font-black uppercase tracking-wider text-white transition-colors hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-35"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--crm-brand)] px-4 py-3.5 text-sm font-black text-white shadow-sm transition-colors hover:bg-[var(--crm-brand-hover)] disabled:cursor-not-allowed disabled:opacity-35"
               >
                 <Icon name={dialMode === 'power_dialer' ? 'auto_awesome_motion' : 'call'} size="text-base" />
-                Start {dialMode === 'power_dialer' ? 'Power Dialer' : 'Click To Call'}{selectedCount > 0 ? ` · ${selectedCount}` : ''}
+                Start {dialMode === 'power_dialer' ? 'power dialer' : 'click-to-call'}{selectedCount > 0 ? ` · ${selectedCount}` : ''}
               </button>
 
               {hasResumePoint && (
                 <button
                   onClick={resumeSavedQueue}
-                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#E32E2E]/45 bg-[#E32E2E]/10 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[#ff7777] transition-colors hover:border-[#E32E2E]"
+                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-4 py-2.5 text-xs font-black text-[var(--crm-brand)] transition-colors hover:border-[var(--crm-brand)]"
                 >
                   <Icon name="history" size="text-base" /> Resume {(selectedSavedQueue?.resumeIndex || 0) + 1}/{resumeLeadIds.length} · {resumeRemaining} left
                 </button>
@@ -2573,12 +2574,12 @@ function DialerHome() {
             </div>
 
             <div className="mt-4 border-t border-[var(--ck-border)] pt-4">
-              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Next Up</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">First contact</p>
               {currentLead ? (
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold leading-tight text-[var(--ck-text)]">{toProperCase(currentLead.full_name) || 'Unknown Lead'}</p>
-                    <p className="mt-1 font-mono text-xs text-[#E32E2E]">{formatPhone(currentLead.phone || '')}</p>
+                    <p className="mt-1 font-mono text-xs text-[var(--crm-brand)]">{formatPhone(currentLead.phone || '')}</p>
                   </div>
                   <button
                     onClick={() => router.push(buildSessionUrl(
@@ -2614,15 +2615,15 @@ function DialerHome() {
             onClick={() => setShowOptionalFilters(false)}
             className="absolute inset-0 bg-black/55 backdrop-blur-[6px]"
           />
-          <div className="relative z-[1] w-full max-w-[640px] rounded-2xl border border-[#D4D4D8] bg-white shadow-[0_24px_64px_rgba(0,0,0,0.35)]">
-            <div className="flex items-center justify-between gap-3 border-b border-[#E4E4E7] px-5 py-4">
+          <div className="relative z-[1] w-full max-w-[640px] rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-[0_24px_64px_rgba(0,0,0,0.35)]">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--crm-border)] px-5 py-4">
               <div>
-                <h3 className="text-2xl font-semibold tracking-[-0.02em] text-[#111111]">Advanced Filters</h3>
-                <p className="mt-0.5 text-xs text-[#71717A]">Refine who&apos;s in this list — applies to both calling and texting.</p>
+                <h3 className="text-2xl font-semibold tracking-[-0.02em] text-[var(--crm-ink)]">Advanced Filters</h3>
+                <p className="mt-0.5 text-xs text-[var(--crm-text-muted)]">Refine who&apos;s in this list — applies to both calling and texting.</p>
               </div>
               <button
                 onClick={() => setShowOptionalFilters(false)}
-                className="h-9 w-9 rounded-lg border border-[#E4E4E7] text-[#71717A] transition-colors hover:bg-[#F4F4F5] hover:text-[#27272A]"
+                className="h-9 w-9 rounded-lg border border-[var(--crm-border)] text-[var(--crm-text-muted)] transition-colors hover:bg-[var(--crm-surface-subtle)] hover:text-[var(--crm-ink)]"
               >
                 <Icon name="close" size="text-lg" />
               </button>
@@ -2630,7 +2631,7 @@ function DialerHome() {
 
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#71717A]">Stop Call Attempts</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">Stop Call Attempts</span>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <input
                     type="number"
@@ -2638,7 +2639,7 @@ function DialerHome() {
                     value={optionalFiltersDraft.attemptsFrom}
                     onChange={(event) => setOptionalFiltersDraft((current) => ({ ...current, attemptsFrom: event.target.value }))}
                     placeholder="From"
-                    className="w-full rounded-lg border border-[#D4D4D8] bg-[#FAFAFA] px-3 py-2 text-sm font-medium text-[#111111] outline-none focus:border-[#E32E2E]"
+                    className="w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-sm font-medium text-[var(--crm-ink)] outline-none focus:border-[var(--crm-focus)]"
                   />
                   <input
                     type="number"
@@ -2646,7 +2647,7 @@ function DialerHome() {
                     value={optionalFiltersDraft.attemptsTo}
                     onChange={(event) => setOptionalFiltersDraft((current) => ({ ...current, attemptsTo: event.target.value }))}
                     placeholder="To"
-                    className="w-full rounded-lg border border-[#D4D4D8] bg-[#FAFAFA] px-3 py-2 text-sm font-medium text-[#111111] outline-none focus:border-[#E32E2E]"
+                    className="w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-sm font-medium text-[var(--crm-ink)] outline-none focus:border-[var(--crm-focus)]"
                   />
                 </div>
               </label>
@@ -2680,70 +2681,70 @@ function DialerHome() {
               />
 
               <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#71717A]">Create Date</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">Create Date</span>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <input
                     type="date"
                     value={optionalFiltersDraft.createDateFrom}
                     onChange={(event) => setOptionalFiltersDraft((current) => ({ ...current, createDateFrom: event.target.value }))}
-                    className="w-full rounded-lg border border-[#D4D4D8] bg-[#FAFAFA] px-3 py-2 text-sm font-medium text-[#111111] outline-none focus:border-[#E32E2E]"
+                    className="w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-sm font-medium text-[var(--crm-ink)] outline-none focus:border-[var(--crm-focus)]"
                   />
                   <input
                     type="date"
                     value={optionalFiltersDraft.createDateTo}
                     onChange={(event) => setOptionalFiltersDraft((current) => ({ ...current, createDateTo: event.target.value }))}
-                    className="w-full rounded-lg border border-[#D4D4D8] bg-[#FAFAFA] px-3 py-2 text-sm font-medium text-[#111111] outline-none focus:border-[#E32E2E]"
+                    className="w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-sm font-medium text-[var(--crm-ink)] outline-none focus:border-[var(--crm-focus)]"
                   />
                 </div>
               </label>
 
               <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#71717A]">Status Change</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">Status Change</span>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <input
                     type="date"
                     value={optionalFiltersDraft.statusChangeFrom}
                     onChange={(event) => setOptionalFiltersDraft((current) => ({ ...current, statusChangeFrom: event.target.value }))}
-                    className="w-full rounded-lg border border-[#D4D4D8] bg-[#FAFAFA] px-3 py-2 text-sm font-medium text-[#111111] outline-none focus:border-[#E32E2E]"
+                    className="w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-sm font-medium text-[var(--crm-ink)] outline-none focus:border-[var(--crm-focus)]"
                   />
                   <input
                     type="date"
                     value={optionalFiltersDraft.statusChangeTo}
                     onChange={(event) => setOptionalFiltersDraft((current) => ({ ...current, statusChangeTo: event.target.value }))}
-                    className="w-full rounded-lg border border-[#D4D4D8] bg-[#FAFAFA] px-3 py-2 text-sm font-medium text-[#111111] outline-none focus:border-[#E32E2E]"
+                    className="w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-sm font-medium text-[var(--crm-ink)] outline-none focus:border-[var(--crm-focus)]"
                   />
                 </div>
               </label>
             </div>
 
             <div className="px-5 pb-2">
-              <label className="inline-flex items-center gap-2 text-sm text-[#27272A]">
+              <label className="inline-flex items-center gap-2 text-sm text-[var(--crm-text)]">
                 <input
                   type="checkbox"
                   checked={optionalFiltersDraft.callOldestToNewest}
                   onChange={(event) => setOptionalFiltersDraft((current) => ({ ...current, callOldestToNewest: event.target.checked }))}
-                  className="h-4 w-4 accent-[#E32E2E]"
+                  className="h-4 w-4 accent-[var(--crm-brand)]"
                 />
                 Call oldest to newest
               </label>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 border-t border-[#E4E4E7] px-5 py-4">
+            <div className="grid grid-cols-3 gap-3 border-t border-[var(--crm-border)] px-5 py-4">
               <button
                 onClick={() => setShowOptionalFilters(false)}
-                className="rounded-lg border border-[#D4D4D8] bg-[#F4F4F5] px-3 py-2 text-sm font-semibold text-[#3F3F46] transition-colors hover:bg-[#E4E4E7]"
+                className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-sm font-semibold text-[var(--crm-text)] transition-colors hover:bg-[var(--crm-surface-hover)]"
               >
                 Cancel
               </button>
               <button
                 onClick={clearOptionalFilterDraft}
-                className="rounded-lg border border-[#D4D4D8] bg-[#F4F4F5] px-3 py-2 text-sm font-semibold text-[#3F3F46] transition-colors hover:bg-[#E4E4E7]"
+                className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-sm font-semibold text-[var(--crm-text)] transition-colors hover:bg-[var(--crm-surface-hover)]"
               >
                 Clear
               </button>
               <button
                 onClick={applyOptionalFilterDraft}
-                className="rounded-lg bg-[#1559C4] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#0E48A5]"
+                className="rounded-lg bg-[var(--crm-brand)] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--crm-brand-hover)]"
               >
                 OK
               </button>
@@ -2768,11 +2769,11 @@ function DarkSelectLight({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#71717A]">{label}</span>
+      <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-lg border border-[#D4D4D8] bg-[#FAFAFA] px-3 py-2 text-sm font-medium text-[#111111] outline-none focus:border-[#E32E2E]"
+        className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-sm font-medium text-[var(--crm-ink)] outline-none focus:border-[var(--crm-focus)]"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
@@ -2789,7 +2790,7 @@ function DarkSelect({ label, value, onChange, options }: { label: string; value:
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+        className="mt-2 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[var(--crm-focus)]"
       >
         {options.map((option) => (
           <option key={option} value={option}>{formatSelectOption(option)}</option>
@@ -2813,7 +2814,7 @@ function HudStat({ icon, label, value, tone = 'neutral' }: { icon: string; label
 
 function DarkPill({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'red' }) {
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${tone === 'red' ? 'bg-[#E32E2E]/15 text-[#ff7777]' : 'bg-white/5 text-[var(--ck-text-muted)]'}`}>
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${tone === 'red' ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'bg-[var(--crm-surface-subtle)] text-[var(--ck-text-muted)]'}`}>
       {children}
     </span>
   )

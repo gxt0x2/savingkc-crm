@@ -39,7 +39,7 @@ export function ConversionRow({
   return (
     <div data-testid="conversion-row" className="grid grid-cols-[1fr_92px_86px_64px] items-center gap-3 py-2">
       <div className="min-w-0">
-        <div className="truncate text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
+        <div className="truncate text-[11px] font-black uppercase tracking-[0.14em] text-[var(--crm-text-muted)]">{label}</div>
       </div>
       <label className="relative block">
         <span className="sr-only">{label} rate</span>
@@ -50,11 +50,11 @@ export function ConversionRow({
           value={displayRate}
           onChange={(event) => setDisplayRate(event.target.value)}
           onBlur={commitRate}
-          className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 pr-7 text-right text-sm font-black tabular-nums text-slate-950 outline-none focus:border-[#ff4d56] focus:ring-2 focus:ring-[#ff4d56]/15 read-only:bg-slate-50"
+          className="h-9 w-full rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 pr-7 text-right text-sm font-black tabular-nums text-[var(--crm-ink)] outline-none focus:border-[var(--crm-focus)] focus:ring-2 focus:ring-[var(--crm-focus)]/15 read-only:bg-[var(--crm-surface-subtle)]"
         />
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-[var(--crm-text-dim)]">%</span>
       </label>
-      <div className="text-right text-sm font-black tabular-nums text-slate-950">{count.toFixed(2)}</div>
+      <div className="text-right text-sm font-black tabular-nums text-[var(--crm-ink)]">{count.toFixed(2)}</div>
       {delta ? (
         <div
           data-testid="rate-delta"
@@ -86,10 +86,10 @@ function getRateDelta(rate: number, comparedRate: number) {
 function getDeltaClassName(tone: string) {
   const toneClass =
     tone === 'positive'
-      ? 'text-emerald-600'
+      ? 'text-[var(--crm-success)]'
       : tone === 'negative'
-        ? 'text-red-600'
-        : 'text-slate-400'
+        ? 'text-[var(--crm-danger)]'
+        : 'text-[var(--crm-text-dim)]'
 
   return `text-right text-xs font-black tabular-nums ${toneClass}`
 }

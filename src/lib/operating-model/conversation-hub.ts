@@ -62,6 +62,59 @@ function direction(activity: ConversationHubActivity): 'inbound' | 'outbound' | 
   return 'outbound'
 }
 
+const OPEN_CALL_OUTCOMES = new Set([
+  'busy',
+  'canceled',
+  'cancelled',
+  'failed',
+  'missed',
+  'no-answer',
+  'no_answer',
+  'not-answered',
+  'not_answered',
+  'voicemail',
+])
+
+const RESOLVED_CALL_OUTCOMES = new Set([
+  'answered',
+  'completed',
+  'connected',
+])
+
+function normalizedMetadataValues(activity: ConversationHubActivity): string[] {
+  const metadata = activity.metadata ?? {}
+  return [
+    metadata.outcome,
+    metadata.dialStatus,
+    metadata.disposition,
+    metadata.status,
+    metadata.callStatus,
+  ]
+    .map((value) => text(value)?.toLowerCase().replace(/\s+/g, '-') ?? null)
+    .filter((value): value is string => Boolean(value))
+}
+
+/**
+ * An inbound communication only needs an agent response when the seller has
+ * not already been served by that event. Calls are outcome-aware: a connected
+ * call is resolved, while a missed call or voicemail remains actionable.
+ */
+export function inboundCommunicationNeedsReply(activity: ConversationHubActivity): boolean {
+  if (direction(activity) !== 'inbound') return false
+  if (activity.activity_type === 'voicemail') return true
+  if (activity.activity_type !== 'call') return true
+
+  const outcomes = normalizedMetadataValues(activity)
+  const description = activity.description?.toLowerCase() ?? ''
+  if (outcomes.some((value) => OPEN_CALL_OUTCOMES.has(value))) return true
+  if (/missed|no[ -]?answer|busy|voicemail|failed|cancel/.test(description)) return true
+  if (outcomes.some((value) => RESOLVED_CALL_OUTCOMES.has(value))) return false
+  if (/connected live|answered|completed call/.test(description)) return false
+
+  // Unknown inbound call outcomes stay visible until the result is known.
+  return true
+}
+
 function latestFirst(a: ConversationHubActivity, b: ConversationHubActivity): number {
   return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
 }
@@ -88,7 +141,11 @@ export function buildConversationHubThread(
       : 'resolved'
 
   if (latestComm) {
-    attentionState = direction(latestComm) === 'inbound' ? 'needs_reply' : 'waiting_on_contact'
+    attentionState = direction(latestComm) === 'outbound'
+      ? 'waiting_on_contact'
+      : inboundCommunicationNeedsReply(latestComm)
+        ? 'needs_reply'
+        : 'resolved'
   }
 
   if (latestHubState && (!latestComm || new Date(latestHubState.created_at) > new Date(latestComm.created_at))) {

@@ -9,11 +9,11 @@ import { cn } from '@/lib/utils'
 
 const items = [
   { label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] },
-  { label: 'Opportunities', icon: 'paid', href: '/opportunities', activeOn: ['/opportunities', '/leads'] },
-  { label: 'Contacts', icon: 'group', href: '/contacts', activeOn: ['/contacts'] },
+  { label: 'Contacts', icon: 'group', href: '/contacts', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
+  { label: 'Dialer', icon: 'dialpad', href: '/dialer', activeOn: ['/dialer'] },
   { label: 'Calendar & Tasks', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
   { label: 'Workflows', icon: 'account_tree', href: '/workflows', activeOn: ['/workflows'] },
-  { label: 'Marketing', icon: 'campaign', href: '/marketing', activeOn: ['/marketing'] },
+  { label: 'Marketing', icon: 'campaign', href: '/marketing', activeOn: ['/marketing'], sectionBreak: true },
   { label: 'Dispositions', icon: 'sell', href: '/dispo/pipeline', activeOn: ['/dispo'] },
   { label: 'Reports', icon: 'bar_chart', href: '/dashboard', activeOn: ['/dashboard'] },
   { label: 'Settings', icon: 'settings', href: '/settings', activeOn: ['/settings'] },
@@ -53,7 +53,7 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
         />}
       </Link>
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {items.map((item, index) => {
+        {items.map((item) => {
           const active = item.activeOn.some((prefix) => pathname.startsWith(prefix))
           return (
             <Link
@@ -67,7 +67,7 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
                 active
                   ? 'bg-[var(--crm-nav-active)] text-[var(--crm-nav-text)] before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-[var(--crm-brand)]'
                   : 'text-[var(--crm-nav-muted)] hover:bg-[var(--crm-nav-hover)] hover:text-[var(--crm-nav-text)]',
-                index === 4 && 'mt-5 border-t border-white/10 pt-5',
+                item.sectionBreak && 'mt-5 border-t border-white/10 pt-5',
               )}
             >
               <Icon name={item.icon} className={cn('text-[20px]', active ? 'text-[var(--crm-brand)]' : 'text-current')} />

@@ -39,10 +39,10 @@ export function ScenarioPanel({
   dispatch: (action: BottleneckAction) => void
 }) {
   return (
-    <section data-testid={`scenario-${scenarioKey}`} className="rounded-lg border border-slate-800 bg-slate-950 p-4 text-white">
+    <section data-testid={`scenario-${scenarioKey}`} className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4 text-[var(--crm-ink)]">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h3 className="text-base font-black tracking-tight">{title}</h3>
-        <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Left Main</div>
+        <div className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--crm-text-dim)]">Left Main</div>
       </div>
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -76,7 +76,7 @@ export function ScenarioPanel({
         />
       </div>
 
-      <div className="rounded-md bg-white p-3 text-slate-950">
+      <div className="rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-[var(--crm-ink)]">
         {CONVERSION_STAGES.map((stage) => (
           <ConversionRow
             key={stage}
@@ -97,8 +97,8 @@ export function ScenarioPanel({
         ))}
       </div>
 
-      <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-3">
-        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Gross Revenue</span>
+      <div className="mt-4 flex items-center justify-between border-t border-[var(--crm-border)] pt-3">
+        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--crm-text-dim)]">Gross Revenue</span>
         <span className="text-xl font-black tabular-nums">{formatDollars(outputs.grossRevenue)}</span>
       </div>
     </section>
@@ -132,7 +132,7 @@ function NumberField({
 
   return (
     <label className="block">
-      <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</span>
+      <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[var(--crm-text-dim)]">{label}</span>
       <input
         aria-label={ariaLabel}
         type="number"
@@ -142,7 +142,7 @@ function NumberField({
         value={displayValue}
         onChange={(event) => setDisplayValue(event.target.value)}
         onBlur={commitValue}
-        className="h-10 w-full rounded-md border border-slate-800 bg-slate-900 px-3 text-sm font-black tabular-nums text-white outline-none focus:border-[#ff4d56]"
+        className="h-10 w-full rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 text-sm font-black tabular-nums text-[var(--crm-ink)] outline-none focus:border-[var(--crm-focus)]"
       />
     </label>
   )

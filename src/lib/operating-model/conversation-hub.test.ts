@@ -83,6 +83,43 @@ describe('conversation hub read model', () => {
     expect(thread.lastChannel).toBe('sms')
   })
 
+  it('does not request another reply after an inbound call connected', () => {
+    const thread = buildConversationHubThread(lead, [
+      activity({
+        id: 'connected-call',
+        activity_type: 'call',
+        description: 'Direct inbound call connected live with Ernest',
+        created_at: '2026-07-28T15:10:00.000Z',
+        metadata: { direction: 'inbound', outcome: 'connected', dialStatus: 'completed' },
+      }),
+    ])
+
+    expect(thread.attentionState).toBe('resolved')
+    expect(thread.unread).toBe(false)
+  })
+
+  it('keeps missed inbound calls actionable until the agent returns them', () => {
+    const missed = activity({
+      id: 'missed-call',
+      activity_type: 'call',
+      description: 'Inbound call: no answer',
+      created_at: '2026-07-28T15:10:00.000Z',
+      metadata: { direction: 'inbound', outcome: 'missed', dialStatus: 'no-answer' },
+    })
+
+    expect(buildConversationHubThread(lead, [missed]).attentionState).toBe('needs_reply')
+
+    const returned = activity({
+      id: 'returned-call',
+      activity_type: 'call',
+      description: 'Outbound call returned by Ernest',
+      created_at: '2026-07-28T15:12:00.000Z',
+      metadata: { direction: 'outbound', outcome: 'connected' },
+    })
+
+    expect(buildConversationHubThread(lead, [missed, returned]).attentionState).toBe('waiting_on_contact')
+  })
+
   it('exposes the most recent communication channel for inbox filters', () => {
     const thread = buildConversationHubThread(lead, [
       activity({
