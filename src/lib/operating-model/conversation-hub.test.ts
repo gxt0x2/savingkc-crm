@@ -83,6 +83,21 @@ describe('conversation hub read model', () => {
     expect(thread.lastChannel).toBe('sms')
   })
 
+  it('treats an inbound contact opt-out as compliance handled, not reply work', () => {
+    const thread = buildConversationHubThread(lead, [
+      activity({
+        id: 'contact-opt-out',
+        activity_type: 'sms_received',
+        description: 'Stop calling.',
+        created_at: '2026-07-28T15:10:00.000Z',
+        metadata: { direction: 'inbound' },
+      }),
+    ])
+
+    expect(thread.attentionState).toBe('resolved')
+    expect(thread.unread).toBe(false)
+  })
+
   it('does not request another reply after an inbound call connected', () => {
     const thread = buildConversationHubThread(lead, [
       activity({

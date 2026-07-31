@@ -81,6 +81,15 @@ const RESOLVED_CALL_OUTCOMES = new Set([
   'connected',
 ])
 
+const OPT_OUT_SMS_TYPES = new Set(['sms', 'sms_received', 'sms_inbound'])
+
+function isContactOptOut(activity: ConversationHubActivity): boolean {
+  if (!OPT_OUT_SMS_TYPES.has(activity.activity_type)) return false
+  const message = activity.description?.toLowerCase().replace(/[^a-z\s']/g, ' ').replace(/\s+/g, ' ').trim() ?? ''
+  return /^(stop|stopall|unsubscribe|quit|end)$/.test(message) ||
+    /\b(stop calling|stop texting|stop messaging|do not call|don't call|remove me|take me off)\b/.test(message)
+}
+
 function normalizedMetadataValues(activity: ConversationHubActivity): string[] {
   const metadata = activity.metadata ?? {}
   return [
@@ -102,7 +111,7 @@ function normalizedMetadataValues(activity: ConversationHubActivity): string[] {
 export function inboundCommunicationNeedsReply(activity: ConversationHubActivity): boolean {
   if (direction(activity) !== 'inbound') return false
   if (activity.activity_type === 'voicemail') return true
-  if (activity.activity_type !== 'call') return true
+  if (activity.activity_type !== 'call') return !isContactOptOut(activity)
 
   const outcomes = normalizedMetadataValues(activity)
   const description = activity.description?.toLowerCase() ?? ''
