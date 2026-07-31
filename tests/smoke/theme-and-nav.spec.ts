@@ -89,10 +89,9 @@ for (const route of crmWorkspaceRoutes) {
     await expect(page.locator('.crm-workspace-shell')).toHaveAttribute('data-theme', 'light');
     await expect(page.getByRole('button', { name: 'Switch to dark theme' })).toBeVisible();
     await expect(page.getByPlaceholder('Search contacts, properties, or messages...')).toBeVisible();
-    const primaryNavigation = page.getByRole('navigation');
-    await expect(primaryNavigation.getByRole('link', { name: /Conversations/ })).toBeVisible();
-    await expect(primaryNavigation.getByRole('link', { name: 'Contacts' })).toBeVisible();
-    await expect(primaryNavigation.getByRole('link', { name: 'Dispositions' })).toHaveAttribute('href', '/dispo/pipeline');
+    await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
+    await expect(page.locator('a[href="/contacts"]').filter({ hasText: 'Contacts' })).toBeVisible();
+    await expect(page.locator('a[href="/dispo/pipeline"]').filter({ hasText: 'Dispositions' })).toBeVisible();
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
     await page.screenshot({
