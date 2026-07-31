@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { useThemePreference } from '@/hooks/use-theme-preference'
 import { WorkspaceNav } from './workspace-nav'
+import { WorkspaceContextNav } from './workspace-context-nav'
 
 export function WorkspaceFrame({
   children,
@@ -88,6 +89,9 @@ export function WorkspaceFrame({
             </div>
           </div>
         </header>
+        <Suspense fallback={null}>
+          <WorkspaceContextNav />
+        </Suspense>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
       </div>
     </div>

@@ -1440,8 +1440,210 @@ function DialerPageInner() {
   )
 }
 
+type DialerHomeSection = 'overview' | 'queue' | 'sessions' | 'conversations' | 'analytics' | 'settings'
+
+const DIALER_HOME_SECTIONS = new Set<DialerHomeSection>(['overview', 'queue', 'sessions', 'conversations', 'analytics', 'settings'])
+
+function DialerPageHeading({ eyebrow, title, copy, action }: { eyebrow: string; title: string; copy: string; action?: React.ReactNode }) {
+  return (
+    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--crm-brand)]">{eyebrow}</p>
+        <h1 className="mt-1 text-3xl font-black tracking-tight text-[var(--crm-ink)]">{title}</h1>
+        <p className="mt-1 text-sm text-[var(--crm-text-muted)]">{copy}</p>
+      </div>
+      {action}
+    </div>
+  )
+}
+
+function DialerOverview({
+  loading,
+  readyCount,
+  scheduledCount,
+  followupCount,
+  priorityCount,
+  staleCount,
+  callsToday,
+  uniqueLeadsToday,
+  activeSessions,
+  focusLeads,
+  onOpenQueue,
+  onResume,
+  lastContactByLeadId,
+}: {
+  loading: boolean
+  readyCount: number
+  scheduledCount: number
+  followupCount: number
+  priorityCount: number
+  staleCount: number
+  callsToday: number
+  uniqueLeadsToday: number
+  activeSessions: SavedDialerQueue[]
+  focusLeads: DialerQueueLead[]
+  onOpenQueue: (preset: QueuePreset) => void
+  onResume: (queue: SavedDialerQueue) => void
+  lastContactByLeadId: Map<string, string>
+}) {
+  const focusQueues: Array<{ preset: QueuePreset; label: string; copy: string; count: number; icon: string; tone: string }> = [
+    { preset: 'followups_today', label: 'Follow-ups due', copy: 'Callbacks and next actions that need attention now.', count: followupCount, icon: 'event_upcoming', tone: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
+    { preset: 'scheduled_today', label: 'Scheduled today', copy: 'Appointments and calendar commitments for today.', count: scheduledCount, icon: 'today', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
+    { preset: 'priority', label: 'Priority sellers', copy: 'High-intent and high-motivation contacts.', count: priorityCount, icon: 'local_fire_department', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' },
+    { preset: 'stale_30', label: 'Re-engage 30+ days', copy: 'Callable records without a recent touch.', count: staleCount, icon: 'history', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
+  ]
+  const activeSession = activeSessions[0] ?? null
+
+  return (
+    <div>
+      <DialerPageHeading
+        eyebrow="Acquisitions call command"
+        title="Dialer overview"
+        copy="Start with the work that matters, resume where you stopped, and see today’s calling load at a glance."
+        action={
+          <button type="button" onClick={() => onOpenQueue('followups_today')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--crm-brand)] px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-[var(--crm-brand-hover)]">
+            <Icon name="phone_in_talk" className="text-lg" /> Review today&apos;s queue
+          </button>
+        }
+      />
+
+      <section aria-label="Dialer readiness" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: 'Ready to call', value: loading ? '—' : readyCount.toLocaleString(), icon: 'contacts', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
+          { label: 'Follow-ups due', value: loading ? '—' : followupCount.toLocaleString(), icon: 'notification_important', tone: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
+          { label: 'Dials logged today', value: callsToday.toLocaleString(), icon: 'call', tone: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' },
+          { label: 'Unique leads touched', value: uniqueLeadsToday.toLocaleString(), icon: 'person_check', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
+        ].map((metric) => (
+          <div key={metric.label} className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${metric.tone}`}><Icon name={metric.icon} className="text-xl" /></span>
+              <span className="text-3xl font-black tabular-nums text-[var(--crm-ink)]">{metric.value}</span>
+            </div>
+            <p className="mt-4 text-xs font-bold text-[var(--crm-text-muted)]">{metric.label}</p>
+          </div>
+        ))}
+      </section>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="overflow-hidden rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
+          <div className="flex items-center justify-between border-b border-[var(--crm-border)] px-5 py-4">
+            <div><h2 className="text-lg font-black text-[var(--crm-ink)]">Work next</h2><p className="mt-0.5 text-xs text-[var(--crm-text-muted)]">Queues ranked by urgency and seller intent.</p></div>
+            <Link href="/dialer?section=queue" className="text-xs font-black text-[var(--crm-brand)] hover:underline">Build custom queue</Link>
+          </div>
+          <div className="grid gap-px bg-[var(--crm-border)] sm:grid-cols-2">
+            {focusQueues.map((item) => (
+              <button key={item.preset} type="button" onClick={() => onOpenQueue(item.preset)} className="group flex min-h-36 flex-col items-start bg-[var(--crm-surface)] p-5 text-left transition-colors hover:bg-[var(--crm-surface-subtle)]">
+                <div className="flex w-full items-start justify-between gap-3">
+                  <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${item.tone}`}><Icon name={item.icon} className="text-xl" /></span>
+                  <span className="text-2xl font-black tabular-nums text-[var(--crm-ink)]">{loading ? '—' : item.count}</span>
+                </div>
+                <p className="mt-4 text-sm font-black text-[var(--crm-ink)]">{item.label}</p>
+                <p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">{item.copy}</p>
+                <span className="mt-auto pt-3 text-xs font-black text-[var(--crm-brand)]">Review queue <Icon name="arrow_forward" className="ml-1 inline text-sm transition-transform group-hover:translate-x-0.5" /></span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <aside className="space-y-5">
+          <section className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-black text-[var(--crm-ink)]">Resume session</h2><Icon name="play_circle" className="text-2xl text-[var(--crm-brand)]" /></div>
+            {activeSession ? (
+              <>
+                <p className="mt-4 text-sm font-black text-[var(--crm-ink)]">{activeSession.name}</p>
+                <p className="mt-1 text-xs text-[var(--crm-text-muted)]">{Math.max(activeSession.sessionLeadIds.length - activeSession.resumeIndex, 0)} contacts remaining · {activeSession.agent}</p>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--crm-surface-subtle)]"><div className="h-full rounded-full bg-[var(--crm-brand)]" style={{ width: `${Math.round((activeSession.resumeIndex / Math.max(activeSession.sessionLeadIds.length, 1)) * 100)}%` }} /></div>
+                <button type="button" onClick={() => onResume(activeSession)} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--crm-brand)] px-3 py-2.5 text-xs font-black text-white hover:bg-[var(--crm-brand-hover)]"><Icon name="resume" className="text-base" />Resume at {activeSession.resumeIndex + 1}</button>
+              </>
+            ) : (
+              <div className="mt-4 rounded-xl border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface-subtle)] p-4 text-center">
+                <p className="text-sm font-bold text-[var(--crm-ink)]">No paused session</p><p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Start from a saved queue and your place will appear here.</p>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
+            <div className="flex items-center justify-between"><h2 className="text-lg font-black text-[var(--crm-ink)]">First calls</h2><span className="text-xs font-bold text-[var(--crm-text-muted)]">Priority order</span></div>
+            <div className="mt-3 divide-y divide-[var(--crm-border)]">
+              {focusLeads.slice(0, 4).map((lead, index) => (
+                <div key={lead.id} className="flex items-center gap-3 py-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--crm-surface-subtle)] text-[10px] font-black text-[var(--crm-text-muted)]">{index + 1}</span>
+                  <div className="min-w-0 flex-1"><p className="truncate text-xs font-black text-[var(--crm-ink)]">{toProperCase(lead.full_name) || 'Unknown lead'}</p><p className="mt-0.5 truncate text-[11px] text-[var(--crm-text-muted)]">{lead.property_address || lead.city || 'No address'} · {lastContactLabel(lastContactByLeadId.get(lead.id))}</p></div>
+                  <span className="text-[10px] font-black uppercase text-[var(--crm-brand)]">{lead.priority || 'ready'}</span>
+                </div>
+              ))}
+              {!loading && focusLeads.length === 0 ? <p className="py-4 text-center text-xs text-[var(--crm-text-muted)]">No callable records are ready.</p> : null}
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function DialerSessionsView({ savedQueues, onResume, onOpenQueue }: { savedQueues: SavedDialerQueue[]; onResume: (queue: SavedDialerQueue) => void; onOpenQueue: (preset: QueuePreset) => void }) {
+  const active = savedQueues.filter((queue) => queue.sessionLeadIds.length > 0 && !queue.sessionCompleted)
+  const completed = savedQueues.filter((queue) => queue.sessionCompleted)
+  return (
+    <div>
+      <DialerPageHeading eyebrow="Dialer sessions" title="Pick up without rebuilding" copy="Paused sessions keep their order, calling number, filters, and exact resume point." action={<button type="button" onClick={() => onOpenQueue('custom')} className="rounded-lg bg-[var(--crm-brand)] px-4 py-2.5 text-sm font-black text-white hover:bg-[var(--crm-brand-hover)]">New calling session</button>} />
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
+          <h2 className="text-lg font-black text-[var(--crm-ink)]">Active and paused</h2>
+          <div className="mt-4 space-y-3">
+            {active.map((queue) => (
+              <div key={queue.id} className="flex flex-col gap-4 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4 sm:flex-row sm:items-center">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="phone_in_talk" className="text-xl" /></span>
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-[var(--crm-ink)]">{queue.name}</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">{queue.resumeIndex + 1} of {queue.sessionLeadIds.length} · {queue.agent} · {formatPhone(queue.callerId)}</p></div>
+                <button type="button" onClick={() => onResume(queue)} className="rounded-lg bg-[var(--crm-brand)] px-4 py-2 text-xs font-black text-white hover:bg-[var(--crm-brand-hover)]">Resume · {Math.max(queue.sessionLeadIds.length - queue.resumeIndex, 0)} left</button>
+              </div>
+            ))}
+            {active.length === 0 ? <div className="rounded-xl border border-dashed border-[var(--crm-border-strong)] p-8 text-center"><Icon name="pause_circle" className="text-3xl text-[var(--crm-text-dim)]" /><p className="mt-2 text-sm font-bold text-[var(--crm-ink)]">No paused sessions</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Start a queue and your progress will be saved here.</p></div> : null}
+          </div>
+        </section>
+        <aside className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm"><h2 className="text-lg font-black text-[var(--crm-ink)]">Completed sessions</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Recent saved-list sessions marked complete.</p><p className="mt-5 text-4xl font-black text-[var(--crm-ink)]">{completed.length}</p><Link href="/dialer?section=analytics" className="mt-5 inline-flex items-center gap-1 text-xs font-black text-[var(--crm-brand)]">Review dialer activity <Icon name="arrow_forward" className="text-sm" /></Link></aside>
+      </div>
+    </div>
+  )
+}
+
+function DialerAnalyticsView({ callsToday, uniqueLeadsToday, followupCount, readyCount, contactActivities }: { callsToday: number; uniqueLeadsToday: number; followupCount: number; readyCount: number; contactActivities: QueueContactActivity[] }) {
+  const sevenDayCalls = contactActivities.filter((activity) => ['call', 'voicemail'].includes(activity.activity_type) && daysSince(activity.created_at) != null && (daysSince(activity.created_at) || 0) <= 7).length
+  const coverage = readyCount > 0 ? Math.min(100, Math.round((uniqueLeadsToday / readyCount) * 100)) : 0
+  return (
+    <div>
+      <DialerPageHeading eyebrow="Dialer performance" title="Calling activity" copy="Operational activity only—connection and conversion rates appear once dispositions are captured consistently." />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[
+        ['Dials today', callsToday, 'call'], ['Unique leads today', uniqueLeadsToday, 'person_check'], ['Dials in 7 days', sevenDayCalls, 'date_range'], ['Follow-ups due', followupCount, 'event_upcoming'],
+      ].map(([label, value, icon]) => <div key={label as string} className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm"><Icon name={icon as string} className="text-2xl text-[var(--crm-brand)]" /><p className="mt-4 text-3xl font-black text-[var(--crm-ink)]">{value as number}</p><p className="mt-1 text-xs font-bold text-[var(--crm-text-muted)]">{label as string}</p></div>)}</div>
+      <section className="mt-5 rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm"><div className="flex items-end justify-between"><div><h2 className="text-lg font-black text-[var(--crm-ink)]">Today&apos;s queue coverage</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Unique leads touched compared with currently callable records.</p></div><strong className="text-2xl font-black text-[var(--crm-ink)]">{coverage}%</strong></div><div className="mt-4 h-3 overflow-hidden rounded-full bg-[var(--crm-surface-subtle)]"><div className="h-full rounded-full bg-[var(--crm-brand)]" style={{ width: `${coverage}%` }} /></div><div className="mt-5 rounded-xl border border-[var(--crm-info)]/25 bg-[var(--crm-info-soft)] p-4 text-sm leading-6 text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">Metric safeguard:</strong> this page does not infer contacts, appointments, or conversions from raw dial events. Those outcomes require a saved disposition so the reporting remains trustworthy.</div></section>
+    </div>
+  )
+}
+
+function DialerSettingsView({ callerId, setCallerId, dialMode, setDialMode, ringCount, setRingCount, useCallHammer, setUseCallHammer, useVoicemailCallHammer, setUseVoicemailCallHammer }: { callerId: string; setCallerId: (value: string) => void; dialMode: 'click_to_call' | 'power_dialer'; setDialMode: (value: 'click_to_call' | 'power_dialer') => void; ringCount: number; setRingCount: (value: number) => void; useCallHammer: boolean; setUseCallHammer: (value: boolean) => void; useVoicemailCallHammer: boolean; setUseVoicemailCallHammer: (value: boolean) => void }) {
+  return (
+    <div>
+      <DialerPageHeading eyebrow="Dialer controls" title="Session defaults" copy="Keep the everyday choices visible; rotation, redial, and automation stay inside advanced queue settings." />
+      <section className="max-w-3xl rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-6 shadow-sm">
+        <div className="grid gap-5 sm:grid-cols-2">
+          <label><span className="text-xs font-bold text-[var(--crm-ink)]">Default calling number</span><select value={callerId} onChange={(event) => setCallerId(event.target.value)} className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2.5 text-sm font-semibold text-[var(--crm-ink)]">{TWILIO_NUMBERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+          <label><span className="text-xs font-bold text-[var(--crm-ink)]">Rings before disposition</span><select value={ringCount} onChange={(event) => setRingCount(Number(event.target.value))} className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2.5 text-sm font-semibold text-[var(--crm-ink)]">{[3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} rings</option>)}</select></label>
+        </div>
+        <div className="mt-6"><p className="text-xs font-bold text-[var(--crm-ink)]">Calling method</p><div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-[var(--crm-surface-subtle)] p-1">{([['power_dialer', 'Power dialer'], ['click_to_call', 'Click to call']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setDialMode(value)} className={`rounded-lg px-3 py-2.5 text-sm font-bold ${dialMode === value ? 'bg-[var(--crm-surface)] text-[var(--crm-brand)] shadow-sm' : 'text-[var(--crm-text-muted)]'}`}>{label}</button>)}</div></div>
+        <div className="mt-6 space-y-3 border-t border-[var(--crm-border)] pt-5">{[
+          ['Call every verified number', 'Use Call Hammer for each contact in the session.', useCallHammer, setUseCallHammer],
+          ['Continue after voicemail', 'Use the remaining verified numbers after a voicemail result.', useVoicemailCallHammer, setUseVoicemailCallHammer],
+        ].map(([title, copy, checked, setter]) => <label key={title as string} className="flex items-start justify-between gap-4 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4"><span><strong className="block text-sm text-[var(--crm-ink)]">{title as string}</strong><span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">{copy as string}</span></span><input type="checkbox" checked={checked as boolean} onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)} className="mt-1 h-4 w-4 accent-[var(--crm-brand)]" /></label>)}</div>
+        <p className="mt-5 text-xs leading-5 text-[var(--crm-text-muted)]">These defaults apply to the current workspace session. Save a calling list to persist its queue-specific configuration and resume point.</p>
+      </section>
+    </div>
+  )
+}
+
 function DialerHome() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [leads, setLeads] = useState<DialerQueueLead[]>([])
   const [followups, setFollowups] = useState<QueueFollowup[]>([])
   const [contactActivities, setContactActivities] = useState<QueueContactActivity[]>([])
@@ -1484,7 +1686,8 @@ function DialerHome() {
   const [useVoicemailCallHammer, setUseVoicemailCallHammer] = useState(false)
   const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [showBulkSms, setShowBulkSms] = useState(false)
-  const [homeTab, setHomeTab] = useState<'queue' | 'conversations'>('queue')
+  const requestedSection = searchParams.get('section') as DialerHomeSection | null
+  const homeSection: DialerHomeSection = requestedSection && DIALER_HOME_SECTIONS.has(requestedSection) ? requestedSection : 'overview'
 
   useEffect(() => {
     if (!callerId && DEFAULT_DIALER_CALLER_ID) {
@@ -1846,41 +2049,42 @@ function DialerHome() {
     ))
   }, [activeSavedQueueId, buildSessionUrl, callerPlan, optionalFilters, queue, ringCount, router, selectedPreset.label, selectedQueue, selectedSavedQueue, startBehavior, useCallHammer, useVoicemailCallHammer])
 
-  const resumeSavedQueue = useCallback(() => {
-    if (!selectedSavedQueue) return
-    const ids = (selectedSavedQueue.sessionLeadIds || []).slice(0, 100)
+  const resumeSavedQueue = useCallback((queueOverride?: SavedDialerQueue) => {
+    const queueToResume = queueOverride ?? selectedSavedQueue
+    if (!queueToResume) return
+    const ids = (queueToResume.sessionLeadIds || []).slice(0, 100)
     if (ids.length === 0) return
     const resumeIndex = Math.min(
-      Math.max(selectedSavedQueue.resumeIndex || 0, 0),
+      Math.max(queueToResume.resumeIndex || 0, 0),
       Math.max(ids.length - 1, 0),
     )
     const resumePlan = normalizeDialerCallerPlan({
-      mode: selectedSavedQueue.callerMode || callerMode,
-      staticCallerId: selectedSavedQueue.callerId || callerId,
-      rotationCallerIds: selectedSavedQueue.rotationCallerIds || rotationCallerIds,
-      rotateEveryCalls: selectedSavedQueue.rotateEveryCalls || rotateEveryCalls,
-      redialCallerId: selectedSavedQueue.redialCallerId || redialCallerId || null,
-    }, selectedSavedQueue.callerId || callerId || DEFAULT_DIALER_CALLER_ID)
-    patchSavedListMeta(selectedSavedQueue.id, {
+      mode: queueToResume.callerMode || callerMode,
+      staticCallerId: queueToResume.callerId || callerId,
+      rotationCallerIds: queueToResume.rotationCallerIds || rotationCallerIds,
+      rotateEveryCalls: queueToResume.rotateEveryCalls || rotateEveryCalls,
+      redialCallerId: queueToResume.redialCallerId || redialCallerId || null,
+    }, queueToResume.callerId || callerId || DEFAULT_DIALER_CALLER_ID)
+    patchSavedListMeta(queueToResume.id, {
       callerId: resumePlan.staticCallerId,
       callerMode: resumePlan.mode,
       rotationCallerIds: resumePlan.rotationCallerIds,
       rotateEveryCalls: resumePlan.rotateEveryCalls,
       redialCallerId: resumePlan.redialCallerId,
-      useCallHammer: selectedSavedQueue.useCallHammer ?? useCallHammer,
-      useVoicemailCallHammer: selectedSavedQueue.useVoicemailCallHammer ?? useVoicemailCallHammer,
+      useCallHammer: queueToResume.useCallHammer ?? useCallHammer,
+      useVoicemailCallHammer: queueToResume.useVoicemailCallHammer ?? useVoicemailCallHammer,
     })
     router.push(buildSessionUrl(
       ids,
       resumeIndex,
-      selectedSavedQueue.id,
+      queueToResume.id,
       resumePlan.staticCallerId,
       resumePlan,
       {
-        useCallHammer: selectedSavedQueue.useCallHammer ?? useCallHammer,
-        useVoicemailCallHammer: selectedSavedQueue.useVoicemailCallHammer ?? useVoicemailCallHammer,
+        useCallHammer: queueToResume.useCallHammer ?? useCallHammer,
+        useVoicemailCallHammer: queueToResume.useVoicemailCallHammer ?? useVoicemailCallHammer,
       },
-      selectedSavedQueue.name,
+      queueToResume.name,
       ringCount,
     ))
   }, [buildSessionUrl, callerId, callerMode, redialCallerId, rotateEveryCalls, rotationCallerIds, ringCount, router, selectedSavedQueue, useCallHammer, useVoicemailCallHammer])
@@ -2055,6 +2259,22 @@ function DialerHome() {
   const hasRotation = callerMode === 'rotation' && callerPlan.rotationCallerIds.length > 0
   const canStart = queue.length > 0
   const lineDialCount = mode === 'predictive' ? 3 : 1
+  const scheduledCount = leads.filter((lead) => scheduledTodayLeadIds.has(lead.id)).length
+  const followupCount = leads.filter((lead) => followupLeadIds.has(lead.id) || dateKey(lead.appointment_date) === today).length
+  const priorityCount = leads.filter((lead) => lead.priority === 'hot' || lead.priority === 'high' || (lead.motivation_score || 0) >= 7).length
+  const staleCount = leads.filter((lead) => {
+    const staleDays = daysSince(lastContactByLeadId.get(lead.id))
+    return staleDays == null || staleDays >= 30
+  }).length
+  const callsToday = contactActivities.filter((activity) => ['call', 'voicemail'].includes(activity.activity_type) && dateKey(activity.created_at) === today).length
+  const uniqueLeadsToday = new Set(contactActivities.filter((activity) => ['call', 'voicemail'].includes(activity.activity_type) && dateKey(activity.created_at) === today).map((activity) => activity.lead_id).filter(Boolean)).size
+  const activeSessions = savedQueues.filter((savedQueue) => savedQueue.sessionLeadIds.length > 0 && !savedQueue.sessionCompleted)
+
+  const openQueue = useCallback((nextPreset: QueuePreset) => {
+    setPreset(nextPreset)
+    setSelectedLeadIds(new Set())
+    router.push('/dialer?section=queue')
+  }, [router])
 
   const openOptionalFilterModal = useCallback(() => {
     setOptionalFiltersDraft({ ...optionalFilters })
@@ -2081,31 +2301,8 @@ function DialerHome() {
     })
   }, [callerId])
 
-  const homeTabSwitcher = (
-    <div className="inline-flex overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
-      <button
-        type="button"
-        onClick={() => setHomeTab('queue')}
-        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
-          homeTab === 'queue' ? 'bg-[var(--crm-brand)] text-white shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
-        }`}
-      >
-        <Icon name="phone_in_talk" size="text-base" /> Call Queue
-      </button>
-      <button
-        type="button"
-        onClick={() => setHomeTab('conversations')}
-        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
-          homeTab === 'conversations' ? 'bg-[var(--crm-brand)] text-white shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
-        }`}
-      >
-        <Icon name="forum" size="text-base" /> Conversations
-      </button>
-    </div>
-  )
-
   return (
-    <div className={`mx-auto w-full px-4 sm:px-6 lg:px-8 ${homeTab === 'conversations' ? 'flex h-full max-w-[1440px] flex-col py-4' : 'max-w-[1440px] py-6 pb-20'}`}>
+    <div className={`mx-auto w-full px-4 sm:px-6 lg:px-8 ${homeSection === 'conversations' ? 'flex h-full max-w-[1440px] flex-col py-4' : 'max-w-[1440px] py-6 pb-20'}`}>
       <BulkSmsModal
         open={showBulkSms}
         onClose={() => setShowBulkSms(false)}
@@ -2113,13 +2310,12 @@ function DialerHome() {
         agent={agent}
         fromPhone={callerId}
       />
-      {homeTab === 'queue' && (
+      {homeSection === 'queue' && (
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--crm-brand)]">Acquisitions workspace</p>
-            <h1 className="text-3xl font-black tracking-tight text-[var(--ck-text)]">Dialer</h1>
-            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Build a focused calling session in three clear steps.</p>
-            <div className="mt-4">{homeTabSwitcher}</div>
+            <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--crm-brand)]">Dialer queue builder</p>
+            <h1 className="text-3xl font-black tracking-tight text-[var(--ck-text)]">Prepare a calling session</h1>
+            <p className="mt-1 text-sm text-[var(--ck-text-muted)]">Choose who to call, review the order, then launch with the right number and method.</p>
           </div>
           <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3.5 py-1.5 text-sm font-bold text-[var(--ck-text)] sm:self-auto">
             <span className={`h-2 w-2 rounded-full ${loading ? 'bg-[var(--ck-text-dim)]' : queue.length ? 'bg-[var(--crm-success)]' : 'bg-[var(--crm-danger)]'}`} />
@@ -2128,8 +2324,30 @@ function DialerHome() {
         </div>
       )}
 
-      {homeTab === 'conversations' ? (
-        <DialerConversationHub agent={agent} defaultFromPhone={callerId} homeTabSwitcher={homeTabSwitcher} />
+      {homeSection === 'overview' ? (
+        <DialerOverview
+          loading={loading}
+          readyCount={leads.length}
+          scheduledCount={scheduledCount}
+          followupCount={followupCount}
+          priorityCount={priorityCount}
+          staleCount={staleCount}
+          callsToday={callsToday}
+          uniqueLeadsToday={uniqueLeadsToday}
+          activeSessions={activeSessions}
+          focusLeads={queue}
+          onOpenQueue={openQueue}
+          onResume={resumeSavedQueue}
+          lastContactByLeadId={lastContactByLeadId}
+        />
+      ) : homeSection === 'sessions' ? (
+        <DialerSessionsView savedQueues={savedQueues} onResume={resumeSavedQueue} onOpenQueue={openQueue} />
+      ) : homeSection === 'analytics' ? (
+        <DialerAnalyticsView callsToday={callsToday} uniqueLeadsToday={uniqueLeadsToday} followupCount={followupCount} readyCount={leads.length} contactActivities={contactActivities} />
+      ) : homeSection === 'settings' ? (
+        <DialerSettingsView callerId={callerId} setCallerId={setCallerId} dialMode={dialMode} setDialMode={setDialMode} ringCount={ringCount} setRingCount={setRingCount} useCallHammer={useCallHammer} setUseCallHammer={setUseCallHammer} useVoicemailCallHammer={useVoicemailCallHammer} setUseVoicemailCallHammer={setUseVoicemailCallHammer} />
+      ) : homeSection === 'conversations' ? (
+        <DialerConversationHub agent={agent} defaultFromPhone={callerId} homeTabSwitcher={null} />
       ) : (
         <>
           {error && (
@@ -2558,7 +2776,7 @@ function DialerHome() {
 
               {hasResumePoint && (
                 <button
-                  onClick={resumeSavedQueue}
+                  onClick={() => resumeSavedQueue()}
                   className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-4 py-2.5 text-xs font-black text-[var(--crm-brand)] transition-colors hover:border-[var(--crm-brand)]"
                 >
                   <Icon name="history" size="text-base" /> Resume {(selectedSavedQueue?.resumeIndex || 0) + 1}/{resumeLeadIds.length} · {resumeRemaining} left
@@ -2607,7 +2825,7 @@ function DialerHome() {
         </>
       )}
 
-      {homeTab === 'queue' && showOptionalFilters && (
+      {homeSection === 'queue' && showOptionalFilters && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
           <button
             type="button"

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
+import { CloseoutDialog } from '@/components/dispo/closeout-dialog'
 import type { DispoDeal, DispoStage } from '@/types/dispo'
 
 // ---------------------------------------------------------------------------
@@ -180,10 +181,12 @@ function DealDetail({
   deal,
   onClose,
   onStageChange,
+  onRequestCloseout,
 }: {
   deal: DispoDeal
   onClose: () => void
   onStageChange: (dealId: string, newStage: DispoStage) => void
+  onRequestCloseout: (mode: 'funding' | 'debrief') => void
 }) {
   const lead = deal.lead as Record<string, unknown> | undefined
   const addr = String(lead?.property_address ?? 'No address')
@@ -197,8 +200,10 @@ function DealDetail({
   const pType = String(lead?.property_type ?? '—')
 
   const stagesForAdvance = STAGES.filter(
-    (s) => s.key !== 'all' && s.key !== deal.stage
+    (s) => s.key !== 'all' && s.key !== 'closed' && s.key !== deal.stage
   ) as { key: DispoStage; label: string; icon: string; color: string }[]
+  const closeoutStatus = deal.closeout_status || 'not_started'
+  const closeoutMetrics = deal.closeout?.metrics
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
@@ -214,12 +219,66 @@ function DealDetail({
               {[city, state].filter(Boolean).join(', ')}
             </p>
           </div>
+
           <button onClick={onClose} aria-label="Close deal details" className="rounded-lg p-2 text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface-subtle)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
 
         <div className="px-6 py-4 space-y-5">
+          {(deal.stage === 'under_contract' || deal.stage === 'closed') && (
+            <div className={`rounded-xl border p-4 ${
+              closeoutStatus === 'complete'
+                ? 'border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)]'
+                : closeoutStatus === 'awaiting_debrief'
+                  ? 'border-[var(--crm-violet)]/30 bg-[var(--crm-violet-soft)]'
+                  : 'border-[var(--crm-warning)]/35 bg-[var(--crm-warning-soft)]'
+            }`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.1em] text-[var(--crm-text-muted)]">Transaction close-out</p>
+                  <p className="mt-1 text-sm font-black text-[var(--crm-ink)]">
+                    {closeoutStatus === 'complete'
+                      ? 'Debrief complete · archived'
+                      : closeoutStatus === 'awaiting_debrief'
+                        ? 'Funding recorded · debrief required'
+                        : 'Funding and final numbers not recorded'}
+                  </p>
+                </div>
+                <Icon
+                  name={closeoutStatus === 'complete' ? 'inventory_2' : closeoutStatus === 'awaiting_debrief' ? 'rate_review' : 'task_alt'}
+                  className={closeoutStatus === 'complete' ? 'text-[var(--crm-success)]' : closeoutStatus === 'awaiting_debrief' ? 'text-[var(--crm-violet)]' : 'text-[var(--crm-warning)]'}
+                />
+              </div>
+
+              {closeoutMetrics ? (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-[var(--crm-surface)] p-2.5">
+                    <p className="text-[9px] font-black uppercase text-[var(--crm-text-dim)]">Net revenue</p>
+                    <p className="mt-0.5 text-sm font-black text-[var(--crm-success)]">{formatCurrency(closeoutMetrics.netRevenue || 0)}</p>
+                  </div>
+                  <div className="rounded-lg bg-[var(--crm-surface)] p-2.5">
+                    <p className="text-[9px] font-black uppercase text-[var(--crm-text-dim)]">Lead to close</p>
+                    <p className="mt-0.5 text-sm font-black text-[var(--crm-ink)]">{closeoutMetrics.leadToCloseDays ?? '—'} days</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {closeoutStatus !== 'complete' ? (
+                <button
+                  type="button"
+                  onClick={() => onRequestCloseout(closeoutStatus === 'awaiting_debrief' ? 'debrief' : 'funding')}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--crm-brand)] px-3 py-2.5 text-xs font-black text-white hover:bg-[var(--crm-brand-hover)]"
+                >
+                  <Icon name={closeoutStatus === 'awaiting_debrief' ? 'rate_review' : 'verified'} className="text-base" />
+                  {closeoutStatus === 'awaiting_debrief' ? 'Complete required debrief' : 'Close transaction'}
+                </button>
+              ) : (
+                <p className="mt-3 text-xs leading-5 text-[var(--crm-text-muted)]">The outcome, buyer score, source score, friction, lesson, and process change are preserved with this archived transaction.</p>
+              )}
+            </div>
+          )}
+
           {/* Current Stage */}
           <div>
             <p className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider mb-2">
@@ -345,6 +404,7 @@ export default function PipelinePage() {
   const [stageFilter, setStageFilter] = useState<DispoStage | 'all'>('all')
   const [search, setSearch] = useState('')
   const [selectedDeal, setSelectedDeal] = useState<DispoDeal | null>(null)
+  const [closeoutTarget, setCloseoutTarget] = useState<{ deal: DispoDeal; mode: 'funding' | 'debrief' } | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -422,6 +482,15 @@ export default function PipelinePage() {
   }, {})
 
   const activeDealCount = allDeals.filter((d) => d.stage !== 'closed' && d.stage !== 'dead').length
+  const awaitingDebriefCount = allDeals.filter((deal) => deal.closeout_status === 'awaiting_debrief').length
+  const archivedCount = allDeals.filter((deal) => Boolean(deal.archived_at)).length
+  const closedThisMonthCount = allDeals.filter((deal) => {
+    if (!deal.closed_at) return false
+    const closed = new Date(deal.closed_at)
+    const now = new Date()
+    return closed.getFullYear() === now.getFullYear() && closed.getMonth() === now.getMonth()
+  }).length
+  const netRevenue = allDeals.reduce((total, deal) => total + Number(deal.closeout?.metrics?.netRevenue || 0), 0)
 
   return (
     <div className="mx-auto min-h-full w-full max-w-[1440px] bg-[var(--crm-canvas)] px-4 pb-24 pt-6 sm:px-6 lg:px-8">
@@ -469,6 +538,20 @@ export default function PipelinePage() {
           )
         })}
       </div>
+
+      <section aria-label="Post-close performance" className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: 'Closed this month', value: String(closedThisMonthCount), icon: 'celebration', tone: 'text-[var(--crm-success)] bg-[var(--crm-success-soft)]' },
+          { label: 'Net revenue recorded', value: formatCurrency(netRevenue), icon: 'payments', tone: 'text-[var(--crm-info)] bg-[var(--crm-info-soft)]' },
+          { label: 'Debriefs due', value: String(awaitingDebriefCount), icon: 'rate_review', tone: 'text-[var(--crm-violet)] bg-[var(--crm-violet-soft)]' },
+          { label: 'Archived with learning', value: String(archivedCount), icon: 'inventory_2', tone: 'text-[var(--crm-warning)] bg-[var(--crm-warning-soft)]' },
+        ].map((metric) => (
+          <div key={metric.label} className="flex items-center gap-3 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3.5 shadow-sm">
+            <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${metric.tone}`}><Icon name={metric.icon} className="text-xl" /></span>
+            <span><strong className="block text-lg font-black text-[var(--crm-ink)]">{metric.value}</strong><span className="text-[11px] font-semibold text-[var(--crm-text-muted)]">{metric.label}</span></span>
+          </div>
+        ))}
+      </section>
 
       {/* Search */}
       <div className="mb-4">
@@ -607,6 +690,18 @@ export default function PipelinePage() {
                             TC {deal.tc_file.status.replace(/_/g, ' ')}
                           </span>
                         )}
+                        {deal.stage === 'closed' && (
+                          <span className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            deal.closeout_status === 'complete'
+                              ? 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'
+                              : deal.closeout_status === 'awaiting_debrief'
+                                ? 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]'
+                                : 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'
+                          }`}>
+                            <Icon name={deal.closeout_status === 'complete' ? 'inventory_2' : deal.closeout_status === 'awaiting_debrief' ? 'rate_review' : 'warning'} size="text-xs" />
+                            {deal.closeout_status === 'complete' ? 'Archived' : deal.closeout_status === 'awaiting_debrief' ? 'Debrief due' : 'Close-out required'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-[var(--ck-text-muted)] hidden sm:table-cell">
                         {arv}
@@ -668,8 +763,26 @@ export default function PipelinePage() {
           deal={selectedDeal}
           onClose={() => setSelectedDeal(null)}
           onStageChange={handleStageChange}
+          onRequestCloseout={(mode) => setCloseoutTarget({ deal: selectedDeal, mode })}
         />
       )}
+
+      {closeoutTarget ? (
+        <CloseoutDialog
+          deal={closeoutTarget.deal}
+          mode={closeoutTarget.mode}
+          onClose={() => setCloseoutTarget(null)}
+          onSaved={() => {
+            setCloseoutTarget(null)
+            setSelectedDeal(null)
+            setFeedback(closeoutTarget.mode === 'funding'
+              ? 'Funding recorded. Debrief is due the next business day.'
+              : 'Debrief complete. Transaction archived.')
+            setTimeout(() => setFeedback(null), 3500)
+            fetchDeals()
+          }}
+        />
+      ) : null}
 
       {/* Feedback toast */}
       {feedback && (

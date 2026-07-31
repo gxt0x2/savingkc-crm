@@ -23,9 +23,21 @@ async function ensureTable() {
       accepted_offer_id uuid,
       accepted_buyer_id uuid,
       notes text,
+      closeout_status text NOT NULL DEFAULT 'not_started',
+      closeout jsonb NOT NULL DEFAULT '{}'::jsonb,
+      closed_at timestamptz,
+      debrief_due_at timestamptz,
+      debrief_completed_at timestamptz,
+      archived_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS closeout_status text NOT NULL DEFAULT 'not_started'`,
+    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS closeout jsonb NOT NULL DEFAULT '{}'::jsonb`,
+    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS closed_at timestamptz`,
+    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS debrief_due_at timestamptz`,
+    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS debrief_completed_at timestamptz`,
+    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS archived_at timestamptz`,
     `CREATE INDEX IF NOT EXISTS idx_dispo_deals_stage ON dispo_deals(stage)`,
     `CREATE INDEX IF NOT EXISTS idx_dispo_deals_lead ON dispo_deals(lead_id)`,
   ]
@@ -67,7 +79,7 @@ export async function GET(req: NextRequest) {
     let query = db
       .from('dispo_deals')
       .select(
-        '*, leads:lead_id(id, full_name, property_address, city, state, zip, arv, offer_amount, property_type, beds, baths_full, sqft)',
+        '*, leads:lead_id(id, full_name, property_address, city, state, zip, arv, offer_amount, property_type, beds, baths_full, sqft, source, assigned_agent, created_at)',
         { count: 'exact' }
       )
       .order('updated_at', { ascending: false })

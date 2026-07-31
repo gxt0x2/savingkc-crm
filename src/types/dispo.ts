@@ -169,6 +169,49 @@ export interface BuyerMatch {
 
 export type DispoStage = 'new' | 'marketing' | 'offers_in' | 'negotiating' | 'under_contract' | 'closed' | 'dead'
 
+export type DispoCloseoutStatus = 'not_started' | 'awaiting_debrief' | 'complete'
+
+export interface DispoCloseoutData {
+  version?: number
+  funding?: {
+    fundedAt?: string
+    finalAssignmentFee?: number
+    closingCosts?: number
+    sellerPurchasePrice?: number | null
+    buyerPurchasePrice?: number | null
+    settlementStatementVerified?: boolean
+    fundingConfirmed?: boolean
+    notes?: string | null
+    recordedBy?: string
+    recordedAt?: string
+  }
+  metrics?: {
+    grossRevenue?: number
+    closingCosts?: number
+    netRevenue?: number
+    transactionSpread?: number | null
+    dispositionDays?: number
+    leadToCloseDays?: number | null
+  }
+  workflow?: {
+    marketingStopped?: boolean
+    transactionCoordinationClosed?: boolean
+    debriefDueAt?: string
+    sellerFollowupDueAt?: string
+  }
+  debrief?: {
+    outcomeRating?: number
+    buyerPerformance?: number
+    sourceQuality?: number
+    wentWell?: string
+    friction?: string
+    lesson?: string
+    processChange?: string
+    completedBy?: string
+    completedAt?: string
+  }
+}
+
 export interface DispoDeal {
   id: string
   lead_id: string
@@ -181,6 +224,12 @@ export interface DispoDeal {
   notes: string | null
   created_at: string
   updated_at: string
+  closeout_status?: DispoCloseoutStatus | null
+  closeout?: DispoCloseoutData | null
+  closed_at?: string | null
+  debrief_due_at?: string | null
+  debrief_completed_at?: string | null
+  archived_at?: string | null
   lead?: {
     id: string
     full_name: string | null
@@ -194,6 +243,9 @@ export interface DispoDeal {
     beds: number | null
     baths_full: number | null
     sqft: number | null
+    source?: string | null
+    assigned_agent?: string | null
+    created_at?: string | null
   }
   deal_page?: { id: string; slug: string; is_active: boolean } | null
   tc_file?: TcFile | null
