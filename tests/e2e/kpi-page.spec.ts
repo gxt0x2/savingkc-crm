@@ -7,6 +7,12 @@ test.use({
 })
 
 test('dashboard bottleneck calculator smoke', async ({ page }) => {
+  await page.route('**/api/contacts**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [] }) })
+  })
+  await page.route('**/api/conversations/hub**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [] }) })
+  })
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
   await page.getByText('Open model', { exact: true }).click()
 
