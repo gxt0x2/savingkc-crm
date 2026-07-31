@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
+import { StreetViewPanel } from '@/components/leads/google-map-panel'
 import { StageSelector } from '@/components/leads/stage-selector'
 import { formatPhone, toProperCase } from '@/lib/format'
 import {
@@ -161,6 +163,7 @@ export function LeadWorkspace({
   const [imageFailed, setImageFailed] = useState(false)
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [operationsPanelOpen, setOperationsPanelOpen] = useState(false)
+  const [streetViewOpen, setStreetViewOpen] = useState(false)
   const sectionHeadingRef = useRef<HTMLDivElement>(null)
   const name = toProperCase(lead.full_name) || 'Unknown contact'
   const firstName = name.split(/\s+/)[0]
@@ -184,16 +187,17 @@ export function LeadWorkspace({
     : nextTask?.description || 'Define the next action'
 
   useEffect(() => {
-    if (!contextPanelOpen && !operationsPanelOpen) return
+    if (!contextPanelOpen && !operationsPanelOpen && !streetViewOpen) return
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setContextPanelOpen(false)
         setOperationsPanelOpen(false)
+        setStreetViewOpen(false)
       }
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [contextPanelOpen, operationsPanelOpen])
+  }, [contextPanelOpen, operationsPanelOpen, streetViewOpen])
 
   function openContextPanel() {
     setOperationsPanelOpen(false)
@@ -224,6 +228,11 @@ export function LeadWorkspace({
   function openPropertyDetails() {
     closePanels()
     onOpenProperty()
+  }
+
+  function openStreetView() {
+    closePanels()
+    setStreetViewOpen(true)
   }
 
   function selectSection(section: LeadWorkspaceSection) {
@@ -286,6 +295,10 @@ export function LeadWorkspace({
 
   return (
     <div className="h-full overflow-y-auto bg-[var(--crm-canvas)]">
+      {streetViewOpen ? createPortal(
+        <StreetViewModal address={address} onClose={() => setStreetViewOpen(false)} />,
+        document.body,
+      ) : null}
       <div className="mx-auto max-w-[1640px] px-4 pb-8 pt-4 xl:px-6">
         <header className="crm-panel-raised relative overflow-hidden rounded-xl px-4 py-3.5 sm:px-5">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -419,26 +432,44 @@ export function LeadWorkspace({
 
                 <div className="my-5 border-t border-[var(--crm-border)]" />
                 <SectionLabel>Property snapshot</SectionLabel>
-                <button type="button" onClick={openPropertyDetails} className="mt-3 w-full overflow-hidden rounded-lg border border-[var(--crm-border)] text-left hover:border-[var(--crm-brand-border)]" aria-label="Open property details">
-                  {!imageFailed && address ? (
-                    // Google Street View is a signed dynamic image URL and is intentionally not routed through next/image.
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={streetViewUrl}
-                      alt={`Street view of ${address}`}
-                      className="h-36 w-full object-cover"
-                      onError={() => setImageFailed(true)}
-                    />
-                  ) : (
-                    <span className="flex h-36 items-center justify-center bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]">
-                      <Icon name="home" className="text-[42px]" />
+                <div className="mt-3 overflow-hidden rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)]">
+                  <button
+                    type="button"
+                    onClick={openStreetView}
+                    disabled={!address}
+                    className="group relative block w-full overflow-hidden text-left disabled:cursor-not-allowed"
+                    aria-label={address ? `Open Street View for ${address}` : 'Street View unavailable because the property address is missing'}
+                  >
+                    {!imageFailed && address ? (
+                      // Google Street View is a signed dynamic image URL and is intentionally not routed through next/image.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={streetViewUrl}
+                        alt={`Street view of ${address}`}
+                        className="h-36 w-full object-cover transition-transform duration-300 group-hover:scale-[1.015]"
+                        onError={() => setImageFailed(true)}
+                      />
+                    ) : (
+                      <span className="flex h-36 items-center justify-center bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]">
+                        <Icon name="home" className="text-[42px]" />
+                      </span>
+                    )}
+                    {address ? <StreetViewHint /> : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openPropertyDetails}
+                    className="flex w-full items-center gap-3 border-t border-[var(--crm-border)] px-4 py-3 text-left hover:bg-[var(--crm-surface-subtle)]"
+                    aria-label="Open property details and county records"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-bold text-[var(--crm-ink)]">{lead.property_address || 'Property address missing'}</span>
+                      <span className="mt-1 block text-xs text-[var(--crm-text-muted)]">{[lead.city, lead.state, lead.zip].filter(Boolean).join(', ')}</span>
                     </span>
-                  )}
-                  <span className="block px-4 py-3">
-                    <span className="block font-bold text-[var(--crm-ink)]">{lead.property_address || 'Property address missing'}</span>
-                    <span className="mt-1 block text-xs text-[var(--crm-text-muted)]">{[lead.city, lead.state, lead.zip].filter(Boolean).join(', ')}</span>
-                  </span>
-                </button>
+                    <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.08em] text-[var(--crm-brand)]">County details</span>
+                    <Icon name="chevron_right" className="shrink-0 text-[18px] text-[var(--crm-brand)]" />
+                  </button>
+                </div>
                 <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   <DataRow label="Beds" value={lead.beds?.toString() || '—'} compact />
                   <DataRow label="Baths" value={((lead.baths_full || 0) + (lead.baths_half ? 0.5 : 0)).toString() || '—'} compact />
@@ -527,6 +558,7 @@ export function LeadWorkspace({
             imageFailed={imageFailed}
             assessedValue={assessedValue}
             onImageError={() => setImageFailed(true)}
+            onOpenStreetView={openStreetView}
             onOpenProperty={openPropertyDetails}
           />
 
@@ -710,6 +742,7 @@ function PropertyOverviewPanel({
   imageFailed,
   assessedValue,
   onImageError,
+  onOpenStreetView,
   onOpenProperty,
 }: {
   lead: LeadWorkspaceLead
@@ -718,27 +751,35 @@ function PropertyOverviewPanel({
   imageFailed: boolean
   assessedValue: number | null
   onImageError: () => void
+  onOpenStreetView: () => void
   onOpenProperty: () => void
 }) {
   const baths = (lead.baths_full || 0) + (lead.baths_half ? 0.5 : 0)
 
   return (
     <section className="crm-panel flex h-[calc(100vh-300px)] min-h-[560px] max-h-[820px] flex-col overflow-hidden rounded-xl">
-      <CardHeader title="Property details" icon="home_work" />
+      <CardHeader
+        title="Property details"
+        icon="home_work"
+        onTitleClick={onOpenProperty}
+        titleActionLabel="Open property details and county records"
+      />
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <button
-          type="button"
-          onClick={onOpenProperty}
-          className="w-full overflow-hidden rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] text-left transition-colors hover:border-[var(--crm-brand-border)]"
-          aria-label="Open full property details"
-        >
+        <div className="overflow-hidden rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] transition-colors hover:border-[var(--crm-brand-border)]">
+          <button
+            type="button"
+            onClick={onOpenStreetView}
+            disabled={!address}
+            className="group relative block w-full overflow-hidden text-left disabled:cursor-not-allowed"
+            aria-label={address ? `Open Street View for ${address}` : 'Street View unavailable because the property address is missing'}
+          >
           {!imageFailed && address ? (
             // Google Street View is a signed dynamic image URL and is intentionally not routed through next/image.
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={streetViewUrl}
               alt={`Street view of ${address}`}
-              className="aspect-[16/10] w-full object-cover"
+              className="aspect-[16/10] w-full object-cover transition-transform duration-300 group-hover:scale-[1.015]"
               onError={onImageError}
             />
           ) : (
@@ -746,11 +787,21 @@ function PropertyOverviewPanel({
               <Icon name="home" className="text-[42px]" />
             </span>
           )}
-          <span className="block px-4 py-3">
-            <span className="block font-bold leading-5 text-[var(--crm-ink)]">{lead.property_address || 'Property address missing'}</span>
-            <span className="mt-1 block text-xs leading-4 text-[var(--crm-text-muted)]">{[lead.city, lead.state, lead.zip].filter(Boolean).join(', ') || 'Location not recorded'}</span>
-          </span>
-        </button>
+            {address ? <StreetViewHint /> : null}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenProperty}
+            className="flex w-full items-center gap-3 border-t border-[var(--crm-border)] px-4 py-3 text-left hover:bg-[var(--crm-surface-subtle)]"
+            aria-label="Open property details and county records"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block font-bold leading-5 text-[var(--crm-ink)]">{lead.property_address || 'Property address missing'}</span>
+              <span className="mt-1 block text-xs leading-4 text-[var(--crm-text-muted)]">{[lead.city, lead.state, lead.zip].filter(Boolean).join(', ') || 'Location not recorded'}</span>
+            </span>
+            <Icon name="chevron_right" className="shrink-0 text-[18px] text-[var(--crm-brand)]" />
+          </button>
+        </div>
 
         <dl className="mt-4 grid grid-cols-2 gap-2">
           {[
@@ -791,6 +842,52 @@ function PropertyOverviewPanel({
   )
 }
 
+function StreetViewHint() {
+  return (
+    <span className="pointer-events-none absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-black/70 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-white shadow-lg backdrop-blur-sm">
+      <Icon name="360" className="text-[16px]" />
+      Open Street View
+    </span>
+  )
+}
+
+function StreetViewModal({ address, onClose }: { address: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6"
+      onClick={onClose}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lead-street-view-title"
+        className="crm-panel-raised w-full max-w-5xl overflow-hidden rounded-2xl shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="flex items-center gap-3 border-b border-[var(--crm-border)] px-4 py-3 sm:px-5">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--crm-info-soft)] text-[var(--crm-info)]">
+            <Icon name="360" className="text-[22px]" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="crm-eyebrow">Interactive property view</p>
+            <h2 id="lead-street-view-title" className="truncate text-base font-black text-[var(--crm-ink)] sm:text-lg">Street View · {address}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            autoFocus
+            aria-label="Close Street View"
+            className="crm-icon-button flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+          >
+            <Icon name="close" />
+          </button>
+        </header>
+        <StreetViewPanel address={address} height="min(72vh, 620px)" />
+      </section>
+    </div>
+  )
+}
+
 function ActionButton({ icon, label, onClick, disabled, tone }: { icon: string; label: string; onClick: () => void; disabled?: boolean; tone: 'teal' | 'blue' | 'violet' }) {
   const toneClass = {
     teal: 'border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-[var(--crm-success)] hover:brightness-95',
@@ -819,7 +916,23 @@ function SummaryItem({ label, children, tone }: { label: string; children: React
   )
 }
 
-function CardHeader({ id, title, icon, onMore, onClose }: { id?: string; title: string; icon: string; onMore?: () => void; onClose?: () => void }) {
+function CardHeader({
+  id,
+  title,
+  icon,
+  onMore,
+  onClose,
+  onTitleClick,
+  titleActionLabel,
+}: {
+  id?: string
+  title: string
+  icon: string
+  onMore?: () => void
+  onClose?: () => void
+  onTitleClick?: () => void
+  titleActionLabel?: string
+}) {
   const iconTone = icon === 'person' || icon === 'forum' || icon === 'home_work'
     ? 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
     : icon === 'paid'
@@ -827,8 +940,23 @@ function CardHeader({ id, title, icon, onMore, onClose }: { id?: string; title: 
       : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'
   return (
     <div className="flex h-13 items-center border-b border-[var(--crm-border)] px-5">
-      <span className={cn('mr-2 flex h-8 w-8 items-center justify-center rounded-lg', iconTone)}><Icon name={icon} className="text-[18px]" /></span>
-      <h2 id={id} className="text-base font-bold text-[var(--crm-ink)]">{title}</h2>
+      {onTitleClick ? (
+        <button
+          type="button"
+          onClick={onTitleClick}
+          aria-label={titleActionLabel || `Open ${title}`}
+          className="group flex min-w-0 items-center rounded-lg pr-2 text-left hover:bg-[var(--crm-surface-subtle)]"
+        >
+          <span className={cn('mr-2 flex h-8 w-8 items-center justify-center rounded-lg', iconTone)}><Icon name={icon} className="text-[18px]" /></span>
+          <span id={id} role="heading" aria-level={2} className="text-base font-bold text-[var(--crm-ink)]">{title}</span>
+          <Icon name="chevron_right" className="ml-1 text-[17px] text-[var(--crm-text-dim)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--crm-brand)]" />
+        </button>
+      ) : (
+        <>
+          <span className={cn('mr-2 flex h-8 w-8 items-center justify-center rounded-lg', iconTone)}><Icon name={icon} className="text-[18px]" /></span>
+          <h2 id={id} className="text-base font-bold text-[var(--crm-ink)]">{title}</h2>
+        </>
+      )}
       <div className="ml-auto flex items-center gap-1">
         {onMore ? <button type="button" onClick={onMore} aria-label={`Edit ${title}`} className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="edit" className="text-[18px]" /></button> : null}
         {onClose ? <button type="button" onClick={onClose} autoFocus aria-label={`Close ${title}`} className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="close" /></button> : null}
