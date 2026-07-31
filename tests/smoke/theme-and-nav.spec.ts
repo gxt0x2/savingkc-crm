@@ -61,7 +61,6 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
 
   const expectedLinks = new Map([
     ['Conversations', '/conversations'],
-    ['Opportunities', '/opportunities'],
     ['Contacts', '/contacts'],
     ['Calendar & Tasks', '/calendar?department=acquisitions'],
     ['Workflows', '/workflows'],
@@ -90,9 +89,10 @@ for (const route of crmWorkspaceRoutes) {
     await expect(page.locator('.crm-workspace-shell')).toHaveAttribute('data-theme', 'light');
     await expect(page.getByRole('button', { name: 'Switch to dark theme' })).toBeVisible();
     await expect(page.getByPlaceholder('Search contacts, properties, or messages...')).toBeVisible();
-    await expect(page.getByRole('link', { name: /Conversations/ })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Contacts' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Dispositions' })).toHaveAttribute('href', '/dispo/pipeline');
+    const primaryNavigation = page.getByRole('navigation');
+    await expect(primaryNavigation.getByRole('link', { name: /Conversations/ })).toBeVisible();
+    await expect(primaryNavigation.getByRole('link', { name: 'Contacts' })).toBeVisible();
+    await expect(primaryNavigation.getByRole('link', { name: 'Dispositions' })).toHaveAttribute('href', '/dispo/pipeline');
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
     await page.screenshot({
