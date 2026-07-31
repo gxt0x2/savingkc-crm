@@ -108,6 +108,12 @@ export function inboundCommunicationNeedsReply(activity: ConversationHubActivity
   const description = activity.description?.toLowerCase() ?? ''
   if (outcomes.some((value) => OPEN_CALL_OUTCOMES.has(value))) return true
   if (/missed|no[ -]?answer|busy|voicemail|failed|cancel/.test(description)) return true
+  const hasRecording = [
+    activity.metadata?.recordingSid,
+    activity.metadata?.recordingUrl,
+    activity.metadata?.recording_url,
+  ].some((value) => Boolean(text(value)))
+  if (hasRecording || /call recording available/.test(description)) return false
   if (outcomes.some((value) => RESOLVED_CALL_OUTCOMES.has(value))) return false
   if (/connected live|answered|completed call/.test(description)) return false
 

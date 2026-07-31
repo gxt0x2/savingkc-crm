@@ -98,6 +98,21 @@ describe('conversation hub read model', () => {
     expect(thread.unread).toBe(false)
   })
 
+  it('recognizes recorded legacy inbound calls as answered', () => {
+    const thread = buildConversationHubThread(lead, [
+      activity({
+        id: 'legacy-recorded-call',
+        activity_type: 'call',
+        description: 'Call recording available',
+        created_at: '2026-07-28T15:10:00.000Z',
+        metadata: { direction: 'inbound', recordingSid: 'RE123' },
+      }),
+    ])
+
+    expect(thread.attentionState).toBe('resolved')
+    expect(thread.unread).toBe(false)
+  })
+
   it('keeps missed inbound calls actionable until the agent returns them', () => {
     const missed = activity({
       id: 'missed-call',
