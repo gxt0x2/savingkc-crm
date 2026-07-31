@@ -56,6 +56,18 @@ const GROUPS: ContextGroup[] = [
       { label: 'Contacts', href: '/dispo/contacts', icon: 'contact_page', matchPath: '/dispo/contacts' },
     ],
   },
+  {
+    label: 'Reports',
+    pathPrefix: '/dashboard',
+    items: [
+      { label: 'Overview', href: '/dashboard?view=overview', icon: 'space_dashboard', section: 'overview' },
+      { label: 'Acquisitions', href: '/dashboard?view=acquisitions', icon: 'track_changes', section: 'acquisitions' },
+      { label: 'Agent performance', href: '/dashboard?view=agents', icon: 'support_agent', section: 'agents' },
+      { label: 'Marketing', href: '/dashboard?view=marketing', icon: 'campaign', section: 'marketing' },
+      { label: 'Dispositions', href: '/dashboard?view=dispositions', icon: 'sell', section: 'dispositions' },
+      { label: 'Data quality', href: '/dashboard?view=data-quality', icon: 'fact_check', section: 'data-quality' },
+    ],
+  },
 ]
 
 export function WorkspaceContextNav() {
@@ -65,7 +77,9 @@ export function WorkspaceContextNav() {
 
   if (!group) return null
 
-  const dialerSection = searchParams.get('section') || 'overview'
+  const selectedSection = group.pathPrefix === '/dialer'
+    ? searchParams.get('section') || 'overview'
+    : searchParams.get('view') || (group.pathPrefix === '/dashboard' ? 'acquisitions' : '')
 
   return (
     <div className="shrink-0 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 sm:px-6">
@@ -77,7 +91,7 @@ export function WorkspaceContextNav() {
         <nav aria-label={`${group.label} sections`} className="flex min-w-max items-center gap-1">
           {group.items.map((item) => {
             const active = item.section
-              ? pathname === '/dialer' && dialerSection === item.section
+              ? pathname === group.pathPrefix && selectedSection === item.section
               : item.matchPath === pathname || (item.matchPath !== group.pathPrefix && pathname.startsWith(`${item.matchPath}/`))
 
             return (

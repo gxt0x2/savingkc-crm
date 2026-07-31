@@ -47,6 +47,7 @@ interface ContactWorkspaceRow extends ContactRow {
 }
 
 type SmartList = 'all' | 'needs_reply' | 'overdue' | 'unassigned' | 'hot' | 'new'
+type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
 type ContactDialog = 'add' | 'import' | 'view' | null
 
 interface SavedView {
@@ -70,6 +71,21 @@ const STAGE_LABELS: Record<DealStage, string> = {
   closed_lost: 'Closed lost',
   dead: 'Dead',
 }
+
+const STAGE_RANK: Record<DealStage, number> = {
+  new: 0,
+  contacted: 1,
+  qualified: 2,
+  appointment_set: 3,
+  offer_made: 4,
+  under_contract: 5,
+  closed_won: 6,
+  closed_lost: -1,
+  dead: -1,
+}
+
+const SMART_LISTS = new Set<SmartList>(['all', 'needs_reply', 'overdue', 'unassigned', 'hot', 'new'])
+const DATA_GAPS = new Set<DataGap>(['', 'missing_phone', 'missing_email', 'missing_next_action'])
 
 const SMART_LIST_TONES: Record<SmartList, { active: string; count: string }> = {
   all: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
@@ -187,10 +203,12 @@ export default function ContactsPage() {
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [ownerFilter, setOwnerFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
+  const [minimumStageFilter, setMinimumStageFilter] = useState('')
   const [sourceFilter, setSourceFilter] = useState('')
   const [tagFilter, setTagFilter] = useState('')
   const [activityFilter, setActivityFilter] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
+  const [dataGapFilter, setDataGapFilter] = useState<DataGap>('')
   const [sortBy, setSortBy] = useState<'priority' | 'recent' | 'name'>('priority')
   const [page, setPage] = useState(1)
   const [dialog, setDialog] = useState<ContactDialog>(null)
@@ -208,8 +226,24 @@ export default function ContactsPage() {
       const stored = window.localStorage.getItem('savingkc-contact-views')
       if (stored) setSavedViews(JSON.parse(stored) as SavedView[])
     } catch { /* storage may be unavailable */ }
-    const requestedSearch = new URLSearchParams(window.location.search).get('search')
+    const params = new URLSearchParams(window.location.search)
+    const requestedSearch = params.get('search')
     if (requestedSearch) setSearch(requestedSearch)
+    const requestedList = params.get('list') as SmartList | null
+    if (requestedList && SMART_LISTS.has(requestedList)) setSmartList(requestedList)
+    const requestedStage = params.get('stage')
+    if (requestedStage && requestedStage in STAGE_LABELS) setStageFilter(requestedStage)
+    const requestedMinimumStage = params.get('min_stage')
+    if (requestedMinimumStage && requestedMinimumStage in STAGE_LABELS) setMinimumStageFilter(requestedMinimumStage)
+    const requestedActivity = params.get('activity')
+    if (requestedActivity && ['day', 'week', 'stale', 'none'].includes(requestedActivity)) setActivityFilter(requestedActivity)
+    const requestedGap = (params.get('gap') ?? '') as DataGap
+    if (DATA_GAPS.has(requestedGap)) setDataGapFilter(requestedGap)
+    if (params.get('owner') === 'unassigned') setOwnerFilter('__unassigned')
+    const requestedSource = params.get('source')
+    if (requestedSource) setSourceFilter(requestedSource)
+    const requestedAttention = params.get('attention')
+    if (requestedAttention && ['needs_reply', 'waiting_on_contact', 'resolved'].includes(requestedAttention)) setAttentionFilter(requestedAttention)
   }, [])
 
   const counts = useMemo<Record<SmartList, number>>(() => ({
@@ -232,18 +266,22 @@ export default function ContactsPage() {
       if (smartList === 'overdue' && !item.primaryNextAction?.overdue) return false
       if (smartList === 'unassigned' && item.owner) return false
       if (smartList === 'hot' && item.score < 75 && !item.isFavorite) return false
-      if (smartList === 'new' && item.station !== 'new') return false
       if (ownerFilter === '__unassigned' ? item.owner : ownerFilter && item.owner !== ownerFilter) return false
       if (stageFilter && item.station !== stageFilter) return false
+      if (minimumStageFilter && STAGE_RANK[item.station] < STAGE_RANK[minimumStageFilter as DealStage]) return false
       if (sourceFilter && item.source !== sourceFilter) return false
       if (tagFilter && !item.tags.includes(tagFilter)) return false
       if (attentionFilter && item.attentionState !== attentionFilter) return false
+      if (dataGapFilter === 'missing_phone' && item.phone) return false
+      if (dataGapFilter === 'missing_email' && item.email) return false
+      if (dataGapFilter === 'missing_next_action' && item.primaryNextAction) return false
       if (activityFilter) {
         const timestamp = item.lastActivityAt ? new Date(item.lastActivityAt).getTime() : 0
         const age = Date.now() - timestamp
         if (activityFilter === 'day' && age > 86_400_000) return false
         if (activityFilter === 'week' && age > 604_800_000) return false
-        if (activityFilter === 'stale' && age <= 604_800_000) return false
+        if (activityFilter === 'stale' && (timestamp === 0 || age <= 604_800_000)) return false
+        if (activityFilter === 'none' && timestamp !== 0) return false
       }
       if (!needle) return true
       return [item.fullName, item.phone, item.email, item.address, item.city, item.owner, item.source].some((value) => value?.toLowerCase().includes(needle))
@@ -253,9 +291,9 @@ export default function ContactsPage() {
       const attentionRank = (item: ContactWorkspaceRow) => item.attentionState === 'needs_reply' ? 0 : item.primaryNextAction?.overdue ? 1 : 2
       return attentionRank(a) - attentionRank(b) || b.score - a.score
     })
-  }, [activityFilter, attentionFilter, items, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
+  }, [activityFilter, attentionFilter, dataGapFilter, items, minimumStageFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
 
-  useEffect(() => setPage(1), [activityFilter, attentionFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
+  useEffect(() => setPage(1), [activityFilter, attentionFilter, dataGapFilter, minimumStageFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
 
   const pageSize = 10
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize))
@@ -269,10 +307,12 @@ export default function ContactsPage() {
     setSmartList('all')
     setOwnerFilter('')
     setStageFilter('')
+    setMinimumStageFilter('')
     setSourceFilter('')
     setTagFilter('')
     setActivityFilter('')
     setAttentionFilter('')
+    setDataGapFilter('')
   }
 
   function openDialer(contact: ContactWorkspaceRow) {
@@ -351,7 +391,7 @@ export default function ContactsPage() {
     setAttentionFilter(view.attention)
   }
 
-  const hasFilters = smartList !== 'all' || ownerFilter || stageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter
+  const hasFilters = smartList !== 'all' || ownerFilter || stageFilter || minimumStageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter || dataGapFilter
 
   return (
     <WorkspaceFrame needsReply={counts.needs_reply}>
@@ -388,9 +428,11 @@ export default function ContactsPage() {
               <label className="relative w-52"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-9 w-full rounded-lg pl-9 pr-3 text-xs outline-none" /></label>
               <FilterSelect label="Owner" value={ownerFilter} onChange={setOwnerFilter} options={[['__unassigned', 'Unassigned'], ...owners.map((value) => [value, value] as [string, string])]} />
               <FilterSelect label="Stage" value={stageFilter} onChange={setStageFilter} options={Object.entries(STAGE_LABELS)} />
+              <FilterSelect label="Minimum stage" value={minimumStageFilter} onChange={setMinimumStageFilter} options={Object.entries(STAGE_LABELS).filter(([value]) => STAGE_RANK[value as DealStage] >= 0)} />
               <FilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter} options={sources.map((value) => [value, formatLeadSource(value)])} />
               <FilterSelect label="Tags" value={tagFilter} onChange={setTagFilter} options={tags.map((value) => [value, value])} />
-              <FilterSelect label="Last activity" value={activityFilter} onChange={setActivityFilter} options={[['day', 'Past 24 hours'], ['week', 'Past 7 days'], ['stale', 'More than 7 days']]} />
+              <FilterSelect label="Last activity" value={activityFilter} onChange={setActivityFilter} options={[['day', 'Past 24 hours'], ['week', 'Past 7 days'], ['stale', 'More than 7 days'], ['none', 'No activity']]} />
+              <FilterSelect label="Data quality" value={dataGapFilter} onChange={(value) => setDataGapFilter(value as DataGap)} options={[['missing_phone', 'Missing phone'], ['missing_email', 'Missing email'], ['missing_next_action', 'Missing next action']]} />
               <FilterSelect label="More filters" value={attentionFilter} onChange={setAttentionFilter} options={[['needs_reply', 'Needs reply'], ['waiting_on_contact', 'Waiting on contact'], ['resolved', 'Resolved']]} />
               <select aria-label="Sort contacts" value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)} className="crm-field ml-auto h-9 rounded-lg px-3 text-xs font-semibold"><option value="priority">Priority first</option><option value="recent">Recently active</option><option value="name">Name A–Z</option></select>
               <button type="button" onClick={() => void refetch()} aria-label="Refresh contacts" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
