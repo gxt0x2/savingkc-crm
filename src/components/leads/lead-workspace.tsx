@@ -5,6 +5,13 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { StageSelector } from '@/components/leads/stage-selector'
 import { formatPhone, toProperCase } from '@/lib/format'
+import {
+  filterLeadConversation,
+  leadActivityText,
+  leadConversationCounts,
+  normalizeLeadConversation,
+  type LeadCommunicationFilter,
+} from '@/lib/lead-conversation'
 import { cn } from '@/lib/utils'
 
 export interface LeadWorkspaceLead {
@@ -89,11 +96,20 @@ const ACTIVITY_META: Record<string, { icon: string; label: string; tone: string 
   call: { icon: 'call', label: 'Call', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
   voicemail: { icon: 'voicemail', label: 'Voicemail', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
   email: { icon: 'mail', label: 'Email', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
-  note: { icon: 'description', label: 'Internal note', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' },
-  agent_note: { icon: 'description', label: 'Internal note', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' },
+  note: { icon: 'description', label: 'Internal note', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
+  agent_note: { icon: 'description', label: 'Internal note', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
   task: { icon: 'check_circle', label: 'Task', tone: 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]' },
   appointment: { icon: 'calendar_month', label: 'Appointment', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
 }
+
+const COMMUNICATION_FILTERS: { key: LeadCommunicationFilter; label: string; icon: string }[] = [
+  { key: 'all', label: 'All', icon: 'forum' },
+  { key: 'call', label: 'Calls', icon: 'call' },
+  { key: 'sms', label: 'Texts', icon: 'chat_bubble' },
+  { key: 'email', label: 'Emails', icon: 'mail' },
+  { key: 'note', label: 'Notes', icon: 'description' },
+  { key: 'voicemail', label: 'Voicemail', icon: 'voicemail' },
+]
 
 function formatMoney(value: number | null) {
   return value == null ? '—' : `$${Math.round(value).toLocaleString()}`
@@ -114,13 +130,6 @@ function directionFor(activity: LeadWorkspaceActivity) {
   if (direction === 'inbound') return 'Inbound'
   if (direction === 'outbound') return 'Outbound'
   return ''
-}
-
-function activityText(activity: LeadWorkspaceActivity) {
-  const raw = activity.description?.trim() || ''
-  const notification = raw.match(/just texted:\s*["“]([\s\S]*?)["”]\s*(?:—|$)/i)
-  if (notification?.[1]) return notification[1].trim()
-  return raw || (activity.activity_type === 'call' ? 'Call activity' : 'No details recorded')
 }
 
 export function LeadWorkspace({
@@ -144,6 +153,7 @@ export function LeadWorkspace({
 }: LeadWorkspaceProps) {
   const [activeSection, setActiveSection] = useState<LeadWorkspaceSection>('overview')
   const [composeMode, setComposeMode] = useState<'sms' | 'email' | 'note'>('sms')
+  const [communicationFilter, setCommunicationFilter] = useState<LeadCommunicationFilter>('all')
   const [message, setMessage] = useState('')
   const [emailSubject, setEmailSubject] = useState('')
   const [sending, setSending] = useState(false)
@@ -159,29 +169,12 @@ export function LeadWorkspace({
   const address = [lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', ')
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${encodeURIComponent(address)}&fov=90&pitch=4&key=${process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''}`
   const stageIndex = Math.max(0, STAGES.findIndex((stage) => stage.keys.includes((lead.station || 'new').toLowerCase())))
-  const visibleActivities = useMemo(() => {
-    const communicationTypes = new Set(['sms', 'call', 'voicemail', 'email', 'note', 'agent_note'])
-    const normalized: LeadWorkspaceActivity[] = []
-    for (const activity of activities) {
-      if (!communicationTypes.has(activity.activity_type)) continue
-      const body = activityText(activity).toLowerCase().replace(/\s+/g, ' ')
-      const timestamp = new Date(activity.created_at).getTime()
-      const duplicateIndex = normalized.findIndex((candidate) => {
-        const candidateTime = new Date(candidate.created_at).getTime()
-        return candidate.activity_type === activity.activity_type
-          && activityText(candidate).toLowerCase().replace(/\s+/g, ' ') === body
-          && Math.abs(candidateTime - timestamp) < 120_000
-      })
-      if (duplicateIndex < 0) {
-        normalized.push(activity)
-        continue
-      }
-      const candidateHasDirection = Boolean(normalized[duplicateIndex].metadata?.direction)
-      const activityHasDirection = Boolean(activity.metadata?.direction)
-      if (activityHasDirection && !candidateHasDirection) normalized[duplicateIndex] = activity
-    }
-    return normalized.slice(0, 10)
-  }, [activities])
+  const normalizedActivities = useMemo(() => normalizeLeadConversation(activities), [activities])
+  const communicationCounts = useMemo(() => leadConversationCounts(normalizedActivities), [normalizedActivities])
+  const visibleActivities = useMemo(
+    () => filterLeadConversation(normalizedActivities, communicationFilter),
+    [communicationFilter, normalizedActivities],
+  )
   const nextTask = activities.find((activity) => activity.activity_type === 'task')
   const appointmentIsPast = Boolean(appointment && new Date(appointment.scheduledAt).getTime() < Date.now())
   const nextAction = appointmentIsPast
@@ -526,17 +519,55 @@ export function LeadWorkspace({
         ) : null}
 
         {activeSection === 'overview' ? (
-        <main className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.9fr)]">
+        <main className="mt-3 grid gap-4 xl:grid-cols-[minmax(240px,0.72fr)_minmax(0,1.65fr)_minmax(300px,0.82fr)]">
+          <PropertyOverviewPanel
+            lead={lead}
+            address={address}
+            streetViewUrl={streetViewUrl}
+            imageFailed={imageFailed}
+            assessedValue={assessedValue}
+            onImageError={() => setImageFailed(true)}
+            onOpenProperty={openPropertyDetails}
+          />
+
           <section className="crm-panel flex h-[calc(100vh-300px)] min-h-[560px] max-h-[820px] flex-col overflow-hidden rounded-xl">
             <CardHeader title="Conversation" icon="forum" />
+            <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2.5">
+              <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filter conversation by communication type">
+                {COMMUNICATION_FILTERS.map((filter) => (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    onClick={() => setCommunicationFilter(filter.key)}
+                    aria-pressed={communicationFilter === filter.key}
+                    className={cn(
+                      'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-bold transition-colors',
+                      communicationFilter === filter.key
+                        ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'
+                        : 'border-transparent text-[var(--crm-text-muted)] hover:border-[var(--crm-border)] hover:bg-[var(--crm-surface-subtle)] hover:text-[var(--crm-ink)]',
+                    )}
+                  >
+                    <Icon name={filter.icon} className="text-[15px]" />
+                    {filter.label}
+                    <span className={cn('rounded-full px-1.5 py-0.5 text-[9px]', communicationFilter === filter.key ? 'bg-[var(--crm-surface)]' : 'bg-[var(--crm-surface-subtle)]')}>
+                      {communicationCounts[filter.key]}
+                    </span>
+                  </button>
+                ))}
+                <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md bg-[var(--crm-info-soft)] px-2 py-1 text-[10px] font-bold text-[var(--crm-info)]">
+                  <Icon name="south" className="text-[13px]" />
+                  Newest first
+                </span>
+              </div>
+            </div>
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
               {visibleActivities.length ? visibleActivities.map((activity) => (
                 <TimelineActivity key={activity.id} activity={activity} />
               )) : (
                 <div className="flex h-full min-h-72 flex-col items-center justify-center text-center">
                   <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--crm-info-soft)] text-[var(--crm-info)]"><Icon name="forum" className="text-[28px]" /></span>
-                  <h3 className="mt-4 font-bold text-[var(--crm-ink)]">No conversation activity yet</h3>
-                  <p className="mt-1 max-w-xs text-sm text-[var(--crm-text-muted)]">Call, text, email, and internal notes will appear together here.</p>
+                  <h3 className="mt-4 font-bold text-[var(--crm-ink)]">No {communicationFilter === 'all' ? 'conversation' : COMMUNICATION_FILTERS.find((filter) => filter.key === communicationFilter)?.label.toLowerCase()} activity yet</h3>
+                  <p className="mt-1 max-w-xs text-sm text-[var(--crm-text-muted)]">Choose another communication type or start a new conversation below.</p>
                 </div>
               )}
             </div>
@@ -581,9 +612,9 @@ export function LeadWorkspace({
             </div>
           </section>
 
-          <section className="crm-panel overflow-hidden rounded-xl">
+          <section className="crm-panel flex h-[calc(100vh-300px)] min-h-[560px] max-h-[820px] flex-col overflow-hidden rounded-xl">
             <CardHeader title="Opportunity" icon="paid" />
-            <div className="p-5">
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
               <SectionLabel>Deal stage</SectionLabel>
               <div className="mt-5 flex items-start">
                 {STAGES.map((stage, index) => {
@@ -672,6 +703,94 @@ export function LeadWorkspace({
   )
 }
 
+function PropertyOverviewPanel({
+  lead,
+  address,
+  streetViewUrl,
+  imageFailed,
+  assessedValue,
+  onImageError,
+  onOpenProperty,
+}: {
+  lead: LeadWorkspaceLead
+  address: string
+  streetViewUrl: string
+  imageFailed: boolean
+  assessedValue: number | null
+  onImageError: () => void
+  onOpenProperty: () => void
+}) {
+  const baths = (lead.baths_full || 0) + (lead.baths_half ? 0.5 : 0)
+
+  return (
+    <section className="crm-panel flex h-[calc(100vh-300px)] min-h-[560px] max-h-[820px] flex-col overflow-hidden rounded-xl">
+      <CardHeader title="Property details" icon="home_work" />
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <button
+          type="button"
+          onClick={onOpenProperty}
+          className="w-full overflow-hidden rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] text-left transition-colors hover:border-[var(--crm-brand-border)]"
+          aria-label="Open full property details"
+        >
+          {!imageFailed && address ? (
+            // Google Street View is a signed dynamic image URL and is intentionally not routed through next/image.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={streetViewUrl}
+              alt={`Street view of ${address}`}
+              className="aspect-[16/10] w-full object-cover"
+              onError={onImageError}
+            />
+          ) : (
+            <span className="flex aspect-[16/10] items-center justify-center bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]">
+              <Icon name="home" className="text-[42px]" />
+            </span>
+          )}
+          <span className="block px-4 py-3">
+            <span className="block font-bold leading-5 text-[var(--crm-ink)]">{lead.property_address || 'Property address missing'}</span>
+            <span className="mt-1 block text-xs leading-4 text-[var(--crm-text-muted)]">{[lead.city, lead.state, lead.zip].filter(Boolean).join(', ') || 'Location not recorded'}</span>
+          </span>
+        </button>
+
+        <dl className="mt-4 grid grid-cols-2 gap-2">
+          {[
+            { label: 'Beds', value: lead.beds?.toString() || '—', icon: 'bed' },
+            { label: 'Baths', value: baths ? String(baths) : '—', icon: 'bathtub' },
+            { label: 'Square feet', value: lead.sqft?.toLocaleString() || '—', icon: 'square_foot' },
+            { label: 'Year built', value: lead.year_built?.toString() || '—', icon: 'calendar_today' },
+          ].map((detail) => (
+            <div key={detail.label} className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-3">
+              <dt className="flex items-center gap-1 text-[9px] font-black uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">
+                <Icon name={detail.icon} className="text-[13px] text-[var(--crm-info)]" />
+                {detail.label}
+              </dt>
+              <dd className="mt-1 text-sm font-black text-[var(--crm-ink)]">{detail.value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <div className="mt-4 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4">
+          <SectionLabel>Value and source</SectionLabel>
+          <dl className="mt-3 space-y-3 text-sm">
+            <DataRow label="Estimated value" value={formatMoney(lead.arv ?? assessedValue)} />
+            <DataRow label="Current offer" value={formatMoney(lead.offer_amount)} />
+            <DataRow label="Lead source" value={lead.source || 'Unknown'} />
+          </dl>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenProperty}
+          className="crm-secondary-button mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-bold"
+        >
+          <Icon name="open_in_new" className="text-[16px]" />
+          Open full property details
+        </button>
+      </div>
+    </section>
+  )
+}
+
 function ActionButton({ icon, label, onClick, disabled, tone }: { icon: string; label: string; onClick: () => void; disabled?: boolean; tone: 'teal' | 'blue' | 'violet' }) {
   const toneClass = {
     teal: 'border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-[var(--crm-success)] hover:brightness-95',
@@ -701,11 +820,11 @@ function SummaryItem({ label, children, tone }: { label: string; children: React
 }
 
 function CardHeader({ id, title, icon, onMore, onClose }: { id?: string; title: string; icon: string; onMore?: () => void; onClose?: () => void }) {
-  const iconTone = icon === 'person'
+  const iconTone = icon === 'person' || icon === 'forum' || icon === 'home_work'
     ? 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
-    : icon === 'forum'
-      ? 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
-      : 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'
+    : icon === 'paid'
+      ? 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]'
+      : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'
   return (
     <div className="flex h-13 items-center border-b border-[var(--crm-border)] px-5">
       <span className={cn('mr-2 flex h-8 w-8 items-center justify-center rounded-lg', iconTone)}><Icon name={icon} className="text-[18px]" /></span>
@@ -736,7 +855,7 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
   const direction = directionFor(activity)
   const isOutbound = direction === 'Outbound'
   const isCall = activity.activity_type === 'call'
-  const text = activityText(activity)
+  const text = leadActivityText(activity)
   const recordingUrl = typeof activity.metadata?.recording_url === 'string'
     ? activity.metadata.recording_url
     : typeof activity.metadata?.recordingUrl === 'string'
@@ -751,7 +870,7 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
         <span className="absolute bottom-[-22px] top-8 w-px bg-[var(--crm-border)]" />
         <span className={cn('relative z-10 flex h-8 w-8 items-center justify-center rounded-full', meta.tone)}><Icon name={meta.icon} className="text-[17px]" /></span>
       </div>
-      <div className={cn('rounded-lg border p-3', activity.activity_type === 'note' || activity.activity_type === 'agent_note' ? 'border-[var(--crm-border-strong)] bg-[var(--crm-warning-soft)]' : isOutbound ? 'border-[var(--crm-border)] bg-[var(--crm-info-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]')}>
+      <div className={cn('rounded-lg border p-3', activity.activity_type === 'note' || activity.activity_type === 'agent_note' ? 'border-[var(--crm-violet)]/25 bg-[var(--crm-violet-soft)]' : isOutbound ? 'border-[var(--crm-border)] bg-[var(--crm-info-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]')}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-black text-[var(--crm-ink)]">{direction ? `${direction} ${meta.label}` : meta.label}</span>
           {activity.agent ? <span className="text-[10px] text-[var(--crm-text-muted)]">by {toProperCase(activity.agent)}</span> : null}
