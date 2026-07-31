@@ -8,6 +8,7 @@ test.use({
 
 test('dashboard bottleneck calculator smoke', async ({ page }) => {
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+  await page.getByText('Open model', { exact: true }).click()
 
   const calculator = page.getByTestId('bottleneck-calculator')
   await expect(calculator.getByRole('heading', { name: 'Left Main Bottleneck Calculator' })).toBeVisible()
