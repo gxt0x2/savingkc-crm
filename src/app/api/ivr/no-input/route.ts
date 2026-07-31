@@ -46,7 +46,7 @@ export async function POST(req: Request) {
         activity_type: 'call',
         description: `Spam filtered: repeat no-input caller ${from} (3+ in 7 days)`,
         agent: 'System',
-        metadata: { direction: 'inbound', from, tag: 'ivr_no_input', spam: true }
+        metadata: { direction: 'inbound', from, to: calledNumber, calledNumber, team: 'Acquisitions', tag: 'ivr_no_input', spam: true }
       })
       return new NextResponse('<Response><Hangup /></Response>', { headers: { 'Content-Type': 'text/xml' } })
     }
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
       activity_type: 'call',
       description: `Inbound call from ${from} — no IVR input, routing to agents`,
       agent: 'System',
-      metadata: { direction: 'inbound', from, tag: 'ivr_no_input' }
+      metadata: { direction: 'inbound', from, to: calledNumber, calledNumber, team: 'Acquisitions', tag: 'ivr_no_input' }
     })
 
     // NO auto-text here. If both agents miss, dial-result sends it after 3-5 min.

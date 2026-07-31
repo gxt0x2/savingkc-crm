@@ -1,4 +1,11 @@
 import type { ConversationAttentionState } from './types'
+import {
+  communicationActivitySummary,
+  getCallOutcomePresentation,
+  getConversationDirection,
+  type CallOutcomePresentation,
+} from './conversation-presentation'
+import type { ConversationDecisionTag } from './conversation-tags'
 
 export interface ConversationHubLead {
   id: string
@@ -16,6 +23,7 @@ export interface ConversationHubLead {
   arv?: number | null
   offer_amount?: number | null
   appointment_date?: string | null
+  decision_tags?: ConversationDecisionTag[]
   created_at: string
 }
 
@@ -36,6 +44,7 @@ export interface ConversationHubThread extends ConversationHubLead {
   lastMessage: string
   lastActivityAt: string
   lastChannel: 'call' | 'sms' | 'email' | 'voicemail' | null
+  lastCallOutcome: CallOutcomePresentation | null
   primaryNextAction: {
     id: string
     title: string
@@ -45,21 +54,8 @@ export interface ConversationHubThread extends ConversationHubLead {
   } | null
 }
 
-const COMM_TYPES = new Set(['call', 'sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'voicemail'])
-
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
-}
-
-function direction(activity: ConversationHubActivity): 'inbound' | 'outbound' | null {
-  if (!COMM_TYPES.has(activity.activity_type)) return null
-  const raw = text(activity.metadata?.direction)?.toLowerCase()
-  if (raw === 'inbound' || raw === 'received' || raw === 'in') return 'inbound'
-  if (raw === 'outbound' || raw === 'sent' || raw === 'out') return 'outbound'
-  if (activity.activity_type === 'sms_received' || activity.activity_type === 'sms_inbound' || activity.activity_type === 'voicemail') {
-    return 'inbound'
-  }
-  return 'outbound'
 }
 
 const OPEN_CALL_OUTCOMES = new Set([
@@ -109,7 +105,7 @@ function normalizedMetadataValues(activity: ConversationHubActivity): string[] {
  * call is resolved, while a missed call or voicemail remains actionable.
  */
 export function inboundCommunicationNeedsReply(activity: ConversationHubActivity): boolean {
-  if (direction(activity) !== 'inbound') return false
+  if (getConversationDirection(activity) !== 'inbound') return false
   if (activity.activity_type === 'voicemail') return true
   if (activity.activity_type !== 'call') return !isContactOptOut(activity)
 
@@ -148,7 +144,7 @@ export function buildConversationHubThread(
     activity.activity_type === 'status_change' &&
     ['mark_read', 'mark_unread'].includes(String(activity.metadata?.hub_action ?? '')),
   )
-  const latestComm = sorted.find((activity) => direction(activity) !== null)
+  const latestComm = sorted.find((activity) => getConversationDirection(activity) !== null)
 
   let attentionState: ConversationAttentionState =
     operatingState?.metadata?.conversation_attention === 'needs_reply'
@@ -156,7 +152,7 @@ export function buildConversationHubThread(
       : 'resolved'
 
   if (latestComm) {
-    attentionState = direction(latestComm) === 'outbound'
+    attentionState = getConversationDirection(latestComm) === 'outbound'
       ? 'waiting_on_contact'
       : inboundCommunicationNeedsReply(latestComm)
         ? 'needs_reply'
@@ -183,7 +179,7 @@ export function buildConversationHubThread(
     attentionState,
     owner,
     unread: attentionState === 'needs_reply',
-    lastMessage: latestComm?.description || (
+    lastMessage: latestComm ? communicationActivitySummary(latestComm) : (
       attentionState === 'needs_reply' ? 'New seller needs a response' : 'No communication yet'
     ),
     lastActivityAt: sorted[0]?.created_at || lead.created_at,
@@ -195,6 +191,9 @@ export function buildConversationHubThread(
           : latestComm.activity_type === 'email'
             ? 'email'
             : 'call'
+      : null,
+    lastCallOutcome: latestComm && ['call', 'voicemail'].includes(latestComm.activity_type)
+      ? getCallOutcomePresentation(latestComm)
       : null,
     primaryNextAction: primaryTask ? {
       id: primaryTask.id,

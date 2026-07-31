@@ -7,6 +7,10 @@ import {
   type ConversationHubActivity,
   type ConversationHubLead,
 } from '@/lib/operating-model/conversation-hub'
+import {
+  buildConversationDecisionTags,
+  type ConversationManifestLike,
+} from '@/lib/operating-model/conversation-tags'
 
 const HUB_ACTIVITY_TYPES = [
   'call',
@@ -37,21 +41,42 @@ export async function GET() {
   const leadRows = (leads ?? []) as ConversationHubLead[]
   if (leadRows.length === 0) return NextResponse.json({ items: [] })
 
-  const { data: activities, error: activitiesError } = await db
-    .from('lead_activities')
-    .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-    .in('lead_id', leadRows.map((lead) => lead.id))
-    .in('activity_type', HUB_ACTIVITY_TYPES)
-    .order('created_at', { ascending: false })
-    .limit(3000)
+  const [activityResult, manifestResult] = await Promise.all([
+    db
+      .from('lead_activities')
+      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+      .in('lead_id', leadRows.map((lead) => lead.id))
+      .in('activity_type', HUB_ACTIVITY_TYPES)
+      .order('created_at', { ascending: false })
+      .limit(3000),
+    db
+      .from('manifests')
+      .select('lead_id, manifest, created_at')
+      .in('lead_id', leadRows.map((lead) => lead.id))
+      .order('created_at', { ascending: false }),
+  ])
+
+  const { data: activities, error: activitiesError } = activityResult
 
   if (activitiesError) {
     return NextResponse.json({ error: activitiesError.message }, { status: 500 })
   }
 
+  const latestManifestByLead = new Map<string, ConversationManifestLike>()
+  for (const row of manifestResult.data ?? []) {
+    if (!latestManifestByLead.has(row.lead_id)) {
+      latestManifestByLead.set(row.lead_id, (row.manifest ?? {}) as ConversationManifestLike)
+    }
+  }
+
+  const enrichedLeadRows = leadRows.map((lead) => ({
+    ...lead,
+    decision_tags: buildConversationDecisionTags(latestManifestByLead.get(lead.id), lead),
+  }))
+
   return NextResponse.json({
     items: buildConversationHubThreads(
-      leadRows,
+      enrichedLeadRows,
       (activities ?? []) as ConversationHubActivity[],
     ),
   })

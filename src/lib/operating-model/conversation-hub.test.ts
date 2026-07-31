@@ -111,6 +111,8 @@ describe('conversation hub read model', () => {
 
     expect(thread.attentionState).toBe('resolved')
     expect(thread.unread).toBe(false)
+    expect(thread.lastMessage).toBe('Inbound call · Connected')
+    expect(thread.lastCallOutcome).toMatchObject({ label: 'Connected', icon: 'phone_in_talk' })
   })
 
   it('recognizes recorded legacy inbound calls as answered', () => {
@@ -138,6 +140,7 @@ describe('conversation hub read model', () => {
     })
 
     expect(buildConversationHubThread(lead, [missed]).attentionState).toBe('needs_reply')
+    expect(buildConversationHubThread(lead, [missed]).lastMessage).toBe('Inbound call · No answer')
 
     const returned = activity({
       id: 'returned-call',

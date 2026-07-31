@@ -10,11 +10,9 @@ import { cn } from '@/lib/utils'
 interface ThreadContact {
   name: string
   initials: string
-  address: string
-  county: string
-  tags: string[]
   verified?: boolean
   assignedAgent?: string | null
+  team: string
   toPhone?: string
   attentionState: 'needs_reply' | 'waiting_on_contact' | 'resolved'
   owner: string | null
@@ -125,6 +123,22 @@ export function ThreadView({
     setQuickDraftVersion((value) => value + 1)
   }
 
+  const attentionLabel = contact.attentionState === 'needs_reply'
+    ? 'Needs reply'
+    : contact.attentionState === 'waiting_on_contact'
+      ? 'Waiting on contact'
+      : 'Resolved'
+  const attentionIcon = contact.attentionState === 'needs_reply'
+    ? 'mark_chat_unread'
+    : contact.attentionState === 'waiting_on_contact'
+      ? 'hourglass_top'
+      : 'check_circle'
+  const attentionClasses = contact.attentionState === 'needs_reply'
+    ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'
+    : contact.attentionState === 'waiting_on_contact'
+      ? 'border-[var(--crm-violet)]/30 bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]'
+      : 'border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] text-[var(--crm-success)]'
+
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--crm-canvas)]">
       {/* Thread Header */}
@@ -142,24 +156,19 @@ export function ThreadView({
                 <Icon name="verified" className="text-secondary text-lg" filled />
               )}
             </div>
-            <div className="mt-1 flex min-w-0 items-center gap-3">
-              <span className="flex items-center gap-1 truncate text-xs font-medium text-slate-500"><Icon name="call" className="text-[14px]" />{contact.county}</span>
-              <span className="flex items-center gap-1 truncate text-xs font-medium text-slate-500"><Icon name="home" className="text-[14px]" />{contact.address}</span>
-              <div className="flex shrink-0 gap-2">
-                {contact.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className={
-                      tag === 'Pre-foreclosure'
-                        ? 'px-2 py-0.5 bg-tertiary-container text-on-tertiary-container text-[10px] font-bold rounded'
-                        : 'px-2 py-0.5 bg-surface-container-highest text-on-surface-variant text-[10px] font-bold rounded'
-                    }
-                  >
-                    {tag}
-                  </span>
-                ))}
-                <span className="rounded border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--crm-brand)]">{contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Active'}</span>
-              </div>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+              <span className="flex items-center gap-1 rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-2 py-1 text-[10px] font-bold text-[var(--crm-text-muted)]">
+                <Icon name="person" className="text-[13px]" />
+                Agent · {contact.assignedAgent || contact.owner || 'Unassigned'}
+              </span>
+              <span className="flex items-center gap-1 rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-2 py-1 text-[10px] font-bold text-[var(--crm-text-muted)]">
+                <Icon name="groups" className="text-[13px]" />
+                Team · {contact.team}
+              </span>
+              <span className={cn('flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-black', attentionClasses)}>
+                <Icon name={attentionIcon} className="text-[13px]" />
+                {attentionLabel}
+              </span>
             </div>
           </div>
         </div>
@@ -197,13 +206,13 @@ export function ThreadView({
           'mx-5 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border-l-4 px-4 py-3',
           contact.attentionState === 'needs_reply'
             ? 'border border-[var(--crm-brand-border)] border-l-[var(--crm-brand)] bg-[var(--crm-brand-soft)]'
-            : 'border border-[var(--crm-border-strong)] border-l-[var(--crm-warning)] bg-[var(--crm-warning-soft)]',
+            : 'border border-[var(--crm-violet)]/30 border-l-[var(--crm-violet)] bg-[var(--crm-violet-soft)]',
         )}>
           <div className="flex items-center gap-3">
             <span className={
               contact.attentionState === 'needs_reply'
                 ? 'rounded-full bg-[var(--crm-brand)] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white'
-                : 'rounded-full bg-[var(--crm-warning)] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white'
+                : 'rounded-full bg-[var(--crm-violet)] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white'
             }>
               {contact.attentionState === 'needs_reply' ? 'Needs reply' : 'Waiting on contact'}
             </span>

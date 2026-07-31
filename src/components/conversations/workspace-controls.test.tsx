@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ComposeBox } from './compose-box'
 import { ContactDetailsPanel } from './contact-details-panel'
 import { InboxSidebar, type ThreadPreview } from './inbox-sidebar'
+import { ThreadView } from './thread-view'
 
 const baseThread: ThreadPreview = {
   id: 'lead-1',
@@ -101,5 +102,54 @@ describe('rebuilt conversation workspace controls', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /Email/ })).toHaveAttribute('aria-pressed', 'true'))
     expect(screen.getByLabelText('Email subject')).toBeInTheDocument()
+  })
+
+  it('uses the thread header for agent, team, and reply state without repeating a caller phone', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ templates: [] }),
+    }))
+
+    const { container } = render(<ThreadView
+      contact={{
+        name: '(816) 476-4715',
+        initials: '15',
+        assignedAgent: null,
+        team: 'Acquisitions',
+        attentionState: 'needs_reply',
+        owner: null,
+        nextAction: null,
+      }}
+      dateGroups={[]}
+      phone="+18164764715"
+    />)
+
+    const header = container.querySelector('header')
+    expect(header).not.toBeNull()
+    expect(within(header!).getByText('Agent · Unassigned')).toBeInTheDocument()
+    expect(within(header!).getByText('Team · Acquisitions')).toBeInTheDocument()
+    expect(within(header!).getByText('Needs reply')).toBeInTheDocument()
+    expect(header!.textContent?.match(/816/g)).toHaveLength(1)
+  })
+
+  it('separates lead source from durable decision signals', () => {
+    render(<ContactDetailsPanel contact={{
+      id: 'lead-ivr',
+      full_name: 'Caller (816) 476-4715',
+      phone: '+18164764715',
+      email: null,
+      property_address: null,
+      city: null,
+      station: 'new',
+      priority: 'normal',
+      assigned_agent: null,
+      source: 'inbound_ivr_no_input',
+      decision_tags: [{ id: 'tax_delinquent', label: 'Tax delinquent', category: 'Risk', tone: 'brand' }],
+    }} />)
+
+    expect(screen.getByText('Source: Inbound IVR')).toBeInTheDocument()
+    expect(screen.getByText('Risk ·')).toBeInTheDocument()
+    expect(screen.getByText('Tax delinquent')).toBeInTheDocument()
+    expect(screen.queryByText(/Inbound Ivr No Input/i)).not.toBeInTheDocument()
   })
 })

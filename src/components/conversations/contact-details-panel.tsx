@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone, toProperCase } from '@/lib/format'
+import { formatLeadSource, getAvatarLabel } from '@/lib/contact-display'
+import type { ConversationDecisionTag } from '@/lib/operating-model/conversation-tags'
 
 interface ContactDetails {
   id: string
@@ -21,6 +23,7 @@ interface ContactDetails {
   offer_amount?: number | null
   source?: string | null
   appointment_date?: string | null
+  decision_tags?: ConversationDecisionTag[]
   primaryNextAction?: {
     id: string
     title: string
@@ -34,13 +37,15 @@ function money(value?: number | null) {
   return value ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value) : '—'
 }
 
-function initials(name?: string | null) {
-  const parts = name?.trim().split(/\s+/).filter(Boolean) ?? []
-  if (!parts.length) return '—'
-  return (parts[0][0] + (parts.at(-1)?.[0] ?? '')).toUpperCase()
-}
-
 const stages = ['New', 'Contacted', 'Qualified', 'Offer']
+
+const TAG_TONE = {
+  brand: 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]',
+  info: 'border-[var(--crm-info)]/30 bg-[var(--crm-info-soft)] text-[var(--crm-info)]',
+  success: 'border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+  violet: 'border-[var(--crm-violet)]/30 bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]',
+  neutral: 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]',
+} as const
 
 export function ContactDetailsPanel({
   contact,
@@ -59,11 +64,7 @@ export function ContactDetailsPanel({
 
   const name = toProperCase(contact.full_name) || formatPhone(contact.phone)
   const currentStage = Math.max(0, stages.findIndex((stage) => stage.toLowerCase() === contact.station?.toLowerCase()))
-  const tags = [
-    contact.priority === 'hot' ? 'Hot Lead' : null,
-    contact.source ? toProperCase(contact.source.replace(/_/g, ' ')) : null,
-    contact.county ? `${contact.county} County` : null,
-  ].filter((tag): tag is string => Boolean(tag))
+  const tags = contact.decision_tags ?? []
 
   return (
     <aside className="hidden w-[360px] shrink-0 overflow-y-auto border-l border-[var(--crm-border)] bg-[var(--crm-surface)] xl:block">
@@ -79,7 +80,7 @@ export function ContactDetailsPanel({
       <section className="border-b border-[var(--crm-border)] p-5">
         <div className="flex gap-3">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-sm font-bold text-[var(--crm-surface)]">
-            {initials(contact.full_name)}
+            {getAvatarLabel(contact.full_name, contact.phone, contact.source)}
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -92,6 +93,7 @@ export function ContactDetailsPanel({
             {contact.email ? <p className="mt-1 flex items-center gap-2 truncate text-sm text-slate-600"><Icon name="mail" className="text-[17px]" />{contact.email}</p> : null}
             <p className="mt-1 flex items-start gap-2 text-sm text-slate-600"><Icon name="location_on" className="mt-0.5 text-[17px]" />{[contact.property_address, contact.city].filter(Boolean).join(', ') || 'No property linked'}</p>
             <p className="mt-1 flex items-center gap-2 text-sm text-slate-600"><Icon name="person" className="text-[17px]" />Owner: {contact.owner || contact.assigned_agent || 'Unassigned'}</p>
+            <p className="mt-1 flex items-center gap-2 text-sm text-slate-600"><Icon name="campaign" className="text-[17px]" />Source: {formatLeadSource(contact.source)}</p>
           </div>
         </div>
         <Link href={`/leads/${contact.id}`} className="crm-primary-button mt-4 flex h-9 items-center justify-center rounded-lg text-sm font-bold">
@@ -116,10 +118,10 @@ export function ContactDetailsPanel({
       </section>
 
       <section className="border-b border-[var(--crm-border)] p-5">
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--crm-ink)]"><Icon name="bolt" className="text-[18px] text-[var(--crm-warning)]" />Next action</h3>
-        <div className={`rounded-xl border-l-4 p-3 ${contact.primaryNextAction?.overdue ? 'border border-[var(--crm-brand-border)] border-l-[var(--crm-danger)] bg-[var(--crm-danger-soft)]' : 'border border-[var(--crm-border-strong)] border-l-[var(--crm-warning)] bg-[var(--crm-warning-soft)]'}`}>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--crm-ink)]"><Icon name="bolt" className="text-[18px] text-[var(--crm-brand)]" />Next action</h3>
+        <div className={`rounded-xl border-l-4 p-3 ${contact.primaryNextAction?.overdue ? 'border border-[var(--crm-brand-border)] border-l-[var(--crm-danger)] bg-[var(--crm-danger-soft)]' : contact.primaryNextAction ? 'border border-[var(--crm-violet)]/30 border-l-[var(--crm-violet)] bg-[var(--crm-violet-soft)]' : 'border border-[var(--crm-brand-border)] border-l-[var(--crm-brand)] bg-[var(--crm-brand-soft)]'}`}>
           <div className="flex items-start gap-2">
-            <Icon name="schedule" className={contact.primaryNextAction?.overdue ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-warning)]'} />
+            <Icon name="schedule" className={contact.primaryNextAction?.overdue ? 'text-[var(--crm-danger)]' : contact.primaryNextAction ? 'text-[var(--crm-violet)]' : 'text-[var(--crm-brand)]'} />
             <div>
               <p className="text-sm font-semibold">{contact.primaryNextAction?.title || 'Define the next action'}</p>
               <p className="mt-1 text-xs text-slate-500">
@@ -138,9 +140,18 @@ export function ContactDetailsPanel({
       ) : null}
 
       <section className="p-5">
-        <h3 className="mb-3 text-sm font-bold text-[var(--crm-ink)]">Tags</h3>
+        <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-ink)]"><Icon name="sell" className="text-[18px] text-[var(--crm-info)]" />Decision signals</h3>
+        <p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Durable facts Ari and agents can use for routing, follow-up, and offer strategy.</p>
         <div className="flex flex-wrap gap-2">
-          {tags.length ? tags.map((tag, index) => <span key={tag} className={`rounded border px-2 py-1 text-xs font-semibold ${index === 0 ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : index === 1 ? 'border-[var(--crm-border-strong)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]' : 'border-[var(--crm-border-strong)] bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'}`}>{tag}</span>) : <span className="text-sm text-slate-400">No tags</span>}
+          {tags.length ? tags.map((tag) => (
+            <span key={tag.id} className={`mt-3 rounded border px-2 py-1 text-xs font-semibold ${TAG_TONE[tag.tone]}`}>
+              <span className="opacity-70">{tag.category} · </span>{tag.label}
+            </span>
+          )) : (
+            <div className="mt-3 rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface-subtle)] px-3 py-3 text-xs leading-5 text-[var(--crm-text-muted)]">
+              No decision signals captured. Add motivation, seller situation, property condition, or a blocker when it becomes known.
+            </div>
+          )}
         </div>
       </section>
     </aside>

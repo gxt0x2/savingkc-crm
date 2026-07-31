@@ -8,12 +8,20 @@ import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
 import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
 import type { Message } from '@/components/conversations/message-bubble'
 import { toProperCase, formatPhone } from '@/lib/format'
+import { getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import {
   buildConversationHubThread,
   type ConversationHubActivity,
   type ConversationHubLead,
 } from '@/lib/operating-model/conversation-hub'
+import {
+  getCallOutcomePresentation,
+  getCallParties,
+  getConversationDirection,
+  type CallOutcomePresentation,
+} from '@/lib/operating-model/conversation-presentation'
+import type { ConversationDecisionTag } from '@/lib/operating-model/conversation-tags'
 
 interface LeadRow {
   id: string
@@ -45,6 +53,8 @@ interface LeadRow {
     owner: string | null
     overdue: boolean
   } | null
+  decision_tags?: ConversationDecisionTag[]
+  lastCallOutcome?: CallOutcomePresentation | null
 }
 
 interface ActivityRow {
@@ -67,25 +77,19 @@ interface Toast {
   message: string
 }
 
-function getInitials(name: string | null): string {
-  if (!name) return '??'
-  const parts = name.trim().split(' ')
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-}
-
-function formatDuration(seconds: number): string {
-  if (!seconds) return '0:00'
+function formatDuration(value: unknown): string | undefined {
+  const seconds = Number(value)
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null {
+function activityToMessage(activity: ActivityRow, lead: LeadRow, teamPhone: string): Message | null {
   const type = activity.type
 
   const meta = activity.metadata || {}
-  const direction = (meta.direction as string) === 'inbound' || (meta.direction as string) === 'received' ? 'received' : 'sent'
+  const direction = getConversationDirection({ activity_type: type, description: activity.description, metadata: meta }) === 'inbound' ? 'received' : 'sent'
   const timestamp = new Date(activity.created_at).toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
@@ -97,27 +101,27 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
     const recordingUrl = recordingSid ? `/api/recordings/${recordingSid}` : undefined
     const transcript = (meta.transcript as string) || undefined
 
-    // Format phone numbers in call descriptions
-    let formattedContent = activity.description || ''
-    const phoneMatch = formattedContent.match(/\+1?(\d{10})/)
-    if (phoneMatch) {
-      const rawPhone = phoneMatch[0]
-      const formatted = formatPhone(rawPhone)
-      formattedContent = formattedContent.replace(rawPhone, formatted)
-    }
+    const presentationActivity = { activity_type: type, description: activity.description, metadata: meta }
+    const callOutcome = getCallOutcomePresentation(presentationActivity)
+    const parties = getCallParties(presentationActivity, { leadPhone: lead.phone, teamPhone })
+    const duration = meta.duration ?? meta.dialCallDuration ?? meta.duration_seconds
 
     return {
       id: activity.id,
       type: 'call',
       direction,
-      content: formattedContent,
-      callDuration: formatDuration((meta.duration as number) || 0),
+      content: activity.description || '',
+      callDuration: formatDuration(duration),
       timestamp,
-      senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+      senderInitials: direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'ED',
       agentName: direction === 'sent' ? agentName : undefined,
       recordingUrl,
       recordingSid,
       transcript,
+      callOutcome,
+      fromPhone: parties.from ? formatPhone(parties.from) : undefined,
+      toPhone: parties.to ? formatPhone(parties.to) : undefined,
+      routingTeam: callOutcome.key === 'routing' ? 'Acquisitions' : undefined,
     }
   }
 
@@ -130,7 +134,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
       emailMeta: (meta.from as string) || undefined,
       content: activity.description || '',
       timestamp,
-      senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+      senderInitials: direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'ED',
       agentName: direction === 'sent' ? agentName : undefined,
     }
   }
@@ -142,7 +146,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
       direction,
       content: activity.description || '',
       timestamp,
-      senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+      senderInitials: direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'ED',
       agentName: direction === 'sent' ? agentName : undefined,
     }
   }
@@ -411,21 +415,35 @@ export default function ConversationsPage() {
       )
     : leads
 
-  // Derive toPhone from last activity metadata.to, fallback to default
-  const lastActivityWithTo = [...activities].reverse().find((a) => a.metadata?.to)
-  const toPhone = (lastActivityWithTo?.metadata?.to as string) || '+18163077835'
+  // The team line is the inbound destination or outbound origin. Do not use an
+  // outbound seller destination as the CRM reply-from number.
+  const teamPhoneActivity = [...activities].reverse().find((activity) => {
+    const direction = getConversationDirection({ activity_type: activity.type, description: activity.description, metadata: activity.metadata })
+    return direction === 'inbound'
+      ? Boolean(activity.metadata?.to || activity.metadata?.calledNumber)
+      : Boolean(activity.metadata?.from || activity.metadata?.fromPhone)
+  })
+  const teamPhoneDirection = teamPhoneActivity
+    ? getConversationDirection({ activity_type: teamPhoneActivity.type, description: teamPhoneActivity.description, metadata: teamPhoneActivity.metadata })
+    : null
+  const toPhone = teamPhoneActivity
+    ? String(teamPhoneDirection === 'inbound'
+      ? teamPhoneActivity.metadata?.to || teamPhoneActivity.metadata?.calledNumber
+      : teamPhoneActivity.metadata?.from || teamPhoneActivity.metadata?.fromPhone)
+    : '+18163077835'
 
   const threads: ThreadPreview[] = leads.map((lead) => ({
     id: lead.id,
-    name: lead.full_name && lead.full_name !== lead.phone ? toProperCase(lead.full_name) : formatPhone(lead.phone),
-    initials: lead.station === 'unmatched' ? '?' : getInitials(lead.full_name),
-    avatarBg: lead.priority === 'hot' ? 'bg-red-900' : lead.station === 'unmatched' ? 'bg-amber-700' : 'bg-slate-700',
+    name: getDisplayLeadName(lead.full_name, lead.phone),
+    initials: getAvatarLabel(lead.full_name, lead.phone, lead.source),
+    avatarBg: lead.priority === 'hot' ? 'bg-[var(--crm-brand)]' : 'bg-[var(--crm-charcoal)]',
     avatarText: 'text-white',
     address: [lead.property_address, lead.city].filter(Boolean).join(', ') || (lead.station === 'unmatched' ? formatPhone(lead.phone) : '—'),
     personality: null,
-    tags: lead.priority === 'hot' ? [{ label: 'Hot Lead', variant: 'hot' as const }] : lead.station === 'unmatched' ? [{ label: 'New Call', variant: 'hot' as const }] : [],
+    tags: (lead.decision_tags || []).slice(0, 2),
     lastMessage: lead.lastMessage || (lead.station === 'unmatched' ? 'Inbound call — not yet a contact' : 'No communication yet'),
     lastChannel: lead.lastChannel || null,
+    lastCallOutcome: lead.lastCallOutcome || null,
     timestamp: new Date(lead.lastActivityAt || lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     unread: lead.unread ?? lead.station === 'unmatched',
     starred: lead.priority === 'hot',
@@ -436,27 +454,23 @@ export default function ConversationsPage() {
 
   const commActivities = activities
   const messages: Message[] = commActivities
-    .map((act) => activeLead ? activityToMessage(act, activeLead) : null)
+    .map((act) => activeLead ? activityToMessage(act, activeLead, toPhone) : null)
     .filter((m): m is Message => m !== null)
   const dateGroups = groupMessagesByDate(messages, commActivities)
 
   const contact = activeLead
     ? {
-        name: activeLead.full_name && activeLead.full_name !== activeLead.phone
-          ? activeLead.full_name
-          : formatPhone(activeLead.phone),
-        initials: getInitials(activeLead.full_name),
-        address: [activeLead.property_address, activeLead.city].filter(Boolean).join(', ') || formatPhone(activeLead.phone),
-        county: activeLead.phone ? formatPhone(activeLead.phone) : '—',
-        tags: activeLead.priority === 'hot' ? ['Hot Lead'] : [],
+        name: getDisplayLeadName(activeLead.full_name, activeLead.phone),
+        initials: getAvatarLabel(activeLead.full_name, activeLead.phone, activeLead.source),
         verified: false,
         assignedAgent: activeLead.assigned_agent,
+        team: 'Acquisitions',
         toPhone,
         attentionState: activeLead.attentionState || 'resolved',
         owner: activeLead.owner || activeLead.assigned_agent,
         nextAction: activeLead.primaryNextAction || null,
       }
-    : { name: 'Select a contact', initials: '—', address: '—', county: '—', tags: [], verified: false, assignedAgent: null, toPhone: '+18163077835', attentionState: 'resolved' as const, owner: null, nextAction: null }
+    : { name: 'Select a contact', initials: '—', verified: false, assignedAgent: null, team: 'Acquisitions', toPhone: '+18163077835', attentionState: 'resolved' as const, owner: null, nextAction: null }
 
   if (loading) {
     return (

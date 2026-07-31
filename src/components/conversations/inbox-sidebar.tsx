@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
 import type { PersonalityType } from '@/types'
+import type { CallOutcomePresentation } from '@/lib/operating-model/conversation-presentation'
+import type { ConversationDecisionTag } from '@/lib/operating-model/conversation-tags'
 
 export interface ThreadPreview {
   id: string
@@ -13,9 +15,10 @@ export interface ThreadPreview {
   avatarText: string
   address: string
   personality: PersonalityType | null
-  tags: { label: string; variant: 'hot' | 'default' }[]
+  tags: ConversationDecisionTag[]
   lastMessage: string
   lastChannel: 'call' | 'sms' | 'email' | 'voicemail' | null
+  lastCallOutcome?: CallOutcomePresentation | null
   timestamp: string
   unread?: boolean
   starred?: boolean
@@ -37,6 +40,21 @@ const CHANNEL_META = {
   sms: { icon: 'chat_bubble', tone: 'text-[var(--crm-success)]' },
   email: { icon: 'mail', tone: 'text-[var(--crm-info)]' },
   voicemail: { icon: 'voicemail', tone: 'text-[var(--crm-violet)]' },
+} as const
+
+const OUTCOME_TONE = {
+  positive: 'text-[var(--crm-success)]',
+  attention: 'text-[var(--crm-violet)]',
+  negative: 'text-[var(--crm-brand)]',
+  neutral: 'text-[var(--crm-text-muted)]',
+} as const
+
+const TAG_TONE = {
+  brand: 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]',
+  info: 'border-[var(--crm-info)]/30 bg-[var(--crm-info-soft)] text-[var(--crm-info)]',
+  success: 'border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+  violet: 'border-[var(--crm-violet)]/30 bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]',
+  neutral: 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]',
 } as const
 
 export function InboxSidebar({
@@ -155,6 +173,11 @@ export function InboxSidebar({
         ) : null}
         {filteredThreads.map((thread) => {
           const isActive = thread.id === activeThreadId
+          const channelMeta = thread.lastChannel === 'call' && thread.lastCallOutcome
+            ? { icon: thread.lastCallOutcome.icon, tone: OUTCOME_TONE[thread.lastCallOutcome.tone] }
+            : thread.lastChannel
+              ? CHANNEL_META[thread.lastChannel]
+              : null
           return (
             <button
               key={thread.id}
@@ -213,20 +236,16 @@ export function InboxSidebar({
                     )}
                     {thread.tags.map((tag) => (
                       <span
-                        key={tag.label}
-                        className={cn(
-                          'px-2 py-0.5 text-[9px] rounded-full uppercase tracking-tighter',
-                          tag.variant === 'hot'
-                            ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'
-                            : 'bg-surface-container-highest text-on-surface-variant'
-                        )}
+                        key={tag.id}
+                        title={`${tag.category}: ${tag.label}`}
+                        className={cn('rounded-full border px-2 py-0.5 text-[9px] font-bold', TAG_TONE[tag.tone])}
                       >
                         {tag.label}
                       </span>
                     ))}
                   </div>
                   <p className="flex items-start gap-1.5 text-[12px] font-normal leading-4 text-slate-500">
-                    {thread.lastChannel ? <Icon name={CHANNEL_META[thread.lastChannel].icon} className={cn('mt-0.5 shrink-0 text-[14px]', CHANNEL_META[thread.lastChannel].tone)} /> : null}
+                    {channelMeta ? <Icon name={channelMeta.icon} className={cn('mt-0.5 shrink-0 text-[14px]', channelMeta.tone)} /> : null}
                     <span className="line-clamp-2">{thread.lastMessage}</span>
                   </p>
                   {(thread.nextAction || thread.owner) && (
