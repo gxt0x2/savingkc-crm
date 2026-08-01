@@ -1961,7 +1961,22 @@ export default function LeadDetailPage() {
         onContract={() => setContractModalOpen(true)}
         onOpenProperty={() => setDetailsExpanded(true)}
         onRefresh={refreshAll}
-        onStageChange={(station) => setLead((current) => current ? { ...current, station } : current)}
+        onStageChange={(station, outcome) => setLead((current) => current ? {
+          ...current,
+          station,
+          ...(station === 'dead'
+            ? { classification: 'dead', priority: 'cold', dead_reason: outcome?.deadReason ?? current.dead_reason }
+            : current.station === 'dead'
+              ? { classification: 'lead', priority: current.priority === 'cold' ? 'warm' : current.priority, dead_reason: null }
+              : {}),
+        } : current)}
+        onLeadStatusChange={(update) => setLead((current) => current ? {
+          ...current,
+          classification: update.classification,
+          station: update.station,
+          priority: update.priority,
+          dead_reason: update.dead_reason,
+        } : current)}
         sectionPanels={{
           property: (
             <div className="mx-auto grid w-full max-w-[1380px] items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">

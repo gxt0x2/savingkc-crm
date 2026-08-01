@@ -520,6 +520,7 @@ function DialerPageInner() {
   const [sessionContacts, setSessionContacts] = useState(0)
   const [showMarkDead, setShowMarkDead] = useState(false)
   const [markDeadReason, setMarkDeadReason] = useState('')
+  const [markDeadNotes, setMarkDeadNotes] = useState('')
   const [markDeadBusy, setMarkDeadBusy] = useState(false)
   const [markDeadError, setMarkDeadError] = useState<string | null>(null)
 
@@ -825,6 +826,10 @@ function DialerPageInner() {
 
   const markLeadDead = useCallback(async () => {
     if (!currentLeadId || !markDeadReason) return
+    if (markDeadReason === 'other' && !markDeadNotes.trim()) {
+      setMarkDeadError('Add a note when Other is selected.')
+      return
+    }
     setMarkDeadBusy(true)
     setMarkDeadError(null)
     try {
@@ -837,10 +842,11 @@ function DialerPageInner() {
           dead_reason: markDeadReason,
           dead_at: new Date().toISOString(),
           dead_by: 'Ernest',
+          deadReasonNotes: markDeadNotes.trim() || null,
           activity: {
             type: 'status_change',
             disposition: 'dead',
-            notes: `Marked dead from dialer — ${markDeadReason.replace(/_/g, ' ')}`,
+            notes: markDeadNotes.trim() || `Marked dead from dialer — ${markDeadReason.replace(/_/g, ' ')}`,
             agent: 'Ernest',
             dead_reason: markDeadReason,
           },
@@ -852,6 +858,7 @@ function DialerPageInner() {
       }
       setShowMarkDead(false)
       setMarkDeadReason('')
+      setMarkDeadNotes('')
       refreshActivities()
       advance(true)
     } catch (e) {
@@ -859,7 +866,7 @@ function DialerPageInner() {
     } finally {
       setMarkDeadBusy(false)
     }
-  }, [currentLeadId, markDeadReason, advance, refreshActivities])
+  }, [currentLeadId, markDeadReason, markDeadNotes, advance, refreshActivities])
 
   const ownerName = useMemo(() => {
     const raw = currentProspect?.owner_1 || currentLead?.full_name || 'Unknown'
@@ -993,7 +1000,7 @@ function DialerPageInner() {
 
           {/* Mark lead dead */}
           <button
-            onClick={() => { setMarkDeadReason(''); setMarkDeadError(null); setShowMarkDead(true) }}
+            onClick={() => { setMarkDeadReason(''); setMarkDeadNotes(''); setMarkDeadError(null); setShowMarkDead(true) }}
             disabled={!currentLeadId}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#E32E2E]/40 text-[#ff7777] hover:bg-[#E32E2E]/10 text-xs font-bold uppercase tracking-wider disabled:opacity-30 transition-colors"
             title="Mark this lead dead (records why)"
@@ -1415,6 +1422,16 @@ function DialerPageInner() {
                   )
                 })}
               </div>
+              <label className="mt-4 block text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
+                Notes {markDeadReason === 'other' ? <span className="text-[#ff7777]">Required</span> : <span className="normal-case tracking-normal">Optional</span>}
+                <textarea
+                  value={markDeadNotes}
+                  onChange={(event) => { setMarkDeadNotes(event.target.value); setMarkDeadError(null) }}
+                  rows={3}
+                  placeholder="Add context an agent or AI will need later…"
+                  className="mt-2 w-full resize-none rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold normal-case tracking-normal text-[var(--ck-text)] outline-none focus:border-[#E32E2E]"
+                />
+              </label>
               {markDeadError && <p className="mt-3 text-xs font-bold text-[#ff7777]">{markDeadError}</p>}
             </div>
             <div className="grid grid-cols-2 gap-2 border-t border-[var(--ck-border)] px-5 py-4">
@@ -1427,7 +1444,7 @@ function DialerPageInner() {
               </button>
               <button
                 onClick={markLeadDead}
-                disabled={!markDeadReason || markDeadBusy}
+                disabled={!markDeadReason || (markDeadReason === 'other' && !markDeadNotes.trim()) || markDeadBusy}
                 className="rounded-lg bg-[#E32E2E] hover:bg-[#C42626] px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {markDeadBusy ? 'Saving…' : 'Mark dead & next'}

@@ -544,7 +544,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json()
-    const { id, activity, ...fields } = body
+    const { id, activity, actor, deadReasonNotes, ...fields } = body
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'id required' }, { status: 400, headers: corsHeaders })
@@ -552,8 +552,17 @@ export async function PATCH(req: NextRequest) {
 
     const activityAgent = typeof activity?.agent === 'string' && activity.agent.trim().length > 0
       ? activity.agent.trim()
-      : 'Casey'
+      : typeof actor === 'string' && actor.trim().length > 0
+        ? actor.trim()
+        : 'Casey'
     const activityAgentId = activityAgent.toLowerCase().includes('ernest') ? 'ernest' : 'casey'
+    const deadOutcomeNotes = typeof deadReasonNotes === 'string'
+      ? deadReasonNotes.trim()
+      : typeof activity?.deadReasonNotes === 'string'
+        ? activity.deadReasonNotes.trim()
+        : typeof activity?.notes === 'string'
+          ? activity.notes.trim()
+          : ''
     const requestedClassification = fields.classification
     const triageClassification = requestedClassification === null || requestedClassification === undefined
       ? null
@@ -594,6 +603,14 @@ export async function PATCH(req: NextRequest) {
         error: 'Dead reason required before marking this lead dead.',
         requiresDeadReason: true,
         allowedDeadReasons: DEAD_REASONS,
+      }, { status: 400, headers: corsHeaders })
+    }
+
+    if (markingDead && deadReason === 'other' && !deadOutcomeNotes) {
+      return NextResponse.json({
+        success: false,
+        error: 'Notes are required when Other is selected.',
+        requiresDeadReasonNotes: true,
       }, { status: 400, headers: corsHeaders })
     }
 
@@ -904,6 +921,7 @@ export async function PATCH(req: NextRequest) {
             details: {
               dead_reason: deadReason,
               dead_reason_label: deadReasonLabel(deadReason),
+              dead_reason_notes: deadOutcomeNotes || null,
             },
           })
         }
@@ -956,7 +974,7 @@ export async function PATCH(req: NextRequest) {
         lead_id: id,
         activity_type: markingDead ? 'outcome' : 'status_change',
         description: markingDead && deadReason
-          ? `Manual triage: ${triage.label} - ${deadReasonLabel(deadReason)}`
+          ? `Manual triage: ${triage.label} - ${deadReasonLabel(deadReason)}${deadOutcomeNotes ? ` - ${deadOutcomeNotes}` : ''}`
           : `Manual triage: ${triage.label}`,
         agent: activityAgent,
         metadata: {
@@ -969,6 +987,7 @@ export async function PATCH(req: NextRequest) {
           new_priority: data.priority ?? fields.priority ?? null,
           dead_reason: deadReason,
           dead_reason_label: deadReason ? deadReasonLabel(deadReason) : null,
+          dead_reason_notes: deadOutcomeNotes || null,
         },
       })
       if (triageActivityError) {

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { StreetViewPanel } from '@/components/leads/google-map-panel'
 import { StageSelector } from '@/components/leads/stage-selector'
+import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
 import { formatPhone, toProperCase } from '@/lib/format'
 import {
   filterLeadConversation,
@@ -37,6 +38,8 @@ export interface LeadWorkspaceLead {
   motivation_score: number | null
   arv: number | null
   offer_amount: number | null
+  classification?: 'lead' | 'opportunity' | 'dead' | null
+  dead_reason?: string | null
 }
 
 export interface LeadWorkspaceActivity {
@@ -70,7 +73,8 @@ interface LeadWorkspaceProps {
   onContract: () => void
   onOpenProperty: () => void
   onRefresh: () => void
-  onStageChange: (station: string) => void
+  onStageChange: (station: string, outcome?: { deadReason: string | null }) => void
+  onLeadStatusChange: (update: LeadStatusUpdate) => void
   sectionPanels?: Partial<Record<LeadWorkspaceSection, React.ReactNode>>
 }
 
@@ -151,6 +155,7 @@ export function LeadWorkspace({
   onOpenProperty,
   onRefresh,
   onStageChange,
+  onLeadStatusChange,
   sectionPanels,
 }: LeadWorkspaceProps) {
   const [activeSection, setActiveSection] = useState<LeadWorkspaceSection>('overview')
@@ -313,10 +318,20 @@ export function LeadWorkspace({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h1 className="truncate text-xl font-bold tracking-[-0.03em] text-[var(--crm-ink)] sm:text-2xl">{name}</h1>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-brand)]">
-                      <Icon name="local_fire_department" className="text-[14px]" />
-                      {(lead.priority || '').toLowerCase() === 'hot' ? 'Hot Lead' : 'Active Lead'}
-                    </span>
+                    <LeadStatusControl
+                      leadId={lead.id}
+                      classification={lead.classification}
+                      station={lead.station}
+                      priority={lead.priority}
+                      deadReason={lead.dead_reason}
+                      agent={lead.assigned_agent}
+                      onChanged={onLeadStatusChange}
+                    />
+                    {(lead.priority || '').toLowerCase() === 'hot' ? (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-brand)]">
+                        <Icon name="local_fire_department" className="text-[14px]" />Hot
+                      </span>
+                    ) : null}
                     <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-success)]">
                       <Icon name="flag" className="text-[13px]" />
                       {STAGES[stageIndex]?.label || toProperCase(lead.station) || 'New'}
@@ -509,6 +524,18 @@ export function LeadWorkspace({
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
               <SectionLabel>Operating status</SectionLabel>
               <div className="mt-3 space-y-3">
+                <SummaryItem label="Lead status" tone="teal">
+                  <LeadStatusControl
+                    leadId={lead.id}
+                    classification={lead.classification}
+                    station={lead.station}
+                    priority={lead.priority}
+                    deadReason={lead.dead_reason}
+                    agent={lead.assigned_agent}
+                    onChanged={onLeadStatusChange}
+                    variant="panel"
+                  />
+                </SummaryItem>
                 <SummaryItem label="Stage" tone="teal">
                   <StageSelector
                     leadId={lead.id}
@@ -516,7 +543,7 @@ export function LeadWorkspace({
                     size="md"
                     variant="workspace"
                     onAppointmentRequired={onAppointment}
-                    onChange={(next) => onStageChange(next)}
+                    onChange={(next, outcome) => onStageChange(next, outcome)}
                   />
                 </SummaryItem>
                 <SummaryItem label="Owner" tone="blue">

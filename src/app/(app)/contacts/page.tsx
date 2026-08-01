@@ -8,6 +8,8 @@ import { formatLeadSource, getAvatarLabel, getDisplayLeadName } from '@/lib/cont
 import type { ContactSignal } from '@/lib/contact-display'
 import type { DealStage } from '@/types/pipeline'
 import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
+import { LeadStatusControl } from '@/components/leads/lead-status-control'
+import { deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
 
 interface ContactRow {
   id: string
@@ -18,6 +20,8 @@ interface ContactRow {
   address: string | null
   city: string | null
   station: DealStage
+  classification: 'lead' | 'opportunity' | 'dead' | null
+  deadReason: string | null
   score: number
   isFavorite: boolean
   nextActivity: { when: string | null; label: string; kind: 'appointment' | 'recommended' | null } | null
@@ -46,7 +50,7 @@ interface ContactWorkspaceRow extends ContactRow {
   primaryNextAction: HubThread['primaryNextAction']
 }
 
-type SmartList = 'all' | 'needs_reply' | 'overdue' | 'unassigned' | 'hot' | 'new'
+type SmartList = 'all' | 'needs_reply' | 'overdue' | 'unassigned' | 'hot' | 'new' | 'not_leads'
 type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
 type ContactDialog = 'add' | 'import' | 'view' | null
 
@@ -84,7 +88,7 @@ const STAGE_RANK: Record<DealStage, number> = {
   dead: -1,
 }
 
-const SMART_LISTS = new Set<SmartList>(['all', 'needs_reply', 'overdue', 'unassigned', 'hot', 'new'])
+const SMART_LISTS = new Set<SmartList>(['all', 'needs_reply', 'overdue', 'unassigned', 'hot', 'new', 'not_leads'])
 const DATA_GAPS = new Set<DataGap>(['', 'missing_phone', 'missing_email', 'missing_next_action'])
 
 const SMART_LIST_TONES: Record<SmartList, { active: string; count: string }> = {
@@ -94,6 +98,7 @@ const SMART_LIST_TONES: Record<SmartList, { active: string; count: string }> = {
   overdue: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' },
   hot: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
   unassigned: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' },
+  not_leads: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' },
 }
 
 const STAGE_TONES: Record<DealStage, string> = {
@@ -253,6 +258,7 @@ export default function ContactsPage() {
     unassigned: items.filter((item) => !item.owner).length,
     hot: items.filter((item) => item.score >= 75 || item.isFavorite).length,
     new: items.filter((item) => item.station === 'new').length,
+    not_leads: items.filter((item) => isNotLeadOutcome(item.classification, item.station)).length,
   }), [items])
 
   const owners = useMemo(() => [...new Set(items.map((item) => item.owner).filter((value): value is string => Boolean(value)))].sort(), [items])
@@ -266,6 +272,8 @@ export default function ContactsPage() {
       if (smartList === 'overdue' && !item.primaryNextAction?.overdue) return false
       if (smartList === 'unassigned' && item.owner) return false
       if (smartList === 'hot' && item.score < 75 && !item.isFavorite) return false
+      if (smartList === 'new' && item.station !== 'new') return false
+      if (smartList === 'not_leads' && !isNotLeadOutcome(item.classification, item.station)) return false
       if (ownerFilter === '__unassigned' ? item.owner : ownerFilter && item.owner !== ownerFilter) return false
       if (stageFilter && item.station !== stageFilter) return false
       if (minimumStageFilter && STAGE_RANK[item.station] < STAGE_RANK[minimumStageFilter as DealStage]) return false
@@ -284,7 +292,7 @@ export default function ContactsPage() {
         if (activityFilter === 'none' && timestamp !== 0) return false
       }
       if (!needle) return true
-      return [item.fullName, item.phone, item.email, item.address, item.city, item.owner, item.source].some((value) => value?.toLowerCase().includes(needle))
+      return [item.fullName, item.phone, item.email, item.address, item.city, item.owner, item.source, deadReasonLabel(item.deadReason)].some((value) => value?.toLowerCase().includes(needle))
     }).sort((a, b) => {
       if (sortBy === 'name') return getDisplayLeadName(a.fullName, a.phone).localeCompare(getDisplayLeadName(b.fullName, b.phone))
       if (sortBy === 'recent') return new Date(b.lastActivityAt || 0).getTime() - new Date(a.lastActivityAt || 0).getTime()
@@ -413,6 +421,7 @@ export default function ContactsPage() {
                 ['needs_reply', 'Needs Follow-up', counts.needs_reply],
                 ['hot', 'Hot Opportunities', counts.hot],
                 ['unassigned', 'Unassigned', counts.unassigned],
+                ['not_leads', 'Not Leads', counts.not_leads],
               ] as [SmartList, string, number][]).map(([id, label, count]) => (
                 <button key={id} type="button" onClick={() => setSmartList(id)} className={`border-b-[3px] py-4 text-sm font-semibold transition-colors ${smartList === id ? SMART_LIST_TONES[id].active : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'}`}>
                   {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${smartList === id ? SMART_LIST_TONES[id].count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{count}</span>
@@ -444,7 +453,7 @@ export default function ContactsPage() {
 
             <div className="crm-panel mt-5 overflow-x-auto rounded-xl">
               <div className="crm-table-header grid min-w-[936px] grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] border-b px-3 py-3 text-[11px] font-bold uppercase tracking-[0.06em]">
-                <span>Contact</span><span>Property</span><span>Stage</span><span>Next Action</span><span>Owner</span><span>Last Activity</span><span>Source</span>
+                <span>Contact</span><span>Property</span><span>Status</span><span>Next Action</span><span>Owner</span><span>Last Activity</span><span>Source</span>
               </div>
               {isLoading ? <ContactSkeleton /> : null}
               {error ? <div className="p-8 text-center text-sm text-red-600">Contacts could not be loaded. <button type="button" onClick={() => void refetch()} className="font-bold underline">Try again</button></div> : null}
@@ -454,6 +463,7 @@ export default function ContactsPage() {
                 const property = [row.address, row.city].filter(Boolean).join(', ') || 'No property linked'
                 const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || 'Define next action'
                 const selectedRow = detailsOpen && selected?.id === row.id
+                const notLead = isNotLeadOutcome(row.classification, row.station)
                 const rowAttention = row.primaryNextAction?.overdue
                   ? 'border-l-[var(--crm-danger)]'
                   : row.attentionState === 'needs_reply'
@@ -468,7 +478,10 @@ export default function ContactsPage() {
                   <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} aria-pressed={selectedRow} className={`grid min-w-[936px] w-full grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-l-4 border-b-[var(--crm-border)] px-3 py-4 text-left text-xs transition-colors last:border-b-0 ${selectedRow ? 'border-l-[var(--crm-brand)] bg-[var(--crm-surface-selected)]' : `${rowAttention} hover:bg-[var(--crm-surface-subtle)]`}`}>
                     <span className="flex min-w-0 items-center gap-2.5"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[var(--crm-ink)]">{displayName}</strong><small className="text-[var(--crm-text-muted)]">{formatPhone(row.phone)}</small></span></span>
                     <span className="min-w-0"><strong className="block truncate font-medium text-[var(--crm-text)]">{property}</strong><small className="text-[var(--crm-text-dim)]">{row.city || ''}</small></span>
-                    <span><span className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[row.station]}`}>{STAGE_LABELS[row.station]}</span></span>
+                    <span className="min-w-0">
+                      <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>{notLead ? 'Not a lead' : 'Lead'}</span>
+                      <small className="mt-1 block truncate text-[10px] text-[var(--crm-text-muted)]">{notLead ? deadReasonLabel(row.deadReason) || 'Reason missing' : STAGE_LABELS[row.station]}</small>
+                    </span>
                     <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-warning)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>
                     <span>{row.owner || 'Unassigned'}</span><span className="text-[var(--crm-text-muted)]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[var(--crm-text-muted)]">{formatLeadSource(row.source)}</span>
                   </button>
@@ -498,6 +511,17 @@ export default function ContactsPage() {
               <button type="button" disabled={!selected.phone} onClick={() => openDialer(selected)} className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-xs font-semibold text-[var(--crm-success)] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" />Call</button>
               {selected.phone ? <Link href={`/conversations?lead=${selected.id}&compose=sms`} className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-info-soft)] text-xs font-semibold text-[var(--crm-info)] hover:brightness-95"><Icon name="sms" />Text</Link> : <button type="button" disabled aria-label="Text unavailable because this contact has no phone number" className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border)] text-xs font-semibold text-[var(--crm-info)] opacity-40"><Icon name="sms" />Text</button>}
               {selected.email ? <Link href={`/conversations?lead=${selected.id}&compose=email`} className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] text-xs font-semibold text-[var(--crm-violet)] hover:brightness-95"><Icon name="mail" />Email</Link> : <button type="button" disabled aria-label="Email unavailable because this contact has no email address" className="flex h-9 items-center justify-center gap-1 rounded-lg border border-[var(--crm-border)] text-xs font-semibold text-[var(--crm-violet)] opacity-40"><Icon name="mail" />Email</button>}
+            </div>
+            <div className="mt-5">
+              <LeadStatusControl
+                leadId={selected.id}
+                classification={selected.classification}
+                station={selected.station}
+                deadReason={selected.deadReason}
+                agent={selected.owner}
+                onChanged={() => void refetch()}
+                variant="panel"
+              />
             </div>
             <div className="crm-panel mt-6 rounded-xl p-4"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="trending_up" className="text-[18px] text-[var(--crm-success)]" />Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[selected.station]}`}>{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-0.5 font-black text-[var(--crm-violet)]">{selected.score} / 100</dd></div></dl></div>
             <div className="mt-5 rounded-xl border border-[var(--crm-border-strong)] border-l-4 border-l-[var(--crm-warning)] bg-[var(--crm-warning-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-warning)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5"><Icon name="schedule" className="mt-0.5" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>

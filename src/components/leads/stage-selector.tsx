@@ -19,7 +19,7 @@ const APPOINTMENT_STAGES = new Set(['appointment_set'])
 interface StageSelectorProps {
   leadId: string
   station: string | null
-  onChange?: (next: DealStage) => void
+  onChange?: (next: DealStage, outcome?: { deadReason: string | null }) => void
   onAppointmentRequired?: () => void
   size?: 'sm' | 'md'
   variant?: 'cockpit' | 'workspace'
@@ -42,8 +42,9 @@ export function StageSelector({
   const [pending, setPending] = useState(false)
   const [deadDialogOpen, setDeadDialogOpen] = useState(false)
   const [deadReason, setDeadReason] = useState('')
+  const [deadReasonNotes, setDeadReasonNotes] = useState('')
 
-  async function submitStage(next: DealStage, reason = 'manual change from lead page', selectedDeadReason?: string) {
+  async function submitStage(next: DealStage, reason = 'manual change from lead page', selectedDeadReason?: string, selectedDeadReasonNotes?: string) {
     const prev = value
     setValue(next)
     setPending(true)
@@ -55,14 +56,14 @@ export function StageSelector({
         body: JSON.stringify({
           station: next,
           reason,
-          ...(next === 'dead' ? { deadReason: selectedDeadReason } : {}),
+          ...(next === 'dead' ? { deadReason: selectedDeadReason, deadReasonNotes: selectedDeadReasonNotes } : {}),
         }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || `HTTP ${res.status}`)
       }
-      onChange?.(next)
+      onChange?.(next, { deadReason: next === 'dead' ? selectedDeadReason ?? null : null })
     } catch (err) {
       setValue(prev)
       console.error('Failed to update station:', err)
@@ -117,12 +118,12 @@ export function StageSelector({
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="w-full max-w-md rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-5 shadow-2xl">
+          <div role="dialog" aria-modal="true" aria-labelledby="stage-dead-reason-title" className="w-full max-w-md rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-5 shadow-2xl">
             <div className="mb-4">
               <p className="text-sm font-black uppercase tracking-wider text-[color:var(--ck-accent-bright)]">Mark Lead Dead</p>
-              <h3 className="mt-1 text-xl font-black text-[var(--ck-text)]">Choose the reason</h3>
+              <h3 id="stage-dead-reason-title" className="mt-1 text-xl font-black text-[var(--ck-text)]">Why is this not a lead?</h3>
               <p className="mt-1 text-sm font-semibold text-[var(--ck-text-muted)]">
-                This reason is used for lead-source reporting and future campaign decisions.
+                Required for lead-source reporting, AI context, and future reactivation decisions.
               </p>
             </div>
             <select
@@ -136,12 +137,23 @@ export function StageSelector({
                 <option key={reason.id} value={reason.id}>{reason.label}</option>
               ))}
             </select>
+            <label className="mt-4 block text-xs font-black uppercase tracking-[0.12em] text-[var(--ck-text-muted)]">
+              Notes {deadReason === 'other' ? <span className="text-[var(--ck-accent)]">(required)</span> : <span className="font-semibold normal-case tracking-normal">(optional)</span>}
+              <textarea
+                value={deadReasonNotes}
+                onChange={(event) => setDeadReasonNotes(event.target.value)}
+                rows={3}
+                placeholder="Add context an agent or AI will need later…"
+                className="mt-2 w-full resize-none rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm font-semibold normal-case tracking-normal text-[var(--ck-text)] focus:border-[#E32E2E] focus:outline-none"
+              />
+            </label>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setDeadDialogOpen(false)
                   setDeadReason('')
+                  setDeadReasonNotes('')
                 }}
                 className="rounded-lg border border-[var(--ck-border)] px-3 py-2 text-sm font-black text-[var(--ck-text)] hover:bg-[var(--ck-surface-elev)]"
               >
@@ -149,12 +161,14 @@ export function StageSelector({
               </button>
               <button
                 type="button"
-                disabled={!deadReason || pending}
+                disabled={!deadReason || (deadReason === 'other' && !deadReasonNotes.trim()) || pending}
                 onClick={async () => {
                   const selected = deadReason
+                  const selectedNotes = deadReasonNotes.trim()
                   setDeadDialogOpen(false)
                   setDeadReason('')
-                  await submitStage('dead', 'manual dead outcome from lead page', selected)
+                  setDeadReasonNotes('')
+                  await submitStage('dead', 'manual dead outcome from lead page', selected, selectedNotes)
                 }}
                 className="rounded-lg bg-[color:var(--ck-accent)] px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
               >

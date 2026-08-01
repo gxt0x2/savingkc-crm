@@ -34,6 +34,8 @@ interface LeadRow {
   station: string | null
   priority: string | null
   assigned_agent: string | null
+  classification?: 'lead' | 'opportunity' | 'dead' | null
+  dead_reason?: string | null
   county?: string | null
   source?: string | null
   motivation_score?: number | null
@@ -588,6 +590,7 @@ export default function ConversationsPage() {
           contact={activeLead || null}
           onClose={() => setContactDetailsOpen(false)}
           onNextAction={activeLead && !activeLead.id.startsWith('unmatched:') ? () => setNextActionDialogOpen(true) : undefined}
+          onContactChanged={refreshConversation}
         />
       ) : null}
 

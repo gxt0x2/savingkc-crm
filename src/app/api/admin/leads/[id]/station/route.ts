@@ -27,6 +27,7 @@ type StationRequestBody = {
   reason?: string
   deadReason?: string
   dead_reason?: string
+  deadReasonNotes?: string
   allowMissingAppointmentDetails?: boolean
 }
 
@@ -112,7 +113,7 @@ export async function POST(
   const db = supabaseAdmin()
   const { data: lead } = await db
     .from('leads')
-    .select('id, station, full_name')
+    .select('id, station, full_name, classification, priority, dead_reason')
     .eq('id', id)
     .single()
   if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
@@ -124,6 +125,7 @@ export async function POST(
   const deadReason = movingToDead
     ? cleanDeadReason(body.deadReason ?? body.dead_reason ?? body.reason)
     : null
+  const deadReasonNotes = typeof body.deadReasonNotes === 'string' ? body.deadReasonNotes.trim() : ''
   const hasAppointmentDetails = movingToAppointment
     ? await leadHasAppointmentDetails(db, id)
     : false
@@ -135,6 +137,14 @@ export async function POST(
         requiresDeadReason: true,
         allowedDeadReasons: DEAD_REASONS,
       },
+      { status: 400 },
+    )
+  }
+
+
+  if (movingToDead && deadReason === 'other' && !deadReasonNotes) {
+    return NextResponse.json(
+      { error: 'Notes are required when Other is selected.', requiresDeadReasonNotes: true },
       { status: 400 },
     )
   }
@@ -164,7 +174,15 @@ export async function POST(
           dead_at: changedAt,
           dead_by: 'system:admin_set_station',
         }
-        : {}),
+        : prevStation === 'dead'
+          ? {
+            classification: ['qualified', 'offer', 'offer_made', 'under_contract', 'contract', 'closing'].includes(body.station) ? 'opportunity' : 'lead',
+            priority: lead.priority === 'cold' ? 'warm' : lead.priority ?? 'warm',
+            dead_reason: null,
+            dead_at: null,
+            dead_by: null,
+          }
+          : {}),
     })
     .eq('id', id)
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
@@ -181,9 +199,35 @@ export async function POST(
         reason: body.reason ?? null,
         dead_reason: deadReason,
         dead_reason_label: deadReason ? deadReasonLabel(deadReason) : null,
+        dead_reason_notes: deadReasonNotes || null,
       },
     })
+    if (prevStation === 'dead' && body.station !== 'dead' && manifest.scoring) {
+      manifest.scoring.classification = ['qualified', 'offer', 'offer_made', 'under_contract', 'contract', 'closing'].includes(body.station as string) ? 'opportunity' : 'lead'
+      manifest.scoring.worth_enriching = true
+      manifest.scoring.reasoning = `Restored to active pipeline at ${body.station}.`
+      manifest.scoring.scored_at = changedAt
+      manifest.scoring.scored_by = 'notes'
+    }
   }, 'admin_set_station').catch(() => false)
+
+  const { error: activityError } = await db.from('lead_activities').insert({
+    lead_id: id,
+    activity_type: movingToDead ? 'outcome' : 'status_change',
+    description: movingToDead && deadReason
+      ? `Marked not a lead — ${deadReasonLabel(deadReason)}${deadReasonNotes ? ` — ${deadReasonNotes}` : ''}`
+      : `Stage changed from ${prevStation || 'unassigned'} to ${body.station}`,
+    agent: 'system:admin_set_station',
+    metadata: {
+      source: 'lead_stage_selector',
+      old_station: prevStation,
+      new_station: body.station,
+      dead_reason: deadReason,
+      dead_reason_label: deadReason ? deadReasonLabel(deadReason) : null,
+      dead_reason_notes: deadReasonNotes || null,
+    },
+  })
+  if (activityError) console.error('[admin station] Failed to write stage activity:', activityError.message)
 
   const ppcQualifiedConversion = await queuePpcQualifiedLeadConversion({
     leadId: id,

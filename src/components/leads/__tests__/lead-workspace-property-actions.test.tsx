@@ -29,6 +29,8 @@ const lead: LeadWorkspaceLead = {
   motivation_score: 80,
   arv: 270000,
   offer_amount: 180000,
+  classification: 'opportunity',
+  dead_reason: null,
 }
 
 const noop = () => {}
@@ -52,6 +54,7 @@ function renderWorkspace(onOpenProperty = vi.fn()) {
       onOpenProperty={onOpenProperty}
       onRefresh={noop}
       onStageChange={noop}
+      onLeadStatusChange={noop}
     />,
   )
   return onOpenProperty

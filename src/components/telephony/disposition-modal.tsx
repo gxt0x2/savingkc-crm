@@ -224,7 +224,9 @@ export function DispositionModal({
   const activeDisposition = isControlledDisposition ? (selectedDisposition ?? null) : internalDisposition
   const activeNotes = isControlledNotes ? (notes ?? '') : internalNotes
   const needsReason = dispositionRequiresReason(activeDisposition)
-  const reasonSatisfied = !needsReason || deadReason.trim().length > 0
+  const reasonSatisfied = !needsReason || (
+    deadReason.trim().length > 0 && (deadReason !== 'other' || activeNotes.trim().length > 0)
+  )
   const canSave = Boolean(activeDisposition) && reasonSatisfied && !isSaving && !localSaving
 
   const resolvedContact = useMemo(() => {
@@ -280,6 +282,10 @@ export function DispositionModal({
       setSaveError('Choose a reason before marking this lead dead.')
       return
     }
+    if (dispositionNeedsReason && resolvedDeadReason === 'other' && !activeNotes.trim()) {
+      setSaveError('Add a note when Other is selected.')
+      return
+    }
     savingRef.current = true
     setSaveError(null)
     setSaveNotice(null)
@@ -312,7 +318,7 @@ export function DispositionModal({
   function pickDeadReason(reasonId: string) {
     setDeadReason(reasonId)
     setSaveError(null)
-    if (autoSubmitOnOutcome && activeDisposition && dispositionRequiresReason(activeDisposition)) {
+    if (autoSubmitOnOutcome && reasonId !== 'other' && activeDisposition && dispositionRequiresReason(activeDisposition)) {
       void submit({
         closeAfter: true,
         advance: true,

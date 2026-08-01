@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 import { formatPhone, toProperCase } from '@/lib/format'
 import { formatLeadSource, getAvatarLabel } from '@/lib/contact-display'
 import type { ConversationDecisionTag } from '@/lib/operating-model/conversation-tags'
+import { LeadStatusControl } from '@/components/leads/lead-status-control'
 
 interface ContactDetails {
   id: string
@@ -17,6 +18,8 @@ interface ContactDetails {
   station: string | null
   priority: string | null
   assigned_agent: string | null
+  classification?: 'lead' | 'opportunity' | 'dead' | null
+  dead_reason?: string | null
   owner?: string | null
   motivation_score?: number | null
   arv?: number | null
@@ -51,10 +54,12 @@ export function ContactDetailsPanel({
   contact,
   onClose,
   onNextAction,
+  onContactChanged,
 }: {
   contact: ContactDetails | null
   onClose?: () => void
   onNextAction?: () => void
+  onContactChanged?: () => void
 }) {
   if (!contact) {
     return (
@@ -98,6 +103,18 @@ export function ContactDetailsPanel({
             <p className="mt-1 flex items-center gap-2 text-sm text-slate-600"><Icon name="campaign" className="text-[17px]" />Source: {formatLeadSource(contact.source)}</p>
           </div>
         </div>
+        {!contact.id.startsWith('unmatched:') ? <div className="mt-4">
+          <LeadStatusControl
+            leadId={contact.id}
+            classification={contact.classification}
+            station={contact.station}
+            priority={contact.priority}
+            deadReason={contact.dead_reason}
+            agent={contact.owner || contact.assigned_agent}
+            onChanged={() => onContactChanged?.()}
+            variant="panel"
+          />
+        </div> : null}
         <Link href={`/leads/${contact.id}`} className="crm-primary-button mt-4 flex h-9 items-center justify-center rounded-lg text-sm font-bold">
           Open contact
         </Link>

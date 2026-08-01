@@ -17,6 +17,8 @@ export interface ConversationHubLead {
   station: string | null
   priority: string | null
   assigned_agent: string | null
+  classification?: 'lead' | 'opportunity' | 'dead' | null
+  dead_reason?: string | null
   county?: string | null
   source?: string | null
   motivation_score?: number | null
