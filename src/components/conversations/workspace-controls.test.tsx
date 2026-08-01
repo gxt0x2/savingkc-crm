@@ -20,6 +20,7 @@ const baseThread: ThreadPreview = {
   tags: [],
   lastMessage: 'I inherited a property.',
   lastChannel: 'sms',
+  activityAt: '2026-08-01T15:00:00.000Z',
   timestamp: 'Today',
   unread: true,
   attentionState: 'needs_reply',
@@ -51,10 +52,10 @@ describe('rebuilt conversation workspace controls', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('uses the signed-in agent, Team, Recent, and Starred as the primary work queues', () => {
+  it('uses the signed-in agent, Team, Recent, and Hot as the primary work queues', () => {
     render(<InboxSidebar
       threads={[
-        { ...baseThread, starred: true },
+        { ...baseThread, hot: true },
         { ...baseThread, id: 'lead-2', name: 'Sheila Brooks', owner: 'Casey' },
       ]}
       activeThreadId="lead-1"
@@ -65,14 +66,55 @@ describe('rebuilt conversation workspace controls', () => {
     expect(screen.getByRole('button', { name: /Ernest 1/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Team 2/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Recent 2/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Starred 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Hot 1/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Inbox/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Mine/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Needs Reply \d+$/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Ernest 1/ }))
+    expect(screen.getByRole('combobox', { name: 'Filter by assigned team member' })).toHaveValue('ernest')
     expect(screen.getByText('Marcus Johnson')).toBeInTheDocument()
     expect(screen.queryByText('Sheila Brooks')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Hot 1/ }))
+    expect(screen.getByRole('combobox', { name: 'Filter by assigned team member' })).toHaveValue('team')
+    expect(screen.getByText('Marcus Johnson')).toBeInTheDocument()
+    expect(screen.queryByText('Sheila Brooks')).not.toBeInTheDocument()
+  })
+
+  it('opens real conversation filters with preset and custom date ranges', () => {
+    render(<InboxSidebar
+      threads={[
+        baseThread,
+        { ...baseThread, id: 'lead-2', name: 'Older Contact', activityAt: '2026-07-01T15:00:00.000Z', timestamp: 'Jul 1' },
+      ]}
+      activeThreadId="lead-1"
+      onSelectThread={() => {}}
+      currentUserName="Ernest"
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conversation filters' }))
+    const filters = screen.getByRole('dialog', { name: 'Filter conversations' })
+    expect(within(filters).getByRole('combobox', { name: 'Conversation date range' })).toHaveTextContent('All timeTodayLast 7 daysLast 30 daysCustom range')
+    expect(within(filters).getByRole('combobox', { name: 'Conversation reply state' })).toBeInTheDocument()
+    expect(within(filters).getByRole('combobox', { name: 'Conversation next action' })).toBeInTheDocument()
+
+    fireEvent.change(within(filters).getByRole('combobox', { name: 'Conversation date range' }), { target: { value: 'custom' } })
+    fireEvent.change(screen.getByLabelText('Conversation start date'), { target: { value: '2026-08-01' } })
+    fireEvent.change(screen.getByLabelText('Conversation end date'), { target: { value: '2026-08-01' } })
+    expect(screen.getByText('Marcus Johnson')).toBeInTheDocument()
+    expect(screen.queryByText('Older Contact')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Conversation filters, 1 active' })).toBeInTheDocument()
+
+    fireEvent.click(within(filters).getByRole('button', { name: 'Show results' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Conversation filters, 1 active' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(screen.getByText('Older Contact')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sort conversations' }))
+    const sortMenu = screen.getByRole('dialog', { name: 'Sort conversations' })
+    fireEvent.click(within(sortMenu).getByRole('button', { name: 'Recent activity' }))
+    expect(screen.queryByRole('dialog', { name: 'Sort conversations' })).not.toBeInTheDocument()
   })
 
   it('filters the team inbox by Casey, Ernest, Gertha, Team, or Unassigned', () => {

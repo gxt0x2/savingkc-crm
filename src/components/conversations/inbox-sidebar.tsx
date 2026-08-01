@@ -19,9 +19,10 @@ export interface ThreadPreview {
   lastMessage: string
   lastChannel: 'call' | 'sms' | 'email' | 'voicemail' | null
   lastCallOutcome?: CallOutcomePresentation | null
+  activityAt: string
   timestamp: string
   unread?: boolean
-  starred?: boolean
+  hot?: boolean
   attentionState: 'needs_reply' | 'waiting_on_contact' | 'resolved'
   owner: string | null
   nextAction: {
@@ -33,8 +34,11 @@ export interface ThreadPreview {
   } | null
 }
 
-type TabFilter = 'agent' | 'team' | 'recent' | 'starred'
+type TabFilter = 'agent' | 'team' | 'recent' | 'hot'
 type OwnerFilter = 'casey' | 'ernest' | 'gertha' | 'team' | 'unassigned'
+type DateRangeFilter = 'all' | 'today' | '7_days' | '30_days' | 'custom'
+type AttentionFilter = 'all' | ThreadPreview['attentionState']
+type NextActionFilter = 'all' | 'overdue' | 'missing'
 
 const OWNER_FILTERS: { value: OwnerFilter; label: string }[] = [
   { value: 'casey', label: 'Casey' },
@@ -43,6 +47,18 @@ const OWNER_FILTERS: { value: OwnerFilter; label: string }[] = [
   { value: 'team', label: 'Team' },
   { value: 'unassigned', label: 'Unassigned' },
 ]
+
+const DAY_IN_MS = 86_400_000
+
+function activityTimestamp(thread: ThreadPreview) {
+  const timestamp = new Date(thread.activityAt).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
+function localDayStart(timestamp: number) {
+  const date = new Date(timestamp)
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+}
 
 const CHANNEL_META = {
   call: { icon: 'call', tone: 'text-[var(--crm-info)]' },
@@ -84,20 +100,56 @@ export function InboxSidebar({
   const [channel, setChannel] = useState('')
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('team')
   const [sortOrder, setSortOrder] = useState<'priority' | 'recent'>('priority')
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false)
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const [dateRange, setDateRange] = useState<DateRangeFilter>('all')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+  const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all')
+  const [nextActionFilter, setNextActionFilter] = useState<NextActionFilter>('all')
+  const [referenceNow] = useState(() => Date.now())
+
+  const currentUserOwnerFilter = useMemo<OwnerFilter>(() => {
+    const normalizedName = currentUserName.trim().toLowerCase()
+    return OWNER_FILTERS.find((option) => option.value !== 'team' && option.value !== 'unassigned' && normalizedName.startsWith(option.value))?.value || 'team'
+  }, [currentUserName])
+
+  const panelFilterCount = Number(dateRange !== 'all') + Number(attentionFilter !== 'all') + Number(nextActionFilter !== 'all')
+
+  function clearPanelFilters() {
+    setDateRange('all')
+    setCustomStart('')
+    setCustomEnd('')
+    setAttentionFilter('all')
+    setNextActionFilter('all')
+  }
 
   const filteredThreads = useMemo(() => threads.filter((t) => {
     if (search && !`${t.name} ${t.address}`.toLowerCase().includes(search.toLowerCase())) return false
     if (channel && t.lastChannel !== channel) return false
     if (ownerFilter === 'unassigned' && t.owner) return false
     if (ownerFilter !== 'team' && ownerFilter !== 'unassigned' && !t.owner?.toLowerCase().startsWith(ownerFilter)) return false
-    if (activeTab === 'agent') return Boolean(t.owner && t.owner.toLowerCase().startsWith(currentUserName.toLowerCase()))
-    if (activeTab === 'starred') return Boolean(t.starred)
+    if (activeTab === 'agent' && !t.owner?.toLowerCase().startsWith(currentUserOwnerFilter)) return false
+    if (activeTab === 'hot' && !t.hot) return false
+    if (attentionFilter !== 'all' && t.attentionState !== attentionFilter) return false
+    if (nextActionFilter === 'overdue' && !t.nextAction?.overdue) return false
+    if (nextActionFilter === 'missing' && t.nextAction) return false
+    const timestamp = activityTimestamp(t)
+    if (dateRange === 'today' && timestamp < localDayStart(referenceNow)) return false
+    if (dateRange === '7_days' && timestamp < referenceNow - (7 * DAY_IN_MS)) return false
+    if (dateRange === '30_days' && timestamp < referenceNow - (30 * DAY_IN_MS)) return false
+    if (dateRange === 'custom') {
+      const start = customStart ? new Date(`${customStart}T00:00:00`).getTime() : null
+      const end = customEnd ? new Date(`${customEnd}T23:59:59.999`).getTime() : null
+      if (start !== null && timestamp < start) return false
+      if (end !== null && timestamp > end) return false
+    }
     return true
   }).sort((a, b) => {
-    if (activeTab === 'recent' || sortOrder === 'recent') return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    if (activeTab === 'recent' || sortOrder === 'recent') return activityTimestamp(b) - activityTimestamp(a)
     const rank = (thread: ThreadPreview) => thread.attentionState === 'needs_reply' ? 0 : thread.nextAction?.overdue ? 1 : 2
     return rank(a) - rank(b)
-  }), [activeTab, channel, currentUserName, ownerFilter, search, sortOrder, threads])
+  }), [activeTab, attentionFilter, channel, currentUserOwnerFilter, customEnd, customStart, dateRange, nextActionFilter, ownerFilter, referenceNow, search, sortOrder, threads])
 
   useEffect(() => {
     if (filteredThreads.length === 0) return
@@ -107,10 +159,10 @@ export function InboxSidebar({
   }, [activeThreadId, filteredThreads, onSelectThread])
 
   const tabs: { key: TabFilter; label: string; count: number }[] = [
-    { key: 'agent', label: currentUserName, count: threads.filter((thread) => thread.owner?.toLowerCase().startsWith(currentUserName.toLowerCase())).length },
+    { key: 'agent', label: currentUserName, count: threads.filter((thread) => thread.owner?.toLowerCase().startsWith(currentUserOwnerFilter)).length },
     { key: 'team', label: 'Team', count: threads.length },
     { key: 'recent', label: 'Recent', count: threads.length },
-    { key: 'starred', label: 'Starred', count: threads.filter((thread) => thread.starred).length },
+    { key: 'hot', label: 'Hot', count: threads.filter((thread) => thread.hot).length },
   ]
 
   return (
@@ -131,7 +183,7 @@ export function InboxSidebar({
               type="button"
               onClick={() => {
                 setActiveTab(tab.key)
-                if (tab.key === 'agent') setOwnerFilter('team')
+                setOwnerFilter(tab.key === 'agent' ? currentUserOwnerFilter : 'team')
               }}
               aria-pressed={activeTab === tab.key}
               className={cn(
@@ -158,8 +210,8 @@ export function InboxSidebar({
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex items-center gap-2 border-t border-[var(--crm-border)] px-4 py-2">
-          <select aria-label="Filter by channel" value={channel} onChange={(event) => setChannel(event.target.value)} className="crm-field h-8 rounded-lg px-2 text-[11px]">
+        <div className="relative flex items-center gap-1.5 border-t border-[var(--crm-border)] px-4 py-2">
+          <select aria-label="Filter by channel" value={channel} onChange={(event) => setChannel(event.target.value)} className="crm-field h-8 w-[94px] rounded-lg px-2 text-[11px]">
             <option value="">All channels</option>
             <option value="sms">SMS</option>
             <option value="call">Calls</option>
@@ -177,7 +229,81 @@ export function InboxSidebar({
           >
             {OWNER_FILTERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
-          <button type="button" onClick={() => setSortOrder((value) => value === 'priority' ? 'recent' : 'priority')} aria-label={`Sort conversations by ${sortOrder === 'priority' ? 'recent activity' : 'priority'}`} title={`Sort: ${sortOrder}`} className="crm-icon-button ml-auto flex h-8 w-8 items-center justify-center rounded-lg"><Icon name={sortOrder === 'priority' ? 'filter_list' : 'schedule'} /></button>
+          <button
+            type="button"
+            onClick={() => { setFilterMenuOpen((value) => !value); setSortMenuOpen(false) }}
+            aria-expanded={filterMenuOpen}
+            aria-label={`Conversation filters${panelFilterCount ? `, ${panelFilterCount} active` : ''}`}
+            title="Filters"
+            className={cn('crm-icon-button relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', panelFilterCount && 'border-[var(--crm-action)] bg-[var(--crm-action-soft)] text-[var(--crm-action)]')}
+          >
+            <Icon name="filter_alt" />
+            {panelFilterCount ? <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--crm-action)] px-1 text-[9px] font-black text-white">{panelFilterCount}</span> : null}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSortMenuOpen((value) => !value); setFilterMenuOpen(false) }}
+            aria-expanded={sortMenuOpen}
+            aria-label="Sort conversations"
+            title={`Sort: ${sortOrder === 'priority' ? 'Priority first' : 'Recent activity'}`}
+            className="crm-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+          >
+            <Icon name={sortOrder === 'priority' ? 'swap_vert' : 'schedule'} />
+          </button>
+          {filterMenuOpen ? (
+            <div role="dialog" aria-label="Filter conversations" className="crm-menu absolute right-4 top-11 z-50 w-[286px] rounded-xl p-4 shadow-xl">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-black text-[var(--crm-ink)]">Filters</h2>
+                  <p className="mt-0.5 text-[10px] font-medium text-[var(--crm-text-muted)]">Narrow the shared inbox without losing its queue.</p>
+                </div>
+                {panelFilterCount ? <button type="button" onClick={clearPanelFilters} className="text-[11px] font-bold text-[var(--crm-action)] hover:underline">Clear</button> : null}
+              </div>
+              <label className="mt-4 block text-[10px] font-black uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">
+                Date range
+                <select aria-label="Conversation date range" value={dateRange} onChange={(event) => setDateRange(event.target.value as DateRangeFilter)} className="crm-field mt-1.5 h-9 w-full rounded-lg px-2 text-xs font-semibold normal-case tracking-normal">
+                  <option value="all">All time</option>
+                  <option value="today">Today</option>
+                  <option value="7_days">Last 7 days</option>
+                  <option value="30_days">Last 30 days</option>
+                  <option value="custom">Custom range</option>
+                </select>
+              </label>
+              {dateRange === 'custom' ? (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className="text-[10px] font-bold text-[var(--crm-text-muted)]">From<input aria-label="Conversation start date" type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} className="crm-field mt-1 h-9 w-full rounded-lg px-2 text-[11px]" /></label>
+                  <label className="text-[10px] font-bold text-[var(--crm-text-muted)]">To<input aria-label="Conversation end date" type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} className="crm-field mt-1 h-9 w-full rounded-lg px-2 text-[11px]" /></label>
+                </div>
+              ) : null}
+              <label className="mt-3 block text-[10px] font-black uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">
+                Reply state
+                <select aria-label="Conversation reply state" value={attentionFilter} onChange={(event) => setAttentionFilter(event.target.value as AttentionFilter)} className="crm-field mt-1.5 h-9 w-full rounded-lg px-2 text-xs font-semibold normal-case tracking-normal">
+                  <option value="all">All states</option>
+                  <option value="needs_reply">Needs reply</option>
+                  <option value="waiting_on_contact">Waiting on contact</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+              </label>
+              <label className="mt-3 block text-[10px] font-black uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">
+                Next action
+                <select aria-label="Conversation next action" value={nextActionFilter} onChange={(event) => setNextActionFilter(event.target.value as NextActionFilter)} className="crm-field mt-1.5 h-9 w-full rounded-lg px-2 text-xs font-semibold normal-case tracking-normal">
+                  <option value="all">All actions</option>
+                  <option value="overdue">Overdue only</option>
+                  <option value="missing">Missing next action</option>
+                </select>
+              </label>
+              <button type="button" onClick={() => setFilterMenuOpen(false)} className="crm-primary-button mt-4 h-9 w-full rounded-lg text-xs font-bold">Show results</button>
+            </div>
+          ) : null}
+          {sortMenuOpen ? (
+            <div role="dialog" aria-label="Sort conversations" className="crm-menu absolute right-4 top-11 z-50 w-48 overflow-hidden rounded-xl py-1 shadow-xl">
+              {([['priority', 'Priority first'], ['recent', 'Recent activity']] as const).map(([value, label]) => (
+                <button key={value} type="button" onClick={() => { setSortOrder(value); setSortMenuOpen(false) }} className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-semibold hover:bg-[var(--crm-surface-subtle)]">
+                  {label}{sortOrder === value ? <Icon name="check" className="text-[15px] text-[var(--crm-action)]" /> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
