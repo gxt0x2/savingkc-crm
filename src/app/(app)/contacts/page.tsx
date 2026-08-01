@@ -550,14 +550,14 @@ export default function ContactsPage() {
               {!isLoading && !error && pageItems.length === 0 ? <div className="p-12 text-center text-sm text-[var(--crm-text-muted)]">No contacts match these filters.</div> : null}
               {!isLoading && !error ? pageItems.map((row) => {
                 const displayName = getDisplayLeadName(row.fullName, row.phone)
-                const property = [row.address, row.city].filter(Boolean).join(', ') || 'No property linked'
+                const property = row.address || 'No property linked'
                 const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || 'Define next action'
                 const selectedRow = detailsOpen && selected?.id === row.id
                 const notLead = isNotLeadOutcome(row.classification, row.station)
                 const rowAttention = row.primaryNextAction?.overdue
                   ? 'border-l-[var(--crm-danger)]'
                   : row.attentionState === 'needs_reply'
-                    ? 'border-l-[var(--crm-warning)]'
+                    ? 'border-l-[var(--crm-brand)]'
                     : 'border-l-transparent'
                 const avatarTone = row.isFavorite || row.attentionState === 'needs_reply'
                   ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'

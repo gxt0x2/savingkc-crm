@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 const AGENT_NAMES = new Map([
   ['ernest', 'Ernest'],
   ['casey', 'Casey'],
+  ['gertha', 'Gertha'],
 ])
 
 function cleanText(value: unknown): string | null {
@@ -27,7 +28,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 })
     }
     if (assignedAgent === undefined) {
-      return NextResponse.json({ success: false, error: 'Choose Ernest, Casey, or Unassigned' }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'Choose Ernest, Casey, Gertha, or Unassigned' }, { status: 400 })
     }
 
     const db = supabaseAdmin()

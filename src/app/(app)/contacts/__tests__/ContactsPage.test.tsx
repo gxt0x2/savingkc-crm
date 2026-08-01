@@ -42,7 +42,7 @@ const baseContact = {
 }
 
 const contacts = [
-  { ...baseContact, id: 'active-new', fullName: 'Active New', station: 'new' as const, classification: 'lead' as const },
+  { ...baseContact, id: 'active-new', fullName: 'Active New', station: 'new' as const, classification: 'lead' as const, address: '6509 W 74TH ST', city: 'Overland Park', attentionState: 'needs_reply' as const },
   { ...baseContact, id: 'dead-record', fullName: 'Dead Record', station: 'dead' as const, classification: 'dead' as const, deadReason: 'dnc_refused' },
 ]
 
@@ -155,5 +155,16 @@ describe('ContactsPage smart-list workspace', () => {
     expect(within(sortMenu).getByRole('button', { name: /Priority first/ })).toBeInTheDocument()
     fireEvent.click(within(sortMenu).getByRole('button', { name: 'Recently active' }))
     expect(screen.queryByRole('dialog', { name: 'Sort contacts' })).not.toBeInTheDocument()
+  })
+
+  it('shows the city once and uses the SavingKC brand for needs-reply row attention', () => {
+    render(<ContactsPage />)
+
+    const contactRow = screen.getAllByRole('button').find((button) => button.textContent?.includes('Active New') && button.textContent.includes('6509 W 74TH ST'))
+    expect(contactRow).toBeDefined()
+    expect(contactRow?.textContent?.match(/Overland Park/g)).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Close contact details' }))
+    expect(contactRow).toHaveClass('border-l-[var(--crm-brand)]')
+    expect(contactRow).not.toHaveClass('border-l-[var(--crm-warning)]')
   })
 })

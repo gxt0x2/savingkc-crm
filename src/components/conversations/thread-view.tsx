@@ -30,7 +30,8 @@ interface DateGroup {
   messages: Message[]
 }
 
-const CONVERSATION_AGENTS = ['Ernest', 'Casey'] as const
+const CONVERSATION_AGENTS = ['Ernest', 'Casey', 'Gertha'] as const
+type ConversationAgent = (typeof CONVERSATION_AGENTS)[number]
 
 export function ThreadView({
   contact,
@@ -122,7 +123,7 @@ export function ThreadView({
     }
   }
 
-  async function assignAgent(assignedAgent: 'Ernest' | 'Casey' | null) {
+  async function assignAgent(assignedAgent: ConversationAgent | null) {
     if (!leadId || leadId.startsWith('unmatched:') || assigningAgent) return
     setAssigningAgent(true)
     setTaskError(null)

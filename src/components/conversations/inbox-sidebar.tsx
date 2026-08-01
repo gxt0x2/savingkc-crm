@@ -33,7 +33,16 @@ export interface ThreadPreview {
   } | null
 }
 
-type TabFilter = 'agent' | 'team' | 'needs_reply'
+type TabFilter = 'agent' | 'team' | 'recent' | 'starred'
+type OwnerFilter = 'casey' | 'ernest' | 'gertha' | 'team' | 'unassigned'
+
+const OWNER_FILTERS: { value: OwnerFilter; label: string }[] = [
+  { value: 'casey', label: 'Casey' },
+  { value: 'ernest', label: 'Ernest' },
+  { value: 'gertha', label: 'Gertha' },
+  { value: 'team', label: 'Team' },
+  { value: 'unassigned', label: 'Unassigned' },
+]
 
 const CHANNEL_META = {
   call: { icon: 'call', tone: 'text-[var(--crm-info)]' },
@@ -70,24 +79,25 @@ export function InboxSidebar({
   onNewMessage?: () => void
   currentUserName?: string
 }) {
-  const [activeTab, setActiveTab] = useState<TabFilter>('needs_reply')
+  const [activeTab, setActiveTab] = useState<TabFilter>('team')
   const [search, setSearch] = useState('')
   const [channel, setChannel] = useState('')
-  const [unassignedOnly, setUnassignedOnly] = useState(false)
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('team')
   const [sortOrder, setSortOrder] = useState<'priority' | 'recent'>('priority')
 
   const filteredThreads = useMemo(() => threads.filter((t) => {
     if (search && !`${t.name} ${t.address}`.toLowerCase().includes(search.toLowerCase())) return false
     if (channel && t.lastChannel !== channel) return false
-    if (unassignedOnly && t.owner) return false
+    if (ownerFilter === 'unassigned' && t.owner) return false
+    if (ownerFilter !== 'team' && ownerFilter !== 'unassigned' && !t.owner?.toLowerCase().startsWith(ownerFilter)) return false
     if (activeTab === 'agent') return Boolean(t.owner && t.owner.toLowerCase().startsWith(currentUserName.toLowerCase()))
-    if (activeTab === 'needs_reply') return t.attentionState === 'needs_reply'
+    if (activeTab === 'starred') return Boolean(t.starred)
     return true
   }).sort((a, b) => {
-    if (sortOrder === 'recent') return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    if (activeTab === 'recent' || sortOrder === 'recent') return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     const rank = (thread: ThreadPreview) => thread.attentionState === 'needs_reply' ? 0 : thread.nextAction?.overdue ? 1 : 2
     return rank(a) - rank(b)
-  }), [activeTab, channel, currentUserName, search, sortOrder, threads, unassignedOnly])
+  }), [activeTab, channel, currentUserName, ownerFilter, search, sortOrder, threads])
 
   useEffect(() => {
     if (filteredThreads.length === 0) return
@@ -97,9 +107,10 @@ export function InboxSidebar({
   }, [activeThreadId, filteredThreads, onSelectThread])
 
   const tabs: { key: TabFilter; label: string; count: number }[] = [
-    { key: 'agent', label: 'Agent', count: threads.filter((thread) => thread.owner?.toLowerCase().startsWith(currentUserName.toLowerCase())).length },
+    { key: 'agent', label: currentUserName, count: threads.filter((thread) => thread.owner?.toLowerCase().startsWith(currentUserName.toLowerCase())).length },
     { key: 'team', label: 'Team', count: threads.length },
-    { key: 'needs_reply', label: 'Needs Reply', count: threads.filter((thread) => thread.attentionState === 'needs_reply').length },
+    { key: 'recent', label: 'Recent', count: threads.length },
+    { key: 'starred', label: 'Starred', count: threads.filter((thread) => thread.starred).length },
   ]
 
   return (
@@ -118,7 +129,10 @@ export function InboxSidebar({
             <button
               key={tab.key}
               type="button"
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                setActiveTab(tab.key)
+                if (tab.key === 'agent') setOwnerFilter('team')
+              }}
               aria-pressed={activeTab === tab.key}
               className={cn(
                 'flex-1 border-b-2 px-1 py-3 text-xs transition-colors',
@@ -152,14 +166,17 @@ export function InboxSidebar({
             <option value="email">Email</option>
             <option value="voicemail">Voicemail</option>
           </select>
-          <button
-            type="button"
-            onClick={() => setUnassignedOnly((value) => !value)}
-            aria-pressed={unassignedOnly}
-            className={cn('flex h-8 items-center rounded-lg border px-3 text-[11px]', unassignedOnly ? 'border-[var(--crm-violet)]/30 bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' : 'border-[var(--crm-border)] text-[var(--crm-text-muted)]')}
+          <select
+            aria-label="Filter by assigned team member"
+            value={ownerFilter}
+            onChange={(event) => {
+              setOwnerFilter(event.target.value as OwnerFilter)
+              setActiveTab('team')
+            }}
+            className="crm-field h-8 min-w-0 flex-1 rounded-lg px-2 text-[11px]"
           >
-            Unassigned
-          </button>
+            {OWNER_FILTERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
           <button type="button" onClick={() => setSortOrder((value) => value === 'priority' ? 'recent' : 'priority')} aria-label={`Sort conversations by ${sortOrder === 'priority' ? 'recent activity' : 'priority'}`} title={`Sort: ${sortOrder}`} className="crm-icon-button ml-auto flex h-8 w-8 items-center justify-center rounded-lg"><Icon name={sortOrder === 'priority' ? 'filter_list' : 'schedule'} /></button>
         </div>
       </div>
@@ -214,7 +231,7 @@ export function InboxSidebar({
                           'px-2 py-0.5 text-[9px] rounded-full uppercase tracking-tighter',
                           thread.attentionState === 'needs_reply'
                             ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'
-                            : 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'
+                            : 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]'
                         )}
                       >
                         {thread.attentionState === 'needs_reply' ? 'Needs Reply' : 'Waiting'}

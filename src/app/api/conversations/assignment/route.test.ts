@@ -60,6 +60,15 @@ describe('conversation assignment', () => {
     }))
   })
 
+  it('assigns Gertha as an operating-team agent', async () => {
+    const response = await PATCH(request('gertha'))
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.assignedAgent).toBe('Gertha')
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ assigned_agent: 'Gertha' }))
+  })
+
   it('returns the lead to the team queue', async () => {
     const response = await PATCH(request(null))
     const payload = await response.json()
