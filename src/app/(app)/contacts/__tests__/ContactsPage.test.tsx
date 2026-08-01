@@ -12,7 +12,7 @@ vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => <a href={href} {...props}>{children}</a>,
 }))
 vi.mock('@/components/conversations/workspace-frame', () => ({
-  WorkspaceFrame: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  WorkspaceFrame: ({ children, commandBar }: { children: React.ReactNode; commandBar?: React.ReactNode }) => <div><header data-testid="shared-shell-header">{commandBar}</header>{children}</div>,
 }))
 vi.mock('@/components/leads/lead-status-control', () => ({
   LeadStatusControl: () => <div>Lead status control</div>,
@@ -83,6 +83,7 @@ describe('ContactsPage smart-list workspace', () => {
     render(<ContactsPage />)
 
     const header = screen.getByTestId('contacts-command-header')
+    expect(screen.getByTestId('shared-shell-header')).toContainElement(header)
     expect(Array.from(header.querySelectorAll('[data-header-slot]')).map((element) => element.getAttribute('data-header-slot'))).toEqual([
       'context',
       'search',

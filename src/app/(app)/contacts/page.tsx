@@ -22,6 +22,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { Icon } from '@/components/ui/icon'
 import { formatLeadSource, getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
+import { formatPhone } from '@/lib/format'
 import type { ContactSignal } from '@/lib/contact-display'
 import type { DealStage } from '@/types/pipeline'
 import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
@@ -147,14 +148,6 @@ const STAGE_TONES: Record<DealStage, string> = {
 }
 
 const EMPTY_CONTACT = { fullName: '', phone: '', email: '', address: '', city: '', state: '', zip: '', source: 'manual_crm' }
-
-function formatPhone(phone: string | null): string {
-  if (!phone) return 'No phone'
-  const digits = phone.replace(/\D/g, '')
-  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
-  if (local.length !== 10) return phone
-  return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`
-}
 
 function formatRelativeDate(value: string | null): string {
   if (!value) return 'No activity'
@@ -470,26 +463,28 @@ export default function ContactsPage() {
   const smartListCopy = CONTACT_SMART_LIST_COPY[smartList]
   const hasCustomSmartListOrder = smartListOrder.some((id, index) => id !== DEFAULT_CONTACT_SMART_LIST_ORDER[index])
 
+  const contactsCommandBar = (
+    <div data-testid="contacts-command-header" className="grid min-w-0 items-center gap-3 lg:grid-cols-[minmax(11rem,1fr)_minmax(13rem,26rem)_auto]">
+      <div data-header-slot="context" className="min-w-0">
+        <p className="crm-eyebrow">Contacts smart list</p>
+        <div className="flex items-center gap-2">
+          <h1 className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{smartListCopy.label}</h1>
+          <span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-xs font-bold text-[var(--crm-info)]">{counts[smartList]}</span>
+        </div>
+        <p className="truncate text-[11px] text-[var(--crm-text-muted)]" title={smartListCopy.description}>{smartListCopy.description}</p>
+      </div>
+      <label data-header-slot="search" className="relative min-w-0"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input aria-label="Search contacts" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-10 w-full rounded-lg pl-9 pr-3 text-sm outline-none" /></label>
+      <div data-header-slot="actions" className="flex justify-start gap-2 lg:justify-end">
+        <button type="button" onClick={() => { setDialogError(null); setDialog('import') }} className="crm-secondary-button flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold"><Icon name="upload" />Import</button>
+        <button type="button" onClick={() => { setDialogError(null); setDialog('add') }} className="crm-primary-button flex h-10 items-center gap-2 rounded-lg px-5 text-sm font-semibold"><Icon name="add" />Add contact</button>
+      </div>
+    </div>
+  )
+
   return (
-    <WorkspaceFrame needsReply={counts.needs_reply}>
+    <WorkspaceFrame needsReply={counts.needs_reply} commandBar={contactsCommandBar}>
       <main className="flex h-full min-w-0 bg-[var(--crm-canvas)]">
         <section className="min-w-0 flex-1 overflow-y-auto">
-          <header data-testid="contacts-command-header" className="crm-page-header grid items-center gap-3 border-b px-7 py-3 lg:grid-cols-[minmax(12rem,1fr)_minmax(12rem,26rem)_auto]">
-            <div data-header-slot="context" className="min-w-0">
-              <p className="crm-eyebrow mb-1">Contacts smart list</p>
-              <div className="flex items-center gap-2">
-                <h1 className="truncate text-[22px] font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{smartListCopy.label}</h1>
-                <span className="rounded-full bg-[var(--crm-surface-subtle)] px-2.5 py-1 text-xs font-bold text-[var(--crm-text-muted)]">{counts[smartList]}</span>
-              </div>
-              <p className="mt-0.5 truncate text-xs text-[var(--crm-text-muted)]" title={smartListCopy.description}>{smartListCopy.description}</p>
-            </div>
-            <label data-header-slot="search" className="relative min-w-0"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input aria-label="Search contacts" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-10 w-full rounded-lg pl-9 pr-3 text-sm outline-none" /></label>
-            <div data-header-slot="actions" className="flex justify-start gap-2 lg:justify-end">
-              <button type="button" onClick={() => { setDialogError(null); setDialog('import') }} className="crm-secondary-button flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold"><Icon name="upload" />Import</button>
-              <button type="button" onClick={() => { setDialogError(null); setDialog('add') }} className="crm-primary-button flex h-10 items-center gap-2 rounded-lg px-5 text-sm font-semibold"><Icon name="add" />Add contact</button>
-            </div>
-          </header>
-
           <div className="flex items-stretch border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
             <DndContext sensors={smartListSensors} collisionDetection={closestCenter} onDragEnd={handleSmartListDragEnd}>
               <SortableContext items={smartListOrder} strategy={horizontalListSortingStrategy}>
@@ -570,14 +565,14 @@ export default function ContactsPage() {
                     ? 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'
                     : 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
                 return (
-                  <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} aria-pressed={selectedRow} className={`grid min-w-[936px] w-full grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-l-4 border-b-[var(--crm-border)] px-3 py-4 text-left text-xs transition-colors last:border-b-0 ${selectedRow ? 'border-l-[var(--crm-brand)] bg-[var(--crm-surface-selected)]' : `${rowAttention} hover:bg-[var(--crm-surface-subtle)]`}`}>
-                    <span className="flex min-w-0 items-center gap-2.5"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[var(--crm-ink)]">{displayName}</strong><small className="text-[var(--crm-text-muted)]">{formatPhone(row.phone)}</small></span></span>
+                  <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} aria-pressed={selectedRow} className={`grid min-w-[936px] w-full grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-l-4 border-b-[var(--crm-border)] px-3 py-4 text-left text-xs transition-colors last:border-b-0 ${selectedRow ? 'border-l-[var(--crm-action)] bg-[var(--crm-action-soft)]' : `${rowAttention} hover:bg-[var(--crm-surface-subtle)]`}`}>
+                    <span className="flex min-w-0 items-center gap-2.5"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[var(--crm-ink)]">{displayName}</strong><small className="text-[var(--crm-text-muted)]">{formatPhone(row.phone) || 'No phone'}</small></span></span>
                     <span className="min-w-0"><strong className="block truncate font-medium text-[var(--crm-text)]">{property}</strong><small className="text-[var(--crm-text-dim)]">{row.city || ''}</small></span>
                     <span className="min-w-0">
                       <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>{notLead ? 'Not a lead' : 'Lead'}</span>
                       <small className={`mt-1 block truncate text-[10px] ${notLead && !row.deadReason ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}>{notLead ? deadReasonLabel(row.deadReason) || 'Reason required' : STAGE_LABELS[row.station]}</small>
                     </span>
-                    <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-warning)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>
+                    <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-action)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>
                     <span>{row.owner || 'Unassigned'}</span><span className="text-[var(--crm-text-muted)]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[var(--crm-text-muted)]">{formatLeadSource(row.source)}</span>
                   </button>
                 )
@@ -619,9 +614,9 @@ export default function ContactsPage() {
               />
             </div>
             <div className="crm-panel mt-6 rounded-xl p-4"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="trending_up" className="text-[18px] text-[var(--crm-success)]" />Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[selected.station]}`}>{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-0.5 font-black text-[var(--crm-violet)]">{selected.score} / 100</dd></div></dl></div>
-            <div className="mt-5 rounded-xl border border-[var(--crm-border-strong)] border-l-4 border-l-[var(--crm-warning)] bg-[var(--crm-warning-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-warning)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5"><Icon name="schedule" className="mt-0.5" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>
+            <div className="mt-5 rounded-xl border border-[var(--crm-action-border)] border-l-4 border-l-[var(--crm-action)] bg-[var(--crm-action-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-action)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--crm-ink)]"><Icon name="schedule" className="mt-0.5 text-[var(--crm-action)]" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>
             <div className="mt-5 border-t border-[var(--crm-border)] pt-5"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="forum" className="text-[18px] text-[var(--crm-info)]" />Recent conversation</h3><p className="mt-3 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-info-soft)] p-3 text-xs leading-5 text-[var(--crm-text)]">{selected.lastMessage || 'No recent message'}</p></div>
-            <div className="mt-6 border-t border-[var(--crm-border)] pt-5"><h3 className="text-sm font-bold">Contact details</h3><p className="mt-3 text-sm text-[var(--crm-text-muted)]">{formatPhone(selected.phone)}</p><p className="mt-2 break-all text-sm text-[var(--crm-text-muted)]">{selected.email || 'No email'}</p><p className="mt-2 text-sm text-[var(--crm-text-muted)]">Owner: {selected.owner || 'Unassigned'}</p></div>
+            <div className="mt-6 border-t border-[var(--crm-border)] pt-5"><h3 className="text-sm font-bold">Contact details</h3><p className="mt-3 text-sm text-[var(--crm-text-muted)]">{formatPhone(selected.phone) || 'No phone'}</p><p className="mt-2 break-all text-sm text-[var(--crm-text-muted)]">{selected.email || 'No email'}</p><p className="mt-2 text-sm text-[var(--crm-text-muted)]">Owner: {selected.owner || 'Unassigned'}</p></div>
             <Link href={`/leads/${selected.id}`} className="crm-primary-button mt-7 flex h-11 items-center justify-center rounded-lg text-sm font-bold">Open full workspace →</Link>
           </> : <p className="text-sm text-[var(--crm-text-dim)]">Select a contact</p>}
         </aside> : null}

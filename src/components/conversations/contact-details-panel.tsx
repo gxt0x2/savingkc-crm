@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
-import { formatPhone, toProperCase } from '@/lib/format'
-import { formatLeadSource, getAvatarLabel } from '@/lib/contact-display'
+import { formatPhone } from '@/lib/format'
+import { formatLeadSource, getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
 import type { ConversationDecisionTag } from '@/lib/operating-model/conversation-tags'
 import { LeadStatusControl } from '@/components/leads/lead-status-control'
 
@@ -69,7 +69,7 @@ export function ContactDetailsPanel({
     )
   }
 
-  const name = toProperCase(contact.full_name) || formatPhone(contact.phone)
+  const name = getDisplayLeadName(contact.full_name, contact.phone)
   const currentStage = Math.max(0, stages.findIndex((stage) => stage.toLowerCase() === contact.station?.toLowerCase()))
   const tags = contact.decision_tags ?? []
 
@@ -137,16 +137,16 @@ export function ContactDetailsPanel({
       </section>
 
       <section className="border-b border-[var(--crm-border)] p-5">
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--crm-ink)]"><Icon name="bolt" className="text-[18px] text-[var(--crm-brand)]" />Next action</h3>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--crm-ink)]"><Icon name="bolt" className="text-[18px] text-[var(--crm-action)]" />Next action</h3>
         <button
           type="button"
           onClick={onNextAction}
           disabled={!onNextAction}
           aria-label={contact.primaryNextAction ? `Edit next action: ${contact.primaryNextAction.title}` : 'Define the next action'}
-          className={`group w-full rounded-xl border-l-4 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none ${contact.primaryNextAction?.overdue ? 'border border-[var(--crm-brand-border)] border-l-[var(--crm-danger)] bg-[var(--crm-danger-soft)]' : contact.primaryNextAction ? 'border border-[var(--crm-violet)]/30 border-l-[var(--crm-violet)] bg-[var(--crm-violet-soft)]' : 'border border-[var(--crm-brand-border)] border-l-[var(--crm-brand)] bg-[var(--crm-brand-soft)]'}`}
+          className={`group w-full rounded-xl border-l-4 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none ${contact.primaryNextAction?.overdue ? 'border border-[var(--crm-brand-border)] border-l-[var(--crm-danger)] bg-[var(--crm-danger-soft)]' : 'border border-[var(--crm-action-border)] border-l-[var(--crm-action)] bg-[var(--crm-action-soft)]'}`}
         >
           <div className="flex items-start gap-2">
-            <Icon name="schedule" className={contact.primaryNextAction?.overdue ? 'text-[var(--crm-danger)]' : contact.primaryNextAction ? 'text-[var(--crm-violet)]' : 'text-[var(--crm-brand)]'} />
+            <Icon name="schedule" className={contact.primaryNextAction?.overdue ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-action)]'} />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold">{contact.primaryNextAction?.title || 'Define the next action'}</p>
               <p className="mt-1 text-xs text-slate-500">

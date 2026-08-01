@@ -45,6 +45,8 @@ function activityText(activity: ContactActivityLike): string {
 export function shouldUsePhoneAsName(name: string | null | undefined): boolean {
   const trimmed = (name || '').trim()
   if (!trimmed) return true
+  const phoneDigits = trimmed.replace(/\D/g, '')
+  if (phoneDigits.length >= 10 && /^[+().\-\s\d]+$/.test(trimmed)) return true
   return PLACEHOLDER_NAME_RE.test(trimmed)
 }
 

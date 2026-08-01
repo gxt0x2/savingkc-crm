@@ -83,6 +83,7 @@ body {
   --crm-focus: #d94a52;
   --crm-success: #0c7540;
   --crm-success-soft: #e8f5ee;
+  --crm-success-border: #8ac6a6;
   --crm-warning: #9a4b00;
   --crm-warning-soft: #fff3de;
   --crm-danger: #c8242d;
@@ -91,6 +92,9 @@ body {
   --crm-info-soft: #eaf2fb;
   --crm-violet: #6d4cb3;
   --crm-violet-soft: #f0ecfa;
+  --crm-action: #4f46d9;
+  --crm-action-soft: #eeefff;
+  --crm-action-border: #9aa4ff;
   --crm-nav: #323232;
   --crm-nav-hover: #404043;
   --crm-nav-active: #4a3b3d;
@@ -151,6 +155,7 @@ body {
   --crm-focus: #f06a72;
   --crm-success: #55c68a;
   --crm-success-soft: #203a2c;
+  --crm-success-border: #427457;
   --crm-warning: #f0ae52;
   --crm-warning-soft: #3e3221;
   --crm-danger: #f06a72;
@@ -159,6 +164,9 @@ body {
   --crm-info-soft: #223448;
   --crm-violet: #a78bde;
   --crm-violet-soft: #302a43;
+  --crm-action: #a9b0ff;
+  --crm-action-soft: #282848;
+  --crm-action-border: #565a8a;
   --crm-nav: #151618;
   --crm-nav-hover: #292c30;
   --crm-nav-active: #332629;
@@ -403,6 +411,32 @@ body {
 /* Portaled dialogs live outside `.crm-workspace-shell`, so give them the same
    theme contract from the document-level preference. */
 .crm-modal-surface {
+  --crm-canvas: #f6f7f9;
+  --crm-surface: #ffffff;
+  --crm-surface-subtle: #f1f3f5;
+  --crm-surface-raised: #ffffff;
+  --crm-border: #e1e4e8;
+  --crm-border-strong: #c9cdd3;
+  --crm-ink: #202124;
+  --crm-text: #32353a;
+  --crm-text-muted: #5f6368;
+  --crm-text-dim: #7c828a;
+  --crm-brand: #c8242d;
+  --crm-brand-hover: #aa1e26;
+  --crm-brand-soft: #fbeaec;
+  --crm-brand-border: #e9a8ad;
+  --crm-on-brand: #ffffff;
+  --crm-focus: #d94a52;
+  --crm-success: #0c7540;
+  --crm-success-soft: #e8f5ee;
+  --crm-success-border: #8ac6a6;
+  --crm-danger: #c8242d;
+  --crm-danger-soft: #fbeaec;
+  --crm-info: #2563a6;
+  --crm-info-soft: #eaf2fb;
+  --crm-action: #4f46d9;
+  --crm-action-soft: #eeefff;
+  --crm-action-border: #9aa4ff;
   --ck-bg: #f6f7f9;
   --ck-surface: #ffffff;
   --ck-surface-elev: #f1f3f5;
@@ -423,6 +457,32 @@ body {
 }
 
 html.dark .crm-modal-surface {
+  --crm-canvas: #17181a;
+  --crm-surface: #202225;
+  --crm-surface-subtle: #292c30;
+  --crm-surface-raised: #25272b;
+  --crm-border: #35383d;
+  --crm-border-strong: #4a4e54;
+  --crm-ink: #f5f7fa;
+  --crm-text: #e4e6e9;
+  --crm-text-muted: #c1c5cb;
+  --crm-text-dim: #959ba3;
+  --crm-brand: #f06a72;
+  --crm-brand-hover: #eb6068;
+  --crm-brand-soft: #44272b;
+  --crm-brand-border: #794047;
+  --crm-on-brand: #ffffff;
+  --crm-focus: #f06a72;
+  --crm-success: #55c68a;
+  --crm-success-soft: #203a2c;
+  --crm-success-border: #427457;
+  --crm-danger: #f06a72;
+  --crm-danger-soft: #44272b;
+  --crm-info: #72a9e3;
+  --crm-info-soft: #223448;
+  --crm-action: #a9b0ff;
+  --crm-action-soft: #282848;
+  --crm-action-border: #565a8a;
   --ck-bg: #17181a;
   --ck-surface: #202225;
   --ck-surface-elev: #25272b;

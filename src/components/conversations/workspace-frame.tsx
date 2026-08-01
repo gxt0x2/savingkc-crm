@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, Suspense, useEffect, useState } from 'react'
+import { FormEvent, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { useThemePreference } from '@/hooks/use-theme-preference'
@@ -11,9 +11,11 @@ import { WorkspaceContextNav } from './workspace-context-nav'
 export function WorkspaceFrame({
   children,
   needsReply,
+  commandBar,
 }: {
-  children: React.ReactNode
+  children: ReactNode
   needsReply?: number
+  commandBar?: ReactNode
 }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
@@ -50,19 +52,23 @@ export function WorkspaceFrame({
     >
       <WorkspaceNav needsReply={resolvedNeedsReply} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="crm-shell-header flex h-[62px] shrink-0 items-center border-b px-6 backdrop-blur">
-          <form onSubmit={submitSearch} className="relative w-full max-w-[610px]">
-            <span className="sr-only">Search contacts, properties, or messages</span>
-            <Icon name="search" className="absolute left-4 top-1/2 -translate-y-1/2 text-[21px] text-[var(--crm-text-muted)]" />
-            <input
-              aria-label="Search contacts, properties, or messages"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="crm-search-field h-10 w-full rounded-lg pl-12 pr-4 text-sm outline-none"
-              placeholder="Search contacts, properties, or messages..."
-            />
-          </form>
-          <div className="ml-auto flex items-center gap-5">
+        <header className={`crm-shell-header flex shrink-0 items-center gap-5 border-b px-6 backdrop-blur ${commandBar ? 'min-h-[76px] py-2' : 'h-[62px]'}`}>
+          <div className="min-w-0 flex-1">
+            {commandBar ?? (
+              <form onSubmit={submitSearch} className="relative w-full max-w-[610px]">
+                <span className="sr-only">Search contacts, properties, or messages</span>
+                <Icon name="search" className="absolute left-4 top-1/2 -translate-y-1/2 text-[21px] text-[var(--crm-text-muted)]" />
+                <input
+                  aria-label="Search contacts, properties, or messages"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="crm-search-field h-10 w-full rounded-lg pl-12 pr-4 text-sm outline-none"
+                  placeholder="Search contacts, properties, or messages..."
+                />
+              </form>
+            )}
+          </div>
+          <div className="ml-auto flex shrink-0 items-center gap-5">
             <button
               type="button"
               onClick={toggleTheme}

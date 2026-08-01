@@ -186,13 +186,13 @@ export function LeadStatusControl({
               onClick={() => setSelectedStatus('lead')}
               aria-pressed={selectedStatus === 'lead'}
               className={cn(
-                'rounded-xl border p-4 text-left transition-colors',
+                'rounded-xl border-2 p-4 text-left transition-colors',
                 selectedStatus === 'lead'
                   ? 'border-[var(--crm-success)] bg-[var(--crm-success-soft)]'
                   : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] hover:border-[var(--crm-success)]/50',
               )}
             >
-              <span className="flex items-center gap-2 font-black text-[var(--crm-success)]"><Icon name="verified" />Lead</span>
+              <span className="flex items-center justify-between gap-2 font-black text-[var(--crm-success)]"><span className="flex items-center gap-2"><Icon name="verified" />Lead</span>{selectedStatus === 'lead' ? <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--crm-success)] text-white"><Icon name="check" className="text-[16px]" /></span> : null}</span>
               <span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">A real seller relationship that should remain in the acquisition pipeline.</span>
             </button>
             <button
@@ -201,13 +201,13 @@ export function LeadStatusControl({
               onClick={() => setSelectedStatus('not_a_lead')}
               aria-pressed={selectedStatus === 'not_a_lead'}
               className={cn(
-                'rounded-xl border p-4 text-left transition-colors',
+                'rounded-xl border-2 p-4 text-left transition-colors',
                 selectedStatus === 'not_a_lead'
                   ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)]'
                   : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] hover:border-[var(--crm-brand)]/50',
               )}
             >
-              <span className="flex items-center gap-2 font-black text-[var(--crm-brand)]"><Icon name="person_off" />Not a lead</span>
+              <span className="flex items-center justify-between gap-2 font-black text-[var(--crm-brand)]"><span className="flex items-center gap-2"><Icon name="person_off" />Not a lead</span>{selectedStatus === 'not_a_lead' ? <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--crm-brand)] text-white"><Icon name="check" className="text-[16px]" /></span> : null}</span>
               <span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">Remove it from active work and record the business reason.</span>
             </button>
           </div>
