@@ -1,8 +1,25 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { Icon } from '@/components/ui/icon'
 import { formatLeadSource, getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
 import type { ContactSignal } from '@/lib/contact-display'
@@ -12,10 +29,14 @@ import { LeadStatusControl } from '@/components/leads/lead-status-control'
 import { deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
 import {
   CONTACT_SMART_LIST_COPY,
+  CONTACT_SMART_LIST_ORDER_STORAGE_KEY,
   CONTACT_SMART_LISTS,
+  DEFAULT_CONTACT_SMART_LIST_ORDER,
   contactMatchesSmartList,
   contactSmartListCounts,
+  normalizeContactSmartListOrder,
   type ContactSmartList,
+  type ContactSmartListNavigationId,
 } from '@/lib/contact-smart-lists'
 
 interface ContactRow {
@@ -215,6 +236,7 @@ function ContactSkeleton() {
 
 export default function ContactsPage() {
   const [smartList, setSmartList] = useState<ContactSmartList>('all')
+  const [smartListOrder, setSmartListOrder] = useState<ContactSmartListNavigationId[]>([...DEFAULT_CONTACT_SMART_LIST_ORDER])
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(true)
@@ -238,11 +260,17 @@ export default function ContactsPage() {
   const [toolbarMenu, setToolbarMenu] = useState<ToolbarMenu>(null)
   const { data, isLoading, error, refetch, isFetching } = useContactWorkspace()
   const items = useMemo(() => data?.items ?? [], [data])
+  const smartListSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem('savingkc-contact-views')
       if (stored) setSavedViews(JSON.parse(stored) as SavedView[])
+      const storedSmartListOrder = window.localStorage.getItem(CONTACT_SMART_LIST_ORDER_STORAGE_KEY)
+      if (storedSmartListOrder) setSmartListOrder(normalizeContactSmartListOrder(JSON.parse(storedSmartListOrder)))
     } catch { /* storage may be unavailable */ }
     const params = new URLSearchParams(window.location.search)
     const requestedSearch = params.get('search')
@@ -265,6 +293,10 @@ export default function ContactsPage() {
   }, [])
 
   const counts = useMemo(() => contactSmartListCounts(items), [items])
+  const orderedSmartLists = useMemo(() => {
+    const smartListsById = new Map(CONTACT_SMART_LISTS.map((item) => [item.id, item]))
+    return smartListOrder.map((id) => smartListsById.get(id)).filter((item): item is (typeof CONTACT_SMART_LISTS)[number] => Boolean(item))
+  }, [smartListOrder])
 
   const owners = useMemo(() => [...new Set(items.map((item) => item.owner).filter((value): value is string => Boolean(value)))].sort(), [items])
   const sources = useMemo(() => [...new Set(items.map((item) => item.source).filter((value): value is string => Boolean(value)))].sort(), [items])
@@ -331,6 +363,28 @@ export default function ContactsPage() {
     else params.set('list', nextSmartList)
     const query = params.toString()
     window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
+  }
+
+  function persistSmartListOrder(nextOrder: ContactSmartListNavigationId[]) {
+    setSmartListOrder(nextOrder)
+    try {
+      window.localStorage.setItem(CONTACT_SMART_LIST_ORDER_STORAGE_KEY, JSON.stringify(nextOrder))
+    } catch { /* storage may be unavailable */ }
+  }
+
+  function handleSmartListDragEnd(event: DragEndEvent) {
+    const activeId = event.active.id as ContactSmartListNavigationId
+    const overId = event.over?.id as ContactSmartListNavigationId | undefined
+    if (!overId || activeId === overId) return
+
+    const currentIndex = smartListOrder.indexOf(activeId)
+    const nextIndex = smartListOrder.indexOf(overId)
+    if (currentIndex === -1 || nextIndex === -1) return
+    persistSmartListOrder(arrayMove(smartListOrder, currentIndex, nextIndex))
+  }
+
+  function resetSmartListOrder() {
+    persistSmartListOrder([...DEFAULT_CONTACT_SMART_LIST_ORDER])
   }
 
   function openDialer(contact: ContactWorkspaceRow) {
@@ -414,39 +468,51 @@ export default function ContactsPage() {
   const activeFilterCount = [ownerFilter, stageFilter, minimumStageFilter, sourceFilter, tagFilter, activityFilter, attentionFilter, dataGapFilter].filter(Boolean).length
     + (['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList) ? 1 : 0)
   const smartListCopy = CONTACT_SMART_LIST_COPY[smartList]
+  const hasCustomSmartListOrder = smartListOrder.some((id, index) => id !== DEFAULT_CONTACT_SMART_LIST_ORDER[index])
 
   return (
     <WorkspaceFrame needsReply={counts.needs_reply}>
       <main className="flex h-full min-w-0 bg-[var(--crm-canvas)]">
         <section className="min-w-0 flex-1 overflow-y-auto">
-          <header className="crm-page-header flex flex-wrap items-center justify-between gap-4 border-b px-7 py-4">
-            <div className="min-w-0">
+          <header data-testid="contacts-command-header" className="crm-page-header grid items-center gap-3 border-b px-7 py-3 lg:grid-cols-[minmax(12rem,1fr)_minmax(12rem,26rem)_auto]">
+            <div data-header-slot="context" className="min-w-0">
               <p className="crm-eyebrow mb-1">Contacts smart list</p>
               <div className="flex items-center gap-2">
-                <h1 className="truncate text-[24px] font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{smartListCopy.label}</h1>
+                <h1 className="truncate text-[22px] font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{smartListCopy.label}</h1>
                 <span className="rounded-full bg-[var(--crm-surface-subtle)] px-2.5 py-1 text-xs font-bold text-[var(--crm-text-muted)]">{counts[smartList]}</span>
               </div>
-              <p className="mt-0.5 text-sm text-[var(--crm-text-muted)]">{smartListCopy.description}</p>
+              <p className="mt-0.5 truncate text-xs text-[var(--crm-text-muted)]" title={smartListCopy.description}>{smartListCopy.description}</p>
             </div>
-            <div className="flex gap-3">
+            <label data-header-slot="search" className="relative min-w-0"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input aria-label="Search contacts" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-10 w-full rounded-lg pl-9 pr-3 text-sm outline-none" /></label>
+            <div data-header-slot="actions" className="flex justify-start gap-2 lg:justify-end">
               <button type="button" onClick={() => { setDialogError(null); setDialog('import') }} className="crm-secondary-button flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold"><Icon name="upload" />Import</button>
               <button type="button" onClick={() => { setDialogError(null); setDialog('add') }} className="crm-primary-button flex h-10 items-center gap-2 rounded-lg px-5 text-sm font-semibold"><Icon name="add" />Add contact</button>
             </div>
           </header>
 
-          <div className="overflow-x-auto border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
-            <nav className="flex min-w-max gap-6" aria-label="Contact smart lists">
-              {CONTACT_SMART_LISTS.map(({ id, label }) => (
-                <button key={id} type="button" onClick={() => selectSmartList(id)} aria-current={smartList === id ? 'page' : undefined} className={`border-b-[3px] py-3 text-sm font-semibold transition-colors ${smartList === id ? SMART_LIST_TONES[id].active : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'}`}>
-                  {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${smartList === id ? SMART_LIST_TONES[id].count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{counts[id]}</span>
-                </button>
-              ))}
-            </nav>
+          <div className="flex items-stretch border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
+            <DndContext sensors={smartListSensors} collisionDetection={closestCenter} onDragEnd={handleSmartListDragEnd}>
+              <SortableContext items={smartListOrder} strategy={horizontalListSortingStrategy}>
+                <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label="Contact smart lists">
+                  {orderedSmartLists.map(({ id, label }) => (
+                    <SortableSmartListTab
+                      key={id}
+                      id={id}
+                      label={label}
+                      count={counts[id]}
+                      active={smartList === id}
+                      tone={SMART_LIST_TONES[id]}
+                      onSelect={() => selectSmartList(id)}
+                    />
+                  ))}
+                </nav>
+              </SortableContext>
+            </DndContext>
+            {hasCustomSmartListOrder ? <button type="button" onClick={resetSmartListOrder} className="ml-2 flex shrink-0 items-center gap-1 border-l border-[var(--crm-border)] px-3 text-xs font-semibold text-[var(--crm-text-muted)] hover:text-[var(--crm-brand)]" aria-label="Reset smart-list order"><Icon name="restart_alt" className="text-[16px]" />Reset order</button> : null}
           </div>
 
           <div className="px-7 py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <label className="relative min-w-52 flex-1 sm:max-w-sm"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-9 w-full rounded-lg pl-9 pr-3 text-xs outline-none" /></label>
               <div className="relative">
                 <button type="button" aria-label="Filters" onClick={() => setToolbarMenu((current) => current === 'filters' ? null : 'filters')} aria-expanded={toolbarMenu === 'filters'} aria-controls="contact-filter-panel" className={`crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${activeFilterCount ? 'border-[var(--crm-brand-border)] text-[var(--crm-brand)]' : ''}`}><Icon name="filter_alt" className="text-[16px]" />Filters{activeFilterCount ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span> : null}</button>
                 {toolbarMenu === 'filters' ? <div id="contact-filter-panel" role="dialog" aria-label="Contact filters" className="crm-panel absolute left-0 top-11 z-40 w-[min(30rem,calc(100vw-3rem))] rounded-xl p-4 shadow-xl">
@@ -577,6 +643,48 @@ export default function ContactsPage() {
         {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[var(--ck-text-muted)]">Save the current owner, stage, source, tag, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label><ModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
       </ContactModal> : null}
     </WorkspaceFrame>
+  )
+}
+
+function SortableSmartListTab({
+  id,
+  label,
+  count,
+  active,
+  tone,
+  onSelect,
+}: {
+  id: ContactSmartListNavigationId
+  label: string
+  count: number
+  active: boolean
+  tone: { active: string; count: string }
+  onSelect: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 30 : undefined,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className={`group flex shrink-0 items-center border-b-[3px] ${active ? tone.active : 'border-transparent text-[var(--crm-text-muted)]'} ${isDragging ? 'rounded-t-lg bg-[var(--crm-surface)] shadow-lg' : ''}`}>
+      <button
+        type="button"
+        {...attributes}
+        onPointerDown={(event) => listeners?.onPointerDown?.(event)}
+        onKeyDown={(event) => listeners?.onKeyDown?.(event)}
+        aria-label={`Reorder ${label} smart list`}
+        title={`Drag to reorder ${label}. Keyboard: Space, arrow keys, Space.`}
+        className="flex h-9 w-6 cursor-grab touch-none items-center justify-center rounded-md text-[var(--crm-text-dim)] opacity-60 transition hover:bg-[var(--crm-surface-subtle)] hover:text-[var(--crm-brand)] hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
+      >
+        <Icon name="drag_indicator" className="text-[15px]" />
+      </button>
+      <button type="button" onClick={onSelect} aria-label={`${label} ${count}`} aria-current={active ? 'page' : undefined} className={`py-3 pr-3 text-sm font-semibold transition-colors ${active ? '' : 'hover:text-[var(--crm-ink)]'}`}>
+        {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${active ? tone.count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{count}</span>
+      </button>
+    </div>
   )
 }
 

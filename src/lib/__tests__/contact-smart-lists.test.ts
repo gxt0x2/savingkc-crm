@@ -4,6 +4,7 @@ import {
   CONTACT_SMART_LISTS,
   contactMatchesSmartList,
   contactSmartListCounts,
+  normalizeContactSmartListOrder,
   type SmartListContact,
 } from '@/lib/contact-smart-lists'
 
@@ -32,6 +33,20 @@ describe('contact smart lists', () => {
       'In Closing',
       'All',
     ])
+  })
+
+  it('restores a saved tab order without losing new or invalid smart lists', () => {
+    expect(normalizeContactSmartListOrder(['all', 'hot', 'all', 'not_leads', 'new'])).toEqual([
+      'all',
+      'hot',
+      'new',
+      'contacted',
+      'qualified',
+      'appointment_set',
+      'offer_made',
+      'in_closing',
+    ])
+    expect(normalizeContactSmartListOrder(null)).toEqual(CONTACT_SMART_LISTS.map(({ id }) => id))
   })
 
   it('keeps Not Leads out of every active pipeline list', () => {

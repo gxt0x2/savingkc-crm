@@ -1,7 +1,7 @@
 import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import type { DealStage } from '@/types/pipeline'
 
-export type ContactSmartList =
+export type ContactSmartListNavigationId =
   | 'hot'
   | 'new'
   | 'contacted'
@@ -10,6 +10,9 @@ export type ContactSmartList =
   | 'offer_made'
   | 'in_closing'
   | 'all'
+
+export type ContactSmartList =
+  | ContactSmartListNavigationId
   | 'needs_reply'
   | 'overdue'
   | 'unassigned'
@@ -25,7 +28,7 @@ export interface SmartListContact {
   primaryNextAction: { overdue: boolean } | null
 }
 
-export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartList; label: string }> = [
+export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartListNavigationId; label: string }> = [
   { id: 'hot', label: 'Hot' },
   { id: 'new', label: 'New' },
   { id: 'contacted', label: 'Leads' },
@@ -35,6 +38,26 @@ export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartList; label: s
   { id: 'in_closing', label: 'In Closing' },
   { id: 'all', label: 'All' },
 ]
+
+export const CONTACT_SMART_LIST_ORDER_STORAGE_KEY = 'savingkc-contact-smart-list-order-v1'
+
+export const DEFAULT_CONTACT_SMART_LIST_ORDER: ReadonlyArray<ContactSmartListNavigationId> = CONTACT_SMART_LISTS.map(({ id }) => id)
+
+export function normalizeContactSmartListOrder(value: unknown): ContactSmartListNavigationId[] {
+  if (!Array.isArray(value)) return [...DEFAULT_CONTACT_SMART_LIST_ORDER]
+
+  const allowed = new Set<ContactSmartListNavigationId>(DEFAULT_CONTACT_SMART_LIST_ORDER)
+  const seen = new Set<ContactSmartListNavigationId>()
+  const requested = value.filter((id): id is ContactSmartListNavigationId => {
+    if (typeof id !== 'string' || !allowed.has(id as ContactSmartListNavigationId)) return false
+    const smartListId = id as ContactSmartListNavigationId
+    if (seen.has(smartListId)) return false
+    seen.add(smartListId)
+    return true
+  })
+
+  return [...requested, ...DEFAULT_CONTACT_SMART_LIST_ORDER.filter((id) => !seen.has(id))]
+}
 
 export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; description: string }> = {
   hot: {

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ContactsPage from '../page'
+import { CONTACT_SMART_LIST_ORDER_STORAGE_KEY } from '@/lib/contact-smart-lists'
 
 const { useQueryMock } = vi.hoisted(() => ({ useQueryMock: vi.fn() }))
 
@@ -61,7 +62,8 @@ describe('ContactsPage smart-list workspace', () => {
     render(<ContactsPage />)
 
     const navigation = screen.getByRole('navigation', { name: 'Contact smart lists' })
-    expect(within(navigation).getAllByRole('button').map((button) => button.textContent?.replace(/\d+$/, '').trim())).toEqual([
+    const smartListButtons = within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder '))
+    expect(smartListButtons.map((button) => button.textContent?.replace(/\d+$/, '').trim())).toEqual([
       'Hot',
       'New',
       'Leads',
@@ -75,6 +77,52 @@ describe('ContactsPage smart-list workspace', () => {
     expect(screen.getByText('Every active acquisition record, excluding contacts marked Not a lead.')).toBeInTheDocument()
     expect(screen.getAllByText('Active New')).toHaveLength(2)
     expect(screen.queryByText('Dead Record')).not.toBeInTheDocument()
+  })
+
+  it('places context, search, and actions together in the requested header order', () => {
+    render(<ContactsPage />)
+
+    const header = screen.getByTestId('contacts-command-header')
+    expect(Array.from(header.querySelectorAll('[data-header-slot]')).map((element) => element.getAttribute('data-header-slot'))).toEqual([
+      'context',
+      'search',
+      'actions',
+    ])
+    expect(within(header).getByRole('textbox', { name: 'Search contacts' })).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: /Import/ })).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: /Add contact/ })).toBeInTheDocument()
+  })
+
+  it('restores a customized smart-list order and provides drag handles and a reset', () => {
+    window.localStorage.setItem(CONTACT_SMART_LIST_ORDER_STORAGE_KEY, JSON.stringify(['all', 'hot', 'new']))
+    render(<ContactsPage />)
+
+    const navigation = screen.getByRole('navigation', { name: 'Contact smart lists' })
+    const smartListButtons = within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder '))
+    expect(smartListButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'All 1',
+      'Hot 0',
+      'New 1',
+      'Leads 0',
+      'Opportunities 0',
+      'Appointment Set 0',
+      'Offer Made 0',
+      'In Closing 0',
+    ])
+    expect(within(navigation).getAllByRole('button', { name: /Reorder .* smart list/ })).toHaveLength(8)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset smart-list order' }))
+    expect(within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder ')).map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Hot 0',
+      'New 1',
+      'Leads 0',
+      'Opportunities 0',
+      'Appointment Set 0',
+      'Offer Made 0',
+      'In Closing 0',
+      'All 1',
+    ])
+    expect(screen.queryByRole('button', { name: 'Reset smart-list order' })).not.toBeInTheDocument()
   })
 
   it('changes the header with the smart list and keeps filters behind one compact control', () => {
