@@ -33,7 +33,7 @@ export interface ThreadPreview {
   } | null
 }
 
-type TabFilter = 'all' | 'unread' | 'mine' | 'unassigned'
+type TabFilter = 'agent' | 'team' | 'needs_reply'
 
 const CHANNEL_META = {
   call: { icon: 'call', tone: 'text-[var(--crm-info)]' },
@@ -70,25 +70,24 @@ export function InboxSidebar({
   onNewMessage?: () => void
   currentUserName?: string
 }) {
-  const [activeTab, setActiveTab] = useState<TabFilter>('unread')
+  const [activeTab, setActiveTab] = useState<TabFilter>('needs_reply')
   const [search, setSearch] = useState('')
   const [channel, setChannel] = useState('')
-  const [needsReplyOnly, setNeedsReplyOnly] = useState(false)
+  const [unassignedOnly, setUnassignedOnly] = useState(false)
   const [sortOrder, setSortOrder] = useState<'priority' | 'recent'>('priority')
 
   const filteredThreads = useMemo(() => threads.filter((t) => {
-    if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false
+    if (search && !`${t.name} ${t.address}`.toLowerCase().includes(search.toLowerCase())) return false
     if (channel && t.lastChannel !== channel) return false
-    if (needsReplyOnly && t.attentionState !== 'needs_reply') return false
-    if (activeTab === 'unread') return t.unread
-    if (activeTab === 'mine') return Boolean(t.owner && t.owner.toLowerCase().startsWith(currentUserName.toLowerCase()))
-    if (activeTab === 'unassigned') return !t.owner
+    if (unassignedOnly && t.owner) return false
+    if (activeTab === 'agent') return Boolean(t.owner && t.owner.toLowerCase().startsWith(currentUserName.toLowerCase()))
+    if (activeTab === 'needs_reply') return t.attentionState === 'needs_reply'
     return true
   }).sort((a, b) => {
     if (sortOrder === 'recent') return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     const rank = (thread: ThreadPreview) => thread.attentionState === 'needs_reply' ? 0 : thread.nextAction?.overdue ? 1 : 2
     return rank(a) - rank(b)
-  }), [activeTab, channel, currentUserName, needsReplyOnly, search, sortOrder, threads])
+  }), [activeTab, channel, currentUserName, search, sortOrder, threads, unassignedOnly])
 
   useEffect(() => {
     if (filteredThreads.length === 0) return
@@ -98,10 +97,9 @@ export function InboxSidebar({
   }, [activeThreadId, filteredThreads, onSelectThread])
 
   const tabs: { key: TabFilter; label: string; count: number }[] = [
-    { key: 'unread', label: 'Inbox', count: threads.filter((thread) => thread.unread).length },
-    { key: 'mine', label: 'Mine', count: threads.filter((thread) => thread.owner?.toLowerCase().startsWith(currentUserName.toLowerCase())).length },
-    { key: 'unassigned', label: 'Unassigned', count: threads.filter((thread) => !thread.owner).length },
-    { key: 'all', label: 'All', count: threads.length },
+    { key: 'agent', label: 'Agent', count: threads.filter((thread) => thread.owner?.toLowerCase().startsWith(currentUserName.toLowerCase())).length },
+    { key: 'team', label: 'Team', count: threads.length },
+    { key: 'needs_reply', label: 'Needs Reply', count: threads.filter((thread) => thread.attentionState === 'needs_reply').length },
   ]
 
   return (
@@ -156,11 +154,11 @@ export function InboxSidebar({
           </select>
           <button
             type="button"
-            onClick={() => setNeedsReplyOnly((value) => !value)}
-            aria-pressed={needsReplyOnly}
-            className={cn('flex h-8 items-center rounded-lg border px-3 text-[11px]', needsReplyOnly ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)] text-[var(--crm-text-muted)]')}
+            onClick={() => setUnassignedOnly((value) => !value)}
+            aria-pressed={unassignedOnly}
+            className={cn('flex h-8 items-center rounded-lg border px-3 text-[11px]', unassignedOnly ? 'border-[var(--crm-violet)]/30 bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' : 'border-[var(--crm-border)] text-[var(--crm-text-muted)]')}
           >
-            Needs reply
+            Unassigned
           </button>
           <button type="button" onClick={() => setSortOrder((value) => value === 'priority' ? 'recent' : 'priority')} aria-label={`Sort conversations by ${sortOrder === 'priority' ? 'recent activity' : 'priority'}`} title={`Sort: ${sortOrder}`} className="crm-icon-button ml-auto flex h-8 w-8 items-center justify-center rounded-lg"><Icon name={sortOrder === 'priority' ? 'filter_list' : 'schedule'} /></button>
         </div>
@@ -219,7 +217,7 @@ export function InboxSidebar({
                             : 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'
                         )}
                       >
-                        {thread.attentionState === 'needs_reply' ? 'Needs reply' : 'Waiting'}
+                        {thread.attentionState === 'needs_reply' ? 'Needs Reply' : 'Waiting'}
                       </span>
                     )}
                     {thread.personality && (

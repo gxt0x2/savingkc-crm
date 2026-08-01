@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ComposeBox } from './compose-box'
 import { ContactDetailsPanel } from './contact-details-panel'
 import { InboxSidebar, type ThreadPreview } from './inbox-sidebar'
+import { NextActionDialog } from './next-action-dialog'
 import { ThreadView } from './thread-view'
 
 const baseThread: ThreadPreview = {
@@ -50,7 +51,7 @@ describe('rebuilt conversation workspace controls', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('treats Mine as the signed-in operator instead of every assigned conversation', () => {
+  it('uses Agent, Team, and Needs Reply as the primary work queues', () => {
     render(<InboxSidebar
       threads={[
         baseThread,
@@ -61,7 +62,13 @@ describe('rebuilt conversation workspace controls', () => {
       currentUserName="Ernest"
     />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Mine 1/ }))
+    expect(screen.getByRole('button', { name: /Agent 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Team 2/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Needs Reply 2/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Inbox/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Mine/ })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Agent 1/ }))
     expect(screen.getByText('Marcus Johnson')).toBeInTheDocument()
     expect(screen.queryByText('Sheila Brooks')).not.toBeInTheDocument()
   })
@@ -128,7 +135,7 @@ describe('rebuilt conversation workspace controls', () => {
     expect(header).not.toBeNull()
     expect(within(header!).getByText('Agent · Unassigned')).toBeInTheDocument()
     expect(within(header!).getByText('Team · Acquisitions')).toBeInTheDocument()
-    expect(within(header!).getByText('Needs reply')).toBeInTheDocument()
+    expect(within(header!).getByText('Needs Reply')).toBeInTheDocument()
     expect(header!.textContent?.match(/816/g)).toHaveLength(1)
   })
 
@@ -151,5 +158,83 @@ describe('rebuilt conversation workspace controls', () => {
     expect(screen.getByText('Risk ·')).toBeInTheDocument()
     expect(screen.getByText('Tax delinquent')).toBeInTheDocument()
     expect(screen.queryByText(/Inbound Ivr No Input/i)).not.toBeInTheDocument()
+  })
+
+  it('assigns a conversation from the Agent control', async () => {
+    const onConversationChanged = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, assignedAgent: 'Casey' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ThreadView
+      contact={{
+        name: 'Marcus Johnson',
+        initials: 'MJ',
+        assignedAgent: null,
+        team: 'Acquisitions',
+        attentionState: 'needs_reply',
+        owner: null,
+        nextAction: null,
+      }}
+      dateGroups={[]}
+      leadId="lead-1"
+      phone="+18165550198"
+      onConversationChanged={onConversationChanged}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign agent. Current: Unassigned' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign to Casey' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/conversations/assignment', expect.objectContaining({ method: 'PATCH' })))
+    await waitFor(() => expect(onConversationChanged).toHaveBeenCalledOnce())
+  })
+
+  it('makes the next-action card a real control', () => {
+    const onNextAction = vi.fn()
+    render(<ContactDetailsPanel contact={{
+      id: 'lead-1',
+      full_name: 'Marcus Johnson',
+      phone: '+18165550198',
+      email: null,
+      property_address: null,
+      city: null,
+      station: 'new',
+      priority: 'normal',
+      assigned_agent: 'Ernest',
+    }} onNextAction={onNextAction} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Define the next action' }))
+    expect(onNextAction).toHaveBeenCalledOnce()
+  })
+
+  it('creates a primary next action from the conversation dialog', async () => {
+    const onSaved = vi.fn()
+    const onClose = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, taskId: 'task-1' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<NextActionDialog
+      leadId="lead-1"
+      leadName="Marcus Johnson"
+      action={null}
+      defaultOwner="Ernest"
+      onClose={onClose}
+      onSaved={onSaved}
+    />)
+
+    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'Call seller with offer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create action' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/calendar/tasks', expect.objectContaining({
+      method: 'POST',
+      body: expect.stringContaining('"primaryNextAction":true'),
+    })))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
+    expect(onClose).toHaveBeenCalledOnce()
   })
 })

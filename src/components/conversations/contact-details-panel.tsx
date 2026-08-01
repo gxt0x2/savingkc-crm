@@ -50,9 +50,11 @@ const TAG_TONE = {
 export function ContactDetailsPanel({
   contact,
   onClose,
+  onNextAction,
 }: {
   contact: ContactDetails | null
   onClose?: () => void
+  onNextAction?: () => void
 }) {
   if (!contact) {
     return (
@@ -119,17 +121,24 @@ export function ContactDetailsPanel({
 
       <section className="border-b border-[var(--crm-border)] p-5">
         <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--crm-ink)]"><Icon name="bolt" className="text-[18px] text-[var(--crm-brand)]" />Next action</h3>
-        <div className={`rounded-xl border-l-4 p-3 ${contact.primaryNextAction?.overdue ? 'border border-[var(--crm-brand-border)] border-l-[var(--crm-danger)] bg-[var(--crm-danger-soft)]' : contact.primaryNextAction ? 'border border-[var(--crm-violet)]/30 border-l-[var(--crm-violet)] bg-[var(--crm-violet-soft)]' : 'border border-[var(--crm-brand-border)] border-l-[var(--crm-brand)] bg-[var(--crm-brand-soft)]'}`}>
+        <button
+          type="button"
+          onClick={onNextAction}
+          disabled={!onNextAction}
+          aria-label={contact.primaryNextAction ? `Edit next action: ${contact.primaryNextAction.title}` : 'Define the next action'}
+          className={`group w-full rounded-xl border-l-4 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none ${contact.primaryNextAction?.overdue ? 'border border-[var(--crm-brand-border)] border-l-[var(--crm-danger)] bg-[var(--crm-danger-soft)]' : contact.primaryNextAction ? 'border border-[var(--crm-violet)]/30 border-l-[var(--crm-violet)] bg-[var(--crm-violet-soft)]' : 'border border-[var(--crm-brand-border)] border-l-[var(--crm-brand)] bg-[var(--crm-brand-soft)]'}`}
+        >
           <div className="flex items-start gap-2">
             <Icon name="schedule" className={contact.primaryNextAction?.overdue ? 'text-[var(--crm-danger)]' : contact.primaryNextAction ? 'text-[var(--crm-violet)]' : 'text-[var(--crm-brand)]'} />
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold">{contact.primaryNextAction?.title || 'Define the next action'}</p>
               <p className="mt-1 text-xs text-slate-500">
                 {contact.primaryNextAction?.dueAt ? new Date(contact.primaryNextAction.dueAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'No due date'}
               </p>
             </div>
+            <Icon name="chevron_right" className="mt-0.5 text-[18px] text-[var(--crm-text-muted)] transition-transform group-hover:translate-x-0.5" />
           </div>
-        </div>
+        </button>
       </section>
 
       {contact.appointment_date ? (

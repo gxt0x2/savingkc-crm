@@ -6,6 +6,7 @@ import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inb
 import { ThreadView } from '@/components/conversations/thread-view'
 import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
 import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
+import { NextActionDialog } from '@/components/conversations/next-action-dialog'
 import type { Message } from '@/components/conversations/message-bubble'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
@@ -194,6 +195,7 @@ export default function ConversationsPage() {
   const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [contactDetailsOpen, setContactDetailsOpen] = useState(true)
+  const [nextActionDialogOpen, setNextActionDialogOpen] = useState(false)
   const [initialComposeMode] = useState<'sms' | 'email' | 'note'>(() => {
     if (typeof window === 'undefined') return 'sms'
     const requestedMode = new URLSearchParams(window.location.search).get('compose')
@@ -581,7 +583,24 @@ export default function ConversationsPage() {
         />
       </div>
 
-      {contactDetailsOpen ? <ContactDetailsPanel contact={activeLead || null} onClose={() => setContactDetailsOpen(false)} /> : null}
+      {contactDetailsOpen ? (
+        <ContactDetailsPanel
+          contact={activeLead || null}
+          onClose={() => setContactDetailsOpen(false)}
+          onNextAction={activeLead && !activeLead.id.startsWith('unmatched:') ? () => setNextActionDialogOpen(true) : undefined}
+        />
+      ) : null}
+
+      {nextActionDialogOpen && activeLead && !activeLead.id.startsWith('unmatched:') ? (
+        <NextActionDialog
+          leadId={activeLead.id}
+          leadName={getDisplayLeadName(activeLead.full_name, activeLead.phone)}
+          action={activeLead.primaryNextAction || null}
+          defaultOwner={activeLead.assigned_agent || activeLead.owner || null}
+          onClose={() => setNextActionDialogOpen(false)}
+          onSaved={refreshConversation}
+        />
+      ) : null}
 
       {/* Toast notifications */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
