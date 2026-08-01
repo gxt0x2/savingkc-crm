@@ -10,6 +10,13 @@ import type { DealStage } from '@/types/pipeline'
 import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
 import { LeadStatusControl } from '@/components/leads/lead-status-control'
 import { deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
+import {
+  CONTACT_SMART_LIST_COPY,
+  CONTACT_SMART_LISTS,
+  contactMatchesSmartList,
+  contactSmartListCounts,
+  type ContactSmartList,
+} from '@/lib/contact-smart-lists'
 
 interface ContactRow {
   id: string
@@ -50,9 +57,9 @@ interface ContactWorkspaceRow extends ContactRow {
   primaryNextAction: HubThread['primaryNextAction']
 }
 
-type SmartList = 'all' | 'needs_reply' | 'overdue' | 'unassigned' | 'hot' | 'new' | 'not_leads'
 type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
 type ContactDialog = 'add' | 'import' | 'view' | null
+type ToolbarMenu = 'filters' | 'sort' | null
 
 interface SavedView {
   id: string
@@ -88,12 +95,17 @@ const STAGE_RANK: Record<DealStage, number> = {
   dead: -1,
 }
 
-const SMART_LISTS = new Set<SmartList>(['all', 'needs_reply', 'overdue', 'unassigned', 'hot', 'new', 'not_leads'])
+const SMART_LISTS = new Set<ContactSmartList>(Object.keys(CONTACT_SMART_LIST_COPY) as ContactSmartList[])
 const DATA_GAPS = new Set<DataGap>(['', 'missing_phone', 'missing_email', 'missing_next_action'])
 
-const SMART_LIST_TONES: Record<SmartList, { active: string; count: string }> = {
+const SMART_LIST_TONES: Record<ContactSmartList, { active: string; count: string }> = {
   all: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
   new: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
+  contacted: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
+  qualified: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' },
+  appointment_set: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
+  offer_made: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' },
+  in_closing: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' },
   needs_reply: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
   overdue: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' },
   hot: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
@@ -202,7 +214,7 @@ function ContactSkeleton() {
 }
 
 export default function ContactsPage() {
-  const [smartList, setSmartList] = useState<SmartList>('all')
+  const [smartList, setSmartList] = useState<ContactSmartList>('all')
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(true)
@@ -223,6 +235,7 @@ export default function ContactsPage() {
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([])
   const [saving, setSaving] = useState(false)
   const [dialogError, setDialogError] = useState<string | null>(null)
+  const [toolbarMenu, setToolbarMenu] = useState<ToolbarMenu>(null)
   const { data, isLoading, error, refetch, isFetching } = useContactWorkspace()
   const items = useMemo(() => data?.items ?? [], [data])
 
@@ -234,7 +247,7 @@ export default function ContactsPage() {
     const params = new URLSearchParams(window.location.search)
     const requestedSearch = params.get('search')
     if (requestedSearch) setSearch(requestedSearch)
-    const requestedList = params.get('list') as SmartList | null
+    const requestedList = params.get('list') as ContactSmartList | null
     if (requestedList && SMART_LISTS.has(requestedList)) setSmartList(requestedList)
     const requestedStage = params.get('stage')
     if (requestedStage && requestedStage in STAGE_LABELS) setStageFilter(requestedStage)
@@ -251,15 +264,7 @@ export default function ContactsPage() {
     if (requestedAttention && ['needs_reply', 'waiting_on_contact', 'resolved'].includes(requestedAttention)) setAttentionFilter(requestedAttention)
   }, [])
 
-  const counts = useMemo<Record<SmartList, number>>(() => ({
-    all: items.length,
-    needs_reply: items.filter((item) => item.attentionState === 'needs_reply').length,
-    overdue: items.filter((item) => item.primaryNextAction?.overdue).length,
-    unassigned: items.filter((item) => !item.owner).length,
-    hot: items.filter((item) => item.score >= 75 || item.isFavorite).length,
-    new: items.filter((item) => item.station === 'new').length,
-    not_leads: items.filter((item) => isNotLeadOutcome(item.classification, item.station)).length,
-  }), [items])
+  const counts = useMemo(() => contactSmartListCounts(items), [items])
 
   const owners = useMemo(() => [...new Set(items.map((item) => item.owner).filter((value): value is string => Boolean(value)))].sort(), [items])
   const sources = useMemo(() => [...new Set(items.map((item) => item.source).filter((value): value is string => Boolean(value)))].sort(), [items])
@@ -268,12 +273,7 @@ export default function ContactsPage() {
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return items.filter((item) => {
-      if (smartList === 'needs_reply' && item.attentionState !== 'needs_reply') return false
-      if (smartList === 'overdue' && !item.primaryNextAction?.overdue) return false
-      if (smartList === 'unassigned' && item.owner) return false
-      if (smartList === 'hot' && item.score < 75 && !item.isFavorite) return false
-      if (smartList === 'new' && item.station !== 'new') return false
-      if (smartList === 'not_leads' && !isNotLeadOutcome(item.classification, item.station)) return false
+      if (!contactMatchesSmartList(item, smartList)) return false
       if (ownerFilter === '__unassigned' ? item.owner : ownerFilter && item.owner !== ownerFilter) return false
       if (stageFilter && item.station !== stageFilter) return false
       if (minimumStageFilter && STAGE_RANK[item.station] < STAGE_RANK[minimumStageFilter as DealStage]) return false
@@ -312,7 +312,7 @@ export default function ContactsPage() {
   const selected = items.find((item) => item.id === selectedId) ?? pageItems[0] ?? null
 
   function clearFilters() {
-    setSmartList('all')
+    selectSmartList('all')
     setOwnerFilter('')
     setStageFilter('')
     setMinimumStageFilter('')
@@ -321,6 +321,16 @@ export default function ContactsPage() {
     setActivityFilter('')
     setAttentionFilter('')
     setDataGapFilter('')
+  }
+
+  function selectSmartList(nextSmartList: ContactSmartList) {
+    setSmartList(nextSmartList)
+    setToolbarMenu(null)
+    const params = new URLSearchParams(window.location.search)
+    if (nextSmartList === 'all') params.delete('list')
+    else params.set('list', nextSmartList)
+    const query = params.toString()
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
   }
 
   function openDialer(contact: ContactWorkspaceRow) {
@@ -391,7 +401,7 @@ export default function ContactsPage() {
   }
 
   function applyView(view: SavedView) {
-    setSmartList('all')
+    selectSmartList('all')
     setOwnerFilter(view.owner)
     setStageFilter(view.stage)
     setSourceFilter(view.source)
@@ -400,13 +410,23 @@ export default function ContactsPage() {
   }
 
   const hasFilters = smartList !== 'all' || ownerFilter || stageFilter || minimumStageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter || dataGapFilter
+  const activeFilterCount = [ownerFilter, stageFilter, minimumStageFilter, sourceFilter, tagFilter, activityFilter, attentionFilter, dataGapFilter].filter(Boolean).length
+    + (['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList) ? 1 : 0)
+  const smartListCopy = CONTACT_SMART_LIST_COPY[smartList]
 
   return (
     <WorkspaceFrame needsReply={counts.needs_reply}>
       <main className="flex h-full min-w-0 bg-[var(--crm-canvas)]">
         <section className="min-w-0 flex-1 overflow-y-auto">
-          <header className="crm-page-header flex flex-wrap items-center justify-between gap-4 border-b px-8 py-6">
-            <div><p className="crm-eyebrow mb-1">Relationship intelligence</p><h1 className="text-[26px] font-bold tracking-[-0.02em] text-[var(--crm-ink)]">Contacts</h1><p className="mt-1 text-sm text-[var(--crm-text-muted)]">People, property, ownership, and next action in one searchable workspace</p></div>
+          <header className="crm-page-header flex flex-wrap items-center justify-between gap-4 border-b px-7 py-4">
+            <div className="min-w-0">
+              <p className="crm-eyebrow mb-1">Contacts smart list</p>
+              <div className="flex items-center gap-2">
+                <h1 className="truncate text-[24px] font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{smartListCopy.label}</h1>
+                <span className="rounded-full bg-[var(--crm-surface-subtle)] px-2.5 py-1 text-xs font-bold text-[var(--crm-text-muted)]">{counts[smartList]}</span>
+              </div>
+              <p className="mt-0.5 text-sm text-[var(--crm-text-muted)]">{smartListCopy.description}</p>
+            </div>
             <div className="flex gap-3">
               <button type="button" onClick={() => { setDialogError(null); setDialog('import') }} className="crm-secondary-button flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold"><Icon name="upload" />Import</button>
               <button type="button" onClick={() => { setDialogError(null); setDialog('add') }} className="crm-primary-button flex h-10 items-center gap-2 rounded-lg px-5 text-sm font-semibold"><Icon name="add" />Add contact</button>
@@ -414,44 +434,52 @@ export default function ContactsPage() {
           </header>
 
           <div className="overflow-x-auto border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
-            <nav className="flex min-w-max gap-7">
-              {([
-                ['all', 'All Contacts', counts.all],
-                ['new', 'New Leads', counts.new],
-                ['needs_reply', 'Needs Follow-up', counts.needs_reply],
-                ['hot', 'Hot Opportunities', counts.hot],
-                ['unassigned', 'Unassigned', counts.unassigned],
-                ['not_leads', 'Not Leads', counts.not_leads],
-              ] as [SmartList, string, number][]).map(([id, label, count]) => (
-                <button key={id} type="button" onClick={() => setSmartList(id)} className={`border-b-[3px] py-4 text-sm font-semibold transition-colors ${smartList === id ? SMART_LIST_TONES[id].active : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'}`}>
-                  {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${smartList === id ? SMART_LIST_TONES[id].count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{count}</span>
+            <nav className="flex min-w-max gap-6" aria-label="Contact smart lists">
+              {CONTACT_SMART_LISTS.map(({ id, label }) => (
+                <button key={id} type="button" onClick={() => selectSmartList(id)} aria-current={smartList === id ? 'page' : undefined} className={`border-b-[3px] py-3 text-sm font-semibold transition-colors ${smartList === id ? SMART_LIST_TONES[id].active : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'}`}>
+                  {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${smartList === id ? SMART_LIST_TONES[id].count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{counts[id]}</span>
                 </button>
               ))}
-              {savedViews.map((view) => <button type="button" key={view.id} onClick={() => applyView(view)} className="border-b-2 border-transparent py-4 text-sm font-semibold text-[var(--crm-text)] hover:text-[var(--crm-brand)]">{view.label}</button>)}
-              <button type="button" onClick={() => setDialog('view')} className="py-4 text-sm font-semibold text-[var(--crm-text)] hover:text-[var(--crm-brand)]">＋ New view</button>
             </nav>
           </div>
 
-          <div className="px-7 py-5">
+          <div className="px-7 py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <label className="relative w-52"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-9 w-full rounded-lg pl-9 pr-3 text-xs outline-none" /></label>
-              <FilterSelect label="Owner" value={ownerFilter} onChange={setOwnerFilter} options={[['__unassigned', 'Unassigned'], ...owners.map((value) => [value, value] as [string, string])]} />
-              <FilterSelect label="Stage" value={stageFilter} onChange={setStageFilter} options={Object.entries(STAGE_LABELS)} />
-              <FilterSelect label="Minimum stage" value={minimumStageFilter} onChange={setMinimumStageFilter} options={Object.entries(STAGE_LABELS).filter(([value]) => STAGE_RANK[value as DealStage] >= 0)} />
-              <FilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter} options={sources.map((value) => [value, formatLeadSource(value)])} />
-              <FilterSelect label="Tags" value={tagFilter} onChange={setTagFilter} options={tags.map((value) => [value, value])} />
-              <FilterSelect label="Last activity" value={activityFilter} onChange={setActivityFilter} options={[['day', 'Past 24 hours'], ['week', 'Past 7 days'], ['stale', 'More than 7 days'], ['none', 'No activity']]} />
-              <FilterSelect label="Data quality" value={dataGapFilter} onChange={(value) => setDataGapFilter(value as DataGap)} options={[['missing_phone', 'Missing phone'], ['missing_email', 'Missing email'], ['missing_next_action', 'Missing next action']]} />
-              <FilterSelect label="More filters" value={attentionFilter} onChange={setAttentionFilter} options={[['needs_reply', 'Needs reply'], ['waiting_on_contact', 'Waiting on contact'], ['resolved', 'Resolved']]} />
-              <select aria-label="Sort contacts" value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)} className="crm-field ml-auto h-9 rounded-lg px-3 text-xs font-semibold"><option value="priority">Priority first</option><option value="recent">Recently active</option><option value="name">Name A–Z</option></select>
-              <button type="button" onClick={() => void refetch()} aria-label="Refresh contacts" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
-            </div>
-            <div className="mt-4 flex items-center gap-3">
-              {hasFilters ? <button type="button" onClick={clearFilters} className="rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear filters ×</button> : null}
-              <span className="text-sm text-[var(--crm-text-muted)]">{visible.length} results</span>
+              <label className="relative min-w-52 flex-1 sm:max-w-sm"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-9 w-full rounded-lg pl-9 pr-3 text-xs outline-none" /></label>
+              <div className="relative">
+                <button type="button" aria-label="Filters" onClick={() => setToolbarMenu((current) => current === 'filters' ? null : 'filters')} aria-expanded={toolbarMenu === 'filters'} aria-controls="contact-filter-panel" className={`crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${activeFilterCount ? 'border-[var(--crm-brand-border)] text-[var(--crm-brand)]' : ''}`}><Icon name="filter_alt" className="text-[16px]" />Filters{activeFilterCount ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span> : null}</button>
+                {toolbarMenu === 'filters' ? <div id="contact-filter-panel" role="dialog" aria-label="Contact filters" className="crm-panel absolute left-0 top-11 z-40 w-[min(30rem,calc(100vw-3rem))] rounded-xl p-4 shadow-xl">
+                  <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold text-[var(--crm-ink)]">Filters</h2><p className="text-xs text-[var(--crm-text-muted)]">Narrow the active smart list without losing table space.</p></div><button type="button" onClick={() => setToolbarMenu(null)} aria-label="Close filters" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="close" /></button></div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <FilterSelect label="Lead status" value={smartList === 'not_leads' ? 'not_leads' : ''} onChange={(value) => selectSmartList(value === 'not_leads' ? 'not_leads' : 'all')} options={[["not_leads", "Not a lead"]]} />
+                    <FilterSelect label="Owner" value={ownerFilter} onChange={setOwnerFilter} options={[["__unassigned", "Unassigned"], ...owners.map((value) => [value, value] as [string, string])]} />
+                    <FilterSelect label="Stage" value={stageFilter} onChange={setStageFilter} options={Object.entries(STAGE_LABELS)} />
+                    <FilterSelect label="Minimum stage" value={minimumStageFilter} onChange={setMinimumStageFilter} options={Object.entries(STAGE_LABELS).filter(([value]) => STAGE_RANK[value as DealStage] >= 0)} />
+                    <FilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter} options={sources.map((value) => [value, formatLeadSource(value)])} />
+                    <FilterSelect label="Tags" value={tagFilter} onChange={setTagFilter} options={tags.map((value) => [value, value])} />
+                    <FilterSelect label="Last activity" value={activityFilter} onChange={setActivityFilter} options={[["day", "Past 24 hours"], ["week", "Past 7 days"], ["stale", "More than 7 days"], ["none", "No activity"]]} />
+                    <FilterSelect label="Data quality" value={dataGapFilter} onChange={(value) => setDataGapFilter(value as DataGap)} options={[["missing_phone", "Missing phone"], ["missing_email", "Missing email"], ["missing_next_action", "Missing next action"]]} />
+                    <FilterSelect label="Conversation state" value={attentionFilter} onChange={setAttentionFilter} options={[["needs_reply", "Needs reply"], ["waiting_on_contact", "Waiting on contact"], ["resolved", "Resolved"]]} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--crm-border)] pt-3">
+                    {savedViews.map((view) => <button type="button" key={view.id} onClick={() => applyView(view)} className="rounded-full border border-[var(--crm-border)] px-3 py-1.5 text-xs font-semibold hover:border-[var(--crm-brand-border)] hover:text-[var(--crm-brand)]">{view.label}</button>)}
+                    <button type="button" onClick={() => { setToolbarMenu(null); setDialog('view') }} className="rounded-full border border-dashed border-[var(--crm-border-strong)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-text-muted)] hover:text-[var(--crm-brand)]">+ Save current view</button>
+                    {hasFilters ? <button type="button" onClick={clearFilters} className="ml-auto text-xs font-bold text-[var(--crm-brand)] hover:underline">Clear all</button> : null}
+                  </div>
+                </div> : null}
+              </div>
+              <div className="relative">
+                <button type="button" aria-label="Sort" onClick={() => setToolbarMenu((current) => current === 'sort' ? null : 'sort')} aria-expanded={toolbarMenu === 'sort'} aria-controls="contact-sort-panel" className="crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold"><Icon name="swap_vert" className="text-[16px]" />Sort</button>
+                {toolbarMenu === 'sort' ? <div id="contact-sort-panel" role="dialog" aria-label="Sort contacts" className="crm-panel absolute left-0 top-11 z-40 w-56 rounded-xl p-2 shadow-xl">
+                  {([['priority', 'Priority first'], ['recent', 'Recently active'], ['name', 'Name A–Z']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortBy(value); setToolbarMenu(null) }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${sortBy === value ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'}`}>{label}{sortBy === value ? <Icon name="check" className="text-[16px]" /> : null}</button>)}
+                </div> : null}
+              </div>
+              <button type="button" onClick={() => void refetch()} aria-label="Refresh contacts" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-full"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
+              {hasFilters ? <button type="button" onClick={clearFilters} className="rounded-full border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear ×</button> : null}
+              <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{visible.length} results</span>
             </div>
 
-            <div className="crm-panel mt-5 overflow-x-auto rounded-xl">
+            <div className="crm-panel mt-3 overflow-x-auto rounded-xl">
               <div className="crm-table-header grid min-w-[936px] grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] border-b px-3 py-3 text-[11px] font-bold uppercase tracking-[0.06em]">
                 <span>Contact</span><span>Property</span><span>Status</span><span>Next Action</span><span>Owner</span><span>Last Activity</span><span>Source</span>
               </div>
@@ -552,7 +580,7 @@ export default function ContactsPage() {
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: [string, string][] }) {
-  return <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className={`h-9 rounded-lg border px-3 text-xs font-semibold ${value ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'crm-field'}`}><option value="">{label}</option>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select>
+  return <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className={`h-9 w-full rounded-lg border px-3 text-xs font-semibold ${value ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'crm-field'}`}><option value="">{label}</option>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select>
 }
 
 function ContactModal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
