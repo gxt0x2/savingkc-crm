@@ -64,8 +64,8 @@ body {
   --crm-surface: #ffffff;
   --crm-surface-subtle: #f1f3f5;
   --crm-surface-raised: #ffffff;
-  --crm-surface-hover: #f8edef;
-  --crm-surface-selected: #fbeaec;
+  --crm-surface-hover: #f4f5fb;
+  --crm-surface-selected: #eeefff;
   --crm-border: #e1e4e8;
   --crm-border-strong: #c9cdd3;
   --crm-ink: #202124;
@@ -136,8 +136,8 @@ body {
   --crm-surface: #202225;
   --crm-surface-subtle: #292c30;
   --crm-surface-raised: #25272b;
-  --crm-surface-hover: #332629;
-  --crm-surface-selected: #40272b;
+  --crm-surface-hover: #242638;
+  --crm-surface-selected: #282848;
   --crm-border: #35383d;
   --crm-border-strong: #4a4e54;
   --crm-ink: #f5f7fa;
