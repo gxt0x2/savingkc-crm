@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEAD_REASONS, cleanDeadReason, deadReasonLabel, isValidDeadReason } from './lead-outcomes'
+import { DEAD_REASONS, cleanDeadReason, deadReasonLabel, isNotLeadOutcome, isValidDeadReason } from './lead-outcomes'
 
 describe('lead outcome dead reasons', () => {
   it('accepts business-wide dead reason ids', () => {
@@ -27,5 +27,13 @@ describe('lead outcome dead reasons', () => {
   it('keeps the visible list to the eleven approved outcomes', () => {
     expect(DEAD_REASONS).toHaveLength(11)
     expect(DEAD_REASONS.map((reason) => reason.label)).toContain('Other — see notes')
+  })
+
+  it('lets the operating stage overrule stale AI classification', () => {
+    expect(isNotLeadOutcome('dead', 'under_contract')).toBe(false)
+    expect(isNotLeadOutcome('dead', 'closed_won')).toBe(false)
+    expect(isNotLeadOutcome('lead', 'dead')).toBe(true)
+    expect(isNotLeadOutcome(null, 'closed_lost')).toBe(true)
+    expect(isNotLeadOutcome('dead', null)).toBe(true)
   })
 })

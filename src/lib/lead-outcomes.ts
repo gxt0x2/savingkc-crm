@@ -77,5 +77,10 @@ export function isNotLeadOutcome(
 ): boolean {
   const normalizedClassification = classification?.trim().toLowerCase()
   const normalizedStation = station?.trim().toLowerCase()
-  return normalizedClassification === 'dead' || ['dead', 'closed_lost'].includes(normalizedStation ?? '')
+  // Stage is the operational source of truth. Historical AI scoring sometimes
+  // left classification=dead on records that later advanced to qualified,
+  // under contract, or closed won; that stale score must never overrule the
+  // active workflow. Classification is only a fallback for unstaged imports.
+  if (normalizedStation) return ['dead', 'closed_lost'].includes(normalizedStation)
+  return normalizedClassification === 'dead'
 }

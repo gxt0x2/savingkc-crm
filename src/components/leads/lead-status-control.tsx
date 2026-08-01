@@ -62,7 +62,7 @@ export function LeadStatusControl({
   }
 
   const dialogRef = useDialogAccessibility<HTMLDivElement>(open, closeDialog, leadButtonRef)
-  const visibleReason = currentlyNotLead ? deadReasonLabel(deadReason) || 'Reason missing' : null
+  const visibleReason = currentlyNotLead ? deadReasonLabel(deadReason) || 'Reason required' : null
 
   async function saveLeadStatus() {
     if (saving) return
