@@ -409,7 +409,8 @@ export default function ContactsPage() {
     setAttentionFilter(view.attention)
   }
 
-  const hasFilters = smartList !== 'all' || ownerFilter || stageFilter || minimumStageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter || dataGapFilter
+  const hasFilters = Boolean(ownerFilter || stageFilter || minimumStageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter || dataGapFilter)
+    || ['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList)
   const activeFilterCount = [ownerFilter, stageFilter, minimumStageFilter, sourceFilter, tagFilter, activityFilter, attentionFilter, dataGapFilter].filter(Boolean).length
     + (['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList) ? 1 : 0)
   const smartListCopy = CONTACT_SMART_LIST_COPY[smartList]

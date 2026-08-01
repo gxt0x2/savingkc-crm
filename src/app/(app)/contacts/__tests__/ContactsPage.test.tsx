@@ -84,6 +84,7 @@ describe('ContactsPage smart-list workspace', () => {
     expect(screen.getByRole('heading', { name: 'New' })).toBeInTheDocument()
     expect(screen.getByText('New seller inquiries awaiting qualification and first contact.')).toBeInTheDocument()
     expect(window.location.search).toBe('?list=new')
+    expect(screen.queryByRole('button', { name: 'Clear ×' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
     const filters = screen.getByRole('dialog', { name: 'Contact filters' })
