@@ -12,6 +12,9 @@ export interface OperatingLead {
   priority: string | null
   assigned_agent: string | null
   opportunity_score: number | null
+  motivation_score?: number | null
+  arv?: number | null
+  offer_amount?: number | null
   is_favorite: boolean | null
   phone: string | null
   email: string | null
@@ -67,11 +70,23 @@ export interface OperatingOffer {
 
 export interface OperatingBuyer {
   id: string
+  first_name?: string | null
+  last_name?: string | null
+  company_name?: string | null
   status: string | null
   tier: string | null
   deals_closed: number | null
+  avg_close_days?: number | null
   last_deal_date: string | null
   created_at: string
+}
+
+export interface OperatingGoalSet {
+  monthlyRevenue: number | null
+  monthlyClosings: number | null
+  dailyCalls: number | null
+  weeklyQualified: number | null
+  weeklyAppointments: number | null
 }
 
 export interface OperatingMoneyRow {
@@ -99,7 +114,13 @@ export interface OperatingReportInput {
   buyers: OperatingBuyer[]
   revenue: OperatingMoneyRow[]
   expenses: OperatingMoneyRow[]
+  goals?: OperatingGoalSet
   availability: Record<string, boolean>
+}
+
+export interface OperatingTrendPoint {
+  label: string
+  value: number
 }
 
 const COMMUNICATION_TYPES = new Set([
@@ -164,6 +185,53 @@ function latestFirst<T extends { date: string }>(left: T, right: T): number {
   return new Date(right.date).getTime() - new Date(left.date).getTime()
 }
 
+function reportStart(input: OperatingReportInput): number {
+  const configured = timestamp(input.since)
+  if (configured !== null) return configured
+  const candidates = [
+    ...input.leads.map((row) => timestamp(row.created_at)),
+    ...input.activities.map((row) => timestamp(row.created_at)),
+    ...input.appointments.map((row) => timestamp(row.scheduled_at ?? row.created_at)),
+    ...input.deals.map((row) => timestamp(row.entered_at ?? row.created_at)),
+    ...input.revenue.map((row) => timestamp(row.date)),
+    ...input.expenses.map((row) => timestamp(row.date)),
+  ].filter((value): value is number => value !== null)
+  return candidates.length > 0 ? Math.min(...candidates) : new Date(input.until).getTime() - 30 * 86_400_000
+}
+
+function trendSeries<T>(
+  rows: T[],
+  input: OperatingReportInput,
+  dateFor: (row: T) => string | null | undefined,
+  valueFor: (row: T) => number = () => 1,
+): OperatingTrendPoint[] {
+  const start = reportStart(input)
+  const end = new Date(input.until).getTime()
+  const span = Math.max(end - start, 1)
+  const bucketCount = 12
+  const width = span / bucketCount
+  const values = Array.from({ length: bucketCount }, () => 0)
+  for (const row of rows) {
+    const rowTime = timestamp(dateFor(row))
+    if (rowTime === null || rowTime < start || rowTime > end) continue
+    const bucket = Math.min(Math.floor((rowTime - start) / width), bucketCount - 1)
+    values[bucket] += valueFor(row)
+  }
+  return values.map((value, index) => {
+    const point = new Date(start + (index + 0.5) * width)
+    return {
+      label: point.toLocaleDateString('en-US', span > 120 * 86_400_000 ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' }),
+      value: Math.round(value * 100) / 100,
+    }
+  })
+}
+
+function scoredAverage(values: Array<number | null>): number | null {
+  const present = values.filter((value): value is number => value !== null)
+  if (present.length === 0) return null
+  return Math.round(present.reduce((sum, value) => sum + value, 0) / present.length)
+}
+
 export function buildOperatingReport(input: OperatingReportInput) {
   const referenceLeads = input.referenceLeads ?? input.leads
   const activitiesByLead = new Map<string, OperatingActivity[]>()
@@ -191,6 +259,24 @@ export function buildOperatingReport(input: OperatingReportInput) {
     }
   })
   const acquisitions = buildAcquisitionsReport(contacts, input.threads, new Date(input.until))
+  const acquisitionAgentGroups = new Map<string, { leads: number; qualified: number; appointments: number; contracts: number }>()
+  for (const lead of input.leads) {
+    const rawOwner = lead.assigned_agent?.trim() || 'Unassigned'
+    const ownerKey = rawOwner.toLocaleLowerCase()
+    const owner = ({ casey: 'Casey', ernest: 'Ernest', gertha: 'Gertha', team: 'Team', unassigned: 'Unassigned' } as Record<string, string>)[ownerKey]
+      ?? rawOwner.replace(/\b\w/g, (character) => character.toUpperCase())
+    const row = acquisitionAgentGroups.get(owner) ?? { leads: 0, qualified: 0, appointments: 0, contracts: 0 }
+    const stage = lead.station ?? 'new'
+    const rank = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won'].indexOf(stage)
+    row.leads += 1
+    if (rank >= 2) row.qualified += 1
+    if (rank >= 3) row.appointments += 1
+    if (rank >= 5) row.contracts += 1
+    acquisitionAgentGroups.set(owner, row)
+  }
+  const acquisitionAgents = [...acquisitionAgentGroups.entries()]
+    .map(([agent, row]) => ({ agent, ...row, qualificationRate: percentage(row.qualified, row.leads), contractRate: percentage(row.contracts, row.leads) }))
+    .sort((left, right) => right.contracts - left.contracts || right.qualified - left.qualified || right.leads - left.leads)
 
   const appointmentStatuses = new Map<string, number>()
   for (const appointment of input.appointments) {
@@ -249,21 +335,79 @@ export function buildOperatingReport(input: OperatingReportInput) {
   }
   const repeatBuyerClosings = [...buyerClosingCounts.values()].filter((count) => count > 1).reduce((sum, count) => sum + count, 0)
   const debriefOutstanding = closedDeals.filter((deal) => deal.debrief_completed_at == null && deal.closeout_status !== 'complete').length
+  const buyerById = new Map(input.buyers.map((buyer) => [buyer.id, buyer]))
   const recentClosings = closedDeals
     .map((deal) => {
       const lead = referenceLeads.find((item) => item.id === deal.lead_id)
+      const buyer = deal.accepted_buyer_id ? buyerById.get(deal.accepted_buyer_id) : null
+      const buyerName = buyer
+        ? buyer.company_name?.trim() || [buyer.first_name, buyer.last_name].filter(Boolean).join(' ').trim() || 'Buyer record'
+        : 'Not recorded'
       return {
         id: deal.id,
         leadId: deal.lead_id,
         property: lead?.property_address || lead?.full_name || 'Contact record',
         city: lead?.city ?? null,
         assignmentFee: number(deal.assignment_fee),
+        buyer: buyerName,
         closeDate: deal.close_date,
         debriefComplete: Boolean(deal.debrief_completed_at || deal.closeout_status === 'complete'),
       }
     })
     .sort((left, right) => (timestamp(right.closeDate) ?? 0) - (timestamp(left.closeDate) ?? 0))
     .slice(0, 8)
+
+  const offersByLead = new Map<string, OperatingOffer[]>()
+  for (const offer of input.offers) {
+    offersByLead.set(offer.lead_id, [...(offersByLead.get(offer.lead_id) ?? []), offer])
+  }
+  const reportUntil = new Date(input.until).getTime()
+  const offerManagement = activeDeals
+    .map((deal) => {
+      const lead = referenceLeads.find((item) => item.id === deal.lead_id)
+      const offers = offersByLead.get(deal.lead_id) ?? []
+      const acceptedOffer = offers.find((offer) => offer.id === deal.accepted_offer_id) ?? offers.find((offer) => offer.status === 'accepted')
+      const entered = timestamp(deal.entered_at)
+      return {
+        id: deal.id,
+        leadId: deal.lead_id,
+        property: lead?.property_address || lead?.full_name || 'Contact record',
+        city: lead?.city ?? null,
+        offers: offers.length,
+        highestOffer: offers.length > 0 ? Math.max(...offers.map((offer) => number(offer.offer_amount))) : null,
+        bestOffer: acceptedOffer ? number(acceptedOffer.offer_amount) : null,
+        daysOnMarket: entered === null ? null : Math.max(0, Math.floor((reportUntil - entered) / 86_400_000)),
+        stage: deal.stage,
+      }
+    })
+    .sort((left, right) => right.offers - left.offers || (right.daysOnMarket ?? 0) - (left.daysOnMarket ?? 0))
+    .slice(0, 8)
+
+  const activeBuyers = input.buyers.filter((buyer) => buyer.status == null || buyer.status === 'active')
+  const repeatBuyers = input.buyers.filter((buyer) => number(buyer.deals_closed) > 1)
+  const vipBuyers = input.buyers.filter((buyer) => buyer.tier?.toLowerCase() === 'vip')
+  const inactiveBuyers = input.buyers.filter((buyer) => buyer.status != null && buyer.status !== 'active')
+  const offeredBuyerIds = new Set(input.offers.map((offer) => offer.buyer_id))
+  const acceptedBuyerIds = new Set(input.offers.filter((offer) => offer.status === 'accepted').map((offer) => offer.buyer_id))
+  const closedBuyerIds = new Set(closedDeals.map((deal) => deal.accepted_buyer_id).filter((id): id is string => Boolean(id)))
+  const buyerFunnel = [
+    { key: 'active', label: 'Active buyers', value: activeBuyers.length },
+    { key: 'offered', label: 'Submitted offer', value: offeredBuyerIds.size },
+    { key: 'accepted', label: 'Offer accepted', value: acceptedBuyerIds.size },
+    { key: 'closed', label: 'Closed buyer', value: closedBuyerIds.size },
+  ]
+  const offersPerProperty = input.deals.length > 0 ? Math.round((input.offers.length / input.deals.length) * 10) / 10 : null
+  const closeRate = percentage(closedDeals.length, input.deals.filter((deal) => deal.stage !== 'dead').length)
+  const offerCoverage = percentage(activeDeals.length - noOfferDeals.length, activeDeals.length)
+  const debriefCompletion = percentage(closedDeals.length - debriefOutstanding, closedDeals.length)
+  const buyerActivity = percentage(offeredBuyerIds.size, activeBuyers.length)
+  const healthScore = scoredAverage([closeRate, offerCoverage, debriefCompletion, buyerActivity])
+  const speedScore = average(dispositionDays) == null ? null : Math.max(0, Math.min(100, Math.round(100 - average(dispositionDays)! * 8)))
+  const buyerDemandScore = scoredAverage([
+    offersPerProperty == null ? null : Math.min(100, Math.round(offersPerProperty * 20)),
+    buyerActivity,
+    speedScore,
+  ])
 
   const revenueByLead = new Map<string, number>()
   for (const row of input.revenue) {
@@ -332,6 +476,30 @@ export function buildOperatingReport(input: OperatingReportInput) {
       : 'No lead-source records were created in this period.',
   ]
 
+  const activeLeadRows = input.leads.filter((lead) => !['closed_won', 'closed_lost', 'dead'].includes(lead.station ?? 'new'))
+  const pipelineOfferValues = activeLeadRows.flatMap((lead) => lead.offer_amount == null ? [] : [number(lead.offer_amount)])
+  const pipelineOfferValue = pipelineOfferValues.length > 0 ? pipelineOfferValues.reduce((sum, value) => sum + value, 0) : null
+  const assignedLeads = input.leads.filter((lead) => Boolean(lead.assigned_agent?.trim())).length
+  const stageAtLeast = (lead: OperatingLead, stage: string) => {
+    const stages = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won']
+    const rank = stages.indexOf(lead.station ?? 'new')
+    const target = stages.indexOf(stage)
+    return rank >= target && target >= 0
+  }
+  const trends = {
+    revenue: trendSeries(input.revenue, input, (row) => row.date, (row) => number(row.amount)),
+    leads: trendSeries(input.leads, input, (row) => row.created_at),
+    assigned: trendSeries(input.leads.filter((lead) => Boolean(lead.assigned_agent?.trim())), input, (row) => row.created_at),
+    qualified: trendSeries(input.leads.filter((lead) => stageAtLeast(lead, 'qualified')), input, (row) => row.created_at),
+    underContract: trendSeries(input.leads.filter((lead) => stageAtLeast(lead, 'under_contract')), input, (row) => row.created_at),
+    closings: trendSeries(closedDeals, input, (row) => row.close_date),
+    appointments: trendSeries(input.appointments, input, (row) => row.scheduled_at ?? row.created_at),
+    calls: trendSeries(calls, input, (row) => row.created_at),
+    sms: trendSeries(sms, input, (row) => row.created_at),
+    offers: trendSeries(input.offers, input, (row) => row.submitted_at ?? row.created_at),
+    expenses: trendSeries(input.expenses, input, (row) => row.date, (row) => number(row.amount)),
+  }
+
   return {
     generatedAt: input.until,
     period: { key: input.period, since: input.since, until: input.until },
@@ -341,7 +509,9 @@ export function buildOperatingReport(input: OperatingReportInput) {
       expenses,
       netRevenue,
       activePipeline: acquisitions.active,
+      pipelineOfferValue,
       leads: acquisitions.total,
+      assigned: assignedLeads,
       qualified: acquisitions.qualified,
       underContract: acquisitions.contracts,
       closed: acquisitions.closed,
@@ -349,6 +519,7 @@ export function buildOperatingReport(input: OperatingReportInput) {
     },
     acquisitions: {
       ...acquisitions,
+      agents: acquisitionAgents,
       appointmentsRecorded: input.appointments.length,
       attendedAppointments,
       noShowAppointments,
@@ -359,16 +530,25 @@ export function buildOperatingReport(input: OperatingReportInput) {
       activeDeals: activeDeals.length,
       closedDeals: closedDeals.length,
       offers: input.offers.length,
-      offersPerProperty: input.deals.length > 0 ? Math.round((input.offers.length / input.deals.length) * 10) / 10 : null,
+      offersPerProperty,
       averageDaysToBuyer: average(dispositionDays) == null ? null : Math.round(average(dispositionDays)! * 10) / 10,
       assignmentRevenue: assignmentFees.reduce((sum, fee) => sum + fee, 0),
       averageAssignmentFee: average(assignmentFees) == null ? null : Math.round(average(assignmentFees)!),
-      closeRate: percentage(closedDeals.length, input.deals.filter((deal) => deal.stage !== 'dead').length),
-      activeBuyers: input.buyers.filter((buyer) => buyer.status == null || buyer.status === 'active').length,
+      closeRate,
+      healthScore,
+      buyerDemandScore,
+      offerCoverage,
+      debriefCompletion,
+      activeBuyers: activeBuyers.length,
+      repeatBuyers: repeatBuyers.length,
+      vipBuyers: vipBuyers.length,
+      inactiveBuyers: inactiveBuyers.length,
       repeatBuyerClosings,
       debriefOutstanding,
       stages: Object.entries(input.deals.reduce<Record<string, number>>((acc, deal) => ({ ...acc, [deal.stage]: (acc[deal.stage] ?? 0) + 1 }), {})),
       recentClosings,
+      offerManagement,
+      buyerFunnel,
     },
     finance: {
       grossRevenue,
@@ -391,6 +571,14 @@ export function buildOperatingReport(input: OperatingReportInput) {
       voicemail: input.activities.filter((activity) => activity.activity_type === 'voicemail').length,
       agents,
     },
+    goals: input.goals ?? {
+      monthlyRevenue: null,
+      monthlyClosings: null,
+      dailyCalls: null,
+      weeklyQualified: null,
+      weeklyAppointments: null,
+    },
+    trends,
     bottlenecks,
     insights,
   }

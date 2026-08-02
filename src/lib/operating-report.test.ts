@@ -73,4 +73,28 @@ describe('buildOperatingReport', () => {
       expect.objectContaining({ agent: 'Casey', calls: 1, connected: 1, sms: 1 }),
     ])
   })
+
+  it('builds dashboard trends, configured goals, agent ownership, and offer management from recorded rows', () => {
+    const base = input()
+    const report = buildOperatingReport({
+      ...base,
+      leads: base.leads.map((lead, index) => ({ ...lead, assigned_agent: index === 0 ? 'Ernest' : null, offer_amount: index === 0 ? 112_000 : null })),
+      deals: [
+        ...base.deals,
+        { id: 'deal-2', lead_id: 'lead-2', stage: 'marketing', entered_at: '2026-07-20T12:00:00.000Z', assignment_fee: null, close_date: null, accepted_buyer_id: null, created_at: '2026-07-20T12:00:00.000Z', updated_at: '2026-07-20T12:00:00.000Z' },
+      ],
+      offers: [
+        ...base.offers,
+        { id: 'offer-2', lead_id: 'lead-2', buyer_id: 'buyer-1', offer_amount: 145_000, close_days: 12, status: 'submitted', submitted_at: '2026-07-21T12:00:00.000Z', decided_at: null, created_at: '2026-07-21T12:00:00.000Z' },
+      ],
+      goals: { monthlyRevenue: 15_000, monthlyClosings: 2, dailyCalls: 50, weeklyQualified: 5, weeklyAppointments: 2 },
+    })
+
+    expect(report.trends.leads).toHaveLength(12)
+    expect(report.trends.leads.reduce((sum, point) => sum + point.value, 0)).toBe(2)
+    expect(report.core).toMatchObject({ assigned: 1, pipelineOfferValue: 112_000 })
+    expect(report.acquisitions.agents[0]).toMatchObject({ agent: 'Ernest', leads: 1, contracts: 1 })
+    expect(report.dispositions.offerManagement[0]).toMatchObject({ leadId: 'lead-2', offers: 1, highestOffer: 145_000 })
+    expect(report.goals.monthlyRevenue).toBe(15_000)
+  })
 })
