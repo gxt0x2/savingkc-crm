@@ -1,57 +1,50 @@
 import { expect, test } from '@playwright/test'
 
+import { buildOperatingReport } from '../../src/lib/operating-report'
+
 test.use({
   extraHTTPHeaders: {
     'x-skc-test-auth-bypass': 'playwright-smoke-bypass',
   },
 })
 
-test('dashboard bottleneck calculator smoke', async ({ page }) => {
-  await page.route('**/api/contacts**', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [] }) })
+const report = buildOperatingReport({
+  period: '30d',
+  since: '2026-07-03T00:00:00.000Z',
+  until: '2026-08-02T18:00:00.000Z',
+  leads: [
+    { id: 'lead-1', full_name: 'Seller One', property_address: '1 Main St', city: 'Kansas City', source: 'google_ads', station: 'qualified', priority: 'hot', assigned_agent: 'Ernest', opportunity_score: 82, is_favorite: false, phone: '+18165550100', email: 'one@example.com', created_at: '2026-07-10T12:00:00.000Z' },
+  ],
+  referenceLeads: [],
+  threads: [],
+  activities: [],
+  appointments: [],
+  deals: [],
+  offers: [],
+  buyers: [],
+  revenue: [],
+  expenses: [],
+  availability: { leads: true, conversations: true, appointments: true, dispositions: true, offers: true, buyers: true, finance: true, activityComplete: true },
+})
+
+test('CEO operating dashboard and report drill-down smoke', async ({ page }) => {
+  await page.route('**/api/reports/operating**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(report) })
   })
-  await page.route('**/api/conversations/hub**', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [] }) })
-  })
+
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
-  await page.getByText('Open model', { exact: true }).click()
 
-  const calculator = page.getByTestId('bottleneck-calculator')
-  await expect(calculator.getByRole('heading', { name: 'Left Main Bottleneck Calculator' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'CEO Operating System' })).toBeVisible()
+  const metrics = page.getByRole('region', { name: 'Company operating metrics' })
+  await expect(metrics.getByText('Revenue', { exact: true })).toBeVisible()
+  await expect(metrics.getByText('Qualified', { exact: true })).toBeVisible()
+  await expect(metrics.getByText('Leads', { exact: true })).toBeVisible()
 
-  const current = page.getByTestId('scenario-current')
-  const optimized = page.getByTestId('scenario-optimized')
+  const period = page.getByRole('combobox', { name: 'Reporting period' })
+  await period.selectOption('quarter')
+  await expect(period).toHaveValue('quarter')
 
-  await expect(current.getByLabel('Current State total leads')).toHaveValue('100')
-  await expect(optimized.getByLabel('Optimized State total leads')).toHaveValue('100')
-  await expect(current.getByText('$17,280')).toBeVisible()
-  await expect(optimized.getByText('$30,720')).toBeVisible()
-
-  await current.getByLabel('Lead Qualification rate').fill('35')
-  await current.getByLabel('Lead Qualification rate').blur()
-  await expect(current.getByText('$20,160')).toBeVisible()
-  await expect(optimized.getByText('+14%')).toBeVisible()
-
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  await expect(page.getByTestId('scenario-current').getByLabel('Lead Qualification rate')).toHaveValue('30')
-  await expect(page.getByTestId('scenario-current').getByText('$17,280')).toBeVisible()
-
-  const reloadedCurrent = page.getByTestId('scenario-current')
-  await reloadedCurrent.getByLabel('Current State average deal margin').fill('50000')
-  await reloadedCurrent.getByLabel('Current State average deal margin').blur()
-  await expect(reloadedCurrent.getByText('$86,400')).toBeVisible()
-
-  for (const label of [
-    'Lead Qualification rate',
-    'Opportunity to Appointment rate',
-    'Opportunity to Contract rate',
-    'Contract to Assignment rate',
-    'Assignment to Closing rate',
-  ]) {
-    await reloadedCurrent.getByLabel(label).fill('0')
-    await reloadedCurrent.getByLabel(label).blur()
-  }
-
-  await expect(reloadedCurrent.getByText('$0')).toBeVisible()
-  await expect(page.getByText(/^NaN$/)).toHaveCount(0)
+  await metrics.getByRole('link', { name: /Revenue/ }).click()
+  await expect(page).toHaveURL(/\/reports\/finance$/)
+  await expect(page.getByRole('heading', { name: 'Financial performance' })).toBeVisible()
 })
