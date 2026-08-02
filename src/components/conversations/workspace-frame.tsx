@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { FormEvent, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
+import { GlobalDialerButton } from '@/components/telephony/global-dialer-button'
 import { useThemePreference } from '@/hooks/use-theme-preference'
 import { WorkspaceNav } from './workspace-nav'
 import { WorkspaceContextNav } from './workspace-context-nav'
@@ -71,6 +72,7 @@ export function WorkspaceFrame({
             )}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-5">
+            <GlobalDialerButton />
             <button
               type="button"
               onClick={toggleTheme}

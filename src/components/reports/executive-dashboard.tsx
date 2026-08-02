@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 
+import { GlobalDialerButton } from '@/components/telephony/global-dialer-button'
 import { Icon } from '@/components/ui/icon'
 import { useThemePreference } from '@/hooks/use-theme-preference'
 import { formatLeadSource } from '@/lib/contact-display'
@@ -71,6 +72,7 @@ export function ExecutiveDashboard({
             <Link href="/ari" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 text-[10px] font-bold shadow-[var(--crm-shadow-sm)] hover:border-[var(--crm-violet)]">
               <Icon name="auto_awesome" className="text-[17px] text-[var(--crm-violet)]" /> Ask AI Assistant
             </Link>
+            <GlobalDialerButton compact />
             <button type="button" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg">
               <Icon name={theme === 'dark' ? 'light_mode' : 'dark_mode'} className="text-[18px]" />
             </button>

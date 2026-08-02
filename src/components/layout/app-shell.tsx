@@ -190,6 +190,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setShowDialer(true)
       }
     }
+    function handleOpenGlobalDialer() {
+      setPendingDialLead(null)
+      setPendingQueue(null)
+      setPendingQueueCallerId(null)
+      setPendingQueueCallerPlan(null)
+      setPendingQueueAutoDial(false)
+      setPendingQueueRingCount(null)
+      setShowDialer(true)
+    }
     function handleOpenDialerQueue(e: Event) {
       const detail = (e as CustomEvent).detail
       if (Array.isArray(detail?.queue) && detail.queue.length > 0) {
@@ -204,9 +213,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     }
     window.addEventListener('open-dialer', handleOpenDialer)
+    window.addEventListener('open-global-dialer', handleOpenGlobalDialer)
     window.addEventListener('open-dialer-queue', handleOpenDialerQueue)
     return () => {
       window.removeEventListener('open-dialer', handleOpenDialer)
+      window.removeEventListener('open-global-dialer', handleOpenGlobalDialer)
       window.removeEventListener('open-dialer-queue', handleOpenDialerQueue)
     }
   }, [])
