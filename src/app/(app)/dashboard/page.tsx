@@ -1,11 +1,5 @@
-import { Suspense } from 'react'
+import { OperatingReportsWorkspace } from '@/components/reports/operating-reports-workspace'
 
-import { AcquisitionsReportsWorkspace } from './components/AcquisitionsReportsWorkspace'
-
-export default function ReportsPage() {
-  return (
-    <Suspense fallback={<div className="p-8 text-sm font-semibold text-[var(--crm-text-muted)]">Loading reports...</div>}>
-      <AcquisitionsReportsWorkspace />
-    </Suspense>
-  )
+export default function DashboardPage() {
+  return <OperatingReportsWorkspace view="dashboard" />
 }

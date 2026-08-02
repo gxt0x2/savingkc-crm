@@ -58,14 +58,13 @@ const GROUPS: ContextGroup[] = [
   },
   {
     label: 'Reports',
-    pathPrefix: '/dashboard',
+    pathPrefix: '/reports',
     items: [
-      { label: 'Overview', href: '/dashboard?view=overview', icon: 'space_dashboard', section: 'overview' },
-      { label: 'Acquisitions', href: '/dashboard?view=acquisitions', icon: 'track_changes', section: 'acquisitions' },
-      { label: 'Agent performance', href: '/dashboard?view=agents', icon: 'support_agent', section: 'agents' },
-      { label: 'Marketing', href: '/dashboard?view=marketing', icon: 'campaign', section: 'marketing' },
-      { label: 'Dispositions', href: '/dashboard?view=dispositions', icon: 'sell', section: 'dispositions' },
-      { label: 'Data quality', href: '/dashboard?view=data-quality', icon: 'fact_check', section: 'data-quality' },
+      { label: 'Marketing', href: '/reports/marketing', icon: 'campaign', matchPath: '/reports/marketing' },
+      { label: 'Acquisitions', href: '/reports/acquisitions', icon: 'track_changes', matchPath: '/reports/acquisitions' },
+      { label: 'Dispositions', href: '/reports/dispositions', icon: 'sell', matchPath: '/reports/dispositions' },
+      { label: 'Finance', href: '/reports/finance', icon: 'account_balance', matchPath: '/reports/finance' },
+      { label: 'Call/SMS', href: '/reports/call-sms', icon: 'phone_in_talk', matchPath: '/reports/call-sms' },
     ],
   },
 ]
@@ -79,7 +78,7 @@ export function WorkspaceContextNav() {
 
   const selectedSection = group.pathPrefix === '/dialer'
     ? searchParams.get('section') || 'overview'
-    : searchParams.get('view') || (group.pathPrefix === '/dashboard' ? 'acquisitions' : '')
+    : searchParams.get('view') || ''
 
   return (
     <div className="shrink-0 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 sm:px-6">

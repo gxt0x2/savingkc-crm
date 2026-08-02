@@ -88,6 +88,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/contacts') ?? false) ||
     (pathname?.startsWith('/leads') ?? false) ||
     (pathname?.startsWith('/workflows') ?? false) ||
+    (pathname?.startsWith('/tasks') ?? false) ||
+    (pathname?.startsWith('/reports') ?? false) ||
+    (pathname?.startsWith('/ari') ?? false) ||
     (pathname?.startsWith('/opportunities') ?? false) ||
     (pathname?.startsWith('/dialer') ?? false) ||
     isAcquisitionsCalendar ||

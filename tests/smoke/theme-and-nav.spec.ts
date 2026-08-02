@@ -7,10 +7,17 @@ const crmWorkspaceRoutes = [
   '/conversations',
   '/opportunities',
   '/calendar?department=acquisitions',
+  '/tasks',
   '/workflows',
   '/marketing',
   '/dispo/pipeline',
   '/dashboard',
+  '/reports/marketing',
+  '/reports/acquisitions',
+  '/reports/dispositions',
+  '/reports/finance',
+  '/reports/call-sms',
+  '/ari',
   '/settings',
 ];
 const artifactDir = path.join(process.cwd(), 'test-results', 'smoke');
@@ -60,19 +67,31 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
   await expect(page.locator('.crm-workspace-shell')).toBeVisible();
 
   const expectedLinks = new Map([
-    ['Conversations', '/conversations'],
+    ['Dashboard', '/dashboard'],
     ['Contacts', '/contacts'],
-    ['Calendar & Tasks', '/calendar?department=acquisitions'],
+    ['Conversations', '/conversations'],
+    ['Calendar', '/calendar?department=acquisitions'],
+    ['Task', '/tasks'],
+    ['ARI Insights', '/ari'],
     ['Workflows', '/workflows'],
-    ['Marketing', '/marketing'],
-    ['Dispositions', '/dispo/pipeline'],
-    ['Reports', '/dashboard'],
     ['Settings', '/settings'],
   ]);
 
   for (const [name, href] of expectedLinks) {
     const destination = page.locator(`a[href="${href}"]`).filter({ hasText: name });
     await expect(destination).toBeVisible();
+  }
+
+  await page.getByRole('button', { name: 'Reports' }).click();
+  const reportLinks = new Map([
+    ['Marketing', '/reports/marketing'],
+    ['Acquisitions', '/reports/acquisitions'],
+    ['Dispositions', '/reports/dispositions'],
+    ['Finance', '/reports/finance'],
+    ['Call/SMS', '/reports/call-sms'],
+  ]);
+  for (const [name, href] of reportLinks) {
+    await expect(page.locator(`a[href="${href}"]`).filter({ hasText: name })).toBeVisible();
   }
 
   await expect(page.locator('a[href="#"]')).toHaveCount(0);
@@ -94,7 +113,7 @@ for (const route of crmWorkspaceRoutes) {
     await expect(commandSearch).toBeVisible();
     await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
     await expect(page.locator('a[href="/contacts"]').filter({ hasText: 'Contacts' })).toBeVisible();
-    await expect(page.locator('a[href="/dispo/pipeline"]').filter({ hasText: 'Dispositions' })).toBeVisible();
+    await expect(page.locator('a[href="/dashboard"]').filter({ hasText: 'Dashboard' })).toBeVisible();
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
     await page.screenshot({
