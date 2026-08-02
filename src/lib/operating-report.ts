@@ -295,6 +295,7 @@ export function buildOperatingReport(input: OperatingReportInput) {
   const connectedCalls = calls.filter(isConnectedCall).length
   const inboundSms = sms.filter(isInbound).length
   const outboundSms = sms.filter(isOutbound).length
+  const unclassifiedSms = sms.filter((activity) => !isInbound(activity) && !isOutbound(activity)).length
   const agentMap = new Map<string, { calls: number; connected: number; sms: number; inbound: number; outbound: number }>()
   for (const activity of input.activities.filter(isCommunication)) {
     const metadataOwner = activity.metadata?.agent_name ?? activity.metadata?.assigned_to ?? activity.metadata?.owner
@@ -580,6 +581,7 @@ export function buildOperatingReport(input: OperatingReportInput) {
       sms: sms.length,
       inboundSms,
       outboundSms,
+      unclassifiedSms,
       smsResponseRate: percentage(inboundSms, outboundSms),
       voicemail: input.activities.filter((activity) => activity.activity_type === 'voicemail').length,
       agents,

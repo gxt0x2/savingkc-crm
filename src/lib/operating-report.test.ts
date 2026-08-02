@@ -38,7 +38,7 @@ describe('buildOperatingReport', () => {
     expect(report.core).toMatchObject({ revenue: 25_000, expenses: 5_000, netRevenue: 20_000, leads: 2, qualified: 2, underContract: 1, needsReply: 1 })
     expect(report.acquisitions.averageSpeedToLeadMinutes).toBe(5)
     expect(report.acquisitions.appointmentShowRate).toBe(100)
-    expect(report.communications).toMatchObject({ calls: 1, connectedCalls: 1, callConnectionRate: 100, sms: 2, inboundSms: 1, outboundSms: 1, smsResponseRate: 100 })
+    expect(report.communications).toMatchObject({ calls: 1, connectedCalls: 1, callConnectionRate: 100, sms: 2, inboundSms: 1, outboundSms: 1, unclassifiedSms: 0, smsResponseRate: 100 })
     expect(report.dispositions).toMatchObject({ closedDeals: 1, offers: 1, averageDaysToBuyer: 6, assignmentRevenue: 25_000, averageAssignmentFee: 25_000, debriefOutstanding: 1 })
     expect(report.finance).toMatchObject({ grossRevenue: 25_000, expenses: 5_000, netRevenue: 20_000, profitMargin: 80 })
   })
@@ -72,6 +72,16 @@ describe('buildOperatingReport', () => {
     expect(report.communications.agents).toEqual([
       expect.objectContaining({ agent: 'Casey', calls: 1, connected: 1, sms: 1 }),
     ])
+  })
+
+  it('surfaces SMS records whose direction is not recorded', () => {
+    const report = buildOperatingReport(input({
+      activities: [
+        { id: 'a1', lead_id: 'lead-1', activity_type: 'sms', description: 'Message event', agent: 'System', metadata: {}, created_at: '2026-07-10T12:05:00.000Z' },
+      ],
+    }))
+
+    expect(report.communications).toMatchObject({ sms: 1, inboundSms: 0, outboundSms: 0, unclassifiedSms: 1 })
   })
 
   it('builds dashboard trends, configured goals, agent ownership, and offer management from recorded rows', () => {
