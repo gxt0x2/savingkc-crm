@@ -12,10 +12,12 @@ export function WorkspaceFrame({
   children,
   needsReply,
   commandBar,
+  hideHeader = false,
 }: {
   children: ReactNode
   needsReply?: number
   commandBar?: ReactNode
+  hideHeader?: boolean
 }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
@@ -52,7 +54,7 @@ export function WorkspaceFrame({
     >
       <WorkspaceNav needsReply={resolvedNeedsReply} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className={`crm-shell-header flex shrink-0 items-center gap-5 border-b px-6 backdrop-blur ${commandBar ? 'min-h-[76px] py-2' : 'h-[62px]'}`}>
+        {hideHeader ? null : <header className={`crm-shell-header flex shrink-0 items-center gap-5 border-b px-6 backdrop-blur ${commandBar ? 'min-h-[76px] py-2' : 'h-[62px]'}`}>
           <div className="min-w-0 flex-1">
             {commandBar ?? (
               <form onSubmit={submitSearch} className="relative w-full max-w-[610px]">
@@ -94,7 +96,7 @@ export function WorkspaceFrame({
             {profileOpen ? <div className="crm-menu absolute right-0 top-12 z-50 w-48 overflow-hidden rounded-xl py-1"><Link href="/dashboard" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="home" className="text-[18px]" />Dashboard</Link><Link href="/reports/acquisitions" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="bar_chart" className="text-[18px]" />Reports</Link><Link href="/settings" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="settings" className="text-[18px]" />Settings</Link></div> : null}
             </div>
           </div>
-        </header>
+        </header>}
         <Suspense fallback={null}>
           <WorkspaceContextNav />
         </Suspense>

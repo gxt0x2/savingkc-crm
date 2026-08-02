@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Icon } from '@/components/ui/icon'
+import { ExecutiveDashboard } from '@/components/reports/executive-dashboard'
 import { formatLeadSource } from '@/lib/contact-display'
 import type { OperatingReport, OperatingReportPeriod } from '@/lib/operating-report'
 
@@ -59,6 +60,10 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
     return <ReportError onRetry={() => void refetch()} />
   }
 
+  if (view === 'dashboard') {
+    return <ExecutiveDashboard report={data} period={period} onPeriodChange={setPeriod} isFetching={isFetching} />
+  }
+
   return (
     <main className="mx-auto w-full max-w-[1720px] space-y-3 px-3 py-4 pb-24 sm:px-5 lg:px-6">
       <header className="flex flex-col gap-3 rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-5 py-4 shadow-[var(--crm-shadow-sm)] xl:flex-row xl:items-center xl:justify-between">
@@ -68,7 +73,6 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
           <p className="mt-0.5 max-w-4xl text-xs font-medium text-[var(--crm-text-muted)]">{copy.description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {view === 'dashboard' ? <Link href="/ari" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black"><Icon name="auto_awesome" className="text-[18px] text-[var(--crm-violet)]" /> Ask ARI</Link> : null}
           <label className="flex h-10 items-center gap-2 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 shadow-sm">
             <Icon name="date_range" className="text-[19px] text-[var(--crm-brand)]" />
             <span className="sr-only">Reporting period</span>
@@ -84,59 +88,12 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
       </header>
 
       <CoverageNotice report={data} />
-      {view === 'dashboard' ? <DashboardView report={data} /> : null}
       {view === 'acquisitions' ? <AcquisitionsView report={data} /> : null}
       {view === 'marketing' ? <MarketingView report={data} /> : null}
       {view === 'dispositions' ? <DispositionsView report={data} /> : null}
       {view === 'finance' ? <FinanceView report={data} /> : null}
       {view === 'call-sms' ? <CallSmsView report={data} /> : null}
     </main>
-  )
-}
-
-function DashboardView({ report }: { report: OperatingReport }) {
-  const cards = [
-    { icon: 'payments', label: 'Revenue', value: report.availability.finance ? money(report.core.revenue) : 'Unavailable', numericValue: report.availability.finance ? report.core.revenue : null, detail: `${report.finance.revenueTransactions} recorded transaction${report.finance.revenueTransactions === 1 ? '' : 's'}`, tone: 'green' as const, href: '/reports/finance', series: report.trends.revenue, goal: scaledGoal(report.goals.monthlyRevenue, report, 'monthly') },
-    { icon: 'route', label: 'Pipeline offer value', value: report.core.pipelineOfferValue == null ? 'Not recorded' : money(report.core.pipelineOfferValue), numericValue: report.core.pipelineOfferValue, detail: 'Recorded seller offers on active leads', tone: 'violet' as const, href: '/reports/acquisitions' },
-    { icon: 'task_alt', label: 'Closings', value: report.availability.dispositions ? report.dispositions.closedDeals : 'Unavailable', numericValue: report.availability.dispositions ? report.dispositions.closedDeals : null, detail: 'Disposition deals closed', tone: 'blue' as const, href: '/reports/dispositions', series: report.trends.closings, goal: scaledGoal(report.goals.monthlyClosings, report, 'monthly') },
-    { icon: 'person_check', label: 'Assigned', value: report.core.assigned, numericValue: report.core.assigned, detail: `${percent(report.core.assigned, report.core.leads)} of period leads`, tone: 'coral' as const, href: '/contacts?list=all', series: report.trends.assigned },
-    { icon: 'description', label: 'Under contract', value: report.core.underContract, numericValue: report.core.underContract, detail: 'Current stage in selected cohort', tone: 'amber' as const, href: '/contacts?min_stage=under_contract', series: report.trends.underContract },
-    { icon: 'verified', label: 'Qualified', value: report.core.qualified, numericValue: report.core.qualified, detail: `${percent(report.core.qualified, report.core.leads)} of period leads`, tone: 'blue' as const, href: '/contacts?min_stage=qualified', series: report.trends.qualified, goal: scaledGoal(report.goals.weeklyQualified, report, 'weekly') },
-    { icon: 'group_add', label: 'Leads', value: report.core.leads, numericValue: report.core.leads, detail: PERIOD_LABELS[report.period.key], tone: 'teal' as const, href: '/contacts?list=new', series: report.trends.leads },
-  ]
-
-  return (
-    <>
-      <section aria-label="Company operating metrics" className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
-        {cards.map((card) => <ExecutiveMetric key={card.label} {...card} />)}
-      </section>
-
-      <section className="grid gap-3 xl:grid-cols-[1fr_1.08fr_1.22fr]">
-        <DepartmentPanel eyebrow="Acquisitions performance" title="Lead-to-contract execution" href="/reports/acquisitions" tone="blue">
-          <MiniMetric label="Speed to lead" value={minutes(report.acquisitions.averageSpeedToLeadMinutes)} />
-          <MiniMetric label="Appointments recorded" value={available(report.availability.appointments, report.acquisitions.appointmentsRecorded)} />
-          <MiniMetric label="Show rate" value={available(report.availability.appointments, nullablePercent(report.acquisitions.appointmentShowRate))} />
-          <MiniMetric label="Contracts" value={report.acquisitions.contracts} />
-        </DepartmentPanel>
-        <DepartmentPanel eyebrow="Dispositions performance" title="Contract-to-close execution" href="/reports/dispositions" tone="red">
-          <MiniMetric label="Active deals" value={available(report.availability.dispositions, report.dispositions.activeDeals)} />
-          <MiniMetric label="Offers / property" value={available(report.availability.dispositions && report.availability.offers, nullableDecimal(report.dispositions.offersPerProperty))} />
-          <MiniMetric label="Avg days to buyer" value={available(report.availability.dispositions && report.availability.offers, nullableDays(report.dispositions.averageDaysToBuyer))} />
-          <MiniMetric label="Avg assignment fee" value={available(report.availability.dispositions, nullableMoney(report.dispositions.averageAssignmentFee))} />
-        </DepartmentPanel>
-        <section className="crm-panel overflow-hidden rounded-2xl">
-          <PanelHeading eyebrow="Marketing performance" title="Top recorded lead sources" href="/reports/marketing" />
-          <SourceRows rows={report.marketing.sources.slice(0, 5)} compact />
-        </section>
-      </section>
-
-      <section className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-[0.8fr_1.05fr_0.72fr_0.95fr]">
-        <FinanceSummary report={report} />
-        <BottleneckPanel report={report} />
-        <InsightsPanel report={report} />
-        <AriAssistantPanel report={report} />
-      </section>
-    </>
   )
 }
 
@@ -510,41 +467,8 @@ function StatusPill({ value }: { value: string }) {
   return <span className="inline-flex rounded-full bg-[var(--crm-info-soft)] px-2 py-1 text-[9px] font-black capitalize text-[var(--crm-info)]">{normalized}</span>
 }
 
-function DepartmentPanel({ eyebrow, title, href, tone, children }: { eyebrow: string; title: string; href: string; tone: keyof typeof TONES; children: React.ReactNode }) {
-  return <section className="crm-panel flex min-h-[250px] flex-col overflow-hidden rounded-2xl"><PanelHeading eyebrow={eyebrow} title={title} href={href} tone={tone} /><div className="grid flex-1 grid-cols-2 gap-px bg-[var(--crm-border)]">{children}</div></section>
-}
-
 function PanelHeading({ eyebrow, title, href, action = 'Open full report', tone = 'red' }: { eyebrow: string; title: string; href: string; action?: string; tone?: keyof typeof TONES }) {
   return <div className="flex items-center justify-between gap-3 border-b border-[var(--crm-border)] px-5 py-4"><div><p className="text-[10px] font-black uppercase tracking-[0.12em]" style={{ color: TONES[tone].line }}>{eyebrow}</p><h2 className="mt-1 text-base font-black">{title}</h2></div><Link href={href} className="inline-flex items-center gap-1 text-xs font-black text-[var(--crm-info)] hover:underline">{action}<Icon name="arrow_forward" className="text-[16px]" /></Link></div>
-}
-
-function MiniMetric({ label, value }: { label: string; value: string | number }) {
-  return <div className="grid place-content-center bg-[var(--crm-surface)] p-3 text-center"><strong className="block text-[22px] font-black tracking-[-0.035em] text-[var(--crm-ink)]">{value}</strong><span className="mt-1 block text-[9px] font-bold leading-3 text-[var(--crm-text-muted)]">{label}</span></div>
-}
-
-function FinanceSummary({ report }: { report: OperatingReport }) {
-  if (!report.availability.finance) return <SourceUnavailable title="Financial data unavailable" />
-  const rows = [
-    ['Gross revenue', money(report.finance.grossRevenue)],
-    ['Expenses', money(report.finance.expenses)],
-    ['Net', money(report.finance.netRevenue)],
-    ['Profit margin', nullablePercent(report.finance.profitMargin)],
-  ]
-  return <section className="crm-panel overflow-hidden rounded-2xl"><PanelHeading eyebrow="Financial overview" title="Recorded economics" href="/reports/finance" tone="green" /><div className="divide-y divide-[var(--crm-border)] px-5">{rows.map(([label, value]) => <div key={label} className="flex items-center justify-between py-3 text-sm"><span className="font-semibold text-[var(--crm-text-muted)]">{label}</span><strong>{value}</strong></div>)}</div></section>
-}
-
-function BottleneckPanel({ report, acquisitionsOnly = false }: { report: OperatingReport; acquisitionsOnly?: boolean }) {
-  const rows = report.bottlenecks.filter((row) => !acquisitionsOnly || row.department === 'Acquisitions')
-  return <section className="crm-panel overflow-hidden rounded-2xl"><PanelHeading eyebrow="Active bottlenecks" title="Work constraining results" href="/tasks" tone="amber" /><div className="grid gap-2 p-4 sm:grid-cols-2">{rows.map((row) => <Link key={row.key} href={row.href} className="flex items-center gap-3 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-3 hover:border-[var(--crm-brand-border)]"><span className={`h-2.5 w-2.5 rounded-full ${row.severity === 'high' ? 'bg-[var(--crm-brand)]' : row.severity === 'medium' ? 'bg-[#d59600]' : 'bg-[#11a857]'}`} /><span className="min-w-0 flex-1"><strong className="block text-xs">{row.label}</strong><span className="text-[10px] text-[var(--crm-text-muted)]">{row.department}</span></span><strong className="text-lg">{row.count}</strong></Link>)}</div></section>
-}
-
-function InsightsPanel({ report }: { report: OperatingReport }) {
-  return <section className="crm-panel overflow-hidden rounded-2xl"><PanelHeading eyebrow="ARI insights" title="What needs attention" href="/ari" tone="violet" action="Open ARI" /><div className="space-y-3 p-5">{report.insights.map((insight) => <div key={insight} className="flex gap-2 text-xs font-semibold leading-5 text-[var(--crm-text-muted)]"><Icon name="auto_awesome" className="mt-0.5 text-[17px] text-[var(--crm-violet)]" /><span>{insight}</span></div>)}</div></section>
-}
-
-function AriAssistantPanel({ report }: { report: OperatingReport }) {
-  const prompts = ['How is my pipeline performing?', 'Which bottleneck needs attention?', 'Why are contracts down?', 'Show my revenue forecast']
-  return <section className="crm-panel overflow-hidden rounded-2xl"><PanelHeading eyebrow="ARI assistant" title="Ask the operating system" href="/ari" tone="violet" action="Open ARI" /><div className="p-4"><div className="rounded-xl bg-gradient-to-br from-[var(--crm-violet-soft)] to-[var(--crm-info-soft)] p-3"><div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--crm-surface)] text-[var(--crm-violet)] shadow-sm"><Icon name="smart_toy" className="text-2xl" /></span><div><strong className="block text-[11px]">Live operating context</strong><span className="mt-1 block text-[10px] leading-4 text-[var(--crm-text-muted)]">ARI can inspect {report.core.leads} period leads, {report.core.needsReply} unresolved replies, and the recorded department metrics shown here.</span></div></div></div><div className="mt-3 flex flex-wrap gap-1.5">{prompts.map((prompt) => <Link key={prompt} href={`/ari?prompt=${encodeURIComponent(prompt)}`} className="rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface)] px-2.5 py-1.5 text-[9px] font-bold text-[var(--crm-text-muted)] hover:border-[var(--crm-violet)] hover:text-[var(--crm-violet)]">{prompt}</Link>)}</div></div></section>
 }
 
 function SourceRows({ rows, compact = false, expanded = false }: { rows: OperatingReport['marketing']['sources']; compact?: boolean; expanded?: boolean }) {
