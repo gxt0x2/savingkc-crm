@@ -486,8 +486,16 @@ export function buildOperatingReport(input: OperatingReportInput) {
     const target = stages.indexOf(stage)
     return rank >= target && target >= 0
   }
+  const revenueTrend = trendSeries(input.revenue, input, (row) => row.date, (row) => number(row.amount))
+  const expenseTrend = trendSeries(input.expenses, input, (row) => row.date, (row) => number(row.amount))
   const trends = {
-    revenue: trendSeries(input.revenue, input, (row) => row.date, (row) => number(row.amount)),
+    revenue: revenueTrend,
+    expenses: expenseTrend,
+    net: revenueTrend.map((point, index) => ({ ...point, value: point.value - (expenseTrend[index]?.value ?? 0) })),
+    profitMargin: revenueTrend.map((point, index) => {
+      const expense = expenseTrend[index]?.value ?? 0
+      return { ...point, value: point.value > 0 ? Math.round(((point.value - expense) / point.value) * 1000) / 10 : 0 }
+    }),
     leads: trendSeries(input.leads, input, (row) => row.created_at),
     assigned: trendSeries(input.leads.filter((lead) => Boolean(lead.assigned_agent?.trim())), input, (row) => row.created_at),
     qualified: trendSeries(input.leads.filter((lead) => stageAtLeast(lead, 'qualified')), input, (row) => row.created_at),
@@ -495,9 +503,14 @@ export function buildOperatingReport(input: OperatingReportInput) {
     closings: trendSeries(closedDeals, input, (row) => row.close_date),
     appointments: trendSeries(input.appointments, input, (row) => row.scheduled_at ?? row.created_at),
     calls: trendSeries(calls, input, (row) => row.created_at),
+    connectedCalls: trendSeries(calls.filter(isConnectedCall), input, (row) => row.created_at),
     sms: trendSeries(sms, input, (row) => row.created_at),
+    inboundSms: trendSeries(sms.filter(isInbound), input, (row) => row.created_at),
+    outboundSms: trendSeries(sms.filter(isOutbound), input, (row) => row.created_at),
     offers: trendSeries(input.offers, input, (row) => row.submitted_at ?? row.created_at),
-    expenses: trendSeries(input.expenses, input, (row) => row.date, (row) => number(row.amount)),
+    activeDeals: trendSeries(activeDeals, input, (row) => row.entered_at ?? row.created_at),
+    assignmentRevenue: trendSeries(closedDeals, input, (row) => row.close_date, (row) => number(row.assignment_fee)),
+    buyers: trendSeries(input.buyers, input, (row) => row.created_at),
   }
 
   return {
