@@ -60,4 +60,17 @@ describe('buildOperatingReport', () => {
     expect(report.insights).toContain('1 seller conversation needs a response.')
     expect(report.bottlenecks.find((row) => row.key === 'debriefs')).toMatchObject({ count: 1, severity: 'high' })
   })
+
+  it('combines case-only agent identity variants without changing activity totals', () => {
+    const report = buildOperatingReport(input({
+      activities: [
+        { id: 'a1', lead_id: 'lead-1', activity_type: 'call', description: 'Connected', agent: 'Casey', metadata: { outcome: 'connected' }, created_at: '2026-07-10T12:05:00.000Z' },
+        { id: 'a2', lead_id: 'lead-1', activity_type: 'sms_outbound', description: 'Follow up', agent: 'casey', metadata: { direction: 'outbound' }, created_at: '2026-07-10T12:06:00.000Z' },
+      ],
+    }))
+
+    expect(report.communications.agents).toEqual([
+      expect.objectContaining({ agent: 'Casey', calls: 1, connected: 1, sms: 1 }),
+    ])
+  })
 })

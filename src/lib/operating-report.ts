@@ -212,7 +212,10 @@ export function buildOperatingReport(input: OperatingReportInput) {
   const agentMap = new Map<string, { calls: number; connected: number; sms: number; inbound: number; outbound: number }>()
   for (const activity of input.activities.filter(isCommunication)) {
     const metadataOwner = activity.metadata?.agent_name ?? activity.metadata?.assigned_to ?? activity.metadata?.owner
-    const agent = (activity.agent || (typeof metadataOwner === 'string' ? metadataOwner : '') || 'Unassigned').trim()
+    const rawAgent = (activity.agent || (typeof metadataOwner === 'string' ? metadataOwner : '') || 'Unassigned').trim()
+    const agentKey = rawAgent.toLocaleLowerCase()
+    const agent = ({ casey: 'Casey', ernest: 'Ernest', gertha: 'Gertha', system: 'System', team: 'Team', unassigned: 'Unassigned' } as Record<string, string>)[agentKey]
+      ?? rawAgent.replace(/\b\w/g, (character) => character.toUpperCase())
     const row = agentMap.get(agent) ?? { calls: 0, connected: 0, sms: 0, inbound: 0, outbound: 0 }
     if (activity.activity_type.toLowerCase().includes('call')) {
       row.calls += 1
