@@ -93,6 +93,7 @@ function Overview({ onSelect }: { onSelect: (workflow: WorkflowDefinition) => vo
   const active = WORKFLOW_CATALOG.filter((workflow) => workflow.status === 'active').length
   const attention = WORKFLOW_CATALOG.filter((workflow) => workflow.health === 'warning' || workflow.health === 'error').length
   const attentionWorkflows = WORKFLOW_CATALOG.filter((workflow) => workflow.health === 'warning' || workflow.health === 'error')
+  const reviewWorkflows = attentionWorkflows.length > 0 ? attentionWorkflows : WORKFLOW_CATALOG.slice(0, 4)
   const automations = WORKFLOW_CATALOG.filter((workflow) => workflow.implementation.execution === 'worker').length
 
   return (
@@ -154,15 +155,13 @@ function Overview({ onSelect }: { onSelect: (workflow: WorkflowDefinition) => vo
         </section>
       ) : null}
 
-      {attentionWorkflows.length > 0 ? (
-        <section className="crm-panel rounded-2xl p-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div><p className="crm-eyebrow">Workflow review</p><h2 className="mt-1 font-black text-[var(--crm-ink)]">Definitions that need a decision</h2></div>
-            <Link href="/workflows?section=all" className="text-xs font-black text-[var(--crm-violet)] hover:underline">Open all workflows</Link>
-          </div>
-          <div className="mt-4 grid gap-2 lg:grid-cols-2">{attentionWorkflows.map((workflow) => <button key={workflow.id} type="button" onClick={() => onSelect(workflow)} aria-label={`Open ${workflow.name} workflow details`} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-3 text-left transition hover:border-[var(--crm-violet)] hover:bg-[var(--crm-violet-soft)]"><span><strong className="block text-sm text-[var(--crm-ink)]">{workflow.name}</strong><span className="mt-1 block line-clamp-2 text-xs text-[var(--crm-text-muted)]">{workflow.description}</span></span><Icon name="arrow_forward" className="shrink-0 text-[var(--crm-violet)]" /></button>)}</div>
-        </section>
-      ) : null}
+      <section className="crm-panel rounded-2xl p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div><p className="crm-eyebrow">Workflow review</p><h2 className="mt-1 font-black text-[var(--crm-ink)]">{attentionWorkflows.length > 0 ? 'Definitions that need a decision' : 'Common workflow definitions'}</h2></div>
+          <Link href="/workflows?section=all" className="text-xs font-black text-[var(--crm-violet)] hover:underline">Open all workflows</Link>
+        </div>
+        <div className="mt-4 grid gap-2 lg:grid-cols-2">{reviewWorkflows.map((workflow) => <button key={workflow.id} type="button" onClick={() => onSelect(workflow)} aria-label={`Open ${workflow.name} workflow details`} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-3 text-left transition hover:border-[var(--crm-violet)] hover:bg-[var(--crm-violet-soft)]"><span><strong className="block text-sm text-[var(--crm-ink)]">{workflow.name}</strong><span className="mt-1 block line-clamp-2 text-xs text-[var(--crm-text-muted)]">{workflow.description}</span></span><Icon name="arrow_forward" className="shrink-0 text-[var(--crm-violet)]" /></button>)}</div>
+      </section>
     </div>
   )
 }

@@ -26,10 +26,13 @@ describe('master phone system', () => {
     }
   })
 
-  it('surfaces the known dispositions and Casey legacy routing mismatches', () => {
-    expect(PHONE_SYSTEM_ATTENTION.map((record) => record.number).sort()).toEqual([
-      '+18163754666',
-      '+18166088858',
-    ])
+  it('routes the dispositions and Casey legacy identities directly to their owners', () => {
+    expect(PHONE_SYSTEM_ATTENTION).toEqual([])
+    expect(PHONE_SYSTEM.find((record) => record.number === '+18166088858')).toMatchObject({
+      owner: 'Ernest', routeType: 'dispositions', health: 'healthy',
+    })
+    expect(PHONE_SYSTEM.find((record) => record.number === '+18163754666')).toMatchObject({
+      owner: 'Casey', routeType: 'legacy', health: 'healthy',
+    })
   })
 })

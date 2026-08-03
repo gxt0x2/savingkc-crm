@@ -33,9 +33,17 @@ const COLD_CALLBACK_NUMBERS = new Set([
   '+18166536616',
 ])
 
-const DIRECT_AGENT_NUMBERS: Record<string, { owner: string; workflowId: string }> = {
-  '+18166088588': { owner: 'Ernest', workflowId: 'ernest-direct-call-flow' },
-  '+18167277667': { owner: 'Casey', workflowId: 'casey-direct-call-flow' },
+const DIRECT_AGENT_NUMBERS: Record<string, {
+  owner: string
+  workflowId: string
+  team: PhoneSystemRecord['team']
+  routeType: PhoneRouteType
+  healthNote: string
+}> = {
+  '+18166088588': { owner: 'Ernest', workflowId: 'ernest-direct-call-flow', team: 'Acquisitions', routeType: 'direct_agent', healthNote: 'Direct company line for Ernest.' },
+  '+18166088858': { owner: 'Ernest', workflowId: 'dispositions-inbound-call-flow', team: 'Dispositions', routeType: 'dispositions', healthNote: 'Direct dispositions line owned by Ernest.' },
+  '+18167277667': { owner: 'Casey', workflowId: 'casey-direct-call-flow', team: 'Acquisitions', routeType: 'direct_agent', healthNote: 'Direct company line for Casey.' },
+  '+18163754666': { owner: 'Casey', workflowId: 'casey-legacy-call-flow', team: 'Acquisitions', routeType: 'legacy', healthNote: 'Legacy Casey line now follows Casey direct routing.' },
 }
 
 const GOOGLE_ADS_NUMBERS: Record<string, { label: string; workflowId: string }> = {
@@ -52,16 +60,18 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       label: config.label,
       purpose: config.purpose,
       owner: direct.owner,
-      team: 'Acquisitions',
-      routeType: 'direct_agent',
+      team: direct.team,
+      routeType: direct.routeType,
       health: 'healthy',
-      healthNote: `Direct company line for ${direct.owner}.`,
+      healthNote: direct.healthNote,
       workflowId: direct.workflowId,
       inboundPath: ['Twilio number', '/api/twiml-voice', `${direct.owner} mobile`, '/api/ivr/dial-result'],
       answeredPath: `Connects directly to ${direct.owner}; the call is recorded after answer.`,
       noAnswerPath: 'Dial result routes the caller to voicemail and records the missed outcome.',
       smsPath: 'Inbound SMS enters /api/twilio-sms-webhook and stays attached to this company number.',
-      outboundUse: 'Available as an approved conversation, broadcast, and dialer caller ID.',
+      outboundUse: config.dialerEligible
+        ? 'Available as an approved conversation, broadcast, and dialer caller ID.'
+        : 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
       carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
       sourceFiles,
     }
@@ -107,48 +117,6 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       outboundUse: 'Available for dialer, conversations, and approved broadcasts.',
       carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
       sourceFiles: [...sourceFiles, '/api/ivr/handle-input', '/api/ivr/cold-no-input'],
-    }
-  }
-
-  if (config.value === '+18166088858') {
-    return {
-      number: config.value,
-      label: config.label,
-      purpose: config.purpose,
-      owner: 'Dispositions team',
-      team: 'Dispositions',
-      routeType: 'dispositions',
-      health: 'attention',
-      healthNote: 'Routing gap: this dispositions line currently enters the general seller/acquisitions IVR.',
-      workflowId: 'dispositions-inbound-call-flow',
-      inboundPath: ['Twilio number', '/api/twiml-voice', 'General seller IVR', 'Acquisitions team'],
-      answeredPath: 'Currently follows the acquisitions seller route; a dedicated dispositions branch is not yet active.',
-      noAnswerPath: 'Uses the general IVR no-input and voicemail behavior.',
-      smsPath: 'Inbound SMS enters the shared webhook; no dedicated buyer/dispositions branch is active.',
-      outboundUse: 'Available to conversations, broadcasts, and dialer as the dispositions caller ID.',
-      carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
-      sourceFiles,
-    }
-  }
-
-  if (config.value === '+18163754666') {
-    return {
-      number: config.value,
-      label: config.label,
-      purpose: config.purpose,
-      owner: 'Casey',
-      team: 'Acquisitions',
-      routeType: 'legacy',
-      health: 'attention',
-      healthNote: 'Legacy Casey line is live but follows the general seller IVR instead of Casey direct routing.',
-      workflowId: 'casey-legacy-call-flow',
-      inboundPath: ['Twilio number', '/api/twiml-voice', 'General seller IVR', 'Acquisitions team'],
-      answeredPath: 'Routes through the seller IVR and acquisition queue rather than directly to Casey.',
-      noAnswerPath: 'Uses the general IVR no-input and voicemail behavior.',
-      smsPath: 'Inbound SMS enters /api/twilio-sms-webhook and is associated with the legacy line.',
-      outboundUse: 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
-      carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
-      sourceFiles,
     }
   }
 
