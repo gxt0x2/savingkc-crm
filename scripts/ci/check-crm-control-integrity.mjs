@@ -104,6 +104,36 @@ for (const file of files) {
   visit(sourceFile)
 }
 
+const googleAdsPage = fs.readFileSync('src/components/marketing/ads-command-page.tsx', 'utf8')
+const googleAdsApi = fs.readFileSync('src/app/api/marketing/ads-command/route.ts', 'utf8')
+const googleAdsAssertions = [
+  {
+    passes: googleAdsPage.includes("new URLSearchParams({ period: reportingPeriod, src: 'g' })"),
+    message: 'Google Ads page must always request the Google-only API scope',
+  },
+  {
+    passes: googleAdsPage.includes("paidSourceFilter: 'google_ads'"),
+    message: 'Google Ads page response contract must reject mixed paid-source data',
+  },
+  {
+    passes: !googleAdsPage.includes('All Paid Drilldown') && !googleAdsPage.includes('OpenAI Ads Health') && !googleAdsPage.includes('Mojo Health'),
+    message: 'Google Ads page must not render combined-paid, OpenAI Ads, or Mojo panels',
+  },
+  {
+    passes: !googleAdsPage.includes('data-theme="light"'),
+    message: 'Google Ads page must inherit the CRM light/dark theme instead of forcing light mode',
+  },
+  {
+    passes: googleAdsApi.includes("const googleOnly = sourceFilter === 'google_ads'")
+      && googleAdsApi.includes("const mojoHealth = paidSourceFilter === 'google_ads'"),
+    message: 'Google-only API requests must skip unrelated OpenAI Ads and Mojo work',
+  },
+]
+
+for (const assertion of googleAdsAssertions) {
+  if (!assertion.passes) failures.push(`Google Ads scope: ${assertion.message}`)
+}
+
 if (failures.length) {
   console.error('CRM control integrity failed:')
   for (const failure of failures) console.error(`- ${failure}`)

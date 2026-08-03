@@ -211,8 +211,8 @@ type AdsCommandResponse = {
   funnel: FunnelRow[]
   callBreakdown: CallBreakdownRow[]
   exportHealth: ExportHealth
-  openAIAdsHealth: OpenAIAdsHealth
-  mojoHealth: MojoHealth
+  openAIAdsHealth: OpenAIAdsHealth | null
+  mojoHealth: MojoHealth | null
   leads: LeadRow[]
   outbox: OutboxRow[]
   paidSessions: PaidSessionRow[]
@@ -1446,6 +1446,8 @@ async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter
   const range = rangeForPeriod(period)
   const previousRange = previousRangeForPeriod(period, range)
   const db = supabaseAdmin()
+  const googleOnly = sourceFilter === 'google_ads'
+  const skippedSourceQuery = () => Promise.resolve({ data: [], error: null })
 
   const [
     { data: campaignRows, error: campaignError },
@@ -1464,8 +1466,8 @@ async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter
   ] = await Promise.all([
     db.from('google_ads_campaign_daily').select('date,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', range.since).lte('date', range.until).order('date', { ascending: true }),
     db.from('google_ads_campaign_daily').select('date,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', previousRange.since).lte('date', previousRange.until),
-    db.from('openai_ads_campaign_daily').select('date,account_id,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', range.since).lte('date', range.until).order('date', { ascending: true }),
-    db.from('openai_ads_campaign_daily').select('date,account_id,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', previousRange.since).lte('date', previousRange.until),
+    googleOnly ? skippedSourceQuery() : db.from('openai_ads_campaign_daily').select('date,account_id,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', range.since).lte('date', range.until).order('date', { ascending: true }),
+    googleOnly ? skippedSourceQuery() : db.from('openai_ads_campaign_daily').select('date,account_id,campaign_id,campaign_name,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', previousRange.since).lte('date', previousRange.until),
     db.from('google_ads_search_term_daily').select('date,campaign_id,campaign_name,ad_group_id,ad_group_name,search_term,keyword_text,keyword_match_type,impressions,clicks,cost_micros,conversions,all_conversions,imported_at').gte('date', range.since).lte('date', range.until).order('clicks', { ascending: false }).limit(500),
     db.from('ppc_tracking_events').select('id,event_id,event_name,event_category,event_time,session_id,visitor_id,lead_id,page_path,page_location,page_referrer,traffic_source,campaign,utm_source,utm_medium,utm_campaign,utm_term,utm_content,gclid,gbraid,wbraid,gad_source,gad_campaignid,gad_adgroupid,form_step,form_status,situation_raw,timeline_raw,condition_raw,phone_number,is_test,payload,created_at').gte('event_time', isoStart(range.since)).lt('event_time', isoAfter(range.until)).order('event_time', { ascending: false }).limit(TRACKING_EVENT_DASHBOARD_LIMIT),
     db.from('leads').select('id,full_name,source,station,priority,property_address,city,county,classification,opportunity_score,created_at').in('source', PPC_LEAD_SOURCES).gte('created_at', isoStart(range.since)).lt('created_at', isoAfter(range.until)).limit(2000),
@@ -1474,7 +1476,7 @@ async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter
     db.from('lead_activities').select('lead_id,activity_type,description,metadata,created_at').gte('created_at', isoStart(range.since)).lt('created_at', isoAfter(range.until)).limit(5000),
     db.from('revenue_transactions').select('deal_id,amount').gte('date', range.since).lte('date', range.until).limit(2000),
     db.from('google_ads_reporting_sync_runs').select('status,started_at,finished_at,error').order('started_at', { ascending: false }).limit(1),
-    db.from('openai_ads_reporting_sync_runs').select('status,started_at,finished_at,since_date,until_date,error').order('started_at', { ascending: false }).limit(1),
+    googleOnly ? skippedSourceQuery() : db.from('openai_ads_reporting_sync_runs').select('status,started_at,finished_at,since_date,until_date,error').order('started_at', { ascending: false }).limit(1),
   ])
 
   const openAIAdsOptionalError = [
@@ -1535,8 +1537,18 @@ async function fetchRows(period: MarketingPeriod, sourceFilter: PaidSourceFilter
   }
 }
 
-function latestImportLabel(googleRows: GoogleAdsCampaignDailyRow[], openAIAdsRows: GoogleAdsCampaignDailyRow[]): string {
-  if (googleRows.length === 0 && openAIAdsRows.length === 0) return 'LIVE • no paid ads import rows'
+function latestImportLabel(
+  googleRows: GoogleAdsCampaignDailyRow[],
+  openAIAdsRows: GoogleAdsCampaignDailyRow[],
+  sourceFilter: PaidSourceFilter,
+): string {
+  if (sourceFilter === 'google_ads') {
+    return googleRows.length > 0 ? 'LIVE • Google Ads sync' : 'LIVE • Google Ads campaign import pending'
+  }
+  if (sourceFilter === 'openai_ads') {
+    return openAIAdsRows.length > 0 ? 'LIVE • OpenAI Ads sync' : 'LIVE • OpenAI Ads campaign import pending'
+  }
+  if (googleRows.length === 0 && openAIAdsRows.length === 0) return 'LIVE • campaign imports pending'
   if (googleRows.length > 0 && openAIAdsRows.length > 0) return 'LIVE • Google + OpenAI Ads sync'
   if (openAIAdsRows.length > 0) return 'LIVE • OpenAI Ads sync'
   return 'LIVE • Google Ads sync'
@@ -1651,18 +1663,31 @@ export async function GET(req: NextRequest) {
     const period = readPeriod(url.searchParams.get('period'))
     const paidSourceFilter = readPaidSourceAlias(url.searchParams.get('src') || url.searchParams.get('source'))
     const rows = await fetchRows(period, paidSourceFilter)
-    const mojoHealth = await getMojoHealth(supabaseAdmin(), {
-      periodSinceIso: isoStart(rows.range.since),
-      periodUntilIso: isoAfter(rows.range.until),
-    })
+    const mojoHealth = paidSourceFilter === 'google_ads'
+      ? null
+      : await getMojoHealth(supabaseAdmin(), {
+        periodSinceIso: isoStart(rows.range.since),
+        periodUntilIso: isoAfter(rows.range.until),
+      })
     const series = buildSeries(rows.campaignRows, rows.leadRows, rows.trackingRows, rows.range)
     const leadRowsForResponse = buildLeadRows(rows.leadRows, rows.trackingRows, rows.outboxRows, rows.activityRows, rows.revenueRows)
     const generatedAt = new Date().toISOString()
+    const captureHealth = buildClickCaptureHealth({
+      campaignRows: rows.campaignRows,
+      trackingRows: rows.trackingRows,
+      leadRows: rows.leadRows,
+      outboxRows: rows.outboxRows,
+      generatedAt,
+    })
+    if (paidSourceFilter !== 'all') {
+      captureHealth.sources = captureHealth.sources.filter((source) => source.source === paidSourceFilter)
+    }
+
     const response: AdsCommandResponse = {
       source: 'live',
       paidSourceFilter,
       generatedAt,
-      syncedLabel: latestImportLabel(rows.googleCampaignRows, rows.openAIAdsCampaignRows),
+      syncedLabel: latestImportLabel(rows.googleCampaignRows, rows.openAIAdsCampaignRows, paidSourceFilter),
       freshness: buildFreshness(
         generatedAt,
         rows.googleCampaignRows,
@@ -1682,18 +1707,12 @@ export async function GET(req: NextRequest) {
       funnel: buildFunnel(rows.campaignRows, rows.trackingRows, rows.leadRows),
       callBreakdown: buildCallBreakdown(rows.trackingRows, rows.outboxRows),
       exportHealth: buildExportHealth(rows.outboxRows, rows.leadRows),
-      openAIAdsHealth: rows.openAIAdsHealth,
+      openAIAdsHealth: paidSourceFilter === 'google_ads' ? null : rows.openAIAdsHealth,
       mojoHealth,
       leads: leadRowsForResponse,
       outbox: buildOutboxRows(rows.outboxRows, rows.leadRows),
       paidSessions: buildPaidSessions(rows.trackingRows),
-      captureHealth: buildClickCaptureHealth({
-        campaignRows: rows.campaignRows,
-        trackingRows: rows.trackingRows,
-        leadRows: rows.leadRows,
-        outboxRows: rows.outboxRows,
-        generatedAt,
-      }),
+      captureHealth,
       trafficQuality: buildTrafficQualityReport(rows.trackingRows, { now: generatedAt }),
     }
 

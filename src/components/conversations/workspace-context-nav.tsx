@@ -45,7 +45,7 @@ const GROUPS: ContextGroup[] = [
     label: 'Marketing',
     pathPrefix: '/marketing',
     items: [
-      { label: 'Command', href: '/marketing', icon: 'space_dashboard', matchPath: '/marketing' },
+      { label: 'Google Ads', href: '/marketing', icon: 'space_dashboard', matchPath: '/marketing' },
       { label: 'Call recordings', href: '/marketing/calls', icon: 'record_voice_over', matchPath: '/marketing/calls' },
       { label: 'Lead alerts', href: '/marketing/alerts', icon: 'notification_important', matchPath: '/marketing/alerts' },
       { label: 'Landing pages', href: '/marketing/heatmaps', icon: 'ads_click', matchPath: '/marketing/heatmaps' },
