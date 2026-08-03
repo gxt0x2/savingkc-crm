@@ -954,13 +954,13 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
       propertyState: call.state,
       propertyZip: call.zip,
       source: 'mojo_call',
-      station: call.property_address ? 'qualified' : 'new',
+      station: dispositionMap.outcome === 'appointment_set' ? 'appointment_set' : 'contacted',
       priority: dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm'),
     }
 
     manifest = buildManifest(manifestInput)
     manifest.property.address = call.property_address
-    manifest.currentStation = call.property_address ? 'qualified' : 'new'
+    manifest.currentStation = dispositionMap.outcome === 'appointment_set' ? 'appointment_set' : 'contacted'
     manifest.priority = dispositionMap.isDead ? 'cold' : (dispositionMap.priority || 'warm')
 
     const contact: ManifestContact = {
@@ -1013,7 +1013,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
           state: call.state,
           zip: call.zip,
           source: 'mojo_call',
-          station: call.property_address ? 'qualified' : 'new',
+          station: dispositionMap.outcome === 'appointment_set' ? 'appointment_set' : 'contacted',
           priority: 'normal',
           appointment_date: call.follow_up_date || null,
         })
@@ -1040,7 +1040,7 @@ export async function processQueuedCall(call: MojoCallRecord, queueItemId: strin
         ...(manifest.auditTrail || []).filter((e: any) => e.action !== 'manifest_created'),
       ]
       // Never let the merge demote pipeline state. The new mojo manifest
-      // always seeds currentStation to 'new' or 'qualified' (line ~894);
+      // seeds currentStation from the verified call outcome;
       // without this guard, every Mojo sync drags Hugo and others back
       // down from appointment_set / offer_made.
       const STAGE_ORDER = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'closed_lost', 'dead'] as const

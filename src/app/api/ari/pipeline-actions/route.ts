@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { requireUserOrSecret } from '@/lib/api/admin-auth'
+import { getLeadQualificationStatuses } from '@/lib/qualification-policy'
 
 export async function GET(request: Request) {
   const unauthorized = await requireUserOrSecret(request)
@@ -44,6 +45,9 @@ export async function GET(request: Request) {
       .eq('status', 'completed')
 
     const completedTaskLeads = new Set((tasks || []).map(t => t.lead_id))
+    const qualificationStatuses = await getLeadQualificationStatuses(
+      leads.filter((lead) => lead.station === 'qualified').map((lead) => lead.id),
+    )
 
     const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
     const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000
@@ -60,12 +64,7 @@ export async function GET(request: Request) {
       let action_detail = ''
 
       if (lead.station === 'qualified') {
-        // Check what info is missing
-        const missing: string[] = []
-        if (!lead.motivation_score) missing.push('MOTIVATION')
-        if (!lead.arv) missing.push('ARV')
-        if (!lead.repair_estimate) missing.push('CONDITION')
-        if (!lead.offer_amount) missing.push('PRICE')
+        const missing = qualificationStatuses.get(lead.id)?.missing ?? []
 
         if (missing.length > 0) {
           action_type = 'get_info'

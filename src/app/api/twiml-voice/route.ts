@@ -3,6 +3,7 @@ import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { parseDialTimeout } from '@/lib/ring-timeout'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -21,14 +22,8 @@ const XML_HEADERS: HeadersInit = {
   Expires: '0',
 }
 
-// Outbound caller ID per agent identity
-const AGENT_CALLER_IDS: Record<string, string> = {
-  ernest: '+18166088588',
-  casey:  '+18167277667',
-}
 const ALLOWED_OUTBOUND_CALLER_IDS = new Set<string>([
   TWILIO_PHONE,
-  ...Object.values(AGENT_CALLER_IDS),
   ...TWILIO_NUMBERS.map((n) => n.value),
 ])
 
@@ -93,7 +88,7 @@ export async function POST(req: Request) {
       // Use agent's company number as caller ID (from=client:ernest or client:casey)
       const identity = from.replace('client:', '').toLowerCase()
       const requestedCallerId = normalizePhone(getFormString(body, ['CallerId', 'callerId', 'caller_id']))
-      const fallbackCallerId = AGENT_CALLER_IDS[identity] || TWILIO_PHONE
+      const fallbackCallerId = resolveAgentTelephonyProfile(identity).defaultCallerId || TWILIO_PHONE
       const callerId = requestedCallerId && ALLOWED_OUTBOUND_CALLER_IDS.has(requestedCallerId)
         ? requestedCallerId
         : fallbackCallerId

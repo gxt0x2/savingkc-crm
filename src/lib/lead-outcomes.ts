@@ -77,10 +77,14 @@ export function isNotLeadOutcome(
 ): boolean {
   const normalizedClassification = classification?.trim().toLowerCase()
   const normalizedStation = station?.trim().toLowerCase()
-  // Stage is the operational source of truth. Historical AI scoring sometimes
-  // left classification=dead on records that later advanced to qualified,
-  // under contract, or closed won; that stale score must never overrule the
-  // active workflow. Classification is only a fallback for unstaged imports.
-  if (normalizedStation) return ['dead', 'closed_lost'].includes(normalizedStation)
-  return normalizedClassification === 'dead'
+  // A record is inactive when either lifecycle field says it is dead/lost.
+  // Requiring both fields to agree allowed legacy and partial updates with
+  // classification=dead to leak back into Contacts, Conversations, and mobile
+  // active work. Contradictory records remain recoverable in the Not Leads
+  // archive, where an agent can deliberately restore them.
+  return (
+    normalizedClassification === 'dead' ||
+    normalizedStation === 'dead' ||
+    normalizedStation === 'closed_lost'
+  )
 }

@@ -1,5 +1,5 @@
 import { mobileConfig } from '../config'
-import type { CallOutcome, CrmLead, LeadDetailResponse, LeadsResponse, MobileSession } from '../types'
+import type { CallOutcome, ConversationDetailResponse, ConversationsResponse, ConversationThread, CrmLead, LeadDetailResponse, LeadsResponse, MobileSession, VoiceTokenResponse } from '../types'
 
 type ApiOptions = {
   accessToken?: string | null
@@ -123,4 +123,43 @@ export async function logCallEvent(input: {
   }
 
   return payload
+}
+
+async function mobileRequest<T>(path: string, options: ApiOptions & { method?: 'GET' | 'POST'; body?: unknown } = {}): Promise<T> {
+  if (!mobileConfig.crmApiBaseUrl) throw new CrmApiError('CRM API base URL is not configured.')
+  const response = await fetch(`${mobileConfig.crmApiBaseUrl}${path}`, {
+    method: options.method ?? 'GET',
+    headers: {
+      Accept: 'application/json',
+      ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
+  })
+  const payload = await response.json().catch(() => null) as (T & { error?: string }) | null
+  if (!response.ok) throw new CrmApiError(payload?.error || `CRM API request failed (${response.status}).`, response.status)
+  if (!payload) throw new CrmApiError('CRM API returned an empty response.')
+  return payload
+}
+
+export async function fetchConversations(options: ApiOptions = {}): Promise<ConversationThread[]> {
+  const payload = await mobileRequest<ConversationsResponse>('/api/mobile/v1/conversations', options)
+  return Array.isArray(payload.items) ? payload.items : []
+}
+
+export async function fetchConversationDetail(leadId: string, options: ApiOptions = {}): Promise<ConversationDetailResponse> {
+  return mobileRequest<ConversationDetailResponse>(`/api/mobile/v1/conversations/${leadId}`, options)
+}
+
+export async function sendMobileMessage(input: { accessToken: string; leadId: string; channel: 'sms' | 'email'; body: string; subject?: string }) {
+  return mobileRequest<{ success: boolean; channel: 'sms' | 'email'; sent?: boolean; from?: string }>('/api/mobile/v1/messages', {
+    accessToken: input.accessToken,
+    method: 'POST',
+    body: input,
+  })
+}
+
+export async function fetchVoiceToken(options: ApiOptions = {}): Promise<VoiceTokenResponse> {
+  return mobileRequest<VoiceTokenResponse>('/api/mobile/v1/twilio/token', options)
 }

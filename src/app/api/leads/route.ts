@@ -10,6 +10,7 @@ import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
+import { getLeadQualificationStatus, qualificationError } from '@/lib/qualification-policy'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -614,6 +615,18 @@ export async function PATCH(req: NextRequest) {
       }, { status: 400, headers: corsHeaders })
     }
 
+    if (requestedStation === 'qualified') {
+      const qualification = await getLeadQualificationStatus(id)
+      if (!qualification.qualified) {
+        return NextResponse.json({
+          success: false,
+          error: qualificationError(qualification),
+          code: 'qualification_incomplete',
+          missingPillars: qualification.missing,
+        }, { status: 409, headers: corsHeaders })
+      }
+    }
+
     delete fields.deadReason
     if (markingDead) {
       fields.dead_reason = deadReason
@@ -654,9 +667,6 @@ export async function PATCH(req: NextRequest) {
           address: null,
           notes: activity.notes || null,
         }
-
-        // Set station to qualified
-        manifest.currentStation = 'qualified'
 
         // Mark briefing as stale
         if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
@@ -773,7 +783,7 @@ export async function PATCH(req: NextRequest) {
                 reason: 'seller_requested',
               })
             } else if (dispo === 'deal_potential' || dispo === 'offer_made') {
-              manifest.currentStation = dispo === 'offer_made' ? 'offer_made' : 'qualified'
+              if (dispo === 'offer_made') manifest.currentStation = 'offer_made'
               manifest.priority = 'hot'
             } else if (dispo === 'not_interested' || dispo === 'dead') {
               const triage = LEAD_TRIAGE.dead

@@ -20,6 +20,8 @@ const LEAD_SELECT = [
   'zip',
   'county',
   'station',
+  'classification',
+  'dead_reason',
   'priority',
   'motivation_score',
   'seller_situation',

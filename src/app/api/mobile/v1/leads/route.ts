@@ -19,6 +19,7 @@ const LEAD_SELECT = [
   'state',
   'zip',
   'station',
+  'classification',
   'priority',
   'motivation_score',
   'appointment_date',
@@ -37,6 +38,8 @@ export async function GET(req: NextRequest) {
     const { data, error } = await db
       .from('leads')
       .select(LEAD_SELECT)
+      .or('station.is.null,station.not.in.(dead,closed_lost)')
+      .or('classification.is.null,classification.neq.dead')
       .order('updated_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .limit(limit)

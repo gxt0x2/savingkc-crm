@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   enqueuePpcConversion: vi.fn(),
   from: vi.fn(),
+  getLeadQualificationStatus: vi.fn(),
 }))
 
 vi.mock('@/lib/ppc/conversion-outbox', () => ({
@@ -16,6 +17,10 @@ vi.mock('@/lib/supabase-lazy', () => ({
   },
 }))
 
+vi.mock('@/lib/qualification-policy', () => ({
+  getLeadQualificationStatus: mocks.getLeadQualificationStatus,
+}))
+
 import { queuePpcQualifiedLeadConversion } from './qualified-lead-conversion'
 
 function sha256Hex(value: string): string {
@@ -25,6 +30,28 @@ function sha256Hex(value: string): string {
 describe('queuePpcQualifiedLeadConversion', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.getLeadQualificationStatus.mockResolvedValue({
+      qualified: true,
+      pillars: { TIMELINE: true, CONDITION: true, MOTIVATION: true, PRICE: true },
+      missing: [],
+    })
+  })
+
+  it('does not export a qualified conversion when the qualification evidence is incomplete', async () => {
+    mocks.getLeadQualificationStatus.mockResolvedValue({
+      qualified: false,
+      pillars: { TIMELINE: true, CONDITION: true, MOTIVATION: false, PRICE: false },
+      missing: ['MOTIVATION', 'PRICE'],
+    })
+
+    const result = await queuePpcQualifiedLeadConversion({
+      leadId: 'lead-unqualified',
+      toStation: 'qualified',
+      changedBy: 'test',
+    })
+
+    expect(result).toEqual({ queued: false, reason: 'qualification_incomplete:MOTIVATION,PRICE' })
+    expect(mocks.enqueuePpcConversion).not.toHaveBeenCalled()
   })
 
   it('carries stored user identifiers from lead submit to the qualified lead conversion', async () => {

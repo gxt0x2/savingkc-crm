@@ -29,11 +29,12 @@ describe('lead outcome dead reasons', () => {
     expect(DEAD_REASONS.map((reason) => reason.label)).toContain('Other — see notes')
   })
 
-  it('lets the operating stage overrule stale AI classification', () => {
-    expect(isNotLeadOutcome('dead', 'under_contract')).toBe(false)
-    expect(isNotLeadOutcome('dead', 'closed_won')).toBe(false)
+  it('keeps a dead classification out of active work even when stage data conflicts', () => {
+    expect(isNotLeadOutcome('dead', 'under_contract')).toBe(true)
+    expect(isNotLeadOutcome('dead', 'closed_won')).toBe(true)
     expect(isNotLeadOutcome('lead', 'dead')).toBe(true)
     expect(isNotLeadOutcome(null, 'closed_lost')).toBe(true)
     expect(isNotLeadOutcome('dead', null)).toBe(true)
+    expect(isNotLeadOutcome('opportunity', 'qualified')).toBe(false)
   })
 })

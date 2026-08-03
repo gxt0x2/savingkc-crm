@@ -43,6 +43,7 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
   return (
     <Link
       href={item.href}
+      prefetch
       aria-current={active ? 'page' : undefined}
       title={collapsed ? item.label : undefined}
       className={cn(
@@ -79,7 +80,7 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
   return (
     <aside className={cn('hidden shrink-0 flex-col border-r border-black/15 bg-[var(--crm-nav)] text-[var(--crm-nav-text)] transition-[width] duration-200 lg:flex', collapsed ? 'w-[76px]' : 'w-[230px]')}>
       <svg width="0" height="0" aria-hidden="true"><filter id="crm-logo-dark" colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values="0 -0.5 -0.5 0 1 -1 0 0 0 1 -1 0 0 0 1 0 0 0 1 0" /></filter></svg>
-      <Link href="/dashboard" aria-label="Saving KC CRM dashboard" className={cn('flex h-[76px] items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-5')}>
+      <Link href="/dashboard" prefetch aria-label="Saving KC CRM dashboard" className={cn('flex h-[76px] items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-5')}>
         <Image src="/logo.png" alt={collapsed ? '' : 'Saving KC Homebuyers'} width={489} height={141} className={cn('h-auto object-contain', collapsed ? 'w-[58px]' : 'w-[155px]')} style={{ filter: 'url(#crm-logo-dark)' }} />
       </Link>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="CRM navigation">

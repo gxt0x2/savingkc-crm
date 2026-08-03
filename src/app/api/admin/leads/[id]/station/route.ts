@@ -7,6 +7,7 @@ import { updateManifestAndCascade } from '@/lib/manifest-sync'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import { DEAD_REASONS, cleanDeadReason, deadReasonLabel } from '@/lib/lead-outcomes'
+import { getLeadQualificationStatus, qualificationError } from '@/lib/qualification-policy'
 
 const ALLOWED_STATIONS = new Set([
   'intake', 'not_contacted', 'new',
@@ -158,6 +159,20 @@ export async function POST(
       },
       { status: 409 },
     )
+  }
+
+  if (body.station === 'qualified') {
+    const qualification = await getLeadQualificationStatus(id)
+    if (!qualification.qualified) {
+      return NextResponse.json(
+        {
+          error: qualificationError(qualification),
+          code: 'qualification_incomplete',
+          missingPillars: qualification.missing,
+        },
+        { status: 409 },
+      )
+    }
   }
 
   const { error: updErr } = await db
