@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
-import { runGoogleAdsReportingSync } from '@/lib/marketing/google-ads-reporting-sync'
+import {
+  GoogleAdsReauthorizationRequiredError,
+  runGoogleAdsReportingSync,
+} from '@/lib/marketing/google-ads-reporting-sync'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -58,6 +61,18 @@ async function handle(req: NextRequest) {
     })
     return NextResponse.json({ ...result, lookbackDays })
   } catch (error) {
+    if (error instanceof GoogleAdsReauthorizationRequiredError) {
+      console.warn('[google-ads-reporting-sync] Google Ads reconnection required')
+      return NextResponse.json({
+        ok: false,
+        dryRun,
+        since,
+        until,
+        lookbackDays,
+        actionRequired: 'reconnect_google_ads',
+        error: error.message,
+      })
+    }
     console.error('[google-ads-reporting-sync] failed', error)
     return NextResponse.json(
       {

@@ -53,7 +53,7 @@ const GOOGLE_ADS_NUMBERS: Record<string, { label: string; workflowId: string }> 
 }
 
 function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
-  const sourceFiles = ['/api/twiml-voice', '/api/twilio-sms-webhook', 'src/lib/twilio-numbers.ts'] as const
+  const sourceFiles = ['/api/twiml-voice', '/api/twilio-sms-webhook', '/api/twilio/fallback/voice', '/api/twilio/fallback/sms', 'src/lib/twilio-numbers.ts'] as const
   const direct = DIRECT_AGENT_NUMBERS[config.value]
   if (direct) {
     return {
@@ -74,7 +74,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       outboundUse: config.dialerEligible
         ? 'Available as an approved conversation, broadcast, and dialer caller ID.'
         : 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
-      carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
+      carrierFallback: 'Voice falls back to the owning agent and SMS is durably captured as New work when the primary Twilio webhook fails. Live carrier configuration is verified from this registry.',
       sourceFiles,
     }
   }
@@ -97,7 +97,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       smsPath: 'Inbound SMS is attributed to the matching Google Ads line and notifies the acquisition team.',
       smsSenderPolicy: 'Reply-only for the matching inbound Google Ads path; blocked from generic conversations, broadcasts, and system sends.',
       outboundUse: 'Reserved for Google Ads attribution; blocked from generic conversations, broadcasts, and dialer rotation.',
-      carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
+      carrierFallback: 'Voice falls back to the acquisition owner and SMS is durably captured without losing the Google Ads tracking number. Live carrier configuration is verified from this registry.',
       sourceFiles: [...sourceFiles, '/api/ivr/google-ads', '/api/cron/google-ads-missed-calls'],
     }
   }
@@ -119,7 +119,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       smsPath: 'Replies enter /api/twilio-sms-webhook and remain associated with the callback number.',
       smsSenderPolicy: 'Approved for conversation, callback reply, and broadcast use; the API validates the selected sender.',
       outboundUse: 'Available for dialer, conversations, and approved broadcasts.',
-      carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
+      carrierFallback: 'Voice falls back to the route owner and SMS is durably captured with the callback number preserved. Live carrier configuration is verified from this registry.',
       sourceFiles: [...sourceFiles, '/api/ivr/handle-input', '/api/ivr/cold-no-input'],
     }
   }
@@ -142,7 +142,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
     outboundUse: config.dialerEligible
       ? 'Available for dialer, conversations, and approved broadcasts.'
       : 'Not available to the generic dialer rotation.',
-    carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
+    carrierFallback: 'Voice falls back to the route owner and SMS is durably captured as New work when the primary Twilio webhook fails. Live carrier configuration is verified from this registry.',
     sourceFiles,
   }
 }

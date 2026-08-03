@@ -1,11 +1,15 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const CRM_EMAIL = process.env.CRM_E2E_EMAIL ?? 'ernest@savingkc.com'
-const CRM_PASSWORD = process.env.CRM_E2E_PASSWORD ?? 'SavingKC2026!'
+const CRM_EMAIL = process.env.CRM_E2E_EMAIL?.trim()
+const CRM_PASSWORD = process.env.CRM_E2E_PASSWORD?.trim()
 
 async function ensureAuthenticated(page: Page) {
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
   if (!page.url().includes('/login')) return
+
+  if (!CRM_EMAIL || !CRM_PASSWORD) {
+    throw new Error('CRM navigation verification requires CRM_E2E_EMAIL and CRM_E2E_PASSWORD when the explicit local test bypass is unavailable. Configure a dedicated test user; never commit login fallbacks.')
+  }
 
   await page.locator('input[type="email"]').fill(CRM_EMAIL)
   await page.locator('input[type="password"]').fill(CRM_PASSWORD)

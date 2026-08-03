@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { markOAuthConnected, persistOAuthHealth, readOAuthHealth } from '@/lib/oauth-health'
 
 const DEFAULT_API_VERSION = 'v24'
 const DEFAULT_SINCE = '2026-05-01'
@@ -36,6 +37,13 @@ export type GoogleAdsReportingSyncResult = {
   campaignRows: number
   searchTermRows: number
   runId: string | null
+}
+
+export class GoogleAdsReauthorizationRequiredError extends Error {
+  constructor(message = 'Google Ads authorization expired. Reconnect Google Ads in Settings.') {
+    super(message)
+    this.name = 'GoogleAdsReauthorizationRequiredError'
+  }
 }
 
 function todayIsoDate() {
@@ -95,6 +103,12 @@ async function getGoogleAdsAccessToken(
   config: GoogleAdsReportingConfig,
   supabase: SupabaseClient,
 ): Promise<string> {
+  if (config.refreshTokenUserEmail) {
+    const health = await readOAuthHealth(supabase, 'google_ads', config.refreshTokenUserEmail)
+    if (health?.status === 'reauthorization_required') {
+      throw new GoogleAdsReauthorizationRequiredError()
+    }
+  }
   const refreshToken = config.refreshToken || await readSavedGoogleAdsRefreshToken(config, supabase)
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -110,7 +124,24 @@ async function getGoogleAdsAccessToken(
   const body = await response.json().catch(() => ({}))
   const token = record(body).access_token
   if (!response.ok || typeof token !== 'string' || !token) {
-    throw new Error(text(record(body).error_description) || text(record(body).error) || `Google OAuth failed (${response.status})`)
+    const errorCode = text(record(body).error) || `oauth_http_${response.status}`
+    const errorDescription = text(record(body).error_description) || 'Google OAuth token refresh failed'
+    if (config.refreshTokenUserEmail) {
+      await persistOAuthHealth(supabase, {
+        provider: 'google_ads',
+        userEmail: config.refreshTokenUserEmail,
+        status: errorCode === 'invalid_grant' ? 'reauthorization_required' : 'error',
+        errorCode,
+        errorMessage: errorDescription,
+      })
+    }
+    if (errorCode === 'invalid_grant') {
+      throw new GoogleAdsReauthorizationRequiredError()
+    }
+    throw new Error(`Google Ads OAuth ${errorCode}: ${errorDescription}`)
+  }
+  if (config.refreshTokenUserEmail) {
+    await markOAuthConnected(supabase, 'google_ads', config.refreshTokenUserEmail)
   }
   return token
 }
@@ -172,8 +203,15 @@ function cleanHeaders(headers: Record<string, string | null>): Record<string, st
 function summarizeGoogleAdsError(body: unknown, fallback: string): string {
   const error = record(body).error
   if (typeof error === 'string') return error
-  const message = record(error).message
-  return typeof message === 'string' && message ? message : fallback
+  const errorRecord = record(error)
+  const message = text(errorRecord.message)
+  const details = Array.isArray(errorRecord.details) ? errorRecord.details : []
+  const issueMessages = details.flatMap((detail) => {
+    const errors = record(detail).errors
+    if (!Array.isArray(errors)) return []
+    return errors.map((issue) => text(record(issue).message)).filter(Boolean)
+  })
+  return [message || fallback, ...issueMessages].filter(Boolean).join(' | ')
 }
 
 async function fetchCampaignDailyRows(

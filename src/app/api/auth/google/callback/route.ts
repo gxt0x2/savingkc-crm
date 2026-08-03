@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { markOAuthConnected } from '@/lib/oauth-health'
 
 type GoogleOAuthProvider = 'google' | 'google_ads'
 
@@ -128,6 +129,8 @@ export async function GET(req: NextRequest) {
     console.error('[oauth/callback] Token upsert failed:', upsertError)
     return redirectWithStatus(url.origin, returnTo, keys.error, 'storage_failed')
   }
+
+  await markOAuthConnected(db, provider, userInfo.email)
 
   return redirectWithStatus(url.origin, returnTo, keys.success, userInfo.email)
 }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { PHONE_SYSTEM, PHONE_SYSTEM_ATTENTION, type PhoneSystemRecord } from '@/lib/operating-model/phone-system'
@@ -89,19 +89,19 @@ function SurfaceHeader({ section, onNew }: { section: string; onNew: () => void 
   )
 }
 
-function Overview({ onSelect }: { onSelect: (workflow: WorkflowDefinition) => void }) {
-  const active = WORKFLOW_CATALOG.filter((workflow) => workflow.status === 'active').length
-  const attention = WORKFLOW_CATALOG.filter((workflow) => workflow.health === 'warning' || workflow.health === 'error').length
-  const attentionWorkflows = WORKFLOW_CATALOG.filter((workflow) => workflow.health === 'warning' || workflow.health === 'error')
-  const reviewWorkflows = attentionWorkflows.length > 0 ? attentionWorkflows : WORKFLOW_CATALOG.slice(0, 4)
-  const automations = WORKFLOW_CATALOG.filter((workflow) => workflow.implementation.execution === 'worker').length
+function Overview({ onSelect, workflows }: { onSelect: (workflow: WorkflowDefinition) => void; workflows: readonly WorkflowDefinition[] }) {
+  const active = workflows.filter((workflow) => workflow.status === 'active').length
+  const attention = workflows.filter((workflow) => workflow.health === 'warning' || workflow.health === 'error').length
+  const attentionWorkflows = workflows.filter((workflow) => workflow.health === 'warning' || workflow.health === 'error')
+  const reviewWorkflows = attentionWorkflows.length > 0 ? attentionWorkflows : workflows.slice(0, 4)
+  const automations = workflows.filter((workflow) => workflow.implementation.execution === 'worker').length
 
   return (
     <div className="space-y-5">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: 'Owned numbers', value: PHONE_SYSTEM.length, note: 'Every live DID is registered', icon: 'phone_in_talk', tone: 'text-[var(--crm-info)] bg-[var(--crm-info-soft)]' },
-          { label: 'System workflows', value: WORKFLOW_CATALOG.length, note: `${active} active definitions`, icon: 'account_tree', tone: 'text-[var(--crm-violet)] bg-[var(--crm-violet-soft)]' },
+          { label: 'System workflows', value: workflows.length, note: `${active} active definitions`, icon: 'account_tree', tone: 'text-[var(--crm-violet)] bg-[var(--crm-violet-soft)]' },
           { label: 'Scheduled workers', value: automations, note: 'Cron and worker execution', icon: 'schedule', tone: 'text-[var(--crm-success)] bg-[var(--crm-success-soft)]' },
           { label: 'Needs attention', value: PHONE_SYSTEM_ATTENTION.length + attention, note: 'Routing or workflow decisions', icon: 'error', tone: 'text-[var(--crm-danger)] bg-[var(--crm-danger-soft)]' },
         ].map((item) => (
@@ -136,8 +136,8 @@ function Overview({ onSelect }: { onSelect: (workflow: WorkflowDefinition) => vo
           <h2 className="mt-5 text-xl font-black text-[var(--crm-ink)]">Workflow Registry</h2>
           <p className="mt-1 text-sm leading-6 text-[var(--crm-text-muted)]">See each trigger, operating owner, action sequence, implementation source, mutation policy, and approval boundary.</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full bg-[var(--crm-violet-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-violet)]">{WORKFLOW_CATALOG.length} definitions</span>
-            <span className="rounded-full bg-[var(--crm-info-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-info)]">{new Set(WORKFLOW_CATALOG.map((workflow) => workflow.category)).size} operating areas</span>
+            <span className="rounded-full bg-[var(--crm-violet-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-violet)]">{workflows.length} definitions</span>
+            <span className="rounded-full bg-[var(--crm-info-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-info)]">{new Set(workflows.map((workflow) => workflow.category)).size} operating areas</span>
           </div>
         </Link>
       </section>
@@ -226,32 +226,32 @@ function PhoneSystem({ onSelect }: { onSelect: (record: PhoneSystemRecord) => vo
           </tbody>
         </table>
       </div>
-      <div className="border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-5 py-3 text-xs text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">Fallback truth:</strong> none of the registered Twilio numbers currently has a carrier-level voice or SMS fallback URL. That is shown on every phone record instead of being implied.</div>
+      <div className="border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-5 py-3 text-xs text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">Fallback truth:</strong> “Verified live” now requires the correct primary voice, SMS, status callback, voice fallback, and SMS fallback routes at Twilio. A mapped code path alone is never reported as carrier-verified.</div>
     </section>
   )
 }
 
-function WorkflowRegistry({ onSelect }: { onSelect: (workflow: WorkflowDefinition) => void }) {
+function WorkflowRegistry({ onSelect, workflows }: { onSelect: (workflow: WorkflowDefinition) => void; workflows: readonly WorkflowDefinition[] }) {
   const params = useSearchParams()
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('')
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase()
-    return WORKFLOW_CATALOG.filter((workflow) =>
+    return workflows.filter((workflow) =>
       (!category || workflow.category === category) &&
       (!needle || [workflow.name, workflow.description, triggerLabel(workflow.trigger), workflow.owner.displayName, ...workflow.implementation.sourceFiles].some((value) => value.toLowerCase().includes(needle))),
     )
-  }, [category, search])
+  }, [category, search, workflows])
 
   const requestedWorkflow = params.get('workflow')
-  const requested = requestedWorkflow ? WORKFLOW_CATALOG.find((workflow) => workflow.id === requestedWorkflow) : undefined
+  const requested = requestedWorkflow ? workflows.find((workflow) => workflow.id === requestedWorkflow) : undefined
 
   return (
     <section className="crm-panel overflow-hidden rounded-2xl">
       {requested ? <button type="button" onClick={() => onSelect(requested)} className="flex w-full items-center justify-between gap-3 border-b border-[var(--crm-violet)]/25 bg-[var(--crm-violet-soft)] px-5 py-3 text-left text-sm font-bold text-[var(--crm-violet)]"><span>Open linked workflow: {requested.name}</span><Icon name="open_in_new" /></button> : null}
       <div className="flex flex-wrap items-center gap-3 border-b border-[var(--crm-border)] p-4">
         <label className="relative min-w-64 flex-1"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search workflow, trigger, owner, or implementation..." className="crm-field h-10 w-full rounded-lg pl-10 pr-3 text-sm outline-none" /></label>
-        <select aria-label="Workflow category" value={category} onChange={(event) => setCategory(event.target.value)} className="crm-field h-10 rounded-lg px-3 text-sm font-bold"><option value="">All operating areas</option>{Array.from(new Set(WORKFLOW_CATALOG.map((workflow) => workflow.category))).map((value) => <option key={value} value={value}>{workflowCategoryLabel(value)}</option>)}</select>
+        <select aria-label="Workflow category" value={category} onChange={(event) => setCategory(event.target.value)} className="crm-field h-10 rounded-lg px-3 text-sm font-bold"><option value="">All operating areas</option>{Array.from(new Set(workflows.map((workflow) => workflow.category))).map((value) => <option key={value} value={value}>{workflowCategoryLabel(value)}</option>)}</select>
         <span className="rounded-full bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs font-black text-[var(--crm-text-muted)]">{visible.length} workflows</span>
       </div>
       <div className="overflow-x-auto">
@@ -321,15 +321,83 @@ function WorkflowDetails({ workflow }: { workflow: WorkflowDefinition }) {
   )
 }
 
-function NewWorkflowDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+const WORKFLOW_CATEGORY_OPTIONS: WorkflowDefinition['category'][] = ['phone_routing', 'lead_intake', 'appointment', 'communication', 'pipeline', 'nurture', 'dispositions', 'data_sync', 'reporting', 'operating_rhythm', 'ai']
+
+function NewWorkflowDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (workflow: WorkflowDefinition) => void }) {
   const ref = useDialogAccessibility<HTMLElement>(open, onClose)
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState<WorkflowDefinition['category']>('lead_intake')
+  const [owner, setOwner] = useState('Acquisitions')
+  const [trigger, setTrigger] = useState('')
+  const [actions, setActions] = useState('')
+  const [protectedResources, setProtectedResources] = useState('')
+  const [rollbackPlan, setRollbackPlan] = useState('Pause this workflow and reverse any work it created after review.')
+  const [mutatesData, setMutatesData] = useState(true)
+  const [approvalPolicy, setApprovalPolicy] = useState<'user_confirmation' | 'admin_only'>('user_confirmation')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (saving) return
+    setSaving(true)
+    setError('')
+    try {
+      const response = await fetch('/api/workflows/definitions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          description,
+          category,
+          owner,
+          trigger,
+          actions: actions.split('\n').map((value) => value.trim()).filter(Boolean),
+          mutatesData,
+          approvalPolicy,
+          protectedResources: protectedResources.split(',').map((value) => value.trim()).filter(Boolean),
+          rollbackPlan,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Workflow draft could not be saved.')
+      onCreated(data.definition)
+      setName('')
+      setDescription('')
+      setTrigger('')
+      setActions('')
+      setProtectedResources('')
+      onClose()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Workflow draft could not be saved.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!open) return null
   return (
     <div className="fixed inset-0 z-[130] grid place-items-center bg-black/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section ref={ref} role="dialog" aria-modal="true" aria-labelledby="new-workflow-title" className="w-full max-w-lg rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-[var(--crm-border)] p-5"><div><p className="crm-eyebrow">Governed creation</p><h2 id="new-workflow-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Workflow safety requirements</h2></div><button type="button" onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--crm-border)]"><Icon name="close" /></button></div>
-        <div className="space-y-4 p-5 text-sm leading-6 text-[var(--crm-text-muted)]"><p>New workflows enter this same registry. Before activation they must declare a trigger, owner, action sequence, implementation source, data mutations, approval policy, protected phone identities, and rollback path.</p><div className="rounded-xl border border-[var(--crm-warning)]/25 bg-[var(--crm-warning-soft)] p-4 text-[var(--crm-ink)]"><strong>Publishing is intentionally gated.</strong> Creating or activating a workflow can send communication, move pipeline records, or change routing. The AI Assistant can draft the definition, but a user must approve consequential actions.</div></div>
-        <div className="flex justify-end gap-3 border-t border-[var(--crm-border)] p-5"><button type="button" onClick={onClose} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-black">Close</button><Link href="/ai?prompt=Draft%20a%20new%20SavingKC%20workflow%20definition" className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="smart_toy" />Draft with AI</Link></div>
+      <section ref={ref} role="dialog" aria-modal="true" aria-labelledby="new-workflow-title" className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--crm-border)] p-5"><div><p className="crm-eyebrow">Governed creation</p><h2 id="new-workflow-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Create workflow draft</h2><p className="mt-1 text-sm text-[var(--crm-text-muted)]">Saved definitions enter the master registry as versioned drafts.</p></div><button type="button" onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--crm-border)]"><Icon name="close" /></button></div>
+        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+          <div className="grid min-h-0 gap-4 overflow-y-auto p-5 sm:grid-cols-2">
+            <label className="sm:col-span-2"><span className="mb-1.5 block text-xs font-black text-[var(--crm-ink)]">Workflow name</span><input required value={name} onChange={(event) => setName(event.target.value)} className="crm-field h-10 w-full rounded-lg px-3 text-sm" /></label>
+            <label className="sm:col-span-2"><span className="mb-1.5 block text-xs font-black text-[var(--crm-ink)]">Purpose and outcome</span><textarea required rows={2} value={description} onChange={(event) => setDescription(event.target.value)} className="crm-field w-full rounded-lg px-3 py-2 text-sm" /></label>
+            <label><span className="mb-1.5 block text-xs font-black text-[var(--crm-ink)]">Operating area</span><select value={category} onChange={(event) => setCategory(event.target.value as WorkflowDefinition['category'])} className="crm-field h-10 w-full rounded-lg px-3 text-sm">{WORKFLOW_CATEGORY_OPTIONS.map((value) => <option key={value} value={value}>{workflowCategoryLabel(value)}</option>)}</select></label>
+            <label><span className="mb-1.5 block text-xs font-black text-[var(--crm-ink)]">Accountable owner</span><input required value={owner} onChange={(event) => setOwner(event.target.value)} className="crm-field h-10 w-full rounded-lg px-3 text-sm" /></label>
+            <label className="sm:col-span-2"><span className="mb-1.5 block text-xs font-black text-[var(--crm-ink)]">Trigger</span><input required value={trigger} onChange={(event) => setTrigger(event.target.value)} placeholder="Example: Appointment is marked no-show" className="crm-field h-10 w-full rounded-lg px-3 text-sm" /></label>
+            <label className="sm:col-span-2"><span className="mb-1.5 block text-xs font-black text-[var(--crm-ink)]">Action sequence · one action per line</span><textarea required rows={4} value={actions} onChange={(event) => setActions(event.target.value)} placeholder={'Create a callback task\nNotify the assigned agent\nWait 24 hours and review'} className="crm-field w-full rounded-lg px-3 py-2 text-sm" /></label>
+            <label className="sm:col-span-2"><span className="mb-1.5 block text-xs font-black text-[var(--crm-ink)]">Protected phone numbers or resources · comma separated</span><input value={protectedResources} onChange={(event) => setProtectedResources(event.target.value)} className="crm-field h-10 w-full rounded-lg px-3 text-sm" /></label>
+            <label className="sm:col-span-2"><span className="mb-1.5 block text-xs font-black text-[var(--crm-ink)]">Rollback plan</span><textarea required rows={2} value={rollbackPlan} onChange={(event) => setRollbackPlan(event.target.value)} className="crm-field w-full rounded-lg px-3 py-2 text-sm" /></label>
+            <label><span className="mb-1.5 block text-xs font-black text-[var(--crm-ink)]">Approval boundary</span><select value={approvalPolicy} onChange={(event) => setApprovalPolicy(event.target.value as 'user_confirmation' | 'admin_only')} className="crm-field h-10 w-full rounded-lg px-3 text-sm"><option value="user_confirmation">Explicit user confirmation</option><option value="admin_only">Admin only</option></select></label>
+            <label className="flex items-center gap-3 self-end rounded-lg border border-[var(--crm-border)] px-3 py-2.5 text-sm font-bold"><input type="checkbox" checked={mutatesData} onChange={(event) => setMutatesData(event.target.checked)} />This workflow writes CRM data</label>
+            {error ? <div className="sm:col-span-2 rounded-xl border border-[var(--crm-danger)]/25 bg-[var(--crm-danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--crm-danger)]">{error}</div> : null}
+            <div className="sm:col-span-2 rounded-xl border border-[var(--crm-warning)]/25 bg-[var(--crm-warning-soft)] p-4 text-sm leading-6 text-[var(--crm-ink)]"><strong>Drafting does not activate execution.</strong> Publication, communication, routing, stage, assignment, deletion, and spending changes require the declared confirmation boundary and an audit record.</div>
+          </div>
+          <div className="flex flex-wrap justify-between gap-3 border-t border-[var(--crm-border)] p-5"><Link href="/ai?prompt=Help%20me%20draft%20a%20new%20SavingKC%20workflow%20definition" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="smart_toy" />Draft with ARI</Link><div className="flex gap-3"><button type="button" onClick={onClose} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-black">Cancel</button><button type="submit" disabled={saving} className="crm-primary-button h-10 rounded-lg px-4 text-sm font-black disabled:opacity-60">{saving ? 'Saving…' : 'Save draft'}</button></div></div>
+        </form>
       </section>
     </div>
   )
@@ -341,15 +409,26 @@ export default function WorkflowsPage() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowDefinition | null>(null)
   const [selectedPhone, setSelectedPhone] = useState<PhoneSystemRecord | null>(null)
   const [showNew, setShowNew] = useState(false)
+  const [workflows, setWorkflows] = useState<readonly WorkflowDefinition[]>(WORKFLOW_CATALOG)
+
+  useEffect(() => {
+    fetch('/api/workflows/definitions', { cache: 'no-store' })
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Workflow registry unavailable')
+        if (Array.isArray(data.definitions)) setWorkflows(data.definitions)
+      })
+      .catch((error) => console.error('[workflows] registry load failed', error))
+  }, [])
 
   return (
     <main className="h-full overflow-y-auto bg-[var(--crm-canvas)] text-[var(--crm-ink)]">
       <div className="mx-auto w-full max-w-[1480px] space-y-5 px-4 py-6 sm:px-6">
         <SurfaceHeader section={section} onNew={() => setShowNew(true)} />
-        {section === 'phones' ? <PhoneSystem onSelect={(record) => { setSelectedPhone(record); setSelectedWorkflow(null) }} /> : section === 'all' ? <WorkflowRegistry onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} /> : <Overview onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} />}
+        {section === 'phones' ? <PhoneSystem onSelect={(record) => { setSelectedPhone(record); setSelectedWorkflow(null) }} /> : section === 'all' ? <WorkflowRegistry workflows={workflows} onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} /> : <Overview workflows={workflows} onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} />}
       </div>
       <DetailSheet workflow={selectedWorkflow} phone={selectedPhone} onClose={() => { setSelectedWorkflow(null); setSelectedPhone(null) }} />
-      <NewWorkflowDialog open={showNew} onClose={() => setShowNew(false)} />
+      <NewWorkflowDialog open={showNew} onClose={() => setShowNew(false)} onCreated={(workflow) => { setWorkflows((current) => [...current, workflow]); setSelectedWorkflow(workflow) }} />
     </main>
   )
 }

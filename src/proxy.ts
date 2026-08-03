@@ -31,6 +31,10 @@ const PUBLIC_API_EXACT = new Set([
   '/api/twilio-missed-call',
   '/api/twilio-recording-callback',
   '/api/twilio-call-status',
+  // Carrier fallback routes are public Twilio webhooks and validate the
+  // provider signature inside their handlers.
+  '/api/twilio/fallback/voice',
+  '/api/twilio/fallback/sms',
 ])
 
 const PUBLIC_API_PREFIXES = [

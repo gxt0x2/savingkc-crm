@@ -1,14 +1,18 @@
-import { expect, test, Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
-const CRM_EMAIL = process.env.CRM_E2E_EMAIL ?? 'ernest@savingkc.com'
-const CRM_PASSWORD = process.env.CRM_E2E_PASSWORD ?? 'SavingKC2026!'
+const CRM_EMAIL = process.env.CRM_E2E_EMAIL?.trim()
+const CRM_PASSWORD = process.env.CRM_E2E_PASSWORD?.trim()
 
 async function login(page: Page) {
-  await page.goto('/login', { waitUntil: 'domcontentloaded' })
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 
   if (!page.url().includes('/login')) {
     await expect(page).toHaveURL(/\/(ari|dashboard|leads|opportunities|calendar|dialer|pipeline|dispo\/pipeline)/)
     return
+  }
+
+  if (!CRM_EMAIL || !CRM_PASSWORD) {
+    throw new Error('Dialer verification requires CRM_E2E_EMAIL and CRM_E2E_PASSWORD when the explicit local test bypass is unavailable.')
   }
 
   await page.locator('input[type="email"]').fill(CRM_EMAIL)

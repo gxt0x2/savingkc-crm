@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { markOAuthConnected, persistOAuthHealth, readOAuthHealth } from '@/lib/oauth-health'
 
 export interface StoredToken {
   id: string
@@ -7,6 +8,11 @@ export interface StoredToken {
   refresh_token: string
   expires_at: string | null
   last_sync_at: string | null
+}
+
+export type GoogleAccessTokenResult = {
+  accessToken: string | null
+  error: 'google_oauth_not_configured' | 'token_refresh_failed' | 'reauthorization_required' | null
 }
 
 interface GmailMessage {
@@ -28,21 +34,28 @@ export function hasGoogleOAuthConfig(): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Refresh an access token if it's expired. Returns a valid access token.
+// Refresh an access token if it's expired and persist actionable connection
+// health so cron jobs stop retrying a revoked grant every few minutes.
 // ---------------------------------------------------------------------------
-export async function getValidAccessToken(token: StoredToken): Promise<string | null> {
+export async function getValidAccessTokenResult(token: StoredToken): Promise<GoogleAccessTokenResult> {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
   if (!clientId || !clientSecret) {
     console.error('[gmail-sync] Google OAuth env is not configured.')
-    return null
+    return { accessToken: null, error: 'google_oauth_not_configured' }
+  }
+
+  const db = supabaseAdmin()
+  const health = await readOAuthHealth(db, 'google', token.user_email)
+  if (health?.status === 'reauthorization_required') {
+    return { accessToken: null, error: 'reauthorization_required' }
   }
 
   const expiresAt = token.expires_at ? new Date(token.expires_at).getTime() : 0
   const buffer = 60_000 // 1 min
 
   if (token.access_token && expiresAt > Date.now() + buffer) {
-    return token.access_token
+    return { accessToken: token.access_token, error: null }
   }
 
   // Refresh
@@ -58,21 +71,40 @@ export async function getValidAccessToken(token: StoredToken): Promise<string | 
   })
 
   if (!res.ok) {
-    console.error('[gmail-sync] Token refresh failed:', await res.text())
-    return null
+    const body = await res.json().catch(() => ({})) as { error?: string; error_description?: string }
+    const errorCode = body.error || `oauth_http_${res.status}`
+    const errorMessage = body.error_description || 'Google token refresh failed'
+    const reauthorizationRequired = errorCode === 'invalid_grant'
+    await persistOAuthHealth(db, {
+      provider: 'google',
+      userEmail: token.user_email,
+      status: reauthorizationRequired ? 'reauthorization_required' : 'error',
+      errorCode,
+      errorMessage,
+    })
+    console.warn(`[gmail-sync] OAuth refresh ${reauthorizationRequired ? 'requires reconnection' : 'failed'} for ${token.user_email}: ${errorCode}`)
+    return {
+      accessToken: null,
+      error: reauthorizationRequired ? 'reauthorization_required' : 'token_refresh_failed',
+    }
   }
 
   const data = await res.json() as { access_token: string; expires_in: number }
   const newExpiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString()
 
-  const db = supabaseAdmin()
   await db.from('user_oauth_tokens').update({
     access_token: data.access_token,
     expires_at: newExpiresAt,
     updated_at: new Date().toISOString(),
   }).eq('id', token.id)
 
-  return data.access_token
+  await markOAuthConnected(db, 'google', token.user_email)
+
+  return { accessToken: data.access_token, error: null }
+}
+
+export async function getValidAccessToken(token: StoredToken): Promise<string | null> {
+  return (await getValidAccessTokenResult(token)).accessToken
 }
 
 // ---------------------------------------------------------------------------
@@ -171,10 +203,11 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
     return { scanned: 0, matched: 0, inserted: 0, error: 'google_oauth_not_configured' }
   }
 
-  const accessToken = await getValidAccessToken(tokenRow as StoredToken)
-  if (!accessToken) {
-    return { scanned: 0, matched: 0, inserted: 0, error: 'token_refresh_failed' }
+  const tokenResult = await getValidAccessTokenResult(tokenRow as StoredToken)
+  if (!tokenResult.accessToken) {
+    return { scanned: 0, matched: 0, inserted: 0, error: tokenResult.error || 'token_refresh_failed' }
   }
+  const accessToken = tokenResult.accessToken
 
   // Fetch leads for matching
   const { data: leads } = await db

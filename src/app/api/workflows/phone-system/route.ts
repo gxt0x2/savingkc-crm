@@ -4,6 +4,11 @@ import { NextResponse } from 'next/server'
 import twilio from 'twilio'
 import { requireUserOrSecret } from '@/lib/api/admin-auth'
 import { PHONE_SYSTEM } from '@/lib/operating-model/phone-system'
+import {
+  SMS_FALLBACK_PATH,
+  VOICE_FALLBACK_PATH,
+  matchesCarrierRoute,
+} from '@/lib/telephony/carrier-fallback'
 
 function env(name: string) {
   return process.env[name]?.replace(/\\[rnt]/g, '').replace(/\s+/g, '').trim() || ''
@@ -53,16 +58,18 @@ export async function GET(request: Request) {
       const voiceMatches = matchesRoute(carrier.voiceUrl, '/api/twiml-voice')
       const smsMatches = matchesRoute(carrier.smsUrl, '/api/twilio-sms-webhook')
       const statusMatches = matchesRoute(carrier.statusCallback, '/api/twilio-missed-call')
+      const voiceFallbackMatches = matchesCarrierRoute(carrier.voiceFallbackUrl, VOICE_FALLBACK_PATH)
+      const smsFallbackMatches = matchesCarrierRoute(carrier.smsFallbackUrl, SMS_FALLBACK_PATH)
       return {
         number: record.number,
-        carrierStatus: voiceMatches && smsMatches && statusMatches ? 'verified' : 'mismatch',
+        carrierStatus: voiceMatches && smsMatches && statusMatches && voiceFallbackMatches && smsFallbackMatches ? 'verified' : 'mismatch',
         voiceUrl: carrier.voiceUrl,
         smsUrl: carrier.smsUrl,
         statusCallback: carrier.statusCallback,
         voiceFallbackUrl: carrier.voiceFallbackUrl,
         smsFallbackUrl: carrier.smsFallbackUrl,
         capabilities: carrier.capabilities,
-        checks: { voiceMatches, smsMatches, statusMatches },
+        checks: { voiceMatches, smsMatches, statusMatches, voiceFallbackMatches, smsFallbackMatches },
       }
     })
 

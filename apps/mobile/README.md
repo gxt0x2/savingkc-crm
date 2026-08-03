@@ -17,6 +17,18 @@ Native mobile companion app for the SavingKC CRM.
 
 Use TestFlight internal testing for the three SavingKC users. This provides normal iPhone installation and update behavior without publishing the app publicly. A paid Apple Developer account, App Store Connect access, an Expo account, an EAS project ID, and Twilio iOS VoIP push credentials are required before the first device build.
 
+TestFlight is the preferred path over ad-hoc sideloading: all three users receive the same signed build, updates are managed, and no device UUID registration is required. The `production` EAS profile is store-distributed; `development-device` remains available for native SDK debugging on registered devices.
+
+### One-time account setup
+
+1. Sign in to Expo (`npx eas-cli login`) and link or create the EAS project (`npx eas-cli init`).
+2. Store `EAS_PROJECT_ID`, `EXPO_OWNER`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `EXPO_PUBLIC_CRM_API_BASE_URL=https://crm.savingkc.com` in the EAS `production` environment.
+3. In Apple Developer/App Store Connect, register `com.savingkc.crm`, enable Push Notifications, create the app, and invite the other two users as internal TestFlight testers.
+4. In Twilio, create the iOS VoIP Push Credential for `com.savingkc.crm` and associate it with the SavingKC TwiML App used by `/api/mobile/v1/twilio/token`.
+5. Run `npm run distribution:check`, then `npm run release:ios`. After the build finishes, run `npm run submit:ios`.
+
+The distribution check intentionally fails before the EAS account/project and production environment are linked. It never prints credential values.
+
 ## Local Setup
 
 ```bash

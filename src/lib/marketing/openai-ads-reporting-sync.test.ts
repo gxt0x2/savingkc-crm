@@ -175,4 +175,35 @@ describe('runOpenAIAdsReportingSync', () => {
       },
     })
   })
+
+  it('retries a transient 504 without duplicating the sync write', async () => {
+    process.env.OPENAI_ADS_API_KEY = 'test-reporting-key'
+    const db = supabaseMock()
+    mocks.supabase = db.client
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'act_123' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Gateway timeout' } }), { status: 504 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{
+          readable_time: '2026-06-11',
+          campaign_id: 'cmpn_123',
+          campaign_name: 'Search 2026',
+          impressions: 10,
+          clicks: 1,
+          spend: 2.5,
+        }],
+        has_more: false,
+      }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runOpenAIAdsReportingSync({
+      since: '2026-06-11',
+      until: '2026-06-11',
+      write: true,
+    })
+
+    expect(result.campaignRows).toBe(1)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(db.upserts).toHaveLength(1)
+  })
 })

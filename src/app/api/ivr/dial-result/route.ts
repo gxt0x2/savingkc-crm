@@ -9,6 +9,13 @@ import { supabase } from '@/lib/supabase-lazy'
 import { formatPhone } from '@/lib/format'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
+import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
+import { ensureManifestExists, onCommunicationEvent } from '@/lib/manifest-sync'
+import {
+  buildDirectInboundLeadSeed,
+  buildDirectInboundQualificationTask,
+} from '@/lib/operating-model/direct-inbound-intake'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import {
   getCallQualityMilestones,
@@ -94,6 +101,93 @@ async function resolveLeadContext(explicitLeadId: string, phone: string): Promis
   }
 
   return resolveProspectLeadContext(phone)
+}
+
+async function ensureUnknownDirectInboundContact(input: {
+  from: string
+  calledNumber: string
+  callSid: string
+  assignedAgent: string
+}): Promise<{ id: string | null; name: string | null }> {
+  if (!input.from || isInternalTestPhone(input.from)) return { id: null, name: null }
+
+  const seedInput = {
+    phone: input.from,
+    displayPhone: callerPhoneLabel(input.from),
+    assignedAgent: input.assignedAgent,
+    calledNumber: input.calledNumber,
+    callSid: input.callSid,
+  }
+
+  let leadId: string | null = null
+  let leadName: string | null = null
+  const prospectMatches = await lookupProspectByPhone(input.from)
+  if (prospectMatches.length > 0) {
+    leadId = await createEnrichedLeadFromProspect(
+      prospectMatches[0],
+      input.from,
+      'inbound_call',
+      'warm',
+    )
+    if (leadId) {
+      const { data } = await supabase
+        .from('leads')
+        .update({ assigned_agent: input.assignedAgent })
+        .eq('id', leadId)
+        .select('full_name')
+        .maybeSingle()
+      leadName = data?.full_name || null
+    }
+  }
+
+  if (!leadId) {
+    const leadSeed = buildDirectInboundLeadSeed(seedInput)
+    const { data, error } = await supabase
+      .from('leads')
+      .insert(leadSeed)
+      .select('id, full_name')
+      .single()
+    if (error) {
+      console.error('[DIAL-RESULT] Failed to create unknown direct caller:', error.message)
+      return { id: null, name: null }
+    }
+    leadId = data?.id || null
+    leadName = data?.full_name || leadSeed.full_name
+  }
+
+  if (!leadId) return { id: null, name: leadName }
+
+  await ensureManifestExists(leadId).catch((error) => {
+    console.error('[DIAL-RESULT] Direct caller manifest creation failed:', error)
+  })
+
+  const { data: existingTask } = await supabase
+    .from('lead_activities')
+    .select('id')
+    .eq('lead_id', leadId)
+    .eq('activity_type', 'task')
+    .eq('metadata->>source', 'direct_inbound_intake')
+    .eq('metadata->>call_sid', input.callSid)
+    .limit(1)
+    .maybeSingle()
+
+  if (!existingTask?.id) {
+    await supabase.from('lead_activities').insert({
+      lead_id: leadId,
+      ...buildDirectInboundQualificationTask(seedInput),
+    })
+  }
+
+  await supabase.from('ari_briefing_events').insert({
+    event_type: 'inbound_call',
+    priority: 'high',
+    title: `New caller connected with ${input.assignedAgent}`,
+    description: 'Identity and seller qualification still need to be confirmed.',
+    lead_id: leadId,
+    action_url: `/leads/${leadId}`,
+  })
+
+  return { id: leadId, name: leadName }
 }
 
 type InboundCallQualityInput = {
@@ -207,6 +301,10 @@ async function logInboundCallQualityMilestones(input: InboundCallQualityInput): 
 
 export async function POST(req: Request) {
   try {
+    if (!(await validateTwilioWebhook(req))) {
+      return new NextResponse('Forbidden', { status: 403 })
+    }
+
     const url = new URL(req.url)
     const from = url.searchParams.get('from') || ''
     const leadId = url.searchParams.get('leadId') || ''
@@ -236,6 +334,17 @@ export async function POST(req: Request) {
       const googleAdsLead = await resolveGoogleAdsLeadContext(from, calledNumber)
       resolvedLeadId = googleAdsLead.leadId
       callerLabel = googleAdsLead.leadName || (resolvedLeadId ? `${googleAdsProfile.label} Caller ${callerPhoneLabel(from)}` : callerLabel)
+    }
+
+    if (!resolvedLeadId && isDirect && dialStatus === 'completed' && !isInternalTestCaller) {
+      const directLead = await ensureUnknownDirectInboundContact({
+        from,
+        calledNumber,
+        callSid: parentCallSid,
+        assignedAgent: routing.primary.name,
+      })
+      resolvedLeadId = directLead.id
+      callerLabel = directLead.name || callerLabel
     }
 
     const shouldTrackConnectedCall = Boolean(resolvedLeadId || isDirect || isGoogleAdsCall)
@@ -289,6 +398,9 @@ export async function POST(req: Request) {
 
       // Mark pending callback tasks done for known leads.
       if (resolvedLeadId) {
+        onCommunicationEvent(resolvedLeadId, { type: 'inbound_call' }).catch((error) => {
+          console.error('[DIAL-RESULT] Manifest communication update failed:', error)
+        })
         const { data: pendingTasks } = await supabase
           .from('lead_activities')
           .select('id, metadata')
@@ -297,7 +409,7 @@ export async function POST(req: Request) {
 
         if (pendingTasks) {
           for (const task of pendingTasks) {
-            if (task.metadata?.status === 'pending') {
+            if (task.metadata?.status === 'pending' && task.metadata?.task_type === 'callback') {
               await supabase.from('lead_activities')
                 .update({ metadata: { ...task.metadata, status: 'completed' } })
                 .eq('id', task.id)

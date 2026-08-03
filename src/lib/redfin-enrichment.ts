@@ -1,16 +1,4 @@
-// Redfin Property Enrichment
-// Pulls Redfin's home estimate by navigating Redfin's public property page
-// and parsing structured data (__INITIAL_STATE__ or __REDUX_STATE__ JSON blob).
-// Falls back to targeted text selectors if the JSON path changes.
-
-// Dynamic import to handle optional Playwright dependency (not available on Vercel)
-let chromium: any
-try {
-  const playwright = require('playwright')
-  chromium = playwright.chromium
-} catch (e) {
-  console.warn('[Redfin] Playwright not available - enrichment disabled')
-}
+import { fetchRenderedPage, scriptContents } from '@/lib/rendered-page'
 
 export interface RedfinInput {
   address: string
@@ -31,180 +19,129 @@ export interface RedfinResult {
   url?: string
 }
 
-export class RedfinEnrichmentService {
-  private browser: any = null
-  private readonly timeout = 45000
+function numberFromMatch(value: string | undefined): number | undefined {
+  if (!value) return undefined
+  const parsed = Number(value.replace(/[$,]/g, ''))
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : undefined
+}
 
-  async init() {
-    if (!chromium) {
-      throw new Error('Playwright not available - Redfin enrichment disabled on this platform')
-    }
-    this.browser = await chromium.launch({
-      headless: true,
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox',
-        '--disable-dev-shm-usage',
-      ],
-    })
+function plainText(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&dollar;|&#36;/gi, '$')
+    .replace(/\s+/g, ' ')
+}
+
+export function parseRedfinHtml(html: string, url?: string): RedfinResult {
+  const result: RedfinResult = {
+    success: true,
+    source: 'redfin',
+    fetchedAt: new Date().toISOString(),
+    url,
   }
 
-  async close() {
-    if (this.browser) {
-      await this.browser.close()
-      this.browser = null
+  const candidates = [...scriptContents(html), html]
+  for (const candidate of candidates) {
+    if (!result.redfinEstimate) {
+      result.redfinEstimate = numberFromMatch(
+        candidate.match(/"redfinEstimate"\s*:\s*\{[^}]*"estimate"\s*:\s*(\d+)/)?.[1]
+          || candidate.match(/"redfinEstimate"\s*:\s*(\d+)/)?.[1]
+          || candidate.match(/"estimate"\s*:\s*(\d{4,})/)?.[1],
+      )
+    }
+    if (!result.yearBuilt) {
+      result.yearBuilt = numberFromMatch(candidate.match(/"yearBuilt"\s*:\s*(\d{4})/)?.[1])
+    }
+    if (!result.lastSalePrice) {
+      result.lastSalePrice = numberFromMatch(candidate.match(/"lastSoldPrice"\s*:\s*(\d+)/)?.[1])
+    }
+    if (!result.lastSaleDate) {
+      result.lastSaleDate = candidate.match(/"lastSoldDate"\s*:\s*"?(\d{4}-\d{2}-\d{2})"?/)?.[1]
     }
   }
 
-  async enrich(input: RedfinInput): Promise<RedfinResult> {
-    const { address, city, state, zip } = input
-    console.log('[Redfin] Enriching:', address, city, state, zip)
+  if (!result.redfinEstimate) {
+    const text = plainText(html)
+    result.redfinEstimate = numberFromMatch(
+      text.match(/Redfin Estimate[^$]{0,120}\$([\d,]+)/i)?.[1],
+    )
+  }
 
-    if (!this.browser) await this.init()
-
-    const context = await this.browser!.newContext({
-      userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      viewport: { width: 1440, height: 900 },
-    })
-    const page = await context.newPage()
-
-    try {
-      // Redfin's search: paste the address and click the first result.
-      // There is no clean URL we can always construct without the zpid-equivalent,
-      // so we let Redfin's autocomplete resolve it.
-      await page.goto('https://www.redfin.com/', {
-        waitUntil: 'domcontentloaded',
-        timeout: this.timeout,
-      })
-
-      const fullAddr = `${address}, ${city}, ${state}${zip ? ' ' + zip : ''}`
-      const searchInput = page
-        .locator('input[placeholder*="Address"], input[name*="search"], input[aria-label*="Search"]')
-        .first()
-      await searchInput.waitFor({ state: 'visible', timeout: 10_000 })
-      await searchInput.fill(fullAddr)
-      await page.waitForTimeout(1500)
-
-      // Click the first autocomplete result (it's usually the exact address)
-      try {
-        const firstResult = page.locator('.search-result-item, a[href*="/home/"]').first()
-        await firstResult.click({ timeout: 8_000 })
-      } catch {
-        // Fallback: hit enter
-        await searchInput.press('Enter')
-      }
-
-      await page.waitForLoadState('domcontentloaded')
-      await page.waitForTimeout(2500)
-
-      const url = page.url()
-      console.log('[Redfin] Landed on:', url)
-
-      // If we're on a search results listing, try to navigate into a /home/ detail page.
-      if (!url.includes('/home/') && !url.includes('/MO/') && !url.includes('/KS/')) {
-        try {
-          const firstListing = page.locator('a[href*="/home/"]').first()
-          await firstListing.click({ timeout: 5_000 })
-          await page.waitForLoadState('domcontentloaded')
-          await page.waitForTimeout(2000)
-        } catch {
-          /* continue — may already be a detail page */
-        }
-      }
-
-      const result: RedfinResult = {
-        success: true,
-        source: 'redfin',
-        fetchedAt: new Date().toISOString(),
-        url: page.url(),
-      }
-
-      // Primary path: pull from the embedded __REACT_QUERY_STATE__ / __INITIAL_STATE__
-      try {
-        const scripts = await page.locator('script').allTextContents()
-        for (const s of scripts) {
-          if (!s || s.length < 500) continue
-          if (!/redfinEstimate|"estimate"\s*:\s*\{/.test(s)) continue
-
-          // Look for redfinEstimate as a nested object
-          const m1 = s.match(/"redfinEstimate"\s*:\s*\{[^}]*"estimate"\s*:\s*(\d+)/)
-          if (m1) {
-            result.redfinEstimate = parseInt(m1[1], 10)
-          }
-          // Alternate shape
-          const m2 = s.match(/"estimate"\s*:\s*(\d{4,})/)
-          if (!result.redfinEstimate && m2) {
-            result.redfinEstimate = parseInt(m2[1], 10)
-          }
-
-          const yb = s.match(/"yearBuilt"\s*:\s*(\d{4})/)
-          if (yb) result.yearBuilt = parseInt(yb[1], 10)
-          const lsp = s.match(/"lastSoldPrice"\s*:\s*(\d+)/)
-          if (lsp) result.lastSalePrice = parseInt(lsp[1], 10)
-          const lsd = s.match(/"lastSoldDate"\s*:\s*"?(\d{4}-\d{2}-\d{2})"?/)
-          if (lsd) result.lastSaleDate = lsd[1]
-
-          if (result.redfinEstimate) break
-        }
-      } catch (err: any) {
-        console.log('[Redfin] __INITIAL_STATE__ parse failed:', err.message)
-      }
-
-      // Fallback: DOM selector for the visible "Redfin Estimate" chip
-      if (!result.redfinEstimate) {
-        try {
-          const text = await page
-            .locator('text=/Redfin Estimate/i')
-            .first()
-            .locator('xpath=..')
-            .textContent({ timeout: 3_000 })
-          if (text) {
-            const m = text.match(/\$([\d,]+)/)
-            if (m) result.redfinEstimate = parseInt(m[1].replace(/,/g, ''), 10)
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-
-      console.log('[Redfin] Extracted:', {
-        estimate: result.redfinEstimate,
-        yearBuilt: result.yearBuilt,
-      })
-
-      if (!result.redfinEstimate) {
-        return {
-          success: false,
-          source: 'redfin',
-          fetchedAt: new Date().toISOString(),
-          error: 'Could not extract Redfin estimate',
-          url: page.url(),
-        }
-      }
-
-      return result
-    } catch (err: any) {
-      console.error('[Redfin] Enrichment failed:', err.message)
-      return {
-        success: false,
-        source: 'redfin',
-        fetchedAt: new Date().toISOString(),
-        error: err.message,
-      }
-    } finally {
-      await context.close().catch(() => {})
+  if (!result.redfinEstimate) {
+    return {
+      ...result,
+      success: false,
+      error: 'Could not extract Redfin estimate',
     }
+  }
+
+  return result
+}
+
+function findRedfinPath(value: unknown): string | null {
+  const queue: unknown[] = [value]
+  const seen = new WeakSet<object>()
+
+  while (queue.length) {
+    const item = queue.shift()
+    if (typeof item === 'string') {
+      if (/^https:\/\/www\.redfin\.com\/.+\/home\//i.test(item)) return item
+      if (/^\/.+\/home\//i.test(item)) return `https://www.redfin.com${item}`
+      continue
+    }
+    if (!item || typeof item !== 'object') continue
+    if (seen.has(item as object)) continue
+    seen.add(item as object)
+    queue.push(...Object.values(item as Record<string, unknown>))
+  }
+
+  return null
+}
+
+export function parseRedfinAutocomplete(body: string): string | null {
+  const payload = body.includes('&&') ? body.slice(body.indexOf('&&') + 2) : body
+  const startCandidates = [payload.indexOf('{'), payload.indexOf('[')].filter((index) => index >= 0)
+  const start = startCandidates.length ? Math.min(...startCandidates) : -1
+  if (start < 0) return null
+
+  try {
+    return findRedfinPath(JSON.parse(payload.slice(start)))
+  } catch {
+    return null
   }
 }
 
+async function resolveRedfinUrl(input: RedfinInput): Promise<string> {
+  const fullAddress = `${input.address}, ${input.city}, ${input.state}${input.zip ? ` ${input.zip}` : ''}`
+  const autocompleteUrl = new URL('https://www.redfin.com/stingray/do/location-autocomplete')
+  autocompleteUrl.searchParams.set('location', fullAddress)
+  autocompleteUrl.searchParams.set('v', '2')
+
+  const { html } = await fetchRenderedPage(autocompleteUrl.toString(), {
+    render: false,
+    timeoutMs: 20_000,
+  })
+  const propertyUrl = parseRedfinAutocomplete(html)
+  if (!propertyUrl) throw new Error('Redfin could not resolve this property address')
+  return propertyUrl
+}
+
 export async function enrichFromRedfin(input: RedfinInput): Promise<RedfinResult> {
-  const service = new RedfinEnrichmentService()
-  await service.init()
   try {
-    return await service.enrich(input)
-  } finally {
-    await service.close()
+    const propertyUrl = await resolveRedfinUrl(input)
+    const { html } = await fetchRenderedPage(propertyUrl, { timeoutMs: 50_000, waitMs: 2500 })
+    return parseRedfinHtml(html, propertyUrl)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Redfin enrichment failed'
+    console.error('[Redfin] Enrichment failed:', message)
+    return {
+      success: false,
+      source: 'redfin',
+      fetchedAt: new Date().toISOString(),
+      error: message,
+    }
   }
 }
