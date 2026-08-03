@@ -28,7 +28,7 @@ import type { DealStage } from '@/types/pipeline'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { LeadStatusControl } from '@/components/leads/lead-status-control'
 import { deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
-import { conversationHubQueryKey, fetchConversationHub } from '@/lib/queries/conversation-hub'
+import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import {
   CONTACT_SMART_LIST_COPY,
   CONTACT_SMART_LIST_ORDER_STORAGE_KEY,
@@ -173,7 +173,7 @@ function useContactWorkspace() {
         queryClient.fetchQuery({
           queryKey: conversationHubQueryKey,
           queryFn: () => fetchConversationHub<HubThread>(),
-          staleTime: 30_000,
+          staleTime: conversationHubStaleTime,
         }),
       ])
       if (!contactsResponse.ok) throw new Error('Contacts could not be loaded')

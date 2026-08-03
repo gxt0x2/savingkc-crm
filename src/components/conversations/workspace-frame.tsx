@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
 import { GlobalDialerButton } from '@/components/telephony/global-dialer-button'
 import { useThemePreference } from '@/hooks/use-theme-preference'
-import { conversationHubQueryKey, fetchConversationHub } from '@/lib/queries/conversation-hub'
+import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import { WorkspaceNav } from './workspace-nav'
 import { WorkspaceContextNav } from './workspace-context-nav'
 
@@ -73,7 +73,7 @@ export function WorkspaceFrame({
   const { data: hubPayload } = useQuery({
     queryKey: conversationHubQueryKey,
     queryFn: () => fetchConversationHub<{ attentionState?: string }>(),
-    staleTime: 30_000,
+    staleTime: conversationHubStaleTime,
   })
   const hubNeedsReply = useMemo(
     () => (hubPayload?.items ?? []).filter((item) => item.attentionState === 'needs_reply').length,

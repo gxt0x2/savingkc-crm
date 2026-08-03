@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import { ThreadView } from '@/components/conversations/thread-view'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
-import { conversationHubQueryKey, fetchConversationHub } from '@/lib/queries/conversation-hub'
+import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
 import { NextActionDialog } from '@/components/conversations/next-action-dialog'
 import type { Message } from '@/components/conversations/message-bubble'
@@ -297,7 +297,7 @@ export default function ConversationsPage() {
     const payload = await queryClient.fetchQuery({
       queryKey: conversationHubQueryKey,
       queryFn: () => fetchConversationHub<LeadRow>(),
-      staleTime: force ? 0 : 30_000,
+      staleTime: force ? 0 : conversationHubStaleTime,
     }).catch(() => ({ items: [] as LeadRow[] }))
     const rows = payload.items
     const requestedLeadId = new URLSearchParams(window.location.search).get('lead')
