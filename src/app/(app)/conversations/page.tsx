@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import { ThreadView } from '@/components/conversations/thread-view'
-import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
+import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
 import { NextActionDialog } from '@/components/conversations/next-action-dialog'
 import type { Message } from '@/components/conversations/message-bubble'
@@ -486,8 +486,9 @@ export default function ConversationsPage() {
   }
 
   return (
-    <WorkspaceFrame needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length}>
-    <div className="relative flex h-full overflow-hidden bg-[var(--crm-canvas)] text-[#152033]">
+    <>
+      <WorkspaceChrome needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length} />
+      <div className="relative flex h-full overflow-hidden bg-[var(--crm-canvas)] text-[#152033]">
       {showNewMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeNewConversation}>
           <section ref={newConversationDialogRef} role="dialog" aria-modal="true" aria-label="Start new conversation" tabIndex={-1} className="max-h-[70vh] w-96 max-w-[90vw] overflow-y-auto rounded-2xl border border-[#ded9d1] bg-white p-6 shadow-[0_22px_60px_rgba(11,41,66,0.22)]" onClick={(e) => e.stopPropagation()}>
@@ -625,7 +626,7 @@ export default function ConversationsPage() {
           </div>
         ))}
       </div>
-    </div>
-    </WorkspaceFrame>
+      </div>
+    </>
   )
 }

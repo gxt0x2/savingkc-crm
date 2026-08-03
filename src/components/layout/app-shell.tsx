@@ -12,6 +12,7 @@ import { useAppMode } from '@/hooks/use-app-mode'
 import { useThemePreference } from '@/hooks/use-theme-preference'
 import { NotificationBell } from './notification-bell'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
+import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
@@ -83,6 +84,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/settings') ?? false) &&
     searchParams.get('portal') !== 'tc' &&
     mode !== 'tc'
+  const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
+  const isModernDispo = (pathname?.startsWith('/dispo') ?? false) && !isTcRoute
   const isConversationWorkspace =
     (pathname?.startsWith('/conversations') ?? false) ||
     (pathname?.startsWith('/contacts') ?? false) ||
@@ -93,13 +96,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/ai') ?? false) ||
     (pathname?.startsWith('/ari') ?? false) ||
     (pathname?.startsWith('/opportunities') ?? false) ||
+    (pathname?.startsWith('/in-closing') ?? false) ||
     (pathname?.startsWith('/dialer') ?? false) ||
     isAcquisitionsCalendar ||
     (pathname?.startsWith('/marketing') ?? false) ||
-    (pathname?.startsWith('/dispo/pipeline') ?? false) ||
+    isModernDispo ||
     (pathname?.startsWith('/dashboard') ?? false) ||
     isAcquisitionsSettings
-  const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
   const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings)
@@ -277,7 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="min-h-screen bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
         data-theme={userTheme}
       >
-        {children}
+        <WorkspaceFrame>{children}</WorkspaceFrame>
         <DialerPanel
           open={showDialer}
           onClose={() => {

@@ -12,7 +12,7 @@ vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => <a href={href} {...props}>{children}</a>,
 }))
 vi.mock('@/components/conversations/workspace-frame', () => ({
-  WorkspaceFrame: ({ children, commandBar }: { children: React.ReactNode; commandBar?: React.ReactNode }) => <div><header data-testid="shared-shell-header">{commandBar}</header>{children}</div>,
+  WorkspaceChrome: ({ commandBar }: { commandBar?: React.ReactNode }) => <header data-testid="shared-shell-header">{commandBar}</header>,
 }))
 vi.mock('@/components/leads/lead-status-control', () => ({
   LeadStatusControl: () => <div>Lead status control</div>,

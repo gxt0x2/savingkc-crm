@@ -25,7 +25,7 @@ import { formatLeadSource, getAvatarLabel, getDisplayLeadName } from '@/lib/cont
 import { formatPhone } from '@/lib/format'
 import type { ContactSignal } from '@/lib/contact-display'
 import type { DealStage } from '@/types/pipeline'
-import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
+import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { LeadStatusControl } from '@/components/leads/lead-status-control'
 import { deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
 import {
@@ -482,7 +482,8 @@ export default function ContactsPage() {
   )
 
   return (
-    <WorkspaceFrame needsReply={counts.needs_reply} commandBar={contactsCommandBar}>
+    <>
+      <WorkspaceChrome needsReply={counts.needs_reply} commandBar={contactsCommandBar} />
       <main className="flex h-full min-w-0 bg-[var(--crm-canvas)]">
         <section className="min-w-0 flex-1 overflow-y-auto">
           <div className="flex items-stretch border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
@@ -637,7 +638,7 @@ export default function ContactsPage() {
         </div> : null}
         {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[var(--ck-text-muted)]">Save the current owner, stage, source, tag, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label><ModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
       </ContactModal> : null}
-    </WorkspaceFrame>
+    </>
   )
 }
 
