@@ -497,18 +497,15 @@ export default function ConversationsPage() {
       }
     : { name: 'Select a contact', initials: '—', verified: false, assignedAgent: null, team: 'Acquisitions', toPhone: '+18163077835', attentionState: 'resolved' as const, owner: null, nextAction: null }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)] text-slate-400">
-        Loading conversations...
-      </div>
-    )
-  }
-
   return (
     <>
       <WorkspaceChrome needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length} />
-      <div className="relative flex h-full overflow-hidden bg-[var(--crm-canvas)] text-[#152033]">
+      <div aria-busy={loading} className="relative flex h-full overflow-hidden bg-[var(--crm-canvas)] text-[#152033]">
+      {loading ? (
+        <div role="status" aria-label="Loading conversations" className="absolute inset-x-0 top-0 z-[60] h-1 overflow-hidden bg-[var(--crm-info-soft)]">
+          <span className="block h-full w-1/3 animate-pulse rounded-full bg-[var(--crm-info)]" />
+        </div>
+      ) : null}
       {showNewMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeNewConversation}>
           <section ref={newConversationDialogRef} role="dialog" aria-modal="true" aria-label="Start new conversation" tabIndex={-1} className="max-h-[70vh] w-96 max-w-[90vw] overflow-y-auto rounded-2xl border border-[#ded9d1] bg-white p-6 shadow-[0_22px_60px_rgba(11,41,66,0.22)]" onClick={(e) => e.stopPropagation()}>
