@@ -9,6 +9,9 @@ export type CrmLead = {
   zip?: string | null
   county?: string | null
   station: string | null
+  classification?: string | null
+  dead_reason?: string | null
+  assigned_agent?: string | null
   priority: string | null
   motivation_score?: number | null
   seller_situation?: string | null
@@ -47,8 +50,40 @@ export type MobileSession = {
   capabilities: {
     leadList: boolean
     leadDetail: boolean
+    contacts: boolean
+    conversations: boolean
+    sms: boolean
+    email: boolean
     outboundDeviceDialer: boolean
     callDisposition: boolean
     twilioNativeVoice: boolean
   }
+}
+
+export type ConversationThread = CrmLead & {
+  owner: string | null
+  attentionState: 'needs_reply' | 'waiting_on_contact' | 'resolved'
+  unread: boolean
+  lastMessage: string
+  lastActivityAt: string
+  lastChannel: 'call' | 'sms' | 'email' | 'voicemail' | null
+}
+
+export type ConversationsResponse = {
+  items?: ConversationThread[]
+  error?: string
+}
+
+export type ConversationDetailResponse = {
+  contact?: CrmLead
+  activities?: CrmActivity[]
+  error?: string
+}
+
+export type VoiceTokenResponse = {
+  token: string
+  identity: string
+  callerId: string
+  displayName: string
+  error?: string
 }

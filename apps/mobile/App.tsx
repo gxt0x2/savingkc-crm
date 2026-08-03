@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar'
 import { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Pressable,
   SafeAreaView,
@@ -14,11 +15,11 @@ import {
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 import { getMissingConfig } from './src/config'
-import { fetchLeadDetail, fetchLeads, fetchMobileSession, logCallEvent } from './src/lib/api'
+import { fetchConversationDetail, fetchConversations, fetchLeadDetail, fetchLeads, fetchMobileSession, logCallEvent, sendMobileMessage } from './src/lib/api'
 import { enqueueCallEvent, flushCallOutbox, getQueuedCallEvents } from './src/lib/call-outbox'
-import { startOutboundCall } from './src/lib/call-service'
+import { registerTwilioVoice, startTwilioVoiceCall, type IncomingVoiceCall, type NativeVoiceCall, type VoiceState } from './src/lib/twilio-voice-service'
 import { getSupabaseClient } from './src/lib/supabase'
-import type { CallOutcome, CrmActivity, CrmLead } from './src/types'
+import type { CallOutcome, ConversationThread, CrmActivity, CrmLead } from './src/types'
 
 const queryClient = new QueryClient()
 
@@ -75,7 +76,7 @@ function MobileCrm() {
     return <LoginScreen />
   }
 
-  return <LeadListScreen accessToken={session.access_token} email={session.user.email ?? 'Agent'} />
+  return <MobileWorkspace accessToken={session.access_token} email={session.user.email ?? 'Agent'} />
 }
 
 function SetupScreen({ missingConfig }: { missingConfig: string[] }) {
@@ -153,12 +154,22 @@ function LoginScreen() {
   )
 }
 
-function LeadListScreen({ accessToken, email }: { accessToken: string; email: string }) {
+type MobileTab = 'contacts' | 'conversations' | 'phone'
+
+function MobileWorkspace({ accessToken, email }: { accessToken: string; email: string }) {
   const supabase = getSupabaseClient()
   const queryClient = useQueryClient()
+  const [activeTab, setActiveTab] = useState<MobileTab>('contacts')
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null)
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [queuedEvents, setQueuedEvents] = useState(0)
   const [syncingOutbox, setSyncingOutbox] = useState(false)
+  const [search, setSearch] = useState('')
+  const [voiceState, setVoiceState] = useState<VoiceState>('offline')
+  const [voiceError, setVoiceError] = useState<string | null>(null)
+  const [voiceIdentity, setVoiceIdentity] = useState<{ callerId: string; displayName: string } | null>(null)
+  const [incomingCall, setIncomingCall] = useState<IncomingVoiceCall | null>(null)
+  const [activeVoiceCall, setActiveVoiceCall] = useState<NativeVoiceCall | null>(null)
   const leadsQuery = useQuery({
     queryKey: ['leads'],
     queryFn: ({ signal }) => fetchLeads({ accessToken, signal }),
@@ -171,6 +182,45 @@ function LeadListScreen({ accessToken, email }: { accessToken: string; email: st
   useEffect(() => {
     refreshOutboxCount()
   }, [])
+
+  useEffect(() => {
+    let alive = true
+    let registering = false
+    async function registerPhone() {
+      if (registering) return
+      registering = true
+      try {
+        const identity = await registerTwilioVoice({
+          accessToken,
+          onState: (state) => { if (alive) setVoiceState(state) },
+          onIncoming: (call) => { if (alive) setIncomingCall(call) },
+        })
+        if (alive) {
+          setVoiceIdentity(identity)
+          setVoiceError(null)
+        }
+      } catch (error) {
+        if (alive) {
+          setVoiceState('error')
+          setVoiceError(error instanceof Error ? error.message : 'Phone registration failed.')
+        }
+      } finally {
+        registering = false
+      }
+    }
+    void registerPhone()
+    const tokenRefresh = setInterval(() => void registerPhone(), 50 * 60 * 1000)
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void registerPhone()
+    })
+    return () => {
+      alive = false
+      clearInterval(tokenRefresh)
+      appStateSubscription.remove()
+    }
+  }, [accessToken])
+
+  useEffect(() => activeVoiceCall?.onEnded(() => setActiveVoiceCall(null)), [activeVoiceCall])
 
   async function refreshOutboxCount() {
     const items = await getQueuedCallEvents()
@@ -201,6 +251,31 @@ function LeadListScreen({ accessToken, email }: { accessToken: string; email: st
     )
   }
 
+  if (selectedConversationId) {
+    return <ConversationDetailScreen accessToken={accessToken} leadId={selectedConversationId} onBack={() => setSelectedConversationId(null)} />
+  }
+
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredLeads = (leadsQuery.data ?? []).filter((lead) => !normalizedSearch || [lead.full_name, lead.phone, lead.email, lead.property_address, lead.city].some((value) => value?.toLowerCase().includes(normalizedSearch)))
+
+  async function acceptIncomingCall() {
+    if (!incomingCall) return
+    try {
+      const call = await incomingCall.accept()
+      setActiveVoiceCall(call)
+      setIncomingCall(null)
+      setActiveTab('phone')
+    } catch (error) {
+      setVoiceError(error instanceof Error ? error.message : 'Incoming call could not be answered.')
+    }
+  }
+
+  async function rejectIncomingCall() {
+    if (!incomingCall) return
+    await incomingCall.reject().catch(() => null)
+    setIncomingCall(null)
+  }
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -214,15 +289,10 @@ function LeadListScreen({ accessToken, email }: { accessToken: string; email: st
         </Pressable>
       </View>
 
-      <View style={styles.headerCompact}>
-        <Text style={styles.title}>Leads</Text>
-        <Text style={styles.body}>
-          {sessionQuery.data?.capabilities.outboundDeviceDialer
-            ? 'Mobile API online. Device dialer enabled.'
-            : sessionQuery.isError
-              ? 'Mobile API session check failed.'
-              : 'Checking mobile API capabilities...'}
-        </Text>
+      {incomingCall ? <View style={styles.incomingBanner}><View style={{ flex: 1 }}><Text style={styles.incomingTitle}>Incoming call</Text><Text style={styles.incomingNumber}>{incomingCall.from}</Text></View><Pressable onPress={rejectIncomingCall} style={styles.declineButton}><Text style={styles.primaryButtonText}>Decline</Text></Pressable><Pressable onPress={acceptIncomingCall} style={styles.answerButton}><Text style={styles.primaryButtonText}>Answer</Text></Pressable></View> : null}
+
+      <View style={styles.mobileTabs}>
+        {(['contacts', 'conversations', 'phone'] as MobileTab[]).map((tab) => <Pressable key={tab} onPress={() => setActiveTab(tab)} style={[styles.mobileTab, activeTab === tab && styles.mobileTabActive]}><Text style={[styles.mobileTabText, activeTab === tab && styles.mobileTabTextActive]}>{tab === 'contacts' ? 'Contacts' : tab === 'conversations' ? 'Conversations' : 'Phone'}</Text></Pressable>)}
       </View>
 
       {queuedEvents > 0 ? (
@@ -236,6 +306,12 @@ function LeadListScreen({ accessToken, email }: { accessToken: string; email: st
         </View>
       ) : null}
 
+      {activeTab === 'contacts' ? <>
+      <View style={styles.headerCompact}>
+        <Text style={styles.title}>Contacts</Text>
+        <Text style={styles.body}>Active acquisition contacts. Dead records stay in the web archive.</Text>
+        <TextInput value={search} onChangeText={setSearch} placeholder="Search name, phone, email, or property" style={styles.input} autoCapitalize="none" />
+      </View>
       {leadsQuery.isLoading ? (
         <CenteredStatus label="Loading leads..." />
       ) : leadsQuery.isError ? (
@@ -248,15 +324,128 @@ function LeadListScreen({ accessToken, email }: { accessToken: string; email: st
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
-          data={leadsQuery.data}
+          data={filteredLeads}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => <LeadRow lead={item} onOpen={() => setSelectedLeadId(item.id)} />}
           refreshing={leadsQuery.isFetching}
           onRefresh={() => leadsQuery.refetch()}
         />
-      )}
+      )}</> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : <PhoneScreen callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
     </SafeAreaView>
   )
+}
+
+function ConversationsScreen({ accessToken, onOpen }: { accessToken: string; onOpen: (id: string) => void }) {
+  const conversationsQuery = useQuery({
+    queryKey: ['mobile-conversations'],
+    queryFn: ({ signal }) => fetchConversations({ accessToken, signal }),
+  })
+
+  if (conversationsQuery.isLoading) return <CenteredStatus label="Loading conversations..." />
+  if (conversationsQuery.isError) return <View style={styles.panel}><Text style={styles.error}>{conversationsQuery.error.message}</Text><Pressable onPress={() => conversationsQuery.refetch()} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Retry</Text></Pressable></View>
+
+  return <FlatList
+    contentContainerStyle={styles.list}
+    data={conversationsQuery.data}
+    keyExtractor={(item) => item.id}
+    onRefresh={() => conversationsQuery.refetch()}
+    refreshing={conversationsQuery.isFetching}
+    ListHeaderComponent={<View style={styles.headerCompact}><Text style={styles.title}>Conversations</Text><Text style={styles.body}>Needs reply is outcome-aware and active work is shown first.</Text></View>}
+    renderItem={({ item }) => <ConversationRow thread={item} onOpen={() => onOpen(item.id)} />}
+  />
+}
+
+function ConversationRow({ thread, onOpen }: { thread: ConversationThread; onOpen: () => void }) {
+  return <Pressable onPress={onOpen} style={[styles.leadRow, thread.attentionState === 'needs_reply' && styles.needsReplyRow]}>
+    <View style={styles.leadRowTop}><Text style={styles.leadName}>{thread.full_name || thread.phone || 'Unnamed contact'}</Text>{thread.attentionState === 'needs_reply' ? <Text style={styles.replyBadge}>Needs reply</Text> : null}</View>
+    <Text style={styles.leadMeta}>{thread.lastMessage}</Text>
+    <View style={styles.conversationMeta}><Text style={styles.activityDate}>{thread.lastChannel || 'No channel'}</Text><Text style={styles.activityDate}>{thread.owner || 'Unassigned'}</Text><Text style={styles.activityDate}>{new Date(thread.lastActivityAt).toLocaleString()}</Text></View>
+  </Pressable>
+}
+
+function ConversationDetailScreen({ accessToken, leadId, onBack }: { accessToken: string; leadId: string; onBack: () => void }) {
+  const queryClient = useQueryClient()
+  const [channel, setChannel] = useState<'sms' | 'email'>('sms')
+  const [message, setMessage] = useState('')
+  const [subject, setSubject] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendStatus, setSendStatus] = useState<string | null>(null)
+  const detailQuery = useQuery({
+    queryKey: ['mobile-conversation', leadId],
+    queryFn: ({ signal }) => fetchConversationDetail(leadId, { accessToken, signal }),
+  })
+  const contact = detailQuery.data?.contact
+  const activities = detailQuery.data?.activities ?? []
+
+  async function send() {
+    if (!message.trim() || sending) return
+    setSending(true)
+    setSendStatus(null)
+    try {
+      await sendMobileMessage({ accessToken, leadId, channel, body: message.trim(), subject: subject.trim() || undefined })
+      setMessage('')
+      setSubject('')
+      setSendStatus(channel === 'sms' ? 'Text sent.' : 'Email sent.')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['mobile-conversation', leadId] }),
+        queryClient.invalidateQueries({ queryKey: ['mobile-conversations'] }),
+      ])
+    } catch (error) {
+      setSendStatus(error instanceof Error ? error.message : 'Message could not be sent.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return <SafeAreaView style={styles.screen}>
+    <StatusBar style="dark" />
+    <View style={styles.toolbar}><Pressable onPress={onBack} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Back</Text></Pressable><Text style={styles.toolbarTitle}>{contact?.full_name || contact?.phone || 'Conversation'}</Text><Pressable onPress={() => detailQuery.refetch()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Refresh</Text></Pressable></View>
+    {detailQuery.isLoading ? <CenteredStatus label="Loading conversation..." /> : detailQuery.isError ? <View style={styles.panel}><Text style={styles.error}>{detailQuery.error.message}</Text></View> : <ScrollView contentContainerStyle={styles.detailContent}>
+      <View style={styles.panel}><Text style={styles.sectionTitle}>{contact?.full_name || 'Unnamed contact'}</Text><Text style={styles.leadMeta}>{contact?.phone || 'No phone'}</Text><Text style={styles.leadMeta}>{contact?.email || 'No email'}</Text></View>
+      <View style={styles.channelTabs}><Pressable onPress={() => setChannel('sms')} style={[styles.channelTab, channel === 'sms' && styles.channelTabActive]}><Text style={[styles.channelTabText, channel === 'sms' && styles.channelTabTextActive]}>Text</Text></Pressable><Pressable onPress={() => setChannel('email')} style={[styles.channelTab, channel === 'email' && styles.channelTabActive]}><Text style={[styles.channelTabText, channel === 'email' && styles.channelTabTextActive]}>Email</Text></Pressable></View>
+      {channel === 'email' ? <TextInput value={subject} onChangeText={setSubject} placeholder="Subject" style={styles.input} /> : null}
+      <TextInput value={message} onChangeText={setMessage} multiline placeholder={channel === 'sms' ? 'Write a text message…' : 'Write an email…'} style={[styles.input, styles.textArea]} />
+      {sendStatus ? <Text style={sendStatus.includes('sent') ? styles.success : styles.error}>{sendStatus}</Text> : null}
+      <Pressable disabled={sending || !message.trim() || (channel === 'sms' ? !contact?.phone : !contact?.email)} onPress={send} style={[styles.primaryButton, (sending || !message.trim() || (channel === 'sms' ? !contact?.phone : !contact?.email)) && styles.disabledButton]}><Text style={styles.primaryButtonText}>{sending ? 'Sending…' : channel === 'sms' ? 'Send text' : 'Send email'}</Text></Pressable>
+      <View style={styles.panel}><Text style={styles.sectionTitle}>Recent communication</Text>{activities.length ? activities.map((activity) => <ActivityRow key={activity.id} activity={activity} />) : <Text style={styles.leadMeta}>No communication yet.</Text>}</View>
+    </ScrollView>}
+  </SafeAreaView>
+}
+
+function PhoneScreen({ callerId, agentName, voiceState, error, activeCall, onActiveCall }: { callerId: string | null; agentName: string; voiceState: VoiceState; error: string | null; activeCall: NativeVoiceCall | null; onActiveCall: (call: NativeVoiceCall | null) => void }) {
+  const [phone, setPhone] = useState('')
+  const [callError, setCallError] = useState<string | null>(null)
+  const [currentState, setCurrentState] = useState<VoiceState>(voiceState)
+
+  useEffect(() => setCurrentState(voiceState), [voiceState])
+
+  async function placeCall() {
+    if (!phone.trim() || activeCall) return
+    setCallError(null)
+    try {
+      const call = await startTwilioVoiceCall({ phone, onState: setCurrentState })
+      onActiveCall(call)
+    } catch (caught) {
+      setCallError(caught instanceof Error ? caught.message : 'Call could not be started.')
+      setCurrentState('error')
+    }
+  }
+
+  async function hangUp() {
+    await activeCall?.disconnect().catch(() => null)
+    onActiveCall(null)
+    setCurrentState('ready')
+  }
+
+  return <ScrollView contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">
+    <View style={styles.headerCompact}><Text style={styles.title}>Phone</Text><Text style={styles.body}>Signed in as {agentName}. {currentState === 'ready' ? 'Ready for inbound and outbound calls.' : `Phone status: ${currentState}.`}</Text></View>
+    <View style={styles.phoneCard}>
+      <Text style={styles.eyebrow}>Calling from</Text><Text style={styles.phoneIdentity}>{callerId || 'Registering line…'}</Text>
+      <TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="Enter phone number" style={styles.dialInput} editable={!activeCall} />
+      {error || callError ? <Text style={styles.error}>{callError || error}</Text> : null}
+      {activeCall ? <Pressable onPress={hangUp} style={styles.hangupButton}><Text style={styles.primaryButtonText}>End call</Text></Pressable> : <Pressable disabled={!phone.trim() || currentState !== 'ready'} onPress={placeCall} style={[styles.answerButton, (!phone.trim() || currentState !== 'ready') && styles.disabledButton]}><Text style={styles.primaryButtonText}>Call</Text></Pressable>}
+    </View>
+  </ScrollView>
 }
 
 function LeadRow({ lead, onOpen }: { lead: CrmLead; onOpen: () => void }) {
@@ -294,7 +483,7 @@ function LeadDetailScreen({
   onOutboxChange: () => void
 }) {
   const queryClient = useQueryClient()
-  const [activeCall, setActiveCall] = useState<{ phone: string; startedAt: number; clientCallId: string } | null>(null)
+  const [activeCall, setActiveCall] = useState<{ phone: string; startedAt: number; clientCallId: string; voiceCall: NativeVoiceCall } | null>(null)
   const [outcome, setOutcome] = useState<CallOutcome>('connected')
   const [disposition, setDisposition] = useState('')
   const [callError, setCallError] = useState<string | null>(null)
@@ -312,26 +501,23 @@ function LeadDetailScreen({
     setCallError(null)
     const clientCallId = `${Date.now()}-${lead.id}`
     try {
-      await logCallEvent({
+      const voiceCall = await startTwilioVoiceCall({ phone: lead.phone, contactName: lead.full_name, onState: () => {} })
+      const startEvent = {
         accessToken,
         leadId: lead.id,
         phone: lead.phone,
         event: 'started',
         clientCallId,
-      })
-      setActiveCall({ phone: lead.phone, startedAt: Date.now(), clientCallId })
-      await startOutboundCall(lead.phone)
+      } as const
+      try {
+        await logCallEvent(startEvent)
+      } catch {
+        await enqueueCallEvent(startEvent)
+        onOutboxChange()
+      }
+      setActiveCall({ phone: lead.phone, startedAt: Date.now(), clientCallId, voiceCall })
     } catch (error) {
-      await enqueueCallEvent({
-        accessToken,
-        leadId: lead.id,
-        phone: lead.phone,
-        event: 'started',
-        clientCallId,
-      }).catch(() => null)
-      onOutboxChange()
-      setActiveCall({ phone: lead.phone, startedAt: Date.now(), clientCallId })
-      setCallError(error instanceof Error ? error.message : 'Call start was queued for sync.')
+      setCallError(error instanceof Error ? error.message : 'Call could not be started.')
     }
   }
 
@@ -357,6 +543,7 @@ function LeadDetailScreen({
         await enqueueCallEvent(eventPayload)
         onOutboxChange()
       }
+      await activeCall.voiceCall.disconnect().catch(() => null)
       setActiveCall(null)
       setDisposition('')
       await Promise.all([
@@ -484,13 +671,13 @@ function CenteredStatus({ label }: { label: string }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f7f8fa',
+    backgroundColor: '#F6F8FC',
     paddingHorizontal: 20,
   },
   centered: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: '#f7f8fa',
+    backgroundColor: '#F6F8FC',
     gap: 12,
     justifyContent: 'center',
   },
@@ -535,8 +722,8 @@ const styles = StyleSheet.create({
   },
   panel: {
     backgroundColor: '#ffffff',
-    borderColor: '#d8dee6',
-    borderRadius: 8,
+    borderColor: '#D8E0EB',
+    borderRadius: 14,
     borderWidth: 1,
     gap: 12,
     padding: 16,
@@ -551,8 +738,8 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: '#ffffff',
-    borderColor: '#cfd6df',
-    borderRadius: 8,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
     borderWidth: 1,
     color: '#111827',
     fontSize: 16,
@@ -561,8 +748,8 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#146c5c',
-    borderRadius: 8,
+    backgroundColor: '#E32E2E',
+    borderRadius: 12,
     minHeight: 52,
     justifyContent: 'center',
     paddingHorizontal: 16,
@@ -574,8 +761,9 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     alignItems: 'center',
-    borderColor: '#cfd6df',
-    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
     borderWidth: 1,
     minHeight: 40,
     justifyContent: 'center',
@@ -587,9 +775,85 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   error: {
-    color: '#b42318',
+    color: '#C81E1E',
     fontSize: 14,
     lineHeight: 20,
+  },
+  success: {
+    color: '#15803D',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  incomingBanner: {
+    alignItems: 'center',
+    backgroundColor: '#ECFDF3',
+    borderColor: '#86EFAC',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+    padding: 14,
+  },
+  incomingTitle: {
+    color: '#166534',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  incomingNumber: {
+    color: '#0B2540',
+    fontSize: 18,
+    fontWeight: '800',
+    paddingTop: 3,
+  },
+  declineButton: {
+    alignItems: 'center',
+    backgroundColor: '#E32E2E',
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  answerButton: {
+    alignItems: 'center',
+    backgroundColor: '#16A34A',
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  mobileTabs: {
+    backgroundColor: '#E9EEF6',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 16,
+    padding: 4,
+  },
+  mobileTab: {
+    alignItems: 'center',
+    borderRadius: 9,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  mobileTabActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0B2540',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  mobileTabText: {
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  mobileTabTextActive: {
+    color: '#D4212A',
   },
   list: {
     gap: 10,
@@ -597,9 +861,9 @@ const styles = StyleSheet.create({
   },
   syncBanner: {
     alignItems: 'center',
-    backgroundColor: '#fff8e6',
-    borderColor: '#f0c36a',
-    borderRadius: 8,
+    backgroundColor: '#EEF2FF',
+    borderColor: '#A5B4FC',
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 12,
@@ -608,15 +872,15 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   syncText: {
-    color: '#6f4e00',
+    color: '#3730A3',
     flex: 1,
     fontSize: 14,
     fontWeight: '700',
   },
   syncButton: {
     alignItems: 'center',
-    backgroundColor: '#6f4e00',
-    borderRadius: 8,
+    backgroundColor: '#4F46E5',
+    borderRadius: 10,
     minHeight: 36,
     justifyContent: 'center',
     paddingHorizontal: 12,
@@ -637,8 +901,8 @@ const styles = StyleSheet.create({
   },
   leadRow: {
     backgroundColor: '#ffffff',
-    borderColor: '#d8dee6',
-    borderRadius: 8,
+    borderColor: '#D8E0EB',
+    borderRadius: 14,
     borderWidth: 1,
     gap: 8,
     padding: 14,
@@ -656,9 +920,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   badge: {
-    backgroundColor: '#eaf4ef',
-    borderRadius: 8,
-    color: '#146c5c',
+    backgroundColor: '#FEE2E2',
+    borderRadius: 999,
+    color: '#C81E1E',
     fontSize: 12,
     fontWeight: '800',
     overflow: 'hidden',
@@ -677,8 +941,8 @@ const styles = StyleSheet.create({
   },
   callButton: {
     alignItems: 'center',
-    backgroundColor: '#146c5c',
-    borderRadius: 8,
+    backgroundColor: '#16A34A',
+    borderRadius: 10,
     flex: 1,
     minHeight: 44,
     justifyContent: 'center',
@@ -693,14 +957,14 @@ const styles = StyleSheet.create({
   },
   noteButton: {
     alignItems: 'center',
-    backgroundColor: '#edf1f5',
-    borderRadius: 8,
+    backgroundColor: '#E8F0FE',
+    borderRadius: 10,
     flex: 1,
     minHeight: 44,
     justifyContent: 'center',
   },
   noteButtonText: {
-    color: '#111827',
+    color: '#175CD3',
     fontSize: 15,
     fontWeight: '800',
   },
@@ -711,17 +975,17 @@ const styles = StyleSheet.create({
   },
   outcomeButton: {
     alignItems: 'center',
-    backgroundColor: '#edf1f5',
-    borderColor: '#edf1f5',
-    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
     borderWidth: 1,
     minHeight: 40,
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
   outcomeButtonActive: {
-    backgroundColor: '#eaf4ef',
-    borderColor: '#146c5c',
+    backgroundColor: '#E8F0FE',
+    borderColor: '#2563EB',
   },
   outcomeText: {
     color: '#111827',
@@ -730,7 +994,7 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   outcomeTextActive: {
-    color: '#146c5c',
+    color: '#1D4ED8',
   },
   textArea: {
     minHeight: 88,
@@ -738,7 +1002,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   activityRow: {
-    borderTopColor: '#edf1f5',
+    borderTopColor: '#E2E8F0',
     borderTopWidth: 1,
     gap: 4,
     paddingTop: 10,
@@ -752,5 +1016,79 @@ const styles = StyleSheet.create({
   activityDate: {
     color: '#7b8794',
     fontSize: 12,
+  },
+  needsReplyRow: {
+    backgroundColor: '#FFF7F7',
+    borderColor: '#FCA5A5',
+  },
+  replyBadge: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: 999,
+    color: '#C81E1E',
+    fontSize: 11,
+    fontWeight: '800',
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    textTransform: 'uppercase',
+  },
+  conversationMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  channelTabs: {
+    backgroundColor: '#E9EEF6',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4,
+  },
+  channelTab: {
+    alignItems: 'center',
+    borderRadius: 9,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 42,
+  },
+  channelTabActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  channelTabText: {
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  channelTabTextActive: {
+    color: '#D4212A',
+  },
+  phoneCard: {
+    backgroundColor: '#0B2540',
+    borderRadius: 20,
+    gap: 18,
+    padding: 22,
+  },
+  phoneIdentity: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  dialInput: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#93A4B8',
+    borderRadius: 14,
+    borderWidth: 1,
+    color: '#0B2540',
+    fontSize: 28,
+    minHeight: 64,
+    paddingHorizontal: 16,
+    textAlign: 'center',
+  },
+  hangupButton: {
+    alignItems: 'center',
+    backgroundColor: '#E32E2E',
+    borderRadius: 12,
+    minHeight: 54,
+    justifyContent: 'center',
   },
 })

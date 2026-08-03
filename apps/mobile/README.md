@@ -2,15 +2,20 @@
 
 Native mobile companion app for the SavingKC CRM.
 
-## First Milestone
+## Version 1 Scope
 
 - Supabase sign-in using CRM credentials.
-- Mobile API capability check through `/api/mobile/v1/session`.
-- Fetch the latest CRM leads through `/api/mobile/v1/leads`.
-- Open lead detail through `/api/mobile/v1/leads/:id`.
-- Start an outbound call through the device dialer and save a disposition back through `/api/mobile/v1/calls/events`.
+- Active contacts only; records marked not-a-lead/dead remain in the web archive.
+- Outcome-aware conversation inbox backed by CRM communication activity.
+- SMS and email sent through authenticated SavingKC server routes.
+- Native Twilio Voice registration for inbound and outbound business calls.
+- The signed-in user's assigned SavingKC caller ID is authoritative for calls and SMS.
+- Open contact detail and save call outcomes back through `/api/mobile/v1/calls/events`.
 - Queue failed call events locally and retry them from the lead list.
-- Establish the React Native/Expo Dev Client foundation needed for native Twilio Voice.
+
+## Distribution
+
+Use TestFlight internal testing for the three SavingKC users. This provides normal iPhone installation and update behavior without publishing the app publicly. A paid Apple Developer account, App Store Connect access, an Expo account, an EAS project ID, and Twilio iOS VoIP push credentials are required before the first device build.
 
 ## Local Setup
 
@@ -20,4 +25,4 @@ npm install
 npm run start:dev-client
 ```
 
-Expo Go is useful for basic UI checks, but the call stack will require an Expo Dev Client build once Twilio native Voice is added.
+Expo Go cannot load the native Twilio Voice SDK. Use an Expo development build during development and TestFlight for the three production users.

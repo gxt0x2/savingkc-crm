@@ -8,6 +8,7 @@ import { DispositionModal, DispositionType } from './disposition-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { isDeadDisposition, isReachedDisposition } from '@/lib/dialer-dispositions'
+import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 
@@ -78,6 +79,7 @@ interface DialerPanelProps {
   /** How many rings to allow before giving up; maps to the Twilio Dial timeout. */
   pendingQueueRingCount?: number | null
   presentation?: 'modal' | 'dock'
+  signedInEmail?: string | null
 }
 
 function resolveCallerIdForAttempt(
@@ -198,11 +200,6 @@ const priorityColors: Record<string, string> = {
   cold: 'bg-cyan-500/20 text-cyan-300',
 }
 
-const AGENT_NAME_BY_CALLER_ID: Record<string, string> = {
-  '+18166088588': 'Ernest',
-  '+18167277667': 'Casey',
-}
-
 const DIALER_KEYPAD: Array<{ value: string; letters?: string }> = [
   { value: '1' },
   { value: '2', letters: 'ABC' },
@@ -241,7 +238,9 @@ export function DialerPanel({
   pendingQueueAutoDial = false,
   pendingQueueRingCount = null,
   presentation = 'dock',
+  signedInEmail = null,
 }: DialerPanelProps) {
+  const signedInProfile = useMemo(() => resolveAgentTelephonyProfile(signedInEmail), [signedInEmail])
   const [status, setStatus] = useState<CallStatus>('offline')
   const [dialNumber, setDialNumber] = useState('')
   const [muted, setMuted] = useState(false)
@@ -266,11 +265,11 @@ export function DialerPanel({
   const [viewTab, setViewTab] = useState<'dial' | 'recent'>('dial')
 
   // Caller ID display
-  const [callerIdDisplay, setCallerIdDisplay] = useState<string>('')
-  const [selectedCallerId, setSelectedCallerId] = useState<string>('')
+  const [callerIdDisplay, setCallerIdDisplay] = useState<string>(() => signedInProfile.defaultCallerId)
+  const [selectedCallerId, setSelectedCallerId] = useState<string>(() => signedInProfile.defaultCallerId)
   const [callerIdLockedByUser, setCallerIdLockedByUser] = useState(false)
-  const [agentIdentity, setAgentIdentity] = useState<string>('crm-user')
-  const [callerPlan, setCallerPlan] = useState<DialerCallerPlan>(() => normalizeDialerCallerPlan(null, ''))
+  const [agentIdentity, setAgentIdentity] = useState<string>(() => signedInProfile.identity)
+  const [callerPlan, setCallerPlan] = useState<DialerCallerPlan>(() => normalizeDialerCallerPlan(null, signedInProfile.defaultCallerId))
   const [attemptsPlaced, setAttemptsPlaced] = useState(0)
 
   // Disposition
@@ -280,12 +279,9 @@ export function DialerPanel({
   const [lastCallDuration, setLastCallDuration] = useState<string | null>(null)
   const lastCallDurationSecondsRef = useRef(0)
   const activeCallerId = selectedCallerId || callerIdDisplay
-  const activeAgentName =
-    agentIdentity === 'ernest'
-      ? 'Ernest'
-      : agentIdentity === 'casey'
-      ? 'Casey'
-      : AGENT_NAME_BY_CALLER_ID[activeCallerId] || 'System'
+  const activeAgentName = agentNameForCallerId(activeCallerId)
+    || (agentIdentity === signedInProfile.identity ? signedInProfile.displayName : null)
+    || 'System'
   const callerIdOptions = useMemo(() => {
     const options: Array<{ label: string; value: string }> = TWILIO_NUMBERS.map((num) => ({ label: num.label, value: num.value }))
     if (callerIdDisplay && !options.some((opt) => opt.value === callerIdDisplay)) {
@@ -295,6 +291,15 @@ export function DialerPanel({
   }, [callerIdDisplay])
   const fallbackCallerId = selectedCallerId || callerIdDisplay || callerIdOptions[0]?.value || ''
   const rotatedCallerId = resolveCallerIdForAttempt(callerPlan, fallbackCallerId, attemptsPlaced)
+
+  useEffect(() => {
+    setAgentIdentity(signedInProfile.identity)
+    setCallerIdDisplay(signedInProfile.defaultCallerId)
+    if (callerIdLockedByUser) return
+    setSelectedCallerId(signedInProfile.defaultCallerId)
+    setCallerPlan(normalizeDialerCallerPlan(null, signedInProfile.defaultCallerId))
+    setAttemptsPlaced(0)
+  }, [callerIdLockedByUser, signedInProfile])
 
   // Heir queue mode — when active, the property stays pinned across calls and
   // each disposition advances to the next heir phone.
@@ -407,13 +412,13 @@ export function DialerPanel({
       const { Device } = await import('@twilio/voice-sdk')
       const res = await fetch('/api/twilio-token')
       const data = await res.json()
-      if (data.error) throw new Error(data.error)
+      if (!res.ok || data.error) throw new Error('Phone service is unavailable. Retry in a moment or use the production CRM.')
       const { token, callerId: cid, identity } = data
       if (cid) {
         setCallerIdDisplay(cid)
         setSelectedCallerId((prev) => {
           if (callerIdLockedByUser && prev) return prev
-          return prev || cid
+          return cid
         })
       }
       if (identity) setAgentIdentity(identity)
@@ -435,7 +440,7 @@ export function DialerPanel({
               setCallerIdDisplay(refreshData.callerId)
               setSelectedCallerId((prev) => {
                 if (callerIdLockedByUser && prev) return prev
-                return prev || refreshData.callerId
+                return refreshData.callerId
               })
             }
             if (refreshData.identity) setAgentIdentity(refreshData.identity)

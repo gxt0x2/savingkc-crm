@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -26,8 +27,9 @@ import { formatPhone } from '@/lib/format'
 import type { ContactSignal } from '@/lib/contact-display'
 import type { DealStage } from '@/types/pipeline'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
-import { LeadStatusControl } from '@/components/leads/lead-status-control'
-import { deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
+import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
+import { DEAD_REASONS, deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
+import { useAuth } from '@/hooks/use-auth'
 import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import {
   CONTACT_SMART_LIST_COPY,
@@ -52,6 +54,7 @@ interface ContactRow {
   station: DealStage
   classification: 'lead' | 'opportunity' | 'dead' | null
   deadReason: string | null
+  owner: string | null
   score: number
   isFavorite: boolean
   nextActivity: { when: string | null; label: string; kind: 'appointment' | 'recommended' | null } | null
@@ -83,6 +86,8 @@ interface ContactWorkspaceRow extends ContactRow {
 type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
 type ContactDialog = 'add' | 'import' | 'view' | null
 type ToolbarMenu = 'filters' | 'sort' | null
+type ContactScope = 'active' | 'not_leads'
+type BulkAction = '' | 'assign:Ernest' | 'assign:Casey' | 'assign:Gertha' | 'assign:unassigned' | `stage:${DealStage}` | 'not_lead'
 
 interface SavedView {
   id: string
@@ -149,6 +154,8 @@ const STAGE_TONES: Record<DealStage, string> = {
 }
 
 const EMPTY_CONTACT = { fullName: '', phone: '', email: '', address: '', city: '', state: '', zip: '', source: 'manual_crm' }
+const CONTACT_QUERY_KEY = (scope: ContactScope) => ['contact-workspace', scope] as const
+const BULK_STAGE_OPTIONS: DealStage[] = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract']
 
 function formatRelativeDate(value: string | null): string {
   if (!value) return 'No activity'
@@ -163,13 +170,13 @@ function formatRelativeDate(value: string | null): string {
   return days < 30 ? `${days}d ago` : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function useContactWorkspace() {
+function useContactWorkspace(scope: ContactScope, enabled = true) {
   const queryClient = useQueryClient()
   return useQuery<{ items: ContactWorkspaceRow[] }>({
-    queryKey: ['contact-workspace'],
+    queryKey: CONTACT_QUERY_KEY(scope),
     queryFn: async () => {
       const [contactsResponse, hubResponse] = await Promise.all([
-        fetch('/api/contacts', { cache: 'no-store' }),
+        fetch(`/api/contacts?scope=${scope}`, { cache: 'no-store' }),
         queryClient.fetchQuery({
           queryKey: conversationHubQueryKey,
           queryFn: () => fetchConversationHub<HubThread>(),
@@ -185,7 +192,7 @@ function useContactWorkspace() {
           return {
             ...contact,
             attentionState: thread?.attentionState ?? 'resolved',
-            owner: thread?.owner ?? null,
+            owner: thread?.owner ?? contact.owner ?? null,
             lastMessage: thread?.lastMessage ?? null,
             lastActivityAt: thread?.lastActivityAt ?? contact.lastContactAt,
             primaryNextAction: thread?.primaryNextAction ?? null,
@@ -195,6 +202,7 @@ function useContactWorkspace() {
     },
     staleTime: 30_000,
     refetchOnWindowFocus: true,
+    enabled,
   })
 }
 
@@ -232,6 +240,9 @@ function ContactSkeleton() {
 }
 
 export default function ContactsPage() {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
   const [smartList, setSmartList] = useState<ContactSmartList>('all')
   const [smartListOrder, setSmartListOrder] = useState<ContactSmartListNavigationId[]>([...DEFAULT_CONTACT_SMART_LIST_ORDER])
   const [search, setSearch] = useState('')
@@ -255,8 +266,21 @@ export default function ContactsPage() {
   const [saving, setSaving] = useState(false)
   const [dialogError, setDialogError] = useState<string | null>(null)
   const [toolbarMenu, setToolbarMenu] = useState<ToolbarMenu>(null)
-  const { data, isLoading, error, refetch, isFetching } = useContactWorkspace()
-  const items = useMemo(() => data?.items ?? [], [data])
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [bulkAction, setBulkAction] = useState<BulkAction>('')
+  const [bulkDeadReason, setBulkDeadReason] = useState('')
+  const [bulkNotes, setBulkNotes] = useState('')
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null)
+  const activeQuery = useContactWorkspace('active')
+  const archiveQuery = useContactWorkspace('not_leads', smartList === 'not_leads')
+  const currentQuery = smartList === 'not_leads' ? archiveQuery : activeQuery
+  const items = useMemo(() => currentQuery.data?.items ?? [], [currentQuery.data])
+  const allKnownItems = useMemo(
+    () => [...(activeQuery.data?.items ?? []), ...(archiveQuery.data?.items ?? [])],
+    [activeQuery.data, archiveQuery.data],
+  )
+  const { isLoading, error, refetch, isFetching } = currentQuery
   const smartListSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -289,7 +313,7 @@ export default function ContactsPage() {
     if (requestedAttention && ['needs_reply', 'waiting_on_contact', 'resolved'].includes(requestedAttention)) setAttentionFilter(requestedAttention)
   }, [])
 
-  const counts = useMemo(() => contactSmartListCounts(items), [items])
+  const counts = useMemo(() => contactSmartListCounts(allKnownItems), [allKnownItems])
   const orderedSmartLists = useMemo(() => {
     const smartListsById = new Map(CONTACT_SMART_LISTS.map((item) => [item.id, item]))
     return smartListOrder.map((id) => smartListsById.get(id)).filter((item): item is (typeof CONTACT_SMART_LISTS)[number] => Boolean(item))
@@ -332,6 +356,14 @@ export default function ContactsPage() {
 
   useEffect(() => setPage(1), [activityFilter, attentionFilter, dataGapFilter, minimumStageFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
 
+  useEffect(() => {
+    setSelectedIds((current) => {
+      const visibleIds = new Set(items.map((item) => item.id))
+      const next = new Set([...current].filter((id) => visibleIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [items])
+
   const pageSize = 10
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize))
   const currentPage = Math.min(page, pageCount)
@@ -339,6 +371,127 @@ export default function ContactsPage() {
   const paginationStart = Math.min(Math.max(1, currentPage - 2), Math.max(1, pageCount - 4))
   const paginationPages = Array.from({ length: Math.min(pageCount, 5) }, (_, index) => paginationStart + index)
   const selected = items.find((item) => item.id === selectedId) ?? pageItems[0] ?? null
+  const pageItemsSelected = pageItems.length > 0 && pageItems.every((item) => selectedIds.has(item.id))
+
+  function signedInAgent(): string {
+    const email = user?.email?.toLowerCase() ?? ''
+    if (email.includes('casey')) return 'Casey'
+    if (email.includes('gertha')) return 'Gertha'
+    if (email.includes('ernest')) return 'Ernest'
+    return user?.email ?? 'CRM user'
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setBulkMessage(null)
+  }
+
+  function togglePageSelection() {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (pageItemsSelected) pageItems.forEach((item) => next.delete(item.id))
+      else pageItems.forEach((item) => next.add(item.id))
+      return next
+    })
+    setBulkMessage(null)
+  }
+
+  async function refreshContactScopes() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_KEY('active') }),
+      queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_KEY('not_leads') }),
+      queryClient.invalidateQueries({ queryKey: conversationHubQueryKey }),
+    ])
+  }
+
+  function handleLeadStatusChanged(id: string, update: LeadStatusUpdate) {
+    const becameNotLead = isNotLeadOutcome(update.classification, update.station)
+    queryClient.setQueryData<{ items: ContactWorkspaceRow[] }>(CONTACT_QUERY_KEY('active'), (current) => ({
+      items: becameNotLead
+        ? (current?.items ?? []).filter((item) => item.id !== id)
+        : (current?.items ?? []).map((item) => item.id === id ? { ...item, classification: update.classification, station: (update.station as DealStage | null) ?? item.station, deadReason: update.dead_reason } : item),
+    }))
+    queryClient.setQueryData<{ items: ContactWorkspaceRow[] }>(CONTACT_QUERY_KEY('not_leads'), (current) => ({
+      items: becameNotLead
+        ? (current?.items ?? [])
+        : (current?.items ?? []).filter((item) => item.id !== id),
+    }))
+    if (becameNotLead) {
+      setSelectedId(null)
+      setDetailsOpen(false)
+    }
+    void refreshContactScopes()
+  }
+
+  async function applyBulkAction() {
+    if (!bulkAction || selectedIds.size === 0 || bulkSaving) return
+    if (bulkAction === 'not_lead' && !bulkDeadReason) {
+      setBulkMessage('Choose a Not a lead reason before applying the change.')
+      return
+    }
+    if (bulkAction === 'not_lead' && bulkDeadReason === 'other' && !bulkNotes.trim()) {
+      setBulkMessage('Add notes when Other is selected.')
+      return
+    }
+
+    setBulkSaving(true)
+    setBulkMessage(null)
+    try {
+      const actor = signedInAgent()
+      const ids = [...selectedIds]
+      const requests = ids.map(async (id) => {
+        let fields: Record<string, unknown>
+        if (bulkAction.startsWith('assign:')) {
+          const owner = bulkAction.slice('assign:'.length)
+          fields = { assigned_agent: owner === 'unassigned' ? null : owner }
+        } else if (bulkAction.startsWith('stage:')) {
+          fields = { station: bulkAction.slice('stage:'.length) }
+        } else {
+          fields = {
+            classification: 'dead',
+            station: 'dead',
+            priority: 'cold',
+            opportunity_score: 0,
+            deadReason: bulkDeadReason,
+            deadReasonNotes: bulkNotes.trim() || null,
+          }
+        }
+        const response = await fetch('/api/leads', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, actor, ...fields }),
+        })
+        const payload = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+        if (!response.ok || !payload.success) throw new Error(payload.error || 'Change failed')
+        return id
+      })
+
+      const results = await Promise.allSettled(requests)
+      const succeeded = results.filter((result) => result.status === 'fulfilled').length
+      const failed = results.length - succeeded
+      if (bulkAction === 'not_lead' && succeeded) {
+        const succeededIds = new Set(results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []))
+        queryClient.setQueryData<{ items: ContactWorkspaceRow[] }>(CONTACT_QUERY_KEY('active'), (current) => ({
+          items: (current?.items ?? []).filter((item) => !succeededIds.has(item.id)),
+        }))
+      }
+      setSelectedIds(new Set())
+      setBulkAction('')
+      setBulkDeadReason('')
+      setBulkNotes('')
+      setBulkMessage(failed ? `${succeeded} updated; ${failed} failed. Review the records that remain.` : `${succeeded} contact${succeeded === 1 ? '' : 's'} updated.`)
+      await refreshContactScopes()
+    } catch (error) {
+      setBulkMessage(error instanceof Error ? error.message : 'Bulk changes could not be completed.')
+    } finally {
+      setBulkSaving(false)
+    }
+  }
 
   function clearFilters() {
     selectSmartList('all')
@@ -546,9 +699,34 @@ export default function ContactsPage() {
               <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{visible.length} results</span>
             </div>
 
+            {selectedIds.size > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] px-3 py-2.5" role="region" aria-label="Bulk contact changes">
+              <span className="mr-1 text-sm font-black text-[var(--crm-info)]">{selectedIds.size} selected</span>
+              {selectedIds.size < visible.length ? <button type="button" onClick={() => setSelectedIds(new Set(visible.map((item) => item.id)))} className="rounded-lg border border-[var(--crm-info-border)] bg-[var(--crm-surface)] px-3 py-2 text-xs font-bold text-[var(--crm-info)]">Select all {visible.length} results</button> : null}
+              <select aria-label="Bulk action" value={bulkAction} onChange={(event) => { setBulkAction(event.target.value as BulkAction); setBulkMessage(null) }} className="crm-field h-9 min-w-52 rounded-lg px-3 text-xs font-semibold">
+                <option value="">Choose bulk change…</option>
+                <optgroup label="Assign owner">
+                  <option value="assign:Ernest">Assign to Ernest</option>
+                  <option value="assign:Casey">Assign to Casey</option>
+                  <option value="assign:Gertha">Assign to Gertha</option>
+                  <option value="assign:unassigned">Set unassigned</option>
+                </optgroup>
+                <optgroup label="Move stage">
+                  {BULK_STAGE_OPTIONS.map((stage) => <option key={stage} value={`stage:${stage}`}>{STAGE_LABELS[stage]}</option>)}
+                </optgroup>
+                <option value="not_lead">Mark Not a lead…</option>
+              </select>
+              {bulkAction === 'not_lead' ? <>
+                <select aria-label="Not a lead reason" value={bulkDeadReason} onChange={(event) => setBulkDeadReason(event.target.value)} className="crm-field h-9 min-w-60 rounded-lg px-3 text-xs font-semibold"><option value="">Required reason…</option>{DEAD_REASONS.map((reason) => <option key={reason.id} value={reason.id}>{reason.label}</option>)}</select>
+                {bulkDeadReason === 'other' ? <input aria-label="Not a lead notes" value={bulkNotes} onChange={(event) => setBulkNotes(event.target.value)} placeholder="Required notes…" className="crm-field h-9 min-w-60 rounded-lg px-3 text-xs" /> : null}
+              </> : null}
+              <button type="button" onClick={() => void applyBulkAction()} disabled={!bulkAction || bulkSaving || (bulkAction === 'not_lead' && !bulkDeadReason)} className="crm-primary-button h-9 rounded-lg px-4 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45">{bulkSaving ? 'Applying…' : 'Apply'}</button>
+              <button type="button" onClick={() => { setSelectedIds(new Set()); setBulkAction(''); setBulkMessage(null) }} disabled={bulkSaving} className="crm-secondary-button h-9 rounded-lg px-3 text-xs font-bold">Clear selection</button>
+            </div> : null}
+            {bulkMessage ? <p role="status" className={`mt-2 text-xs font-bold ${bulkMessage.includes('failed') || bulkMessage.includes('Choose') || bulkMessage.includes('notes') ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-success)]'}`}>{bulkMessage}</p> : null}
+
             <div className="crm-panel mt-3 overflow-x-auto rounded-xl">
-              <div className="crm-table-header grid min-w-[936px] grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] border-b px-3 py-3 text-[11px] font-bold uppercase tracking-[0.06em]">
-                <span>Contact</span><span>Property</span><span>Status</span><span>Next Action</span><span>Owner</span><span>Last Activity</span><span>Source</span>
+              <div className="crm-table-header grid min-w-[980px] grid-cols-[2rem_1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b px-3 py-3 text-[11px] font-bold uppercase tracking-[0.06em]">
+                <input type="checkbox" aria-label="Select contacts on this page" checked={pageItemsSelected} onChange={togglePageSelection} className="h-4 w-4 accent-[var(--crm-brand)]" /><span>Contact</span><span>Property</span><span>Status</span><span>Next Action</span><span>Owner</span><span>Last Activity</span><span>Source</span>
               </div>
               {isLoading ? <ContactSkeleton /> : null}
               {error ? <div className="p-8 text-center text-sm text-red-600">Contacts could not be loaded. <button type="button" onClick={() => void refetch()} className="font-bold underline">Try again</button></div> : null}
@@ -570,8 +748,9 @@ export default function ContactsPage() {
                     ? 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'
                     : 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
                 return (
-                  <button key={row.id} type="button" onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} aria-pressed={selectedRow} className={`grid min-w-[936px] w-full grid-cols-[1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-l-4 border-b-[var(--crm-border)] px-3 py-4 text-left text-xs transition-colors last:border-b-0 ${selectedRow ? 'border-l-[var(--crm-action)] bg-[var(--crm-action-soft)]' : `${rowAttention} hover:bg-[var(--crm-surface-subtle)]`}`}>
-                    <span className="flex min-w-0 items-center gap-2.5"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[var(--crm-ink)]">{displayName}</strong><small className="text-[var(--crm-text-muted)]">{formatPhone(row.phone) || 'No phone'}</small></span></span>
+                  <div key={row.id} onClick={() => { setSelectedId(row.id); setDetailsOpen(true) }} onDoubleClick={() => router.push(`/leads/${row.id}`)} className={`grid min-w-[980px] w-full cursor-pointer grid-cols-[2rem_1.15fr_1.15fr_.75fr_1.2fr_.85fr_.85fr_.75fr] items-center border-b border-l-4 border-b-[var(--crm-border)] px-3 py-4 text-left text-xs transition-colors last:border-b-0 ${selectedRow ? 'border-l-[var(--crm-action)] bg-[var(--crm-action-soft)]' : `${rowAttention} hover:bg-[var(--crm-surface-subtle)]`}`}>
+                    <input type="checkbox" aria-label={`Select ${displayName}`} checked={selectedIds.has(row.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleSelected(row.id)} className="h-4 w-4 accent-[var(--crm-brand)]" />
+                    <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedId(row.id); setDetailsOpen(true) }} onDoubleClick={(event) => { event.stopPropagation(); router.push(`/leads/${row.id}`) }} title="Double-click to open the full lead workspace" className="flex min-w-0 items-center gap-2.5 rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--crm-info)]"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[var(--crm-ink)]">{displayName}</strong><small className="text-[var(--crm-text-muted)]">{formatPhone(row.phone) || 'No phone'}</small></span></button>
                     <span className="min-w-0"><strong className="block truncate font-medium text-[var(--crm-text)]">{property}</strong><small className="text-[var(--crm-text-dim)]">{row.city || ''}</small></span>
                     <span className="min-w-0">
                       <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>{notLead ? 'Not a lead' : 'Lead'}</span>
@@ -579,7 +758,7 @@ export default function ContactsPage() {
                     </span>
                     <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-action)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>
                     <span>{row.owner || 'Unassigned'}</span><span className="text-[var(--crm-text-muted)]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[var(--crm-text-muted)]">{formatLeadSource(row.source)}</span>
-                  </button>
+                  </div>
                 )
               }) : null}
             </div>
@@ -614,7 +793,7 @@ export default function ContactsPage() {
                 station={selected.station}
                 deadReason={selected.deadReason}
                 agent={selected.owner}
-                onChanged={() => void refetch()}
+                onChanged={(update) => handleLeadStatusChanged(selected.id, update)}
                 variant="panel"
               />
             </div>
@@ -668,24 +847,20 @@ function SortableSmartListTab({
     zIndex: isDragging ? 30 : undefined,
   }
 
-  return (
-    <div ref={setNodeRef} style={style} className={`group flex shrink-0 items-center border-b-[3px] ${active ? tone.active : 'border-transparent text-[var(--crm-text-muted)]'} ${isDragging ? 'rounded-t-lg bg-[var(--crm-surface)] shadow-lg' : ''}`}>
-      <button
-        type="button"
-        {...attributes}
-        onPointerDown={(event) => listeners?.onPointerDown?.(event)}
-        onKeyDown={(event) => listeners?.onKeyDown?.(event)}
-        aria-label={`Reorder ${label} smart list`}
-        title={`Drag to reorder ${label}. Keyboard: Space, arrow keys, Space.`}
-        className="flex h-9 w-6 cursor-grab touch-none items-center justify-center rounded-md text-[var(--crm-text-dim)] opacity-60 transition hover:bg-[var(--crm-surface-subtle)] hover:text-[var(--crm-brand)] hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
-      >
-        <Icon name="drag_indicator" className="text-[15px]" />
-      </button>
-      <button type="button" onClick={onSelect} aria-label={`${label} ${count}`} aria-current={active ? 'page' : undefined} className={`py-3 pr-3 text-sm font-semibold transition-colors ${active ? '' : 'hover:text-[var(--crm-ink)]'}`}>
-        {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${active ? tone.count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{count}</span>
-      </button>
-    </div>
-  )
+  return <button
+    ref={setNodeRef}
+    style={style}
+    type="button"
+    {...attributes}
+    {...listeners}
+    onClick={onSelect}
+    aria-label={`${label} ${count}`}
+    aria-current={active ? 'page' : undefined}
+    title={`Open ${label}. Drag the tab itself to reorder.`}
+    className={`shrink-0 touch-none border-b-[3px] px-3 py-3 text-sm font-semibold transition-colors ${active ? tone.active : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'} ${isDragging ? 'cursor-grabbing rounded-t-lg bg-[var(--crm-surface)] shadow-lg' : 'cursor-grab'}`}
+  >
+    {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${active ? tone.count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{count}</span>
+  </button>
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: [string, string][] }) {

@@ -4,6 +4,7 @@ export const maxDuration = 60
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getContactSignal, isOutboundAttempt, type ContactActivityLike, type ContactSignal } from '@/lib/contact-display'
+import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
@@ -11,9 +12,9 @@ import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/
  *
  * Returns one row per contact with the fields the Contacts
  * smart list needs: name, address, phone, next activity, tags, station,
- * composite score. Parked records are excluded here; dead/lost records stay
- * searchable so agents can see why they left active work. Single endpoint — the page filters by station tab on
- * the client.
+ * composite score. Parked records are excluded here. Active work is the
+ * default contract; dead/lost records are only returned through the explicit
+ * not_leads archive scope so they cannot leak back into an active smart list.
  *
  * Auth: session (the page is auth-gated).
  */
@@ -29,6 +30,7 @@ export interface ContactRow {
   station: DealStage
   classification: 'lead' | 'opportunity' | 'dead' | null
   deadReason: string | null
+  owner: string | null
   score: number
   isFavorite: boolean
   nextActivity: {
@@ -114,24 +116,32 @@ function pickTags(m: ManifestPayload): string[] {
   return [...tags].slice(0, 6)
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const db = supabaseAdmin()
+  const requestedScope = request.nextUrl.searchParams.get('scope')
+  const scope = requestedScope === 'not_leads' || requestedScope === 'all' ? requestedScope : 'active'
 
   const { data: leads, error: leadsErr } = await db
     .from('leads')
-    .select('id, full_name, phone, email, source, station, classification, dead_reason, property_address, city, created_at, updated_at, is_parked, is_favorite')
+    .select('id, full_name, phone, email, source, station, classification, dead_reason, assigned_agent, property_address, city, created_at, updated_at, is_parked, is_favorite')
     .eq('is_parked', false)
     .order('updated_at', { ascending: false })
 
   if (leadsErr) return NextResponse.json({ error: leadsErr.message }, { status: 500 })
   const rows = leads ?? []
-  const activeRows = rows
+  const scopedRows = rows
     .map((lead) => ({ lead, station: getContactStation(lead.station) }))
     .filter((row): row is { lead: typeof rows[number]; station: DealStage } => row.station !== null)
+    .filter(({ lead, station }) => {
+      const notLead = isNotLeadOutcome(lead.classification, station)
+      if (scope === 'not_leads') return notLead
+      if (scope === 'all') return true
+      return !notLead
+    })
 
-  if (activeRows.length === 0) return NextResponse.json({ items: [] })
+  if (scopedRows.length === 0) return NextResponse.json({ items: [], scope })
 
-  const leadIds = activeRows.map(({ lead }) => lead.id)
+  const leadIds = scopedRows.map(({ lead }) => lead.id)
 
   const [{ data: manifests }, { data: scores }, { data: activities }] = await Promise.all([
     db
@@ -178,7 +188,7 @@ export async function GET() {
   }
 
   const items: ContactRow[] = []
-  for (const { lead, station } of activeRows) {
+  for (const { lead, station } of scopedRows) {
     const manifest = latestManifest.get(lead.id) ?? {}
     const lastContactAt =
       manifest.communications?.lastSellerContactDate ??
@@ -196,6 +206,7 @@ export async function GET() {
       station,
       classification: (lead.classification as ContactRow['classification']) ?? null,
       deadReason: lead.dead_reason ?? null,
+      owner: lead.assigned_agent ?? null,
       score: scoreByLead.get(lead.id) ?? 0,
       isFavorite: Boolean((lead as { is_favorite?: boolean | null }).is_favorite),
       nextActivity: pickNextActivity(manifest),
@@ -208,7 +219,7 @@ export async function GET() {
     })
   }
 
-  return NextResponse.json({ items })
+  return NextResponse.json({ items, scope })
 }
 
 function cleanText(value: unknown): string | null {

@@ -13,6 +13,19 @@ async function inboundTwiml(to: string) {
   return response.text()
 }
 
+async function outboundTwiml(identity: string, requestedCallerId?: string) {
+  const body = new FormData()
+  body.set('CallSid', 'CA_test_outbound')
+  body.set('From', `client:${identity}`)
+  body.set('To', '+18165550199')
+  if (requestedCallerId) body.set('CallerId', requestedCallerId)
+  const response = await POST(new Request('https://crm.savingkc.com/api/twiml-voice', {
+    method: 'POST',
+    body,
+  }))
+  return response.text()
+}
+
 describe('inbound TwiML identity routing', () => {
   it('routes the dispositions number directly to Ernest without the seller IVR', async () => {
     const twiml = await inboundTwiml('+18166088858')
@@ -39,5 +52,28 @@ describe('inbound TwiML identity routing', () => {
 
     expect(twiml).toContain('<Gather')
     expect(twiml).toContain('/api/ivr/handle-input')
+  })
+})
+
+describe('outbound TwiML agent identity', () => {
+  it('defaults Ernest to his canonical company line', async () => {
+    const twiml = await outboundTwiml('ernest')
+
+    expect(twiml).toContain('callerId="+18166088588"')
+    expect(twiml).toContain('identity=ernest')
+  })
+
+  it('defaults Casey to her canonical company line', async () => {
+    const twiml = await outboundTwiml('casey')
+
+    expect(twiml).toContain('callerId="+18167277667"')
+    expect(twiml).toContain('identity=casey')
+  })
+
+  it('ignores an unapproved caller ID instead of leaking it to Twilio', async () => {
+    const twiml = await outboundTwiml('ernest', '+18165550999')
+
+    expect(twiml).toContain('callerId="+18166088588"')
+    expect(twiml).not.toContain('+18165550999')
   })
 })

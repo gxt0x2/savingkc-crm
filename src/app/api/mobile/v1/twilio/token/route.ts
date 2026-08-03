@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import twilio from 'twilio'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { cleanTwilioEnv, resolveTwimlAppSid } from '@/lib/telephony/twiml-app'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -12,30 +14,17 @@ export function OPTIONS() {
 const AccessToken = twilio.jwt.AccessToken
 const VoiceGrant = AccessToken.VoiceGrant
 
-function cleanEnv(name: string): string {
-  return process.env[name]?.replace(/\\[rnt]/g, '').replace(/\s+/g, '').trim() ?? ''
-}
-
-function identityFromEmail(email: string | undefined): string {
-  const normalized = (email || 'mobile-user').toLowerCase()
-  if (normalized.includes('casey')) return 'casey'
-  if (normalized.includes('ernest')) return 'ernest'
-  return normalized.replace(/[^a-z0-9_-]/g, '-').slice(0, 80) || 'mobile-user'
-}
-
 export async function GET(req: NextRequest) {
   try {
     const { user } = await requireMobileUser(req)
-    const accountSid = cleanEnv('TWILIO_ACCOUNT_SID')
-    const apiKey = cleanEnv('TWILIO_API_KEY')
-    const apiSecret = cleanEnv('TWILIO_API_SECRET')
-    const outgoingApplicationSid = cleanEnv('TWILIO_TWIML_APP_SID')
+    const accountSid = cleanTwilioEnv('TWILIO_ACCOUNT_SID')
+    const apiKey = cleanTwilioEnv('TWILIO_API_KEY')
+    const apiSecret = cleanTwilioEnv('TWILIO_API_SECRET')
 
     const missing = [
       !accountSid && 'TWILIO_ACCOUNT_SID',
       !apiKey && 'TWILIO_API_KEY',
       !apiSecret && 'TWILIO_API_SECRET',
-      !outgoingApplicationSid && 'TWILIO_TWIML_APP_SID',
     ].filter(Boolean)
 
     if (missing.length > 0) {
@@ -45,7 +34,16 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const identity = identityFromEmail(user.email)
+    const outgoingApplicationSid = await resolveTwimlAppSid()
+    if (!outgoingApplicationSid) {
+      return NextResponse.json(
+        { error: 'SavingKC CRM TwiML App is not configured' },
+        { status: 500, headers: mobileNoStoreHeaders() },
+      )
+    }
+
+    const profile = resolveAgentTelephonyProfile(user.email)
+    const { identity } = profile
     const token = new AccessToken(accountSid, apiKey, apiSecret, { identity, ttl: 3600 })
     token.addGrant(new VoiceGrant({ outgoingApplicationSid, incomingAllow: true }))
 
@@ -53,6 +51,8 @@ export async function GET(req: NextRequest) {
       {
         token: token.toJwt(),
         identity,
+        callerId: profile.defaultCallerId,
+        displayName: profile.displayName,
       },
       { headers: mobileNoStoreHeaders() },
     )

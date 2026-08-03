@@ -11,6 +11,7 @@ import { useThemePreference } from '@/hooks/use-theme-preference'
 import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import { WorkspaceNav } from './workspace-nav'
 import { WorkspaceContextNav } from './workspace-context-nav'
+import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 
 type WorkspaceChromeContextValue = {
   commandBarHost: HTMLDivElement | null
@@ -55,11 +56,13 @@ export function WorkspaceFrame({
   needsReply,
   commandBar,
   hideHeader = false,
+  userEmail,
 }: {
   children: ReactNode
   needsReply?: number
   commandBar?: ReactNode
   hideHeader?: boolean
+  userEmail?: string | null
 }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
@@ -70,6 +73,7 @@ export function WorkspaceFrame({
   const [pageHeaderHidden, setPageHeaderHidden] = useState(false)
   const [commandBarHost, setCommandBarHost] = useState<HTMLDivElement | null>(null)
   const { theme, toggle: toggleTheme } = useThemePreference()
+  const userProfile = useMemo(() => resolveAgentTelephonyProfile(userEmail), [userEmail])
   const { data: hubPayload } = useQuery({
     queryKey: conversationHubQueryKey,
     queryFn: () => fetchConversationHub<{ attentionState?: string }>(),
@@ -139,8 +143,8 @@ export function WorkspaceFrame({
             </div>
             <div className="relative">
             <button type="button" onClick={() => setProfileOpen((value) => !value)} aria-expanded={profileOpen} aria-label="Open user menu" className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-[var(--crm-surface-subtle)]">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-xs font-bold text-[var(--crm-surface)]">ED</div>
-              <span className="text-sm font-semibold text-[var(--crm-ink)]">Ernest</span>
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-xs font-bold text-[var(--crm-surface)]">{userProfile.initials}</div>
+              <span className="text-sm font-semibold text-[var(--crm-ink)]">{userProfile.displayName}</span>
               <Icon name="expand_more" className="text-[var(--crm-text-muted)]" />
             </button>
             {profileOpen ? <div className="crm-menu absolute right-0 top-12 z-50 w-48 overflow-hidden rounded-xl py-1"><Link href="/dashboard" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="home" className="text-[18px]" />Dashboard</Link><Link href="/reports/acquisitions" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="bar_chart" className="text-[18px]" />Reports</Link><Link href="/settings" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="settings" className="text-[18px]" />Settings</Link></div> : null}

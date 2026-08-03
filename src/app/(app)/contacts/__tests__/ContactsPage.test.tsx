@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ContactsPage from '../page'
 import { CONTACT_SMART_LIST_ORDER_STORAGE_KEY } from '@/lib/contact-smart-lists'
 
-const { useQueryMock, useQueryClientMock } = vi.hoisted(() => ({ useQueryMock: vi.fn(), useQueryClientMock: vi.fn() }))
+const { useQueryMock, useQueryClientMock, pushMock } = vi.hoisted(() => ({ useQueryMock: vi.fn(), useQueryClientMock: vi.fn(), pushMock: vi.fn() }))
 
 vi.mock('@tanstack/react-query', () => ({ useQuery: useQueryMock, useQueryClient: useQueryClientMock }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: pushMock }) }))
+vi.mock('@/hooks/use-auth', () => ({ useAuth: () => ({ user: { email: 'ernest@savingkc.com' } }) }))
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => <a href={href} {...props}>{children}</a>,
 }))
@@ -50,8 +52,16 @@ describe('ContactsPage smart-list workspace', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/contacts')
     window.localStorage.clear()
-    useQueryClientMock.mockReturnValue({ fetchQuery: vi.fn() })
-    useQueryMock.mockReturnValue({ data: { items: contacts }, isLoading: false, error: null, refetch: vi.fn(), isFetching: false })
+    useQueryClientMock.mockReturnValue({ fetchQuery: vi.fn(), invalidateQueries: vi.fn(), setQueryData: vi.fn() })
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
+      const scope = queryKey?.[1]
+      const scopedContacts = scope === 'active'
+        ? contacts.filter((contact) => contact.station !== 'dead')
+        : scope === 'not_leads'
+          ? contacts.filter((contact) => contact.station === 'dead')
+          : contacts
+      return { data: { items: scopedContacts }, isLoading: false, error: null, refetch: vi.fn(), isFetching: false }
+    })
   })
 
   afterEach(() => {
@@ -95,7 +105,7 @@ describe('ContactsPage smart-list workspace', () => {
     expect(within(header).getByRole('button', { name: /Add contact/ })).toBeInTheDocument()
   })
 
-  it('restores a customized smart-list order and provides drag handles and a reset', () => {
+  it('restores a customized smart-list order using the whole tab as the drag target', () => {
     window.localStorage.setItem(CONTACT_SMART_LIST_ORDER_STORAGE_KEY, JSON.stringify(['all', 'hot', 'new']))
     render(<ContactsPage />)
 
@@ -111,7 +121,8 @@ describe('ContactsPage smart-list workspace', () => {
       'Offer Made 0',
       'In Closing 0',
     ])
-    expect(within(navigation).getAllByRole('button', { name: /Reorder .* smart list/ })).toHaveLength(8)
+    expect(within(navigation).queryByRole('button', { name: /Reorder .* smart list/ })).not.toBeInTheDocument()
+    expect(navigation.querySelector('[data-icon="drag_indicator"]')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset smart-list order' }))
     expect(within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder ')).map((button) => button.getAttribute('aria-label'))).toEqual([
@@ -161,11 +172,24 @@ describe('ContactsPage smart-list workspace', () => {
   it('shows the city once and uses the SavingKC brand for needs-reply row attention', () => {
     render(<ContactsPage />)
 
-    const contactRow = screen.getAllByRole('button').find((button) => button.textContent?.includes('Active New') && button.textContent.includes('6509 W 74TH ST'))
-    expect(contactRow).toBeDefined()
+    const contactName = screen.getByRole('button', { name: /Active New/ })
+    const contactRow = contactName.closest('.grid')
+    expect(contactRow).toBeTruthy()
     expect(contactRow?.textContent?.match(/Overland Park/g)).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: 'Close contact details' }))
     expect(contactRow).toHaveClass('border-l-[var(--crm-brand)]')
     expect(contactRow).not.toHaveClass('border-l-[var(--crm-warning)]')
+  })
+
+  it('supports bulk selection and opens the full lead workspace on double-click', () => {
+    render(<ContactsPage />)
+
+    const contactName = screen.getByRole('button', { name: /Active New/ })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Active New' }))
+    expect(screen.getByRole('region', { name: 'Bulk contact changes' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Bulk action' })).toBeInTheDocument()
+
+    fireEvent.doubleClick(contactName)
+    expect(pushMock).toHaveBeenCalledWith('/leads/active-new')
   })
 })

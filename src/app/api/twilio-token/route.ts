@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import twilio from 'twilio'
+import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { cleanTwilioEnv, requireTwilioEnv, resolveTwimlAppSid } from '@/lib/telephony/twiml-app'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -18,93 +20,10 @@ const NO_STORE_HEADERS: HeadersInit = {
   Vary: 'Authorization, Cookie',
 }
 
-const TWIML_APP_FRIENDLY_NAME = 'SavingKC CRM'
-const CANONICAL_VOICE_URL = 'https://crm.savingkc.com/api/twiml-voice'
-
-// Map email → outbound caller ID
-const AGENT_CALLER_IDS: Record<string, string> = {
-  'ernest@savingkc.com': '+18166088588', // Ernest's company number
-  'casey@savingkc.com':  '+18167277667', // Casey's company number
-}
-const DEFAULT_CALLER_ID = '+18163077835' // fallback: main Twilio number
-
-function env(name: string): string {
-  return process.env[name]?.replace(/\\n/g, '').trim() ?? ''
-}
-
-function twilioEnv(name: string): string {
-  return env(name)
-    .replace(/\\[rnt]/g, '')
-    .replace(/\s+/g, '')
-}
-
-function requireTwilioEnv(name: string, expectedPrefix?: string): string {
-  const value = twilioEnv(name)
-  if (!value) throw new Error(`${name} is not configured`)
-  if (expectedPrefix && !value.startsWith(expectedPrefix)) {
-    throw new Error(`${name} is malformed`)
-  }
-  return value
-}
-
-function isProductionRuntime(): boolean {
-  const appUrl = env('NEXT_PUBLIC_APP_URL').replace(/\/$/, '')
-  return env('VERCEL_ENV') === 'production' || appUrl === 'https://crm.savingkc.com'
-}
-
-async function getTwimlAppSid(): Promise<string | undefined> {
-  const configuredSid = twilioEnv('TWILIO_TWIML_APP_SID')
-  if (configuredSid) return configuredSid
-
-  const accountSid = requireTwilioEnv('TWILIO_ACCOUNT_SID', 'AC')
-  const apiKey = requireTwilioEnv('TWILIO_API_KEY', 'SK')
-  const apiSecret = requireTwilioEnv('TWILIO_API_SECRET')
-  const creds = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
-
-  try {
-    const listRes = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Applications.json`,
-      { headers: { Authorization: `Basic ${creds}` } }
-    )
-    const listData = await listRes.json()
-    const existing = listData.applications?.find(
-      (a: { friendly_name: string; sid: string }) => a.friendly_name === TWIML_APP_FRIENDLY_NAME
-    )
-    if (existing) {
-      return existing.sid
-    }
-
-    // Normal token generation must not let preview deployments rewrite shared
-    // voice routing. Only production may create the canonical app if it is
-    // missing; explicit repair belongs in /api/setup-twilio.
-    if (!isProductionRuntime()) return undefined
-
-    const createRes = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Applications.json`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${creds}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          FriendlyName: TWIML_APP_FRIENDLY_NAME,
-          VoiceUrl: CANONICAL_VOICE_URL,
-          VoiceMethod: 'POST',
-        }).toString(),
-      }
-    )
-    const data = await createRes.json()
-    return data.sid
-  } catch {
-    return undefined
-  }
-}
-
 export async function GET() {
   try {
     const required = ['TWILIO_ACCOUNT_SID', 'TWILIO_API_KEY', 'TWILIO_API_SECRET'] as const
-    const missing = required.filter((k) => !twilioEnv(k))
+    const missing = required.filter((k) => !cleanTwilioEnv(k))
     if (missing.length > 0) {
       return NextResponse.json(
         { error: `Missing required env vars: ${missing.join(', ')}` },
@@ -127,11 +46,12 @@ export async function GET() {
     const { data: { user } } = await supabase.auth.getUser()
     const email = user?.email?.toLowerCase() || ''
 
-    // Derive identity + caller ID from email
-    const identity = email.includes('casey') ? 'casey' : email.includes('ernest') ? 'ernest' : 'crm-user'
-    const callerId = AGENT_CALLER_IDS[email] || DEFAULT_CALLER_ID
+    // Authentication is the source of truth for both the Twilio client identity
+    // and the first outbound line shown to the agent.
+    const profile = resolveAgentTelephonyProfile(email)
+    const { identity, defaultCallerId: callerId } = profile
 
-    const twimlAppSid = await getTwimlAppSid()
+    const twimlAppSid = await resolveTwimlAppSid()
     if (!twimlAppSid) {
       throw new Error('SavingKC CRM TwiML App is not configured')
     }

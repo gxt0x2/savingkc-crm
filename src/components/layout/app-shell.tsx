@@ -280,7 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="min-h-screen bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
         data-theme={userTheme}
       >
-        <WorkspaceFrame>{children}</WorkspaceFrame>
+        <WorkspaceFrame userEmail={user?.email}>{children}</WorkspaceFrame>
         <DialerPanel
           open={showDialer}
           onClose={() => {
@@ -300,6 +300,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           pendingQueueAutoDial={pendingQueueAutoDial}
           pendingQueueRingCount={pendingQueueRingCount}
           presentation={dialerPresentation}
+          signedInEmail={user?.email}
         />
       </div>
     )
@@ -538,6 +539,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         pendingQueueAutoDial={pendingQueueAutoDial}
         pendingQueueRingCount={pendingQueueRingCount}
         presentation={dialerPresentation}
+        signedInEmail={user?.email}
       />
 
       {/* ⌘K Command Palette — global search */}
