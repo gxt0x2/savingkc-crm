@@ -156,6 +156,7 @@ export async function POST(req: NextRequest) {
             to: buyer.phone,
             from: nextTwilioNumber(),
             body: messageBody,
+            senderUse: 'broadcast',
           })
 
           await db

@@ -11,6 +11,7 @@ import { safeSendSMS } from '@/lib/safe-communications'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { supabase } from '@/lib/supabase-lazy'
+import { isAllowedSmsSender, normalizeTwilioNumber } from '@/lib/twilio-numbers'
 
 const DEFAULT_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const SMS_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound']
@@ -38,16 +39,22 @@ export interface SendLeadSmsInput {
 }
 
 /**
- * Pick the Twilio number to send from. Prefer the number this lead/phone last
- * used with this contact (keeps the thread on one number); otherwise the
- * explicit override; otherwise the default line.
+ * Pick the Twilio number to send from. An explicit session/user choice wins.
+ * Without one, preserve the contact's most recent approved conversation line,
+ * then use the main line. Historical protected or unknown senders are ignored.
  */
 export async function resolveSmsFromNumber(
   leadId: string | null | undefined,
   phone: string,
   fromPhone?: string,
 ): Promise<string> {
-  if (fromPhone) return fromPhone
+  if (fromPhone) {
+    const explicit = normalizeTwilioNumber(fromPhone)
+    if (!explicit || !isAllowedSmsSender(explicit, 'conversation')) {
+      throw new Error(`SMS sender is not approved for conversations: ${fromPhone}`)
+    }
+    return explicit
+  }
 
   function textValue(value: unknown): string | null {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -105,7 +112,7 @@ export async function resolveSmsFromNumber(
     const rows = (data || []) as SmsActivityRow[]
     const match = rows.find((row) => phoneKey(contactPhone(row)) === targetKey && linePhone(row))
     const detectedLine = match ? linePhone(match) : null
-    if (detectedLine) return detectedLine
+    if (detectedLine && isAllowedSmsSender(detectedLine, 'conversation')) return normalizeTwilioNumber(detectedLine)!
   }
 
   if (phone) {
@@ -130,7 +137,7 @@ export async function resolveSmsFromNumber(
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     const match = rows.find((row) => phoneKey(contactPhone(row)) === targetKey && linePhone(row))
     const detectedLine = match ? linePhone(match) : null
-    if (detectedLine) return detectedLine
+    if (detectedLine && isAllowedSmsSender(detectedLine, 'conversation')) return normalizeTwilioNumber(detectedLine)!
   }
 
   return DEFAULT_TWILIO_PHONE
@@ -144,7 +151,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
   if (await isDuplicateSms(phone, body)) return { status: 'skipped', reason: 'duplicate' }
 
   const from = await resolveSmsFromNumber(leadId, phone, fromPhone)
-  const msg = await safeSendSMS({ body, from, to: phone })
+  const msg = await safeSendSMS({ body, from, to: phone, senderUse: 'conversation' })
   if (!msg.success) return { status: 'failed', error: msg.error || 'SMS send failed' }
 
   await supabase.from('lead_activities').insert({
@@ -156,18 +163,20 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
       ...(metadata || {}),
       ...(source ? { source } : {}),
       direction: 'outbound',
-      from,
+      from: msg.from,
+      requested_from: msg.requestedFrom || from,
+      sender_mismatch: Boolean(msg.senderMismatch),
       to: phone,
       message_sid: msg.sid,
     },
   })
 
-  logSmsSend(phone, body, from, leadId || undefined).catch((err) => console.error('[SMS-DEDUP] Failed:', err))
+  logSmsSend(phone, body, msg.from, leadId || undefined).catch((err) => console.error('[SMS-DEDUP] Failed:', err))
 
   if (leadId) {
     checkAutoAdvance(leadId, 'outbound_contact').catch((err) => console.error('[AUTO-ADVANCE] Failed:', err))
     onCommunicationEvent(leadId, { type: 'outbound_sms', content: body }).catch((err) => console.error('[MANIFEST-SYNC] Failed:', err))
   }
 
-  return { status: 'sent', sid: msg.sid, from }
+  return { status: 'sent', sid: msg.sid, from: msg.from }
 }

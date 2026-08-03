@@ -7,6 +7,7 @@ import {
   GOOGLE_ADS_PROPERTY_TAX_TWILIO_NUMBER,
   GOOGLE_ADS_TWILIO_NUMBER,
   findTwilioNumber,
+  isAllowedSmsSender,
   isReservedTwilioNumber,
   TWILIO_NUMBERS,
 } from './twilio-numbers'
@@ -23,7 +24,17 @@ describe('twilio number inventory', () => {
       expect(CONVERSATION_TWILIO_NUMBERS.some((option) => option.value === number)).toBe(false)
       expect(BROADCAST_TWILIO_NUMBERS.some((option) => option.value === number)).toBe(false)
       expect(DIALER_CALLER_ID_NUMBERS.some((option) => option.value === number)).toBe(false)
+      expect(isAllowedSmsSender(number, 'conversation')).toBe(false)
+      expect(isAllowedSmsSender(number, 'broadcast')).toBe(false)
+      expect(isAllowedSmsSender(number, 'reply')).toBe(true)
+      expect(isAllowedSmsSender(number, 'system')).toBe(false)
     }
+  })
+
+  it('normalizes approved conversation senders and rejects unknown numbers', () => {
+    expect(isAllowedSmsSender('(816) 307-7835', 'conversation')).toBe(true)
+    expect(isAllowedSmsSender('+18167277667', 'conversation')).toBe(true)
+    expect(isAllowedSmsSender('+18165550199', 'conversation')).toBe(false)
   })
 
   it('labels the 8858 number as dispositions eligible for Ernest call flow', () => {

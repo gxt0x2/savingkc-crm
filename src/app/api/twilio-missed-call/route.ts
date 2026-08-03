@@ -164,7 +164,8 @@ export async function POST(req: Request) {
               await safeSendSMS({
                 body: response.message as string,
                 from: replyFromRaw as string,
-                to: fromPhone as string
+                to: fromPhone as string,
+                senderUse: 'reply',
               })
               await supabase.from('lead_activities').insert({
                 lead_id: leadId,
@@ -286,7 +287,8 @@ export async function POST(req: Request) {
               await safeSendSMS({
                 body: response.message as string,
                 from: unknownReplyFromRaw as string,
-                to: fromPhoneUnknown as string
+                to: fromPhoneUnknown as string,
+                senderUse: 'reply',
               })
               await supabase.from('lead_activities').insert({
                 lead_id: newLeadId,

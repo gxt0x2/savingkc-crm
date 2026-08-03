@@ -59,7 +59,7 @@ export async function POST(req: Request) {
           : NextResponse.json({ error: 'Duplicate SMS — same message sent to this number within 24 hours' }, { status: 409 })
       }
 
-      return NextResponse.json({ success: true, sid: result.sid })
+      return NextResponse.json({ success: true, sid: result.sid, from: result.from })
     }
 
     if (mode === 'email') {

@@ -108,6 +108,8 @@ interface ComposeModalProps {
   heirName?: string | null
   heirRelation?: string | null
   prospectOwnerName?: string | null
+  /** Explicit sender selected by an active Dialer session. */
+  defaultFromPhone?: string | null
 }
 
 export function SmsComposeModal({
@@ -120,6 +122,7 @@ export function SmsComposeModal({
   heirName = null,
   heirRelation = null,
   prospectOwnerName = null,
+  defaultFromPhone = null,
 }: ComposeModalProps) {
   const { user } = useAuth()
   const agentName = getAgentFromEmail(user?.email)
@@ -129,15 +132,17 @@ export function SmsComposeModal({
   const [activeTab, setActiveTab] = useState<'sms' | 'email'>(initialTab)
   const [messages, setMessages] = useState<Activity[]>([])
   const [message, setMessage] = useState('')
-  const [fromPhone, setFromPhone] = useState<string>(AGENT_DEFAULT_NUMBERS.ernest)
+  const [fromPhone, setFromPhone] = useState<string>(defaultFromPhone || AGENT_DEFAULT_NUMBERS.ernest)
   const [fromPhoneOverridden, setFromPhoneOverridden] = useState(false)
 
   // ── Set default from-number once auth loads ──
   useEffect(() => {
-    if (user?.email && !fromPhoneOverridden) {
+    if (defaultFromPhone && !fromPhoneOverridden) {
+      setFromPhone(defaultFromPhone)
+    } else if (user?.email && !fromPhoneOverridden) {
       setFromPhone(getDefaultFromPhone(user.email))
     }
-  }, [user?.email, fromPhoneOverridden])
+  }, [defaultFromPhone, user?.email, fromPhoneOverridden])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
@@ -174,7 +179,7 @@ export function SmsComposeModal({
 
   // ── Auto-detect reply number from the active SMS thread unless manually changed ──
   useEffect(() => {
-    if (fromPhoneOverridden) return
+    if (fromPhoneOverridden || defaultFromPhone) return
     const targetKey = phoneKey(lead.phone)
     const lastThreadSms = [...messages].reverse().find((activity) => {
       if (!targetKey) return Boolean(activityLinePhone(activity))
@@ -182,7 +187,7 @@ export function SmsComposeModal({
     })
     const detectedLine = lastThreadSms ? activityLinePhone(lastThreadSms) : null
     if (detectedLine) setFromPhone(detectedLine)
-  }, [lead.phone, messages, fromPhoneOverridden])
+  }, [defaultFromPhone, lead.phone, messages, fromPhoneOverridden])
 
   // ── Load history + templates + property meta on mount ──
   useEffect(() => {

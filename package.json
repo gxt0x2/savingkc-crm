@@ -26,7 +26,9 @@
     "gate:crm-controls": "node scripts/ci/check-crm-control-integrity.mjs",
     "gate:twilio": "node scripts/ci/check-twilio-token-health.mjs",
     "gate:edge": "node scripts/ci/check-edge-integrity.mjs",
-    "gate:dialer": "node scripts/ci/check-dialer-ringback.mjs"
+    "gate:dialer": "node scripts/ci/check-dialer-ringback.mjs",
+    "gate:mobile": "npm --prefix apps/mobile run healthcheck",
+    "gate:security": "npm audit --audit-level=high"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

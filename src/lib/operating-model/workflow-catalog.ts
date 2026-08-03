@@ -149,11 +149,11 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
   {
     id: 'sms-sender-worker',
     name: 'Approved SMS Sender',
-    description: 'Claims queued messages, checks consent and suppression, sends them, and records the provider outcome.',
+    description: 'Claims queued messages, checks consent and suppression, validates the sender against the master phone system, and records Twilio\'s actual sender and outcome.',
     category: 'communication', status: 'active', health: 'healthy', owner: SYSTEM_OWNER,
     trigger: { type: 'manual', surface: '/api/workers/sms-sender' },
-    actions: [{ type: 'execute', label: 'Claim queued SMS jobs' }, { type: 'branch', condition: 'Consent and opt-out checks pass' }, { type: 'execute', label: 'Send and persist Twilio result' }],
-    implementation: implementation(['/api/workers/sms-sender', 'src/lib/safe-communications.ts'], { execution: 'worker' }),
+    actions: [{ type: 'execute', label: 'Claim queued SMS jobs' }, { type: 'branch', condition: 'Consent and opt-out checks pass' }, { type: 'execute', label: 'Validate sender purpose and eligibility' }, { type: 'execute', label: 'Send and persist the provider-confirmed identity and result' }],
+    implementation: implementation(['/api/workers/sms-sender', 'src/lib/safe-communications.ts', 'src/lib/twilio-numbers.ts'], { execution: 'worker' }),
     version: 1, lastRunAt: null,
   },
   {

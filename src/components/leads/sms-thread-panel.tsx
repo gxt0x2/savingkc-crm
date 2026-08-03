@@ -107,9 +107,12 @@ export function SmsThreadPanel({
 
   const latestMessage = thread[thread.length - 1] || null
   const recipientPhone = phone || (latestMessage ? smsPeerPhone(latestMessage) : null)
-  const replyFromPhone = lastInbound
-    ? smsSystemPhone(lastInbound, defaultFromPhone || DEFAULT_FROM_PHONE)
-    : defaultFromPhone || DEFAULT_FROM_PHONE
+  // A Dialer session sender is an explicit operating choice and must outrank
+  // an older thread line. Outside a session, preserve reply continuity.
+  const sessionFromPhone = defaultFromPhone?.trim() || null
+  const replyFromPhone = sessionFromPhone || (lastInbound
+    ? smsSystemPhone(lastInbound, DEFAULT_FROM_PHONE)
+    : DEFAULT_FROM_PHONE)
 
   const fromOptions = useMemo(() => {
     const numbers: Array<{ label: string; value: string }> = CONVERSATION_TWILIO_NUMBERS.map((number) => ({
@@ -277,7 +280,9 @@ export function SmsThreadPanel({
               <option key={number.value} value={number.value}>{number.label}</option>
             ))}
           </select>
-          <span className="ml-auto text-[10px] text-[var(--ck-text-dim)]">{lastInboundLabel}</span>
+          <span className="ml-auto text-[10px] text-[var(--ck-text-dim)]">
+            {sessionFromPhone ? 'Active dialer session' : lastInboundLabel}
+          </span>
         </div>
 
         <div className="flex items-end gap-2 p-3">
