@@ -1,4 +1,20 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+const CRM_EMAIL = process.env.CRM_E2E_EMAIL ?? 'ernest@savingkc.com'
+const CRM_PASSWORD = process.env.CRM_E2E_PASSWORD ?? 'SavingKC2026!'
+
+async function ensureAuthenticated(page: Page) {
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+  if (!page.url().includes('/login')) return
+
+  await page.locator('input[type="email"]').fill(CRM_EMAIL)
+  await page.locator('input[type="password"]').fill(CRM_PASSWORD)
+  await Promise.all([
+    page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 }),
+    page.getByRole('button', { name: 'Sign In', exact: true }).click(),
+  ])
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+}
 
 const transitions = [
   { label: 'Contacts', href: '/contacts', readyHeading: /All|New|Hot|Leads|Opportunities/i },
@@ -14,7 +30,7 @@ test('CRM navigation keeps the workspace mounted and reveals each destination pr
   page.on('console', (message) => {
     if (message.type() === 'error') console.error(`CRM_CONSOLE_ERROR=${message.text()}`)
   })
-  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+  await ensureAuthenticated(page)
   await expect(page.locator('.crm-workspace-shell')).toBeVisible()
   await page.locator('.crm-workspace-shell').evaluate((element) => {
     element.setAttribute('data-navigation-performance-sentinel', 'persistent')
@@ -36,7 +52,7 @@ test('CRM navigation keeps the workspace mounted and reveals each destination pr
     measured.push({ route: transition.href, milliseconds })
 
     await expect(page.locator('[data-navigation-performance-sentinel="persistent"]')).toHaveCount(1)
-    expect(milliseconds, `${transition.href} should become usable within 1500ms`).toBeLessThan(1_500)
+    expect(milliseconds, `${transition.href} should become usable within 1000ms`).toBeLessThan(1_000)
   }
 
   console.info(`CRM_NAVIGATION_TIMINGS=${JSON.stringify(measured)}`)
