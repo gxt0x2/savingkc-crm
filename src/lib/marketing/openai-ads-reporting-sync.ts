@@ -5,6 +5,8 @@ const DEFAULT_API_BASE = 'https://api.ads.openai.com/v1'
 const DEFAULT_SINCE = '2026-06-01'
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const OPENAI_ADS_INSIGHTS_LIMIT = 2000
+const OPENAI_ADS_MAX_ATTEMPTS = 3
+const OPENAI_ADS_REQUEST_TIMEOUT_MS = 15_000
 
 type OpenAIAdsReportingConfig = {
   apiBase: string
@@ -84,17 +86,41 @@ async function openAIAdsGet(config: OpenAIAdsReportingConfig, path: string, para
     for (const [key, value] of params) url.searchParams.append(key, value)
   }
 
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-  })
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) {
+  for (let attempt = 1; attempt <= OPENAI_ADS_MAX_ATTEMPTS; attempt += 1) {
+    let response: Response
+    try {
+      response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        signal: AbortSignal.timeout(OPENAI_ADS_REQUEST_TIMEOUT_MS),
+      })
+    } catch (error) {
+      if (attempt < OPENAI_ADS_MAX_ATTEMPTS) {
+        await retryDelay(attempt)
+        continue
+      }
+      throw error
+    }
+
+    const body = await response.json().catch(() => ({}))
+    if (response.ok) return body
+    if (attempt < OPENAI_ADS_MAX_ATTEMPTS && [429, 502, 503, 504].includes(response.status)) {
+      await retryDelay(attempt, response.headers.get('retry-after'))
+      continue
+    }
     throw new Error(summarizeOpenAIAdsError(body, `OpenAI Ads API failed (${response.status})`))
   }
-  return body
+  throw new Error('OpenAI Ads API request exhausted its retry budget')
+}
+
+async function retryDelay(attempt: number, retryAfter: string | null = null): Promise<void> {
+  const seconds = retryAfter ? Number(retryAfter) : NaN
+  const delayMs = Number.isFinite(seconds)
+    ? Math.min(5_000, Math.max(0, seconds * 1000))
+    : Math.min(2_000, 250 * (2 ** (attempt - 1)))
+  await new Promise((resolve) => setTimeout(resolve, delayMs))
 }
 
 function summarizeOpenAIAdsError(body: unknown, fallback: string): string {

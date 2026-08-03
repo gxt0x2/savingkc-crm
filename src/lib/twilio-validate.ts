@@ -23,8 +23,8 @@ export function validateTwilioRequest(
   }
   if (!signature) return false
   if (!AUTH_TOKEN) {
-    console.warn('TWILIO_AUTH_TOKEN not set - skipping signature validation')
-    return true
+    console.error('TWILIO_AUTH_TOKEN not set - rejecting Twilio webhook')
+    return false
   }
   return twilio.validateRequest(AUTH_TOKEN, signature, url, params)
 }
@@ -49,7 +49,7 @@ export async function validateTwilioWebhook(req: Request): Promise<boolean> {
 
   // Build the full URL Twilio used to sign
   const url = new URL(req.url)
-  const fullUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}${url.pathname}`
+  const fullUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}${url.pathname}${url.search}`
 
   return validateTwilioRequest(fullUrl, params, signature)
 }

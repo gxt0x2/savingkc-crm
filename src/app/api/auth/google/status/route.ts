@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { hasGoogleOAuthConfig } from '@/lib/gmail-sync'
 import { getCurrentUserEmail, isCurrentUserAdmin } from '@/lib/auth/admin'
+import { readOAuthHealth } from '@/lib/oauth-health'
 
 // GET /api/auth/google/status — list connected Google accounts
 export async function GET(req: NextRequest) {
@@ -31,8 +32,19 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  const accounts = await Promise.all((data || []).map(async (account) => {
+    const health = await readOAuthHealth(db, 'google', account.user_email)
+    return {
+      ...account,
+      connection_status: health?.status || 'connected',
+      connection_error_code: health?.errorCode || null,
+      connection_error_message: health?.errorMessage || null,
+      connection_checked_at: health?.checkedAt || null,
+    }
+  }))
+
   return NextResponse.json({
-    accounts: data || [],
+    accounts,
     oauthConfigured: hasGoogleOAuthConfig(),
   })
 }

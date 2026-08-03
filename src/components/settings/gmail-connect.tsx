@@ -9,6 +9,10 @@ interface ConnectedAccount {
   last_sync_at: string | null
   created_at: string
   scope: string
+  connection_status: 'connected' | 'reauthorization_required' | 'error'
+  connection_error_code: string | null
+  connection_error_message: string | null
+  connection_checked_at: string | null
 }
 
 interface GmailConnectProps {
@@ -138,11 +142,13 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
         </div>
       ) : (
         <div className="space-y-2">
-          {accounts.map(a => (
-            <div
-              key={a.user_email}
-              className="flex items-center justify-between p-3 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)]"
-            >
+          {accounts.map(a => {
+            const needsReconnect = a.connection_status === 'reauthorization_required'
+            return (
+              <div
+                key={a.user_email}
+                className={`flex items-center justify-between p-3 rounded-lg bg-[var(--ck-surface-elev)] border ${needsReconnect ? 'border-red-400' : 'border-[var(--ck-border)]'}`}
+              >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
                   <Icon name="mail" size="text-base" className="text-emerald-400" />
@@ -150,7 +156,9 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
                 <div className="min-w-0">
                   <p className="text-[14px] font-semibold text-[var(--ck-text)] truncate">{a.user_email}</p>
                   <p className="text-[11px] text-[var(--ck-text-muted)]">
-                    {a.last_sync_at
+                    {needsReconnect
+                      ? 'Authorization expired — reconnect to resume automatic sync'
+                      : a.last_sync_at
                       ? `Last sync: ${new Date(a.last_sync_at).toLocaleString()}`
                       : 'Never synced'}
                   </p>
@@ -158,11 +166,11 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  onClick={() => handleSyncNow(a.user_email)}
+                  onClick={() => needsReconnect ? handleConnect() : handleSyncNow(a.user_email)}
                   disabled={syncing === a.user_email || !oauthConfigured}
-                  className="text-[12px] font-medium text-[var(--ck-accent)] hover:underline disabled:opacity-50"
+                  className={`text-[12px] font-semibold hover:underline disabled:opacity-50 ${needsReconnect ? 'text-red-500' : 'text-[var(--ck-accent)]'}`}
                 >
-                  {syncing === a.user_email ? 'Syncing…' : 'Sync now'}
+                  {needsReconnect ? 'Reconnect Gmail' : syncing === a.user_email ? 'Syncing…' : 'Sync now'}
                 </button>
                 <button
                   onClick={() => handleDisconnect(a.user_email)}
@@ -171,8 +179,9 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
                   Disconnect
                 </button>
               </div>
-            </div>
-          ))}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -183,6 +192,7 @@ function formatGmailSyncError(error: string): string {
   const labels: Record<string, string> = {
     google_oauth_not_configured: 'Google OAuth is not configured in Vercel.',
     token_refresh_failed: 'Google rejected the saved token. Reconnect Gmail.',
+    reauthorization_required: 'Google authorization expired. Reconnect Gmail to resume syncing.',
     no_token: 'No Gmail token is connected for this account.',
     no_refresh_token_revoke_and_retry: 'Google did not return a refresh token. Remove SavingKC CRM from your Google account permissions, then reconnect.',
     token_exchange_failed: 'Google token exchange failed. Check the OAuth client and redirect URI.',

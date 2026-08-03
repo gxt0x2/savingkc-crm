@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { GmailConnect } from '@/components/settings/gmail-connect'
+import { GoogleAdsConnect } from '@/components/settings/google-ads-connect'
 
 interface AgentProfile {
   email: string
@@ -238,6 +239,9 @@ export default function SettingsPage() {
       <div className="space-y-8">
         {/* Gmail Sync */}
         <GmailConnect userEmail={selectedEmail || user?.email || ''} />
+
+        {/* Company paid-media connection */}
+        <GoogleAdsConnect />
 
         {/* Agent Switcher (Owner only) */}
         {isOwner && allProfiles.length > 1 && (

@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { getValidAccessToken, hasGoogleOAuthConfig, type StoredToken } from '@/lib/gmail-sync'
+import { getValidAccessTokenResult, hasGoogleOAuthConfig, type StoredToken } from '@/lib/gmail-sync'
 
 interface GmailHeader {
   name: string
@@ -361,10 +361,18 @@ export async function syncUserMojoEmails(
     return { user_email: userEmail, scanned: 0, queued: 0, skipped: 0, failed: 0, error: 'google_oauth_not_configured' }
   }
 
-  const accessToken = await getValidAccessToken(tokenRow as StoredToken)
-  if (!accessToken) {
-    return { user_email: userEmail, scanned: 0, queued: 0, skipped: 0, failed: 0, error: 'token_refresh_failed' }
+  const tokenResult = await getValidAccessTokenResult(tokenRow as StoredToken)
+  if (!tokenResult.accessToken) {
+    return {
+      user_email: userEmail,
+      scanned: 0,
+      queued: 0,
+      skipped: 0,
+      failed: 0,
+      error: tokenResult.error || 'token_refresh_failed',
+    }
   }
+  const accessToken = tokenResult.accessToken
 
   let stubs: GmailMessageStub[]
   try {

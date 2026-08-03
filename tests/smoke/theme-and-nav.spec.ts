@@ -45,11 +45,11 @@ test('CRM controls are interactive instead of decorative', async ({ page }) => {
   await page.goto('/workflows', { waitUntil: 'domcontentloaded' });
   const newWorkflowButton = page.getByRole('button', { name: 'New workflow' });
   await newWorkflowButton.click();
-  const safetyDialog = page.getByRole('dialog', { name: 'Workflow safety requirements' });
+  const safetyDialog = page.getByRole('dialog', { name: 'Create workflow draft' });
   await expect(safetyDialog).toBeVisible();
   await expect(safetyDialog.locator(':focus')).toHaveCount(1);
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog', { name: 'Workflow safety requirements' })).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Create workflow draft' })).toHaveCount(0);
   await expect(newWorkflowButton).toBeFocused();
 
   const firstWorkflow = page.getByRole('button', { name: /open .* workflow details/i }).first();

@@ -2,9 +2,8 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 import { NextResponse } from 'next/server'
-import { createCommandAgent, commandAgentInstructions, readOperatingSnapshot } from '@/lib/ai/command-agent'
+import { createCommandAgent, commandAgentInstructions, readOperatingSnapshot, readWorkflowRegistry } from '@/lib/ai/command-agent'
 import { PHONE_SYSTEM } from '@/lib/operating-model/phone-system'
-import { WORKFLOW_CATALOG } from '@/lib/operating-model/workflow-catalog'
 import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
 type CommandMessage = { role: 'user' | 'assistant'; content: string }
@@ -24,11 +23,11 @@ function transcript(messages: CommandMessage[]) {
 }
 
 async function directProviderReply(messages: CommandMessage[]) {
-  const [snapshot] = await Promise.all([readOperatingSnapshot(30)])
+  const [snapshot, workflowRegistry] = await Promise.all([readOperatingSnapshot(30), readWorkflowRegistry()])
   const context = {
     operatingSnapshot: snapshot,
     phoneSystem: PHONE_SYSTEM,
-    workflows: WORKFLOW_CATALOG.map((workflow) => ({
+    workflows: workflowRegistry.map((workflow) => ({
       id: workflow.id,
       name: workflow.name,
       description: workflow.description,

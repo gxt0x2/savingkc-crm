@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enrichFromRedfin, RedfinInput } from '@/lib/redfin-enrichment'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
+
+export const runtime = 'nodejs'
+export const maxDuration = 60
 
 // POST /api/enrich-redfin — Add Redfin estimate to the manifest financials.
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireUserOrSecret(req)
+  if (unauthorized) return unauthorized
+
   try {
     const body = await req.json()
     const { leadId, address, city, state, zip } = body

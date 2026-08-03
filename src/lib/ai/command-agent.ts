@@ -1,7 +1,9 @@
 import { ToolLoopAgent, isStepCount, tool } from 'ai'
 import { z } from 'zod'
+import type { WorkflowDefinition } from '@/lib/operating-model/types'
 import { PHONE_SYSTEM } from '@/lib/operating-model/phone-system'
 import { WORKFLOW_CATALOG, workflowCategoryLabel } from '@/lib/operating-model/workflow-catalog'
+import { readStoredWorkflowDefinitions } from '@/lib/operating-model/workflow-store'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 type LeadRow = {
@@ -98,6 +100,16 @@ export async function searchContacts(query: string) {
   return data ?? []
 }
 
+export async function readWorkflowRegistry(): Promise<WorkflowDefinition[]> {
+  try {
+    const stored = await readStoredWorkflowDefinitions(supabaseAdmin())
+    return [...WORKFLOW_CATALOG, ...stored.map((entry) => entry.definition)]
+  } catch (error) {
+    console.error('[command-agent] stored workflow registry unavailable', error)
+    return [...WORKFLOW_CATALOG]
+  }
+}
+
 const instructions = `You are ARI, the SavingKC operating assistant. You may answer any user request, but you must remain grounded in the CRM and be explicit about what you can and cannot execute.
 
 Operating rules:
@@ -133,8 +145,9 @@ export function createCommandAgent() {
         description: 'Read the canonical workflow registry with triggers, actions, owner, status, approval policy, and implementation sources.',
         inputSchema: z.object({ search: z.string().max(80).optional() }),
         execute: async ({ search }) => {
+          const registry = await readWorkflowRegistry()
           const needle = search?.trim().toLowerCase()
-          return WORKFLOW_CATALOG.filter((workflow) => !needle || [workflow.name, workflow.description, workflow.category, workflow.owner.displayName, ...workflow.implementation.sourceFiles].some((value) => value.toLowerCase().includes(needle))).map((workflow) => ({
+          return registry.filter((workflow) => !needle || [workflow.name, workflow.description, workflow.category, workflow.owner.displayName, ...workflow.implementation.sourceFiles].some((value) => value.toLowerCase().includes(needle))).map((workflow) => ({
             ...workflow,
             categoryLabel: workflowCategoryLabel(workflow.category),
           }))
