@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server'
 import { resolvePpcTrackingEndpoint } from '@/lib/ppc/tracking-endpoint'
 import { previewWriteBlocked } from '@/lib/preview-safety'
+import { hasVerifiedSubject } from '@/lib/auth/verified-claims'
 
 // Routes that don't require authentication
 const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', '/deals', '/ppc']
@@ -450,10 +451,14 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // The project uses an asymmetric ES256 signing key, so getClaims verifies
+  // the session locally after the cached JWKS lookup. getUser always calls the
+  // regional Auth server and made every page prefetch/navigation block on a
+  // redundant network round-trip.
+  const claimsResult = await supabase.auth.getClaims()
 
-  // If no user and trying to access protected route, redirect to login
-  if (!user) {
+  // If the signed token has no verified subject, keep the existing deny path.
+  if (!hasVerifiedSubject(claimsResult)) {
     if (pathname.startsWith('/api/')) {
       return withPaidLandingCookies(unauthorized(), paidLandingCookies)
     }
