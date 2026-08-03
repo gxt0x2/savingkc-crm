@@ -6,6 +6,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from '@/lib/manifest-builder'
+import { getLeadQualificationStatus } from '@/lib/qualification-policy'
 
 // ============================================================================
 // TYPES
@@ -354,6 +355,15 @@ export async function validateLeadStage(
   leadId: string,
   targetStage: StageId
 ): Promise<StageValidationResult> {
+  if (targetStage === 'qualified') {
+    const qualification = await getLeadQualificationStatus(leadId)
+    return {
+      valid: qualification.qualified,
+      missing: qualification.missing.map((pillar) => `${pillar} qualification pillar`),
+      warnings: [],
+    }
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
   const supabase = createClient(supabaseUrl, supabaseKey)

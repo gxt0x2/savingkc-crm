@@ -6,6 +6,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { getLeadQualificationStatus } from '@/lib/qualification-policy'
 
 export const PILLARS = ['TIMELINE', 'CONDITION', 'MOTIVATION', 'PRICE'] as const
 export type PillarType = (typeof PILLARS)[number]
@@ -30,28 +31,8 @@ export interface MissingPillarWarning {
 export async function getLeadPillarStatus(
   leadId: string
 ): Promise<PillarStatus> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const supabase = createClient(supabaseUrl, supabaseKey)
-
-  // Get most recent pillar_data activity
-  const { data } = await supabase
-    .from('lead_activities')
-    .select('metadata')
-    .eq('lead_id', leadId)
-    .eq('type', 'pillar_data')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
-
-  const metadata = (data?.metadata as any) || {}
-
-  return {
-    TIMELINE: metadata.TIMELINE === true,
-    CONDITION: metadata.CONDITION === true,
-    MOTIVATION: metadata.MOTIVATION === true,
-    PRICE: metadata.PRICE === true,
-  }
+  const status = await getLeadQualificationStatus(leadId)
+  return status.pillars
 }
 
 /**

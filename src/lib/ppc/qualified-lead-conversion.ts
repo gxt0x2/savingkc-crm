@@ -1,5 +1,6 @@
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { loadPpcLeadConversionContext } from '@/lib/ppc/lead-conversion-context'
+import { getLeadQualificationStatus } from '@/lib/qualification-policy'
 
 const QUALIFIED_OR_BETTER_STATIONS = new Set([
   'qualified',
@@ -42,6 +43,11 @@ export async function queuePpcQualifiedLeadConversion(input: {
 }): Promise<QueuePpcQualifiedLeadConversionResult> {
   if (!isQualifiedOrBetterStation(input.toStation)) {
     return { queued: false, reason: 'station_not_qualified' }
+  }
+
+  const qualification = await getLeadQualificationStatus(input.leadId)
+  if (!qualification.qualified) {
+    return { queued: false, reason: `qualification_incomplete:${qualification.missing.join(',')}` }
   }
 
   const context = await loadPpcLeadConversionContext(input.leadId)

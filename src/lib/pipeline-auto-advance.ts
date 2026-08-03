@@ -13,6 +13,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import type { ManifestV2 } from '@/lib/manifest-builder'
+import { getLeadQualificationStatus } from '@/lib/qualification-policy'
 
 const STAGE_ORDER = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won', 'closed_lost', 'dead'] as const
 type ManifestPipelineStageKey = Exclude<Extract<keyof ManifestV2['pipeline'], string>, 'appointment'>
@@ -73,6 +74,11 @@ export async function checkAutoAdvance(
   }
 
   if (!newStation || newStation === current) return { advanced: false }
+
+  if (newStation === 'qualified') {
+    const qualification = await getLeadQualificationStatus(leadId)
+    if (!qualification.qualified) return { advanced: false }
+  }
 
   // Don't go backwards
   const currentIdx = STAGE_ORDER.indexOf(current as typeof STAGE_ORDER[number])

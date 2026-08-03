@@ -55,7 +55,7 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
   const { data, error, isLoading, isFetching, refetch } = useOperatingReport(period)
   const copy = VIEW_COPY[view]
 
-  if (isLoading) return <ReportSkeleton />
+  if (isLoading) return <ReportSkeleton copy={copy} />
   if (error || !data) {
     return <ReportError onRetry={() => void refetch()} />
   }
@@ -496,8 +496,8 @@ function SourceUnavailable({ title }: { title: string }) {
   return <section className="crm-panel rounded-2xl"><EmptyState icon="cloud_off" title={title} detail="This panel is not replaced with a sample or zero value." /></section>
 }
 
-function ReportSkeleton() {
-  return <main aria-label="Loading operating report" className="mx-auto max-w-[1600px] space-y-5 px-5 py-6"><div className="h-20 animate-pulse rounded-2xl bg-[var(--crm-surface-subtle)]" /><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">{Array.from({ length: 7 }, (_, index) => <div key={index} className="h-40 animate-pulse rounded-2xl bg-[var(--crm-surface-subtle)]" />)}</div><div className="h-80 animate-pulse rounded-2xl bg-[var(--crm-surface-subtle)]" /></main>
+function ReportSkeleton({ copy }: { copy: (typeof VIEW_COPY)[OperatingReportView] }) {
+  return <main aria-label="Loading operating report" className="mx-auto max-w-[1600px] space-y-5 px-5 py-6"><header><p className="crm-eyebrow">{copy.eyebrow}</p><h1 className="mt-1 text-[25px] font-black tracking-[-0.035em] text-[var(--crm-ink)]">{copy.title}</h1><p className="mt-0.5 max-w-4xl text-xs font-medium text-[var(--crm-text-muted)]">{copy.description}</p></header><div className="grid animate-pulse gap-3 sm:grid-cols-2 xl:grid-cols-7">{Array.from({ length: 7 }, (_, index) => <div key={index} className="h-40 rounded-2xl bg-[var(--crm-surface-subtle)]" />)}</div><div className="h-80 animate-pulse rounded-2xl bg-[var(--crm-surface-subtle)]" /></main>
 }
 
 function ReportError({ onRetry }: { onRetry: () => void }) {

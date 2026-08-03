@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase-lazy'
+import { getLeadQualificationStatuses, QUALIFICATION_PILLARS } from '@/lib/qualification-policy'
 
 
 export type AuditType =
@@ -191,19 +192,14 @@ async function findRequirementViolations(): Promise<AuditFinding[]> {
   // Leads in "qualified" must have all 4 pillars
   const { data: qualifiedLeads, error } = await supabase
     .from('leads')
-    .select('id, full_name, four_pillars')
+    .select('id, full_name')
     .eq('station', 'qualified')
 
   if (error || !qualifiedLeads) return findings
 
+  const qualificationStatuses = await getLeadQualificationStatuses(qualifiedLeads.map((lead) => lead.id))
   for (const lead of qualifiedLeads) {
-    const pillars = lead.four_pillars || {}
-    const missingPillars = []
-
-    if (!pillars.TIMELINE) missingPillars.push('Timeline')
-    if (!pillars.CONDITION) missingPillars.push('Condition')
-    if (!pillars.MOTIVATION) missingPillars.push('Motivation')
-    if (!pillars.PRICE) missingPillars.push('Price')
+    const missingPillars = qualificationStatuses.get(lead.id)?.missing ?? [...QUALIFICATION_PILLARS]
 
     if (missingPillars.length > 0) {
       findings.push({
