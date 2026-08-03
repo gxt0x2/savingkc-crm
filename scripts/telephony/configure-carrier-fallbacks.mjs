@@ -27,7 +27,25 @@ if (apply && confirmation !== APPLY_CONFIRMATION) {
 }
 
 const source = await fs.readFile(path.join(process.cwd(), 'src/lib/twilio-numbers.ts'), 'utf8')
-const registered = new Set([...source.matchAll(/value:\s*'([^']+)'/g)].map((match) => match[1]))
+const registryBody = source.match(/export const TWILIO_NUMBERS = \[([\s\S]*?)\]\s+as const/)?.[1]
+if (!registryBody) {
+  throw new Error('Could not locate the TWILIO_NUMBERS registry.')
+}
+
+const constants = new Map(
+  [...source.matchAll(/export const\s+([A-Z0-9_]+)\s*=\s*'([^']+)'/g)]
+    .map((match) => [match[1], match[2]]),
+)
+const registered = new Set(
+  [...registryBody.matchAll(/value:\s*([^,}\n]+)/g)].map((match) => {
+    const expression = match[1].trim()
+    const literal = expression.match(/^'([^']+)'$/)?.[1]
+    if (literal) return literal
+    const resolved = constants.get(expression)
+    if (resolved) return resolved
+    throw new Error(`Could not resolve Twilio registry value: ${expression}`)
+  }),
+)
 if (registered.size !== 21) {
   throw new Error(`Expected 21 registered phone numbers, found ${registered.size}.`)
 }
