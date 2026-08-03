@@ -89,9 +89,10 @@ function SurfaceHeader({ section, onNew }: { section: string; onNew: () => void 
   )
 }
 
-function Overview() {
+function Overview({ onSelect }: { onSelect: (workflow: WorkflowDefinition) => void }) {
   const active = WORKFLOW_CATALOG.filter((workflow) => workflow.status === 'active').length
   const attention = WORKFLOW_CATALOG.filter((workflow) => workflow.health === 'warning' || workflow.health === 'error').length
+  const attentionWorkflows = WORKFLOW_CATALOG.filter((workflow) => workflow.health === 'warning' || workflow.health === 'error')
   const automations = WORKFLOW_CATALOG.filter((workflow) => workflow.implementation.execution === 'worker').length
 
   return (
@@ -150,6 +151,16 @@ function Overview() {
               <div className="mt-3 space-y-2">{PHONE_SYSTEM_ATTENTION.map((record) => <Link key={record.number} href="/workflows?section=phones" className="flex items-center justify-between gap-3 rounded-xl bg-[var(--crm-surface)] px-3 py-2 text-sm hover:shadow"><span><strong>{record.label}</strong><span className="ml-2 text-[var(--crm-text-muted)]">{record.healthNote}</span></span><Icon name="arrow_forward" className="shrink-0 text-[var(--crm-danger)]" /></Link>)}</div>
             </div>
           </div>
+        </section>
+      ) : null}
+
+      {attentionWorkflows.length > 0 ? (
+        <section className="crm-panel rounded-2xl p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div><p className="crm-eyebrow">Workflow review</p><h2 className="mt-1 font-black text-[var(--crm-ink)]">Definitions that need a decision</h2></div>
+            <Link href="/workflows?section=all" className="text-xs font-black text-[var(--crm-violet)] hover:underline">Open all workflows</Link>
+          </div>
+          <div className="mt-4 grid gap-2 lg:grid-cols-2">{attentionWorkflows.map((workflow) => <button key={workflow.id} type="button" onClick={() => onSelect(workflow)} aria-label={`Open ${workflow.name} workflow details`} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-3 text-left transition hover:border-[var(--crm-violet)] hover:bg-[var(--crm-violet-soft)]"><span><strong className="block text-sm text-[var(--crm-ink)]">{workflow.name}</strong><span className="mt-1 block line-clamp-2 text-xs text-[var(--crm-text-muted)]">{workflow.description}</span></span><Icon name="arrow_forward" className="shrink-0 text-[var(--crm-violet)]" /></button>)}</div>
         </section>
       ) : null}
     </div>
@@ -273,7 +284,7 @@ function DetailSheet({ workflow, phone, onClose }: { workflow: WorkflowDefinitio
 
   return (
     <div className="fixed inset-0 z-[120] flex justify-end bg-black/30 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <aside ref={ref} role="dialog" aria-modal="true" aria-label={workflow?.name || phone?.label} className="h-full w-full max-w-[560px] overflow-y-auto border-l border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-2xl">
+      <aside ref={ref} role="dialog" aria-modal="true" aria-label={workflow ? `${workflow.name} workflow details` : `${phone?.label} phone details`} className="h-full w-full max-w-[560px] overflow-y-auto border-l border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-2xl">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--crm-border)] bg-[var(--crm-surface)]/95 p-5 backdrop-blur">
           <div><p className="crm-eyebrow">{phone ? 'Phone route' : 'Workflow definition'}</p><h2 className="mt-1 text-xl font-black text-[var(--crm-ink)]">{phone?.label || workflow?.name}</h2>{phone ? <p className="mt-1 font-mono text-xs text-[var(--crm-text-muted)]">{phone.number}</p> : null}</div>
           <button type="button" onClick={onClose} aria-label="Close details" className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--crm-border)] text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface-subtle)]"><Icon name="close" /></button>
@@ -317,7 +328,7 @@ function NewWorkflowDialog({ open, onClose }: { open: boolean; onClose: () => vo
   return (
     <div className="fixed inset-0 z-[130] grid place-items-center bg-black/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <section ref={ref} role="dialog" aria-modal="true" aria-labelledby="new-workflow-title" className="w-full max-w-lg rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-[var(--crm-border)] p-5"><div><p className="crm-eyebrow">Governed creation</p><h2 id="new-workflow-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Create a workflow definition</h2></div><button type="button" onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--crm-border)]"><Icon name="close" /></button></div>
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--crm-border)] p-5"><div><p className="crm-eyebrow">Governed creation</p><h2 id="new-workflow-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Workflow safety requirements</h2></div><button type="button" onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--crm-border)]"><Icon name="close" /></button></div>
         <div className="space-y-4 p-5 text-sm leading-6 text-[var(--crm-text-muted)]"><p>New workflows enter this same registry. Before activation they must declare a trigger, owner, action sequence, implementation source, data mutations, approval policy, protected phone identities, and rollback path.</p><div className="rounded-xl border border-[var(--crm-warning)]/25 bg-[var(--crm-warning-soft)] p-4 text-[var(--crm-ink)]"><strong>Publishing is intentionally gated.</strong> Creating or activating a workflow can send communication, move pipeline records, or change routing. The AI Assistant can draft the definition, but a user must approve consequential actions.</div></div>
         <div className="flex justify-end gap-3 border-t border-[var(--crm-border)] p-5"><button type="button" onClick={onClose} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-black">Close</button><Link href="/ai?prompt=Draft%20a%20new%20SavingKC%20workflow%20definition" className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="smart_toy" />Draft with AI</Link></div>
       </section>
@@ -336,7 +347,7 @@ export default function WorkflowsPage() {
     <main className="h-full overflow-y-auto bg-[var(--crm-canvas)] text-[var(--crm-ink)]">
       <div className="mx-auto w-full max-w-[1480px] space-y-5 px-4 py-6 sm:px-6">
         <SurfaceHeader section={section} onNew={() => setShowNew(true)} />
-        {section === 'phones' ? <PhoneSystem onSelect={(record) => { setSelectedPhone(record); setSelectedWorkflow(null) }} /> : section === 'all' ? <WorkflowRegistry onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} /> : <Overview />}
+        {section === 'phones' ? <PhoneSystem onSelect={(record) => { setSelectedPhone(record); setSelectedWorkflow(null) }} /> : section === 'all' ? <WorkflowRegistry onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} /> : <Overview onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} />}
       </div>
       <DetailSheet workflow={selectedWorkflow} phone={selectedPhone} onClose={() => { setSelectedWorkflow(null); setSelectedPhone(null) }} />
       <NewWorkflowDialog open={showNew} onClose={() => setShowNew(false)} />
