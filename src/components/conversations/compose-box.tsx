@@ -6,24 +6,29 @@ import { Icon } from '@/components/ui/icon'
 import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { formatPhone } from '@/lib/format'
 
-type ComposeMode = 'sms' | 'email' | 'call'
+type ComposeMode = 'sms' | 'email' | 'note'
 
 const modes: { key: ComposeMode; label: string; icon: string }[] = [
   { key: 'sms', label: 'SMS', icon: 'sms' },
   { key: 'email', label: 'Email', icon: 'mail' },
-  { key: 'call', label: 'Call', icon: 'call' },
+  { key: 'note', label: 'Internal note', icon: 'edit_note' },
 ]
 
 interface ComposeBoxProps {
   leadId?: string
   phone?: string
+  email?: string
   onSent?: () => void
   replyFromPhone?: string // Auto-select the Twilio number the lead last texted
+  draftMessage?: string
+  draftVersion?: number
+  initialMode?: ComposeMode
 }
 
-export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBoxProps) {
-  const [activeMode, setActiveMode] = useState<ComposeMode>('sms')
+export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draftMessage, draftVersion, initialMode = 'sms' }: ComposeBoxProps) {
+  const [activeMode, setActiveMode] = useState<ComposeMode>(initialMode)
   const [message, setMessage] = useState('')
+  const [subject, setSubject] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fromPhone, setFromPhone] = useState(replyFromPhone || '+18163077835')
@@ -38,20 +43,41 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (draftMessage) {
+      setActiveMode('sms')
+      setMessage(draftMessage)
+    }
+  }, [draftMessage, draftVersion])
+
+  useEffect(() => {
+    setActiveMode(initialMode)
+  }, [initialMode])
+
   async function handleSend() {
     if (!message.trim()) return
-    if (!phone) { setError('No phone number for this contact'); return }
+    if (activeMode === 'sms' && !phone) { setError('No phone number for this contact'); return }
+    if (activeMode === 'email' && !email) { setError('No email address for this contact'); return }
+    if (activeMode === 'note' && (!leadId || leadId.startsWith('unmatched:'))) { setError('Create or link this contact before adding an internal note.'); return }
 
     setSending(true)
     setError(null)
 
     try {
-      const res = await fetch('/api/conversations/send', {
+      const isInternalNote = activeMode === 'note'
+      const res = await fetch(
+        isInternalNote ? `/api/leads/${leadId}/activities` : '/api/conversations/send',
+        {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify(isInternalNote ? {
+          description: message.trim(),
+          agent: 'Ernest',
+        } : {
           leadId: leadId?.startsWith('unmatched:') ? null : leadId,
           phone,
+          to: activeMode === 'email' ? email : undefined,
+          subject: activeMode === 'email' ? subject.trim() || 'Message from Saving KC' : undefined,
           body: message.trim(),
           mode: activeMode,
           fromPhone: activeMode === 'sms' ? fromPhone : undefined,
@@ -63,6 +89,7 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
       if (!res.ok) throw new Error(data.error || 'Send failed')
 
       setMessage('')
+      setSubject('')
       onSent?.()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to send')
@@ -88,19 +115,21 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
   }
 
   return (
-    <div className="p-8 pt-0 relative z-10 flex-shrink-0">
-      <div className="bg-white rounded-3xl shadow-[0px_8px_32px_rgba(0,0,0,0.08)] border border-outline-variant/10 overflow-hidden">
+    <div className="relative z-10 flex-shrink-0 border-t border-[var(--crm-border)] bg-[var(--crm-surface)] p-4">
+      <div className="overflow-hidden rounded-xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)]">
         {/* Toggle Tabs */}
         <div className="flex border-b border-outline-variant/5">
           {modes.map((mode) => (
             <button
               key={mode.key}
+              type="button"
               onClick={() => setActiveMode(mode.key)}
+              aria-pressed={activeMode === mode.key}
               className={cn(
-                'px-8 py-4 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all',
+                'flex items-center gap-2 border-b-2 px-5 py-2.5 text-xs font-bold transition-all',
                 activeMode === mode.key
-                  ? 'border-b-2 border-primary text-primary'
-                  : 'text-on-surface-variant/40 hover:text-on-surface-variant'
+                  ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]'
+                  : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'
               )}
             >
               <Icon name={mode.icon} className="text-sm" />
@@ -119,14 +148,15 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
           <div className="px-6 pt-3 flex items-center gap-2">
             <span className="text-xs text-on-surface-variant/60 font-medium">From:</span>
             {replyFromPhone ? (
-              <span className="text-xs font-medium text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
+              <span className="rounded-lg bg-[var(--crm-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--crm-text)]">
                 {TWILIO_NUMBERS.find(n => n.value === replyFromPhone)?.label || formatPhone(replyFromPhone)}
               </span>
             ) : (
               <select
+                aria-label="Sending phone number"
                 value={fromPhone}
                 onChange={(e) => setFromPhone(e.target.value)}
-                className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700"
+                className="crm-field rounded-lg px-2 py-1 text-xs"
               >
                 {TWILIO_NUMBERS.map((n) => (
                   <option key={n.value} value={n.value}>{n.label}</option>
@@ -135,33 +165,36 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
             )}
           </div>
         )}
+        {activeMode === 'email' ? (
+          <div className="border-t border-[#eef1f4] px-5 py-2">
+            <input aria-label="Email subject" value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Email subject" className="h-8 w-full border-0 bg-transparent text-xs font-semibold text-[var(--crm-text)] outline-none placeholder:text-[var(--crm-text-dim)]" />
+          </div>
+        ) : null}
 
         {/* Input Area */}
-        <div className="p-4 flex items-end gap-4">
+        <div className="flex items-end gap-3 p-3">
           <div className="flex-1">
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="w-full border-none focus:ring-0 text-sm p-2 resize-none h-20 bg-transparent focus:outline-none"
+              className="h-14 w-full resize-none border-none bg-transparent p-2 text-sm text-[var(--crm-text)] focus:outline-none focus:ring-0"
               placeholder={
                 activeMode === 'sms'
                   ? 'Type your message... (Enter to send)'
                   : activeMode === 'email'
                     ? 'Compose email...'
-                    : 'Add call notes...'
+                  : 'Add an internal note...'
               }
               spellCheck={false}
               disabled={sending}
             />
             <div className="flex gap-2 p-2">
-              <button className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
+              <button type="button" onClick={() => setMessage((value) => `${value}${value ? ' ' : ''}🙂`)} title="Add emoji" className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
                 <Icon name="mood" className="text-on-surface-variant text-lg" />
               </button>
-              <button className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
-                <Icon name="attach_file" className="text-on-surface-variant text-lg" />
-              </button>
               <button
+                type="button"
                 onClick={() => setShowTemplates(!showTemplates)}
                 className="p-1.5 hover:bg-surface-container rounded-lg transition-all relative"
                 title="Templates"
@@ -170,11 +203,12 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
               </button>
             </div>
             {showTemplates && templates.length > 0 && (
-              <div className="absolute bottom-full left-0 mb-2 w-80 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50">
+              <div className="crm-menu absolute bottom-full left-0 z-50 mb-2 max-h-60 w-80 overflow-y-auto rounded-xl">
                 <div className="p-2 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wide">Templates</div>
                 {templates.map((t) => (
                   <button
                     key={t.id}
+                    type="button"
                     onClick={() => handleTemplateSelect(t)}
                     className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-50 last:border-0"
                   >
@@ -186,13 +220,15 @@ export function ComposeBox({ leadId, phone, onSent, replyFromPhone }: ComposeBox
             )}
           </div>
           <button
+            type="button"
             onClick={handleSend}
+            aria-label={activeMode === 'note' ? 'Add internal note' : activeMode === 'email' ? 'Send email' : 'Send text message'}
             disabled={sending || !message.trim()}
             className={cn(
-              'w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-lg mb-2',
+              'mb-2 flex h-10 w-16 items-center justify-center rounded-md text-sm font-bold transition-all',
               sending || !message.trim()
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-primary text-on-primary hover:scale-[1.02] active:scale-95'
+                ? 'cursor-not-allowed bg-[var(--crm-surface-subtle)] text-[var(--crm-text-disabled)]'
+                : 'crm-primary-button'
             )}
           >
             {sending

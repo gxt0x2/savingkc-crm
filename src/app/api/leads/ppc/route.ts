@@ -27,6 +27,8 @@ import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
+import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
+import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 
 export const runtime = 'nodejs'
 
@@ -863,7 +865,23 @@ export async function POST(req: NextRequest) {
       requestPayload,
     })
 
-    if (!isTestLead) {
+    try {
+      await recordSellerIntakeOperatingState({
+        leadId: resolvedLeadId,
+        formSource: 'ppc_form_submit',
+        submissionKey: parsed.sessionId ?? parsed.visitorId,
+        phone: phoneE164,
+        email,
+        address,
+        smsConsent,
+      })
+    } catch (err) {
+      // Keep PPC capture available if the additive operating-model projection
+      // fails, while surfacing the failure for repair/replay.
+      console.error('[ppc/lead] operating state projection failed', err)
+    }
+
+    if (!isTestLead && !externalSideEffectsDisabled()) {
       const conversionEventId = `lead:${resolvedLeadId}:lead_submitted`
       await enqueuePpcConversion({
         eventName: 'lead_submitted',
@@ -923,7 +941,7 @@ export async function POST(req: NextRequest) {
       }),
     })
 
-    if (!isTestLead) {
+    if (!isTestLead && !externalSideEffectsDisabled()) {
       try {
         await triggerPpcLeadSideEffects({
           leadId: resolvedLeadId,

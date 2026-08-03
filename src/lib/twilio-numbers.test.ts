@@ -8,9 +8,15 @@ import {
   GOOGLE_ADS_TWILIO_NUMBER,
   findTwilioNumber,
   isReservedTwilioNumber,
+  TWILIO_NUMBERS,
 } from './twilio-numbers'
 
 describe('twilio number inventory', () => {
+  it('contains the full 21-number owned inventory without duplicates', () => {
+    expect(TWILIO_NUMBERS).toHaveLength(21)
+    expect(new Set(TWILIO_NUMBERS.map((number) => number.value)).size).toBe(21)
+  })
+
   it('reserves Google Ads tracking numbers out of team sending and dialer pools', () => {
     for (const number of [GOOGLE_ADS_TWILIO_NUMBER, GOOGLE_ADS_PROPERTY_TAX_TWILIO_NUMBER]) {
       expect(isReservedTwilioNumber(number)).toBe(true)

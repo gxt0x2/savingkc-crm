@@ -4,8 +4,25 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import { ThreadView } from '@/components/conversations/thread-view'
+import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
+import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
+import { NextActionDialog } from '@/components/conversations/next-action-dialog'
 import type { Message } from '@/components/conversations/message-bubble'
 import { toProperCase, formatPhone } from '@/lib/format'
+import { getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
+import {
+  buildConversationHubThread,
+  type ConversationHubActivity,
+  type ConversationHubLead,
+} from '@/lib/operating-model/conversation-hub'
+import {
+  getCallOutcomePresentation,
+  getCallParties,
+  getConversationDirection,
+  type CallOutcomePresentation,
+} from '@/lib/operating-model/conversation-presentation'
+import type { ConversationDecisionTag } from '@/lib/operating-model/conversation-tags'
 
 interface LeadRow {
   id: string
@@ -17,7 +34,30 @@ interface LeadRow {
   station: string | null
   priority: string | null
   assigned_agent: string | null
+  classification?: 'lead' | 'opportunity' | 'dead' | null
+  dead_reason?: string | null
+  county?: string | null
+  source?: string | null
+  motivation_score?: number | null
+  arv?: number | null
+  offer_amount?: number | null
+  appointment_date?: string | null
   created_at: string
+  attentionState?: 'needs_reply' | 'waiting_on_contact' | 'resolved'
+  owner?: string | null
+  unread?: boolean
+  lastMessage?: string
+  lastActivityAt?: string
+  lastChannel?: 'call' | 'sms' | 'email' | 'voicemail' | null
+  primaryNextAction?: {
+    id: string
+    title: string
+    dueAt: string | null
+    owner: string | null
+    overdue: boolean
+  } | null
+  decision_tags?: ConversationDecisionTag[]
+  lastCallOutcome?: CallOutcomePresentation | null
 }
 
 interface ActivityRow {
@@ -30,31 +70,29 @@ interface ActivityRow {
   created_at: string
 }
 
+interface DatabaseActivityRow extends Omit<ActivityRow, 'type'> {
+  activity_type: string
+}
+
 // Simple toast type
 interface Toast {
   id: number
   message: string
 }
 
-function getInitials(name: string | null): string {
-  if (!name) return '??'
-  const parts = name.trim().split(' ')
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-}
-
-function formatDuration(seconds: number): string {
-  if (!seconds) return '0:00'
+function formatDuration(value: unknown): string | undefined {
+  const seconds = Number(value)
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null {
+function activityToMessage(activity: ActivityRow, lead: LeadRow, teamPhone: string): Message | null {
   const type = activity.type
 
   const meta = activity.metadata || {}
-  const direction = (meta.direction as string) === 'inbound' || (meta.direction as string) === 'received' ? 'received' : 'sent'
+  const direction = getConversationDirection({ activity_type: type, description: activity.description, metadata: meta }) === 'inbound' ? 'received' : 'sent'
   const timestamp = new Date(activity.created_at).toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
@@ -66,27 +104,27 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
     const recordingUrl = recordingSid ? `/api/recordings/${recordingSid}` : undefined
     const transcript = (meta.transcript as string) || undefined
 
-    // Format phone numbers in call descriptions
-    let formattedContent = activity.description || ''
-    const phoneMatch = formattedContent.match(/\+1?(\d{10})/)
-    if (phoneMatch) {
-      const rawPhone = phoneMatch[0]
-      const formatted = formatPhone(rawPhone)
-      formattedContent = formattedContent.replace(rawPhone, formatted)
-    }
+    const presentationActivity = { activity_type: type, description: activity.description, metadata: meta }
+    const callOutcome = getCallOutcomePresentation(presentationActivity)
+    const parties = getCallParties(presentationActivity, { leadPhone: lead.phone, teamPhone })
+    const duration = meta.duration ?? meta.dialCallDuration ?? meta.duration_seconds
 
     return {
       id: activity.id,
       type: 'call',
       direction,
-      content: formattedContent,
-      callDuration: formatDuration((meta.duration as number) || 0),
+      content: activity.description || '',
+      callDuration: formatDuration(duration),
       timestamp,
-      senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+      senderInitials: direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'ED',
       agentName: direction === 'sent' ? agentName : undefined,
       recordingUrl,
       recordingSid,
       transcript,
+      callOutcome,
+      fromPhone: parties.from ? formatPhone(parties.from) : undefined,
+      toPhone: parties.to ? formatPhone(parties.to) : undefined,
+      routingTeam: callOutcome.key === 'routing' ? 'Acquisitions' : undefined,
     }
   }
 
@@ -99,7 +137,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
       emailMeta: (meta.from as string) || undefined,
       content: activity.description || '',
       timestamp,
-      senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+      senderInitials: direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'ED',
       agentName: direction === 'sent' ? agentName : undefined,
     }
   }
@@ -111,7 +149,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow): Message | null
       direction,
       content: activity.description || '',
       timestamp,
-      senderInitials: direction === 'received' ? getInitials(lead.full_name) : 'ED',
+      senderInitials: direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'ED',
       agentName: direction === 'sent' ? agentName : undefined,
     }
   }
@@ -155,17 +193,28 @@ export default function ConversationsPage() {
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null)
   const [activities, setActivities] = useState<ActivityRow[]>([])
   const [showNewMessage, setShowNewMessage] = useState(false)
+  const [newConversationSearch, setNewConversationSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [contactDetailsOpen, setContactDetailsOpen] = useState(true)
+  const [nextActionDialogOpen, setNextActionDialogOpen] = useState(false)
+  const [initialComposeMode] = useState<'sms' | 'email' | 'note'>(() => {
+    if (typeof window === 'undefined') return 'sms'
+    const requestedMode = new URLSearchParams(window.location.search).get('compose')
+    return requestedMode === 'email' || requestedMode === 'note' || requestedMode === 'sms'
+      ? requestedMode
+      : 'sms'
+  })
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastCounter = useRef(0)
-
-  // Expose fetchActivities as a stable ref so realtime + onSent can both call it
-  const activeLeadIdRef = useRef<string | null>(null)
-  activeLeadIdRef.current = activeLeadId
-
-  const leadsRef = useRef<LeadRow[]>([])
-  leadsRef.current = leads
+  const closeNewConversation = useCallback(() => {
+    setShowNewMessage(false)
+    setNewConversationSearch('')
+  }, [])
+  const newConversationDialogRef = useDialogAccessibility<HTMLElement>(
+    showNewMessage,
+    closeNewConversation,
+  )
 
   function addToast(msg: string) {
     const id = ++toastCounter.current
@@ -179,8 +228,30 @@ export default function ConversationsPage() {
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }
 
+  const selectConversation = useCallback((id: string) => {
+    setActiveLeadId(id)
+    const url = new URL(window.location.href)
+    url.searchParams.set('lead', id)
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+  }, [])
+  const handleSelectConversation = useCallback((id: string) => {
+    selectConversation(id)
+    setSidebarOpen(false)
+  }, [selectConversation])
+
+  function openActiveDialer() {
+    if (!activeLead?.phone) return
+    window.dispatchEvent(new CustomEvent('open-dialer', {
+      detail: {
+        leadId: activeLead.id.startsWith('unmatched:') ? null : activeLead.id,
+        phone: activeLead.phone,
+        name: activeLead.full_name || formatPhone(activeLead.phone),
+      },
+    }))
+  }
+
   const fetchActivities = useCallback(async () => {
-    const currentLeadId = activeLeadIdRef.current
+    const currentLeadId = activeLeadId
     if (!currentLeadId) return
     const supabase = createClient()
 
@@ -190,57 +261,56 @@ export default function ConversationsPage() {
         .from('lead_activities')
         .select('id, lead_id, activity_type, description, agent, metadata, created_at')
         .is('lead_id', null)
-        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'task', 'status_change', 'letter_tracking', 'ghost_protocol_enrollment', 'followup_enrollment'])
+        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'letter_tracking'])
         .order('created_at', { ascending: true })
         .limit(100)
-      const filtered = (data || []).filter((a: any) => {
+      const filtered = ((data || []) as DatabaseActivityRow[]).filter((a) => {
         const meta = a.metadata || {}
         return meta.from === phone || meta.to === phone
       })
-      setActivities(filtered.map((a: any) => ({ ...a, type: a.activity_type })) as unknown as ActivityRow[])
+      setActivities(filtered.map((a) => ({ ...a, type: a.activity_type })))
     } else {
       const { data } = await supabase
         .from('lead_activities')
         .select('id, lead_id, activity_type, description, agent, metadata, created_at')
         .eq('lead_id', currentLeadId)
-        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'task', 'status_change', 'letter_tracking', 'ghost_protocol_enrollment', 'followup_enrollment'])
+        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'letter_tracking'])
         .order('created_at', { ascending: true })
         .limit(100)
-      setActivities((data || []).map((a: any) => ({ ...a, type: a.activity_type })) as unknown as ActivityRow[])
+      setActivities(((data || []) as DatabaseActivityRow[]).map((a) => ({ ...a, type: a.activity_type })))
     }
-  }, [])
+  }, [activeLeadId])
 
-  useEffect(() => {
-    async function fetchLeads() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('leads')
-        .select('id, full_name, phone, email, property_address, city, station, priority, assigned_agent, created_at')
-        .not('station', 'eq', 'dead')
-        .order('created_at', { ascending: false })
-        .limit(100)
-      const rows = (data as LeadRow[]) || []
-
-      // Also fetch unmatched conversations (lead_id is null)
-      const { data: unmatchedData } = await supabase
+  const fetchThreads = useCallback(async () => {
+    const supabase = createClient()
+    const [response, unmatchedResult] = await Promise.all([
+      fetch('/api/conversations/hub', { cache: 'no-store' }),
+      supabase
         .from('lead_activities')
         .select('id, lead_id, activity_type, description, agent, metadata, created_at')
         .is('lead_id', null)
         .in('activity_type', ['call', 'sms', 'voicemail'])
         .order('created_at', { ascending: false })
-        .limit(50)
-      const unmatched = (unmatchedData || []) as unknown as ActivityRow[]
+        .limit(50),
+    ])
+    const payload = response.ok ? await response.json() as { items?: LeadRow[] } : { items: [] }
+    const rows = payload.items || []
+    const unmatched = ((unmatchedResult.data || []) as DatabaseActivityRow[])
+      .map((activity) => ({ ...activity, type: activity.activity_type }))
 
-      // Group unmatched by phone number to create virtual threads
-      const phoneMap = new Map<string, ActivityRow[]>()
-      for (const act of unmatched) {
-        const phone = (act.metadata?.from as string) || (act.metadata?.to as string) || 'unknown'
-        if (!phoneMap.has(phone)) phoneMap.set(phone, [])
-        phoneMap.get(phone)!.push(act)
-      }
+    const phoneMap = new Map<string, ActivityRow[]>()
+    for (const act of unmatched) {
+      const rawDirection = String(act.metadata?.direction ?? '').toLowerCase()
+      const phone = rawDirection === 'outbound' || rawDirection === 'sent'
+        ? String(act.metadata?.to ?? act.metadata?.from ?? 'unknown')
+        : String(act.metadata?.from ?? act.metadata?.to ?? 'unknown')
+      const items = phoneMap.get(phone) ?? []
+      items.push(act)
+      phoneMap.set(phone, items)
+    }
 
-      // Create virtual lead entries for unmatched numbers
-      const virtualLeads: LeadRow[] = Array.from(phoneMap.entries()).map(([phone, acts]) => ({
+    const virtualLeads: LeadRow[] = Array.from(phoneMap.entries()).map(([phone, acts]) => {
+      const virtualLead: ConversationHubLead = {
         id: `unmatched:${phone}`,
         full_name: phone,
         phone,
@@ -251,21 +321,49 @@ export default function ConversationsPage() {
         priority: 'normal',
         assigned_agent: null,
         created_at: acts[0].created_at,
+      }
+      const activities: ConversationHubActivity[] = acts.map((activity) => ({
+        id: activity.id,
+        lead_id: activity.lead_id,
+        activity_type: activity.type,
+        description: activity.description,
+        agent: activity.agent,
+        metadata: activity.metadata,
+        created_at: activity.created_at,
       }))
+      return buildConversationHubThread(virtualLead, activities)
+    })
 
-      const allLeads = [...virtualLeads, ...rows]
-      setLeads(allLeads)
-      if (allLeads.length > 0) setActiveLeadId(allLeads[0].id)
-      setLoading(false)
-    }
-    fetchLeads()
+    // Open the workspace on a fully identified seller so the operator lands in
+    // a useful thread with property, ownership, and opportunity context. Keep
+    // unmatched callers in the same inbox, immediately after known contacts.
+    const allLeads = [...rows, ...virtualLeads]
+    const requestedLeadId = new URLSearchParams(window.location.search).get('lead')
+    setLeads(allLeads)
+    setActiveLeadId((current) =>
+      current && allLeads.some((lead) => lead.id === current)
+        ? current
+        : requestedLeadId && allLeads.some((lead) => lead.id === requestedLeadId)
+          ? requestedLeadId
+          : allLeads[0]?.id ?? null,
+    )
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchThreads()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [fetchThreads])
 
   useEffect(() => {
     if (!activeLeadId) return
     const supabase = createClient()
 
-    fetchActivities()
+    const refreshTimer = window.setTimeout(() => {
+      void fetchActivities()
+    }, 0)
 
     // Realtime subscription — new activities appear without refresh
     const channel = supabase
@@ -278,16 +376,15 @@ export default function ConversationsPage() {
           table: 'lead_activities',
           ...(activeLeadId.startsWith('unmatched:') ? {} : { filter: `lead_id=eq.${activeLeadId}` }),
         },
-        (payload: any) => {
-          fetchActivities()
+        (payload) => {
+          void Promise.all([fetchActivities(), fetchThreads()])
 
           // Toast notification for inbound messages
           const meta = payload.new?.metadata || {}
           const direction = (meta.direction as string) || ''
           const isInbound = direction === 'inbound' || direction === 'received'
           if (isInbound) {
-            const currentLeads = leadsRef.current
-            const lead = currentLeads.find((l) => l.id === activeLeadId)
+            const lead = leads.find((l) => l.id === activeLeadId)
             const name = lead?.full_name && lead.full_name !== lead.phone
               ? toProperCase(lead.full_name)
               : formatPhone(lead?.phone)
@@ -297,50 +394,88 @@ export default function ConversationsPage() {
       )
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
-  }, [activeLeadId, fetchActivities])
+    return () => {
+      window.clearTimeout(refreshTimer)
+      supabase.removeChannel(channel)
+    }
+  }, [activeLeadId, fetchActivities, fetchThreads, leads])
+
+  const refreshConversation = useCallback(() => {
+    void Promise.all([fetchActivities(), fetchThreads()])
+  }, [fetchActivities, fetchThreads])
 
   const activeLead = leads.find((l) => l.id === activeLeadId)
+  const normalizedNewConversationSearch = newConversationSearch.trim().toLowerCase()
+  const newConversationLeads = normalizedNewConversationSearch
+    ? leads.filter((lead) =>
+        [
+          lead.full_name,
+          lead.phone,
+          lead.property_address,
+          lead.city,
+          lead.owner,
+          lead.assigned_agent,
+        ].some((value) => value?.toLowerCase().includes(normalizedNewConversationSearch)),
+      )
+    : leads
 
-  // Derive toPhone from last activity metadata.to, fallback to default
-  const lastActivityWithTo = [...activities].reverse().find((a) => a.metadata?.to)
-  const toPhone = (lastActivityWithTo?.metadata?.to as string) || '+18163077835'
+  // The team line is the inbound destination or outbound origin. Do not use an
+  // outbound seller destination as the CRM reply-from number.
+  const teamPhoneActivity = [...activities].reverse().find((activity) => {
+    const direction = getConversationDirection({ activity_type: activity.type, description: activity.description, metadata: activity.metadata })
+    return direction === 'inbound'
+      ? Boolean(activity.metadata?.to || activity.metadata?.calledNumber)
+      : Boolean(activity.metadata?.from || activity.metadata?.fromPhone)
+  })
+  const teamPhoneDirection = teamPhoneActivity
+    ? getConversationDirection({ activity_type: teamPhoneActivity.type, description: teamPhoneActivity.description, metadata: teamPhoneActivity.metadata })
+    : null
+  const toPhone = teamPhoneActivity
+    ? String(teamPhoneDirection === 'inbound'
+      ? teamPhoneActivity.metadata?.to || teamPhoneActivity.metadata?.calledNumber
+      : teamPhoneActivity.metadata?.from || teamPhoneActivity.metadata?.fromPhone)
+    : '+18163077835'
 
   const threads: ThreadPreview[] = leads.map((lead) => ({
     id: lead.id,
-    name: lead.full_name && lead.full_name !== lead.phone ? toProperCase(lead.full_name) : formatPhone(lead.phone),
-    initials: lead.station === 'unmatched' ? '?' : getInitials(lead.full_name),
-    avatarBg: lead.priority === 'hot' ? 'bg-red-900' : lead.station === 'unmatched' ? 'bg-amber-700' : 'bg-slate-700',
+    name: getDisplayLeadName(lead.full_name, lead.phone),
+    initials: getAvatarLabel(lead.full_name, lead.phone, lead.source),
+    avatarBg: lead.priority === 'hot' ? 'bg-[var(--crm-brand)]' : 'bg-[var(--crm-charcoal)]',
     avatarText: 'text-white',
     address: [lead.property_address, lead.city].filter(Boolean).join(', ') || (lead.station === 'unmatched' ? formatPhone(lead.phone) : '—'),
     personality: null,
-    tags: lead.priority === 'hot' ? [{ label: 'Hot Lead', variant: 'hot' as const }] : lead.station === 'unmatched' ? [{ label: 'New Call', variant: 'hot' as const }] : [],
-    lastMessage: lead.station === 'unmatched' ? 'Inbound call — not yet a lead' : lead.station ? `Stage: ${lead.station.replace(/_/g, ' ')}` : 'No activity yet',
-    timestamp: new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    unread: lead.station === 'unmatched',
-    starred: lead.priority === 'hot',
+    tags: (lead.decision_tags || []).slice(0, 2),
+    lastMessage: lead.lastMessage || (lead.station === 'unmatched' ? 'Inbound call — not yet a contact' : 'No communication yet'),
+    lastChannel: lead.lastChannel || null,
+    lastCallOutcome: lead.lastCallOutcome || null,
+    activityAt: lead.lastActivityAt || lead.created_at,
+    timestamp: new Date(lead.lastActivityAt || lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    unread: lead.unread ?? lead.station === 'unmatched',
+    hot: lead.priority === 'hot',
+    attentionState: lead.attentionState || (lead.station === 'unmatched' ? 'needs_reply' : 'resolved'),
+    owner: lead.owner || lead.assigned_agent,
+    nextAction: lead.primaryNextAction || null,
   }))
 
   const commActivities = activities
   const messages: Message[] = commActivities
-    .map((act) => activeLead ? activityToMessage(act, activeLead) : null)
+    .map((act) => activeLead ? activityToMessage(act, activeLead, toPhone) : null)
     .filter((m): m is Message => m !== null)
   const dateGroups = groupMessagesByDate(messages, commActivities)
 
   const contact = activeLead
     ? {
-        name: activeLead.full_name && activeLead.full_name !== activeLead.phone
-          ? activeLead.full_name
-          : formatPhone(activeLead.phone),
-        initials: getInitials(activeLead.full_name),
-        address: [activeLead.property_address, activeLead.city].filter(Boolean).join(', ') || formatPhone(activeLead.phone),
-        county: activeLead.phone ? formatPhone(activeLead.phone) : '—',
-        tags: activeLead.priority === 'hot' ? ['Hot Lead'] : [],
+        name: getDisplayLeadName(activeLead.full_name, activeLead.phone),
+        initials: getAvatarLabel(activeLead.full_name, activeLead.phone, activeLead.source),
         verified: false,
         assignedAgent: activeLead.assigned_agent,
+        team: 'Acquisitions',
         toPhone,
+        attentionState: activeLead.attentionState || 'resolved',
+        owner: activeLead.owner || activeLead.assigned_agent,
+        nextAction: activeLead.primaryNextAction || null,
       }
-    : { name: 'Select a contact', initials: '—', address: '—', county: '—', tags: [], verified: false, assignedAgent: null, toPhone: '+18163077835' }
+    : { name: 'Select a contact', initials: '—', verified: false, assignedAgent: null, team: 'Acquisitions', toPhone: '+18163077835', attentionState: 'resolved' as const, owner: null, nextAction: null }
 
   if (loading) {
     return (
@@ -351,25 +486,53 @@ export default function ConversationsPage() {
   }
 
   return (
-    <div className="relative flex h-[calc(100vh-4rem)]">
+    <WorkspaceFrame needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length}>
+    <div className="relative flex h-full overflow-hidden bg-[var(--crm-canvas)] text-[#152033]">
       {showNewMessage && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center" onClick={() => setShowNewMessage(false)}>
-          <div className="bg-white rounded-xl p-6 shadow-2xl w-96 max-w-[90vw] max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h2 className="font-bold text-lg mb-4">Start New Conversation</h2>
-            <p className="text-sm text-slate-500 mb-4">Select a lead to open their conversation thread:</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeNewConversation}>
+          <section ref={newConversationDialogRef} role="dialog" aria-modal="true" aria-label="Start new conversation" tabIndex={-1} className="max-h-[70vh] w-96 max-w-[90vw] overflow-y-auto rounded-2xl border border-[#ded9d1] bg-white p-6 shadow-[0_22px_60px_rgba(11,41,66,0.22)]" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-bold">Start New Conversation</h2>
+              <button type="button" onClick={closeNewConversation} aria-label="Close new conversation dialog" className="flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#b91c26]">✕</button>
+            </div>
+            <p className="mb-3 text-sm text-slate-500">Select a lead to open their conversation thread:</p>
+            <label htmlFor="new-conversation-search" className="sr-only">Search contacts for a new conversation</label>
+            <div className="relative mb-4">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true">⌕</span>
+              <input
+                id="new-conversation-search"
+                autoFocus
+                type="search"
+                value={newConversationSearch}
+                onChange={(event) => setNewConversationSearch(event.target.value)}
+                placeholder="Search name, phone, address, or owner"
+                className="h-10 w-full rounded-lg border border-[#d9dee5] bg-white pl-9 pr-3 text-sm text-[#172033] outline-none focus:border-[#df3038] focus:ring-2 focus:ring-[#df3038]/10"
+              />
+            </div>
             <div className="space-y-2">
-              {leads.map((lead) => (
+              {newConversationLeads.length === 0 ? (
+                <p role="status" className="rounded-lg border border-dashed border-[#ccd4dd] px-4 py-6 text-center text-sm text-slate-500">
+                  No contacts match “{newConversationSearch}”.
+                </p>
+              ) : newConversationLeads.map((lead) => (
                 <button
                   key={lead.id}
-                  onClick={() => { setActiveLeadId(lead.id); setShowNewMessage(false); setSidebarOpen(false) }}
-                  className="w-full text-left p-3 rounded-lg hover:bg-slate-50 border border-slate-100 transition-colors"
+                  onClick={() => {
+                    selectConversation(lead.id)
+                    setShowNewMessage(false)
+                    setNewConversationSearch('')
+                    setSidebarOpen(false)
+                  }}
+                  className="w-full rounded-lg border border-[#e1ddd7] p-3 text-left transition-colors hover:border-[#a9c5f4] hover:bg-[#edf4ff]"
                 >
-                  <div className="font-semibold text-sm">{lead.full_name || '(no name)'}</div>
-                  <div className="text-xs text-slate-400">{lead.property_address || '—'}</div>
+                  <div className="text-sm font-semibold">{lead.full_name || formatPhone(lead.phone) || '(no name)'}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {[lead.property_address || formatPhone(lead.phone), lead.owner || lead.assigned_agent ? `Owner: ${lead.owner || lead.assigned_agent}` : 'Unassigned'].filter(Boolean).join(' · ')}
+                  </div>
                 </button>
               ))}
             </div>
-          </div>
+          </section>
         </div>
       )}
 
@@ -386,17 +549,19 @@ export default function ConversationsPage() {
         <InboxSidebar
           threads={threads}
           activeThreadId={activeLeadId || ''}
-          onSelectThread={(id) => { setActiveLeadId(id); setSidebarOpen(false) }}
+          onSelectThread={handleSelectConversation}
           onNewMessage={() => setShowNewMessage(true)}
         />
       </div>
 
       {/* Thread view - full width on mobile, flex-1 on desktop */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--crm-canvas)]">
         {/* Mobile header with menu button */}
         <div className="md:hidden flex items-center gap-3 p-4 border-b border-slate-200 bg-white">
           <button
+            type="button"
             onClick={() => setSidebarOpen(true)}
+            aria-label="Open conversation inbox"
             className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -411,20 +576,48 @@ export default function ConversationsPage() {
           dateGroups={dateGroups.length > 0 ? dateGroups : [{ label: 'No messages yet', messages: [] }]}
           leadId={activeLeadId || undefined}
           phone={activeLead?.phone || undefined}
-          onSent={fetchActivities}
+          email={activeLead?.email || undefined}
+          onCall={openActiveDialer}
+          onSent={refreshConversation}
+          onConversationChanged={refreshConversation}
+          contactDetailsOpen={contactDetailsOpen}
+          onToggleContactDetails={() => setContactDetailsOpen((value) => !value)}
+          initialComposeMode={initialComposeMode}
         />
       </div>
+
+      {contactDetailsOpen ? (
+        <ContactDetailsPanel
+          contact={activeLead || null}
+          onClose={() => setContactDetailsOpen(false)}
+          onNextAction={activeLead && !activeLead.id.startsWith('unmatched:') ? () => setNextActionDialogOpen(true) : undefined}
+          onContactChanged={refreshConversation}
+        />
+      ) : null}
+
+      {nextActionDialogOpen && activeLead && !activeLead.id.startsWith('unmatched:') ? (
+        <NextActionDialog
+          leadId={activeLead.id}
+          leadName={getDisplayLeadName(activeLead.full_name, activeLead.phone)}
+          action={activeLead.primaryNextAction || null}
+          defaultOwner={activeLead.assigned_agent || activeLead.owner || null}
+          onClose={() => setNextActionDialogOpen(false)}
+          onSaved={refreshConversation}
+        />
+      ) : null}
 
       {/* Toast notifications */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className="flex items-center gap-3 bg-green-600 text-white px-4 py-3 rounded-xl shadow-xl text-sm font-semibold pointer-events-auto"
+            className="flex items-center gap-3 bg-[#df3038] text-white px-4 py-3 rounded-xl shadow-xl text-sm font-semibold pointer-events-auto"
           >
             <span>{toast.message}</span>
             <button
+              type="button"
               onClick={() => dismissToast(toast.id)}
+              aria-label="Dismiss notification"
               className="ml-1 text-white/80 hover:text-white leading-none"
             >
               ✕
@@ -433,5 +626,6 @@ export default function ConversationsPage() {
         ))}
       </div>
     </div>
+    </WorkspaceFrame>
   )
 }

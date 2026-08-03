@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
 import type { AppMode } from '@/hooks/use-app-mode'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 
 interface Lead {
   id: string
@@ -44,6 +45,9 @@ export function NewTaskModal({
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [leadSearch, setLeadSearch] = useState(leadName || '')
   const titleRef = useRef<HTMLInputElement>(null)
+  const titleId = useId()
+  const fieldIdPrefix = useId()
+  const dialogRef = useDialogAccessibility<HTMLFormElement>(true, onClose, titleRef)
 
   // Load leads when showing the selector
   useEffect(() => {
@@ -111,17 +115,22 @@ export function NewTaskModal({
   return (
     <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <form
-        className="ck-dark bg-surface-container-lowest rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-outline-variant/20"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="crm-modal-surface bg-surface-container-lowest w-full max-w-md overflow-hidden rounded-xl border border-outline-variant/20 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
       >
         <div className="px-6 pt-6 pb-4 border-b border-outline-variant/10">
-          <h2 className="text-lg font-black text-primary">New Task</h2>
+          <h2 id={titleId} className="text-lg font-black text-primary">New Task</h2>
         </div>
         <div className="px-6 py-5 space-y-4">
           <div>
-            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Title</label>
+            <label htmlFor={`${fieldIdPrefix}-title`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Title</label>
             <input
+              id={`${fieldIdPrefix}-title`}
               ref={titleRef}
               autoFocus
               value={title}
@@ -133,10 +142,11 @@ export function NewTaskModal({
 
           {showLeadSelector && !initialLeadId && (
             <div>
-              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">
+              <label htmlFor={`${fieldIdPrefix}-lead`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">
                 Attach to Lead <span className="text-on-surface-variant/50">(optional)</span>
               </label>
               <input
+                id={`${fieldIdPrefix}-lead`}
                 type="text"
                 value={leadSearch}
                 onChange={(e) => {
@@ -187,8 +197,8 @@ export function NewTaskModal({
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Type</label>
-              <select value={taskType} onChange={(e) => setTaskType(e.target.value)} className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm">
+              <label htmlFor={`${fieldIdPrefix}-type`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Type</label>
+              <select id={`${fieldIdPrefix}-type`} value={taskType} onChange={(e) => setTaskType(e.target.value)} className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm">
                 <option value="follow_up">Follow-up</option>
                 <option value="callback">Callback</option>
                 <option value="appointment">Appointment</option>
@@ -198,15 +208,16 @@ export function NewTaskModal({
               </select>
             </div>
             <div>
-              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Assigned To</label>
-              <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm">
+              <label htmlFor={`${fieldIdPrefix}-owner`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Assigned To</label>
+              <select id={`${fieldIdPrefix}-owner`} value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm">
                 <option value="Casey">Casey</option>
                 <option value="Ernest">Ernest</option>
               </select>
             </div>
             <div>
-              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Role</label>
+              <label htmlFor={`${fieldIdPrefix}-role`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Role</label>
               <select
+                id={`${fieldIdPrefix}-role`}
                 value={role}
                 onChange={(e) => setRole(e.target.value as 'setter' | 'closer' | 'admin')}
                 className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
@@ -218,18 +229,19 @@ export function NewTaskModal({
             </div>
           </div>
           <div>
-            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Due Date</label>
+            <label htmlFor={`${fieldIdPrefix}-due`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Due Date</label>
             <input
+              id={`${fieldIdPrefix}-due`}
               type="datetime-local"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              style={{ colorScheme: 'dark' }}
               className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Notes <span className="text-on-surface-variant/50">(optional)</span></label>
+            <label htmlFor={`${fieldIdPrefix}-notes`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Notes <span className="text-on-surface-variant/50">(optional)</span></label>
             <textarea
+              id={`${fieldIdPrefix}-notes`}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Additional details..."

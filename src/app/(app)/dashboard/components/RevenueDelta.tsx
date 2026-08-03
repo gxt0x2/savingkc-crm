@@ -2,17 +2,16 @@ import type { ScenarioComparison } from '../lib/bottleneck.types'
 
 export function RevenueDelta({ comparison }: { comparison: ScenarioComparison }) {
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-950 p-4 text-white">
-      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Revenue Lift</div>
+    <section className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4 text-[var(--crm-ink)]">
+      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--crm-text-dim)]">Revenue Lift</div>
       <div
         data-testid="revenue-increase-percent"
-        className="mt-2 text-5xl font-black tracking-normal tabular-nums"
-        style={{ color: '#ff4d56' }}
+        className="mt-2 text-5xl font-black tracking-normal tabular-nums text-[var(--crm-brand)]"
       >
         {formatPercent(comparison.revenueIncreasePercent)}
       </div>
-      <div className="mt-4 rounded-md bg-white p-3 text-slate-950">
-        <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Net Increase</div>
+      <div className="mt-4 rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-[var(--crm-ink)]">
+        <div className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--crm-text-dim)]">Net Increase</div>
         <div className="text-2xl font-black tabular-nums">{formatDollars(comparison.netIncrease)}</div>
       </div>
     </section>

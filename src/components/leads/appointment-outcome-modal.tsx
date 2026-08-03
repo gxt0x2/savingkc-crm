@@ -7,8 +7,9 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 
 type OutcomeType = 'completed' | 'no_show' | 'cancelled' | 'rescheduled'
 
@@ -34,25 +35,25 @@ const OUTCOMES: Array<{
     type: 'completed',
     label: 'Completed',
     icon: 'check_circle',
-    color: 'bg-secondary-container text-secondary',
+    color: 'bg-[#e9f8ef] text-[#148044]',
   },
   {
     type: 'no_show',
     label: 'No-Show',
     icon: 'cancel',
-    color: 'bg-error-container text-error',
+    color: 'bg-[#fff0f1] text-[#c9232d]',
   },
   {
     type: 'cancelled',
     label: 'Cancelled',
     icon: 'block',
-    color: 'bg-surface-variant text-on-surface-variant',
+    color: 'bg-[#f1f3f5] text-[#667085]',
   },
   {
     type: 'rescheduled',
     label: 'Rescheduled',
     icon: 'update',
-    color: 'bg-tertiary-container text-tertiary',
+    color: 'bg-[#fff5e5] text-[#9a5800]',
   },
 ]
 
@@ -66,6 +67,9 @@ export function AppointmentOutcomeModal({
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const titleId = useId()
+  const notesId = useId()
+  const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
 
   async function handleSubmit() {
     if (!selectedOutcome) return
@@ -109,30 +113,37 @@ export function AppointmentOutcomeModal({
   })
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#111827]/55 p-4 backdrop-blur-sm">
       <div
-        className="ck-dark w-full max-w-lg bg-surface-container-lowest rounded-xl shadow-2xl overflow-hidden border border-outline-variant/20"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="w-full max-w-lg overflow-hidden rounded-xl border border-[#d9dfe6] bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 pt-6 pb-4 border-b border-outline-variant/10">
+        <div className="border-b border-[#e4e7ec] px-6 pb-4 pt-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-black text-primary tracking-tight mb-1">
+              <h2 id={titleId} className="mb-1 text-xl font-black tracking-tight text-[#111827]">
                 Appointment Outcome
               </h2>
-              <p className="text-sm text-on-surface-variant">
+              <p className="text-sm text-[#475467]">
                 {lead.full_name || 'Unknown'} &mdash; {appointment.type}
               </p>
-              <p className="text-xs text-on-surface-variant/70 mt-0.5">
+              <p className="mt-0.5 text-xs text-[#667085]">
                 Scheduled: {formattedDate} &middot; {appointment.assignedTo}
               </p>
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-surface-container-high transition-colors"
+              aria-label="Close appointment outcome dialog"
+              className="rounded-lg p-1.5 transition-colors hover:bg-[#f2f4f7]"
             >
-              <Icon name="close" size="text-lg" className="text-on-surface-variant" />
+              <Icon name="close" size="text-lg" className="text-[#667085]" />
             </button>
           </div>
         </div>
@@ -141,7 +152,7 @@ export function AppointmentOutcomeModal({
         <div className="px-6 py-6 space-y-6">
           {/* Outcome Grid */}
           <div>
-            <label className="text-xs font-bold text-primary uppercase tracking-wider mb-3 block">
+            <label className="mb-3 block text-xs font-bold uppercase tracking-wider text-[#344054]">
               What happened?
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -153,8 +164,8 @@ export function AppointmentOutcomeModal({
                     relative p-4 rounded-lg border-2 transition-all text-left
                     ${
                       selectedOutcome === outcome.type
-                        ? 'border-primary shadow-md scale-[1.02]'
-                        : 'border-outline-variant/20 hover:border-outline-variant/40'
+                        ? 'scale-[1.02] border-[#df3038] bg-[#fff8f8] shadow-md'
+                        : 'border-[#d9dfe6] hover:border-[#efb4b8]'
                     }
                   `}
                 >
@@ -164,14 +175,14 @@ export function AppointmentOutcomeModal({
                     >
                       <Icon name={outcome.icon} size="text-lg" />
                     </div>
-                    <p className="text-sm font-bold text-on-surface">
+                    <p className="text-sm font-bold text-[#172033]">
                       {outcome.label}
                     </p>
                     {selectedOutcome === outcome.type && (
                       <div className="absolute top-1.5 right-1.5">
                         <Icon
                           name="check_circle"
-                          className="text-primary"
+                          className="text-[#df3038]"
                           size="text-sm"
                         />
                       </div>
@@ -184,34 +195,35 @@ export function AppointmentOutcomeModal({
 
           {/* Notes (Optional) */}
           <div>
-            <label className="text-xs font-bold text-primary uppercase tracking-wider mb-2 block">
-              Notes <span className="text-on-surface-variant/60">(optional)</span>
+            <label htmlFor={notesId} className="mb-2 block text-xs font-bold uppercase tracking-wider text-[#344054]">
+              Notes <span className="text-[#98a2b3]">(optional)</span>
             </label>
             <textarea
+              id={notesId}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Any details about the appointment..."
-              className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-primary/20 bg-surface-container"
+              className="min-h-[80px] w-full rounded-lg border border-[#cfd6de] bg-white px-3 py-2 text-sm text-[#1f2937] focus:border-[#df3038] focus:outline-none focus:ring-2 focus:ring-[#df3038]/10"
             />
           </div>
 
           {error && (
-            <p className="text-sm text-error font-medium">{error}</p>
+            <p className="text-sm font-medium text-[#c9232d]">{error}</p>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-surface-container-high border-t border-outline-variant/10 flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 border-t border-[#e4e7ec] bg-[#f8f9fa] px-6 py-4">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-[#475467] transition-colors hover:bg-white"
           >
             Skip for now
           </button>
           <button
             onClick={handleSubmit}
             disabled={!selectedOutcome || submitting}
-            className="px-6 py-2.5 bg-primary text-on-primary font-bold rounded-lg hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="rounded-lg bg-[#df3038] px-6 py-2.5 font-bold text-white transition-all hover:bg-[#c9232d] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting ? 'Saving...' : 'Log Outcome'}
           </button>

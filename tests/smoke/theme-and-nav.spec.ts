@@ -1,50 +1,143 @@
 import { expect, test } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-
-function luminanceFromRgb(cssColor: string): number {
-  const match = cssColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-  if (!match) return 255;
-  const [, r, g, b] = match.map(Number);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-const routes = ['/ari', '/leads', '/dispo/pipeline'];
+const crmWorkspaceRoutes = [
+  '/leads',
+  '/contacts',
+  '/conversations',
+  '/opportunities',
+  '/calendar?department=acquisitions',
+  '/tasks',
+  '/workflows',
+  '/marketing',
+  '/dispo/pipeline',
+  '/dashboard',
+  '/reports/marketing',
+  '/reports/acquisitions',
+  '/reports/dispositions',
+  '/reports/finance',
+  '/reports/call-sms',
+  '/ari',
+  '/settings',
+];
 const artifactDir = path.join(process.cwd(), 'test-results', 'smoke');
 
-for (const route of routes) {
-  test(`dark shell smoke: ${route}`, async ({ page }) => {
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!window.localStorage.getItem('crm-theme-smoke-seeded')) {
+      window.localStorage.setItem('crm-theme', 'light');
+      window.localStorage.setItem('crm-theme-smoke-seeded', 'true');
+    }
+  });
+});
+
+test('CRM controls are interactive instead of decorative', async ({ page }) => {
+  await page.goto('/contacts', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Add contact' }).click();
+  await expect(page.getByRole('dialog', { name: 'Add contact' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('dialog', { name: 'Add contact' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Import' }).click();
+  await expect(page.getByRole('dialog', { name: 'Import contacts' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  await page.goto('/workflows', { waitUntil: 'domcontentloaded' });
+  const newWorkflowButton = page.getByRole('button', { name: 'New workflow' });
+  await newWorkflowButton.click();
+  const safetyDialog = page.getByRole('dialog', { name: 'Workflow safety requirements' });
+  await expect(safetyDialog).toBeVisible();
+  await expect(safetyDialog.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Workflow safety requirements' })).toHaveCount(0);
+  await expect(newWorkflowButton).toBeFocused();
+
+  const firstWorkflow = page.getByRole('button', { name: /open .* workflow details/i }).first();
+  await firstWorkflow.click();
+  const workflowDetails = page.getByRole('dialog', { name: /workflow details/i });
+  await expect(workflowDetails).toBeVisible();
+  await expect(workflowDetails.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(workflowDetails).toHaveCount(0);
+  await expect(firstWorkflow).toBeFocused();
+});
+
+test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) => {
+  await page.goto('/workflows', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.crm-workspace-shell')).toBeVisible();
+
+  const expectedLinks = new Map([
+    ['Dashboard', '/dashboard'],
+    ['Contacts', '/contacts'],
+    ['Conversations', '/conversations'],
+    ['Calendar', '/calendar?department=acquisitions'],
+    ['Task', '/tasks'],
+    ['ARI Insights', '/ari'],
+    ['Workflows', '/workflows'],
+    ['Settings', '/settings'],
+  ]);
+
+  for (const [name, href] of expectedLinks) {
+    const destination = page.locator(`a[href="${href}"]`).filter({ hasText: name });
+    await expect(destination).toBeVisible();
+  }
+
+  await page.getByRole('button', { name: 'Reports' }).click();
+  const reportLinks = new Map([
+    ['Marketing', '/reports/marketing'],
+    ['Acquisitions', '/reports/acquisitions'],
+    ['Dispositions', '/reports/dispositions'],
+    ['Finance', '/reports/finance'],
+    ['Call/SMS', '/reports/call-sms'],
+  ]);
+  for (const [name, href] of reportLinks) {
+    await expect(page.locator(`a[href="${href}"]`).filter({ hasText: name })).toBeVisible();
+  }
+
+  await expect(page.locator('a[href="#"]')).toHaveCount(0);
+});
+
+for (const route of crmWorkspaceRoutes) {
+  test(`approved CRM workspace smoke: ${route}`, async ({ page }) => {
     mkdirSync(artifactDir, { recursive: true });
 
     await page.goto(route, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1200);
 
-    await expect(page.locator('body.ck-dark')).toBeVisible();
-
-    const header = page.locator('header.sticky').first();
-    await expect(header).toBeVisible();
-
-    const headerBg = await header.evaluate((el) => getComputedStyle(el).backgroundColor);
-    const headerLum = luminanceFromRgb(headerBg);
-
-    expect(
-      headerLum,
-      `Header background is too light (${headerBg}) on route ${route}.`
-    ).toBeLessThan(120);
-
-    const modeSwitcher = page.locator('header').locator('button', { hasText: 'Acquisitions' }).first();
-    if (await modeSwitcher.isVisible().catch(() => false)) {
-      const switcherBg = await modeSwitcher.evaluate((el) => getComputedStyle(el).backgroundColor);
-      const switcherLum = luminanceFromRgb(switcherBg);
-      expect(
-        switcherLum,
-        `Mode switcher looks too light (${switcherBg}) on route ${route}.`
-      ).toBeLessThan(140);
-    }
+    await expect(page.locator('body.ck-dark')).toHaveCount(0);
+    await expect(page.locator('.crm-workspace-shell')).toHaveAttribute('data-theme', 'light');
+    await expect(page.getByRole('button', { name: 'Switch to dark theme' })).toBeVisible();
+    const commandSearch = route === '/contacts'
+      ? page.getByPlaceholder('Search contacts...')
+      : page.getByPlaceholder('Search contacts, properties, or messages...');
+    await expect(commandSearch).toBeVisible();
+    await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
+    await expect(page.locator('a[href="/contacts"]').filter({ hasText: 'Contacts' })).toBeVisible();
+    await expect(page.locator('a[href="/dashboard"]').filter({ hasText: 'Dashboard' })).toBeVisible();
+    await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
     await page.screenshot({
-      path: path.join(artifactDir, `${route.replace(/\//g, '_') || 'root'}.png`),
+      path: path.join(artifactDir, `${route.replace(/[^a-z0-9_-]+/gi, '_') || 'root'}.png`),
       fullPage: true,
     });
   });
 }
+
+test('rebuilt CRM honors and persists dark and light theme preference', async ({ page }) => {
+  await page.goto('/workflows', { waitUntil: 'domcontentloaded' });
+  const shell = page.locator('.crm-workspace-shell');
+
+  await expect(shell).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('button', { name: 'Switch to dark theme' }).click();
+  await expect(shell).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('body')).toHaveClass(/ck-dark/);
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('dark');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.crm-workspace-shell')).toHaveAttribute('data-theme', 'dark');
+
+  await page.getByRole('button', { name: 'Switch to light theme' }).click();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('crm-theme'))).toBe('light');
+  await expect(page.locator('.crm-workspace-shell')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('body.ck-dark')).toHaveCount(0);
+});

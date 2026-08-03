@@ -19,7 +19,7 @@ export async function GET(
     const { data: deal, error } = await db
       .from('dispo_deals')
       .select(
-        '*, leads:lead_id(id, full_name, property_address, city, state, zip, arv, offer_amount, property_type, beds, baths_full, sqft)'
+        '*, leads:lead_id(id, full_name, property_address, city, state, zip, arv, offer_amount, property_type, beds, baths_full, sqft, source, assigned_agent, created_at)'
       )
       .eq('id', id)
       .single()
@@ -105,6 +105,12 @@ export async function PATCH(
         return NextResponse.json(
           { error: `Invalid stage. Must be one of: ${VALID_STAGES.join(', ')}` },
           { status: 400 }
+        )
+      }
+      if (body.stage === 'closed' && current.stage !== 'closed') {
+        return NextResponse.json(
+          { error: 'Use transaction close-out to confirm funding before closing this deal' },
+          { status: 409 }
         )
       }
       updates.stage = body.stage

@@ -37,6 +37,8 @@ const appShell = read('src/components/layout/app-shell.tsx');
 const modeSwitcher = read('src/components/layout/mode-switcher.tsx');
 const globals = read('src/app/globals.css');
 const rootLayout = read('src/app/layout.tsx');
+const workspaceFrame = read('src/components/conversations/workspace-frame.tsx');
+const cockpitModal = read('src/components/ui/cockpit-modal.tsx');
 
 const forbiddenInShell = [
   'bg-white border-b border-slate-200',
@@ -71,6 +73,23 @@ assert(
 assert(
   globals.includes('.theme-light .lead-cockpit') && globals.includes('--ck-text: #111827'),
   'Theme guard failed: cockpit light theme text tokens are missing.'
+);
+
+assert(
+  workspaceFrame.includes('data-theme={theme}') &&
+    workspaceFrame.includes("aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}"),
+  'Theme guard failed: rebuilt CRM workspace must expose and apply the persisted theme preference.'
+);
+
+assert(
+  globals.includes('.crm-workspace-shell[data-theme="dark"]') &&
+    globals.includes('html.dark .crm-modal-surface'),
+  'Theme guard failed: rebuilt workspace and portaled modal dark tokens are missing.'
+);
+
+assert(
+  cockpitModal.includes('className={`crm-modal-surface') && !cockpitModal.includes('overflow-hidden ck-dark'),
+  'Theme guard failed: portaled cockpit modal must inherit the active document theme.'
 );
 
 for (const relPath of [

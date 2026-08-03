@@ -93,7 +93,7 @@ describe('DispositionModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /Dead Lead/i }))
     expect(onDisposition).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: /No living heirs found/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Not the owner \/ No legal interest/i }))
 
     await waitFor(() => {
       expect(onDisposition).toHaveBeenCalledWith(
@@ -101,7 +101,7 @@ describe('DispositionModal', () => {
         undefined,
         expect.objectContaining({
           autoDialNext: true,
-          deadReason: 'no_living_heirs',
+          deadReason: 'no_legal_interest',
         }),
       )
     })
@@ -113,6 +113,6 @@ describe('DispositionModal', () => {
     })
 
     expect(html).toContain('Why is it dead?')
-    expect(html).toContain('No living heirs found')
+    expect(html).toContain('Not the owner / No legal interest')
   })
 })

@@ -76,6 +76,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const isAcquisitionsCalendar =
+    (pathname?.startsWith('/calendar') ?? false) &&
+    (searchParams.get('department') === 'acquisitions' || (!searchParams.get('department') && mode === 'acquisitions'))
+  const isAcquisitionsSettings =
+    (pathname?.startsWith('/settings') ?? false) &&
+    searchParams.get('portal') !== 'tc' &&
+    mode !== 'tc'
+  const isConversationWorkspace =
+    (pathname?.startsWith('/conversations') ?? false) ||
+    (pathname?.startsWith('/contacts') ?? false) ||
+    (pathname?.startsWith('/leads') ?? false) ||
+    (pathname?.startsWith('/workflows') ?? false) ||
+    (pathname?.startsWith('/tasks') ?? false) ||
+    (pathname?.startsWith('/reports') ?? false) ||
+    (pathname?.startsWith('/ai') ?? false) ||
+    (pathname?.startsWith('/ari') ?? false) ||
+    (pathname?.startsWith('/opportunities') ?? false) ||
+    (pathname?.startsWith('/dialer') ?? false) ||
+    isAcquisitionsCalendar ||
+    (pathname?.startsWith('/marketing') ?? false) ||
+    (pathname?.startsWith('/dispo/pipeline') ?? false) ||
+    (pathname?.startsWith('/dashboard') ?? false) ||
+    isAcquisitionsSettings
   const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
@@ -168,6 +191,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setShowDialer(true)
       }
     }
+    function handleOpenGlobalDialer() {
+      setPendingDialLead(null)
+      setPendingQueue(null)
+      setPendingQueueCallerId(null)
+      setPendingQueueCallerPlan(null)
+      setPendingQueueAutoDial(false)
+      setPendingQueueRingCount(null)
+      setShowDialer(true)
+    }
     function handleOpenDialerQueue(e: Event) {
       const detail = (e as CustomEvent).detail
       if (Array.isArray(detail?.queue) && detail.queue.length > 0) {
@@ -182,9 +214,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     }
     window.addEventListener('open-dialer', handleOpenDialer)
+    window.addEventListener('open-global-dialer', handleOpenGlobalDialer)
     window.addEventListener('open-dialer-queue', handleOpenDialerQueue)
     return () => {
       window.removeEventListener('open-dialer', handleOpenDialer)
+      window.removeEventListener('open-global-dialer', handleOpenGlobalDialer)
       window.removeEventListener('open-dialer-queue', handleOpenDialerQueue)
     }
   }, [])
@@ -236,6 +270,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     loadProfile()
   }, [user?.email])
+
+  if (isConversationWorkspace) {
+    return (
+      <div
+        className="min-h-screen bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
+        data-theme={userTheme}
+      >
+        {children}
+        <DialerPanel
+          open={showDialer}
+          onClose={() => {
+            setShowDialer(false)
+            setPendingDialLead(null)
+            setPendingQueue(null)
+            setPendingQueueCallerId(null)
+            setPendingQueueCallerPlan(null)
+            setPendingQueueAutoDial(false)
+            setPendingQueueRingCount(null)
+          }}
+          onStatusChange={handleDialerStatusChange}
+          pendingDial={pendingDialLead}
+          pendingQueue={pendingQueue}
+          pendingQueueCallerId={pendingQueueCallerId}
+          pendingQueueCallerPlan={pendingQueueCallerPlan}
+          pendingQueueAutoDial={pendingQueueAutoDial}
+          pendingQueueRingCount={pendingQueueRingCount}
+          presentation={dialerPresentation}
+        />
+      </div>
+    )
+  }
 
   return (
     <div

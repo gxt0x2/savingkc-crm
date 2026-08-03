@@ -27,6 +27,11 @@ describe('contact-display', () => {
     expect(getDisplayLeadName('Google Ads Caller ((816) 555-1212)', '+18165551212')).toBe('Google Ads Caller (816) 555-1212')
   })
 
+  it('formats raw E.164 phone placeholders as human-readable caller names', () => {
+    expect(getDisplayLeadName('+14195585125', '+14195585125')).toBe('(419) 558-5125')
+    expect(getDisplayLeadName('(913) 707-7847', '+19137077847')).toBe('(913) 707-7847')
+  })
+
   it('detects missed inbound calls and outbound attempts', () => {
     const missed = {
       activity_type: 'call',

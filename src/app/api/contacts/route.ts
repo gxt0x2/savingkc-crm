@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getContactSignal, isOutboundAttempt, type ContactActivityLike, type ContactSignal } from '@/lib/contact-display'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
@@ -9,9 +9,10 @@ import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/
 /**
  * GET /api/contacts
  *
- * Returns one row per active lead with the fields the Contacts
+ * Returns one row per contact with the fields the Contacts
  * smart list needs: name, address, phone, next activity, tags, station,
- * composite score. Parked and archived leads are excluded here. Single endpoint — the page filters by station tab on
+ * composite score. Parked records are excluded here; dead/lost records stay
+ * searchable so agents can see why they left active work. Single endpoint — the page filters by station tab on
  * the client.
  *
  * Auth: session (the page is auth-gated).
@@ -21,10 +22,13 @@ export interface ContactRow {
   id: string
   fullName: string | null
   phone: string | null
+  email: string | null
   source: string | null
   address: string | null
   city: string | null
   station: DealStage
+  classification: 'lead' | 'opportunity' | 'dead' | null
+  deadReason: string | null
   score: number
   isFavorite: boolean
   nextActivity: {
@@ -66,12 +70,18 @@ interface ManifestPayload {
   }
 }
 
-const ACTIVE_CONTACT_STAGES = new Set<DealStage>([...ACQUISITION_STAGES, 'under_contract'])
+const CONTACT_STAGES = new Set<DealStage>([
+  ...ACQUISITION_STAGES,
+  'under_contract',
+  'closed_won',
+  'closed_lost',
+  'dead',
+])
 const CONTACT_ACTIVITY_TYPES = ['call', 'sms', 'email', 'voicemail', 'missed_call']
 
-function getActiveContactStation(station: string | null | undefined): DealStage | null {
+function getContactStation(station: string | null | undefined): DealStage | null {
   const normalized = normalizeDealStage(station) ?? 'new'
-  return ACTIVE_CONTACT_STAGES.has(normalized) ? normalized : null
+  return CONTACT_STAGES.has(normalized) ? normalized : null
 }
 
 function pickNextActivity(m: ManifestPayload): ContactRow['nextActivity'] {
@@ -109,14 +119,14 @@ export async function GET() {
 
   const { data: leads, error: leadsErr } = await db
     .from('leads')
-    .select('id, full_name, phone, source, station, property_address, city, created_at, updated_at, is_parked, is_favorite')
+    .select('id, full_name, phone, email, source, station, classification, dead_reason, property_address, city, created_at, updated_at, is_parked, is_favorite')
     .eq('is_parked', false)
     .order('updated_at', { ascending: false })
 
   if (leadsErr) return NextResponse.json({ error: leadsErr.message }, { status: 500 })
   const rows = leads ?? []
   const activeRows = rows
-    .map((lead) => ({ lead, station: getActiveContactStation(lead.station) }))
+    .map((lead) => ({ lead, station: getContactStation(lead.station) }))
     .filter((row): row is { lead: typeof rows[number]; station: DealStage } => row.station !== null)
 
   if (activeRows.length === 0) return NextResponse.json({ items: [] })
@@ -179,10 +189,13 @@ export async function GET() {
       id: lead.id,
       fullName: lead.full_name,
       phone: lead.phone,
+      email: lead.email,
       source: lead.source,
       address: lead.property_address,
       city: lead.city,
       station,
+      classification: (lead.classification as ContactRow['classification']) ?? null,
+      deadReason: lead.dead_reason ?? null,
       score: scoreByLead.get(lead.id) ?? 0,
       isFavorite: Boolean((lead as { is_favorite?: boolean | null }).is_favorite),
       nextActivity: pickNextActivity(manifest),
@@ -196,4 +209,58 @@ export async function GET() {
   }
 
   return NextResponse.json({ items })
+}
+
+function cleanText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function normalizeContactPhone(value: unknown): string | null {
+  const raw = cleanText(value)
+  if (!raw) return null
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return raw
+}
+
+/**
+ * POST /api/contacts
+ *
+ * Creates a manual CRM contact without firing website-intake alerts,
+ * automated outreach, or advertising conversion events.
+ */
+export async function POST(request: NextRequest) {
+  const payload = await request.json().catch(() => null) as Record<string, unknown> | null
+  if (!payload) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+
+  const fullName = cleanText(payload.fullName)
+  const phone = normalizeContactPhone(payload.phone)
+  const email = cleanText(payload.email)?.toLowerCase() ?? null
+  const address = cleanText(payload.address)
+  if (!fullName && !phone && !email) {
+    return NextResponse.json({ error: 'Add a name, phone number, or email address.' }, { status: 400 })
+  }
+
+  const db = supabaseAdmin()
+  const { data, error } = await db
+    .from('leads')
+    .insert({
+      full_name: fullName,
+      phone,
+      email,
+      property_address: address,
+      city: cleanText(payload.city),
+      state: cleanText(payload.state),
+      zip: cleanText(payload.zip),
+      source: cleanText(payload.source) ?? 'manual_crm',
+      station: 'new',
+      priority: 'warm',
+      is_parked: false,
+    })
+    .select('id')
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true, id: data.id }, { status: 201 })
 }

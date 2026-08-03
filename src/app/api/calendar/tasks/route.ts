@@ -384,6 +384,7 @@ export async function POST(req: NextRequest) {
           department,
           priority: 'normal',
           status: 'pending',
+          primary_next_action: body.primaryNextAction === true,
           notes: body.notes?.trim() || undefined,
           source: body.leadId ? 'lead_detail_task' : 'calendar_new_task',
         },

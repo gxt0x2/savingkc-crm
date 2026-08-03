@@ -35,7 +35,9 @@ const ALLOWED_OUTBOUND_CALLER_IDS = new Set<string>([
 // Company numbers that ring agent cell directly (no IVR)
 const DIRECT_RING_NUMBERS: Record<string, string> = {
   '+18166088588': ERNEST_PHONE,
+  '+18166088858': ERNEST_PHONE,
   '+18167277667': CASEY_PHONE,
+  '+18163754666': CASEY_PHONE,
 }
 
 // Cold call outbound dialing numbers — callbacks get a different IVR

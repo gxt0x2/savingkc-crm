@@ -13,15 +13,19 @@ const PUBLIC_ROUTE_PREFIXES = ['/ppc', '/login', '/privacy', '/terms']
 export function PushManager() {
   const pathname = usePathname()
   const isPublicRoute = !!pathname && PUBLIC_ROUTE_PREFIXES.some((p) => pathname.startsWith(p))
-  const { isSupported, isSubscribed, subscribe, permission } = usePushNotifications()
+  const { isSupported, isSubscribed, subscribe, permission, isConfigured } = usePushNotifications()
 
   useEffect(() => {
-    if (isPublicRoute) return
+    if (isPublicRoute || !isConfigured) return
     if (isSupported && !isSubscribed && permission === 'default') {
-      const timer = setTimeout(() => subscribe(), 3000)
+      const timer = setTimeout(() => {
+        void subscribe().catch((error) => {
+          console.error('[push] Subscription failed:', error)
+        })
+      }, 3000)
       return () => clearTimeout(timer)
     }
-  }, [isPublicRoute, isSupported, isSubscribed, permission, subscribe])
+  }, [isConfigured, isPublicRoute, isSupported, isSubscribed, permission, subscribe])
 
   return null
 }

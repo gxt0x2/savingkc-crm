@@ -10,10 +10,29 @@ function assert(condition, message) {
 }
 
 const requiredRoutes = [
+  '/(app)/ai/page',
   '/(app)/ari/page',
   '/(app)/leads/page',
+  '/(app)/leads/[id]/page',
+  '/(app)/contacts/page',
+  '/(app)/conversations/page',
+  '/(app)/opportunities/page',
+  '/(app)/calendar/page',
+  '/(app)/tasks/page',
+  '/(app)/workflows/page',
+  '/(app)/marketing/page',
   '/(app)/dialer/page',
   '/(app)/dispo/pipeline/page',
+  '/(app)/dashboard/page',
+  '/(app)/reports/acquisitions/page',
+  '/(app)/reports/marketing/page',
+  '/(app)/reports/dispositions/page',
+  '/(app)/reports/finance/page',
+  '/(app)/reports/call-sms/page',
+  '/(app)/settings/page',
+  '/api/ai/command/route',
+  '/api/workflows/phone-system/route',
+  '/api/workflows/summary/route',
 ];
 
 for (const route of requiredRoutes) {
@@ -24,8 +43,8 @@ const appPages = routes.filter((r) => r.startsWith('/(app)/') && r.endsWith('/pa
 const dispoPages = routes.filter((r) => r.startsWith('/(app)/dispo/') && r.endsWith('/page'));
 
 assert(
-  appPages.length >= 12,
-  `Route integrity failed: expected at least 12 app pages, found ${appPages.length}.`
+  appPages.length >= 18,
+  `Route integrity failed: expected at least 18 app pages, found ${appPages.length}.`
 );
 
 assert(
