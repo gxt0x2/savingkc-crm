@@ -13,7 +13,7 @@ async function ensureAuthenticated(page: Page) {
     page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 }),
     page.getByRole('button', { name: 'Sign In', exact: true }).click(),
   ])
-  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+  await page.waitForLoadState('domcontentloaded')
 }
 
 const transitions = [
@@ -29,6 +29,12 @@ test('CRM navigation keeps the workspace mounted and reveals each destination pr
   page.on('pageerror', (error) => console.error(`CRM_PAGE_ERROR=${error.stack ?? error.message}`))
   page.on('console', (message) => {
     if (message.type() === 'error') console.error(`CRM_CONSOLE_ERROR=${message.text()}`)
+  })
+  page.on('requestfailed', (request) => {
+    const url = new URL(request.url())
+    if (url.origin === new URL(page.url() || 'http://localhost').origin && url.pathname.startsWith('/api/')) {
+      console.error(`CRM_REQUEST_FAILED=${request.method()} ${url.pathname} ${request.failure()?.errorText ?? 'unknown'}`)
+    }
   })
   await ensureAuthenticated(page)
   await expect(page.locator('.crm-workspace-shell')).toBeVisible()
@@ -52,7 +58,7 @@ test('CRM navigation keeps the workspace mounted and reveals each destination pr
     measured.push({ route: transition.href, milliseconds })
 
     await expect(page.locator('[data-navigation-performance-sentinel="persistent"]')).toHaveCount(1)
-    expect(milliseconds, `${transition.href} should become usable within 1000ms`).toBeLessThan(1_000)
+    expect.soft(milliseconds, `${transition.href} should become usable within 1000ms`).toBeLessThan(1_000)
   }
 
   console.info(`CRM_NAVIGATION_TIMINGS=${JSON.stringify(measured)}`)
