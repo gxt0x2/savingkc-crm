@@ -15,6 +15,10 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: () => ({ data: { items: [] } }),
+}))
+
 vi.mock('@/hooks/use-theme-preference', () => ({
   useThemePreference: () => ({ theme: 'light', toggle: vi.fn() }),
 }))

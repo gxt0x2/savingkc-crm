@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
   KeyboardSensor,
@@ -28,6 +28,7 @@ import type { DealStage } from '@/types/pipeline'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { LeadStatusControl } from '@/components/leads/lead-status-control'
 import { deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
+import { conversationHubQueryKey, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import {
   CONTACT_SMART_LIST_COPY,
   CONTACT_SMART_LIST_ORDER_STORAGE_KEY,
@@ -163,18 +164,21 @@ function formatRelativeDate(value: string | null): string {
 }
 
 function useContactWorkspace() {
+  const queryClient = useQueryClient()
   return useQuery<{ items: ContactWorkspaceRow[] }>({
     queryKey: ['contact-workspace'],
     queryFn: async () => {
       const [contactsResponse, hubResponse] = await Promise.all([
         fetch('/api/contacts', { cache: 'no-store' }),
-        fetch('/api/conversations/hub', { cache: 'no-store' }),
+        queryClient.fetchQuery({
+          queryKey: conversationHubQueryKey,
+          queryFn: () => fetchConversationHub<HubThread>(),
+          staleTime: 30_000,
+        }),
       ])
       if (!contactsResponse.ok) throw new Error('Contacts could not be loaded')
-      if (!hubResponse.ok) throw new Error('Conversation state could not be loaded')
       const contactsPayload = await contactsResponse.json() as { items?: ContactRow[] }
-      const hubPayload = await hubResponse.json() as { items?: HubThread[] }
-      const hubByLead = new Map((hubPayload.items ?? []).map((thread) => [thread.id, thread]))
+      const hubByLead = new Map(hubResponse.items.map((thread) => [thread.id, thread]))
       return {
         items: (contactsPayload.items ?? []).map((contact) => {
           const thread = hubByLead.get(contact.id)

@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import { ThreadView } from '@/components/conversations/thread-view'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
+import { conversationHubQueryKey, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
 import { NextActionDialog } from '@/components/conversations/next-action-dialog'
 import type { Message } from '@/components/conversations/message-bubble'
@@ -189,12 +191,14 @@ function groupMessagesByDate(messages: Message[], activities: ActivityRow[]): { 
 }
 
 export default function ConversationsPage() {
+  const queryClient = useQueryClient()
   const [leads, setLeads] = useState<LeadRow[]>([])
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null)
   const [activities, setActivities] = useState<ActivityRow[]>([])
   const [showNewMessage, setShowNewMessage] = useState(false)
   const [newConversationSearch, setNewConversationSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const initialThreadsLoaded = useRef(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [contactDetailsOpen, setContactDetailsOpen] = useState(true)
   const [nextActionDialogOpen, setNextActionDialogOpen] = useState(false)
@@ -281,20 +285,37 @@ export default function ConversationsPage() {
     }
   }, [activeLeadId])
 
-  const fetchThreads = useCallback(async () => {
+  const fetchThreads = useCallback(async (force = false) => {
     const supabase = createClient()
-    const [response, unmatchedResult] = await Promise.all([
-      fetch('/api/conversations/hub', { cache: 'no-store' }),
-      supabase
-        .from('lead_activities')
-        .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-        .is('lead_id', null)
-        .in('activity_type', ['call', 'sms', 'voicemail'])
-        .order('created_at', { ascending: false })
-        .limit(50),
-    ])
-    const payload = response.ok ? await response.json() as { items?: LeadRow[] } : { items: [] }
-    const rows = payload.items || []
+    const unmatchedRequest = supabase
+      .from('lead_activities')
+      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+      .is('lead_id', null)
+      .in('activity_type', ['call', 'sms', 'voicemail'])
+      .order('created_at', { ascending: false })
+      .limit(50)
+    const payload = await queryClient.fetchQuery({
+      queryKey: conversationHubQueryKey,
+      queryFn: () => fetchConversationHub<LeadRow>(),
+      staleTime: force ? 0 : 30_000,
+    }).catch(() => ({ items: [] as LeadRow[] }))
+    const rows = payload.items
+    const requestedLeadId = new URLSearchParams(window.location.search).get('lead')
+
+    if (!initialThreadsLoaded.current) {
+      setLeads(rows)
+      setActiveLeadId((current) =>
+        current && rows.some((lead) => lead.id === current)
+          ? current
+          : requestedLeadId && rows.some((lead) => lead.id === requestedLeadId)
+            ? requestedLeadId
+            : rows[0]?.id ?? null,
+      )
+      setLoading(false)
+      initialThreadsLoaded.current = true
+    }
+
+    const unmatchedResult = await unmatchedRequest
     const unmatched = ((unmatchedResult.data || []) as DatabaseActivityRow[])
       .map((activity) => ({ ...activity, type: activity.activity_type }))
 
@@ -338,7 +359,6 @@ export default function ConversationsPage() {
     // a useful thread with property, ownership, and opportunity context. Keep
     // unmatched callers in the same inbox, immediately after known contacts.
     const allLeads = [...rows, ...virtualLeads]
-    const requestedLeadId = new URLSearchParams(window.location.search).get('lead')
     setLeads(allLeads)
     setActiveLeadId((current) =>
       current && allLeads.some((lead) => lead.id === current)
@@ -348,7 +368,7 @@ export default function ConversationsPage() {
           : allLeads[0]?.id ?? null,
     )
     setLoading(false)
-  }, [])
+  }, [queryClient])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -377,7 +397,7 @@ export default function ConversationsPage() {
           ...(activeLeadId.startsWith('unmatched:') ? {} : { filter: `lead_id=eq.${activeLeadId}` }),
         },
         (payload) => {
-          void Promise.all([fetchActivities(), fetchThreads()])
+          void Promise.all([fetchActivities(), fetchThreads(true)])
 
           // Toast notification for inbound messages
           const meta = payload.new?.metadata || {}
@@ -401,7 +421,7 @@ export default function ConversationsPage() {
   }, [activeLeadId, fetchActivities, fetchThreads, leads])
 
   const refreshConversation = useCallback(() => {
-    void Promise.all([fetchActivities(), fetchThreads()])
+    void Promise.all([fetchActivities(), fetchThreads(true)])
   }, [fetchActivities, fetchThreads])
 
   const activeLead = leads.find((l) => l.id === activeLeadId)

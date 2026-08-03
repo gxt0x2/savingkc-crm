@@ -106,6 +106,7 @@ export function WorkspaceContextNav() {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'relative inline-flex h-10 items-center gap-2 rounded-lg px-3 text-xs font-bold transition-colors',

@@ -1,12 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { createContext, FormEvent, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, FormEvent, Suspense, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
 import { GlobalDialerButton } from '@/components/telephony/global-dialer-button'
 import { useThemePreference } from '@/hooks/use-theme-preference'
+import { conversationHubQueryKey, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import { WorkspaceNav } from './workspace-nav'
 import { WorkspaceContextNav } from './workspace-context-nav'
 
@@ -63,12 +65,20 @@ export function WorkspaceFrame({
   const [search, setSearch] = useState('')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [hubNeedsReply, setHubNeedsReply] = useState(0)
   const [pageNeedsReply, setPageNeedsReply] = useState<number | undefined>(undefined)
   const [pageCommandBarActive, setPageCommandBarActive] = useState(false)
   const [pageHeaderHidden, setPageHeaderHidden] = useState(false)
   const [commandBarHost, setCommandBarHost] = useState<HTMLDivElement | null>(null)
   const { theme, toggle: toggleTheme } = useThemePreference()
+  const { data: hubPayload } = useQuery({
+    queryKey: conversationHubQueryKey,
+    queryFn: () => fetchConversationHub<{ attentionState?: string }>(),
+    staleTime: 30_000,
+  })
+  const hubNeedsReply = useMemo(
+    () => (hubPayload?.items ?? []).filter((item) => item.attentionState === 'needs_reply').length,
+    [hubPayload],
+  )
   const resolvedNeedsReply = pageNeedsReply ?? needsReply ?? hubNeedsReply
   const resolvedHideHeader = pageHeaderHidden || hideHeader
   const resolvedCommandBarActive = Boolean(commandBar) || pageCommandBarActive
@@ -78,20 +88,6 @@ export function WorkspaceFrame({
     setHeaderHidden: setPageHeaderHidden,
     setNeedsReplyOverride: setPageNeedsReply,
   }), [commandBarHost])
-
-  useEffect(() => {
-    if (needsReply != null) return
-    let active = true
-    fetch('/api/conversations/hub', { cache: 'no-store' })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Conversation state unavailable')))
-      .then((payload: { items?: { attentionState?: string }[] }) => {
-        if (active) setHubNeedsReply((payload.items ?? []).filter((item) => item.attentionState === 'needs_reply').length)
-      })
-      .catch(() => {
-        if (active) setHubNeedsReply(0)
-      })
-    return () => { active = false }
-  }, [needsReply])
 
   function submitSearch(event: FormEvent) {
     event.preventDefault()

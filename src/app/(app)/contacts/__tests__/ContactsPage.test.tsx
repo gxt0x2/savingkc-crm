@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ContactsPage from '../page'
 import { CONTACT_SMART_LIST_ORDER_STORAGE_KEY } from '@/lib/contact-smart-lists'
 
-const { useQueryMock } = vi.hoisted(() => ({ useQueryMock: vi.fn() }))
+const { useQueryMock, useQueryClientMock } = vi.hoisted(() => ({ useQueryMock: vi.fn(), useQueryClientMock: vi.fn() }))
 
-vi.mock('@tanstack/react-query', () => ({ useQuery: useQueryMock }))
+vi.mock('@tanstack/react-query', () => ({ useQuery: useQueryMock, useQueryClient: useQueryClientMock }))
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => <a href={href} {...props}>{children}</a>,
 }))
@@ -50,6 +50,7 @@ describe('ContactsPage smart-list workspace', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/contacts')
     window.localStorage.clear()
+    useQueryClientMock.mockReturnValue({ fetchQuery: vi.fn() })
     useQueryMock.mockReturnValue({ data: { items: contacts }, isLoading: false, error: null, refetch: vi.fn(), isFetching: false })
   })
 
