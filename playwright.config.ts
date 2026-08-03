@@ -9,6 +9,9 @@ const useAuthProxyTestBypass =
   useManagedWebServer || Boolean(process.env.PLAYWRIGHT_AUTH_BYPASS_SECRET);
 const playwrightEnv = {
   ...process.env,
+  // A pulled Vercel environment may set VERCEL_ENV=production locally. Keep
+  // the test-only proxy bypass impossible in production and explicit here.
+  VERCEL_ENV: 'development',
   AUTH_PROXY_TEST_BYPASS_SECRET: authProxyTestBypassSecret,
   NEXT_PUBLIC_SUPABASE_URL:
     process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://example.supabase.co',

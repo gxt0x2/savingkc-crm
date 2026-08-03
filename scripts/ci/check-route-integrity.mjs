@@ -10,6 +10,7 @@ function assert(condition, message) {
 }
 
 const requiredRoutes = [
+  '/(app)/ai/page',
   '/(app)/ari/page',
   '/(app)/leads/page',
   '/(app)/leads/[id]/page',
@@ -29,6 +30,9 @@ const requiredRoutes = [
   '/(app)/reports/finance/page',
   '/(app)/reports/call-sms/page',
   '/(app)/settings/page',
+  '/api/ai/command/route',
+  '/api/workflows/phone-system/route',
+  '/api/workflows/summary/route',
 ];
 
 for (const route of requiredRoutes) {

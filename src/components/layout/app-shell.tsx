@@ -90,6 +90,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/workflows') ?? false) ||
     (pathname?.startsWith('/tasks') ?? false) ||
     (pathname?.startsWith('/reports') ?? false) ||
+    (pathname?.startsWith('/ai') ?? false) ||
     (pathname?.startsWith('/ari') ?? false) ||
     (pathname?.startsWith('/opportunities') ?? false) ||
     (pathname?.startsWith('/dialer') ?? false) ||

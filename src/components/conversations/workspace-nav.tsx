@@ -14,6 +14,7 @@ const PRIMARY_ITEMS: NavItem[] = [
   { label: 'Dashboard', icon: 'home', href: '/dashboard', activeOn: ['/dashboard'] },
   { label: 'Contacts', icon: 'group', href: '/contacts', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
   { label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] },
+  { label: 'Dialer', icon: 'dialpad', href: '/dialer', activeOn: ['/dialer'] },
   { label: 'Calendar', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
   { label: 'Task', icon: 'checklist', href: '/tasks', activeOn: ['/tasks'] },
 ]
@@ -27,6 +28,7 @@ const REPORT_ITEMS: NavItem[] = [
 ]
 
 const OPERATING_ITEMS: NavItem[] = [
+  { label: 'AI Assistant', icon: 'smart_toy', href: '/ai', activeOn: ['/ai'] },
   { label: 'ARI Insights', icon: 'auto_awesome', href: '/ari', activeOn: ['/ari'] },
   { label: 'Workflows', icon: 'account_tree', href: '/workflows', activeOn: ['/workflows'] },
   { label: 'Settings', icon: 'settings', href: '/settings', activeOn: ['/settings'] },

@@ -21,6 +21,15 @@ type ContextGroup = {
 
 const GROUPS: ContextGroup[] = [
   {
+    label: 'Workflows',
+    pathPrefix: '/workflows',
+    items: [
+      { label: 'Overview', href: '/workflows', icon: 'space_dashboard', section: 'overview' },
+      { label: 'Phone system', href: '/workflows?section=phones', icon: 'account_tree', section: 'phones' },
+      { label: 'All workflows', href: '/workflows?section=all', icon: 'schema', section: 'all' },
+    ],
+  },
+  {
     label: 'Dialer',
     pathPrefix: '/dialer',
     items: [
@@ -76,7 +85,7 @@ export function WorkspaceContextNav() {
 
   if (!group) return null
 
-  const selectedSection = group.pathPrefix === '/dialer'
+  const selectedSection = group.pathPrefix === '/dialer' || group.pathPrefix === '/workflows'
     ? searchParams.get('section') || 'overview'
     : searchParams.get('view') || ''
 

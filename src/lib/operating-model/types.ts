@@ -60,16 +60,26 @@ export type WorkflowCategory =
   | 'communication'
   | 'pipeline'
   | 'nurture'
+  | 'dispositions'
+  | 'data_sync'
+  | 'reporting'
+  | 'operating_rhythm'
+  | 'ai'
 
 export type WorkflowStatus = 'draft' | 'active' | 'paused' | 'archived'
 export type WorkflowHealth = 'healthy' | 'warning' | 'error' | 'not_run'
 
 export type WorkflowTrigger =
   | { type: 'inbound_call'; phoneNumber: string }
+  | { type: 'inbound_sms'; phoneScope: 'all_owned_numbers' }
   | { type: 'lead_form_submitted'; formKey: string }
   | { type: 'appointment_status_changed'; toStatus: 'scheduled' | 'confirmed' | 'completed' | 'no_show' | 'cancelled' | 'rescheduled' }
   | { type: 'conversation_attention_changed'; toState: ConversationAttentionState }
   | { type: 'opportunity_stage_changed'; toStage: CanonicalOpportunityStage }
+  | { type: 'scheduled'; schedule: string }
+  | { type: 'webhook'; event: string }
+  | { type: 'record_changed'; record: string; event: string }
+  | { type: 'manual'; surface: string }
 
 export type WorkflowAction =
   | { type: 'normalize_identity' }
@@ -88,6 +98,15 @@ export type WorkflowAction =
   | { type: 'stop_future_reminders' }
   | { type: 'wait_until'; relativeTo: 'appointment'; offsetMinutes: number }
   | { type: 'branch'; condition: string }
+  | { type: 'execute'; label: string }
+
+export interface WorkflowImplementation {
+  sourceFiles: readonly string[]
+  execution: 'route' | 'worker' | 'library' | 'configuration'
+  schedule?: string
+  mutatesData: boolean
+  approvalPolicy: 'automatic' | 'user_confirmation' | 'admin_only'
+}
 
 export interface WorkflowDefinition {
   id: string
@@ -100,6 +119,7 @@ export interface WorkflowDefinition {
   trigger: WorkflowTrigger
   actions: WorkflowAction[]
   protectedResources?: string[]
+  implementation: WorkflowImplementation
   version: number
   lastRunAt: string | null
 }

@@ -10,6 +10,14 @@ describe('workflow operating model', () => {
     }
   })
 
+  it('keeps implementation and approval ownership on every workflow', () => {
+    expect(WORKFLOW_CATALOG.length).toBeGreaterThan(20)
+    for (const workflow of WORKFLOW_CATALOG) {
+      expect(workflow.implementation.sourceFiles.length, workflow.name).toBeGreaterThan(0)
+      expect(['automatic', 'user_confirmation', 'admin_only']).toContain(workflow.implementation.approvalPolicy)
+    }
+  })
+
   it('requires protected Google Ads call-flow resources', () => {
     const unsafeWorkflow: WorkflowDefinition = {
       ...WORKFLOW_CATALOG[0],
