@@ -58,7 +58,7 @@ describe('contact smart lists', () => {
     expect(contactMatchesSmartList(dead, 'not_leads')).toBe(true)
   })
 
-  it('maps stage and operating queues without trusting stale classifications', () => {
+  it('maps stage and operating queues while keeping every dead classification inactive', () => {
     const contacts = [
       contact({ station: 'new', score: 80, attentionState: 'needs_reply', owner: null }),
       contact({ station: 'contacted' }),
@@ -78,12 +78,12 @@ describe('contact smart lists', () => {
       qualified: 1,
       appointment_set: 1,
       offer_made: 1,
-      in_closing: 2,
-      all: 7,
+      in_closing: 1,
+      all: 6,
       needs_reply: 1,
       overdue: 1,
       unassigned: 1,
-      not_leads: 2,
+      not_leads: 3,
     })
   })
 })

@@ -30,7 +30,8 @@ export async function GET() {
   const { data: leads, error: leadsError } = await db
     .from('leads')
     .select('id, full_name, phone, email, property_address, city, county, station, priority, assigned_agent, classification, dead_reason, source, motivation_score, arv, offer_amount, appointment_date, created_at')
-    .not('station', 'eq', 'dead')
+    .or('station.is.null,station.not.in.(dead,closed_lost)')
+    .or('classification.is.null,classification.neq.dead')
     .order('created_at', { ascending: false })
     .limit(100)
 
