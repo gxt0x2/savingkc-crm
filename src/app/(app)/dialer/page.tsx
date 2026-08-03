@@ -1374,6 +1374,7 @@ function DialerPageInner() {
           heirName={smsTarget.heirName}
           heirRelation={smsTarget.relation}
           prospectOwnerName={smsTarget.deceasedOwnerName}
+          defaultFromPhone={sessionCallerId || null}
           onClose={() => setSmsTarget(null)}
           onSent={() => { setSmsTarget(null); refreshActivities() }}
         />

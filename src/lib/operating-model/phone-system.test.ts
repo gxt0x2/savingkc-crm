@@ -20,6 +20,7 @@ describe('master phone system', () => {
       expect(record.answeredPath, record.label).not.toBe('')
       expect(record.noAnswerPath, record.label).not.toBe('')
       expect(record.smsPath, record.label).not.toBe('')
+      expect(record.smsSenderPolicy, record.label).not.toBe('')
       expect(record.outboundUse, record.label).not.toBe('')
       expect(record.carrierFallback, record.label).not.toBe('')
       expect(record.sourceFiles.length, record.label).toBeGreaterThan(0)

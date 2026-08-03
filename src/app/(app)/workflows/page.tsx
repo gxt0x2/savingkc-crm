@@ -296,7 +296,7 @@ function DetailSheet({ workflow, phone, onClose }: { workflow: WorkflowDefinitio
 
 function PhoneDetails({ record }: { record: PhoneSystemRecord }) {
   const facts = [
-    ['Owner', record.owner], ['Team', record.team], ['Answered', record.answeredPath], ['No answer', record.noAnswerPath], ['SMS', record.smsPath], ['Outbound', record.outboundUse], ['Carrier fallback', record.carrierFallback],
+    ['Owner', record.owner], ['Team', record.team], ['Answered', record.answeredPath], ['No answer', record.noAnswerPath], ['SMS', record.smsPath], ['SMS sender guard', record.smsSenderPolicy], ['Outbound', record.outboundUse], ['Carrier fallback', record.carrierFallback],
   ]
   return (
     <div className="space-y-6 p-5">

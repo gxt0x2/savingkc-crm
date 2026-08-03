@@ -26,9 +26,15 @@ describe('resolveSmsFromNumber', () => {
   })
 
   it('uses an explicit sender override without querying conversation history', async () => {
-    const from = await resolveSmsFromNumber('lead-1', '+19135550123', '+1816608552')
+    const from = await resolveSmsFromNumber('lead-1', '+19135550123', '+18166088552')
 
-    expect(from).toBe('+1816608552')
+    expect(from).toBe('+18166088552')
+    expect(mocks.from).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when a protected tracking number is used as a conversation override', async () => {
+    await expect(resolveSmsFromNumber('lead-1', '+19135550123', '+18166088808'))
+      .rejects.toThrow('not approved for conversations')
     expect(mocks.from).not.toHaveBeenCalled()
   })
 
@@ -40,7 +46,7 @@ describe('resolveSmsFromNumber', () => {
         metadata: {
           direction: 'received',
           from: '+19135550123',
-          to: '+1816608559',
+          to: '+18166088559',
         },
       },
       {
@@ -57,6 +63,6 @@ describe('resolveSmsFromNumber', () => {
 
     const from = await resolveSmsFromNumber('lead-1', '(913) 555-0123')
 
-    expect(from).toBe('+1816608559')
+    expect(from).toBe('+18166088559')
   })
 })

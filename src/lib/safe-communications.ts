@@ -10,6 +10,7 @@
 import twilio from 'twilio'
 import { supabase } from '@/lib/supabase-lazy'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
+import { isAllowedSmsSender, normalizeTwilioNumber, type SmsSenderUse } from '@/lib/twilio-numbers'
 
 const TEST_MODE = externalSideEffectsDisabled()
 
@@ -69,6 +70,7 @@ interface SMSParams {
   to: string
   from: string
   body: string
+  senderUse?: SmsSenderUse
 }
 
 export interface SMSResult {
@@ -79,6 +81,8 @@ export interface SMSResult {
   to: string
   from: string
   body: string
+  requestedFrom?: string
+  senderMismatch?: boolean
 }
 
 /**
@@ -97,6 +101,17 @@ export interface SMSResult {
  */
 export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
   const startTime = Date.now()
+  const requestedFrom = normalizeTwilioNumber(params.from)
+  const senderUse = params.senderUse || 'system'
+
+  if (!requestedFrom || !isAllowedSmsSender(requestedFrom, senderUse)) {
+    const error = `SMS sender is not approved for ${senderUse}: ${params.from || 'missing'}`
+    console.error('[SMS-SENDER-POLICY]', { requestedFrom: params.from || null, senderUse })
+    await logSMSAttempt({ ...params, from: requestedFrom || params.from, success: false, error })
+    return { success: false, error, ...params, from: requestedFrom || params.from }
+  }
+
+  const sendParams = { ...params, from: requestedFrom }
 
   if (TEST_MODE) {
     console.log('\n🧪 [TEST_MODE] SMS NOT SENT:')
@@ -110,9 +125,9 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
       success: true,
       sid: 'TEST_MESSAGE_SID_' + Date.now(),
       status: 'queued',
-      to: params.to,
-      from: params.from,
-      body: params.body,
+      to: sendParams.to,
+      from: sendParams.from,
+      body: sendParams.body,
     }
   }
 
@@ -120,22 +135,35 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
   if (!client) {
     const error = twilioInitError || 'Twilio client not initialized'
     console.error(`[SMS-ERROR] ${error}`)
-    await logSMSAttempt({ ...params, success: false, error })
-    return { success: false, error, ...params }
+    await logSMSAttempt({ ...sendParams, success: false, error })
+    return { success: false, error, ...sendParams }
   }
 
   try {
     const messagingServiceSid = cleanTwilioEnv('TWILIO_MESSAGING_SERVICE')
     const message = await client.messages.create({
-      ...params,
+      to: sendParams.to,
+      from: sendParams.from,
+      body: sendParams.body,
       ...(messagingServiceSid ? { messagingServiceSid } : {}),
     })
     const duration = Date.now() - startTime
+    const actualFrom = normalizeTwilioNumber(message.from) || sendParams.from
+    const senderMismatch = actualFrom !== sendParams.from
 
-    console.log(`[SMS-SUCCESS] Sent to ${params.to} (SID: ${message.sid}, ${duration}ms)`)
+    console.log(`[SMS-SUCCESS] Sent to ${sendParams.to} (SID: ${message.sid}, ${duration}ms)`)
+    if (senderMismatch) {
+      console.error('[SMS-SENDER-MISMATCH]', {
+        sid: message.sid,
+        requestedFrom: sendParams.from,
+        actualFrom,
+        senderUse,
+      })
+    }
 
     await logSMSAttempt({
-      ...params,
+      ...sendParams,
+      from: actualFrom,
       success: true,
       sid: message.sid,
       status: message.status,
@@ -145,9 +173,11 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
       success: true,
       sid: message.sid,
       status: message.status,
-      to: params.to,
-      from: params.from,
-      body: params.body,
+      to: sendParams.to,
+      from: actualFrom,
+      requestedFrom: sendParams.from,
+      senderMismatch,
+      body: sendParams.body,
     }
   } catch (error: unknown) {
     const duration = Date.now() - startTime
@@ -158,13 +188,13 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
     const twilioCode = typeof code === 'number' ? code : undefined
     const twilioStatus = typeof status === 'number' ? status : undefined
 
-    console.error(`[SMS-ERROR] Failed to send to ${params.to} (${duration}ms)`)
+    console.error(`[SMS-ERROR] Failed to send to ${sendParams.to} (${duration}ms)`)
     console.error(`  Error: ${errorMsg}`)
     if (twilioCode) console.error(`  Twilio Code: ${twilioCode}`)
     if (twilioStatus) console.error(`  HTTP Status: ${twilioStatus}`)
 
     await logSMSAttempt({
-      ...params,
+      ...sendParams,
       success: false,
       error: errorMsg,
       twilioCode,
@@ -174,9 +204,9 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
     return {
       success: false,
       error: errorMsg,
-      to: params.to,
-      from: params.from,
-      body: params.body,
+      to: sendParams.to,
+      from: sendParams.from,
+      body: sendParams.body,
     }
   }
 }

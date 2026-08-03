@@ -17,6 +17,7 @@ export interface PhoneSystemRecord {
   answeredPath: string
   noAnswerPath: string
   smsPath: string
+  smsSenderPolicy: string
   outboundUse: string
   carrierFallback: string
   sourceFiles: readonly string[]
@@ -69,6 +70,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       answeredPath: `Connects directly to ${direct.owner}; the call is recorded after answer.`,
       noAnswerPath: 'Dial result routes the caller to voicemail and records the missed outcome.',
       smsPath: 'Inbound SMS enters /api/twilio-sms-webhook and stays attached to this company number.',
+      smsSenderPolicy: config.conversationEligible ? 'Approved for explicit conversation sends; the API validates and records the provider-confirmed sender.' : 'Reply-only identity; generic conversation sends are blocked.',
       outboundUse: config.dialerEligible
         ? 'Available as an approved conversation, broadcast, and dialer caller ID.'
         : 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
@@ -93,6 +95,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       answeredPath: 'Rings the Google Ads acquisition route, records after answer, and preserves the tracking number.',
       noAnswerPath: 'Creates the missed-call recovery path and urgent return-call attention.',
       smsPath: 'Inbound SMS is attributed to the matching Google Ads line and notifies the acquisition team.',
+      smsSenderPolicy: 'Reply-only for the matching inbound Google Ads path; blocked from generic conversations, broadcasts, and system sends.',
       outboundUse: 'Reserved for Google Ads attribution; blocked from generic conversations, broadcasts, and dialer rotation.',
       carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
       sourceFiles: [...sourceFiles, '/api/ivr/google-ads', '/api/cron/google-ads-missed-calls'],
@@ -114,6 +117,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       answeredPath: 'A seller who presses 1 is routed to the acquisition team and the call is recorded after answer.',
       noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input, ends the call, and queues a same-number SMS follow-up.',
       smsPath: 'Replies enter /api/twilio-sms-webhook and remain associated with the callback number.',
+      smsSenderPolicy: 'Approved for conversation, callback reply, and broadcast use; the API validates the selected sender.',
       outboundUse: 'Available for dialer, conversations, and approved broadcasts.',
       carrierFallback: 'No Twilio carrier-level voice or SMS fallback URL is configured.',
       sourceFiles: [...sourceFiles, '/api/ivr/handle-input', '/api/ivr/cold-no-input'],
@@ -134,6 +138,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
     answeredPath: 'Qualified seller input rings the acquisition team and records the call after answer.',
     noAnswerPath: 'No input is logged and routed through the general no-input follow-up and voicemail path.',
     smsPath: 'Inbound SMS enters /api/twilio-sms-webhook, resolves identity, records the message, and updates attention.',
+    smsSenderPolicy: 'Approved for conversation sends; the API validates the selected identity and records Twilio\'s actual sender.',
     outboundUse: config.dialerEligible
       ? 'Available for dialer, conversations, and approved broadcasts.'
       : 'Not available to the generic dialer rotation.',

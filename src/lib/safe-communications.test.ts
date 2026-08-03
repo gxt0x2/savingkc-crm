@@ -72,7 +72,7 @@ describe('safeSendSMS', () => {
     vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
     vi.stubEnv('TWILIO_API_KEY', 'SK123')
     vi.stubEnv('TWILIO_API_SECRET', 'secret123')
-    mocks.createMessage.mockResolvedValue({ sid: 'SM123', status: 'queued' })
+    mocks.createMessage.mockResolvedValue({ sid: 'SM123', status: 'queued', from: '+18163077835' })
     mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
 
     const result = await safeSendSMS({
@@ -92,5 +92,45 @@ describe('safeSendSMS', () => {
       from: '+18166088588',
       body: 'Hello',
     })
+  })
+
+  it('records the provider sender and exposes any mismatch with the requested identity', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.createMessage.mockResolvedValue({ sid: 'SM456', status: 'accepted', from: '+18163077835' })
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+
+    const result = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18167277667',
+      body: 'Hello',
+      senderUse: 'conversation',
+    })
+
+    expect(result).toMatchObject({
+      success: true,
+      from: '+18163077835',
+      requestedFrom: '+18167277667',
+      senderMismatch: true,
+    })
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({ from_phone: '+18163077835' }))
+  })
+
+  it('blocks protected tracking numbers from ordinary conversation sends', async () => {
+    clearTwilioEnv()
+    const { safeSendSMS } = await importSafeCommunications()
+
+    const result = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18166088808',
+      body: 'Hello',
+      senderUse: 'conversation',
+    })
+
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('not approved') })
+    expect(mocks.twilio).not.toHaveBeenCalled()
   })
 })

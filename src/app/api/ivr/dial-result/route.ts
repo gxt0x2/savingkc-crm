@@ -433,7 +433,7 @@ export async function POST(req: Request) {
       const isDupe = await isDuplicateSms(from, autoText)
       if (!isDupe) {
         sendDelayed(async () => {
-          await safeSendSMS({ body: autoText, from: calledNumber || TWILIO_PHONE, to: from })
+          await safeSendSMS({ body: autoText, from: calledNumber || TWILIO_PHONE, to: from, senderUse: 'reply' })
           await logSmsSend(from, autoText, calledNumber || TWILIO_PHONE, resolvedLeadId)
           await supabase.from('lead_activities').insert({
             lead_id: resolvedLeadId,
