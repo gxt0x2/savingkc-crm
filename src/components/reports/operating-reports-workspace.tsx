@@ -14,8 +14,8 @@ export type OperatingReportView = 'dashboard' | 'marketing' | 'acquisitions' | '
 const VIEW_COPY: Record<OperatingReportView, { eyebrow: string; title: string; description: string }> = {
   dashboard: { eyebrow: 'SavingKC command center', title: 'CEO Operating System', description: 'A real-time view of attention, pipeline, communication, disposition, and recorded economics.' },
   marketing: { eyebrow: 'Reports · Marketing', title: 'Marketing performance', description: 'Lead-source quality measured by seller records, stage advancement, contracts, and attributed revenue.' },
-  acquisitions: { eyebrow: 'Reports · Acquisitions', title: 'Acquisitions performance', description: 'The operating path from new inquiry to qualified seller, appointment, contract, and close.' },
-  dispositions: { eyebrow: 'Reports · Dispositions', title: 'Dispositions performance', description: 'Buyer demand, offers, contract-to-close execution, assignment economics, and the post-close debrief loop.' },
+  acquisitions: { eyebrow: 'Team dashboard · Acquisitions', title: 'Acquisitions performance', description: 'The operating path from new inquiry to qualified seller, appointment, contract, and close.' },
+  dispositions: { eyebrow: 'Team dashboard · Dispositions', title: 'Dispositions performance', description: 'Buyer demand, offers, contract-to-close execution, assignment economics, and the post-close debrief loop.' },
   finance: { eyebrow: 'Reports · Finance', title: 'Financial performance', description: 'Recorded revenue and expenses only. Seed and sample transactions are excluded.' },
   'call-sms': { eyebrow: 'Reports · Call/SMS', title: 'Call and SMS performance', description: 'Connected calls, messages, response signals, agent activity, and unresolved seller attention.' },
 }

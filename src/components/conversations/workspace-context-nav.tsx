@@ -19,7 +19,28 @@ type ContextGroup = {
   items: ContextItem[]
 }
 
+const DASHBOARD_CONTEXT_ITEMS: ContextItem[] = [
+  { label: 'Company overview', href: '/dashboard', icon: 'space_dashboard', matchPath: '/dashboard' },
+  { label: 'Acquisitions', href: '/reports/acquisitions', icon: 'track_changes', matchPath: '/reports/acquisitions' },
+  { label: 'Dispositions', href: '/reports/dispositions', icon: 'sell', matchPath: '/reports/dispositions' },
+]
+
 const GROUPS: ContextGroup[] = [
+  {
+    label: 'Dashboards',
+    pathPrefix: '/dashboard',
+    items: DASHBOARD_CONTEXT_ITEMS,
+  },
+  {
+    label: 'Dashboards',
+    pathPrefix: '/reports/acquisitions',
+    items: DASHBOARD_CONTEXT_ITEMS,
+  },
+  {
+    label: 'Dashboards',
+    pathPrefix: '/reports/dispositions',
+    items: DASHBOARD_CONTEXT_ITEMS,
+  },
   {
     label: 'Workflows',
     pathPrefix: '/workflows',
@@ -55,6 +76,7 @@ const GROUPS: ContextGroup[] = [
     label: 'Dispositions',
     pathPrefix: '/dispo',
     items: [
+      { label: 'Dashboard', href: '/reports/dispositions', icon: 'space_dashboard', matchPath: '/reports/dispositions' },
       { label: 'Pipeline', href: '/dispo/pipeline', icon: 'route', matchPath: '/dispo/pipeline' },
       { label: 'Deal pages', href: '/dispo/deals', icon: 'storefront', matchPath: '/dispo/deals' },
       { label: 'Buyers', href: '/dispo/buyers', icon: 'groups', matchPath: '/dispo/buyers' },
@@ -70,8 +92,6 @@ const GROUPS: ContextGroup[] = [
     pathPrefix: '/reports',
     items: [
       { label: 'Marketing', href: '/reports/marketing', icon: 'campaign', matchPath: '/reports/marketing' },
-      { label: 'Acquisitions', href: '/reports/acquisitions', icon: 'track_changes', matchPath: '/reports/acquisitions' },
-      { label: 'Dispositions', href: '/reports/dispositions', icon: 'sell', matchPath: '/reports/dispositions' },
       { label: 'Finance', href: '/reports/finance', icon: 'account_balance', matchPath: '/reports/finance' },
       { label: 'Call/SMS', href: '/reports/call-sms', icon: 'phone_in_talk', matchPath: '/reports/call-sms' },
     ],

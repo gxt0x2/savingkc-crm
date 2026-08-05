@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils'
 type NavItem = { label: string; icon: string; href: string; activeOn: string[] }
 
 const PRIMARY_ITEMS: NavItem[] = [
-  { label: 'Dashboard', icon: 'home', href: '/dashboard', activeOn: ['/dashboard'] },
   { label: 'Contacts', icon: 'group', href: '/contacts', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
   { label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] },
   { label: 'Dialer', icon: 'dialpad', href: '/dialer', activeOn: ['/dialer'] },
@@ -19,10 +18,14 @@ const PRIMARY_ITEMS: NavItem[] = [
   { label: 'Task', icon: 'checklist', href: '/tasks', activeOn: ['/tasks'] },
 ]
 
-const REPORT_ITEMS: NavItem[] = [
-  { label: 'Marketing', icon: 'campaign', href: '/reports/marketing', activeOn: ['/reports/marketing'] },
+const DASHBOARD_ITEMS: NavItem[] = [
+  { label: 'Company overview', icon: 'space_dashboard', href: '/dashboard', activeOn: ['/dashboard'] },
   { label: 'Acquisitions', icon: 'track_changes', href: '/reports/acquisitions', activeOn: ['/reports/acquisitions'] },
   { label: 'Dispositions', icon: 'sell', href: '/reports/dispositions', activeOn: ['/reports/dispositions'] },
+]
+
+const REPORT_ITEMS: NavItem[] = [
+  { label: 'Marketing', icon: 'campaign', href: '/reports/marketing', activeOn: ['/reports/marketing'] },
   { label: 'Finance', icon: 'account_balance', href: '/reports/finance', activeOn: ['/reports/finance'] },
   { label: 'Call/SMS', icon: 'phone_in_talk', href: '/reports/call-sms', activeOn: ['/reports/call-sms'] },
 ]
@@ -64,9 +67,21 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
 export function WorkspaceNav({ needsReply }: { needsReply: number }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
-  const reportsActive = pathname.startsWith('/reports')
+  const dashboardsActive = DASHBOARD_ITEMS.some((item) => isItemActive(item, pathname))
+  const reportsActive = REPORT_ITEMS.some((item) => isItemActive(item, pathname))
+  const [dashboardsPreference, setDashboardsPreference] = useState<boolean | null>(null)
   const [reportsPreference, setReportsPreference] = useState<boolean | null>(null)
+  const dashboardsOpen = dashboardsPreference ?? dashboardsActive
   const reportsOpen = reportsPreference ?? reportsActive
+
+  function toggleDashboards() {
+    if (collapsed) {
+      setCollapsed(false)
+      setDashboardsPreference(true)
+      return
+    }
+    setDashboardsPreference(!dashboardsOpen)
+  }
 
   function toggleReports() {
     if (collapsed) {
@@ -84,6 +99,15 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
         <Image src="/logo.png" alt={collapsed ? '' : 'Saving KC Homebuyers'} width={489} height={141} className={cn('h-auto object-contain', collapsed ? 'w-[58px]' : 'w-[155px]')} style={{ filter: 'url(#crm-logo-dark)' }} />
       </Link>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="CRM navigation">
+        <div>
+          <button type="button" onClick={toggleDashboards} aria-expanded={dashboardsOpen} className={cn('relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold transition-colors', collapsed && 'justify-center', dashboardsActive ? 'bg-[var(--crm-nav-active)] text-[var(--crm-nav-text)]' : 'text-[var(--crm-nav-muted)] hover:bg-[var(--crm-nav-hover)] hover:text-[var(--crm-nav-text)]')}>
+            {dashboardsActive ? <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[var(--crm-brand)]" /> : null}
+            <Icon name="home" className={cn('text-[20px]', dashboardsActive && 'text-[var(--crm-brand)]')} />
+            <span className={cn('min-w-0 flex-1', collapsed && 'sr-only')}>Dashboard</span>
+            {collapsed ? null : <Icon name={dashboardsOpen ? 'expand_less' : 'expand_more'} className="text-[18px]" />}
+          </button>
+          {dashboardsOpen && !collapsed ? <div className="ml-5 space-y-0.5 border-l border-white/15 py-1 pl-2">{DASHBOARD_ITEMS.map((item) => <WorkspaceNavLink key={item.label} item={item} pathname={pathname} collapsed={false} needsReply={needsReply} />)}</div> : null}
+        </div>
         {PRIMARY_ITEMS.map((item) => <WorkspaceNavLink key={item.label} item={item} pathname={pathname} collapsed={collapsed} needsReply={needsReply} />)}
         <div className="pt-1">
           <button type="button" onClick={toggleReports} aria-expanded={reportsOpen} className={cn('relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold transition-colors', collapsed && 'justify-center', reportsActive ? 'bg-[var(--crm-nav-active)] text-[var(--crm-nav-text)]' : 'text-[var(--crm-nav-muted)] hover:bg-[var(--crm-nav-hover)] hover:text-[var(--crm-nav-text)]')}>
