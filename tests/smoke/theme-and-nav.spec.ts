@@ -82,11 +82,18 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
     await expect(destination).toBeVisible();
   }
 
+  await page.getByRole('button', { name: 'Expand dashboard menu' }).click();
+  const dashboardLinks = new Map([
+    ['Acquisitions', '/reports/acquisitions'],
+    ['Dispositions', '/reports/dispositions'],
+  ]);
+  for (const [name, href] of dashboardLinks) {
+    await expect(page.locator(`a[href="${href}"]`).filter({ hasText: name })).toBeVisible();
+  }
+
   await page.getByRole('button', { name: 'Reports' }).click();
   const reportLinks = new Map([
     ['Marketing', '/reports/marketing'],
-    ['Acquisitions', '/reports/acquisitions'],
-    ['Dispositions', '/reports/dispositions'],
     ['Finance', '/reports/finance'],
     ['Call/SMS', '/reports/call-sms'],
   ]);
@@ -113,7 +120,7 @@ for (const route of crmWorkspaceRoutes) {
     await expect(commandSearch).toBeVisible();
     await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
     await expect(page.locator('a[href="/contacts"]').filter({ hasText: 'Contacts' })).toBeVisible();
-    await expect(page.locator('a[href="/dashboard"]').filter({ hasText: 'Dashboard' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
     await page.screenshot({

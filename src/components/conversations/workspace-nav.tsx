@@ -100,12 +100,14 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
       </Link>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="CRM navigation">
         <div>
-          <button type="button" onClick={toggleDashboards} aria-expanded={dashboardsOpen} className={cn('relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold transition-colors', collapsed && 'justify-center', dashboardsActive ? 'bg-[var(--crm-nav-active)] text-[var(--crm-nav-text)]' : 'text-[var(--crm-nav-muted)] hover:bg-[var(--crm-nav-hover)] hover:text-[var(--crm-nav-text)]')}>
+          <div className={cn('relative flex min-h-11 w-full items-center rounded-lg text-[13px] font-semibold transition-colors', collapsed && 'justify-center', dashboardsActive ? 'bg-[var(--crm-nav-active)] text-[var(--crm-nav-text)]' : 'text-[var(--crm-nav-muted)] hover:bg-[var(--crm-nav-hover)] hover:text-[var(--crm-nav-text)]')}>
             {dashboardsActive ? <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[var(--crm-brand)]" /> : null}
-            <Icon name="home" className={cn('text-[20px]', dashboardsActive && 'text-[var(--crm-brand)]')} />
-            <span className={cn('min-w-0 flex-1', collapsed && 'sr-only')}>Dashboard</span>
-            {collapsed ? null : <Icon name={dashboardsOpen ? 'expand_less' : 'expand_more'} className="text-[18px]" />}
-          </button>
+            <Link href="/dashboard" prefetch aria-label="Dashboard" aria-current={pathname.startsWith('/dashboard') ? 'page' : undefined} title={collapsed ? 'Dashboard' : undefined} className={cn('flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5', collapsed && 'justify-center')}>
+              <Icon name="home" className={cn('text-[20px]', dashboardsActive && 'text-[var(--crm-brand)]')} />
+              <span className={cn('min-w-0 flex-1', collapsed && 'sr-only')}>Dashboard</span>
+            </Link>
+            {collapsed ? null : <button type="button" onClick={toggleDashboards} aria-label={dashboardsOpen ? 'Collapse dashboard menu' : 'Expand dashboard menu'} aria-expanded={dashboardsOpen} className="mr-1 grid h-9 w-9 shrink-0 place-items-center rounded-md hover:bg-white/10"><Icon name={dashboardsOpen ? 'expand_less' : 'expand_more'} className="text-[18px]" /></button>}
+          </div>
           {dashboardsOpen && !collapsed ? <div className="ml-5 space-y-0.5 border-l border-white/15 py-1 pl-2">{DASHBOARD_ITEMS.map((item) => <WorkspaceNavLink key={item.label} item={item} pathname={pathname} collapsed={false} needsReply={needsReply} />)}</div> : null}
         </div>
         {PRIMARY_ITEMS.map((item) => <WorkspaceNavLink key={item.label} item={item} pathname={pathname} collapsed={collapsed} needsReply={needsReply} />)}

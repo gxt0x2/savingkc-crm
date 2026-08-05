@@ -14,9 +14,10 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('next/link', () => ({
-  default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
-    <a href={href} {...props}>{children}</a>
-  ),
+  default: ({ href, children, prefetch, ...props }: { href: string; children: React.ReactNode; prefetch?: boolean }) => {
+    void prefetch
+    return <a href={href} {...props}>{children}</a>
+  },
 }))
 
 vi.mock('next/image', () => ({
@@ -33,7 +34,8 @@ describe('workspace dashboard navigation', () => {
     render(<WorkspaceNav needsReply={0} />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
-    expect(within(navigationRegion).getByRole('button', { name: /Dashboard/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(within(navigationRegion).getByRole('link', { name: /Dashboard$/ })).toHaveAttribute('href', '/dashboard')
+    expect(within(navigationRegion).getByRole('button', { name: 'Collapse dashboard menu' })).toHaveAttribute('aria-expanded', 'true')
     expect(within(navigationRegion).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
     expect(within(navigationRegion).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('href', '/reports/acquisitions')
     expect(within(navigationRegion).getByRole('link', { name: /Dispositions/ })).toHaveAttribute('href', '/reports/dispositions')
@@ -44,6 +46,8 @@ describe('workspace dashboard navigation', () => {
     render(<WorkspaceNav needsReply={0} />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
+    expect(within(navigationRegion).getByRole('link', { name: /Dashboard$/ })).toBeVisible()
+    expect(within(navigationRegion).getByRole('button', { name: 'Expand dashboard menu' })).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(within(navigationRegion).getByRole('button', { name: /Reports/ }))
 
     const reportsButton = within(navigationRegion).getByRole('button', { name: /Reports/ })
