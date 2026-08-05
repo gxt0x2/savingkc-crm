@@ -38,7 +38,7 @@ describe('workspace dashboard navigation', () => {
     expect(within(navigationRegion).getByRole('button', { name: 'Collapse dashboard menu' })).toHaveAttribute('aria-expanded', 'true')
     expect(within(navigationRegion).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
     expect(within(navigationRegion).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('href', '/reports/acquisitions')
-    expect(within(navigationRegion).getByRole('link', { name: /Dispositions/ })).toHaveAttribute('href', '/reports/dispositions')
+    expect(navigationRegion.querySelector('a[href="/reports/dispositions"]')).toBeInTheDocument()
   })
 
   it('keeps team dashboards out of the generic reports section', () => {
@@ -54,8 +54,17 @@ describe('workspace dashboard navigation', () => {
     expect(reportsButton).toHaveAttribute('aria-expanded', 'true')
     expect(within(navigationRegion).getByRole('link', { name: /Marketing/ })).toBeInTheDocument()
     expect(within(navigationRegion).getByRole('link', { name: /Finance/ })).toBeInTheDocument()
-    expect(within(navigationRegion).queryByRole('link', { name: /^Acquisitions$/ })).not.toBeInTheDocument()
-    expect(within(navigationRegion).queryByRole('link', { name: /^Dispositions$/ })).not.toBeInTheDocument()
+    expect(navigationRegion.querySelector('a[href="/reports/acquisitions"]')).not.toBeInTheDocument()
+    expect(navigationRegion.querySelector('a[href="/reports/dispositions"]')).not.toBeInTheDocument()
+  })
+
+  it('keeps the dispositions and transaction coordination portals directly accessible', () => {
+    navigation.pathname = '/contacts'
+    render(<WorkspaceNav needsReply={0} />)
+
+    const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
+    expect(within(navigationRegion).getByRole('link', { name: /^Dispositions$/ })).toHaveAttribute('href', '/dispo/pipeline')
+    expect(within(navigationRegion).getByRole('link', { name: /^Transaction coordination$/ })).toHaveAttribute('href', '/dispo/tc')
   })
 
   it('shows the dashboard switcher on each team dashboard', () => {

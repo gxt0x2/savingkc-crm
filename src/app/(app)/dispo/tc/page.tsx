@@ -1005,7 +1005,7 @@ export default function TransactionCoordinatorPage() {
   ]
 
   return (
-    <main className="tc-portal min-h-screen bg-[#f6f7f9] text-[#111827]">
+    <main className="tc-portal min-h-full bg-[var(--crm-canvas)] text-[var(--crm-ink)]">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b border-[#d8dee9] pb-5">
           <div>

@@ -84,8 +84,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/settings') ?? false) &&
     searchParams.get('portal') !== 'tc' &&
     mode !== 'tc'
-  const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
-  const isModernDispo = (pathname?.startsWith('/dispo') ?? false) && !isTcRoute
+  // Every dispositions route, including the TC portal, belongs to the rebuilt
+  // workspace shell. Keeping TC out of this branch was the legacy-wrapper
+  // exception that made the portal disappear from the new CRM experience.
+  const isModernDispo = pathname?.startsWith('/dispo') ?? false
   const isConversationWorkspace =
     (pathname?.startsWith('/conversations') ?? false) ||
     (pathname?.startsWith('/contacts') ?? false) ||
@@ -105,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     isAcquisitionsSettings
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
-  const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings)
+  const useTcLightTheme = hydrated && (isTcCalendar || isTcSettings)
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
   const useUserLightTheme = hydrated && !useTcLightTheme && userTheme === 'light'
   const useLightLogo = useTcLightTheme || useUserLightTheme

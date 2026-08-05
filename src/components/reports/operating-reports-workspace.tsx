@@ -73,6 +73,18 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
           <p className="mt-0.5 max-w-4xl text-xs font-medium text-[var(--crm-text-muted)]">{copy.description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {view === 'dispositions' ? (
+            <>
+              <Link href="/dispo/pipeline" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
+                <Icon name="route" className="text-[18px]" />
+                Dispositions portal
+              </Link>
+              <Link href="/dispo/tc" className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
+                <Icon name="fact_check" className="text-[18px]" />
+                TC portal
+              </Link>
+            </>
+          ) : null}
           <label className="flex h-10 items-center gap-2 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 shadow-sm">
             <Icon name="date_range" className="text-[19px] text-[var(--crm-brand)]" />
             <span className="sr-only">Reporting period</span>

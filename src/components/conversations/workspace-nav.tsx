@@ -16,6 +16,8 @@ const PRIMARY_ITEMS: NavItem[] = [
   { label: 'Dialer', icon: 'dialpad', href: '/dialer', activeOn: ['/dialer'] },
   { label: 'Calendar', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
   { label: 'Task', icon: 'checklist', href: '/tasks', activeOn: ['/tasks'] },
+  { label: 'Dispositions', icon: 'sell', href: '/dispo/pipeline', activeOn: ['/dispo/pipeline', '/dispo/deals', '/dispo/buyers', '/dispo/offers', '/dispo/broadcasts', '/dispo/vendors', '/dispo/contacts'] },
+  { label: 'Transaction coordination', icon: 'fact_check', href: '/dispo/tc', activeOn: ['/dispo/tc'] },
 ]
 
 const DASHBOARD_ITEMS: NavItem[] = [
@@ -47,6 +49,7 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
     <Link
       href={item.href}
       prefetch
+      aria-label={item.label}
       aria-current={active ? 'page' : undefined}
       title={collapsed ? item.label : undefined}
       className={cn(
