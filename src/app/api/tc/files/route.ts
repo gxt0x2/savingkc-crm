@@ -159,15 +159,17 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 200)
     const db = supabaseAdmin()
 
-    after(async () => {
-      try {
-        const backgroundDb = supabaseAdmin()
-        await syncPipelineDealsIntoTcFiles(backgroundDb)
-        await syncOperatingTasks(backgroundDb)
-      } catch (backgroundError) {
-        console.error('[tc/files GET] operating workflow sync failed:', backgroundError)
-      }
-    })
+    if (process.env.VERCEL_ENV !== 'preview') {
+      after(async () => {
+        try {
+          const backgroundDb = supabaseAdmin()
+          await syncPipelineDealsIntoTcFiles(backgroundDb)
+          await syncOperatingTasks(backgroundDb)
+        } catch (backgroundError) {
+          console.error('[tc/files GET] operating workflow sync failed:', backgroundError)
+        }
+      })
+    }
 
     let query = db
       .from('tc_files')

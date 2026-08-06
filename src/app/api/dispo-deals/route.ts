@@ -10,6 +10,7 @@ import { ensureTcFileForDeal } from '@/lib/tc'
 let bootstrapped = false
 async function ensureTable() {
   if (bootstrapped) return
+  if (process.env.VERCEL_ENV === 'preview') return
   const db = supabaseAdmin()
 
   const statements = [
