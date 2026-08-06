@@ -7,6 +7,11 @@ import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { PHONE_SYSTEM, PHONE_SYSTEM_ATTENTION, type PhoneSystemRecord } from '@/lib/operating-model/phone-system'
 import { WORKFLOW_CATALOG, workflowCategoryLabel } from '@/lib/operating-model/workflow-catalog'
+import {
+  communicationTemplateDepartmentLabel,
+  communicationTemplatePhaseLabel,
+  type CommunicationTemplateDefinition,
+} from '@/lib/operating-model/communication-template-catalog'
 import type { WorkflowAction, WorkflowDefinition } from '@/lib/operating-model/types'
 
 const STATUS_STYLES: Record<WorkflowDefinition['status'], string> = {
@@ -70,6 +75,8 @@ function actionLabel(action: WorkflowAction): string {
 function SurfaceHeader({ section, onNew }: { section: string; onNew: () => void }) {
   const content = section === 'phones'
     ? { eyebrow: 'Phone routing', title: 'Master Phone System', description: 'Every owned number, the path it takes, the workflow that controls it, and the gaps that require a decision.' }
+    : section === 'templates'
+      ? { eyebrow: 'Communication standards', title: 'Email Template System', description: 'Approved seller, buyer, title, and internal messages attached to the operating step where each one is used.' }
     : section === 'all'
       ? { eyebrow: 'System registry', title: 'All Workflows', description: 'The canonical operating registry for live routes, workers, automations, and workflows still being designed.' }
       : { eyebrow: 'Operations control', title: 'Workflows', description: 'One source of truth for phone routing, lead intake, communication, appointments, pipeline movement, closeout, reporting, and operating rhythm.' }
@@ -114,7 +121,7 @@ function Overview({ onSelect, workflows }: { onSelect: (workflow: WorkflowDefini
         ))}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="grid gap-4 lg:grid-cols-3">
         <Link href="/workflows?section=phones" className="group crm-panel rounded-2xl p-5 transition hover:-translate-y-0.5 hover:border-[var(--crm-info)]/50 hover:shadow-lg">
           <div className="flex items-start justify-between gap-4">
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--crm-info-soft)] text-[var(--crm-info)]"><Icon name="phone_in_talk" className="text-[25px]" /></div>
@@ -138,6 +145,19 @@ function Overview({ onSelect, workflows }: { onSelect: (workflow: WorkflowDefini
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="rounded-full bg-[var(--crm-violet-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-violet)]">{workflows.length} definitions</span>
             <span className="rounded-full bg-[var(--crm-info-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-info)]">{new Set(workflows.map((workflow) => workflow.category)).size} operating areas</span>
+          </div>
+        </Link>
+
+        <Link href="/workflows?section=templates" className="group crm-panel rounded-2xl p-5 transition hover:-translate-y-0.5 hover:border-[var(--crm-danger)]/50 hover:shadow-lg">
+          <div className="flex items-start justify-between gap-4">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]"><Icon name="mark_email_read" className="text-[25px]" /></div>
+            <Icon name="arrow_forward" className="text-[22px] text-[var(--crm-text-dim)] transition group-hover:translate-x-1 group-hover:text-[var(--crm-danger)]" />
+          </div>
+          <h2 className="mt-5 text-xl font-black text-[var(--crm-ink)]">Communication Templates</h2>
+          <p className="mt-1 text-sm leading-6 text-[var(--crm-text-muted)]">Use governed email standards built from the acquisitions and dispositions archives plus recurring sent-mail practices.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="rounded-full bg-[var(--crm-danger-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-danger)]">Workflow-linked</span>
+            <span className="rounded-full bg-[var(--crm-success-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-success)]">Human approval required</span>
           </div>
         </Link>
       </section>
@@ -272,6 +292,124 @@ function WorkflowRegistry({ onSelect, workflows }: { onSelect: (workflow: Workfl
           </tbody>
         </table>
       </div>
+    </section>
+  )
+}
+
+type WorkflowCommunicationTemplate = CommunicationTemplateDefinition & {
+  catalog: boolean
+  system?: boolean
+}
+
+function CommunicationTemplates() {
+  const [templates, setTemplates] = useState<WorkflowCommunicationTemplate[]>([])
+  const [search, setSearch] = useState('')
+  const [department, setDepartment] = useState('')
+  const [audience, setAudience] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+    fetch('/api/tc/document-templates?template_type=email', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Email templates are unavailable.')
+        if (active) setTemplates(Array.isArray(data.templates) ? data.templates : [])
+      })
+      .catch((cause) => {
+        if (active && (cause as Error).name !== 'AbortError') {
+          setError(cause instanceof Error ? cause.message : 'Email templates are unavailable.')
+        }
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [])
+
+  const visible = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    return templates.filter((template) =>
+      (!department || template.department === department) &&
+      (!audience || template.audience === audience) &&
+      (!needle || [template.title, template.subject, template.body, template.source_label, template.task_type]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(needle))),
+    )
+  }, [audience, department, search, templates])
+
+  const departments = Array.from(new Set(templates.map((template) => template.department)))
+  const audiences = Array.from(new Set(templates.map((template) => template.audience)))
+
+  return (
+    <section className="crm-panel overflow-hidden rounded-2xl">
+      <div className="grid gap-3 border-b border-[var(--crm-border)] p-4 sm:grid-cols-3">
+        <div className="rounded-xl bg-[var(--crm-danger-soft)] p-3">
+          <p className="text-2xl font-black text-[var(--crm-danger)]">{templates.length}</p>
+          <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">Approved standards</p>
+        </div>
+        <div className="rounded-xl bg-[var(--crm-info-soft)] p-3">
+          <p className="text-2xl font-black text-[var(--crm-info)]">{departments.length}</p>
+          <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">Operating departments</p>
+        </div>
+        <div className="rounded-xl bg-[var(--crm-success-soft)] p-3">
+          <p className="text-2xl font-black text-[var(--crm-success)]">Review</p>
+          <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">Required before sending</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 border-b border-[var(--crm-border)] p-4">
+        <label className="relative min-w-64 flex-1">
+          <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title, subject, task, or message..." className="crm-field h-10 w-full rounded-lg pl-10 pr-3 text-sm outline-none" />
+        </label>
+        <select aria-label="Template department" value={department} onChange={(event) => setDepartment(event.target.value)} className="crm-field h-10 rounded-lg px-3 text-sm font-bold">
+          <option value="">All departments</option>
+          {departments.map((value) => <option key={value} value={value}>{communicationTemplateDepartmentLabel(value)}</option>)}
+        </select>
+        <select aria-label="Template audience" value={audience} onChange={(event) => setAudience(event.target.value)} className="crm-field h-10 rounded-lg px-3 text-sm font-bold">
+          <option value="">All audiences</option>
+          {audiences.map((value) => <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}
+        </select>
+        <span className="rounded-full bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs font-black text-[var(--crm-text-muted)]">{visible.length} templates</span>
+      </div>
+
+      {error ? <div className="m-4 rounded-xl border border-[var(--crm-danger)]/25 bg-[var(--crm-danger-soft)] p-4 text-sm font-bold text-[var(--crm-danger)]">{error}</div> : null}
+      {loading ? <div className="p-8 text-center text-sm font-bold text-[var(--crm-text-muted)]">Loading communication standards…</div> : null}
+      {!loading && visible.length === 0 ? <div className="p-8 text-center text-sm font-bold text-[var(--crm-text-muted)]">No email templates match these filters.</div> : null}
+
+      {!loading && visible.length > 0 ? (
+        <div className="divide-y divide-[var(--crm-border)]">
+          {visible.map((template) => (
+            <article key={template.id} className="bg-[var(--crm-surface)] p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-black text-[var(--crm-ink)]">{template.title}</h2>
+                    <span className="rounded-full bg-[var(--crm-danger-soft)] px-2 py-0.5 text-[10px] font-black uppercase text-[var(--crm-danger)]">{template.audience}</span>
+                    <span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-[10px] font-black text-[var(--crm-info)]">{communicationTemplateDepartmentLabel(template.department)}</span>
+                    {template.system ? <span className="rounded-full bg-[var(--crm-success-soft)] px-2 py-0.5 text-[10px] font-black uppercase text-[var(--crm-success)]">Governed</span> : null}
+                  </div>
+                  <p className="mt-2 text-sm font-bold text-[var(--crm-ink)]">{template.subject}</p>
+                  <p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Used at <strong>{communicationTemplatePhaseLabel(template.phase_id)}</strong> for <code>{template.task_type || 'custom'}</code>.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link href={`/workflows?section=all&workflow=${template.workflow_id}`} className="crm-secondary-button inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-black"><Icon name="account_tree" className="text-[16px]" />Workflow</Link>
+                  <Link href="/dispo/tc" className="crm-primary-button inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-black"><Icon name="edit_note" className="text-[16px]" />Use in active file</Link>
+                </div>
+              </div>
+              <details className="mt-4 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
+                <summary className="cursor-pointer list-none px-4 py-3 text-xs font-black text-[var(--crm-text-muted)] marker:content-none">Preview approved message</summary>
+                <pre className="whitespace-pre-wrap border-t border-[var(--crm-border)] px-4 py-4 font-sans text-sm leading-6 text-[var(--crm-ink)]">{template.body}</pre>
+              </details>
+              <p className="mt-3 text-[11px] font-semibold text-[var(--crm-text-muted)]">Source: {template.source_label}. Deal-specific values remain merge fields until an agent reviews the draft.</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -425,7 +563,13 @@ export default function WorkflowsPage() {
     <main className="h-full overflow-y-auto bg-[var(--crm-canvas)] text-[var(--crm-ink)]">
       <div className="mx-auto w-full max-w-[1480px] space-y-5 px-4 py-6 sm:px-6">
         <SurfaceHeader section={section} onNew={() => setShowNew(true)} />
-        {section === 'phones' ? <PhoneSystem onSelect={(record) => { setSelectedPhone(record); setSelectedWorkflow(null) }} /> : section === 'all' ? <WorkflowRegistry workflows={workflows} onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} /> : <Overview workflows={workflows} onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} />}
+        {section === 'phones'
+          ? <PhoneSystem onSelect={(record) => { setSelectedPhone(record); setSelectedWorkflow(null) }} />
+          : section === 'all'
+            ? <WorkflowRegistry workflows={workflows} onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} />
+            : section === 'templates'
+              ? <CommunicationTemplates />
+              : <Overview workflows={workflows} onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} />}
       </div>
       <DetailSheet workflow={selectedWorkflow} phone={selectedPhone} onClose={() => { setSelectedWorkflow(null); setSelectedPhone(null) }} />
       <NewWorkflowDialog open={showNew} onClose={() => setShowNew(false)} onCreated={(workflow) => { setWorkflows((current) => [...current, workflow]); setSelectedWorkflow(workflow) }} />

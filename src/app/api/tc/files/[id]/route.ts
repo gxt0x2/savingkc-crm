@@ -37,7 +37,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .from('tc_files')
       .select(
         `*,
-        lead:lead_id(id, full_name, property_address, city, state, zip),
+        lead:lead_id(id, full_name, phone, email, property_address, city, state, zip),
         offer:buyer_offer_id(id, offer_amount, status, assignment_sent_at, assignment_signed_at, assignment_document_url, buyer:buyer_id(id, name, company, email, phone)),
         dispo_deal:dispo_deal_id(id, stage, assignment_fee, close_date),
         title_company:title_company_id(id, name, office_phone, office_email, address),

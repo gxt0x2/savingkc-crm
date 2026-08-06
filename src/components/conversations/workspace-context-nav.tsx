@@ -48,6 +48,7 @@ const GROUPS: ContextGroup[] = [
       { label: 'Overview', href: '/workflows', icon: 'space_dashboard', section: 'overview' },
       { label: 'Phone system', href: '/workflows?section=phones', icon: 'account_tree', section: 'phones' },
       { label: 'All workflows', href: '/workflows?section=all', icon: 'schema', section: 'all' },
+      { label: 'Email templates', href: '/workflows?section=templates', icon: 'mark_email_read', section: 'templates' },
     ],
   },
   {

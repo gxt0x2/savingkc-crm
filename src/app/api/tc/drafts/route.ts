@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { logTcEvent } from '@/lib/tc'
 import type { TcDraftRecipientRole, TcDraftStatus } from '@/types/dispo'
+import { communicationTemplateById } from '@/lib/operating-model/communication-template-catalog'
 
 const DRAFT_STATUSES = ['pending', 'approved', 'rejected', 'sending', 'sent', 'superseded'] as const
 
@@ -25,10 +26,13 @@ const createDraftSchema = z.object({
 interface LeadSnapshot {
   id: string
   full_name: string | null
+  phone: string | null
+  email: string | null
   property_address: string | null
   city: string | null
   state: string | null
   zip: string | null
+  offer_amount: number | string | null
 }
 
 interface BuyerSnapshot {
@@ -102,16 +106,30 @@ function renderTemplate(source: string, file: TcFileSnapshot) {
   const buyerDisplay = buyer?.name || buyer?.company || ''
   const values: Record<string, string> = {
     property_address: file.lead?.property_address ?? '',
+    property_city: file.lead?.city ?? '',
+    property_state: file.lead?.state ?? '',
+    property_zip: file.lead?.zip ?? '',
     buyer_name: buyerDisplay,
     buyer_first_name: firstName(buyerDisplay),
+    buyer_email: buyer?.email ?? '',
+    buyer_phone: buyer?.phone ?? '',
     seller_name: file.lead?.full_name ?? '',
+    seller_first_name: firstName(file.lead?.full_name),
+    seller_phone: file.lead?.phone ?? '',
+    seller_email: file.lead?.email ?? '',
     title_contact_name: file.title_contact?.name || file.title_company?.name || '',
+    title_contact_role: file.title_contact?.role ?? '',
+    title_contact_email: file.title_contact?.email || file.title_company?.office_email || '',
+    title_contact_phone: file.title_contact?.phone || file.title_company?.office_phone || '',
     title_company_name: file.title_company?.name ?? '',
+    title_company_email: file.title_company?.office_email ?? '',
+    title_company_phone: file.title_company?.office_phone ?? '',
     file_number: file.file_number ?? '',
     emd_deadline: formatDateValue(file.emd_due_at),
     closing_date: formatDateValue(file.closing_scheduled_at),
     assignment_fee: formatCurrencyValue(file.assignment_fee),
-    purchase_price: formatCurrencyValue(file.offer?.offer_amount),
+    purchase_price: formatCurrencyValue(file.lead?.offer_amount),
+    buyer_purchase_price: formatCurrencyValue(file.offer?.offer_amount),
   }
 
   return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, token: string) => values[token] ?? match)
@@ -130,6 +148,12 @@ function recipientFor(role: TcDraftRecipientRole, file: TcFileSnapshot) {
       phone: file.title_contact?.phone || file.title_company?.office_phone || null,
     }
   }
+  if (role === 'seller') {
+    return {
+      email: file.lead?.email ?? null,
+      phone: file.lead?.phone ?? null,
+    }
+  }
   return { email: null, phone: null }
 }
 
@@ -138,7 +162,7 @@ async function loadFile(db: ReturnType<typeof supabaseAdmin>, tcFileId: string) 
     .from('tc_files')
     .select(
       `id, lead_id, file_number, emd_due_at, closing_scheduled_at, assignment_fee,
-      lead:lead_id(id, full_name, property_address, city, state, zip),
+      lead:lead_id(id, full_name, phone, email, property_address, city, state, zip, offer_amount),
       offer:buyer_offer_id(id, offer_amount, buyer:buyer_id(id, name, company, email, phone)),
       title_company:title_company_id(id, name, office_phone, office_email),
       title_contact:title_contact_id(id, name, role, email, phone)`
@@ -164,7 +188,7 @@ export async function GET(req: NextRequest) {
         `*,
         template:template_id(id, slug, title, template_type, audience, subject, body),
         file:tc_file_id(id, lead_id, status, file_number, emd_due_at, closing_scheduled_at, assignment_fee,
-          lead:lead_id(id, full_name, property_address, city, state, zip),
+          lead:lead_id(id, full_name, phone, email, property_address, city, state, zip, offer_amount),
           offer:buyer_offer_id(id, offer_amount, buyer:buyer_id(id, name, company, email, phone)),
           title_company:title_company_id(id, name, office_phone, office_email),
           title_contact:title_contact_id(id, name, role, email, phone))`
@@ -193,8 +217,9 @@ export async function POST(req: NextRequest) {
 
     const db = supabaseAdmin()
     const input = parsed.data
+    const catalogTemplate = input.template_id ? communicationTemplateById(input.template_id) : null
 
-    if (input.template_id) {
+    if (input.template_id && !catalogTemplate) {
       const { data: existing, error: existingError } = await db
         .from('tc_drafts')
         .select('*')
@@ -209,9 +234,9 @@ export async function POST(req: NextRequest) {
 
     const [{ data: file, error: fileError }, { data: template, error: templateError }] = await Promise.all([
       loadFile(db, input.tc_file_id),
-      input.template_id
+      input.template_id && !catalogTemplate
         ? db.from('tc_document_templates').select('id, slug, title, template_type, audience, subject, body').eq('id', input.template_id).maybeSingle<TemplateSnapshot>()
-        : Promise.resolve({ data: null, error: null }),
+        : Promise.resolve({ data: catalogTemplate, error: null }),
     ])
 
     if (fileError) return NextResponse.json({ error: fileError.message }, { status: 500 })
@@ -228,7 +253,7 @@ export async function POST(req: NextRequest) {
       .from('tc_drafts')
       .insert({
         tc_file_id: file.id,
-        template_id: template?.id ?? null,
+        template_id: catalogTemplate ? null : template?.id ?? null,
         lead_id: file.lead_id,
         channel: input.channel ?? (template?.template_type === 'document' ? 'document' : 'email'),
         recipient_role: recipientRole,
@@ -261,7 +286,12 @@ export async function POST(req: NextRequest) {
       recipient_role: recipientRole,
     }, input.created_by ?? 'system')
 
-    return NextResponse.json({ draft }, { status: 201 })
+    return NextResponse.json({
+      draft: {
+        ...draft,
+        template: template ?? null,
+      },
+    }, { status: 201 })
   } catch (err) {
     console.error('[tc/drafts POST] error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

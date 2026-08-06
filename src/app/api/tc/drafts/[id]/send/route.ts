@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { logTcEvent } from '@/lib/tc'
+import { unresolvedCommunicationTemplateFields } from '@/lib/operating-model/communication-template-catalog'
 
 const sendSchema = z.object({
   confirm_send: z.literal(true),
@@ -17,7 +18,7 @@ const DEFAULT_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const draftSelect = `*,
 template:template_id(id, slug, title, template_type, audience, subject, body),
 file:tc_file_id(id, lead_id, status, file_number, emd_due_at, closing_scheduled_at, assignment_fee,
-  lead:lead_id(id, full_name, property_address, city, state, zip),
+  lead:lead_id(id, full_name, phone, email, property_address, city, state, zip, offer_amount),
   offer:buyer_offer_id(id, offer_amount, buyer:buyer_id(id, name, company, email, phone)),
   title_company:title_company_id(id, name, office_phone, office_email),
   title_contact:title_contact_id(id, name, role, email, phone))`
@@ -139,7 +140,7 @@ async function sendSmsDraft(draft: SendDraftRow, body: string, fromPhone?: strin
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const actor = 'gertha'
+  const actor = 'system'
   const db = supabaseAdmin()
 
   try {
@@ -168,6 +169,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const body = approvedBody(current)
     if (!body) return NextResponse.json({ error: 'Approved draft body is empty' }, { status: 400 })
+    const unresolvedFields = unresolvedCommunicationTemplateFields(current.subject, body)
+    if (unresolvedFields.length > 0) {
+      return NextResponse.json({
+        error: 'Approved draft still contains unresolved template fields',
+        unresolved_fields: unresolvedFields,
+      }, { status: 409 })
+    }
     if (current.channel === 'document') {
       return NextResponse.json({ error: 'Document draft sending is not supported yet' }, { status: 400 })
     }

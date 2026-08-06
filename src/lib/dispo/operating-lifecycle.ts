@@ -170,6 +170,7 @@ export const DISPOSITION_OPERATING_LIFECYCLE: readonly DispositionOperatingPhase
     completionGate: 'Aftercare, debrief, final documents, metrics, and archive are complete.',
     tasks: [
       task('ops.aftercare.seller_check_in', 'Complete seller post-close check-in', 'coordination', 'communication', false, 1, 'closing'),
+      task('ops.aftercare.release_holdback', 'Release escrow or holdback when conditions are satisfied', 'coordination', 'receipt', false, 1, 'closing'),
       task('ops.aftercare.seller_gift', 'Send seller closing gift', 'coordination', 'receipt', false, 1, 'closing'),
       task('ops.aftercare.buyer_gift', 'Send buyer closing gift', 'dispositions', 'receipt', false, 1, 'closing'),
       task('ops.testimonial.request', 'Request testimonial', 'coordination', 'communication', false, 1, 'closing'),

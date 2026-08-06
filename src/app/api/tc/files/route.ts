@@ -65,7 +65,7 @@ async function syncPipelineDealsIntoTcFiles(db: ReturnType<typeof supabaseAdmin>
     .from('dispo_deals')
     .select(
       `id, lead_id, stage, assignment_fee, close_date, accepted_offer_id, updated_at,
-      lead:lead_id(id, full_name, property_address, city, state, zip)`
+      lead:lead_id(id, full_name, phone, email, property_address, city, state, zip)`
     )
     .in('stage', TC_PIPELINE_STAGES)
     .limit(300)
@@ -175,7 +175,7 @@ export async function GET(req: NextRequest) {
       .from('tc_files')
       .select(
         `*,
-        lead:lead_id(id, full_name, property_address, city, state, zip),
+        lead:lead_id(id, full_name, phone, email, property_address, city, state, zip),
         offer:buyer_offer_id(id, offer_amount, status, close_days, assignment_submission_id, assignment_assignee_submitter_id, assignment_sent_at, assignment_signed_at, assignment_document_url, buyer:buyer_id(id, name, company, email, phone)),
         dispo_deal:dispo_deal_id(id, stage, entered_at, assignment_fee, close_date, accepted_offer_id, accepted_buyer_id),
         title_company:title_company_id(id, name, office_phone, office_email),

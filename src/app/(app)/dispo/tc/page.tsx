@@ -5,14 +5,21 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
 import { Icon } from '@/components/ui/icon'
+import { useAuth } from '@/hooks/use-auth'
 import {
   activeDispositionPhases,
   dispositionTaskDefinition,
   summarizeDispositionPhase,
   type DispositionOperatingLane,
 } from '@/lib/dispo/operating-lifecycle'
+import {
+  communicationTemplateDepartmentLabel,
+  communicationTemplatePhaseLabel,
+  unresolvedCommunicationTemplateFields,
+  type CommunicationTemplateDepartment,
+} from '@/lib/operating-model/communication-template-catalog'
 import { cn, formatCurrency } from '@/lib/utils'
-import type { BuyerOffer, TcCommunication, TcEvent, TcFile, TcStatus, TcTask } from '@/types/dispo'
+import type { BuyerOffer, TcCommunication, TcDraft, TcEvent, TcFile, TcStatus, TcTask } from '@/types/dispo'
 
 const STATUS_TABS: { key: TcStatus | 'all' | 'blocked'; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -87,6 +94,14 @@ interface TcDocumentTemplate {
   subject: string | null
   body: string
   sort_order?: number
+  department: CommunicationTemplateDepartment
+  phase_id: string
+  task_type: string
+  workflow_id: string
+  source: 'archive' | 'gmail' | 'archive_and_gmail'
+  source_label: string
+  catalog: boolean
+  system?: boolean
 }
 
 function statusLabel(status: string) {
@@ -267,6 +282,7 @@ function DetailDrawer({
   onClose: () => void
   onChanged: () => void
 }) {
+  const { user } = useAuth()
   const [status, setStatus] = useState<TcStatus>(file.status)
   const [fileNumber, setFileNumber] = useState(file.file_number ?? '')
   const [nextAction, setNextAction] = useState(file.next_action ?? '')
@@ -281,6 +297,12 @@ function DetailDrawer({
   const [events, setEvents] = useState<TcEvent[]>([])
   const [loadingComms, setLoadingComms] = useState(false)
   const [assignmentPreviewOffer, setAssignmentPreviewOffer] = useState<BuyerOffer | null>(null)
+  const [activeDraft, setActiveDraft] = useState<TcDraft | null>(null)
+  const [draftSubject, setDraftSubject] = useState('')
+  const [draftBody, setDraftBody] = useState('')
+  const [draftAction, setDraftAction] = useState<'idle' | 'creating' | 'saving' | 'approving' | 'sending'>('idle')
+  const [draftNotice, setDraftNotice] = useState('')
+  const [preparingTemplateId, setPreparingTemplateId] = useState<string | null>(null)
   const [templateDraft, setTemplateDraft] = useState({
     title: '',
     template_type: 'email' as TcDocumentTemplate['template_type'],
@@ -303,6 +325,27 @@ function DetailDrawer({
     () => (file.tasks ?? []).filter((task) => !operatingTaskTypes.has(task.task_type)),
     [file.tasks, operatingTaskTypes],
   )
+  const templatesByTaskType = useMemo(() => {
+    const byTaskType = new Map<string, TcDocumentTemplate[]>()
+    for (const template of templates) {
+      if (template.template_type !== 'email' || !template.task_type) continue
+      const current = byTaskType.get(template.task_type) ?? []
+      current.push(template)
+      byTaskType.set(template.task_type, current)
+    }
+    return byTaskType
+  }, [templates])
+  const unresolvedDraftFields = useMemo(
+    () => unresolvedCommunicationTemplateFields(draftSubject, draftBody),
+    [draftBody, draftSubject],
+  )
+  const draftActor = useMemo(() => {
+    const email = user?.email?.toLowerCase() ?? ''
+    if (email.includes('casey')) return 'Casey'
+    if (email.includes('gertha')) return 'Gertha'
+    if (email.includes('ernest')) return 'Ernest'
+    return user?.email || 'CRM user'
+  }, [user?.email])
 
   useEffect(() => {
     setStatus(file.status)
@@ -311,6 +354,12 @@ function DetailDrawer({
     setClosingDate(dateForInput(file.closing_scheduled_at))
     setAssignmentFee(file.assignment_fee != null ? String(file.assignment_fee) : '')
     setSaveState('idle')
+    setActiveDraft(null)
+    setDraftSubject('')
+    setDraftBody('')
+    setDraftNotice('')
+    setDraftAction('idle')
+    setPreparingTemplateId(null)
     didMountRef.current = false
     lastPayloadRef.current = ''
   }, [file.assignment_fee, file.closing_scheduled_at, file.file_number, file.id, file.next_action, file.status])
@@ -429,7 +478,94 @@ function DetailDrawer({
     setTimeout(() => setCopiedSlug(null), 1600)
   }
 
+  async function prepareTemplate(template: TcDocumentTemplate) {
+    if (preparingTemplateId) return
+    setError(null)
+    setDraftNotice('')
+    setPreparingTemplateId(template.id)
+    setDraftAction('creating')
+    try {
+      const response = await fetch('/api/tc/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tc_file_id: file.id,
+          template_id: template.id,
+          created_by: draftActor,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Draft could not be created.')
+      const draft = { ...data.draft, template: data.draft?.template ?? template } as TcDraft
+      setActiveDraft(draft)
+      setDraftSubject(draft.subject ?? '')
+      setDraftBody(draft.edited_body || draft.approved_body || draft.draft_body)
+      setDraftNotice(data.existing ? 'Opened the existing pending draft for this file.' : 'Draft created. Review every unresolved field before approval.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Draft could not be created.')
+    } finally {
+      setDraftAction('idle')
+      setPreparingTemplateId(null)
+    }
+  }
+
+  async function persistDraft(nextStatus?: 'approved') {
+    if (!activeDraft || draftAction !== 'idle') return
+    setError(null)
+    setDraftNotice('')
+    setDraftAction(nextStatus === 'approved' ? 'approving' : 'saving')
+    try {
+      const response = await fetch(`/api/tc/drafts/${activeDraft.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: draftSubject || null,
+          edited_body: draftBody,
+          ...(nextStatus ? { status: nextStatus, approved_by: draftActor } : {}),
+          actor: draftActor,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Draft could not be saved.')
+      setActiveDraft({ ...data.draft, template: activeDraft.template } as TcDraft)
+      setDraftNotice(nextStatus === 'approved' ? 'Draft approved. Sending still requires a separate confirmation.' : 'Draft saved.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Draft could not be saved.')
+    } finally {
+      setDraftAction('idle')
+    }
+  }
+
+  async function sendApprovedDraft() {
+    if (!activeDraft || activeDraft.status !== 'approved' || draftAction !== 'idle') return
+    const destination = activeDraft.recipient_email || activeDraft.recipient_phone || activeDraft.recipient_role
+    if (!window.confirm(`Send this approved ${activeDraft.channel} to ${destination}? This action is recorded and cannot be undone.`)) return
+    setError(null)
+    setDraftNotice('')
+    setDraftAction('sending')
+    try {
+      const response = await fetch(`/api/tc/drafts/${activeDraft.id}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm_send: true, actor: draftActor }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Approved draft could not be sent.')
+      setActiveDraft({ ...data.draft, template: activeDraft.template } as TcDraft)
+      setDraftNotice('Message sent and recorded on the transaction file.')
+      onChanged()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Approved draft could not be sent.')
+    } finally {
+      setDraftAction('idle')
+    }
+  }
+
   function startEditTemplate(template: TcDocumentTemplate | 'new') {
+    if (template !== 'new' && template.system) {
+      setError('Governed workflow templates are version-controlled. Create a custom template instead of changing the approved standard in place.')
+      return
+    }
     setEditingTemplate(template)
     if (template === 'new') {
       setTemplateDraft({
@@ -471,6 +607,10 @@ function DetailDrawer({
   }
 
   async function deleteTemplate(template: TcDocumentTemplate) {
+    if (template.system) {
+      setError('Governed workflow templates cannot be deleted from an active file.')
+      return
+    }
     const res = await fetch(`/api/tc/document-templates/${template.id}`, { method: 'DELETE' })
     if (res.ok) onTemplatesChanged()
   }
@@ -520,6 +660,65 @@ function DetailDrawer({
 
         <div className="space-y-6 px-6 py-5">
           {error && <div className="rounded-lg border border-[#E32E2E]/35 bg-[#fff1f1] px-3 py-2 text-sm font-semibold text-[#b42318]">{error}</div>}
+
+          {activeDraft && (
+            <section className="overflow-hidden rounded-xl border border-[#c4b5fd] bg-[#ffffff] shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e1e6ee] bg-[#f6f3ff] px-4 py-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Icon name="edit_note" size="text-base" className="text-[#6d3fd1]" />
+                    <h3 className="text-sm font-black text-[#111827]">{activeDraft.template?.title || 'Communication draft'}</h3>
+                    <span className={cn(
+                      'rounded-full px-2 py-0.5 text-[10px] font-black uppercase',
+                      activeDraft.status === 'sent' ? 'bg-[#e8fff0] text-[#166534]' : activeDraft.status === 'approved' ? 'bg-[#e8f4ff] text-[#1d4ed8]' : 'bg-[#fff1f1] text-[#b42318]',
+                    )}>{activeDraft.status}</span>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-[#697386]">
+                    {activeDraft.recipient_role} · {activeDraft.recipient_email || activeDraft.recipient_phone || 'recipient not yet available'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setActiveDraft(null)} className="grid h-8 w-8 place-items-center rounded-lg border border-[#cad2df] bg-white text-[#697386]" aria-label="Close draft review"><Icon name="close" size="text-sm" /></button>
+              </div>
+
+              <div className="space-y-3 p-4">
+                {draftNotice ? <div className="rounded-lg border border-[#93c5fd] bg-[#eff6ff] px-3 py-2 text-xs font-bold text-[#1d4ed8]">{draftNotice}</div> : null}
+                {!activeDraft.recipient_email && activeDraft.channel === 'email' ? (
+                  <div className="rounded-lg border border-[#f7c948] bg-[#fff7d6] px-3 py-2 text-xs font-bold text-[#8a5a00]">Add the {activeDraft.recipient_role}&apos;s email address before sending.</div>
+                ) : null}
+                {unresolvedDraftFields.length > 0 ? (
+                  <div className="rounded-lg border border-[#f7c948] bg-[#fff7d6] px-3 py-2 text-xs text-[#8a5a00]">
+                    <strong>{unresolvedDraftFields.length} fields still require human input:</strong> {unresolvedDraftFields.join(', ')}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-[#86efac] bg-[#e8fff0] px-3 py-2 text-xs font-bold text-[#166534]">All merge fields have been resolved. Read the complete message before approval.</div>
+                )}
+
+                <label className="block space-y-1">
+                  <span className={fieldLabelClass}>Subject</span>
+                  <input value={draftSubject} onChange={(event) => setDraftSubject(event.target.value)} disabled={activeDraft.status !== 'pending'} className={cn(fieldClass, 'disabled:bg-[#f1f3f6] disabled:text-[#697386]')} />
+                </label>
+                <label className="block space-y-1">
+                  <span className={fieldLabelClass}>Message</span>
+                  <textarea value={draftBody} onChange={(event) => setDraftBody(event.target.value)} disabled={activeDraft.status !== 'pending'} rows={15} className={cn(fieldClass, 'resize-y leading-6 disabled:bg-[#f1f3f6] disabled:text-[#697386]')} />
+                </label>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e1e6ee] pt-3">
+                  <p className="max-w-sm text-[11px] leading-5 text-[#697386]">Creating a draft never sends it. Approval locks the reviewed body; sending requires a second explicit confirmation.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {activeDraft.status === 'pending' ? (
+                      <>
+                        <button type="button" onClick={() => persistDraft()} disabled={draftAction !== 'idle'} className={secondaryButtonClass}><Icon name="save" size="text-sm" />{draftAction === 'saving' ? 'Saving…' : 'Save'}</button>
+                        <button type="button" onClick={() => persistDraft('approved')} disabled={draftAction !== 'idle' || unresolvedDraftFields.length > 0 || !draftBody.trim()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-3 py-2 text-sm font-black text-white transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="verified" size="text-sm" />{draftAction === 'approving' ? 'Approving…' : 'Approve'}</button>
+                      </>
+                    ) : null}
+                    {activeDraft.status === 'approved' ? (
+                      <button type="button" onClick={sendApprovedDraft} disabled={draftAction !== 'idle' || (activeDraft.channel === 'email' && !activeDraft.recipient_email)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-3 py-2 text-sm font-black text-white transition hover:bg-[#c42626] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="send" size="text-sm" />{draftAction === 'sending' ? 'Sending…' : 'Confirm & send'}</button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
 
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
             <div className="mb-4 flex items-center gap-2">
@@ -582,6 +781,8 @@ function DetailDrawer({
                 label="Seller"
                 name={file.lead?.full_name || 'No seller assigned'}
                 context={file.lead?.property_address}
+                phone={file.lead?.phone}
+                email={file.lead?.email}
                 href={file.lead_id ? `/leads/${file.lead_id}` : undefined}
               />
               <ContactTile
@@ -852,6 +1053,17 @@ function DetailDrawer({
                               )}
                             </div>
                           )}
+                          {(templatesByTaskType.get(definition.taskType)?.length ?? 0) > 0 ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[#e1e6ee] pt-2">
+                              <span className="mr-auto text-[10px] font-black uppercase tracking-[0.1em] text-[#697386]">Linked communication</span>
+                              {(templatesByTaskType.get(definition.taskType) ?? []).map((template) => (
+                                  <button key={template.id} type="button" onClick={() => prepareTemplate(template)} disabled={Boolean(preparingTemplateId)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#c4b5fd] bg-[#f6f3ff] px-2.5 py-1.5 text-[11px] font-black text-[#6d3fd1] transition hover:bg-[#eee8ff] disabled:opacity-50">
+                                    <Icon name="mail" size="text-sm" />
+                                    {preparingTemplateId === template.id ? 'Preparing…' : `Prepare ${template.audience} email`}
+                                  </button>
+                                ))}
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -963,25 +1175,31 @@ function DetailDrawer({
                 <div key={template.id} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-[220px] flex-1">
-                      <p className="text-sm font-bold text-[#111827]">{template.title}</p>
-                      <p className="mt-0.5 text-[11px] font-bold uppercase text-[#697386]">
-                        {template.audience} · {template.template_type}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-bold text-[#111827]">{template.title}</p>
+                        {template.system ? <span className="rounded-full bg-[#e8fff0] px-2 py-0.5 text-[9px] font-black uppercase text-[#166534]">Governed</span> : <span className="rounded-full bg-[#eef2f7] px-2 py-0.5 text-[9px] font-black uppercase text-[#4b5565]">Custom</span>}
+                      </div>
+                      <p className="mt-0.5 text-[11px] font-bold uppercase text-[#697386]">{template.audience} · {communicationTemplateDepartmentLabel(template.department)} · {communicationTemplatePhaseLabel(template.phase_id)}</p>
                       {template.subject && <p className="mt-2 truncate text-xs text-[#4b5565]">{template.subject}</p>}
+                      <p className="mt-1 text-[10px] font-semibold text-[#7a8494]">{template.source_label}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      {template.template_type === 'email' ? (
+                        <button onClick={() => prepareTemplate(template)} disabled={Boolean(preparingTemplateId)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#6d3fd1] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#5b2fbd] disabled:opacity-50">
+                          <Icon name="edit_note" size="text-sm" />
+                          {preparingTemplateId === template.id ? 'Preparing…' : 'Prepare draft'}
+                        </button>
+                      ) : null}
                       <button onClick={() => copyTemplate(template)} className={secondaryButtonClass}>
                         <Icon name={copiedSlug === template.slug ? 'check' : 'content_copy'} size="text-sm" />
                         {copiedSlug === template.slug ? 'Copied' : 'Copy'}
                       </button>
-                      <button onClick={() => startEditTemplate(template)} className={secondaryButtonClass}>
-                        <Icon name="edit" size="text-sm" />
-                        Edit
-                      </button>
-                      <button onClick={() => deleteTemplate(template)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#E32E2E]/35 bg-[#fff1f1] px-3 py-2 text-sm font-bold text-[#b42318] transition hover:bg-[#ffe5e5]">
-                        <Icon name="delete" size="text-sm" />
-                        Delete
-                      </button>
+                      {!template.system ? (
+                        <>
+                          <button onClick={() => startEditTemplate(template)} className={secondaryButtonClass}><Icon name="edit" size="text-sm" />Edit</button>
+                          <button onClick={() => deleteTemplate(template)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#E32E2E]/35 bg-[#fff1f1] px-3 py-2 text-sm font-bold text-[#b42318] transition hover:bg-[#ffe5e5]"><Icon name="delete" size="text-sm" />Delete</button>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </div>
