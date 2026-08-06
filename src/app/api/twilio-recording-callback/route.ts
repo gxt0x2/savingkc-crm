@@ -21,6 +21,7 @@ import {
   phoneLookupVariants,
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
+import { resolveLeadIdFromCallActivity } from '@/lib/telephony/recording-lead-resolution'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -294,6 +295,15 @@ export async function POST(req: Request) {
       leadId = googleAdsLead.leadId
       if (leadId) {
         console.log(`[recording-callback] Resolved Google Ads recording to seller lead ${leadId}`)
+      }
+    }
+
+    // Prefer the CRM call event when it already resolved the lead. Falling
+    // through to child legs can match an internal agent phone on inbound calls.
+    if (!leadId && callSid) {
+      leadId = await resolveLeadIdFromCallActivity(callSid)
+      if (leadId) {
+        console.log(`[recording-callback] Resolved lead ${leadId} via call activity lookup`)
       }
     }
 

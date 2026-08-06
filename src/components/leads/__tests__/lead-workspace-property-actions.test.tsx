@@ -92,4 +92,38 @@ describe('LeadWorkspace property actions', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: /Street View/ })).not.toBeInTheDocument()
   })
+
+  it('renders protected playback for legacy recording metadata', () => {
+    const { container } = render(
+      <LeadWorkspace
+        lead={lead}
+        activities={[{
+          id: 'call-1',
+          activity_type: 'call',
+          description: 'Inbound call connected',
+          agent: 'Ernest',
+          metadata: { RecordingSid: 'RElegacy' },
+          created_at: '2026-08-06T15:00:00.000Z',
+        }]}
+        appointment={null}
+        score={80}
+        assessedValue={270000}
+        onCall={noop}
+        onEdit={noop}
+        onText={noop}
+        onEmail={noop}
+        onAppointment={noop}
+        onAppointmentOutcome={noop}
+        onTask={noop}
+        onContract={noop}
+        onOpenProperty={noop}
+        onRefresh={noop}
+        onStageChange={noop}
+        onLeadStatusChange={noop}
+      />,
+    )
+
+    expect(container.querySelector('audio')).toHaveAttribute('src', '/api/recordings/RElegacy')
+    expect(screen.queryByText('No recording available')).not.toBeInTheDocument()
+  })
 })

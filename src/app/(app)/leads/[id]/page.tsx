@@ -3,41 +3,44 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
-import { AriBriefing } from '@/components/leads/ari-briefing'
-import { PainPoints } from '@/components/leads/pain-points'
-import { FavoriteOrFool } from '@/components/leads/favorite-or-fool'
-import { PropertyHero } from '@/components/leads/property-hero'
-import { ActivityFeed } from '@/components/leads/activity-feed'
-import { DocumentManager } from '@/components/documents/document-manager'
-import { PropertyDetailsCard } from '@/components/leads/property-details-card'
-import { TemperatureBadge } from '@/components/leads/temperature-badge'
-import { FavoriteToggle } from '@/components/leads/favorite-toggle'
-import { StageSelector } from '@/components/leads/stage-selector'
-import { AdsSignalReceipt } from '@/components/leads/ads-signal-receipt'
-import { AddNote } from '@/components/leads/add-note'
-import { EditNoteModal } from '@/components/leads/edit-note-modal'
-import { ContractModal } from '@/components/leads/contract-modal'
-import { AppointmentModal } from '@/components/leads/appointment-modal'
-import { AppointmentOutcomeModal } from '@/components/leads/appointment-outcome-modal'
-import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
-import { SellerGoals } from '@/components/leads/seller-goals'
-import { DiscoveryQuestions } from '@/components/leads/discovery-questions'
-import { AriChat } from '@/components/leads/ari-chat'
-import { MailTracker } from '@/components/leads/mail-tracker'
-import { NextAction } from '@/components/leads/next-action'
-import { MissingInfoCard } from '@/components/leads/missing-info-card'
-import { EmailThread } from '@/components/leads/email-thread'
-import { CockpitModal } from '@/components/ui/cockpit-modal'
-import { SortableColumn } from '@/components/ui/sortable-column'
-import { NewTaskModal } from '@/components/modals/new-task-modal'
-import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { formatDurationBetween, isOutboundAttempt } from '@/lib/contact-display'
 import { DEAD_REASONS } from '@/lib/lead-outcomes'
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
+import { normalizeLeadRecordingActivities } from '@/lib/lead-recording-activities'
+
+const AriBriefing = dynamic(() => import('@/components/leads/ari-briefing').then((module) => module.AriBriefing))
+const PainPoints = dynamic(() => import('@/components/leads/pain-points').then((module) => module.PainPoints))
+const FavoriteOrFool = dynamic(() => import('@/components/leads/favorite-or-fool').then((module) => module.FavoriteOrFool))
+const PropertyHero = dynamic(() => import('@/components/leads/property-hero').then((module) => module.PropertyHero))
+const ActivityFeed = dynamic(() => import('@/components/leads/activity-feed').then((module) => module.ActivityFeed))
+const DocumentManager = dynamic(() => import('@/components/documents/document-manager').then((module) => module.DocumentManager))
+const PropertyDetailsCard = dynamic(() => import('@/components/leads/property-details-card').then((module) => module.PropertyDetailsCard))
+const TemperatureBadge = dynamic(() => import('@/components/leads/temperature-badge').then((module) => module.TemperatureBadge))
+const FavoriteToggle = dynamic(() => import('@/components/leads/favorite-toggle').then((module) => module.FavoriteToggle))
+const StageSelector = dynamic(() => import('@/components/leads/stage-selector').then((module) => module.StageSelector))
+const AdsSignalReceipt = dynamic(() => import('@/components/leads/ads-signal-receipt').then((module) => module.AdsSignalReceipt))
+const AddNote = dynamic(() => import('@/components/leads/add-note').then((module) => module.AddNote))
+const EditNoteModal = dynamic(() => import('@/components/leads/edit-note-modal').then((module) => module.EditNoteModal))
+const ContractModal = dynamic(() => import('@/components/leads/contract-modal').then((module) => module.ContractModal))
+const AppointmentModal = dynamic(() => import('@/components/leads/appointment-modal').then((module) => module.AppointmentModal))
+const AppointmentOutcomeModal = dynamic(() => import('@/components/leads/appointment-outcome-modal').then((module) => module.AppointmentOutcomeModal))
+const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
+const SellerGoals = dynamic(() => import('@/components/leads/seller-goals').then((module) => module.SellerGoals))
+const DiscoveryQuestions = dynamic(() => import('@/components/leads/discovery-questions').then((module) => module.DiscoveryQuestions))
+const AriChat = dynamic(() => import('@/components/leads/ari-chat').then((module) => module.AriChat))
+const MailTracker = dynamic(() => import('@/components/leads/mail-tracker').then((module) => module.MailTracker))
+const NextAction = dynamic(() => import('@/components/leads/next-action').then((module) => module.NextAction))
+const MissingInfoCard = dynamic(() => import('@/components/leads/missing-info-card').then((module) => module.MissingInfoCard))
+const EmailThread = dynamic(() => import('@/components/leads/email-thread').then((module) => module.EmailThread))
+const CockpitModal = dynamic(() => import('@/components/ui/cockpit-modal').then((module) => module.CockpitModal))
+const SortableColumn = dynamic(() => import('@/components/ui/sortable-column').then((module) => module.SortableColumn))
+const NewTaskModal = dynamic(() => import('@/components/modals/new-task-modal').then((module) => module.NewTaskModal))
+const EditTaskModal = dynamic(() => import('@/components/modals/edit-task-modal').then((module) => module.EditTaskModal))
 
 type LeadTriageValue = 'opportunity' | 'lead' | 'dead'
 
@@ -1621,55 +1624,14 @@ export default function LeadDetailPage() {
       })
   })()
 
-  // Normalize a raw recording URL into a playable in-app URL.
-  // Twilio recordings need basic auth so we route them through our /api/recordings/[sid] proxy.
-  const toPlayableRecordingUrl = (raw: string | undefined): string | undefined => {
-    if (!raw) return undefined
-    const twilioMatch = raw.match(/\/Recordings\/(RE[A-Za-z0-9]+)(?:\.[a-z0-9]+)?(?:$|\?)/)
-    if (twilioMatch) return `/api/recordings/${twilioMatch[1]}`
-    return raw
-  }
-
-  // Manifest transcripts hold recording URLs for calls (the call activity row
-  // itself doesn't get the URL written back). Build a timestamp-indexed lookup
-  // so we can backfill recordingUrl on each call row without a DB change.
-  const transcriptLookup: { ts: number; url: string; sid: string | null }[] = manifestTranscripts
-    .map((t) => {
-      const url = toPlayableRecordingUrl((t as { recordingUrl?: string }).recordingUrl) || ''
-      const sidMatch = url.match(/\/api\/recordings\/(RE[A-Za-z0-9]+)/)
-      return {
-        ts: new Date(t.date).getTime(),
-        url,
-        sid: sidMatch?.[1] || null,
-      }
-    })
-    .filter((t) => t.url && Number.isFinite(t.ts))
-
-  const findTranscriptUrl = (activityTs: string, callSid: string | null | undefined, recordingSid: string | null | undefined): string | undefined => {
-    // Strongest signal: matching recordingSid (recorded on the activity row).
-    if (recordingSid) {
-      const direct = transcriptLookup.find((tr) => tr.sid === recordingSid)
-      if (direct) return direct.url
-    }
-    const t = new Date(activityTs).getTime()
-    if (!Number.isFinite(t)) return undefined
-    // Widened to ±30 min. Twilio sometimes takes 5-15 min to finish a long
-    // recording, and the call activity row's created_at is the start, not
-    // the end. The earlier ±10 min window missed those.
-    let best: { dt: number; url: string } | null = null
-    for (const tr of transcriptLookup) {
-      const dt = Math.abs(tr.ts - t)
-      if (dt > 30 * 60_000) continue
-      if (!best || dt < best.dt) best = { dt, url: tr.url }
-    }
-    if (best) return best.url
-    // Fallback: callSid match if either side recorded it
-    if (callSid && transcriptLookup.length === 1) return transcriptLookup[0].url
-    return undefined
-  }
+  // Resolve recordings once and pass the same canonical activity objects to
+  // both the overview conversation and the full activity feed. Previously the
+  // feed received this normalized metadata while LeadWorkspace received raw
+  // rows, which made live recordings appear to be missing on the overview.
+  const workspaceActivities = normalizeLeadRecordingActivities(mergedActivities, manifestTranscripts)
 
   // Build feed activities - include notes, appointments, call recordings
-  const feedActivities = mergedActivities
+  const feedActivities = workspaceActivities
     .slice(0, 30)
     .map((a) => {
       let link: string | undefined
@@ -1686,15 +1648,11 @@ export default function LeadDetailPage() {
         }
       }
 
-      // Check for recording URL in call/voicemail activities.
-      // Order: metadata.recordingUrl on the row → manifest transcript match
-      // by recordingSid → by timestamp ±30 min → callSid fallback.
+      // workspaceActivities already canonicalizes legacy metadata and manifest
+      // transcript fallbacks into these two fields.
       if ((a.activity_type === 'call' || a.activity_type === 'voicemail') && a.metadata) {
-        const fromMeta = (a.metadata.recordingUrl || a.metadata.recording_url || a.metadata.RecordingUrl) as string | undefined
-        const callSid = (a.metadata.callSid || a.metadata.CallSid) as string | undefined
-        const recordingSid = (a.metadata.recordingSid || a.metadata.RecordingSid) as string | undefined
-        recordingUrl = toPlayableRecordingUrl(fromMeta) || findTranscriptUrl(a.created_at, callSid, recordingSid)
-        const durationValue = Number(a.metadata.duration || a.metadata.recordingDuration || a.metadata.RecordingDuration)
+        recordingUrl = typeof a.metadata.recordingUrl === 'string' ? a.metadata.recordingUrl : undefined
+        const durationValue = Number(a.metadata.recordingDuration || a.metadata.duration)
         if (Number.isFinite(durationValue) && durationValue > 0) {
           recordingDuration = durationValue
         }
@@ -1937,7 +1895,7 @@ export default function LeadDetailPage() {
     <>
       <LeadWorkspace
         lead={lead}
-        activities={activities}
+        activities={workspaceActivities}
         appointment={activeAppointment ? {
           scheduledAt: activeAppointment.scheduledAt,
           address: activeAppointment.address,
