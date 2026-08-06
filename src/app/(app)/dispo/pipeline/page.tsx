@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import { CloseoutDialog } from '@/components/dispo/closeout-dialog'
-import type { DispoDeal, DispoStage } from '@/types/dispo'
+import { activeDispositionPhases, summarizeDispositionPhase } from '@/lib/dispo/operating-lifecycle'
+import type { DispoDeal, DispoStage, TcFile } from '@/types/dispo'
 
 // ---------------------------------------------------------------------------
 // Stage config
@@ -46,6 +47,25 @@ function daysAgo(iso: string) {
 function formatDate(iso: string | null) {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function dealWorkflowProgress(deal: DispoDeal, file: TcFile | null | undefined) {
+  if (!file) return null
+  const phases = activeDispositionPhases({
+    dealStage: deal.stage,
+    tcStatus: file.status,
+    enteredAt: deal.entered_at,
+    closingAt: file.closing_scheduled_at || deal.close_date,
+  })
+  const summaries = phases.map((phase) => summarizeDispositionPhase(phase, file.tasks ?? []))
+  const total = summaries.reduce((sum, summary) => sum + summary.total, 0)
+  const completed = summaries.reduce((sum, summary) => sum + summary.completed, 0)
+  return {
+    completed,
+    total,
+    percent: total === 0 ? 0 : Math.round((completed / total) * 100),
+    blocked: summaries.reduce((sum, summary) => sum + summary.blocked, 0),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -512,6 +532,32 @@ export default function PipelinePage() {
         </button>
       </div>
 
+      <section className="mb-6 overflow-hidden rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm" aria-label="Shared transaction operating model">
+        <div className="flex flex-col gap-4 border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--crm-brand)]">One transaction record</p>
+            <h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Dispositions and Closing Coordination work in parallel</h2>
+            <p className="mt-1 max-w-3xl text-sm text-[var(--crm-text-muted)]">The pipeline owns pricing, buyers, offers, and assignment. Closing Coordination owns title, funding, documents, closing, and aftercare. Required handoffs are shared gates.</p>
+          </div>
+          <Link href="/dispo/tc" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--crm-brand)] px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-[var(--crm-brand-hover)]">
+            <Icon name="fact_check" size="text-base" />
+            Open closing coordination
+          </Link>
+        </div>
+        <div className="grid gap-px bg-[var(--crm-border)] md:grid-cols-3">
+          {[
+            { icon: 'campaign', title: 'Dispositions lane', text: 'Valuation, marketing, buyer offers, negotiation, and assignment.', tone: 'text-[var(--crm-violet)] bg-[var(--crm-violet-soft)]' },
+            { icon: 'verified_user', title: 'Shared gates', text: 'Contract intake, due diligence, offer approval, clear-to-close, and closeout.', tone: 'text-[var(--crm-success)] bg-[var(--crm-success-soft)]' },
+            { icon: 'fact_check', title: 'Closing coordination lane', text: 'Title, EMD, funding, documents, closing, aftercare, and archive.', tone: 'text-[var(--crm-info)] bg-[var(--crm-info-soft)]' },
+          ].map((item) => (
+            <div key={item.title} className="flex items-start gap-3 bg-[var(--crm-surface)] px-5 py-4">
+              <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', item.tone)}><Icon name={item.icon} size="text-lg" /></span>
+              <span><strong className="block text-sm font-black text-[var(--crm-ink)]">{item.title}</strong><span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">{item.text}</span></span>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Stage Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-6">
         {STAGES.filter((s) => s.key !== 'all').map((s) => {
@@ -636,6 +682,9 @@ export default function PipelinePage() {
                   <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider hidden lg:table-cell">
                     Offers
                   </th>
+                  <th className="min-w-[150px] px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)] hidden lg:table-cell">
+                    Workflow
+                  </th>
                   <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider hidden lg:table-cell">
                     Entered
                   </th>
@@ -651,6 +700,7 @@ export default function PipelinePage() {
                   const state = String(lead?.state ?? '')
                   const arv = lead?.arv ? formatCurrency(Number(lead.arv)) : '—'
                   const price = lead?.offer_amount ? formatCurrency(Number(lead.offer_amount)) : '—'
+                  const workflow = dealWorkflowProgress(deal, deal.tc_file)
 
                   return (
                     <tr
@@ -727,6 +777,24 @@ export default function PipelinePage() {
                           <span className="font-semibold text-[var(--crm-warning)]">{deal.offers_count}</span>
                         ) : (
                           <span className="text-[var(--ck-text-dim)]">—</span>
+                        )}
+                      </td>
+                      <td className="hidden px-4 py-3 lg:table-cell">
+                        {workflow ? (
+                          <Link href="/dispo/tc" onClick={(event) => event.stopPropagation()} className="block min-w-[125px] rounded-lg p-1 transition hover:bg-[var(--crm-surface-subtle)]">
+                            <span className="flex items-center justify-between gap-2 text-[11px] font-black text-[var(--crm-ink)]">
+                              <span>{workflow.percent}%</span>
+                              <span className="text-[var(--crm-text-muted)]">{workflow.completed}/{workflow.total}</span>
+                            </span>
+                            <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[var(--crm-border)]">
+                              <span className={cn('block h-full rounded-full', workflow.blocked > 0 ? 'bg-[var(--crm-danger)]' : 'bg-[var(--crm-success)]')} style={{ width: `${workflow.percent}%` }} />
+                            </span>
+                            <span className={cn('mt-1 block text-[10px] font-bold', workflow.blocked > 0 ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]')}>
+                              {workflow.blocked > 0 ? `${workflow.blocked} blocked` : 'Open workflow'}
+                            </span>
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-[var(--crm-text-dim)]">Synchronizing</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-[var(--ck-text-dim)] text-xs whitespace-nowrap hidden lg:table-cell">

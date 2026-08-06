@@ -82,7 +82,7 @@ const GROUPS: ContextGroup[] = [
       { label: 'Buyers', href: '/dispo/buyers', icon: 'groups', matchPath: '/dispo/buyers' },
       { label: 'Offers', href: '/dispo/offers', icon: 'local_offer', matchPath: '/dispo/offers' },
       { label: 'Broadcasts', href: '/dispo/broadcasts', icon: 'campaign', matchPath: '/dispo/broadcasts' },
-      { label: 'Transaction coordination', href: '/dispo/tc', icon: 'fact_check', matchPath: '/dispo/tc' },
+      { label: 'Closing coordination', href: '/dispo/tc', icon: 'fact_check', matchPath: '/dispo/tc' },
       { label: 'Partners', href: '/dispo/vendors', icon: 'handshake', matchPath: '/dispo/vendors' },
       { label: 'Contacts', href: '/dispo/contacts', icon: 'contact_page', matchPath: '/dispo/contacts' },
     ],

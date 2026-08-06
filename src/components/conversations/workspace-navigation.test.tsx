@@ -58,13 +58,13 @@ describe('workspace dashboard navigation', () => {
     expect(navigationRegion.querySelector('a[href="/reports/dispositions"]')).not.toBeInTheDocument()
   })
 
-  it('keeps the dispositions and transaction coordination portals directly accessible', () => {
+  it('keeps one direct dispositions portal entry for the shared operating workspace', () => {
     navigation.pathname = '/contacts'
     render(<WorkspaceNav needsReply={0} />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
     expect(within(navigationRegion).getByRole('link', { name: /^Dispositions$/ })).toHaveAttribute('href', '/dispo/pipeline')
-    expect(within(navigationRegion).getByRole('link', { name: /^Transaction coordination$/ })).toHaveAttribute('href', '/dispo/tc')
+    expect(within(navigationRegion).queryByRole('link', { name: /^Transaction coordination$/ })).not.toBeInTheDocument()
   })
 
   it('shows the dashboard switcher on each team dashboard', () => {

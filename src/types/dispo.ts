@@ -351,7 +351,16 @@ export interface TcFile {
   title_contact?: { id: string; name: string; role?: string | null; email?: string | null; phone?: string | null } | null
   lead?: { id: string; full_name: string | null; property_address: string | null; city: string | null; state: string | null; zip: string | null } | null
   offer?: BuyerOffer | null
-  dispo_deal?: { id: string; stage: DispoStage; assignment_fee: number | null; close_date: string | null; updated_at?: string | null } | null
+  dispo_deal?: {
+    id: string
+    stage: DispoStage
+    entered_at?: string | null
+    assignment_fee: number | null
+    close_date: string | null
+    accepted_offer_id?: string | null
+    accepted_buyer_id?: string | null
+    updated_at?: string | null
+  } | null
 }
 
 export interface TcEvent {

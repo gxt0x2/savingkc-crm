@@ -5,6 +5,12 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
 import { Icon } from '@/components/ui/icon'
+import {
+  activeDispositionPhases,
+  dispositionTaskDefinition,
+  summarizeDispositionPhase,
+  type DispositionOperatingLane,
+} from '@/lib/dispo/operating-lifecycle'
 import { cn, formatCurrency } from '@/lib/utils'
 import type { BuyerOffer, TcCommunication, TcEvent, TcFile, TcStatus, TcTask } from '@/types/dispo'
 
@@ -31,6 +37,8 @@ const STATUS_OPTIONS: TcStatus[] = [
   'cancelled',
 ]
 
+const TASK_ASSIGNEES = ['Dispositions', 'Closing Coordination', 'Shared', 'Ernest', 'Casey', 'Gertha'] as const
+
 const DETAIL_TABS = [
   { key: 'communications', label: 'Communications', icon: 'forum' },
   { key: 'activity', label: 'TC Activity', icon: 'history' },
@@ -42,11 +50,11 @@ type DetailTab = (typeof DETAIL_TABS)[number]['key']
 type TcPageView = 'files' | 'communications' | 'docs' | 'tasks' | 'reports'
 
 const TC_PAGE_TABS: { key: TcPageView; label: string; href: string; icon: string }[] = [
-  { key: 'files', label: 'Files', href: '/dispo/tc', icon: 'fact_check' },
+  { key: 'files', label: 'Closing queue', href: '/dispo/tc', icon: 'fact_check' },
   { key: 'communications', label: 'Communications', href: '/dispo/tc?view=communications', icon: 'forum' },
-  { key: 'docs', label: 'Doc Review', href: '/dispo/tc?view=docs', icon: 'preview' },
+  { key: 'docs', label: 'Documents', href: '/dispo/tc?view=docs', icon: 'preview' },
   { key: 'tasks', label: 'Tasks', href: '/dispo/tc?view=tasks', icon: 'task_alt' },
-  { key: 'reports', label: 'Dispo Reports', href: '/dispo/tc?view=reports', icon: 'account_tree' },
+  { key: 'reports', label: 'Performance', href: '/dispo/tc?view=reports', icon: 'account_tree' },
 ]
 
 interface TcFileTimeline {
@@ -159,6 +167,40 @@ function taskStatusClass(status: TcTask['status']) {
   return map[status]
 }
 
+function operatingContext(file: TcFile) {
+  return {
+    dealStage: file.dispo_deal?.stage ?? 'new',
+    tcStatus: file.status,
+    enteredAt: file.dispo_deal?.entered_at ?? file.created_at,
+    closingAt: tcClosingDate(file),
+  }
+}
+
+function operatingProgress(file: TcFile) {
+  const phases = activeDispositionPhases(operatingContext(file))
+  const summaries = phases.map((phase) => summarizeDispositionPhase(phase, file.tasks ?? []))
+  const total = summaries.reduce((sum, summary) => sum + summary.total, 0)
+  const completed = summaries.reduce((sum, summary) => sum + summary.completed, 0)
+  return {
+    completed,
+    total,
+    percent: total === 0 ? 0 : Math.round((completed / total) * 100),
+    blocked: summaries.reduce((sum, summary) => sum + summary.blocked, 0),
+  }
+}
+
+function laneLabel(lane: DispositionOperatingLane) {
+  if (lane === 'dispositions') return 'Dispositions'
+  if (lane === 'coordination') return 'Closing coordination'
+  return 'Shared'
+}
+
+function laneClass(lane: DispositionOperatingLane) {
+  if (lane === 'dispositions') return 'border-[#c4b5fd] bg-[#f1edff] text-[#5b21b6]'
+  if (lane === 'coordination') return 'border-[#93c5fd] bg-[#eff6ff] text-[#1d4ed8]'
+  return 'border-[#86efac] bg-[#e8fff0] text-[#166534]'
+}
+
 function ContactTile({
   icon,
   label,
@@ -248,6 +290,19 @@ function DetailDrawer({
   })
   const didMountRef = useRef(false)
   const lastPayloadRef = useRef('')
+  const operatingPhases = useMemo(() => activeDispositionPhases(operatingContext(file)), [file])
+  const operatingTaskTypes = useMemo(
+    () => new Set(operatingPhases.flatMap((phase) => phase.tasks.map((task) => task.taskType))),
+    [operatingPhases],
+  )
+  const taskByType = useMemo(
+    () => new Map((file.tasks ?? []).map((task) => [task.task_type, task])),
+    [file.tasks],
+  )
+  const manualTasks = useMemo(
+    () => (file.tasks ?? []).filter((task) => !operatingTaskTypes.has(task.task_type)),
+    [file.tasks, operatingTaskTypes],
+  )
 
   useEffect(() => {
     setStatus(file.status)
@@ -335,12 +390,33 @@ function DetailDrawer({
   }, [assignmentFee, closingDate, file.id, fileNumber, nextAction, onChanged, status])
 
   async function updateTask(task: TcTask, nextStatus: TcTask['status']) {
+    setError(null)
     const res = await fetch(`/api/tc/tasks/${task.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: nextStatus }),
     })
-    if (res.ok) onChanged()
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setError(data.error || 'Task update failed')
+      return
+    }
+    onChanged()
+  }
+
+  async function updateTaskAssignee(task: TcTask, assignedTo: string | null) {
+    setError(null)
+    const res = await fetch(`/api/tc/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assigned_to: assignedTo }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setError(data.error || 'Task assignment failed')
+      return
+    }
+    onChanged()
   }
 
   async function copyTemplate(template: TcDocumentTemplate) {
@@ -667,39 +743,153 @@ function DetailDrawer({
           </section>
 
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Icon name="checklist" size="text-base" className="text-[#E32E2E]" />
-                <h3 className="text-sm font-black text-[#111827]">Checklist</h3>
-              </div>
-              <span className="text-xs font-bold text-[#697386]">{openTaskCount(file)} open</span>
-            </div>
-            <div className="space-y-2">
-              {(file.tasks ?? []).map((task) => (
-                <div key={task.id} className="flex items-center gap-3 rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] px-3 py-2">
-                  <button
-                    onClick={() => updateTask(task, task.status === 'done' ? 'open' : 'done')}
-                    className={cn(
-                      'flex h-8 w-8 items-center justify-center rounded-lg border transition',
-                      task.status === 'done' ? 'border-[#22c55e] bg-[#22c55e] text-[#ffffff]' : 'border-[#cad2df] bg-[#ffffff] text-[#697386] hover:border-[#E32E2E]/40'
-                    )}
-                    aria-label={task.status === 'done' ? 'Reopen task' : 'Complete task'}
-                  >
-                    <Icon name={task.status === 'done' ? 'check' : 'radio_button_unchecked'} size="text-sm" />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className={cn('truncate text-sm font-semibold', task.status === 'done' ? 'text-[#7a8494] line-through' : 'text-[#253041]')}>{task.label}</p>
-                    {task.due_at && <p className="text-xs text-[#697386]">Due {formatDate(task.due_at)}</p>}
-                  </div>
-                  <span className={cn('rounded-full border px-2 py-1 text-[11px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Icon name="account_tree" size="text-base" className="text-[#E32E2E]" />
+                  <h3 className="text-sm font-black text-[#111827]">Operating workflow</h3>
                 </div>
-              ))}
-              {(file.tasks ?? []).length === 0 && (
+                <p className="mt-1 text-xs font-semibold text-[#697386]">One transaction record with Dispositions, Closing Coordination, and shared gates.</p>
+              </div>
+              <span className="rounded-full border border-[#cad2df] bg-[#f8fafc] px-2.5 py-1 text-xs font-black text-[#4b5565]">{openTaskCount(file)} open</span>
+            </div>
+
+            <div className="space-y-3">
+              {operatingPhases.map((phase, index) => {
+                const summary = summarizeDispositionPhase(phase, file.tasks ?? [])
+                const phaseTasks = phase.tasks.map((definition) => ({
+                  definition,
+                  task: taskByType.get(definition.taskType),
+                }))
+
+                return (
+                  <details key={phase.id} open={!summary.gateComplete || index === operatingPhases.length - 1} className="group overflow-hidden rounded-xl border border-[#d8dee9] bg-[#fbfcfe]">
+                    <summary className="cursor-pointer list-none px-4 py-3 marker:content-none">
+                      <div className="flex items-center gap-3">
+                        <span className={cn(
+                          'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black',
+                          summary.gateComplete ? 'bg-[#e8fff0] text-[#166534]' : summary.blocked > 0 ? 'bg-[#fff1f1] text-[#b42318]' : 'bg-[#e8f4ff] text-[#075985]',
+                        )}>
+                          {summary.gateComplete ? <Icon name="check" size="text-base" /> : index + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-black text-[#111827]">{phase.label}</span>
+                            {summary.gateComplete && <span className="rounded-full bg-[#e8fff0] px-2 py-0.5 text-[10px] font-black uppercase text-[#166534]">Gate clear</span>}
+                            {summary.blocked > 0 && <span className="rounded-full bg-[#fff1f1] px-2 py-0.5 text-[10px] font-black uppercase text-[#b42318]">{summary.blocked} blocked</span>}
+                          </span>
+                          <span className="mt-0.5 block text-xs font-semibold text-[#697386]">{phase.description}</span>
+                        </span>
+                        <span className="text-right">
+                          <span className="block text-sm font-black text-[#111827]">{summary.percent}%</span>
+                          <span className="block text-[10px] font-bold text-[#697386]">{summary.completed}/{summary.total}</span>
+                        </span>
+                        <Icon name="expand_more" size="text-lg" className="text-[#697386] transition group-open:rotate-180" />
+                      </div>
+                      <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-[#e1e6ee]">
+                        <span className="block h-full rounded-full bg-[#E32E2E] transition-all" style={{ width: `${summary.percent}%` }} />
+                      </span>
+                    </summary>
+
+                    <div className="space-y-2 border-t border-[#e1e6ee] bg-[#ffffff] p-3">
+                      <p className="rounded-lg bg-[#f8fafc] px-3 py-2 text-xs font-bold text-[#4b5565]">
+                        Gate: {phase.completionGate}
+                      </p>
+                      {phaseTasks.map(({ definition, task }) => (
+                        <div key={definition.taskType} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
+                          <div className="flex items-start gap-3">
+                            {task ? (
+                              <button
+                                type="button"
+                                onClick={() => updateTask(task, task.status === 'done' ? 'open' : 'done')}
+                                className={cn(
+                                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition',
+                                  task.status === 'done' ? 'border-[#22c55e] bg-[#22c55e] text-[#ffffff]' : 'border-[#cad2df] bg-[#ffffff] text-[#697386] hover:border-[#E32E2E]/40',
+                                )}
+                                aria-label={task.status === 'done' ? `Reopen ${task.label}` : `Complete ${task.label}`}
+                              >
+                                <Icon name={task.status === 'done' ? 'check' : task.status === 'blocked' ? 'block' : 'radio_button_unchecked'} size="text-sm" />
+                              </button>
+                            ) : (
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-[#cad2df] bg-white text-[#9aa3b2]">
+                                <Icon name="sync" size="text-sm" />
+                              </span>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className={cn('text-sm font-bold', task?.status === 'done' ? 'text-[#7a8494] line-through' : 'text-[#253041]')}>{definition.label}</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-black', laneClass(definition.lane))}>{laneLabel(definition.lane)}</span>
+                                <span className="rounded-full border border-[#cad2df] bg-white px-2 py-0.5 text-[10px] font-black text-[#697386]">Evidence: {definition.evidence}</span>
+                                {definition.gate && <span className="rounded-full border border-[#f7c948] bg-[#fff7d6] px-2 py-0.5 text-[10px] font-black text-[#8a5a00]">Required gate</span>}
+                                {task?.due_at && <span className="text-[10px] font-bold text-[#697386]">Due {formatDate(task.due_at)}</span>}
+                              </div>
+                            </div>
+                            {task && (
+                              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                <span className={cn('rounded-full border px-2 py-1 text-[10px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
+                                <select
+                                  value={task.assigned_to ?? ''}
+                                  onChange={(event) => updateTaskAssignee(task, event.target.value || null)}
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="max-w-[160px] rounded-md border border-[#cad2df] bg-white px-2 py-1 text-[10px] font-bold text-[#4b5565]"
+                                  aria-label={`Assign ${task.label}`}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {TASK_ASSIGNEES.map((assignee) => <option key={assignee} value={assignee}>{assignee}</option>)}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+                          {task && task.status !== 'done' && (
+                            <div className="mt-2 flex justify-end gap-2 border-t border-[#e1e6ee] pt-2">
+                              {task.status === 'blocked' ? (
+                                <button type="button" onClick={() => updateTask(task, 'open')} className="text-[11px] font-black text-[#1d4ed8] hover:underline">Resolve block</button>
+                              ) : (
+                                <button type="button" onClick={() => updateTask(task, 'blocked')} className="text-[11px] font-black text-[#b42318] hover:underline">Mark blocked</button>
+                              )}
+                              {!definition.gate && task.status !== 'waived' && (
+                                <button type="button" onClick={() => updateTask(task, 'waived')} className="text-[11px] font-black text-[#697386] hover:underline">Waive</button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )
+              })}
+
+              {operatingPhases.length === 0 && (
                 <div className="rounded-lg border border-dashed border-[#cad2df] bg-[#fbfcfe] px-4 py-8 text-center text-sm font-semibold text-[#697386]">
-                  No checklist tasks yet.
+                  This transaction is cancelled or no longer in the active operating workflow.
                 </div>
               )}
             </div>
+
+            {manualTasks.length > 0 && (
+              <details className="mt-4 overflow-hidden rounded-xl border border-[#d8dee9] bg-[#fbfcfe]">
+                <summary className="cursor-pointer px-4 py-3 text-sm font-black text-[#253041]">Existing manual tasks ({manualTasks.length})</summary>
+                <div className="space-y-2 border-t border-[#e1e6ee] bg-white p-3">
+                  {manualTasks.map((task) => (
+                    <div key={task.id} className="flex items-center gap-3 rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => updateTask(task, task.status === 'done' ? 'open' : 'done')}
+                        className={cn('flex h-8 w-8 items-center justify-center rounded-lg border', task.status === 'done' ? 'border-[#22c55e] bg-[#22c55e] text-white' : 'border-[#cad2df] bg-white text-[#697386]')}
+                        aria-label={task.status === 'done' ? `Reopen ${task.label}` : `Complete ${task.label}`}
+                      >
+                        <Icon name={task.status === 'done' ? 'check' : 'radio_button_unchecked'} size="text-sm" />
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-[#253041]">{task.label}</p>
+                        {task.due_at && <p className="text-xs text-[#697386]">Due {formatDate(task.due_at)}</p>}
+                      </div>
+                      <span className={cn('rounded-full border px-2 py-1 text-[10px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </section>
 
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
@@ -832,6 +1022,8 @@ export default function TransactionCoordinatorPage() {
   const [assignmentPreviewOffer, setAssignmentPreviewOffer] = useState<BuyerOffer | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [taskLane, setTaskLane] = useState<'all' | DispositionOperatingLane>('all')
+  const [taskState, setTaskState] = useState<'active' | 'all' | TcTask['status']>('active')
 
   async function fetchFiles() {
     setError(null)
@@ -866,6 +1058,7 @@ export default function TransactionCoordinatorPage() {
   }, [])
 
   useEffect(() => {
+    if (pageView !== 'communications') return
     if (files.length === 0) {
       setTimelineByFile({})
       return
@@ -902,7 +1095,7 @@ export default function TransactionCoordinatorPage() {
 
     fetchTimeline()
     return () => controller.abort()
-  }, [files])
+  }, [files, pageView])
 
   const filtered = useMemo(() => {
     if (activeTab === 'all') return files
@@ -935,6 +1128,14 @@ export default function TransactionCoordinatorPage() {
         return aTime - bTime
       })
   ), [files])
+
+  const visiblePageTasks = useMemo(() => pageTasks.filter(({ task }) => {
+    const operating = dispositionTaskDefinition(task.task_type)
+    if (taskLane !== 'all' && operating?.definition.lane !== taskLane) return false
+    if (taskState === 'active') return task.status === 'open' || task.status === 'blocked'
+    if (taskState !== 'all' && task.status !== taskState) return false
+    return true
+  }), [pageTasks, taskLane, taskState])
 
   const pageDocs = useMemo(() => (
     files.filter((file) => file.buyer_offer_id || file.offer?.assignment_document_url)
@@ -998,9 +1199,9 @@ export default function TransactionCoordinatorPage() {
   }
 
   const metricCards = [
-    { label: 'Open files', value: stats.open, icon: 'folder_open', tone: 'bg-[#e8f4ff] text-[#075985]' },
+    { label: 'Active transactions', value: stats.open, icon: 'folder_open', tone: 'bg-[#e8f4ff] text-[#075985]' },
     { label: 'Blocked', value: stats.blocked, icon: 'report', tone: 'bg-[#fff1f1] text-[#b42318]' },
-    { label: 'Scheduled', value: stats.scheduled, icon: 'event_available', tone: 'bg-[#eff6ff] text-[#1d4ed8]' },
+    { label: 'Closings scheduled', value: stats.scheduled, icon: 'event_available', tone: 'bg-[#eff6ff] text-[#1d4ed8]' },
     { label: 'Assignment fees', value: formatCurrency(stats.fees), icon: 'payments', tone: 'bg-[#e8fff0] text-[#166534]' },
   ]
 
@@ -1009,9 +1210,9 @@ export default function TransactionCoordinatorPage() {
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b border-[#d8dee9] pb-5">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E32E2E]">Reports to Dispositions</p>
-            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111827]">Transaction Coordination Portal</h1>
-            <p suppressHydrationWarning className="mt-1 max-w-2xl text-sm text-[#4b5565]">Closing files, approved communications, call agendas, exceptions, title work, EMD, and assignment fee recognition.</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E32E2E]">Dispositions operating system</p>
+            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111827]">Closing coordination</h1>
+            <p suppressHydrationWarning className="mt-1 max-w-2xl text-sm text-[#4b5565]">One shared transaction record for title, funding, assignment, closing, post-close, and the handoffs between Dispositions and Closing Coordination.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {TC_PAGE_TABS.map((tab) => {
@@ -1080,12 +1281,13 @@ export default function TransactionCoordinatorPage() {
             <div className="overflow-hidden rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
               <div className="overflow-x-auto">
                 <div className="min-w-[980px]">
-                  <div className="grid grid-cols-[1.4fr_1fr_0.95fr_0.8fr_0.7fr_1.2fr] gap-3 border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3 text-[11px] font-black uppercase text-[#697386]">
+                  <div className="grid grid-cols-[1.35fr_0.95fr_0.9fr_0.72fr_0.72fr_0.9fr_1.05fr] gap-3 border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3 text-[11px] font-black uppercase text-[#697386]">
                     <span>Property</span>
                     <span>Buyer</span>
                     <span>Title</span>
                     <span>Closing</span>
                     <span>Risk</span>
+                    <span>Workflow</span>
                     <span>Next Action</span>
                   </div>
                   {loading ? (
@@ -1093,16 +1295,18 @@ export default function TransactionCoordinatorPage() {
                   ) : filtered.length === 0 ? (
                     <div className="px-4 py-14 text-center">
                       <Icon name="fact_check" size="text-3xl" className="mx-auto mb-2 text-[#cad2df]" />
-                      <p className="text-sm font-bold text-[#253041]">No TC files in this view.</p>
-                      <p className="mt-1 text-xs text-[#697386]">Real Dispo pipeline files will appear here when they are ready for closing coordination.</p>
+                      <p className="text-sm font-bold text-[#253041]">No active closing files in this view.</p>
+                      <p className="mt-1 text-xs text-[#697386]">Real Dispositions records appear here as the shared operating workflow activates.</p>
                     </div>
                   ) : (
                     <div className="divide-y divide-[#e1e6ee]">
-                      {filtered.map((file) => (
+                      {filtered.map((file) => {
+                        const progress = operatingProgress(file)
+                        return (
                         <button
                           key={file.id}
                           onClick={() => setSelected(file)}
-                          className="grid w-full grid-cols-[1.4fr_1fr_0.95fr_0.8fr_0.7fr_1.2fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
+                          className="grid w-full grid-cols-[1.35fr_0.95fr_0.9fr_0.72fr_0.72fr_0.9fr_1.05fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
                         >
                           <span className="min-w-0">
                             <span className="block truncate font-bold text-[#111827]">{file.lead?.property_address || 'No address'}</span>
@@ -1120,9 +1324,19 @@ export default function TransactionCoordinatorPage() {
                           <span>
                             <span className={cn('inline-flex rounded-full border px-2 py-1 text-[11px] font-black uppercase', riskClass(file.risk_level))}>{file.risk_level}</span>
                           </span>
+                          <span className="min-w-0">
+                            <span className="flex items-center justify-between gap-2 text-[11px] font-black text-[#253041]">
+                              <span>{progress.percent}%</span>
+                              <span className="text-[#697386]">{progress.completed}/{progress.total}</span>
+                            </span>
+                            <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[#e1e6ee]">
+                              <span className={cn('block h-full rounded-full', progress.blocked > 0 ? 'bg-[#E32E2E]' : 'bg-[#22c55e]')} style={{ width: `${progress.percent}%` }} />
+                            </span>
+                          </span>
                           <span className="truncate text-[#4b5565]">{file.next_action || '—'}</span>
                         </button>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -1169,7 +1383,8 @@ export default function TransactionCoordinatorPage() {
         {pageView === 'docs' && (
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
             <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-              <h2 className="text-sm font-black text-[#111827]">Doc Review</h2>
+              <h2 className="text-sm font-black text-[#111827]">Documents</h2>
+              <p className="mt-1 text-xs font-semibold text-[#697386]">Contracts, receipts, title work, approvals, and closing evidence tied to the transaction record.</p>
             </div>
             <div className="grid grid-cols-1 gap-4 p-4 xl:grid-cols-2">
               {loading ? (
@@ -1224,16 +1439,37 @@ export default function TransactionCoordinatorPage() {
 
         {pageView === 'tasks' && (
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
-            <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-              <h2 className="text-sm font-black text-[#111827]">Tasks</h2>
+            <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
+              <div>
+                <h2 className="text-sm font-black text-[#111827]">Role queue</h2>
+                <p className="mt-1 text-xs font-semibold text-[#697386]">Due work across Dispositions, Closing Coordination, and shared handoffs.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select value={taskLane} onChange={(event) => setTaskLane(event.target.value as typeof taskLane)} className="rounded-lg border border-[#cad2df] bg-white px-3 py-2 text-xs font-black text-[#253041]" aria-label="Filter tasks by team lane">
+                  <option value="all">All teams</option>
+                  <option value="dispositions">Dispositions</option>
+                  <option value="coordination">Closing coordination</option>
+                  <option value="shared">Shared gates</option>
+                </select>
+                <select value={taskState} onChange={(event) => setTaskState(event.target.value as typeof taskState)} className="rounded-lg border border-[#cad2df] bg-white px-3 py-2 text-xs font-black text-[#253041]" aria-label="Filter tasks by status">
+                  <option value="active">Active work</option>
+                  <option value="all">All statuses</option>
+                  <option value="open">Open</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="done">Done</option>
+                  <option value="waived">Waived</option>
+                </select>
+              </div>
             </div>
             <div className="divide-y divide-[#e1e6ee]">
               {loading ? (
                 <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">Loading tasks...</div>
-              ) : pageTasks.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">No TC tasks found.</div>
+              ) : visiblePageTasks.length === 0 ? (
+                <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">No tasks match this role queue.</div>
               ) : (
-                pageTasks.map(({ file, task }) => (
+                visiblePageTasks.map(({ file, task }) => {
+                  const operating = dispositionTaskDefinition(task.task_type)
+                  return (
                   <button
                     key={task.id}
                     type="button"
@@ -1243,6 +1479,12 @@ export default function TransactionCoordinatorPage() {
                     <span className="min-w-0">
                       <span className="block truncate font-bold text-[#111827]">{task.label}</span>
                       <span className="mt-0.5 block truncate text-xs font-semibold text-[#697386]">{file.lead?.property_address || 'No property'}</span>
+                      {operating && (
+                        <span className="mt-1 flex flex-wrap gap-1.5">
+                          <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-black', laneClass(operating.definition.lane))}>{laneLabel(operating.definition.lane)}</span>
+                          <span className="rounded-full border border-[#cad2df] bg-white px-2 py-0.5 text-[10px] font-black text-[#697386]">{operating.phase.label}</span>
+                        </span>
+                      )}
                     </span>
                     <span className="truncate text-[#4b5565]">{task.assigned_to || 'Unassigned'}</span>
                     <span className="text-[#4b5565]">{formatDate(task.due_at)}</span>
@@ -1250,7 +1492,8 @@ export default function TransactionCoordinatorPage() {
                       <span className={cn('inline-flex rounded-full border px-2 py-1 text-[11px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
                     </span>
                   </button>
-                ))
+                  )
+                })
               )}
             </div>
           </section>
@@ -1260,8 +1503,8 @@ export default function TransactionCoordinatorPage() {
           <section className="space-y-4">
             <div className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
               <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-                <h2 className="text-sm font-black text-[#111827]">Dispo Reports</h2>
-                <p className="mt-1 text-xs font-semibold text-[#697386]">TC closing snapshot for Dispositions without leaving the TC portal.</p>
+                <h2 className="text-sm font-black text-[#111827]">Transaction performance</h2>
+                <p className="mt-1 text-xs font-semibold text-[#697386]">Shared Dispositions and Closing Coordination performance from the same live transaction records.</p>
               </div>
               <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
                 {reportRows.map((row) => (

@@ -81,7 +81,7 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
               </Link>
               <Link href="/dispo/tc" className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
                 <Icon name="fact_check" className="text-[18px]" />
-                TC portal
+                Closing coordination
               </Link>
             </>
           ) : null}

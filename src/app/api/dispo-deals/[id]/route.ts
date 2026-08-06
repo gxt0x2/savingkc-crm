@@ -2,6 +2,9 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { validateDispositionStageGate } from '@/lib/dispo/operating-lifecycle'
+import { ensureTcFileForDeal, syncDispositionOperatingTasksForFile } from '@/lib/tc'
+import type { DispoStage, TcTask } from '@/types/dispo'
 
 const VALID_STAGES = ['new', 'marketing', 'offers_in', 'negotiating', 'under_contract', 'closed', 'dead']
 
@@ -87,7 +90,7 @@ export async function PATCH(
     // Fetch current deal
     const { data: current, error: fetchError } = await db
       .from('dispo_deals')
-      .select('id, stage')
+      .select('id, lead_id, stage, entered_at, assignment_fee, close_date, accepted_offer_id, accepted_buyer_id')
       .eq('id', id)
       .single()
 
@@ -113,6 +116,40 @@ export async function PATCH(
           { status: 409 }
         )
       }
+
+      if (body.stage !== current.stage && body.stage !== 'dead') {
+        const tcFileId = await ensureTcFileForDeal(db, {
+          id: current.id,
+          leadId: current.lead_id,
+          stage: current.stage as DispoStage,
+          enteredAt: current.entered_at,
+          assignmentFee: current.assignment_fee,
+          closeDate: current.close_date,
+          acceptedOfferId: current.accepted_offer_id,
+        })
+        const { data: tasks, error: taskError } = await db
+          .from('tc_tasks')
+          .select('id, tc_file_id, task_type, label, status, due_at, completed_at, assigned_to, source, notes, created_at, updated_at')
+          .eq('tc_file_id', tcFileId)
+        if (taskError) throw new Error(`Failed to validate operating gates: ${taskError.message}`)
+
+        const gate = validateDispositionStageGate(
+          current.stage as DispoStage,
+          body.stage as DispoStage,
+          (tasks ?? []) as TcTask[],
+          {
+            acceptedOfferId: body.accepted_offer_id ?? current.accepted_offer_id,
+            acceptedBuyerId: body.accepted_buyer_id ?? current.accepted_buyer_id,
+          },
+        )
+        if (!gate.allowed) {
+          return NextResponse.json({
+            error: `Complete the operating gates before moving to ${String(body.stage).replace(/_/g, ' ')}`,
+            missing_requirements: gate.missing,
+            missing_phase_ids: gate.missingPhaseIds,
+          }, { status: 409 })
+        }
+      }
       updates.stage = body.stage
     }
 
@@ -134,6 +171,19 @@ export async function PATCH(
     if (updateError) {
       console.error('[dispo-deals/:id PATCH] Update error:', updateError)
       return NextResponse.json({ error: updateError.message }, { status: 500 })
+    }
+
+    if (body.stage !== undefined && body.stage !== current.stage) {
+      const { data: tcFile } = await db
+        .from('tc_files')
+        .select('id')
+        .eq('dispo_deal_id', id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (tcFile?.id) {
+        await syncDispositionOperatingTasksForFile(db, tcFile.id)
+      }
     }
 
     return NextResponse.json({ deal })

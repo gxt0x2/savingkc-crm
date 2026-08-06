@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { updateManifestV2_1 } from '@/lib/manifest-sync'
 import type { ManifestV2 } from '@/lib/manifest-builder'
+import { activeDispositionTasks, calculateDispositionTaskDueAt } from '@/lib/dispo/operating-lifecycle'
+import type { DispoStage } from '@/types/dispo'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DbClient = SupabaseClient<any, 'public', any>
@@ -57,6 +59,83 @@ export const STANDARD_TC_TASKS = [
   { task_type: 'log_assignment_revenue', label: 'Log assignment revenue' },
 ] as const
 
+export interface DispositionOperatingTaskSeedContext {
+  tcFileId: string
+  dealStage: DispoStage
+  tcStatus: TcStatus
+  enteredAt: string | null
+  closingAt: string | null
+}
+
+function taskOwner(lane: 'dispositions' | 'coordination' | 'shared') {
+  if (lane === 'dispositions') return 'Dispositions'
+  if (lane === 'coordination') return 'Closing Coordination'
+  return 'Shared'
+}
+
+export async function seedDispositionOperatingTasks(
+  db: DbClient,
+  contexts: readonly DispositionOperatingTaskSeedContext[],
+) {
+  if (contexts.length === 0) return 0
+
+  const fileIds = contexts.map((context) => context.tcFileId)
+  const { data: existing, error: existingError } = await db
+    .from('tc_tasks')
+    .select('tc_file_id, task_type')
+    .in('tc_file_id', fileIds)
+  if (existingError) throw new Error(`Failed to inspect operating tasks: ${existingError.message}`)
+
+  const existingKeys = new Set(
+    (existing ?? []).map((row: { tc_file_id: string; task_type: string }) => `${row.tc_file_id}:${row.task_type}`),
+  )
+  const rows = contexts.flatMap((context) => {
+    const lifecycleContext = {
+      dealStage: context.dealStage,
+      tcStatus: context.tcStatus,
+      enteredAt: context.enteredAt,
+      closingAt: context.closingAt,
+    }
+    return activeDispositionTasks(lifecycleContext)
+      .filter(({ definition }) => !existingKeys.has(`${context.tcFileId}:${definition.taskType}`))
+      .map(({ phase, definition }) => ({
+        tc_file_id: context.tcFileId,
+        task_type: definition.taskType,
+        label: definition.label,
+        due_at: calculateDispositionTaskDueAt(definition, lifecycleContext),
+        assigned_to: taskOwner(definition.lane),
+        source: 'disposition_operating_system:v1',
+        notes: `Workflow phase: ${phase.label}`,
+      }))
+  })
+
+  if (rows.length === 0) return 0
+  const { error } = await db.from('tc_tasks').insert(rows)
+  if (error) throw new Error(`Failed to seed operating tasks: ${error.message}`)
+  return rows.length
+}
+
+export async function syncDispositionOperatingTasksForFile(db: DbClient, tcFileId: string) {
+  const { data, error } = await db
+    .from('tc_files')
+    .select('id, status, created_at, closing_scheduled_at, dispo_deal:dispo_deal_id(stage, entered_at, close_date)')
+    .eq('id', tcFileId)
+    .maybeSingle()
+  if (error) throw new Error(`Failed to load operating task context: ${error.message}`)
+  if (!data) return 0
+
+  const deal = Array.isArray(data.dispo_deal) ? data.dispo_deal[0] : data.dispo_deal
+  if (!deal?.stage) return 0
+  const closingAt = data.closing_scheduled_at || (deal.close_date ? `${deal.close_date}T17:00:00.000Z` : null)
+  return seedDispositionOperatingTasks(db, [{
+    tcFileId: data.id,
+    dealStage: deal.stage as DispoStage,
+    tcStatus: data.status as TcStatus,
+    enteredAt: deal.entered_at || data.created_at,
+    closingAt,
+  }])
+}
+
 export function isTcStatus(value: string): value is TcStatus {
   return (TC_STATUSES as readonly string[]).includes(value)
 }
@@ -82,24 +161,68 @@ export async function logTcEvent(
 }
 
 export async function seedStandardTcTasks(db: DbClient, tcFileId: string) {
-  const { data: existing } = await db
-    .from('tc_tasks')
-    .select('task_type')
-    .eq('tc_file_id', tcFileId)
+  await syncDispositionOperatingTasksForFile(db, tcFileId)
+}
 
-  const existingTypes = new Set((existing ?? []).map((row: { task_type: string }) => row.task_type))
-  const rows = STANDARD_TC_TASKS
-    .filter((task) => !existingTypes.has(task.task_type))
-    .map((task) => ({
-      tc_file_id: tcFileId,
-      task_type: task.task_type,
-      label: task.label,
-      source: 'system',
-    }))
+export async function ensureTcFileForDeal(
+  db: DbClient,
+  deal: {
+    id: string
+    leadId: string
+    stage: DispoStage
+    enteredAt?: string | null
+    assignmentFee?: number | null
+    closeDate?: string | null
+    acceptedOfferId?: string | null
+  },
+) {
+  const { data: existing, error: existingError } = await db
+    .from('tc_files')
+    .select('id')
+    .eq('dispo_deal_id', deal.id)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (existingError) throw new Error(`Failed to inspect closing file: ${existingError.message}`)
+  if (existing?.id) {
+    await syncDispositionOperatingTasksForFile(db, existing.id)
+    return existing.id as string
+  }
 
-  if (rows.length === 0) return
-  const { error } = await db.from('tc_tasks').insert(rows)
-  if (error) throw new Error(`Failed to seed TC tasks: ${error.message}`)
+  const status: TcStatus = deal.stage === 'dead'
+    ? 'cancelled'
+    : deal.stage === 'closed'
+      ? 'closed'
+      : deal.stage === 'under_contract'
+        ? 'opening_package_needed'
+        : 'not_opened'
+  const closingAt = deal.closeDate ? new Date(`${deal.closeDate}T17:00:00.000Z`).toISOString() : null
+  const { data: created, error: createError } = await db
+    .from('tc_files')
+    .insert({
+      lead_id: deal.leadId,
+      dispo_deal_id: deal.id,
+      buyer_offer_id: deal.acceptedOfferId ?? null,
+      status,
+      opened_at: deal.stage === 'under_contract' || deal.stage === 'closed' ? new Date().toISOString() : null,
+      closing_scheduled_at: closingAt,
+      assignment_fee: deal.assignmentFee ?? null,
+      next_action: 'Complete contract intake and deal readiness',
+      risk_level: 'normal',
+    })
+    .select('id')
+    .single()
+  if (createError || !created?.id) throw new Error(`Failed to create closing file: ${createError?.message || 'Unknown error'}`)
+
+  await seedDispositionOperatingTasks(db, [{
+    tcFileId: created.id,
+    dealStage: deal.stage,
+    tcStatus: status,
+    enteredAt: deal.enteredAt ?? new Date().toISOString(),
+    closingAt,
+  }])
+  await logTcEvent(db, created.id, 'closing_file_created_from_disposition', { dispo_deal_id: deal.id }, 'system')
+  return created.id as string
 }
 
 export async function syncTcStatusToManifest(db: DbClient, tcFileId: string) {

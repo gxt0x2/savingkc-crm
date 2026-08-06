@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic'
 
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { ensureTcFileForOffer, isTcStatus } from '@/lib/tc'
+import { ensureTcFileForOffer, isTcStatus, seedDispositionOperatingTasks } from '@/lib/tc'
 import { isNonRealRecord } from '@/lib/real-data'
 import type { TcStatus } from '@/types/dispo'
 
@@ -129,6 +129,28 @@ async function syncPipelineDealsIntoTcFiles(db: ReturnType<typeof supabaseAdmin>
   }
 }
 
+async function syncOperatingTasks(db: ReturnType<typeof supabaseAdmin>) {
+  const { data, error } = await db
+    .from('tc_files')
+    .select('id, status, created_at, closing_scheduled_at, dispo_deal:dispo_deal_id(stage, entered_at, close_date)')
+    .not('dispo_deal_id', 'is', null)
+    .limit(300)
+  if (error) throw new Error(error.message)
+
+  const contexts = (data ?? []).flatMap((file) => {
+    const deal = Array.isArray(file.dispo_deal) ? file.dispo_deal[0] : file.dispo_deal
+    if (!deal?.stage || deal.stage === 'dead') return []
+    return [{
+      tcFileId: file.id,
+      dealStage: deal.stage,
+      tcStatus: file.status,
+      enteredAt: deal.entered_at || file.created_at,
+      closingAt: file.closing_scheduled_at || (deal.close_date ? `${deal.close_date}T17:00:00.000Z` : null),
+    }]
+  })
+  await seedDispositionOperatingTasks(db, contexts)
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
@@ -137,7 +159,15 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 200)
     const db = supabaseAdmin()
 
-    await syncPipelineDealsIntoTcFiles(db)
+    after(async () => {
+      try {
+        const backgroundDb = supabaseAdmin()
+        await syncPipelineDealsIntoTcFiles(backgroundDb)
+        await syncOperatingTasks(backgroundDb)
+      } catch (backgroundError) {
+        console.error('[tc/files GET] operating workflow sync failed:', backgroundError)
+      }
+    })
 
     let query = db
       .from('tc_files')
@@ -145,7 +175,7 @@ export async function GET(req: NextRequest) {
         `*,
         lead:lead_id(id, full_name, property_address, city, state, zip),
         offer:buyer_offer_id(id, offer_amount, status, close_days, assignment_submission_id, assignment_assignee_submitter_id, assignment_sent_at, assignment_signed_at, assignment_document_url, buyer:buyer_id(id, name, company, email, phone)),
-        dispo_deal:dispo_deal_id(id, stage, assignment_fee, close_date),
+        dispo_deal:dispo_deal_id(id, stage, entered_at, assignment_fee, close_date, accepted_offer_id, accepted_buyer_id),
         title_company:title_company_id(id, name, office_phone, office_email),
         title_contact:title_contact_id(id, name, role, email, phone),
         tasks:tc_tasks(id, task_type, label, status, due_at, completed_at, assigned_to, source, notes)`

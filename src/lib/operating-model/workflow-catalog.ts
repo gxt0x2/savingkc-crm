@@ -237,6 +237,21 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
     version: 1, lastRunAt: null,
   },
   {
+    id: 'disposition-operating-lifecycle',
+    name: 'Disposition & Closing Operating Lifecycle',
+    description: 'Activates the shared Dispositions and Transaction Coordination work lanes from contract intake through closing, debrief, and archive.',
+    category: 'dispositions', status: 'active', health: 'healthy', owner: DISPOSITIONS_OWNER,
+    trigger: { type: 'record_changed', record: 'disposition deal', event: 'deal or closing stage changed' },
+    actions: [
+      { type: 'execute', label: 'Activate contract and due-diligence gates' },
+      { type: 'execute', label: 'Coordinate buyer marketing and assignment work' },
+      { type: 'execute', label: 'Activate title, funding, and clear-to-close gates' },
+      { type: 'create_next_action', actionType: 'task', title: 'Complete the current disposition operating gate', dueOffsetMinutes: 0 },
+    ],
+    implementation: implementation(['src/lib/dispo/operating-lifecycle.ts', 'src/lib/tc.ts', '/api/tc/files', '/api/tc/tasks/[id]']),
+    version: 1, lastRunAt: null,
+  },
+  {
     id: 'disposition-closeout',
     name: 'Transaction Funding & Closeout',
     description: 'Records confirmed funding, calculates economics, closes marketing and TC, and creates debrief and seller follow-up work.',
