@@ -182,18 +182,3 @@ REVOKE ALL ON FUNCTION public.preview_data_retention() FROM PUBLIC, anon, authen
 REVOKE ALL ON FUNCTION public.apply_data_retention() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.preview_data_retention() TO service_role;
 GRANT EXECUTE ON FUNCTION public.apply_data_retention() TO service_role;
-
-INSERT INTO public.system_workers (name, type, description, check_interval_minutes, status, metadata)
-VALUES (
-  'Data Retention Monitor',
-  'cron',
-  'Previews governed retention candidates daily; apply mode requires two independent safety gates.',
-  1440,
-  'unknown',
-  '{"endpoint":"/api/cron/data-retention","default_mode":"dry_run"}'::jsonb
-)
-ON CONFLICT (name) DO UPDATE SET
-  description = EXCLUDED.description,
-  check_interval_minutes = EXCLUDED.check_interval_minutes,
-  metadata = EXCLUDED.metadata,
-  updated_at = NOW();
