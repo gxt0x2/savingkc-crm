@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+import NextImage from 'next/image'
 import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
@@ -11,6 +13,7 @@ interface AgentProfile {
   email: string
   full_name: string
   role: 'owner' | 'agent'
+  is_admin: boolean
   phone: string
   assigned_twilio_number: string | null
   profile_photo_url: string | null
@@ -36,6 +39,7 @@ const DEFAULT_PROFILE: AgentProfile = {
   email: '',
   full_name: '',
   role: 'agent',
+  is_admin: false,
   phone: '',
   assigned_twilio_number: null,
   profile_photo_url: null,
@@ -88,6 +92,7 @@ export default function SettingsPage() {
   const envLabel = deployEnv === 'production' ? 'Production' : deployEnv === 'preview' ? 'Preview' : 'Development'
 
   const { user } = useAuth()
+  const userEmail = user?.email ?? ''
   const [profile, setProfile] = useState<AgentProfile>(DEFAULT_PROFILE)
   const [allProfiles, setAllProfiles] = useState<AgentProfile[]>([])
   const [selectedEmail, setSelectedEmail] = useState<string>('')
@@ -96,7 +101,7 @@ export default function SettingsPage() {
 
   // Load all profiles (for owner agent-switcher) and current user profile
   useEffect(() => {
-    if (!user?.email) return
+    if (!userEmail) return
 
     async function load() {
       setLoading(true)
@@ -109,20 +114,20 @@ export default function SettingsPage() {
         }
 
         // Fetch current user profile
-        const res = await fetch(`/api/settings?email=${encodeURIComponent(user!.email!)}`)
+        const res = await fetch(`/api/settings?email=${encodeURIComponent(userEmail)}`)
         const data = await res.json()
         if (data.profile) {
           setProfile({ ...DEFAULT_PROFILE, ...data.profile })
-          setSelectedEmail(user!.email!)
+          setSelectedEmail(userEmail)
         } else {
-          setProfile({ ...DEFAULT_PROFILE, email: user!.email! })
-          setSelectedEmail(user!.email!)
+          setProfile({ ...DEFAULT_PROFILE, email: userEmail })
+          setSelectedEmail(userEmail)
         }
       } catch {}
       setLoading(false)
     }
     load()
-  }, [user?.email])
+  }, [userEmail])
 
   // Switch to a different agent's profile
   async function switchAgent(email: string) {
@@ -182,8 +187,8 @@ export default function SettingsPage() {
       } else {
         alert(`Failed to save settings: ${data.error || 'Unknown error'}`)
       }
-    } catch (err: any) {
-      alert(`Error saving settings: ${err.message || 'Network error'}`)
+    } catch (err: unknown) {
+      alert(`Error saving settings: ${err instanceof Error ? err.message : 'Network error'}`)
     }
   }
 
@@ -207,7 +212,9 @@ export default function SettingsPage() {
     img.src = URL.createObjectURL(file)
   }
 
-  const isOwner = allProfiles.find((p) => p.email === user?.email)?.role === 'owner'
+  const isOwner = allProfiles.find((p) => p.email === userEmail)?.role === 'owner'
+  const isAdmin = allProfiles.find((p) => p.email === userEmail)?.is_admin
+    ?? (selectedEmail === userEmail && profile.is_admin)
 
   const initials = profile.full_name
     ? profile.full_name
@@ -238,7 +245,7 @@ export default function SettingsPage() {
 
       <div className="space-y-8">
         {/* Gmail Sync */}
-        <GmailConnect userEmail={selectedEmail || user?.email || ''} />
+        <GmailConnect userEmail={selectedEmail || userEmail} />
 
         {/* Company paid-media connection */}
         <GoogleAdsConnect />
@@ -276,9 +283,12 @@ export default function SettingsPage() {
           <div className="flex flex-col sm:flex-row items-start gap-4 sm:gap-6 mb-6">
             <div className="relative shrink-0 mx-auto sm:mx-0">
               {profile.profile_photo_url ? (
-                <img
+                <NextImage
                   src={profile.profile_photo_url}
                   alt="Profile"
+                  width={80}
+                  height={80}
+                  unoptimized
                   className="w-20 h-20 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-primary/20"
                 />
               ) : (
@@ -532,9 +542,19 @@ export default function SettingsPage() {
 
         {/* System Info */}
         <section className="bg-surface-container-lowest border border-outline-variant/10 rounded-2xl p-6 shadow-sm">
-          <h2 className="text-sm font-black uppercase tracking-widest text-primary mb-5 flex items-center gap-2">
-            <Icon name="info" size="text-base" /> System
-          </h2>
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-primary">
+              <Icon name="info" size="text-base" /> System
+            </h2>
+            {isAdmin && (
+              <Link
+                href="/settings/system-health"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container px-4 py-2 text-xs font-bold text-primary transition-colors hover:border-primary/30 hover:bg-primary/[0.04]"
+              >
+                <Icon name="health_and_safety" size="text-base" /> System health
+              </Link>
+            )}
+          </div>
           <div className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-on-surface-variant">CRM Version</span>

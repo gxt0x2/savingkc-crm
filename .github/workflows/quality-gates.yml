@@ -40,6 +40,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -49,6 +51,11 @@ jobs:
 
       - name: Install deps
         run: npm ci
+
+      - name: Code hygiene gate
+        env:
+          HYGIENE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npm run gate:hygiene
 
       - name: Root dependency security gate
         run: npm run gate:security

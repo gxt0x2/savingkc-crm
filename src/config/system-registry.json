@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "policies": {
+    "newFileMaxLines": 700,
+    "oversizedExistingGrowthToleranceLines": 15,
+    "approvedPolling": [
+      {
+        "path": "src/components/layout/notification-bell.tsx",
+        "minimumIntervalMs": 300000,
+        "reason": "Refresh the signed-in user's notification count while the CRM is visible. The panel also refreshes on demand when opened."
+      }
+    ]
+  },
+  "features": [
+    {
+      "id": "dashboard",
+      "name": "CEO Dashboard",
+      "owner": "Operations",
+      "status": "active",
+      "routes": ["/dashboard"],
+      "apiRoutes": ["/api/dashboard-data", "/api/dashboard-kpis", "/api/reports/operating"],
+      "tables": ["leads", "dispo_deals", "tc_files"],
+      "environment": []
+    },
+    {
+      "id": "contacts",
+      "name": "Contacts and lead workspace",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": ["/contacts", "/leads/[id]"],
+      "apiRoutes": ["/api/contacts", "/api/leads", "/api/leads/[id]"],
+      "tables": ["leads", "lead_activities", "lead_tasks", "manifest_history"],
+      "environment": []
+    },
+    {
+      "id": "conversations",
+      "name": "Conversations",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": ["/conversations"],
+      "apiRoutes": ["/api/conversations/hub", "/api/conversations/send", "/api/notifications"],
+      "tables": ["communications", "conversation_thread_state", "notifications", "sms_delivery_log"],
+      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET"]
+    },
+    {
+      "id": "dialer",
+      "name": "Dialer and phone system",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": ["/dialer"],
+      "apiRoutes": ["/api/dialer/queue", "/api/twilio-token", "/api/call-log"],
+      "tables": ["call_logs", "dialer_saved_lists", "phone_number_registry", "agent_profiles"],
+      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN"]
+    },
+    {
+      "id": "calendar_tasks",
+      "name": "Calendar and tasks",
+      "owner": "Operations",
+      "status": "active",
+      "routes": ["/calendar", "/tasks"],
+      "apiRoutes": ["/api/calendar/tasks"],
+      "tables": ["appointments", "lead_tasks"],
+      "environment": []
+    },
+    {
+      "id": "acquisitions",
+      "name": "Acquisitions reporting",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": ["/reports/acquisitions"],
+      "apiRoutes": ["/api/stage/advance", "/api/stage/validate"],
+      "tables": ["leads", "lead_stage_history", "offers"],
+      "environment": []
+    },
+    {
+      "id": "dispositions_tc",
+      "name": "Dispositions and transaction coordination",
+      "owner": "Dispositions and TC",
+      "status": "active",
+      "routes": ["/dispo/pipeline", "/dispo/tc", "/dispo/offers", "/dispo/buyers", "/dispo/vendors"],
+      "apiRoutes": ["/api/dispo-deals", "/api/tc/files", "/api/offers", "/api/buyers"],
+      "tables": ["dispo_deals", "tc_files", "tc_tasks", "tc_drafts", "offers", "buyers", "vendors"],
+      "environment": ["DOCUSEAL_API_KEY"]
+    },
+    {
+      "id": "reports",
+      "name": "Department reporting",
+      "owner": "Operations",
+      "status": "active",
+      "routes": ["/reports", "/reports/marketing", "/reports/dispositions", "/reports/finance", "/reports/call-sms"],
+      "apiRoutes": ["/api/reports/operating", "/api/financials"],
+      "tables": ["leads", "call_logs", "communications", "dispo_deals", "tc_files"],
+      "environment": []
+    },
+    {
+      "id": "ari",
+      "name": "ARI insights and assistant",
+      "owner": "Operations",
+      "status": "active",
+      "routes": ["/ari", "/ai"],
+      "apiRoutes": ["/api/ari/chat", "/api/ai/command"],
+      "tables": ["ari_briefings", "ari_briefing_events", "ari_audit_events"],
+      "environment": ["OPENAI_API_KEY"]
+    },
+    {
+      "id": "workflows",
+      "name": "Workflow control center",
+      "owner": "Operations",
+      "status": "active",
+      "routes": ["/workflows"],
+      "apiRoutes": ["/api/workflows/definitions", "/api/workflows/phone-system", "/api/workflows/summary"],
+      "tables": ["workflow_runs", "phone_number_registry"],
+      "environment": []
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "owner": "Administration",
+      "status": "active",
+      "routes": ["/settings"],
+      "apiRoutes": ["/api/settings"],
+      "tables": ["agent_profiles", "google_oauth_tokens"],
+      "environment": []
+    },
+    {
+      "id": "google_ads",
+      "name": "Google Ads reporting and conversion export",
+      "owner": "Marketing",
+      "status": "active",
+      "routes": ["/marketing"],
+      "apiRoutes": ["/api/marketing/ads-command", "/api/cron/google-ads-reporting-sync", "/api/cron/google-ads-missed-calls", "/api/workers/ppc-conversion-export"],
+      "tables": ["google_ads_campaign_daily", "google_ads_reporting_sync_runs", "ppc_conversion_outbox", "ppc_tracking_events"],
+      "environment": ["GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN"],
+      "crons": [
+        {
+          "path": "/api/cron/google-ads-reporting-sync",
+          "schedule": "*/10 * * * *",
+          "highFrequencyReason": "Keep campaign performance current enough for the live marketing dashboard while avoiding per-page polling."
+        },
+        {
+          "path": "/api/cron/google-ads-missed-calls",
+          "schedule": "*/5 * * * *",
+          "highFrequencyReason": "Missed Google Ads calls must be reconciled quickly enough for same-session lead response and attribution."
+        },
+        {
+          "path": "/api/workers/ppc-conversion-export",
+          "schedule": "*/15 * * * *"
+        }
+      ]
+    },
+    {
+      "id": "openai_ads",
+      "name": "Legacy OpenAI Ads reporting",
+      "owner": "Marketing",
+      "status": "deprecated",
+      "routes": [],
+      "apiRoutes": ["/api/cron/openai-ads-reporting-sync"],
+      "tables": ["openai_ads_campaign_daily", "openai_ads_reporting_sync_runs"],
+      "environment": [],
+      "retirement": {
+        "reason": "The CRM paid-media workspace is Google Ads only. Historical rows remain available during the retention review.",
+        "targetDate": "2026-09-30"
+      }
+    },
+    {
+      "id": "gmail",
+      "name": "Gmail synchronization",
+      "owner": "Operations",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/cron/sync-gmail"],
+      "tables": ["google_oauth_tokens", "lead_emails"],
+      "environment": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      "crons": [
+        { "path": "/api/cron/sync-gmail", "schedule": "15 13 * * *" }
+      ]
+    },
+    {
+      "id": "mojo",
+      "name": "Mojo synchronization",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/cron/process-mojo-queue", "/api/cron/sync-mojo-emails", "/api/admin/mojo-health"],
+      "tables": ["mojo_sync_queue", "mojo_sync_log", "system_workers"],
+      "environment": ["MOJO_USERNAME", "MOJO_PASSWORD"],
+      "crons": [
+        { "path": "/api/cron/process-mojo-queue", "schedule": "*/15 * * * *" },
+        { "path": "/api/cron/sync-mojo-emails", "schedule": "*/15 13-22 * * 1-5" },
+        { "path": "/api/admin/mojo-health", "schedule": "*/15 13-22 * * 1-5" }
+      ]
+    },
+    {
+      "id": "briefings",
+      "name": "Briefing lifecycle",
+      "owner": "Operations",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/cron/sweep-briefings", "/api/hot-opportunities/cron"],
+      "tables": ["ari_briefings", "ari_briefing_events", "hot_score_audit_trail"],
+      "environment": [],
+      "crons": [
+        { "path": "/api/cron/sweep-briefings", "schedule": "0 13 * * *" },
+        { "path": "/api/hot-opportunities/cron", "schedule": "0 14 * * *" }
+      ]
+    },
+    {
+      "id": "system_hygiene",
+      "name": "System hygiene and data retention",
+      "owner": "Administration",
+      "status": "active",
+      "routes": ["/settings/system-health"],
+      "apiRoutes": ["/api/system-hygiene", "/api/cron/data-retention"],
+      "tables": ["data_retention_policies", "data_retention_runs", "system_workers", "manifest_history", "hot_score_audit_trail", "google_ads_reporting_sync_runs", "openai_ads_reporting_sync_runs", "sms_delivery_log"],
+      "environment": ["DATA_RETENTION_MUTATIONS_ENABLED", "CRON_SECRET", "ADMIN_API_SECRET", "HYGIENE_BASE_REF", "GITHUB_BASE_REF"],
+      "crons": [
+        { "path": "/api/cron/data-retention", "schedule": "30 11 * * *" }
+      ]
+    }
+  ]
+}

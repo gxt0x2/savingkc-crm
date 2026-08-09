@@ -14,6 +14,13 @@
 
 -
 
+## Ownership and hygiene
+
+- [ ] New routes, tables, environment variables, crons, and polling are registered in `src/config/system-registry.json`.
+- [ ] Data growth and retention impact were reviewed; destructive migrations have a bounded, reversible safety justification.
+- [ ] `npm run hygiene` passes against the PR base.
+- [ ] User-facing changes were verified through the complete affected workflow, not only an isolated component.
+
 ## Rollback
 
 -
