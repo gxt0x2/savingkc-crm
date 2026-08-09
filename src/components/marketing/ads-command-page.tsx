@@ -2356,11 +2356,17 @@ export function AdsCommandPage() {
       }
     }
 
+    function refreshWhenActive() {
+      if (document.visibilityState === 'visible') void loadAdsData()
+    }
+
     void loadAdsData()
-    const refreshId = window.setInterval(() => void loadAdsData(), 60_000)
+    window.addEventListener('focus', refreshWhenActive)
+    document.addEventListener('visibilitychange', refreshWhenActive)
     return () => {
       cancelled = true
-      window.clearInterval(refreshId)
+      window.removeEventListener('focus', refreshWhenActive)
+      document.removeEventListener('visibilitychange', refreshWhenActive)
       controller?.abort()
     }
   }, [reloadVersion, reportingPeriod])

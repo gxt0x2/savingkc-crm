@@ -25,6 +25,12 @@ function normalize(path) {
   return path.split(sep).join('/')
 }
 
+function countLines(content) {
+  if (!content) return 0
+  const lines = content.split('\n').length
+  return content.endsWith('\n') ? lines - 1 : lines
+}
+
 function listFiles(directory) {
   if (!existsSync(directory)) return []
   return readdirSync(directory).flatMap((entry) => {
@@ -113,21 +119,39 @@ for (const cron of registeredCrons) {
 const registeredEnvironment = new Set(registry.features.flatMap((feature) => feature.environment))
 const registeredTables = new Set(registry.features.flatMap((feature) => feature.tables))
 const pollingApprovals = new Map(registry.policies.approvedPolling.map((approval) => [approval.path, approval]))
+const oversizedApprovals = new Map(
+  (registry.policies.approvedOversizedSources ?? []).map((approval) => [approval.path, approval]),
+)
 const suspiciousName = /(^|\/)(?:.*[-_.](?:old|bak|backup|copy|tmp)|.*\d{4}[-_]\d{2}[-_]\d{2}.*)\.(?:[cm]?[jt]sx?|css|json)$/i
 const codeFile = /\.(?:[cm]?[jt]sx?|css)$/
+
+for (const approval of oversizedApprovals.values()) {
+  if (!approval.path || !approval.owner || !approval.reason || !approval.targetDate || !Number.isInteger(approval.maximumLines)) {
+    fail(`Oversized-source approval is incomplete: ${approval.path || '<missing path>'}`)
+    continue
+  }
+  const targetDate = new Date(`${approval.targetDate}T23:59:59Z`)
+  if (Number.isNaN(targetDate.getTime()) || targetDate < new Date()) {
+    fail(`Oversized-source approval is expired or invalid: ${approval.path} (${approval.targetDate})`)
+  }
+}
 
 for (const [file, status] of changed) {
   if (!file || !existsSync(join(root, file))) continue
   const content = readFileSync(join(root, file), 'utf8')
   const beforeContent = status === 'A' ? '' : git(['show', `${baseRef}:${file}`])
-  const lineCount = content.split('\n').length
+  const lineCount = countLines(content)
 
   if (suspiciousName.test(file)) fail(`Temporary or versioned source filename is not allowed: ${file}`)
-  if (status === 'A' && codeFile.test(file) && lineCount > registry.policies.newFileMaxLines) {
+  const oversizedApproval = oversizedApprovals.get(file)
+  if (codeFile.test(file) && lineCount > registry.policies.newFileMaxLines && oversizedApproval) {
+    if (lineCount > oversizedApproval.maximumLines) {
+      fail(`Approved oversized source exceeds its frozen ceiling: ${file} (${lineCount}/${oversizedApproval.maximumLines})`)
+    }
+  } else if (status === 'A' && codeFile.test(file) && lineCount > registry.policies.newFileMaxLines) {
     fail(`New source file exceeds ${registry.policies.newFileMaxLines} lines: ${file} (${lineCount})`)
-  }
-  if (status !== 'A' && codeFile.test(file) && lineCount > registry.policies.newFileMaxLines) {
-    const beforeLines = beforeContent ? beforeContent.split('\n').length : lineCount
+  } else if (status !== 'A' && codeFile.test(file) && lineCount > registry.policies.newFileMaxLines) {
+    const beforeLines = beforeContent ? countLines(beforeContent) : lineCount
     if (lineCount - beforeLines > registry.policies.oversizedExistingGrowthToleranceLines) {
       fail(`Oversized source grew by ${lineCount - beforeLines} lines: ${file}`)
     }

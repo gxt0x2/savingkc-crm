@@ -29,7 +29,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "healthcheck": "npm audit --audit-level=high && expo-doctor && npm run typecheck",
+    "healthcheck": "node ../../scripts/ci/check-mobile-audit.mjs && expo-doctor && npm run typecheck",
     "distribution:check": "node scripts/check-distribution.mjs",
     "release:ios": "npm run healthcheck && npm run distribution:check && npx eas-cli build --platform ios --profile production",
     "submit:ios": "npx eas-cli submit --platform ios --profile production --latest"

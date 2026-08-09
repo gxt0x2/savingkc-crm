@@ -274,7 +274,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     }
     loadProfile()
-  }, [user?.email])
+  }, [user])
 
   if (isConversationWorkspace) {
     return (
@@ -347,6 +347,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </filter>
             </svg>
             <Link href="/ari" className="flex items-center flex-shrink-0" aria-label="Saving KC Homebuyers">
+              {/* eslint-disable-next-line @next/next/no-img-element -- the active brand asset can switch between the local dark-theme file and the external light-theme source. */}
               <img
                 src={useLightLogo ? 'https://savingkc.com/logo.png' : '/logo.png'}
                 alt="Saving KC Homebuyers"
@@ -429,6 +430,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     className="w-10 h-10 rounded-lg overflow-hidden bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] transition-colors"
                     aria-label="Profile menu"
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- agent profile photos are user-configured external URLs. */}
                     <img
                       src={profilePhotoUrl}
                       alt="Profile"
@@ -499,6 +501,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           style={{ borderColor: 'var(--ck-border)' }}
         >
           <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element -- the compact drawer reuses the unoptimized local brand asset. */}
             <img src="/logo.png" alt="Saving KC" className="h-9 w-auto" />
 
           </div>

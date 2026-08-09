@@ -9,6 +9,43 @@
         "minimumIntervalMs": 300000,
         "reason": "Refresh the signed-in user's notification count while the CRM is visible. The panel also refreshes on demand when opened."
       }
+    ],
+    "approvedOversizedSources": [
+      {
+        "path": "src/app/(app)/dispo/pipeline/page.tsx",
+        "maximumLines": 863,
+        "owner": "Dispositions",
+        "reason": "Existing operations pipeline restored from the prior portal; freeze growth while the workflow is split into owned components.",
+        "targetDate": "2026-10-31"
+      },
+      {
+        "path": "src/app/(app)/dispo/tc/page.tsx",
+        "maximumLines": 1858,
+        "owner": "Transaction Coordination",
+        "reason": "Existing transaction coordinator portal restored as one release unit; freeze growth while lanes and panels are extracted.",
+        "targetDate": "2026-10-31"
+      },
+      {
+        "path": "src/app/api/marketing/ads-command/route.ts",
+        "maximumLines": 1727,
+        "owner": "Marketing",
+        "reason": "Google Ads read model remains consolidated during the provider recovery; freeze growth while report builders are separated.",
+        "targetDate": "2026-10-31"
+      },
+      {
+        "path": "src/app/globals.css",
+        "maximumLines": 1105,
+        "owner": "Design System",
+        "reason": "The current CRM shell and restored operations portals share legacy global tokens; freeze growth while route themes move into scoped layers.",
+        "targetDate": "2026-10-31"
+      },
+      {
+        "path": "src/lib/operating-model/communication-template-catalog.ts",
+        "maximumLines": 737,
+        "owner": "Operations",
+        "reason": "The approved acquisitions and dispositions template catalog is kept intact for this release; freeze growth while templates move to data-backed modules.",
+        "targetDate": "2026-10-31"
+      }
     ]
   },
   "features": [
@@ -80,7 +117,7 @@
       "routes": ["/dispo/pipeline", "/dispo/tc", "/dispo/offers", "/dispo/buyers", "/dispo/vendors"],
       "apiRoutes": ["/api/dispo-deals", "/api/tc/files", "/api/offers", "/api/buyers"],
       "tables": ["dispo_deals", "tc_files", "tc_tasks", "tc_drafts", "offers", "buyers", "vendors"],
-      "environment": ["DOCUSEAL_API_KEY"]
+      "environment": ["DOCUSEAL_API_KEY", "VERCEL_ENV"]
     },
     {
       "id": "reports",

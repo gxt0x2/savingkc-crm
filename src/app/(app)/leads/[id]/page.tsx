@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { createClient } from '@/lib/supabase/client'
-import { toProperCase, formatPhone } from '@/lib/format'
+import { toProperCase } from '@/lib/format'
 import { formatDurationBetween, isOutboundAttempt } from '@/lib/contact-display'
 import { DEAD_REASONS } from '@/lib/lead-outcomes'
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
@@ -116,6 +116,58 @@ interface AppointmentState {
   source?: string | null
 }
 
+interface ManifestTaxCollector {
+  totalOwed?: number | null
+  delinquentAmount?: number | null
+  firstDelinquentYear?: number | string | null
+  firstYearDelinquent?: number | string | null
+  delinquentSince?: number | string | null
+  oldestDelinquentYear?: number | string | null
+  yearsDelinquent?: number | null
+}
+
+interface ManifestAssessment {
+  totalValue?: number | null
+  source?: string | null
+  fetchedAt?: string | null
+}
+
+interface ManifestProperty {
+  beds?: number | null
+  baths_full?: number | null
+  bathsFull?: number | null
+  baths_half?: number | null
+  bathsHalf?: number | null
+  sqft?: number | null
+  squareFeet?: number | null
+  lot_size?: number | null
+  lotSize?: number | null
+  year_built?: number | null
+  yearBuilt?: number | null
+  basement_type?: string | null
+  basement?: string | null
+  stories?: number | null
+  garage_spaces?: number | null
+  garage?: number | null
+  roof_type?: string | null
+  roof?: string | null
+  heating?: string | null
+  cooling?: string | null
+  property_type?: string | null
+  propertyType?: string | null
+  zoning?: string | null
+  hoa_amount?: number | null
+  tax_assessment?: number | null
+  assessment?: ManifestAssessment | null
+  taxCollector?: ManifestTaxCollector | null
+  last_sale_date?: string | null
+  lastSaleDate?: string | null
+  last_sale_price?: number | null
+  lastSalePrice?: number | null
+  data_source?: string | null
+  data_enriched_at?: string | null
+}
+
 interface LeadGroupContext {
   source?: string
   returnPath?: string
@@ -127,31 +179,6 @@ interface LeadGroupContext {
     name?: string | null
     address?: string | null
   }>
-}
-
-function formatActivityTimestamp(ts: string): string {
-  try {
-    const d = new Date(ts)
-    // Check if date is valid
-    if (isNaN(d.getTime())) {
-      return 'Unknown date'
-    }
-    const now = new Date()
-    const diffMs = now.getTime() - d.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-
-    // For recent items, show relative time with actual time
-    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-
-    if (diffMins < 60) return `${diffMins}m ago · ${timeStr}`
-    const diffHrs = Math.floor(diffMins / 60)
-    if (diffHrs < 24) return `${diffHrs}h ago · ${timeStr}`
-    const diffDays = Math.floor(diffHrs / 24)
-    if (diffDays < 7) return `${diffDays}d ago · ${timeStr}`
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` · ${timeStr}`
-  } catch {
-    return 'Unknown date'
-  }
 }
 
 function activityTypeToFeedType(type: string): 'sms' | 'call' | 'email' | 'status_change' {
@@ -410,7 +437,6 @@ function LeadTriageStrip({
 interface NetProceedsCalcProps {
   leadId: string
   initialArv: number | null
-  initialRepairs: number | null
   initialAskingPrice: number | null
   initialAssignmentFee: number | null
   initialBackTaxes?: number | null
@@ -418,7 +444,7 @@ interface NetProceedsCalcProps {
   initialLiens?: number | null
 }
 
-function NetProceedsCalc({ leadId, initialArv, initialRepairs, initialAskingPrice, initialAssignmentFee, initialBackTaxes, initialMortgage, initialLiens }: NetProceedsCalcProps) {
+function NetProceedsCalc({ leadId, initialArv, initialAskingPrice, initialAssignmentFee, initialBackTaxes, initialMortgage, initialLiens }: NetProceedsCalcProps) {
   const [arv, setArv] = useState(initialArv ?? 0)
   const [asIsValue, setAsIsValue] = useState(initialAskingPrice ? Math.round(initialAskingPrice * 1.1) : 0)
   const [askingPrice, setAskingPrice] = useState(initialAskingPrice ?? 0)
@@ -614,8 +640,8 @@ function EmailComposeModal({ leadId, toEmail, leadName, onClose, onSent }: Email
       if (!res.ok) throw new Error(data.error || 'Send failed')
       onSent()
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Failed to send email')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to send email')
     } finally {
       setSending(false)
     }
@@ -870,8 +896,39 @@ interface ManifestPanelProps {
   leadId: string
 }
 
+interface ManifestPanelData {
+  manifestId?: string
+  version?: number | string
+  currentStation?: string
+  priority?: string
+  tier?: string
+  qualificationScore?: number
+  owner?: {
+    fullName?: string
+    coOwners?: unknown
+    deceased?: boolean
+    outOfState?: boolean
+  }
+  situation?: {
+    type?: unknown
+    motivation?: { signals?: unknown }
+  }
+  property?: {
+    vacant?: boolean
+    taxCollector?: {
+      totalOwed?: number | null
+      delinquentAmount?: number | null
+    }
+  }
+  flags?: {
+    redFlags?: unknown
+    opportunityFlags?: unknown
+  }
+  [key: string]: unknown
+}
+
 function ManifestPanel({ leadId }: ManifestPanelProps) {
-  const [manifest, setManifest] = useState<any>(null)
+  const [manifest, setManifest] = useState<ManifestPanelData | null>(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
@@ -883,7 +940,9 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
       try {
         const res = await fetch(`/api/manifests?lead_id=${leadId}`)
         const data = await res.json()
-        if (data.manifest) setManifest(data.manifest.manifest)
+        if (data.manifest?.manifest && typeof data.manifest.manifest === 'object') {
+          setManifest(data.manifest.manifest as ManifestPanelData)
+        }
       } catch (err) {
         console.error('Failed to fetch manifest:', err)
       } finally {
@@ -922,7 +981,9 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
         }),
       })
       const data = await res.json()
-      if (data.manifest) setManifest(data.manifest)
+      if (data.manifest && typeof data.manifest === 'object') {
+        setManifest(data.manifest as ManifestPanelData)
+      }
     } catch (err) {
       console.error('Failed to create manifest:', err)
     } finally {
@@ -1151,8 +1212,7 @@ export default function LeadDetailPage() {
   const [leadGroup, setLeadGroup] = useState<LeadGroupContext | null>(null)
   const [manifestRowId, setManifestRowId] = useState<string | null>(null)
   const [manifestFinancials, setManifestFinancials] = useState<Record<string, number | null>>({ back_taxes: null, liens_amount: null, mortgage_balance: null })
-  const [manifestProperty, setManifestProperty] = useState<Record<string, any> | null>(null)
-  const [ownerDeceased, setOwnerDeceased] = useState<boolean>(false)
+  const [manifestProperty, setManifestProperty] = useState<ManifestProperty | null>(null)
   const [zestimate, setZestimate] = useState<number | null>(null)
   const [assessedValue, setAssessedValue] = useState<number | null>(null)
   const [redfinEstimate, setRedfinEstimate] = useState<number | null>(null)
@@ -1166,7 +1226,7 @@ export default function LeadDetailPage() {
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [showNewTask, setShowNewTask] = useState(false)
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false)
-  const [manifestAppointment, setManifestAppointment] = useState<any>(null)
+  const [manifestAppointment, setManifestAppointment] = useState<AppointmentState | null>(null)
   const [nextAppointment, setNextAppointment] = useState<AppointmentState | null>(null)
   const [manifestScore, setManifestScore] = useState<number | null>(null)
   const [manifestTranscripts, setManifestTranscripts] = useState<Array<{ date: string; recordingUrl?: string }>>([])
@@ -1183,9 +1243,6 @@ export default function LeadDetailPage() {
   const [editTaskId, setEditTaskId] = useState<string | null>(null)
   const [editTaskTitle, setEditTaskTitle] = useState('')
   const [editTaskMetadata, setEditTaskMetadata] = useState<Record<string, unknown>>({})
-  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
-  const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
-  const [activityTypeFilter, setActivityTypeFilter] = useState<string>('all')
   const activeAppointment = nextAppointment ?? manifestAppointment
   const appointmentChip = formatAppointmentChip(activeAppointment)
 
@@ -1231,12 +1288,12 @@ export default function LeadDetailPage() {
   const [refreshTick, setRefreshTick] = useState(0)
 
   // Call this after any user action that changes data (note, call, edit, email, etc.)
-  function refreshAll() {
+  const refreshAll = useCallback(() => {
     setRefreshTick(t => t + 1)
     // Fan out to every sub-card (AriBriefing, PainPoints, SellerGoals, NextAction, FavoriteOrFool, etc.)
     // so they all re-read manifest/activities in one go.
     window.dispatchEvent(new CustomEvent('crm:lead-refresh', { detail: { leadId: id } }))
-  }
+  }, [id])
 
   // Listen for disposition logged events from the telephony bar
   useEffect(() => {
@@ -1246,7 +1303,7 @@ export default function LeadDetailPage() {
     }
     window.addEventListener('crm:disposition-logged', onDisposition)
     return () => window.removeEventListener('crm:disposition-logged', onDisposition)
-  }, [id])
+  }, [id, refreshAll])
 
   useEffect(() => {
     async function fetchLead() {
@@ -1273,25 +1330,6 @@ export default function LeadDetailPage() {
     if (id) fetchLead()
   }, [id, refreshTick])
 
-  // The manifest's owner.deceased can drift (we've seen manifests built from
-  // the wrong owner's prospect). Fall back to prospects.is_deceased so the
-  // heirs panel appears whenever any linked prospect is flagged deceased.
-  useEffect(() => {
-    if (!id) return
-    async function fetchProspectDeceased() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('prospects')
-        .select('is_deceased')
-        .eq('lead_id', id)
-        .limit(50)
-      if ((data ?? []).some((r: { is_deceased: boolean | null }) => r.is_deceased)) {
-        setOwnerDeceased(true)
-      }
-    }
-    fetchProspectDeceased()
-  }, [id])
-
   useEffect(() => {
     async function fetchManifestId() {
       try {
@@ -1307,11 +1345,6 @@ export default function LeadDetailPage() {
           })
           // Store property object for PropertyDetailsCard manifest fallback
           setManifestProperty(data.manifest.manifest?.property || null)
-          // Track deceased flag for the heirs section.
-          // Additive only: if the manifest says deceased we flip to true, but
-          // never flip back to false — the prospects-table fetch is the other
-          // source and the OR must hold across both.
-          if (data.manifest.manifest?.owner?.deceased) setOwnerDeceased(true)
           // Two independent values: live Zillow zestimate and county/tax assessed value.
           const m = data.manifest.manifest || {}
           const property = m.property || {}
@@ -1339,7 +1372,18 @@ export default function LeadDetailPage() {
           const isoLike = typeof rawAppt?.scheduledAt === 'string'
             && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawAppt.scheduledAt)
           const parsedAt = isoLike ? new Date(rawAppt.scheduledAt as string) : null
-          const validAppt = rawAppt && parsedAt && !isNaN(parsedAt.getTime()) ? rawAppt : null
+          const validAppt: AppointmentState | null = rawAppt && parsedAt && !isNaN(parsedAt.getTime())
+            ? {
+                appointmentId: typeof rawAppt.appointmentId === 'string' ? rawAppt.appointmentId : null,
+                type: typeof rawAppt.type === 'string' ? rawAppt.type : null,
+                scheduledAt: rawAppt.scheduledAt,
+                status: typeof rawAppt.status === 'string' ? rawAppt.status : 'scheduled',
+                assignedTo: typeof rawAppt.assignedTo === 'string' ? rawAppt.assignedTo : null,
+                address: typeof rawAppt.address === 'string' ? rawAppt.address : null,
+                notes: typeof rawAppt.notes === 'string' ? rawAppt.notes : null,
+                source: typeof rawAppt.source === 'string' ? rawAppt.source : null,
+              }
+            : null
           setManifestAppointment(validAppt)
           // Qualification score for header chip
           const qs = data.manifest.manifest?.qualificationScore
@@ -1377,7 +1421,7 @@ export default function LeadDetailPage() {
       })
       .catch(() => { /* silent — enrichment is best-effort */ })
       .finally(() => setZillowEnriching(false))
-  }, [lead, manifestRowId, zestimate, zillowEnriching])
+  }, [lead, manifestRowId, refreshAll, zestimate, zillowEnriching])
 
   // On-demand Redfin enrichment (parallel to Zillow). Same best-effort pattern.
   useEffect(() => {
@@ -1402,7 +1446,7 @@ export default function LeadDetailPage() {
       })
       .catch(() => { /* silent */ })
       .finally(() => setRedfinEnriching(false))
-  }, [lead, manifestRowId, redfinEstimate, redfinEnriching])
+  }, [lead, manifestRowId, redfinEstimate, redfinEnriching, refreshAll])
 
   useEffect(() => {
     async function fetchActivities() {
@@ -1421,24 +1465,25 @@ export default function LeadDetailPage() {
     if (id) fetchActivities()
   }, [id, refreshTick])
 
-  // ── Lightweight poll: detect external events (calls, voicemails, SMS) ──
-  // Only checks latest activity timestamp every 15s. No refetch unless new data exists.
+  // Subscribe to new communications instead of polling the database every 15 seconds.
+  // User actions still refresh immediately; Realtime covers calls, voicemail, SMS, and email
+  // arriving from external systems while the workspace is open.
   useEffect(() => {
     if (!id) return
-    let lastSeen = activities[0]?.created_at || ''
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/leads/${id}/activities?limit=1`, { cache: 'no-store' })
-        const data = res.ok ? await res.json() : { activities: [] }
-        const latest = data.activities?.[0]?.created_at || ''
-        if (latest && latest !== lastSeen) {
-          lastSeen = latest
-          refreshAll()
-        }
-      } catch { /* silent */ }
-    }, 15000)
-    return () => clearInterval(interval)
-  }, [id]) // intentionally no refreshTick dep — runs independently
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`lead-activity:${id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lead_activities', filter: `lead_id=eq.${id}` },
+        refreshAll,
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [id, refreshAll])
 
   function handleNoteAdded(note: ActivityRow) {
     setActivities(prev => [note, ...prev])
@@ -1464,8 +1509,6 @@ export default function LeadDetailPage() {
 
   const addressLine = [lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', ')
   const formattedName = toProperCase(lead.full_name)
-  const formattedPhone = formatPhone(lead.phone)
-
   function openLeadDialer() {
     const dialLead = lead
     if (!dialLead?.phone) return
@@ -1548,32 +1591,9 @@ export default function LeadDetailPage() {
     tags: [lead.station || 'intake', lead.priority || 'normal'].filter(Boolean),
   }
 
-  // Filter activities by date and type
-  const filteredActivities = activities.filter((a) => {
-    // Date filter
-    const activityDate = new Date(a.created_at)
-    const now = new Date()
-
-    if (activityDateFilter === 'today') {
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      if (activityDate < today) return false
-    } else if (activityDateFilter === 'week') {
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      if (activityDate < weekAgo) return false
-    } else if (activityDateFilter === 'month') {
-      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-      if (activityDate < monthAgo) return false
-    }
-
-    // Type filter
-    if (activityTypeFilter !== 'all') {
-      if (activityTypeFilter === 'note' && !['note', 'agent_note'].includes(a.activity_type)) return false
-      if (activityTypeFilter === 'appointment' && a.activity_type !== 'appointment') return false
-      if (activityTypeFilter !== 'note' && activityTypeFilter !== 'appointment' && a.activity_type !== activityTypeFilter) return false
-    }
-
-    return true
-  })
+  // Communication filtering belongs to LeadWorkspace, where agents can switch
+  // between calls, texts, emails, notes, and voicemail without hiding timeline data here.
+  const filteredActivities = activities
 
   // Merge disposition-only call rows (description "Call: <dispo>") into their
   // parent telephony call row (the "Outbound/Inbound call ..." entry) so the
@@ -1828,22 +1848,6 @@ export default function LeadDetailPage() {
   const showLeadTriage = (lead.station || '').toLowerCase() === 'new'
   const appointmentStageNeedsDetails = ['appointment', 'appt_set', 'appointment_set'].includes((lead.station || '').toLowerCase())
     && !activeAppointment?.scheduledAt
-
-  // Build Zillow and county links
-  const zillowUrl = addressLine
-    ? `https://www.zillow.com/homes/${encodeURIComponent(addressLine)}`
-    : null
-
-  const countyTaxUrl = (() => {
-    const county = lead.county?.toLowerCase()
-    if (!county) return null
-    if (county.includes('johnson')) return 'https://taxbill.jocogov.org/'
-    if (county.includes('jackson')) return 'https://jacksoncountygov.com/170/Assessment'
-    if (county.includes('clay')) return 'https://www.claycountymo.tax/'
-    if (county.includes('platte')) return 'https://www.co.platte.mo.us/assessor'
-    if (county.includes('wyandotte')) return 'https://www.wycokck.org/Departments/Appraiser'
-    return null
-  })()
 
   const workspacePropertyDetails = (() => {
     const mp = manifestProperty || {}
@@ -2460,10 +2464,10 @@ export default function LeadDetailPage() {
                     station={lead.station}
                     notes={lead.notes}
                     sellerSituation={lead.seller_situation}
-                    classification={(lead as any).classification}
+                    classification={lead.classification}
                     priority={lead.priority}
-                    isFavorite={(lead as any).is_favorite}
-                    opportunityScore={(lead as any).opportunity_score}
+                    isFavorite={lead.is_favorite}
+                    opportunityScore={lead.opportunity_score}
                     activities={activities}
                   />
                 ),
@@ -2542,7 +2546,6 @@ export default function LeadDetailPage() {
                         <NetProceedsCalc
                           leadId={id}
                           initialArv={lead.arv}
-                          initialRepairs={lead.repair_estimate}
                           initialAskingPrice={lead.offer_amount}
                           initialAssignmentFee={lead.assignment_fee}
                           initialBackTaxes={manifestFinancials.back_taxes}
