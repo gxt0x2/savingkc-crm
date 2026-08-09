@@ -5,8 +5,21 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
 import { Icon } from '@/components/ui/icon'
+import { useAuth } from '@/hooks/use-auth'
+import {
+  activeDispositionPhases,
+  dispositionTaskDefinition,
+  summarizeDispositionPhase,
+  type DispositionOperatingLane,
+} from '@/lib/dispo/operating-lifecycle'
+import {
+  communicationTemplateDepartmentLabel,
+  communicationTemplatePhaseLabel,
+  unresolvedCommunicationTemplateFields,
+  type CommunicationTemplateDepartment,
+} from '@/lib/operating-model/communication-template-catalog'
 import { cn, formatCurrency } from '@/lib/utils'
-import type { BuyerOffer, TcCommunication, TcEvent, TcFile, TcStatus, TcTask } from '@/types/dispo'
+import type { BuyerOffer, TcCommunication, TcDraft, TcEvent, TcFile, TcStatus, TcTask } from '@/types/dispo'
 
 const STATUS_TABS: { key: TcStatus | 'all' | 'blocked'; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -31,6 +44,8 @@ const STATUS_OPTIONS: TcStatus[] = [
   'cancelled',
 ]
 
+const TASK_ASSIGNEES = ['Dispositions', 'Closing Coordination', 'Shared', 'Ernest', 'Casey', 'Gertha'] as const
+
 const DETAIL_TABS = [
   { key: 'communications', label: 'Communications', icon: 'forum' },
   { key: 'activity', label: 'TC Activity', icon: 'history' },
@@ -42,11 +57,11 @@ type DetailTab = (typeof DETAIL_TABS)[number]['key']
 type TcPageView = 'files' | 'communications' | 'docs' | 'tasks' | 'reports'
 
 const TC_PAGE_TABS: { key: TcPageView; label: string; href: string; icon: string }[] = [
-  { key: 'files', label: 'Files', href: '/dispo/tc', icon: 'fact_check' },
+  { key: 'files', label: 'Closing queue', href: '/dispo/tc', icon: 'fact_check' },
   { key: 'communications', label: 'Communications', href: '/dispo/tc?view=communications', icon: 'forum' },
-  { key: 'docs', label: 'Doc Review', href: '/dispo/tc?view=docs', icon: 'preview' },
+  { key: 'docs', label: 'Documents', href: '/dispo/tc?view=docs', icon: 'preview' },
   { key: 'tasks', label: 'Tasks', href: '/dispo/tc?view=tasks', icon: 'task_alt' },
-  { key: 'reports', label: 'Dispo Reports', href: '/dispo/tc?view=reports', icon: 'account_tree' },
+  { key: 'reports', label: 'Performance', href: '/dispo/tc?view=reports', icon: 'account_tree' },
 ]
 
 interface TcFileTimeline {
@@ -79,6 +94,14 @@ interface TcDocumentTemplate {
   subject: string | null
   body: string
   sort_order?: number
+  department: CommunicationTemplateDepartment
+  phase_id: string
+  task_type: string
+  workflow_id: string
+  source: 'archive' | 'gmail' | 'archive_and_gmail'
+  source_label: string
+  catalog: boolean
+  system?: boolean
 }
 
 function statusLabel(status: string) {
@@ -159,6 +182,40 @@ function taskStatusClass(status: TcTask['status']) {
   return map[status]
 }
 
+function operatingContext(file: TcFile) {
+  return {
+    dealStage: file.dispo_deal?.stage ?? 'new',
+    tcStatus: file.status,
+    enteredAt: file.dispo_deal?.entered_at ?? file.created_at,
+    closingAt: tcClosingDate(file),
+  }
+}
+
+function operatingProgress(file: TcFile) {
+  const phases = activeDispositionPhases(operatingContext(file))
+  const summaries = phases.map((phase) => summarizeDispositionPhase(phase, file.tasks ?? []))
+  const total = summaries.reduce((sum, summary) => sum + summary.total, 0)
+  const completed = summaries.reduce((sum, summary) => sum + summary.completed, 0)
+  return {
+    completed,
+    total,
+    percent: total === 0 ? 0 : Math.round((completed / total) * 100),
+    blocked: summaries.reduce((sum, summary) => sum + summary.blocked, 0),
+  }
+}
+
+function laneLabel(lane: DispositionOperatingLane) {
+  if (lane === 'dispositions') return 'Dispositions'
+  if (lane === 'coordination') return 'Closing coordination'
+  return 'Shared'
+}
+
+function laneClass(lane: DispositionOperatingLane) {
+  if (lane === 'dispositions') return 'border-[#c4b5fd] bg-[#f1edff] text-[#5b21b6]'
+  if (lane === 'coordination') return 'border-[#93c5fd] bg-[#eff6ff] text-[#1d4ed8]'
+  return 'border-[#86efac] bg-[#e8fff0] text-[#166534]'
+}
+
 function ContactTile({
   icon,
   label,
@@ -225,6 +282,7 @@ function DetailDrawer({
   onClose: () => void
   onChanged: () => void
 }) {
+  const { user } = useAuth()
   const [status, setStatus] = useState<TcStatus>(file.status)
   const [fileNumber, setFileNumber] = useState(file.file_number ?? '')
   const [nextAction, setNextAction] = useState(file.next_action ?? '')
@@ -239,6 +297,12 @@ function DetailDrawer({
   const [events, setEvents] = useState<TcEvent[]>([])
   const [loadingComms, setLoadingComms] = useState(false)
   const [assignmentPreviewOffer, setAssignmentPreviewOffer] = useState<BuyerOffer | null>(null)
+  const [activeDraft, setActiveDraft] = useState<TcDraft | null>(null)
+  const [draftSubject, setDraftSubject] = useState('')
+  const [draftBody, setDraftBody] = useState('')
+  const [draftAction, setDraftAction] = useState<'idle' | 'creating' | 'saving' | 'approving' | 'sending'>('idle')
+  const [draftNotice, setDraftNotice] = useState('')
+  const [preparingTemplateId, setPreparingTemplateId] = useState<string | null>(null)
   const [templateDraft, setTemplateDraft] = useState({
     title: '',
     template_type: 'email' as TcDocumentTemplate['template_type'],
@@ -248,6 +312,40 @@ function DetailDrawer({
   })
   const didMountRef = useRef(false)
   const lastPayloadRef = useRef('')
+  const operatingPhases = useMemo(() => activeDispositionPhases(operatingContext(file)), [file])
+  const operatingTaskTypes = useMemo(
+    () => new Set(operatingPhases.flatMap((phase) => phase.tasks.map((task) => task.taskType))),
+    [operatingPhases],
+  )
+  const taskByType = useMemo(
+    () => new Map((file.tasks ?? []).map((task) => [task.task_type, task])),
+    [file.tasks],
+  )
+  const manualTasks = useMemo(
+    () => (file.tasks ?? []).filter((task) => !operatingTaskTypes.has(task.task_type)),
+    [file.tasks, operatingTaskTypes],
+  )
+  const templatesByTaskType = useMemo(() => {
+    const byTaskType = new Map<string, TcDocumentTemplate[]>()
+    for (const template of templates) {
+      if (template.template_type !== 'email' || !template.task_type) continue
+      const current = byTaskType.get(template.task_type) ?? []
+      current.push(template)
+      byTaskType.set(template.task_type, current)
+    }
+    return byTaskType
+  }, [templates])
+  const unresolvedDraftFields = useMemo(
+    () => unresolvedCommunicationTemplateFields(draftSubject, draftBody),
+    [draftBody, draftSubject],
+  )
+  const draftActor = useMemo(() => {
+    const email = user?.email?.toLowerCase() ?? ''
+    if (email.includes('casey')) return 'Casey'
+    if (email.includes('gertha')) return 'Gertha'
+    if (email.includes('ernest')) return 'Ernest'
+    return user?.email || 'CRM user'
+  }, [user?.email])
 
   useEffect(() => {
     setStatus(file.status)
@@ -256,6 +354,12 @@ function DetailDrawer({
     setClosingDate(dateForInput(file.closing_scheduled_at))
     setAssignmentFee(file.assignment_fee != null ? String(file.assignment_fee) : '')
     setSaveState('idle')
+    setActiveDraft(null)
+    setDraftSubject('')
+    setDraftBody('')
+    setDraftNotice('')
+    setDraftAction('idle')
+    setPreparingTemplateId(null)
     didMountRef.current = false
     lastPayloadRef.current = ''
   }, [file.assignment_fee, file.closing_scheduled_at, file.file_number, file.id, file.next_action, file.status])
@@ -335,12 +439,33 @@ function DetailDrawer({
   }, [assignmentFee, closingDate, file.id, fileNumber, nextAction, onChanged, status])
 
   async function updateTask(task: TcTask, nextStatus: TcTask['status']) {
+    setError(null)
     const res = await fetch(`/api/tc/tasks/${task.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: nextStatus }),
     })
-    if (res.ok) onChanged()
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setError(data.error || 'Task update failed')
+      return
+    }
+    onChanged()
+  }
+
+  async function updateTaskAssignee(task: TcTask, assignedTo: string | null) {
+    setError(null)
+    const res = await fetch(`/api/tc/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assigned_to: assignedTo }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setError(data.error || 'Task assignment failed')
+      return
+    }
+    onChanged()
   }
 
   async function copyTemplate(template: TcDocumentTemplate) {
@@ -353,7 +478,94 @@ function DetailDrawer({
     setTimeout(() => setCopiedSlug(null), 1600)
   }
 
+  async function prepareTemplate(template: TcDocumentTemplate) {
+    if (preparingTemplateId) return
+    setError(null)
+    setDraftNotice('')
+    setPreparingTemplateId(template.id)
+    setDraftAction('creating')
+    try {
+      const response = await fetch('/api/tc/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tc_file_id: file.id,
+          template_id: template.id,
+          created_by: draftActor,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Draft could not be created.')
+      const draft = { ...data.draft, template: data.draft?.template ?? template } as TcDraft
+      setActiveDraft(draft)
+      setDraftSubject(draft.subject ?? '')
+      setDraftBody(draft.edited_body || draft.approved_body || draft.draft_body)
+      setDraftNotice(data.existing ? 'Opened the existing pending draft for this file.' : 'Draft created. Review every unresolved field before approval.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Draft could not be created.')
+    } finally {
+      setDraftAction('idle')
+      setPreparingTemplateId(null)
+    }
+  }
+
+  async function persistDraft(nextStatus?: 'approved') {
+    if (!activeDraft || draftAction !== 'idle') return
+    setError(null)
+    setDraftNotice('')
+    setDraftAction(nextStatus === 'approved' ? 'approving' : 'saving')
+    try {
+      const response = await fetch(`/api/tc/drafts/${activeDraft.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: draftSubject || null,
+          edited_body: draftBody,
+          ...(nextStatus ? { status: nextStatus, approved_by: draftActor } : {}),
+          actor: draftActor,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Draft could not be saved.')
+      setActiveDraft({ ...data.draft, template: activeDraft.template } as TcDraft)
+      setDraftNotice(nextStatus === 'approved' ? 'Draft approved. Sending still requires a separate confirmation.' : 'Draft saved.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Draft could not be saved.')
+    } finally {
+      setDraftAction('idle')
+    }
+  }
+
+  async function sendApprovedDraft() {
+    if (!activeDraft || activeDraft.status !== 'approved' || draftAction !== 'idle') return
+    const destination = activeDraft.recipient_email || activeDraft.recipient_phone || activeDraft.recipient_role
+    if (!window.confirm(`Send this approved ${activeDraft.channel} to ${destination}? This action is recorded and cannot be undone.`)) return
+    setError(null)
+    setDraftNotice('')
+    setDraftAction('sending')
+    try {
+      const response = await fetch(`/api/tc/drafts/${activeDraft.id}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm_send: true, actor: draftActor }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Approved draft could not be sent.')
+      setActiveDraft({ ...data.draft, template: activeDraft.template } as TcDraft)
+      setDraftNotice('Message sent and recorded on the transaction file.')
+      onChanged()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Approved draft could not be sent.')
+    } finally {
+      setDraftAction('idle')
+    }
+  }
+
   function startEditTemplate(template: TcDocumentTemplate | 'new') {
+    if (template !== 'new' && template.system) {
+      setError('Governed workflow templates are version-controlled. Create a custom template instead of changing the approved standard in place.')
+      return
+    }
     setEditingTemplate(template)
     if (template === 'new') {
       setTemplateDraft({
@@ -395,6 +607,10 @@ function DetailDrawer({
   }
 
   async function deleteTemplate(template: TcDocumentTemplate) {
+    if (template.system) {
+      setError('Governed workflow templates cannot be deleted from an active file.')
+      return
+    }
     const res = await fetch(`/api/tc/document-templates/${template.id}`, { method: 'DELETE' })
     if (res.ok) onTemplatesChanged()
   }
@@ -444,6 +660,65 @@ function DetailDrawer({
 
         <div className="space-y-6 px-6 py-5">
           {error && <div className="rounded-lg border border-[#E32E2E]/35 bg-[#fff1f1] px-3 py-2 text-sm font-semibold text-[#b42318]">{error}</div>}
+
+          {activeDraft && (
+            <section className="overflow-hidden rounded-xl border border-[#c4b5fd] bg-[#ffffff] shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e1e6ee] bg-[#f6f3ff] px-4 py-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Icon name="edit_note" size="text-base" className="text-[#6d3fd1]" />
+                    <h3 className="text-sm font-black text-[#111827]">{activeDraft.template?.title || 'Communication draft'}</h3>
+                    <span className={cn(
+                      'rounded-full px-2 py-0.5 text-[10px] font-black uppercase',
+                      activeDraft.status === 'sent' ? 'bg-[#e8fff0] text-[#166534]' : activeDraft.status === 'approved' ? 'bg-[#e8f4ff] text-[#1d4ed8]' : 'bg-[#fff1f1] text-[#b42318]',
+                    )}>{activeDraft.status}</span>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-[#697386]">
+                    {activeDraft.recipient_role} · {activeDraft.recipient_email || activeDraft.recipient_phone || 'recipient not yet available'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setActiveDraft(null)} className="grid h-8 w-8 place-items-center rounded-lg border border-[#cad2df] bg-white text-[#697386]" aria-label="Close draft review"><Icon name="close" size="text-sm" /></button>
+              </div>
+
+              <div className="space-y-3 p-4">
+                {draftNotice ? <div className="rounded-lg border border-[#93c5fd] bg-[#eff6ff] px-3 py-2 text-xs font-bold text-[#1d4ed8]">{draftNotice}</div> : null}
+                {!activeDraft.recipient_email && activeDraft.channel === 'email' ? (
+                  <div className="rounded-lg border border-[#f7c948] bg-[#fff7d6] px-3 py-2 text-xs font-bold text-[#8a5a00]">Add the {activeDraft.recipient_role}&apos;s email address before sending.</div>
+                ) : null}
+                {unresolvedDraftFields.length > 0 ? (
+                  <div className="rounded-lg border border-[#f7c948] bg-[#fff7d6] px-3 py-2 text-xs text-[#8a5a00]">
+                    <strong>{unresolvedDraftFields.length} fields still require human input:</strong> {unresolvedDraftFields.join(', ')}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-[#86efac] bg-[#e8fff0] px-3 py-2 text-xs font-bold text-[#166534]">All merge fields have been resolved. Read the complete message before approval.</div>
+                )}
+
+                <label className="block space-y-1">
+                  <span className={fieldLabelClass}>Subject</span>
+                  <input value={draftSubject} onChange={(event) => setDraftSubject(event.target.value)} disabled={activeDraft.status !== 'pending'} className={cn(fieldClass, 'disabled:bg-[#f1f3f6] disabled:text-[#697386]')} />
+                </label>
+                <label className="block space-y-1">
+                  <span className={fieldLabelClass}>Message</span>
+                  <textarea value={draftBody} onChange={(event) => setDraftBody(event.target.value)} disabled={activeDraft.status !== 'pending'} rows={15} className={cn(fieldClass, 'resize-y leading-6 disabled:bg-[#f1f3f6] disabled:text-[#697386]')} />
+                </label>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e1e6ee] pt-3">
+                  <p className="max-w-sm text-[11px] leading-5 text-[#697386]">Creating a draft never sends it. Approval locks the reviewed body; sending requires a second explicit confirmation.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {activeDraft.status === 'pending' ? (
+                      <>
+                        <button type="button" onClick={() => persistDraft()} disabled={draftAction !== 'idle'} className={secondaryButtonClass}><Icon name="save" size="text-sm" />{draftAction === 'saving' ? 'Saving…' : 'Save'}</button>
+                        <button type="button" onClick={() => persistDraft('approved')} disabled={draftAction !== 'idle' || unresolvedDraftFields.length > 0 || !draftBody.trim()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-3 py-2 text-sm font-black text-white transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="verified" size="text-sm" />{draftAction === 'approving' ? 'Approving…' : 'Approve'}</button>
+                      </>
+                    ) : null}
+                    {activeDraft.status === 'approved' ? (
+                      <button type="button" onClick={sendApprovedDraft} disabled={draftAction !== 'idle' || (activeDraft.channel === 'email' && !activeDraft.recipient_email)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-3 py-2 text-sm font-black text-white transition hover:bg-[#c42626] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="send" size="text-sm" />{draftAction === 'sending' ? 'Sending…' : 'Confirm & send'}</button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
 
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
             <div className="mb-4 flex items-center gap-2">
@@ -506,6 +781,8 @@ function DetailDrawer({
                 label="Seller"
                 name={file.lead?.full_name || 'No seller assigned'}
                 context={file.lead?.property_address}
+                phone={file.lead?.phone}
+                email={file.lead?.email}
                 href={file.lead_id ? `/leads/${file.lead_id}` : undefined}
               />
               <ContactTile
@@ -667,39 +944,164 @@ function DetailDrawer({
           </section>
 
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Icon name="checklist" size="text-base" className="text-[#E32E2E]" />
-                <h3 className="text-sm font-black text-[#111827]">Checklist</h3>
-              </div>
-              <span className="text-xs font-bold text-[#697386]">{openTaskCount(file)} open</span>
-            </div>
-            <div className="space-y-2">
-              {(file.tasks ?? []).map((task) => (
-                <div key={task.id} className="flex items-center gap-3 rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] px-3 py-2">
-                  <button
-                    onClick={() => updateTask(task, task.status === 'done' ? 'open' : 'done')}
-                    className={cn(
-                      'flex h-8 w-8 items-center justify-center rounded-lg border transition',
-                      task.status === 'done' ? 'border-[#22c55e] bg-[#22c55e] text-[#ffffff]' : 'border-[#cad2df] bg-[#ffffff] text-[#697386] hover:border-[#E32E2E]/40'
-                    )}
-                    aria-label={task.status === 'done' ? 'Reopen task' : 'Complete task'}
-                  >
-                    <Icon name={task.status === 'done' ? 'check' : 'radio_button_unchecked'} size="text-sm" />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className={cn('truncate text-sm font-semibold', task.status === 'done' ? 'text-[#7a8494] line-through' : 'text-[#253041]')}>{task.label}</p>
-                    {task.due_at && <p className="text-xs text-[#697386]">Due {formatDate(task.due_at)}</p>}
-                  </div>
-                  <span className={cn('rounded-full border px-2 py-1 text-[11px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Icon name="account_tree" size="text-base" className="text-[#E32E2E]" />
+                  <h3 className="text-sm font-black text-[#111827]">Operating workflow</h3>
                 </div>
-              ))}
-              {(file.tasks ?? []).length === 0 && (
+                <p className="mt-1 text-xs font-semibold text-[#697386]">One transaction record with Dispositions, Closing Coordination, and shared gates.</p>
+              </div>
+              <span className="rounded-full border border-[#cad2df] bg-[#f8fafc] px-2.5 py-1 text-xs font-black text-[#4b5565]">{openTaskCount(file)} open</span>
+            </div>
+
+            <div className="space-y-3">
+              {operatingPhases.map((phase, index) => {
+                const summary = summarizeDispositionPhase(phase, file.tasks ?? [])
+                const phaseTasks = phase.tasks.map((definition) => ({
+                  definition,
+                  task: taskByType.get(definition.taskType),
+                }))
+
+                return (
+                  <details key={phase.id} open={!summary.gateComplete || index === operatingPhases.length - 1} className="group overflow-hidden rounded-xl border border-[#d8dee9] bg-[#fbfcfe]">
+                    <summary className="cursor-pointer list-none px-4 py-3 marker:content-none">
+                      <div className="flex items-center gap-3">
+                        <span className={cn(
+                          'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black',
+                          summary.gateComplete ? 'bg-[#e8fff0] text-[#166534]' : summary.blocked > 0 ? 'bg-[#fff1f1] text-[#b42318]' : 'bg-[#e8f4ff] text-[#075985]',
+                        )}>
+                          {summary.gateComplete ? <Icon name="check" size="text-base" /> : index + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-black text-[#111827]">{phase.label}</span>
+                            {summary.gateComplete && <span className="rounded-full bg-[#e8fff0] px-2 py-0.5 text-[10px] font-black uppercase text-[#166534]">Gate clear</span>}
+                            {summary.blocked > 0 && <span className="rounded-full bg-[#fff1f1] px-2 py-0.5 text-[10px] font-black uppercase text-[#b42318]">{summary.blocked} blocked</span>}
+                          </span>
+                          <span className="mt-0.5 block text-xs font-semibold text-[#697386]">{phase.description}</span>
+                        </span>
+                        <span className="text-right">
+                          <span className="block text-sm font-black text-[#111827]">{summary.percent}%</span>
+                          <span className="block text-[10px] font-bold text-[#697386]">{summary.completed}/{summary.total}</span>
+                        </span>
+                        <Icon name="expand_more" size="text-lg" className="text-[#697386] transition group-open:rotate-180" />
+                      </div>
+                      <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-[#e1e6ee]">
+                        <span className="block h-full rounded-full bg-[#E32E2E] transition-all" style={{ width: `${summary.percent}%` }} />
+                      </span>
+                    </summary>
+
+                    <div className="space-y-2 border-t border-[#e1e6ee] bg-[#ffffff] p-3">
+                      <p className="rounded-lg bg-[#f8fafc] px-3 py-2 text-xs font-bold text-[#4b5565]">
+                        Gate: {phase.completionGate}
+                      </p>
+                      {phaseTasks.map(({ definition, task }) => (
+                        <div key={definition.taskType} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
+                          <div className="flex items-start gap-3">
+                            {task ? (
+                              <button
+                                type="button"
+                                onClick={() => updateTask(task, task.status === 'done' ? 'open' : 'done')}
+                                className={cn(
+                                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition',
+                                  task.status === 'done' ? 'border-[#22c55e] bg-[#22c55e] text-[#ffffff]' : 'border-[#cad2df] bg-[#ffffff] text-[#697386] hover:border-[#E32E2E]/40',
+                                )}
+                                aria-label={task.status === 'done' ? `Reopen ${task.label}` : `Complete ${task.label}`}
+                              >
+                                <Icon name={task.status === 'done' ? 'check' : task.status === 'blocked' ? 'block' : 'radio_button_unchecked'} size="text-sm" />
+                              </button>
+                            ) : (
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-[#cad2df] bg-white text-[#9aa3b2]">
+                                <Icon name="sync" size="text-sm" />
+                              </span>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className={cn('text-sm font-bold', task?.status === 'done' ? 'text-[#7a8494] line-through' : 'text-[#253041]')}>{definition.label}</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-black', laneClass(definition.lane))}>{laneLabel(definition.lane)}</span>
+                                <span className="rounded-full border border-[#cad2df] bg-white px-2 py-0.5 text-[10px] font-black text-[#697386]">Evidence: {definition.evidence}</span>
+                                {definition.gate && <span className="rounded-full border border-[#f7c948] bg-[#fff7d6] px-2 py-0.5 text-[10px] font-black text-[#8a5a00]">Required gate</span>}
+                                {task?.due_at && <span className="text-[10px] font-bold text-[#697386]">Due {formatDate(task.due_at)}</span>}
+                              </div>
+                            </div>
+                            {task && (
+                              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                <span className={cn('rounded-full border px-2 py-1 text-[10px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
+                                <select
+                                  value={task.assigned_to ?? ''}
+                                  onChange={(event) => updateTaskAssignee(task, event.target.value || null)}
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="max-w-[160px] rounded-md border border-[#cad2df] bg-white px-2 py-1 text-[10px] font-bold text-[#4b5565]"
+                                  aria-label={`Assign ${task.label}`}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {TASK_ASSIGNEES.map((assignee) => <option key={assignee} value={assignee}>{assignee}</option>)}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+                          {task && task.status !== 'done' && (
+                            <div className="mt-2 flex justify-end gap-2 border-t border-[#e1e6ee] pt-2">
+                              {task.status === 'blocked' ? (
+                                <button type="button" onClick={() => updateTask(task, 'open')} className="text-[11px] font-black text-[#1d4ed8] hover:underline">Resolve block</button>
+                              ) : (
+                                <button type="button" onClick={() => updateTask(task, 'blocked')} className="text-[11px] font-black text-[#b42318] hover:underline">Mark blocked</button>
+                              )}
+                              {!definition.gate && task.status !== 'waived' && (
+                                <button type="button" onClick={() => updateTask(task, 'waived')} className="text-[11px] font-black text-[#697386] hover:underline">Waive</button>
+                              )}
+                            </div>
+                          )}
+                          {(templatesByTaskType.get(definition.taskType)?.length ?? 0) > 0 ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[#e1e6ee] pt-2">
+                              <span className="mr-auto text-[10px] font-black uppercase tracking-[0.1em] text-[#697386]">Linked communication</span>
+                              {(templatesByTaskType.get(definition.taskType) ?? []).map((template) => (
+                                  <button key={template.id} type="button" onClick={() => prepareTemplate(template)} disabled={Boolean(preparingTemplateId)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#c4b5fd] bg-[#f6f3ff] px-2.5 py-1.5 text-[11px] font-black text-[#6d3fd1] transition hover:bg-[#eee8ff] disabled:opacity-50">
+                                    <Icon name="mail" size="text-sm" />
+                                    {preparingTemplateId === template.id ? 'Preparing…' : `Prepare ${template.audience} email`}
+                                  </button>
+                                ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )
+              })}
+
+              {operatingPhases.length === 0 && (
                 <div className="rounded-lg border border-dashed border-[#cad2df] bg-[#fbfcfe] px-4 py-8 text-center text-sm font-semibold text-[#697386]">
-                  No checklist tasks yet.
+                  This transaction is cancelled or no longer in the active operating workflow.
                 </div>
               )}
             </div>
+
+            {manualTasks.length > 0 && (
+              <details className="mt-4 overflow-hidden rounded-xl border border-[#d8dee9] bg-[#fbfcfe]">
+                <summary className="cursor-pointer px-4 py-3 text-sm font-black text-[#253041]">Existing manual tasks ({manualTasks.length})</summary>
+                <div className="space-y-2 border-t border-[#e1e6ee] bg-white p-3">
+                  {manualTasks.map((task) => (
+                    <div key={task.id} className="flex items-center gap-3 rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => updateTask(task, task.status === 'done' ? 'open' : 'done')}
+                        className={cn('flex h-8 w-8 items-center justify-center rounded-lg border', task.status === 'done' ? 'border-[#22c55e] bg-[#22c55e] text-white' : 'border-[#cad2df] bg-white text-[#697386]')}
+                        aria-label={task.status === 'done' ? `Reopen ${task.label}` : `Complete ${task.label}`}
+                      >
+                        <Icon name={task.status === 'done' ? 'check' : 'radio_button_unchecked'} size="text-sm" />
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-[#253041]">{task.label}</p>
+                        {task.due_at && <p className="text-xs text-[#697386]">Due {formatDate(task.due_at)}</p>}
+                      </div>
+                      <span className={cn('rounded-full border px-2 py-1 text-[10px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </section>
 
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
@@ -773,25 +1175,31 @@ function DetailDrawer({
                 <div key={template.id} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-[220px] flex-1">
-                      <p className="text-sm font-bold text-[#111827]">{template.title}</p>
-                      <p className="mt-0.5 text-[11px] font-bold uppercase text-[#697386]">
-                        {template.audience} · {template.template_type}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-bold text-[#111827]">{template.title}</p>
+                        {template.system ? <span className="rounded-full bg-[#e8fff0] px-2 py-0.5 text-[9px] font-black uppercase text-[#166534]">Governed</span> : <span className="rounded-full bg-[#eef2f7] px-2 py-0.5 text-[9px] font-black uppercase text-[#4b5565]">Custom</span>}
+                      </div>
+                      <p className="mt-0.5 text-[11px] font-bold uppercase text-[#697386]">{template.audience} · {communicationTemplateDepartmentLabel(template.department)} · {communicationTemplatePhaseLabel(template.phase_id)}</p>
                       {template.subject && <p className="mt-2 truncate text-xs text-[#4b5565]">{template.subject}</p>}
+                      <p className="mt-1 text-[10px] font-semibold text-[#7a8494]">{template.source_label}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      {template.template_type === 'email' ? (
+                        <button onClick={() => prepareTemplate(template)} disabled={Boolean(preparingTemplateId)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#6d3fd1] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#5b2fbd] disabled:opacity-50">
+                          <Icon name="edit_note" size="text-sm" />
+                          {preparingTemplateId === template.id ? 'Preparing…' : 'Prepare draft'}
+                        </button>
+                      ) : null}
                       <button onClick={() => copyTemplate(template)} className={secondaryButtonClass}>
                         <Icon name={copiedSlug === template.slug ? 'check' : 'content_copy'} size="text-sm" />
                         {copiedSlug === template.slug ? 'Copied' : 'Copy'}
                       </button>
-                      <button onClick={() => startEditTemplate(template)} className={secondaryButtonClass}>
-                        <Icon name="edit" size="text-sm" />
-                        Edit
-                      </button>
-                      <button onClick={() => deleteTemplate(template)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#E32E2E]/35 bg-[#fff1f1] px-3 py-2 text-sm font-bold text-[#b42318] transition hover:bg-[#ffe5e5]">
-                        <Icon name="delete" size="text-sm" />
-                        Delete
-                      </button>
+                      {!template.system ? (
+                        <>
+                          <button onClick={() => startEditTemplate(template)} className={secondaryButtonClass}><Icon name="edit" size="text-sm" />Edit</button>
+                          <button onClick={() => deleteTemplate(template)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#E32E2E]/35 bg-[#fff1f1] px-3 py-2 text-sm font-bold text-[#b42318] transition hover:bg-[#ffe5e5]"><Icon name="delete" size="text-sm" />Delete</button>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -832,6 +1240,8 @@ export default function TransactionCoordinatorPage() {
   const [assignmentPreviewOffer, setAssignmentPreviewOffer] = useState<BuyerOffer | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [taskLane, setTaskLane] = useState<'all' | DispositionOperatingLane>('all')
+  const [taskState, setTaskState] = useState<'active' | 'all' | TcTask['status']>('active')
 
   async function fetchFiles() {
     setError(null)
@@ -866,6 +1276,7 @@ export default function TransactionCoordinatorPage() {
   }, [])
 
   useEffect(() => {
+    if (pageView !== 'communications') return
     if (files.length === 0) {
       setTimelineByFile({})
       return
@@ -902,7 +1313,7 @@ export default function TransactionCoordinatorPage() {
 
     fetchTimeline()
     return () => controller.abort()
-  }, [files])
+  }, [files, pageView])
 
   const filtered = useMemo(() => {
     if (activeTab === 'all') return files
@@ -935,6 +1346,14 @@ export default function TransactionCoordinatorPage() {
         return aTime - bTime
       })
   ), [files])
+
+  const visiblePageTasks = useMemo(() => pageTasks.filter(({ task }) => {
+    const operating = dispositionTaskDefinition(task.task_type)
+    if (taskLane !== 'all' && operating?.definition.lane !== taskLane) return false
+    if (taskState === 'active') return task.status === 'open' || task.status === 'blocked'
+    if (taskState !== 'all' && task.status !== taskState) return false
+    return true
+  }), [pageTasks, taskLane, taskState])
 
   const pageDocs = useMemo(() => (
     files.filter((file) => file.buyer_offer_id || file.offer?.assignment_document_url)
@@ -998,20 +1417,20 @@ export default function TransactionCoordinatorPage() {
   }
 
   const metricCards = [
-    { label: 'Open files', value: stats.open, icon: 'folder_open', tone: 'bg-[#e8f4ff] text-[#075985]' },
+    { label: 'Active transactions', value: stats.open, icon: 'folder_open', tone: 'bg-[#e8f4ff] text-[#075985]' },
     { label: 'Blocked', value: stats.blocked, icon: 'report', tone: 'bg-[#fff1f1] text-[#b42318]' },
-    { label: 'Scheduled', value: stats.scheduled, icon: 'event_available', tone: 'bg-[#eff6ff] text-[#1d4ed8]' },
+    { label: 'Closings scheduled', value: stats.scheduled, icon: 'event_available', tone: 'bg-[#eff6ff] text-[#1d4ed8]' },
     { label: 'Assignment fees', value: formatCurrency(stats.fees), icon: 'payments', tone: 'bg-[#e8fff0] text-[#166534]' },
   ]
 
   return (
-    <main className="tc-portal min-h-screen bg-[#f6f7f9] text-[#111827]">
+    <main className="tc-portal min-h-full bg-[var(--crm-canvas)] text-[var(--crm-ink)]">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b border-[#d8dee9] pb-5">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E32E2E]">Reports to Dispositions</p>
-            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111827]">Transaction Coordination Portal</h1>
-            <p suppressHydrationWarning className="mt-1 max-w-2xl text-sm text-[#4b5565]">Closing files, approved communications, call agendas, exceptions, title work, EMD, and assignment fee recognition.</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E32E2E]">Dispositions operating system</p>
+            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111827]">Closing coordination</h1>
+            <p suppressHydrationWarning className="mt-1 max-w-2xl text-sm text-[#4b5565]">One shared transaction record for title, funding, assignment, closing, post-close, and the handoffs between Dispositions and Closing Coordination.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {TC_PAGE_TABS.map((tab) => {
@@ -1080,12 +1499,13 @@ export default function TransactionCoordinatorPage() {
             <div className="overflow-hidden rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
               <div className="overflow-x-auto">
                 <div className="min-w-[980px]">
-                  <div className="grid grid-cols-[1.4fr_1fr_0.95fr_0.8fr_0.7fr_1.2fr] gap-3 border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3 text-[11px] font-black uppercase text-[#697386]">
+                  <div className="grid grid-cols-[1.35fr_0.95fr_0.9fr_0.72fr_0.72fr_0.9fr_1.05fr] gap-3 border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3 text-[11px] font-black uppercase text-[#697386]">
                     <span>Property</span>
                     <span>Buyer</span>
                     <span>Title</span>
                     <span>Closing</span>
                     <span>Risk</span>
+                    <span>Workflow</span>
                     <span>Next Action</span>
                   </div>
                   {loading ? (
@@ -1093,16 +1513,18 @@ export default function TransactionCoordinatorPage() {
                   ) : filtered.length === 0 ? (
                     <div className="px-4 py-14 text-center">
                       <Icon name="fact_check" size="text-3xl" className="mx-auto mb-2 text-[#cad2df]" />
-                      <p className="text-sm font-bold text-[#253041]">No TC files in this view.</p>
-                      <p className="mt-1 text-xs text-[#697386]">Real Dispo pipeline files will appear here when they are ready for closing coordination.</p>
+                      <p className="text-sm font-bold text-[#253041]">No active closing files in this view.</p>
+                      <p className="mt-1 text-xs text-[#697386]">Real Dispositions records appear here as the shared operating workflow activates.</p>
                     </div>
                   ) : (
                     <div className="divide-y divide-[#e1e6ee]">
-                      {filtered.map((file) => (
+                      {filtered.map((file) => {
+                        const progress = operatingProgress(file)
+                        return (
                         <button
                           key={file.id}
                           onClick={() => setSelected(file)}
-                          className="grid w-full grid-cols-[1.4fr_1fr_0.95fr_0.8fr_0.7fr_1.2fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
+                          className="grid w-full grid-cols-[1.35fr_0.95fr_0.9fr_0.72fr_0.72fr_0.9fr_1.05fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
                         >
                           <span className="min-w-0">
                             <span className="block truncate font-bold text-[#111827]">{file.lead?.property_address || 'No address'}</span>
@@ -1120,9 +1542,19 @@ export default function TransactionCoordinatorPage() {
                           <span>
                             <span className={cn('inline-flex rounded-full border px-2 py-1 text-[11px] font-black uppercase', riskClass(file.risk_level))}>{file.risk_level}</span>
                           </span>
+                          <span className="min-w-0">
+                            <span className="flex items-center justify-between gap-2 text-[11px] font-black text-[#253041]">
+                              <span>{progress.percent}%</span>
+                              <span className="text-[#697386]">{progress.completed}/{progress.total}</span>
+                            </span>
+                            <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[#e1e6ee]">
+                              <span className={cn('block h-full rounded-full', progress.blocked > 0 ? 'bg-[#E32E2E]' : 'bg-[#22c55e]')} style={{ width: `${progress.percent}%` }} />
+                            </span>
+                          </span>
                           <span className="truncate text-[#4b5565]">{file.next_action || '—'}</span>
                         </button>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -1169,7 +1601,8 @@ export default function TransactionCoordinatorPage() {
         {pageView === 'docs' && (
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
             <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-              <h2 className="text-sm font-black text-[#111827]">Doc Review</h2>
+              <h2 className="text-sm font-black text-[#111827]">Documents</h2>
+              <p className="mt-1 text-xs font-semibold text-[#697386]">Contracts, receipts, title work, approvals, and closing evidence tied to the transaction record.</p>
             </div>
             <div className="grid grid-cols-1 gap-4 p-4 xl:grid-cols-2">
               {loading ? (
@@ -1224,16 +1657,37 @@ export default function TransactionCoordinatorPage() {
 
         {pageView === 'tasks' && (
           <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
-            <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-              <h2 className="text-sm font-black text-[#111827]">Tasks</h2>
+            <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
+              <div>
+                <h2 className="text-sm font-black text-[#111827]">Role queue</h2>
+                <p className="mt-1 text-xs font-semibold text-[#697386]">Due work across Dispositions, Closing Coordination, and shared handoffs.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select value={taskLane} onChange={(event) => setTaskLane(event.target.value as typeof taskLane)} className="rounded-lg border border-[#cad2df] bg-white px-3 py-2 text-xs font-black text-[#253041]" aria-label="Filter tasks by team lane">
+                  <option value="all">All teams</option>
+                  <option value="dispositions">Dispositions</option>
+                  <option value="coordination">Closing coordination</option>
+                  <option value="shared">Shared gates</option>
+                </select>
+                <select value={taskState} onChange={(event) => setTaskState(event.target.value as typeof taskState)} className="rounded-lg border border-[#cad2df] bg-white px-3 py-2 text-xs font-black text-[#253041]" aria-label="Filter tasks by status">
+                  <option value="active">Active work</option>
+                  <option value="all">All statuses</option>
+                  <option value="open">Open</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="done">Done</option>
+                  <option value="waived">Waived</option>
+                </select>
+              </div>
             </div>
             <div className="divide-y divide-[#e1e6ee]">
               {loading ? (
                 <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">Loading tasks...</div>
-              ) : pageTasks.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">No TC tasks found.</div>
+              ) : visiblePageTasks.length === 0 ? (
+                <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">No tasks match this role queue.</div>
               ) : (
-                pageTasks.map(({ file, task }) => (
+                visiblePageTasks.map(({ file, task }) => {
+                  const operating = dispositionTaskDefinition(task.task_type)
+                  return (
                   <button
                     key={task.id}
                     type="button"
@@ -1243,6 +1697,12 @@ export default function TransactionCoordinatorPage() {
                     <span className="min-w-0">
                       <span className="block truncate font-bold text-[#111827]">{task.label}</span>
                       <span className="mt-0.5 block truncate text-xs font-semibold text-[#697386]">{file.lead?.property_address || 'No property'}</span>
+                      {operating && (
+                        <span className="mt-1 flex flex-wrap gap-1.5">
+                          <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-black', laneClass(operating.definition.lane))}>{laneLabel(operating.definition.lane)}</span>
+                          <span className="rounded-full border border-[#cad2df] bg-white px-2 py-0.5 text-[10px] font-black text-[#697386]">{operating.phase.label}</span>
+                        </span>
+                      )}
                     </span>
                     <span className="truncate text-[#4b5565]">{task.assigned_to || 'Unassigned'}</span>
                     <span className="text-[#4b5565]">{formatDate(task.due_at)}</span>
@@ -1250,7 +1710,8 @@ export default function TransactionCoordinatorPage() {
                       <span className={cn('inline-flex rounded-full border px-2 py-1 text-[11px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
                     </span>
                   </button>
-                ))
+                  )
+                })
               )}
             </div>
           </section>
@@ -1260,8 +1721,8 @@ export default function TransactionCoordinatorPage() {
           <section className="space-y-4">
             <div className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
               <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-                <h2 className="text-sm font-black text-[#111827]">Dispo Reports</h2>
-                <p className="mt-1 text-xs font-semibold text-[#697386]">TC closing snapshot for Dispositions without leaving the TC portal.</p>
+                <h2 className="text-sm font-black text-[#111827]">Transaction performance</h2>
+                <p className="mt-1 text-xs font-semibold text-[#697386]">Shared Dispositions and Closing Coordination performance from the same live transaction records.</p>
               </div>
               <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
                 {reportRows.map((row) => (

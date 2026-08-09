@@ -975,50 +975,50 @@ html.dark .crm-modal-surface {
   .ck-attention { animation: none; }
 }
 
-/* ─── Transaction Coordination portal: light, brand-aligned workspace ─────── */
+/* ─── Transaction Coordination portal: shared CRM theme contract ─────────── */
 .tc-portal {
-  --ck-bg: #f6f7f9;
-  --ck-surface: #ffffff;
-  --ck-surface-elev: #f9fafb;
-  --ck-surface-hi: #eef1f5;
-  --ck-border: #d8dee7;
-  --ck-border-strong: #b8c2d0;
-  --ck-text: #111827;
-  --ck-text-muted: #526173;
-  --ck-text-dim: #7a8798;
-  color-scheme: light;
+  --ck-bg: var(--crm-canvas);
+  --ck-surface: var(--crm-surface);
+  --ck-surface-elev: var(--crm-surface-raised);
+  --ck-surface-hi: var(--crm-surface-subtle);
+  --ck-border: var(--crm-border);
+  --ck-border-strong: var(--crm-border-strong);
+  --ck-text: var(--crm-ink);
+  --ck-text-muted: var(--crm-text-muted);
+  --ck-text-dim: var(--crm-text-dim);
+  color-scheme: inherit;
 }
 
 .tc-portal .bg-\[\#141414\],
 .tc-portal .bg-\[\#0f0f0f\] {
-  background-color: #ffffff;
+  background-color: var(--crm-surface);
 }
 
 .tc-portal [class~="bg-white/[0.03]"],
 .tc-portal [class~="bg-white/[0.04]"] {
-  background-color: #f9fafb;
+  background-color: var(--crm-surface-raised);
 }
 
 .tc-portal [class~="bg-white/5"],
 .tc-portal [class~="bg-black/20"] {
-  background-color: #eef1f5;
+  background-color: var(--crm-surface-subtle);
 }
 
 .tc-portal [class~="border-white/10"],
 .tc-portal [class~="border-white/20"] {
-  border-color: #d8dee7;
+  border-color: var(--crm-border);
 }
 
 .tc-portal [class~="divide-white/10"] > :not([hidden]) ~ :not([hidden]) {
-  border-color: #d8dee7;
+  border-color: var(--crm-border);
 }
 
 .tc-portal .text-white {
-  color: #111827;
+  color: var(--crm-ink);
 }
 
 .tc-portal .text-black {
-  color: #111827 !important;
+  color: var(--crm-ink) !important;
 }
 
 .tc-portal .bg-\[\#E32E2E\],
@@ -1031,13 +1031,75 @@ html.dark .crm-modal-surface {
 .tc-portal input:not([type="checkbox"]):not([type="radio"]),
 .tc-portal textarea,
 .tc-portal select {
-  background-color: #ffffff !important;
-  border-color: #d8dee7 !important;
-  color: #111827 !important;
-  color-scheme: light;
+  background-color: var(--crm-surface) !important;
+  border-color: var(--crm-border) !important;
+  color: var(--crm-ink) !important;
+  color-scheme: inherit;
 }
 
 .tc-portal input::placeholder,
 .tc-portal textarea::placeholder {
-  color: #7a8798 !important;
+  color: var(--crm-text-dim) !important;
+}
+
+/* TC predates the shared design tokens, so normalize its remaining neutral
+   utilities at the portal boundary. Semantic status colors remain intact. */
+.tc-portal [class*="bg-[#ffffff]"],
+.tc-portal [class*="bg-[#fbfcfe]"],
+.tc-portal [class*="bg-[#f8fafc]"] {
+  background-color: var(--crm-surface) !important;
+}
+
+.tc-portal [class*="bg-[#f6f7f9]"],
+.tc-portal [class*="bg-[#eef2f7]"] {
+  background-color: var(--crm-surface-subtle) !important;
+}
+
+.tc-portal [class*="border-[#cad2df]"],
+.tc-portal [class*="border-[#d8dee9]"],
+.tc-portal [class*="border-[#e1e6ee]"] {
+  border-color: var(--crm-border) !important;
+}
+
+.tc-portal [class*="text-[#111827]"],
+.tc-portal [class*="text-[#253041]"] {
+  color: var(--crm-ink) !important;
+}
+
+.tc-portal [class*="text-[#4b5565]"],
+.tc-portal [class*="text-[#697386]"] {
+  color: var(--crm-text-muted) !important;
+}
+
+.tc-portal [class*="text-[#7a8494]"] {
+  color: var(--crm-text-dim) !important;
+}
+
+.tc-portal [class*="bg-[#E32E2E]"],
+.tc-portal [class*="bg-[#c42626]"] {
+  background-color: var(--crm-brand) !important;
+}
+
+.tc-portal [class*="border-[#E32E2E]"] {
+  border-color: var(--crm-brand) !important;
+}
+
+.tc-portal [class*="text-[#E32E2E]"],
+.tc-portal [class*="text-[#c42626]"] {
+  color: var(--crm-brand) !important;
+}
+
+.tc-portal [class*="bg-[#fff7f7]"],
+.tc-portal [class*="bg-[#ffe5e5]"] {
+  background-color: var(--crm-brand-soft) !important;
+}
+
+.tc-portal [class*="bg-[#fff1f1]"],
+.tc-portal [class*="bg-[#fff1f2]"] {
+  background-color: var(--crm-danger-soft) !important;
+}
+
+.tc-portal [class*="text-[#b42318]"],
+.tc-portal [class*="text-[#be123c]"] {
+  color: var(--crm-danger) !important;
 }

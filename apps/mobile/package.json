@@ -7,7 +7,7 @@
     "@supabase/supabase-js": "^2.106.2",
     "@tanstack/react-query": "^5.100.14",
     "@twilio/voice-react-native-sdk": "^1.7.0",
-    "expo": "~56.0.18",
+    "expo": "~56.0.19",
     "expo-dev-client": "~56.0.24",
     "expo-secure-store": "^56.0.4",
     "expo-splash-screen": "~56.0.14",
@@ -29,7 +29,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "healthcheck": "npm audit --audit-level=high && expo-doctor && npm run typecheck",
+    "healthcheck": "node ../../scripts/ci/check-mobile-audit.mjs && expo-doctor && npm run typecheck",
     "distribution:check": "node scripts/check-distribution.mjs",
     "release:ios": "npm run healthcheck && npm run distribution:check && npx eas-cli build --platform ios --profile production",
     "submit:ios": "npx eas-cli submit --platform ios --profile production --latest"

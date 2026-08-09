@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { ensureTcFileForDeal } from '@/lib/tc'
 
 // ---------------------------------------------------------------------------
 // Bootstrap: create dispo_deals table if missing
@@ -9,6 +10,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 let bootstrapped = false
 async function ensureTable() {
   if (bootstrapped) return
+  if (process.env.VERCEL_ENV === 'preview') return
   const db = supabaseAdmin()
 
   const statements = [
@@ -96,66 +98,61 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Enrich each deal with deal_page, broadcasts_count, offers_count
-    const enriched = await Promise.all(
-      (deals ?? []).map(async (deal) => {
-        // Get deal page for this lead
-        const { data: dealPage } = await db
-          .from('deal_pages')
-          .select('id, slug, is_active')
-          .eq('lead_id', deal.lead_id)
-          .limit(1)
-          .maybeSingle()
+    const dealRows = deals ?? []
+    if (dealRows.length === 0) return NextResponse.json({ deals: [], total: count ?? 0 })
 
-        // Count broadcasts
-        const { count: bcCount } = await db
-          .from('deal_broadcasts')
-          .select('id', { count: 'exact', head: true })
-          .eq('lead_id', deal.lead_id)
+    const leadIds = [...new Set(dealRows.map((deal) => deal.lead_id))]
+    const dealIds = dealRows.map((deal) => deal.id)
+    const acceptedBuyerIds = [...new Set(dealRows.map((deal) => deal.accepted_buyer_id).filter(Boolean))] as string[]
+    const [dealPagesResult, broadcastsResult, offersResult, tcFilesResult, buyersResult] = await Promise.all([
+      db.from('deal_pages').select('id, lead_id, slug, is_active').in('lead_id', leadIds),
+      db.from('deal_broadcasts').select('id, lead_id').in('lead_id', leadIds),
+      db.from('buyer_offers').select('id, lead_id').in('lead_id', leadIds),
+      db
+        .from('tc_files')
+        .select('id, dispo_deal_id, status, risk_level, next_action, closing_scheduled_at, file_number, tasks:tc_tasks(id, tc_file_id, task_type, label, status, due_at, completed_at, assigned_to, source, notes, created_at, updated_at)')
+        .in('dispo_deal_id', dealIds)
+        .order('updated_at', { ascending: false }),
+      acceptedBuyerIds.length > 0
+        ? db.from('buyers').select('id, first_name, last_name, company_name, name, company').in('id', acceptedBuyerIds)
+        : Promise.resolve({ data: [], error: null }),
+    ])
 
-        // Count offers
-        const { count: offerCount } = await db
-          .from('buyer_offers')
-          .select('id', { count: 'exact', head: true })
-          .eq('lead_id', deal.lead_id)
+    const dealPageByLead = new Map<string, NonNullable<typeof dealPagesResult.data>[number]>()
+    for (const dealPage of dealPagesResult.data ?? []) {
+      if (!dealPageByLead.has(dealPage.lead_id)) dealPageByLead.set(dealPage.lead_id, dealPage)
+    }
+    const broadcastCountByLead = new Map<string, number>()
+    for (const broadcast of broadcastsResult.data ?? []) {
+      broadcastCountByLead.set(broadcast.lead_id, (broadcastCountByLead.get(broadcast.lead_id) ?? 0) + 1)
+    }
+    const offerCountByLead = new Map<string, number>()
+    for (const offer of offersResult.data ?? []) {
+      offerCountByLead.set(offer.lead_id, (offerCountByLead.get(offer.lead_id) ?? 0) + 1)
+    }
+    const tcFileByDeal = new Map<string, NonNullable<typeof tcFilesResult.data>[number]>()
+    for (const tcFile of tcFilesResult.data ?? []) {
+      if (tcFile.dispo_deal_id && !tcFileByDeal.has(tcFile.dispo_deal_id)) tcFileByDeal.set(tcFile.dispo_deal_id, tcFile)
+    }
+    const buyerById = new Map((buyersResult.data ?? []).map((buyer) => [buyer.id, buyer]))
 
-        // Get accepted buyer if applicable
-        let accepted_buyer = null
-        if (deal.accepted_buyer_id) {
-          const { data: buyer } = await db
-            .from('buyers')
-            .select('id, first_name, last_name, company_name, name, company')
-            .eq('id', deal.accepted_buyer_id)
-            .single()
-          if (buyer) {
-            const nameParts = (buyer.name ?? '').split(' ')
-            accepted_buyer = {
-              id: buyer.id,
-              first_name: buyer.first_name ?? nameParts[0] ?? '',
-              last_name: buyer.last_name ?? nameParts.slice(1).join(' ') ?? '',
-              company_name: buyer.company_name ?? buyer.company ?? null,
-            }
-          }
-        }
-
-        const { data: tcFile } = await db
-          .from('tc_files')
-          .select('id, status, risk_level, next_action, closing_scheduled_at, file_number')
-          .eq('dispo_deal_id', deal.id)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        return {
-          ...deal,
-          deal_page: dealPage ?? null,
-          tc_file: tcFile ?? null,
-          broadcasts_count: bcCount ?? 0,
-          offers_count: offerCount ?? 0,
-          accepted_buyer,
-        }
-      })
-    )
+    const enriched = dealRows.map((deal) => {
+      const buyer = deal.accepted_buyer_id ? buyerById.get(deal.accepted_buyer_id) : null
+      const nameParts = (buyer?.name ?? '').split(' ').filter(Boolean)
+      return {
+        ...deal,
+        deal_page: dealPageByLead.get(deal.lead_id) ?? null,
+        tc_file: tcFileByDeal.get(deal.id) ?? null,
+        broadcasts_count: broadcastCountByLead.get(deal.lead_id) ?? 0,
+        offers_count: offerCountByLead.get(deal.lead_id) ?? 0,
+        accepted_buyer: buyer ? {
+          id: buyer.id,
+          first_name: buyer.first_name ?? nameParts[0] ?? '',
+          last_name: buyer.last_name ?? nameParts.slice(1).join(' '),
+          company_name: buyer.company_name ?? buyer.company ?? null,
+        } : null,
+      }
+    })
 
     // Apply search filter post-fetch (on lead address/name)
     let results = enriched
@@ -232,6 +229,16 @@ export async function POST(req: NextRequest) {
       console.error('[dispo-deals POST] Insert error:', insertError)
       return NextResponse.json({ error: insertError.message }, { status: 500 })
     }
+
+    await ensureTcFileForDeal(db, {
+      id: deal.id,
+      leadId: deal.lead_id,
+      stage: deal.stage,
+      enteredAt: deal.entered_at,
+      assignmentFee: deal.assignment_fee,
+      closeDate: deal.close_date,
+      acceptedOfferId: deal.accepted_offer_id,
+    })
 
     return NextResponse.json({ deal }, { status: 201 })
   } catch (err) {

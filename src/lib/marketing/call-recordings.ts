@@ -60,8 +60,21 @@ export function playableRecordingUrl(metadata: unknown): string | null {
   const sid = readRecordingSid(meta)
   if (sid) return `/api/recordings/${encodeURIComponent(sid)}`
 
-  const storedUrl = text(meta.recordingUrl) || text(meta.recording_url)
+  const storedUrl = text(meta.recordingUrl) || text(meta.recording_url) || text(meta.RecordingUrl)
   if (storedUrl.startsWith('/api/recordings/')) return storedUrl
+
+  // Historical Twilio callbacks stored the protected API URL instead of the
+  // in-app proxy URL. Recover the recording SID and keep credentials server-side.
+  try {
+    const parsed = new URL(storedUrl)
+    if (parsed.hostname === 'api.twilio.com') {
+      const twilioMatch = parsed.pathname.match(/\/Recordings\/(RE[A-Za-z0-9]+)(?:\.[a-z0-9]+)?$/i)
+      if (twilioMatch?.[1]) return `/api/recordings/${encodeURIComponent(twilioMatch[1])}`
+    }
+  } catch {
+    // Non-URL values are intentionally rejected below.
+  }
+
   return null
 }
 

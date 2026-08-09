@@ -71,7 +71,7 @@ assert(
 );
 
 assert(
-  globals.includes('.theme-light .lead-cockpit') && globals.includes('--ck-text: #111827'),
+  globals.includes('.theme-light .lead-cockpit') && globals.includes('--ck-text: #0b1220'),
   'Theme guard failed: cockpit light theme text tokens are missing.'
 );
 

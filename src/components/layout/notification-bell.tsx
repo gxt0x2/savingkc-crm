@@ -34,6 +34,10 @@ const typeLabels: Record<string, string> = {
   info: 'i',
 }
 
+const POLL_MS = 300_000
+const MIN_FETCH_GAP_MS = 60_000
+const LAST_FETCH_KEY = 'ck_notifications_last_fetch_ms'
+
 function BellSvg() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5 text-[var(--ck-text-muted)]" aria-hidden="true" fill="none">
@@ -50,9 +54,6 @@ export function NotificationBell() {
   const ref = useRef<HTMLDivElement>(null)
   const inFlightRef = useRef(false)
   const lastFetchedRef = useRef(0)
-  const POLL_MS = 30_000
-  const MIN_FETCH_GAP_MS = 10_000
-  const LAST_FETCH_KEY = 'ck_notifications_last_fetch_ms'
 
   const fetchNotifications = useCallback(async (force = false) => {
     const now = Date.now()
@@ -80,7 +81,7 @@ export function NotificationBell() {
     }
   }, [])
 
-  // Poll every 30 seconds
+  // Background refresh is deliberately conservative; opening the panel still refreshes immediately.
   useEffect(() => {
     fetchNotifications()
     const interval = setInterval(() => {
@@ -89,7 +90,7 @@ export function NotificationBell() {
       }
     }, POLL_MS)
     return () => clearInterval(interval)
-  }, [fetchNotifications, POLL_MS])
+  }, [fetchNotifications])
 
   // Close on click outside
   useEffect(() => {

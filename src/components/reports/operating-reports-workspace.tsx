@@ -14,8 +14,8 @@ export type OperatingReportView = 'dashboard' | 'marketing' | 'acquisitions' | '
 const VIEW_COPY: Record<OperatingReportView, { eyebrow: string; title: string; description: string }> = {
   dashboard: { eyebrow: 'SavingKC command center', title: 'CEO Operating System', description: 'A real-time view of attention, pipeline, communication, disposition, and recorded economics.' },
   marketing: { eyebrow: 'Reports · Marketing', title: 'Marketing performance', description: 'Lead-source quality measured by seller records, stage advancement, contracts, and attributed revenue.' },
-  acquisitions: { eyebrow: 'Reports · Acquisitions', title: 'Acquisitions performance', description: 'The operating path from new inquiry to qualified seller, appointment, contract, and close.' },
-  dispositions: { eyebrow: 'Reports · Dispositions', title: 'Dispositions performance', description: 'Buyer demand, offers, contract-to-close execution, assignment economics, and the post-close debrief loop.' },
+  acquisitions: { eyebrow: 'Team dashboard · Acquisitions', title: 'Acquisitions performance', description: 'The operating path from new inquiry to qualified seller, appointment, contract, and close.' },
+  dispositions: { eyebrow: 'Team dashboard · Dispositions', title: 'Dispositions performance', description: 'Buyer demand, offers, contract-to-close execution, assignment economics, and the post-close debrief loop.' },
   finance: { eyebrow: 'Reports · Finance', title: 'Financial performance', description: 'Recorded revenue and expenses only. Seed and sample transactions are excluded.' },
   'call-sms': { eyebrow: 'Reports · Call/SMS', title: 'Call and SMS performance', description: 'Connected calls, messages, response signals, agent activity, and unresolved seller attention.' },
 }
@@ -73,6 +73,18 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
           <p className="mt-0.5 max-w-4xl text-xs font-medium text-[var(--crm-text-muted)]">{copy.description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {view === 'dispositions' ? (
+            <>
+              <Link href="/dispo/pipeline" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
+                <Icon name="route" className="text-[18px]" />
+                Dispositions portal
+              </Link>
+              <Link href="/dispo/tc" className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
+                <Icon name="fact_check" className="text-[18px]" />
+                Closing coordination
+              </Link>
+            </>
+          ) : null}
           <label className="flex h-10 items-center gap-2 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 shadow-sm">
             <Icon name="date_range" className="text-[19px] text-[var(--crm-brand)]" />
             <span className="sr-only">Reporting period</span>

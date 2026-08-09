@@ -19,7 +19,28 @@ type ContextGroup = {
   items: ContextItem[]
 }
 
+const DASHBOARD_CONTEXT_ITEMS: ContextItem[] = [
+  { label: 'Company overview', href: '/dashboard', icon: 'space_dashboard', matchPath: '/dashboard' },
+  { label: 'Acquisitions', href: '/reports/acquisitions', icon: 'track_changes', matchPath: '/reports/acquisitions' },
+  { label: 'Dispositions', href: '/reports/dispositions', icon: 'sell', matchPath: '/reports/dispositions' },
+]
+
 const GROUPS: ContextGroup[] = [
+  {
+    label: 'Dashboards',
+    pathPrefix: '/dashboard',
+    items: DASHBOARD_CONTEXT_ITEMS,
+  },
+  {
+    label: 'Dashboards',
+    pathPrefix: '/reports/acquisitions',
+    items: DASHBOARD_CONTEXT_ITEMS,
+  },
+  {
+    label: 'Dashboards',
+    pathPrefix: '/reports/dispositions',
+    items: DASHBOARD_CONTEXT_ITEMS,
+  },
   {
     label: 'Workflows',
     pathPrefix: '/workflows',
@@ -27,6 +48,7 @@ const GROUPS: ContextGroup[] = [
       { label: 'Overview', href: '/workflows', icon: 'space_dashboard', section: 'overview' },
       { label: 'Phone system', href: '/workflows?section=phones', icon: 'account_tree', section: 'phones' },
       { label: 'All workflows', href: '/workflows?section=all', icon: 'schema', section: 'all' },
+      { label: 'Email templates', href: '/workflows?section=templates', icon: 'mark_email_read', section: 'templates' },
     ],
   },
   {
@@ -45,7 +67,7 @@ const GROUPS: ContextGroup[] = [
     label: 'Marketing',
     pathPrefix: '/marketing',
     items: [
-      { label: 'Command', href: '/marketing', icon: 'space_dashboard', matchPath: '/marketing' },
+      { label: 'Google Ads', href: '/marketing', icon: 'space_dashboard', matchPath: '/marketing' },
       { label: 'Call recordings', href: '/marketing/calls', icon: 'record_voice_over', matchPath: '/marketing/calls' },
       { label: 'Lead alerts', href: '/marketing/alerts', icon: 'notification_important', matchPath: '/marketing/alerts' },
       { label: 'Landing pages', href: '/marketing/heatmaps', icon: 'ads_click', matchPath: '/marketing/heatmaps' },
@@ -55,12 +77,13 @@ const GROUPS: ContextGroup[] = [
     label: 'Dispositions',
     pathPrefix: '/dispo',
     items: [
+      { label: 'Dashboard', href: '/reports/dispositions', icon: 'space_dashboard', matchPath: '/reports/dispositions' },
       { label: 'Pipeline', href: '/dispo/pipeline', icon: 'route', matchPath: '/dispo/pipeline' },
       { label: 'Deal pages', href: '/dispo/deals', icon: 'storefront', matchPath: '/dispo/deals' },
       { label: 'Buyers', href: '/dispo/buyers', icon: 'groups', matchPath: '/dispo/buyers' },
       { label: 'Offers', href: '/dispo/offers', icon: 'local_offer', matchPath: '/dispo/offers' },
       { label: 'Broadcasts', href: '/dispo/broadcasts', icon: 'campaign', matchPath: '/dispo/broadcasts' },
-      { label: 'Transaction coordination', href: '/dispo/tc', icon: 'fact_check', matchPath: '/dispo/tc' },
+      { label: 'Closing coordination', href: '/dispo/tc', icon: 'fact_check', matchPath: '/dispo/tc' },
       { label: 'Partners', href: '/dispo/vendors', icon: 'handshake', matchPath: '/dispo/vendors' },
       { label: 'Contacts', href: '/dispo/contacts', icon: 'contact_page', matchPath: '/dispo/contacts' },
     ],
@@ -70,8 +93,6 @@ const GROUPS: ContextGroup[] = [
     pathPrefix: '/reports',
     items: [
       { label: 'Marketing', href: '/reports/marketing', icon: 'campaign', matchPath: '/reports/marketing' },
-      { label: 'Acquisitions', href: '/reports/acquisitions', icon: 'track_changes', matchPath: '/reports/acquisitions' },
-      { label: 'Dispositions', href: '/reports/dispositions', icon: 'sell', matchPath: '/reports/dispositions' },
       { label: 'Finance', href: '/reports/finance', icon: 'account_balance', matchPath: '/reports/finance' },
       { label: 'Call/SMS', href: '/reports/call-sms', icon: 'phone_in_talk', matchPath: '/reports/call-sms' },
     ],

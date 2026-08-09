@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: apps/mobile/package-lock.json
 
@@ -40,15 +40,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install deps
         run: npm ci
+
+      - name: Code hygiene gate
+        env:
+          HYGIENE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npm run gate:hygiene
 
       - name: Root dependency security gate
         run: npm run gate:security
@@ -106,7 +113,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Require Twilio health config
         if: env.TWILIO_HEALTH_BASE_URL == ''
@@ -138,7 +145,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Require edge integrity config
         if: env.EDGE_INTEGRITY_BASE_URL == ''

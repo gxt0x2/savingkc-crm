@@ -84,8 +84,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/settings') ?? false) &&
     searchParams.get('portal') !== 'tc' &&
     mode !== 'tc'
-  const isTcRoute = (pathname?.startsWith('/dispo/tc') ?? false) || (pathname?.startsWith('/dispo/contacts') && searchParams.get('portal') === 'tc')
-  const isModernDispo = (pathname?.startsWith('/dispo') ?? false) && !isTcRoute
+  // Every dispositions route, including the TC portal, belongs to the rebuilt
+  // workspace shell. Keeping TC out of this branch was the legacy-wrapper
+  // exception that made the portal disappear from the new CRM experience.
+  const isModernDispo = pathname?.startsWith('/dispo') ?? false
   const isConversationWorkspace =
     (pathname?.startsWith('/conversations') ?? false) ||
     (pathname?.startsWith('/contacts') ?? false) ||
@@ -105,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     isAcquisitionsSettings
   const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
   const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
-  const useTcLightTheme = hydrated && (isTcRoute || isTcCalendar || isTcSettings)
+  const useTcLightTheme = hydrated && (isTcCalendar || isTcSettings)
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
   const useUserLightTheme = hydrated && !useTcLightTheme && userTheme === 'light'
   const useLightLogo = useTcLightTheme || useUserLightTheme
@@ -272,7 +274,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     }
     loadProfile()
-  }, [user?.email])
+  }, [user])
 
   if (isConversationWorkspace) {
     return (
@@ -345,6 +347,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </filter>
             </svg>
             <Link href="/ari" className="flex items-center flex-shrink-0" aria-label="Saving KC Homebuyers">
+              {/* eslint-disable-next-line @next/next/no-img-element -- the active brand asset can switch between the local dark-theme file and the external light-theme source. */}
               <img
                 src={useLightLogo ? 'https://savingkc.com/logo.png' : '/logo.png'}
                 alt="Saving KC Homebuyers"
@@ -427,6 +430,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     className="w-10 h-10 rounded-lg overflow-hidden bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] transition-colors"
                     aria-label="Profile menu"
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- agent profile photos are user-configured external URLs. */}
                     <img
                       src={profilePhotoUrl}
                       alt="Profile"
@@ -497,6 +501,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           style={{ borderColor: 'var(--ck-border)' }}
         >
           <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element -- the compact drawer reuses the unoptimized local brand asset. */}
             <img src="/logo.png" alt="Saving KC" className="h-9 w-auto" />
 
           </div>

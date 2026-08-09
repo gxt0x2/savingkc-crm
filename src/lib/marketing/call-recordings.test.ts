@@ -20,7 +20,8 @@ describe('marketing call recordings helpers', () => {
     expect(playableRecordingUrl({ recordingSid: 'RE123' })).toBe('/api/recordings/RE123')
     expect(playableRecordingUrl({ RecordingSid: 'RE 456' })).toBe('/api/recordings/RE%20456')
     expect(playableRecordingUrl({ recordingUrl: '/api/recordings/RE789' })).toBe('/api/recordings/RE789')
-    expect(playableRecordingUrl({ recordingUrl: 'https://api.twilio.com/recordings/RE789' })).toBeNull()
+    expect(playableRecordingUrl({ RecordingUrl: 'https://api.twilio.com/2010-04-01/Accounts/AC123/Recordings/RE789.mp3' })).toBe('/api/recordings/RE789')
+    expect(playableRecordingUrl({ recordingUrl: 'https://example.com/recordings/RE789' })).toBeNull()
   })
 
   it('reads and merges recording review metadata without mutating existing fields', () => {

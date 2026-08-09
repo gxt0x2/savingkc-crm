@@ -11,6 +11,13 @@ const crmWorkspaceRoutes = [
   '/workflows',
   '/marketing',
   '/dispo/pipeline',
+  '/dispo/deals',
+  '/dispo/buyers',
+  '/dispo/offers',
+  '/dispo/broadcasts',
+  '/dispo/tc',
+  '/dispo/vendors',
+  '/dispo/contacts',
   '/dashboard',
   '/reports/marketing',
   '/reports/acquisitions',
@@ -72,6 +79,7 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
     ['Conversations', '/conversations'],
     ['Calendar', '/calendar?department=acquisitions'],
     ['Task', '/tasks'],
+    ['Dispositions', '/dispo/pipeline'],
     ['ARI Insights', '/ari'],
     ['Workflows', '/workflows'],
     ['Settings', '/settings'],
@@ -82,11 +90,18 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
     await expect(destination).toBeVisible();
   }
 
+  await page.getByRole('button', { name: 'Expand dashboard menu' }).click();
+  const dashboardLinks = new Map([
+    ['Acquisitions', '/reports/acquisitions'],
+    ['Dispositions', '/reports/dispositions'],
+  ]);
+  for (const [name, href] of dashboardLinks) {
+    await expect(page.locator(`a[href="${href}"]`).filter({ hasText: name })).toBeVisible();
+  }
+
   await page.getByRole('button', { name: 'Reports' }).click();
   const reportLinks = new Map([
     ['Marketing', '/reports/marketing'],
-    ['Acquisitions', '/reports/acquisitions'],
-    ['Dispositions', '/reports/dispositions'],
     ['Finance', '/reports/finance'],
     ['Call/SMS', '/reports/call-sms'],
   ]);
@@ -113,7 +128,7 @@ for (const route of crmWorkspaceRoutes) {
     await expect(commandSearch).toBeVisible();
     await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
     await expect(page.locator('a[href="/contacts"]').filter({ hasText: 'Contacts' })).toBeVisible();
-    await expect(page.locator('a[href="/dashboard"]').filter({ hasText: 'Dashboard' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
     await page.screenshot({
@@ -140,4 +155,18 @@ test('rebuilt CRM honors and persists dark and light theme preference', async ({
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('crm-theme'))).toBe('light');
   await expect(page.locator('.crm-workspace-shell')).toHaveAttribute('data-theme', 'light');
   await expect(page.locator('body.ck-dark')).toHaveCount(0);
+});
+
+test('closing coordination uses the rebuilt shell and shared theme', async ({ page }) => {
+  await page.goto('/dispo/tc', { waitUntil: 'domcontentloaded' });
+
+  const shell = page.locator('.crm-workspace-shell');
+  const portal = page.locator('.tc-portal');
+  await expect(shell).toHaveAttribute('data-theme', 'light');
+  await expect(page.getByRole('navigation', { name: 'Dispositions sections' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Closing coordination' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Switch to dark theme' }).click();
+  await expect(shell).toHaveAttribute('data-theme', 'dark');
+  await expect.poll(() => portal.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(23, 24, 26)');
 });

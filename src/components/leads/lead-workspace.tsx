@@ -15,6 +15,7 @@ import {
   normalizeLeadConversation,
   type LeadCommunicationFilter,
 } from '@/lib/lead-conversation'
+import { playableRecordingUrl } from '@/lib/marketing/call-recordings'
 import { cn } from '@/lib/utils'
 
 export interface LeadWorkspaceLead {
@@ -1011,13 +1012,7 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
   const isOutbound = direction === 'Outbound'
   const isCall = activity.activity_type === 'call'
   const text = leadActivityText(activity)
-  const recordingUrl = typeof activity.metadata?.recording_url === 'string'
-    ? activity.metadata.recording_url
-    : typeof activity.metadata?.recordingUrl === 'string'
-      ? activity.metadata.recordingUrl
-      : typeof activity.metadata?.recordingSid === 'string'
-        ? `/api/recordings/${activity.metadata.recordingSid}`
-        : null
+  const recordingUrl = playableRecordingUrl(activity.metadata)
   return (
     <article className="grid grid-cols-[92px_34px_1fr] gap-3">
       <time className="pt-1 text-right text-[11px] leading-4 text-[var(--crm-text-muted)]">{formatActivityDate(activity.created_at)}</time>

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { logTcEvent } from '@/lib/tc'
+import { unresolvedCommunicationTemplateFields } from '@/lib/operating-model/communication-template-catalog'
 
 const updateDraftSchema = z.object({
   subject: z.string().nullable().optional(),
@@ -17,7 +18,7 @@ const updateDraftSchema = z.object({
 const draftSelect = `*,
 template:template_id(id, slug, title, template_type, audience, subject, body),
 file:tc_file_id(id, lead_id, status, file_number, emd_due_at, closing_scheduled_at, assignment_fee,
-  lead:lead_id(id, full_name, property_address, city, state, zip),
+  lead:lead_id(id, full_name, phone, email, property_address, city, state, zip, offer_amount),
   offer:buyer_offer_id(id, offer_amount, buyer:buyer_id(id, name, company, email, phone)),
   title_company:title_company_id(id, name, office_phone, office_email),
   title_contact:title_contact_id(id, name, role, email, phone))`
@@ -66,9 +67,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (input.status) {
       updates.status = input.status
       if (input.status === 'approved') {
+        const reviewedBody = input.edited_body ?? current.edited_body ?? current.draft_body
+        const reviewedSubject = 'subject' in input ? input.subject : current.subject
+        const unresolvedFields = unresolvedCommunicationTemplateFields(reviewedSubject, reviewedBody)
+        if (!reviewedBody.trim()) {
+          return NextResponse.json({ error: 'Draft body is empty' }, { status: 400 })
+        }
+        if (unresolvedFields.length > 0) {
+          return NextResponse.json({
+            error: 'Resolve every template field before approval',
+            unresolved_fields: unresolvedFields,
+          }, { status: 409 })
+        }
         updates.approved_at = new Date().toISOString()
-        updates.approved_by = input.approved_by ?? input.actor ?? 'gertha'
-        updates.approved_body = input.edited_body ?? current.edited_body ?? current.draft_body
+        updates.approved_by = input.approved_by ?? input.actor ?? 'system'
+        updates.approved_body = reviewedBody
         updates.rejection_notes = null
       } else if (input.status === 'rejected') {
         updates.approved_at = null
