@@ -40,6 +40,10 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByRole('heading', { name: 'CEO Operating System' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('button', { name: 'Open phone dialer' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /Switch to (light|dark) theme/ })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Notifications' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Open user menu' })).toHaveCount(1)
   const andon = page.getByRole('button', { name: 'Raise an Andon and report an issue' })
   await expect(andon).toBeVisible()
   await andon.click()

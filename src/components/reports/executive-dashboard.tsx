@@ -2,10 +2,8 @@
 
 import Link from 'next/link'
 
-import { GlobalDialerButton } from '@/components/telephony/global-dialer-button'
 import { Icon } from '@/components/ui/icon'
 import { ReportDateRangeControl, type OperatingCustomRange } from '@/components/reports/report-date-range-control'
-import { useThemePreference } from '@/hooks/use-theme-preference'
 import { formatLeadSource } from '@/lib/contact-display'
 import type { OperatingReport, OperatingReportPeriod } from '@/lib/operating-report'
 
@@ -36,7 +34,6 @@ export function ExecutiveDashboard({
   onCustomRangeChange: (range: OperatingCustomRange) => void
   isFetching: boolean
 }) {
-  const { theme, toggle: toggleTheme } = useThemePreference()
   const cards = [
     { icon: 'payments', label: 'Revenue (period)', value: report.availability.finance ? money(report.core.revenue) : 'Unavailable', numericValue: report.availability.finance ? report.core.revenue : null, detail: `${report.finance.revenueTransactions} recorded transaction${report.finance.revenueTransactions === 1 ? '' : 's'}`, tone: 'green' as const, href: '/reports/finance', series: report.trends.revenue, goal: scaledGoal(report.goals.monthlyRevenue, report, 'monthly') },
     { icon: 'filter_alt', label: 'Pipeline est. revenue', value: report.core.pipelineOfferValue == null ? 'Not recorded' : money(report.core.pipelineOfferValue), numericValue: report.core.pipelineOfferValue, detail: 'Recorded offers on active leads', tone: 'violet' as const, href: '/reports/acquisitions', series: null, goal: null },
@@ -63,18 +60,6 @@ export function ExecutiveDashboard({
             </Link>
             <Link href="/ari" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 text-[10px] font-bold shadow-[var(--crm-shadow-sm)] hover:border-[var(--crm-violet)]">
               <Icon name="auto_awesome" className="text-[17px] text-[var(--crm-violet)]" /> Ask AI Assistant
-            </Link>
-            <GlobalDialerButton compact />
-            <button type="button" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg">
-              <Icon name={theme === 'dark' ? 'light_mode' : 'dark_mode'} className="text-[18px]" />
-            </button>
-            <Link href="/conversations?reply=needs_reply" aria-label={`${report.core.needsReply} conversations need a reply`} className="relative grid h-9 w-9 place-items-center rounded-lg hover:bg-[var(--crm-surface-subtle)]">
-              <Icon name="notifications_none" className="text-[20px]" />
-              {report.core.needsReply > 0 ? <span className="absolute right-0 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--crm-brand)] px-1 text-[8px] font-bold text-white">{report.core.needsReply}</span> : null}
-            </Link>
-            <Link href="/settings" aria-label="Open Ernest's profile settings" className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-[var(--crm-surface-subtle)]">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#101d4a] text-[9px] font-bold text-white">ED</span>
-              <span className="hidden text-[10px] font-bold sm:block">Ernest</span>
             </Link>
           </div>
         </header>
