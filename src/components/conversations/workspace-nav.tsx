@@ -24,6 +24,7 @@ const DASHBOARD_ITEMS: NavItem[] = [
   { label: 'Company overview', icon: 'space_dashboard', href: '/dashboard', activeOn: ['/dashboard'] },
   { label: 'Acquisitions', icon: 'track_changes', href: '/reports/acquisitions', activeOn: ['/reports/acquisitions'] },
   { label: 'Dispositions', icon: 'sell', href: '/reports/dispositions', activeOn: ['/reports/dispositions'] },
+  { label: 'Andon system', icon: 'warning_amber', href: '/reports/andon', activeOn: ['/reports/andon'] },
 ]
 
 const REPORT_ITEMS: NavItem[] = [

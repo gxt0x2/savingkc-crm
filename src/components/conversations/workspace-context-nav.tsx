@@ -23,6 +23,7 @@ const DASHBOARD_CONTEXT_ITEMS: ContextItem[] = [
   { label: 'Company overview', href: '/dashboard', icon: 'space_dashboard', matchPath: '/dashboard' },
   { label: 'Acquisitions', href: '/reports/acquisitions', icon: 'track_changes', matchPath: '/reports/acquisitions' },
   { label: 'Dispositions', href: '/reports/dispositions', icon: 'sell', matchPath: '/reports/dispositions' },
+  { label: 'Andon system', href: '/reports/andon', icon: 'warning_amber', matchPath: '/reports/andon' },
 ]
 
 const GROUPS: ContextGroup[] = [
@@ -39,6 +40,11 @@ const GROUPS: ContextGroup[] = [
   {
     label: 'Dashboards',
     pathPrefix: '/reports/dispositions',
+    items: DASHBOARD_CONTEXT_ITEMS,
+  },
+  {
+    label: 'Dashboards',
+    pathPrefix: '/reports/andon',
     items: DASHBOARD_CONTEXT_ITEMS,
   },
   {

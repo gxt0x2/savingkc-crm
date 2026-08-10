@@ -4,6 +4,7 @@ import Link from 'next/link'
 
 import { GlobalDialerButton } from '@/components/telephony/global-dialer-button'
 import { Icon } from '@/components/ui/icon'
+import { ReportDateRangeControl, type OperatingCustomRange } from '@/components/reports/report-date-range-control'
 import { useThemePreference } from '@/hooks/use-theme-preference'
 import { formatLeadSource } from '@/lib/contact-display'
 import type { OperatingReport, OperatingReportPeriod } from '@/lib/operating-report'
@@ -20,26 +21,22 @@ const TONES: Record<Tone, { color: string; icon: string }> = {
   red: { color: '#d62937', icon: 'bg-[#ffe5e8] text-[#d62937]' },
 }
 
-const PERIOD_LABELS: Record<OperatingReportPeriod, string> = {
-  '30d': 'Last 30 days',
-  quarter: 'This quarter',
-  ytd: 'Year to date',
-  all: 'All time',
-}
-
 export function ExecutiveDashboard({
   report,
   period,
+  customRange,
   onPeriodChange,
+  onCustomRangeChange,
   isFetching,
 }: {
   report: OperatingReport
   period: OperatingReportPeriod
+  customRange: OperatingCustomRange
   onPeriodChange: (period: OperatingReportPeriod) => void
+  onCustomRangeChange: (range: OperatingCustomRange) => void
   isFetching: boolean
 }) {
   const { theme, toggle: toggleTheme } = useThemePreference()
-  const range = periodRange(report)
   const cards = [
     { icon: 'payments', label: 'Revenue (period)', value: report.availability.finance ? money(report.core.revenue) : 'Unavailable', numericValue: report.availability.finance ? report.core.revenue : null, detail: `${report.finance.revenueTransactions} recorded transaction${report.finance.revenueTransactions === 1 ? '' : 's'}`, tone: 'green' as const, href: '/reports/finance', series: report.trends.revenue, goal: scaledGoal(report.goals.monthlyRevenue, report, 'monthly') },
     { icon: 'filter_alt', label: 'Pipeline est. revenue', value: report.core.pipelineOfferValue == null ? 'Not recorded' : money(report.core.pipelineOfferValue), numericValue: report.core.pipelineOfferValue, detail: 'Recorded offers on active leads', tone: 'violet' as const, href: '/reports/acquisitions', series: null, goal: null },
@@ -60,16 +57,10 @@ export function ExecutiveDashboard({
             <p className="text-[11px] font-medium leading-4 text-[var(--crm-text-muted)]">Real-time overview of the entire business</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <label className="relative flex h-10 min-w-[188px] cursor-pointer items-center justify-between rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 shadow-[var(--crm-shadow-sm)]">
-              <span>
-                <strong className="block text-[10px] font-bold leading-4">{range.current}</strong>
-                <span className="block text-[8px] font-medium text-[var(--crm-text-muted)]">{range.comparison}</span>
-              </span>
-              <Icon name="calendar_month" className="text-[17px] text-[var(--crm-info)]" />
-              <select aria-label="Reporting period" value={period} onChange={(event) => onPeriodChange(event.target.value as OperatingReportPeriod)} className="absolute inset-0 cursor-pointer opacity-0">
-                {Object.entries(PERIOD_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </label>
+            <ReportDateRangeControl period={period} customRange={customRange} onPeriodChange={onPeriodChange} onCustomRangeChange={onCustomRangeChange} />
+            <Link href="/reports/andon" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-3 text-[10px] font-bold text-[var(--crm-danger)] shadow-[var(--crm-shadow-sm)] hover:border-[var(--crm-danger)]">
+              <Icon name="warning_amber" className="text-[17px]" /> Andon system
+            </Link>
             <Link href="/ari" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 text-[10px] font-bold shadow-[var(--crm-shadow-sm)] hover:border-[var(--crm-violet)]">
               <Icon name="auto_awesome" className="text-[17px] text-[var(--crm-violet)]" /> Ask AI Assistant
             </Link>
@@ -94,14 +85,14 @@ export function ExecutiveDashboard({
           {cards.map((card) => <CeoMetricCard key={card.label} {...card} />)}
         </section>
 
-        <section className="grid gap-2.5 xl:grid-cols-[0.70fr_0.72fr_1.08fr] 2xl:h-[230px]">
+        <section aria-label="Department operating flow" className="grid gap-2.5 xl:grid-cols-2 2xl:h-[230px] 2xl:grid-cols-4">
+          <MarketingPerformance report={report} />
           <AcquisitionsPerformance report={report} />
           <DispositionsPerformance report={report} />
-          <MarketingPerformance report={report} />
+          <RevenuePerformance report={report} />
         </section>
 
-        <section className="grid gap-2.5 xl:grid-cols-2 2xl:h-[224px] 2xl:grid-cols-[1.05fr_.96fr_.70fr_1.42fr]">
-          <FinancialOverview report={report} />
+        <section className="grid gap-2.5 xl:grid-cols-2 2xl:h-[224px] 2xl:grid-cols-[.96fr_.70fr_1.42fr]">
           <ActiveBottlenecks report={report} />
           <AiInsights report={report} />
           <AiAssistant report={report} />
@@ -170,9 +161,10 @@ function AcquisitionsPerformance({ report }: { report: OperatingReport }) {
     { label: 'Speed to lead', value: minutes(report.acquisitions.averageSpeedToLeadMinutes), numeric: report.acquisitions.averageSpeedToLeadMinutes ?? 0, goal: 2, tone: 'blue' as const, icon: 'speed' },
     { label: 'Meaningful conversations', value: report.communications.connectedCalls, numeric: report.communications.connectedCalls, goal: goalCalls, tone: 'green' as const, icon: 'forum' },
     { label: 'Appointments attended', value: attended == null ? 'Not recorded' : attended, numeric: attended ?? 0, goal: goalAppointments, tone: 'blue' as const, icon: 'calendar_month' },
+    { label: 'Offers presented', value: report.acquisitions.offers, numeric: report.acquisitions.offers, goal: null, tone: 'violet' as const, icon: 'request_quote' },
     { label: 'Under contract', value: report.core.underContract, numeric: report.core.underContract, goal: scaledGoal(report.goals.monthlyClosings, report, 'monthly'), tone: 'teal' as const, icon: 'description' },
   ]
-  return <DashboardPanel title="Acquisitions performance" period="Selected period" tone="blue" href="/reports/acquisitions"><div className="grid h-full grid-cols-2 divide-x divide-y divide-[var(--crm-border)] sm:grid-cols-4 sm:divide-y-0">{metrics.map((metric) => <GaugeMetric key={metric.label} {...metric} />)}</div></DashboardPanel>
+  return <DashboardPanel title="Acquisitions" period="Selected period" tone="blue" href="/reports/acquisitions"><div className="grid h-full grid-cols-2 divide-x divide-y divide-[var(--crm-border)] sm:grid-cols-5 sm:divide-y-0">{metrics.map((metric) => <GaugeMetric key={metric.label} {...metric} />)}</div></DashboardPanel>
 }
 
 function GaugeMetric({ label, value, numeric, goal, tone, icon }: { label: string; value: string | number; numeric: number; goal: number | null; tone: Tone; icon: string }) {
@@ -201,52 +193,36 @@ function IconSvg({ name, color }: { name: string; color: string }) {
 
 function DispositionsPerformance({ report }: { report: OperatingReport }) {
   const metrics = [
-    ['Active buyers', report.dispositions.activeBuyers, ''],
-    ['Offers / property', decimal(report.dispositions.offersPerProperty), ''],
-    ['Days to secure buyer', days(report.dispositions.averageDaysToBuyer), ''],
-    ['Assignment revenue', money(report.dispositions.assignmentRevenue), ''],
-    ['Avg. assignment fee', nullableMoney(report.dispositions.averageAssignmentFee), ''],
-    ['Offer coverage', nullablePercent(report.dispositions.offerCoverage), ''],
-    ['Close rate', nullablePercent(report.dispositions.closeRate), ''],
-    ['Repeat buyers', report.dispositions.repeatBuyers, ''],
+    ['New buyers', report.dispositions.newBuyers],
+    ['Properties marketed', report.dispositions.propertiesMarketed],
+    ['Offers received', report.dispositions.offers],
+    ['Properties assigned', report.dispositions.assignedDeals],
+    ['Assignments closed', report.dispositions.closedDeals],
+    ['Revenue closed', money(report.dispositions.assignmentRevenue)],
   ]
-  return <DashboardPanel title="Dispositions performance" period="Selected period" tone="red" href="/reports/dispositions"><div className="grid h-full grid-cols-4 grid-rows-2 divide-x divide-y divide-[var(--crm-border)]">{metrics.map(([label, value]) => <div key={label} className="flex min-w-0 flex-col items-center justify-center px-1.5 py-2 text-center"><span className="min-h-6 text-[9px] font-bold leading-3">{label}</span><strong className={`mt-1 font-extrabold tracking-[-0.035em] ${String(value).length > 11 ? 'text-[11px]' : 'text-[18px]'}`}>{value}</strong><span className="mt-1 text-[9px] font-semibold text-[var(--crm-success)]">Recorded CRM</span></div>)}</div></DashboardPanel>
+  return <DashboardPanel title="Dispositions" period="Selected period" tone="red" href="/reports/dispositions"><div className="grid h-full grid-cols-3 grid-rows-2 divide-x divide-y divide-[var(--crm-border)]">{metrics.map(([label, value]) => <div key={label} className="flex min-w-0 flex-col items-center justify-center px-1.5 py-2 text-center"><span className="min-h-6 text-[9px] font-bold leading-3">{label}</span><strong className={`mt-1 font-extrabold tracking-[-0.035em] ${String(value).length > 11 ? 'text-[11px]' : 'text-[18px]'}`}>{value}</strong><span className="mt-1 text-[9px] font-semibold text-[var(--crm-success)]">Recorded CRM</span></div>)}</div></DashboardPanel>
 }
 
 function MarketingPerformance({ report }: { report: OperatingReport }) {
-  const sources = report.marketing.sources.slice(0, 5)
-  const featured = sources.slice(0, 2)
+  const sources = report.marketing.sources.slice(0, 4)
   return (
-    <DashboardPanel title="Marketing performance" period="Selected period" tone="violet" href="/reports/marketing">
-      <div className="grid h-full min-h-0 grid-cols-[.86fr_1.14fr] divide-x divide-[var(--crm-border)]">
-        <div className="grid min-h-0 grid-rows-2 divide-y divide-[var(--crm-border)]">
-          {featured.length > 0 ? featured.map((source, index) => <div key={source.source} className="flex min-h-0 items-center gap-2 px-3 py-2"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${index === 0 ? TONES.blue.icon : TONES.teal.icon}`}><Icon name={index === 0 ? 'ads_click' : 'campaign'} className="text-[15px]" /></span><div className="min-w-0 flex-1"><strong className="block truncate text-[9px]">{formatLeadSource(source.source)}</strong><div className="mt-1 grid grid-cols-3 gap-1 text-center"><SmallStat label="Leads" value={source.leads} /><SmallStat label="Qualified" value={source.qualified} /><SmallStat label="Contracts" value={source.contracts} /></div></div></div>) : <div className="col-span-full grid place-items-center text-[10px] text-[var(--crm-text-muted)]">No recorded lead sources</div>}
+    <DashboardPanel title="Marketing" period="Selected period" tone="violet" href="/reports/marketing">
+      <div className="grid h-full min-h-0 grid-rows-[78px_1fr] divide-y divide-[var(--crm-border)]">
+        <div className="grid grid-cols-2 divide-x divide-[var(--crm-border)]">
+          <div className="flex flex-col items-center justify-center"><strong className="text-2xl font-black">{report.core.leads}</strong><span className="text-[9px] font-bold text-[var(--crm-text-muted)]">All leads</span></div>
+          <div className="flex flex-col items-center justify-center"><strong className="text-2xl font-black text-[var(--crm-info)]">{report.core.qualified}</strong><span className="text-[9px] font-bold text-[var(--crm-text-muted)]">Qualified leads</span></div>
         </div>
-        <div className="min-w-0 px-3 py-2">
-          <div className="mb-1.5 text-[9px] font-bold text-[var(--crm-text-muted)]">Top lead sources</div>
-          <div className="grid grid-cols-[1fr_40px_48px_42px] gap-1 border-b border-[var(--crm-border)] pb-1 text-[8px] font-bold uppercase text-[var(--crm-text-muted)]"><span>Source</span><span className="text-right">Leads</span><span className="text-right">Qualified</span><span className="text-right">Rate</span></div>
-          {sources.map((source) => <Link href="/reports/marketing" key={source.source} className="grid grid-cols-[1fr_40px_48px_42px] gap-1 border-b border-[var(--crm-border)] py-1.5 text-[9px] hover:bg-[var(--crm-surface-subtle)]"><strong className="truncate">{formatLeadSource(source.source)}</strong><span className="text-right">{source.leads}</span><span className="text-right">{source.qualified}</span><span className="text-right font-bold text-[var(--crm-success)]">{nullablePercent(source.qualificationRate)}</span></Link>)}
+        <div className="min-w-0 px-3 py-2"><div className="grid grid-cols-[1fr_44px_52px] gap-1 border-b border-[var(--crm-border)] pb-1 text-[8px] font-bold uppercase text-[var(--crm-text-muted)]"><span>Top lead source</span><span className="text-right">Leads</span><span className="text-right">Qualified</span></div>{sources.length > 0 ? sources.map((source) => <Link href="/reports/marketing" key={source.source} className="grid grid-cols-[1fr_44px_52px] gap-1 border-b border-[var(--crm-border)] py-1.5 text-[9px] hover:bg-[var(--crm-surface-subtle)]"><strong className="truncate">{formatLeadSource(source.source)}</strong><span className="text-right">{source.leads}</span><span className="text-right font-bold text-[var(--crm-info)]">{source.qualified}</span></Link>) : <div className="grid h-full place-items-center text-[10px] text-[var(--crm-text-muted)]">No recorded lead sources</div>}
         </div>
       </div>
     </DashboardPanel>
   )
 }
 
-function SmallStat({ label, value }: { label: string; value: number }) {
-  return <span><span className="block text-[8px] text-[var(--crm-text-muted)]">{label}</span><strong className="block text-[10px]">{value}</strong></span>
-}
-
-function FinancialOverview({ report }: { report: OperatingReport }) {
-  const revenueGoal = scaledGoal(report.goals.monthlyRevenue, report, 'monthly')
-  const rows = [
-    ['Gross revenue', money(report.finance.grossRevenue), revenueGoal, report.finance.grossRevenue],
-    ['Expenses', money(report.finance.expenses), null, report.finance.expenses],
-    ['Net profit', money(report.finance.netRevenue), revenueGoal, report.finance.netRevenue],
-    ['Profit margin', nullablePercent(report.finance.profitMargin), 30, report.finance.profitMargin ?? 0],
-    ['Avg. revenue', nullableMoney(report.finance.averageRevenuePerTransaction), null, report.finance.averageRevenuePerTransaction ?? 0],
-    ['Transactions', report.finance.revenueTransactions, null, report.finance.revenueTransactions],
-  ] as Array<[string, string | number, number | null, number]>
-  return <DashboardPanel title="Financial overview" period="Selected period" tone="green" href="/reports/finance"><div className="px-3 py-1"><div className="grid grid-cols-[1fr_72px_1fr] gap-2 border-b border-[var(--crm-border)] py-1 text-[8px] font-bold uppercase text-[var(--crm-text-muted)]"><span>Metric</span><span className="text-right">Actual</span><span className="text-right">vs goal</span></div>{rows.map(([label, value, goal, numeric]) => { const progress = goal != null && goal > 0 ? Math.max(0, Math.min(100, Math.round((numeric / goal) * 100))) : null; return <div key={label} className="grid grid-cols-[1fr_72px_1fr] items-center gap-2 border-b border-[var(--crm-border)] py-1.5 text-[9px]"><span className="font-semibold">{label}</span><strong className="text-right">{value}</strong><span className="flex items-center justify-end gap-1"><span className="h-1.5 w-14 overflow-hidden rounded-full bg-[var(--crm-surface-subtle)]"><span className="block h-full rounded-full bg-[var(--crm-success)]" style={{ width: `${progress ?? 0}%` }} /></span><span className="w-7 text-right text-[8px] text-[var(--crm-text-muted)]">{progress == null ? '—' : `${progress}%`}</span></span></div>})}</div></DashboardPanel>
+function RevenuePerformance({ report }: { report: OperatingReport }) {
+  const stages = report.finance.pipelineRevenueByStage.slice(0, 5)
+  const maximum = Math.max(...stages.map(([, value]) => value), 1)
+  return <DashboardPanel title="Revenue" period="Selected period" tone="green" href="/reports/finance"><div className="grid h-full grid-rows-[78px_1fr] divide-y divide-[var(--crm-border)]"><div className="grid grid-cols-2 divide-x divide-[var(--crm-border)]"><div className="flex flex-col items-center justify-center"><strong className="text-[20px] font-black">{money(report.finance.grossRevenue)}</strong><span className="text-[9px] font-bold text-[var(--crm-text-muted)]">Closed revenue</span></div><div className="flex flex-col items-center justify-center"><strong className={`font-black ${report.core.pipelineOfferValue == null ? 'text-sm' : 'text-[20px]'}`}>{report.core.pipelineOfferValue == null ? 'Not recorded' : money(report.core.pipelineOfferValue)}</strong><span className="text-[9px] font-bold text-[var(--crm-text-muted)]">Pipeline revenue</span></div></div><div className="px-3 py-2"><div className="mb-1 text-[8px] font-black uppercase text-[var(--crm-text-muted)]">Pipeline revenue by stage</div>{stages.length > 0 ? <div className="space-y-1.5">{stages.map(([stage, value]) => <div key={stage} className="grid grid-cols-[76px_1fr_54px] items-center gap-2 text-[8px]"><span className="truncate font-bold capitalize">{stage.replaceAll('_', ' ')}</span><span className="h-1.5 overflow-hidden rounded-full bg-[var(--crm-surface-subtle)]"><span className="block h-full rounded-full bg-[var(--crm-success)]" style={{ width: `${Math.round(value / maximum * 100)}%` }} /></span><strong className="text-right">{money(value)}</strong></div>)}</div> : <div className="grid h-20 place-items-center text-[10px] font-semibold text-[var(--crm-text-muted)]">No recorded pipeline offers</div>}</div></div></DashboardPanel>
 }
 
 function ActiveBottlenecks({ report }: { report: OperatingReport }) {
@@ -275,22 +251,7 @@ function MiniSparkline({ series, color, label }: { series: OperatingReport['tren
   return <svg role="img" aria-label={label} viewBox="0 0 130 28" className="h-6 w-full"><polyline points={points} fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" /></svg>
 }
 
-function periodRange(report: OperatingReport) {
-  if (!report.period.since) return { current: 'All recorded time', comparison: 'No prior comparison period' }
-  const start = new Date(report.period.since)
-  const end = new Date(report.period.until)
-  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000))
-  const previousEnd = new Date(start.getTime() - 86_400_000)
-  const previousStart = new Date(previousEnd.getTime() - days * 86_400_000)
-  return { current: `${shortRangeDate(start)} – ${shortRangeDate(end)}`, comparison: `vs ${shortRangeDate(previousStart)} – ${shortRangeDate(previousEnd)}` }
-}
-
-function shortRangeDate(value: Date) { return value.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: value.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }) }
 function money(value: number) { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value) }
-function nullableMoney(value: number | null) { return value == null ? 'Not recorded' : money(value) }
-function nullablePercent(value: number | null) { return value == null ? 'Not recorded' : `${value}%` }
-function decimal(value: number | null) { return value == null ? 'Not recorded' : value.toFixed(1) }
-function days(value: number | null) { return value == null ? 'Not recorded' : `${value.toFixed(1)}d` }
 function minutes(value: number | null) { return value == null ? 'Not recorded' : value >= 60 ? `${Math.floor(value / 60)}h ${value % 60}m` : `${value}m` }
 function percent(numerator: number, denominator: number) { return denominator > 0 ? `${Math.round((numerator / denominator) * 100)}%` : '—' }
 function compactNumber(value: number) { return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value) }

@@ -21,9 +21,11 @@ function request(overrides: Record<string, unknown> = {}) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      type: 'bug',
-      section: 'Dashboard',
+      issue_kind: 'process',
+      department: 'Acquisitions',
+      category: 'Speed to lead',
       description: 'The revenue card did not load.',
+      five_whys: ['The alert was delayed.', '', '', '', ''],
       priority: 'high',
       page_url: 'https://crm.savingkc.com/dashboard',
       user_agent: 'Browser test',
@@ -57,7 +59,10 @@ describe('system Andon submission', () => {
     expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
       agent_id: 'user-ernest',
       agent_name: 'Ernest',
-      section: 'Dashboard',
+      issue_kind: 'process',
+      department: 'Acquisitions',
+      category: 'Speed to lead',
+      section: 'Acquisitions · Speed to lead',
       status: 'open',
     }))
   })

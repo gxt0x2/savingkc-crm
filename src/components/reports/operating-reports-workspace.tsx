@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
 import { AcquisitionsMetricsDashboard } from '@/components/reports/acquisitions-metrics-dashboard'
 import { ExecutiveDashboard } from '@/components/reports/executive-dashboard'
+import { defaultOperatingCustomRange, operatingRangeQuery, ReportDateRangeControl, type OperatingCustomRange } from '@/components/reports/report-date-range-control'
 import { formatLeadSource } from '@/lib/contact-display'
 import type { OperatingReport, OperatingReportPeriod } from '@/lib/operating-report'
 
@@ -21,13 +22,6 @@ const VIEW_COPY: Record<OperatingReportView, { eyebrow: string; title: string; d
   'call-sms': { eyebrow: 'Reports · Call/SMS', title: 'Call and SMS performance', description: 'Connected calls, messages, response signals, agent activity, and unresolved seller attention.' },
 }
 
-const PERIOD_LABELS: Record<OperatingReportPeriod, string> = {
-  '30d': 'Last 30 days',
-  quarter: 'This quarter',
-  ytd: 'Year to date',
-  all: 'All time',
-}
-
 const TONES = {
   green: { icon: 'bg-[#e8f8ef] text-[#07883f]', line: '#07883f', border: 'border-[#c7ead4]' },
   violet: { icon: 'bg-[#f2ecff] text-[#6d28d9]', line: '#7c3aed', border: 'border-[#ddd0fa]' },
@@ -38,11 +32,11 @@ const TONES = {
   red: { icon: 'bg-[#ffeded] text-[var(--crm-brand)]', line: '#e32e2e', border: 'border-[var(--crm-brand-border)]' },
 } as const
 
-function useOperatingReport(period: OperatingReportPeriod) {
+function useOperatingReport(period: OperatingReportPeriod, customRange: OperatingCustomRange) {
   return useQuery<OperatingReport>({
-    queryKey: ['operating-report', period],
+    queryKey: ['operating-report', period, customRange.start, customRange.end],
     queryFn: async () => {
-      const response = await fetch(`/api/reports/operating?period=${period}`, { cache: 'no-store' })
+      const response = await fetch(`/api/reports/operating?${operatingRangeQuery(period, customRange)}`, { cache: 'no-store' })
       if (!response.ok) throw new Error('Operating report unavailable')
       return response.json() as Promise<OperatingReport>
     },
@@ -53,7 +47,8 @@ function useOperatingReport(period: OperatingReportPeriod) {
 
 export function OperatingReportsWorkspace({ view }: { view: OperatingReportView }) {
   const [period, setPeriod] = useState<OperatingReportPeriod>('30d')
-  const { data, error, isLoading, isFetching, refetch } = useOperatingReport(period)
+  const [customRange, setCustomRange] = useState<OperatingCustomRange>(defaultOperatingCustomRange)
+  const { data, error, isLoading, isFetching, refetch } = useOperatingReport(period, customRange)
   const copy = VIEW_COPY[view]
 
   if (isLoading) return <ReportSkeleton copy={copy} />
@@ -62,7 +57,7 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
   }
 
   if (view === 'dashboard') {
-    return <ExecutiveDashboard report={data} period={period} onPeriodChange={setPeriod} isFetching={isFetching} />
+    return <ExecutiveDashboard report={data} period={period} customRange={customRange} onPeriodChange={setPeriod} onCustomRangeChange={setCustomRange} isFetching={isFetching} />
   }
 
   return (
@@ -86,13 +81,7 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
               </Link>
             </>
           ) : null}
-          <label className="flex h-10 items-center gap-2 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 shadow-sm">
-            <Icon name="date_range" className="text-[19px] text-[var(--crm-brand)]" />
-            <span className="sr-only">Reporting period</span>
-            <select aria-label="Reporting period" value={period} onChange={(event) => setPeriod(event.target.value as OperatingReportPeriod)} className="bg-transparent text-xs font-black text-[var(--crm-ink)] outline-none">
-              {Object.entries(PERIOD_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
+          <ReportDateRangeControl period={period} customRange={customRange} onPeriodChange={setPeriod} onCustomRangeChange={setCustomRange} />
           <span className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-3 text-xs font-black text-[var(--crm-success)]">
             <span className={`h-2 w-2 rounded-full bg-[#11a857] ${isFetching ? 'animate-pulse' : ''}`} />
             Live CRM · {formatTimestamp(data.generatedAt)}

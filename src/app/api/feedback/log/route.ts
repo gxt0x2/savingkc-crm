@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { decodeLegacyAndon, inferAndonIssueKind, isAndonIssueKind } from '@/lib/andon'
 
 /**
  * GET /api/feedback/log
@@ -12,6 +13,8 @@ export async function GET(req: NextRequest) {
     const filterType = searchParams.get('type')
     const filterStatus = searchParams.get('status')
     const filterSection = searchParams.get('section')
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
 
     // Fetch feedback submissions
     let feedbackQuery = supabase
@@ -28,6 +31,8 @@ export async function GET(req: NextRequest) {
     if (filterSection) {
       feedbackQuery = feedbackQuery.eq('section', filterSection)
     }
+    if (from) feedbackQuery = feedbackQuery.gte('created_at', from)
+    if (to) feedbackQuery = feedbackQuery.lte('created_at', to)
 
     const { data: feedback, error: feedbackError } = await feedbackQuery
 
@@ -37,12 +42,16 @@ export async function GET(req: NextRequest) {
       .select('*')
       .order('created_at', { ascending: false })
 
-    if (filterStatus) {
-      const resolved = filterStatus === 'resolved'
+    const errorStatusSupported = !filterStatus || ['open', 'resolved', 'closed'].includes(filterStatus)
+    if (filterStatus && errorStatusSupported) {
+      const resolved = ['resolved', 'closed'].includes(filterStatus)
       errorQuery = errorQuery.eq('resolved', resolved)
     }
+    if (from) errorQuery = errorQuery.gte('created_at', from)
+    if (to) errorQuery = errorQuery.lte('created_at', to)
 
-    const { data: errors, error: errorError } = filterType === 'error' || !filterType ? await errorQuery : { data: [], error: null }
+    const shouldFetchErrors = (filterType === 'error' || !filterType) && errorStatusSupported
+    const { data: errors, error: errorError } = shouldFetchErrors ? await errorQuery : { data: [], error: null }
 
     if (feedbackError || errorError) {
       console.error('Error fetching feedback log:', feedbackError || errorError)
@@ -51,26 +60,42 @@ export async function GET(req: NextRequest) {
 
     // Combine and format
     const combined = [
-      ...(feedback || []).map((f) => ({
-        id: f.id,
-        type: f.type,
-        section: f.section,
-        description: f.description,
-        priority: f.priority,
-        status: f.status,
-        created_at: f.created_at,
-        agent_name: f.agent_name,
-        page_url: f.page_url,
-        source: 'feedback',
-      })),
+      ...(feedback || []).map((f) => {
+        const decoded = decodeLegacyAndon(f.description)
+        const [legacyDepartment = 'Other', legacyCategory = 'General'] = String(f.section ?? '').split(' · ')
+        const issueKind = isAndonIssueKind(f.issue_kind) ? f.issue_kind : inferAndonIssueKind(f.type, f.description)
+        return {
+          id: f.id,
+          type: f.type,
+          issue_kind: issueKind,
+          section: f.section,
+          department: f.department || legacyDepartment,
+          category: f.category || legacyCategory,
+          description: decoded.happened,
+          five_whys: Array.isArray(f.five_whys) ? f.five_whys : decoded.fiveWhys,
+          priority: f.priority,
+          status: f.status,
+          created_at: f.created_at,
+          updated_at: f.updated_at,
+          resolved_at: f.resolved_at,
+          agent_name: f.agent_name,
+          page_url: f.page_url,
+          source: 'feedback',
+        }
+      }),
       ...(errors || []).map((e) => ({
         id: e.id,
         type: 'error',
+        issue_kind: 'system',
         section: 'System',
+        department: 'System',
+        category: e.error_type || 'Automatic error',
         description: e.message,
+        five_whys: [],
         priority: e.error_type === 'frontend_crash' ? 'high' : 'medium',
         status: e.resolved ? 'resolved' : 'open',
         created_at: e.created_at,
+        resolved_at: e.resolved_at,
         agent_name: e.agent_name,
         page_url: e.page_url,
         source: 'error_log',
@@ -83,8 +108,8 @@ export async function GET(req: NextRequest) {
     combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
     return NextResponse.json({ items: combined, total: combined.length })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Feedback log error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to load Andons.' }, { status: 500 })
   }
 }

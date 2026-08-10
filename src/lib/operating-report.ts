@@ -1,7 +1,7 @@
 import { buildAcquisitionsReport, type AcquisitionContact, type AcquisitionThread } from './acquisitions-report'
 import { deadReasonLabel, isNotLeadOutcome } from './lead-outcomes'
 
-export type OperatingReportPeriod = '30d' | 'quarter' | 'ytd' | 'all'
+export type OperatingReportPeriod = 'today' | '30d' | 'quarter' | 'ytd' | 'all' | 'custom'
 
 export interface OperatingLead {
   id: string
@@ -416,6 +416,12 @@ export function buildOperatingReport(input: OperatingReportInput) {
     .slice(0, 8)
 
   const activeBuyers = input.buyers.filter((buyer) => buyer.status == null || buyer.status === 'active')
+  const rangeStart = reportStart(input)
+  const rangeEnd = new Date(input.until).getTime()
+  const newBuyers = input.buyers.filter((buyer) => {
+    const created = timestamp(buyer.created_at)
+    return created !== null && created >= rangeStart && created <= rangeEnd
+  })
   const repeatBuyers = input.buyers.filter((buyer) => number(buyer.deals_closed) > 1)
   const vipBuyers = input.buyers.filter((buyer) => buyer.tier?.toLowerCase() === 'vip')
   const inactiveBuyers = input.buyers.filter((buyer) => buyer.status != null && buyer.status !== 'active')
@@ -528,6 +534,14 @@ export function buildOperatingReport(input: OperatingReportInput) {
     .sort((left, right) => right.count - left.count || left.source.localeCompare(right.source))
   const pipelineOfferValues = activeLeadRows.flatMap((lead) => lead.offer_amount == null ? [] : [number(lead.offer_amount)])
   const pipelineOfferValue = pipelineOfferValues.length > 0 ? pipelineOfferValues.reduce((sum, value) => sum + value, 0) : null
+  const pipelineRevenueByStage = [...activeLeadRows.reduce((groups, lead) => {
+    const value = lead.offer_amount == null ? 0 : number(lead.offer_amount)
+    const stage = lead.station ?? 'new'
+    groups.set(stage, (groups.get(stage) ?? 0) + value)
+    return groups
+  }, new Map<string, number>()).entries()]
+    .filter(([, value]) => value > 0)
+    .sort((left, right) => right[1] - left[1])
   const assignedLeads = input.leads.filter((lead) => Boolean(lead.assigned_agent?.trim())).length
   const stageAtLeast = (lead: OperatingLead, stage: string) => {
     const stages = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won']
@@ -612,6 +626,8 @@ export function buildOperatingReport(input: OperatingReportInput) {
       buyerDemandScore,
       offerCoverage,
       debriefCompletion,
+      newBuyers: newBuyers.length,
+      propertiesMarketed: input.deals.filter((deal) => ['marketing', 'offers_in', 'negotiating', 'under_contract', 'closed'].includes(deal.stage)).length,
       activeBuyers: activeBuyers.length,
       repeatBuyers: repeatBuyers.length,
       vipBuyers: vipBuyers.length,
@@ -632,6 +648,7 @@ export function buildOperatingReport(input: OperatingReportInput) {
       averageRevenuePerTransaction: input.revenue.length > 0 ? Math.round(grossRevenue / input.revenue.length) : null,
       expenseCategories,
       recentTransactions,
+      pipelineRevenueByStage,
     },
     communications: {
       calls: calls.length,

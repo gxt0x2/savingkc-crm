@@ -33,6 +33,9 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await page.route('**/api/reports/operating**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(report) })
   })
+  await page.route('**/api/feedback/log**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], total: 0 }) })
+  })
 
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 
@@ -41,7 +44,9 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await expect(andon).toBeVisible()
   await andon.click()
   await expect(page.getByRole('dialog', { name: 'Report an issue' })).toBeVisible()
-  await expect(page.getByRole('combobox', { name: 'Area' })).toHaveValue('Dashboard')
+  await expect(page.getByRole('button', { name: 'Process issue' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Core work area' })).toHaveValue('Reporting')
+  await expect(page.getByRole('textbox', { name: 'Why 5' })).toBeVisible()
   await page.getByRole('button', { name: 'Close Andon form' }).click()
   const metrics = page.getByRole('region', { name: 'Company operating metrics' })
   await expect(metrics.getByRole('link', { name: /Revenue/ })).toBeVisible({ timeout: 20_000 })
@@ -55,8 +60,19 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   expect(new Set(metricRows).size).toBe(1)
 
   const period = page.getByRole('combobox', { name: 'Reporting period' })
+  await expect(period.getByRole('option', { name: 'Today' })).toHaveCount(1)
+  await expect(period.getByRole('option', { name: 'Custom range' })).toHaveCount(1)
+  await period.selectOption('custom')
+  await expect(page.getByRole('textbox', { name: 'Reporting start date' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Reporting end date' })).toBeVisible()
   await period.selectOption('quarter')
   await expect(period).toHaveValue('quarter')
+
+  await page.getByRole('link', { name: /Andon system/ }).first().click()
+  await expect(page).toHaveURL(/\/reports\/andon$/)
+  await expect(page.getByRole('heading', { name: 'Andon system' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Andon date range' })).toHaveValue('30d')
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 
   await metrics.getByRole('link', { name: /Revenue/ }).click()
   await expect(page).toHaveURL(/\/reports\/finance$/)

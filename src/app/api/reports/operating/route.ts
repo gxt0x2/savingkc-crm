@@ -10,11 +10,17 @@ import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const NO_STORE_HEADERS: HeadersInit = { 'Cache-Control': 'no-store, max-age=0' }
-const PERIODS = new Set<OperatingReportPeriod>(['30d', 'quarter', 'ytd', 'all'])
+const PERIODS = new Set<OperatingReportPeriod>(['today', '30d', 'quarter', 'ytd', 'all', 'custom'])
 const PAGE_SIZE = 1000
 
 function periodStart(period: OperatingReportPeriod, now: Date): Date | null {
   if (period === 'all') return null
+  if (period === 'today') {
+    const start = new Date(now)
+    start.setHours(0, 0, 0, 0)
+    return start
+  }
+  if (period === 'custom') return new Date(now.getTime() - 30 * 86_400_000)
   if (period === '30d') return new Date(now.getTime() - 30 * 86_400_000)
   if (period === 'ytd') return new Date(now.getFullYear(), 0, 1)
   return new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)
@@ -57,8 +63,15 @@ async function loadActivities(leadIds: string[]) {
 export async function GET(request: NextRequest) {
   const requested = request.nextUrl.searchParams.get('period') as OperatingReportPeriod | null
   const period = requested && PERIODS.has(requested) ? requested : '30d'
-  const until = new Date()
-  const since = periodStart(period, until)
+  const requestedStart = request.nextUrl.searchParams.get('start')
+  const requestedEnd = request.nextUrl.searchParams.get('end')
+  const parsedEnd = requestedEnd ? new Date(requestedEnd) : null
+  const until = parsedEnd && Number.isFinite(parsedEnd.getTime()) ? parsedEnd : new Date()
+  const parsedStart = requestedStart ? new Date(requestedStart) : null
+  const since = parsedStart && Number.isFinite(parsedStart.getTime()) ? parsedStart : periodStart(period, until)
+  if (since && since.getTime() > until.getTime()) {
+    return NextResponse.json({ error: 'The report start date must be before the end date.' }, { status: 400, headers: NO_STORE_HEADERS })
+  }
   const db = supabaseAdmin()
 
   const { data: leadData, error: leadError } = await db
