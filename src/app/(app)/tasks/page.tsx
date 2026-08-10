@@ -13,6 +13,7 @@ import type { Task, TaskStatus } from '@/types'
 type TaskView = 'all' | 'due_today' | 'overdue' | 'upcoming' | 'completed'
 type TaskStatusFilter = 'all' | 'active' | 'completed'
 type TaskDueFilter = 'any' | 'no_due' | 'seven_days' | 'thirty_days'
+type TaskTypeFilter = 'any' | 'follow_up' | 'callback' | 'appointment' | 'research' | 'offer' | 'general'
 type TaskSort = 'due_asc' | 'due_desc' | 'newest' | 'title'
 type ToolbarMenu = 'filters' | 'sort' | null
 type BulkAction = '' | 'complete' | 'reopen' | 'delete' | `assign:${string}`
@@ -20,6 +21,14 @@ type DeleteRequest = { kind: 'single' | 'bulk'; ids: string[]; label: string }
 
 const PAGE_SIZE = 20
 const ASSIGNEES = ['Casey', 'Ernest', 'Gertha'] as const
+const TASK_TYPE_FILTER_OPTIONS: Array<[Exclude<TaskTypeFilter, 'any'>, string]> = [
+  ['follow_up', 'Follow-up'],
+  ['callback', 'Callback'],
+  ['appointment', 'Appointment'],
+  ['research', 'Research'],
+  ['offer', 'Send Offer'],
+  ['general', 'General'],
+]
 
 const TASK_VIEW_COPY: Record<TaskView, { label: string; description: string }> = {
   all: { label: 'All', description: 'Every acquisition task, including completed work.' },
@@ -63,6 +72,13 @@ function dueLabel(task: Task) {
   })
 }
 
+function taskTypeCategory(value: string): Exclude<TaskTypeFilter, 'any'> | null {
+  if (value === 'send_offer' || value === 'offer') return 'offer'
+  if (value === 'task' || value === 'review' || value === 'general') return 'general'
+  if (value === 'follow_up' || value === 'callback' || value === 'appointment' || value === 'research') return value
+  return null
+}
+
 export default function TasksPage() {
   const { data: sourceTasks = [], isLoading, error, refetch, isFetching } = useCalendarTasks('acquisitions')
   const [view, setView] = useState<TaskView>('all')
@@ -70,6 +86,7 @@ export default function TasksPage() {
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>('all')
   const [dueFilter, setDueFilter] = useState<TaskDueFilter>('any')
+  const [taskTypeFilter, setTaskTypeFilter] = useState<TaskTypeFilter>('any')
   const [sortBy, setSortBy] = useState<TaskSort>('due_asc')
   const [toolbarMenu, setToolbarMenu] = useState<ToolbarMenu>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -157,6 +174,7 @@ export default function TasksPage() {
       if (statusFilter === 'completed' && task.status !== 'completed') return false
       if (dueFilter === 'no_due' && due !== null) return false
       if (dueLimit !== null && (due === null || due < now || due > dueLimit)) return false
+      if (taskTypeFilter !== 'any' && taskTypeCategory(task.type) !== taskTypeFilter) return false
       if (!query) return true
       return [task.title, task.description, task.property_address, task.assigned_to, contactName(task)]
         .some((value) => value?.toLowerCase().includes(query))
@@ -167,15 +185,15 @@ export default function TasksPage() {
       const rightDue = right.due_date ? new Date(right.due_date).getTime() : Number.MAX_SAFE_INTEGER
       return sortBy === 'due_desc' ? rightDue - leftDue : leftDue - rightDue
     })
-  }, [assigneeFilter, dueFilter, now, search, sortBy, statusFilter, tasks, todayStart, tomorrowStart, view])
+  }, [assigneeFilter, dueFilter, now, search, sortBy, statusFilter, taskTypeFilter, tasks, todayStart, tomorrowStart, view])
 
-  useEffect(() => setPage(1), [assigneeFilter, dueFilter, search, sortBy, statusFilter, view])
+  useEffect(() => setPage(1), [assigneeFilter, dueFilter, search, sortBy, statusFilter, taskTypeFilter, view])
 
   const pageCount = Math.max(1, Math.ceil(filteredTasks.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const pageTasks = filteredTasks.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
   const pageItemsSelected = pageTasks.length > 0 && pageTasks.every((task) => selectedIds.has(task.id))
-  const activeFilterCount = [assigneeFilter, statusFilter !== 'all' ? statusFilter : '', dueFilter !== 'any' ? dueFilter : ''].filter(Boolean).length
+  const activeFilterCount = [assigneeFilter, statusFilter !== 'all' ? statusFilter : '', dueFilter !== 'any' ? dueFilter : '', taskTypeFilter !== 'any' ? taskTypeFilter : ''].filter(Boolean).length
   const selectedTask = selectedTaskId ? tasks.find((task) => task.id === selectedTaskId) || null : null
   const editingTask = editingTaskId ? tasks.find((task) => task.id === editingTaskId) || null : null
   const viewCopy = TASK_VIEW_COPY[view]
@@ -377,12 +395,13 @@ export default function TasksPage() {
               <button type="button" aria-label="Filters" onClick={() => setToolbarMenu((current) => current === 'filters' ? null : 'filters')} aria-expanded={toolbarMenu === 'filters'} className={`crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${activeFilterCount ? 'border-[var(--crm-brand-border)] text-[var(--crm-brand)]' : ''}`}><Icon name="filter_alt" className="text-[16px]" />Filters{activeFilterCount ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span> : null}</button>
               {toolbarMenu === 'filters' ? <div role="dialog" aria-label="Task filters" className="crm-panel absolute left-0 top-11 z-40 w-[min(30rem,calc(100vw-3rem))] rounded-xl p-4 shadow-xl">
                 <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold">Filters</h2><p className="text-xs text-[var(--crm-text-muted)]">Narrow this smart list without taking over the page.</p></div><button type="button" onClick={() => setToolbarMenu(null)} aria-label="Close filters" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="close" /></button></div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <TaskFilterSelect label="Assignee" value={assigneeFilter} onChange={setAssigneeFilter} options={[["__unassigned", "Unassigned"], ...ASSIGNEES.map((name) => [name, name] as [string, string])]} />
                   <TaskFilterSelect label="Status" value={statusFilter === 'all' ? '' : statusFilter} onChange={(value) => setStatusFilter((value || 'all') as TaskStatusFilter)} options={[["active", "Active"], ["completed", "Completed"]]} />
                   <TaskFilterSelect label="Due date" value={dueFilter === 'any' ? '' : dueFilter} onChange={(value) => setDueFilter((value || 'any') as TaskDueFilter)} options={[["no_due", "No due date"], ["seven_days", "Next 7 days"], ["thirty_days", "Next 30 days"]]} />
+                  <TaskFilterSelect label="Task type" value={taskTypeFilter === 'any' ? '' : taskTypeFilter} onChange={(value) => setTaskTypeFilter((value || 'any') as TaskTypeFilter)} options={TASK_TYPE_FILTER_OPTIONS} />
                 </div>
-                <div className="mt-4 flex justify-end border-t border-[var(--crm-border)] pt-3"><button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any') }} className="text-xs font-bold text-[var(--crm-brand)] hover:underline">Clear all</button></div>
+                <div className="mt-4 flex justify-end border-t border-[var(--crm-border)] pt-3"><button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any'); setTaskTypeFilter('any') }} className="text-xs font-bold text-[var(--crm-brand)] hover:underline">Clear all</button></div>
               </div> : null}
             </div>
             <div className="relative">
@@ -392,7 +411,7 @@ export default function TasksPage() {
               </div> : null}
             </div>
             <button type="button" onClick={() => void refetch()} aria-label="Refresh tasks" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-full"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
-            {activeFilterCount ? <button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any') }} className="rounded-full border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear ×</button> : null}
+            {activeFilterCount ? <button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any'); setTaskTypeFilter('any') }} className="rounded-full border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear ×</button> : null}
             <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{filteredTasks.length} results</span>
           </div>
 

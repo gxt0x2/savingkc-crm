@@ -119,4 +119,37 @@ describe('TasksPage operating workspace', () => {
     })))
     expect(await screen.findByRole('status')).toHaveTextContent('2 tasks updated.')
   })
+
+  it('filters by the governed task types and combines with other task filters', () => {
+    render(<TasksPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    const filters = screen.getByRole('dialog', { name: 'Task filters' })
+    const taskType = within(filters).getByRole('combobox', { name: 'Task type' })
+
+    expect(within(taskType).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Any',
+      'Follow-up',
+      'Callback',
+      'Appointment',
+      'Research',
+      'Send Offer',
+      'General',
+    ])
+
+    fireEvent.change(taskType, { target: { value: 'follow_up' } })
+    expect(screen.getByText('Call seller')).toBeInTheDocument()
+    expect(screen.queryByText('Review offer')).not.toBeInTheDocument()
+
+    fireEvent.change(within(filters).getByRole('combobox', { name: 'Assignee' }), { target: { value: 'Ernest' } })
+    expect(screen.getByText('No tasks match this view')).toBeInTheDocument()
+
+    fireEvent.change(taskType, { target: { value: 'general' } })
+    expect(screen.getByText('Review offer')).toBeInTheDocument()
+    expect(screen.queryByText('Call seller')).not.toBeInTheDocument()
+
+    fireEvent.click(within(filters).getByRole('button', { name: 'Clear all' }))
+    expect(screen.getByText('Call seller')).toBeInTheDocument()
+    expect(screen.getByText('Review offer')).toBeInTheDocument()
+  })
 })

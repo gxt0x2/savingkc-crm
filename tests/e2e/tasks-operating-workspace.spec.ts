@@ -63,6 +63,16 @@ test('Tasks renders the contact-style workspace and closes the work loop', async
   await expect(page.getByRole('button', { name: 'Mark Call Michael complete' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Delete Call Michael' })).toBeVisible()
 
+  await page.getByRole('button', { name: 'Filters' }).click()
+  const filters = page.getByRole('dialog', { name: 'Task filters' })
+  await expect(filters.getByRole('combobox', { name: 'Task type' })).toHaveValue('')
+  await filters.getByRole('combobox', { name: 'Task type' }).selectOption('offer')
+  await expect(page.getByText('Send revised offer', { exact: true })).toBeVisible()
+  await expect(page.getByText('Call Michael', { exact: true })).toHaveCount(0)
+  await filters.getByRole('button', { name: 'Clear all' }).click()
+  await expect(page.getByText('Call Michael', { exact: true })).toBeVisible()
+  await filters.getByRole('button', { name: 'Close filters' }).click()
+
   const shell = page.locator('.crm-workspace-shell')
   const initialTheme = await shell.getAttribute('data-theme')
   await page.getByRole('button', { name: /Switch to (light|dark) theme/ }).click()
