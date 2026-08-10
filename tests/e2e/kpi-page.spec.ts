@@ -51,7 +51,7 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Financial performance' })).toBeVisible()
 
   await page.goto('/reports/acquisitions', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Acquisitions performance' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Acquisitions performance', level: 1 })).toBeVisible()
   const acquisitionMetrics = page.getByRole('region', { name: 'Acquisition operating metrics' })
   await expect(acquisitionMetrics.getByText('New leads', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Lead-source performance' })).toBeVisible()
