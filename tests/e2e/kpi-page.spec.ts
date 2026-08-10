@@ -58,8 +58,4 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Revenue lift model' })).toBeVisible()
   await expect(page.locator('[data-nextjs-dialog]')).toHaveCount(0)
 
-  if (process.env.PLAYWRIGHT_DASHBOARD_SCREENSHOT) {
-    await page.setViewportSize({ width: 1600, height: 1800 })
-    await page.screenshot({ path: process.env.PLAYWRIGHT_DASHBOARD_SCREENSHOT, fullPage: true })
-  }
 })
