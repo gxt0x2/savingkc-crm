@@ -18,11 +18,11 @@ const TONES: Record<Tone, { color: string; icon: string }> = {
 
 const SOURCE_COLORS = ['#1769e0', '#6d28d9', '#0b9348', '#f05a28', '#e3a008', '#078b87', '#d62937']
 const ACQUISITION_SOURCE_CHANNELS = [
-  { key: 'google_ads', label: 'Google Ads' },
-  { key: 'outbound_calls', label: 'Outbound Calls' },
-  { key: 'inbound_call', label: 'Inbound Call' },
-  { key: 'inbound_sms', label: 'Inbound SMS' },
-  { key: 'youtube', label: 'Youtube' },
+  { key: 'google_general', label: 'Google - General' },
+  { key: 'google_tax_delinquent', label: 'Google - Tax Delinquent' },
+  { key: 'cold_calls', label: 'Cold Calls' },
+  { key: 'sms_outreach', label: 'SMS Outreach' },
+  { key: 'youtube', label: 'YouTube' },
 ] as const
 type AcquisitionSourceChannel = (typeof ACQUISITION_SOURCE_CHANNELS)[number]['key']
 type OperatingSourceRow = OperatingReport['marketing']['sources'][number]
@@ -514,11 +514,11 @@ function conicGradient(values: number[], colors: string[]) {
 
 function acquisitionSourceChannel(source: string): AcquisitionSourceChannel | null {
   const value = source.trim().toLowerCase().replace(/[\s-]+/g, '_')
-  if (/google_?ads|googleads|gclid|paid_?search|(^|_)ppc(_|$)/.test(value)) return 'google_ads'
+  if (/(tax_?delinquent|delinquent_?tax|ppc_?tax|tax_?ppc)/.test(value)) return 'google_tax_delinquent'
+  if (/google_?ads|googleads|gclid|paid_?search|(^|_)ppc(_|$)/.test(value)) return 'google_general'
   if (/youtube|you_?tube/.test(value)) return 'youtube'
-  if (/(sms|text)/.test(value) && /(inbound|incoming|received)/.test(value)) return 'inbound_sms'
-  if (/outbound|cold_?call|mojo|dialer/.test(value)) return 'outbound_calls'
-  if (/inbound_?call|incoming_?call|inbound_?ivr|\bivr\b/.test(value)) return 'inbound_call'
+  if (/outbound|cold_?call|mojo|dialer/.test(value)) return 'cold_calls'
+  if (/(sms|text)/.test(value)) return 'sms_outreach'
   return null
 }
 

@@ -63,11 +63,11 @@ describe('buildAcquisitionSourceRows', () => {
     ]
 
     expect(buildAcquisitionSourceRows(sourceRows)).toEqual([
-      expect.objectContaining({ label: 'Google Ads', leads: 3 }),
-      expect.objectContaining({ label: 'Outbound Calls', leads: 5 }),
-      expect.objectContaining({ label: 'Inbound Call', leads: 10 }),
-      expect.objectContaining({ label: 'Inbound SMS', leads: 5 }),
-      expect.objectContaining({ label: 'Youtube', leads: 6 }),
+      expect.objectContaining({ label: 'Google - General', leads: 2 }),
+      expect.objectContaining({ label: 'Google - Tax Delinquent', leads: 5 }),
+      expect.objectContaining({ label: 'Cold Calls', leads: 5 }),
+      expect.objectContaining({ label: 'SMS Outreach', leads: 1 }),
+      expect.objectContaining({ label: 'YouTube', leads: 6 }),
     ])
   })
 })
