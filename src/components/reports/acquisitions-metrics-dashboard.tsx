@@ -17,6 +17,26 @@ const TONES: Record<Tone, { color: string; icon: string }> = {
 }
 
 const SOURCE_COLORS = ['#1769e0', '#6d28d9', '#0b9348', '#f05a28', '#e3a008', '#078b87', '#d62937']
+const ACQUISITION_SOURCE_CHANNELS = [
+  { key: 'google_ads', label: 'Google Ads' },
+  { key: 'outbound_calls', label: 'Outbound Calls' },
+  { key: 'inbound_call', label: 'Inbound Call' },
+  { key: 'inbound_sms', label: 'Inbound SMS' },
+  { key: 'youtube', label: 'Youtube' },
+] as const
+type AcquisitionSourceChannel = (typeof ACQUISITION_SOURCE_CHANNELS)[number]['key']
+type OperatingSourceRow = OperatingReport['marketing']['sources'][number]
+
+export interface AcquisitionSourceRow {
+  key: AcquisitionSourceChannel
+  label: string
+  leads: number
+  qualified: number
+  appointments: number
+  contracts: number
+  revenue: number
+}
+
 const OPTIMIZED_RATES = {
   qualification: 40,
   appointment: 60,
@@ -69,6 +89,32 @@ export function buildRevenueLiftModel(report: OperatingReport): RevenueLiftModel
     optimizedRevenue,
     revenueLift: optimizedRevenue == null || currentRevenue == null ? null : optimizedRevenue - currentRevenue,
   }
+}
+
+export function buildAcquisitionSourceRows(sourceRows: OperatingSourceRow[]): AcquisitionSourceRow[] {
+  const rows = new Map<AcquisitionSourceChannel, AcquisitionSourceRow>(
+    ACQUISITION_SOURCE_CHANNELS.map((channel) => [channel.key, {
+      ...channel,
+      leads: 0,
+      qualified: 0,
+      appointments: 0,
+      contracts: 0,
+      revenue: 0,
+    }]),
+  )
+
+  for (const sourceRow of sourceRows) {
+    const channel = acquisitionSourceChannel(sourceRow.source)
+    if (!channel) continue
+    const row = rows.get(channel)!
+    row.leads += sourceRow.leads
+    row.qualified += sourceRow.qualified
+    row.appointments += sourceRow.appointments
+    row.contracts += sourceRow.contracts
+    row.revenue += sourceRow.revenue
+  }
+
+  return ACQUISITION_SOURCE_CHANNELS.map(({ key }) => rows.get(key)!)
 }
 
 export function AcquisitionsMetricsDashboard({ report }: { report: OperatingReport }) {
@@ -198,11 +244,36 @@ function Gauge({ label, value, progress, tone }: { label: string; value: string 
 }
 
 function LeadSourcePerformance({ report }: { report: OperatingReport }) {
-  const sources = report.marketing.sources.slice(0, 7)
+  const sources = buildAcquisitionSourceRows(report.marketing.sources)
   const total = sources.reduce((sum, row) => sum + row.leads, 0)
   const gradient = conicGradient(sources.map((row) => row.leads), SOURCE_COLORS)
-  if (sources.length === 0) return <EmptyState title="No recorded lead sources" detail="No CRM lead-source rows exist in this period." />
-  return <div className="grid min-h-[190px] gap-2 p-3 md:grid-cols-[190px_1fr]"><div className="flex items-center justify-center gap-3"><div className="relative grid h-28 w-28 shrink-0 place-items-center rounded-full" style={{ background: gradient }}><div className="grid h-[68px] w-[68px] place-items-center rounded-full bg-[var(--crm-surface)] text-center"><strong className="text-xl font-extrabold">{total}</strong><span className="text-[8px] font-bold uppercase text-[var(--crm-text-muted)]">Leads</span></div></div><div className="space-y-1">{sources.slice(0, 5).map((row, index) => <div key={row.source} className="flex items-center gap-1 text-[8px]"><span className="h-2 w-2 rounded-sm" style={{ background: SOURCE_COLORS[index] }} /><span className="max-w-24 truncate">{formatLeadSource(row.source)}</span></div>)}</div></div><div className="overflow-x-auto"><table className="w-full min-w-[520px] text-[9px]"><thead className="text-[8px] uppercase text-[var(--crm-text-muted)]"><tr><th className="border-b border-[var(--crm-border)] py-2 text-left">Lead source</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Leads</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Qualified</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Appointments</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Contracts</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Revenue</th></tr></thead><tbody>{sources.map((row) => <tr key={row.source} className="border-b border-[var(--crm-border)]"><td className="py-2 font-bold">{formatLeadSource(row.source)}</td><td className="py-2 text-right">{row.leads}</td><td className="py-2 text-right">{row.qualified}</td><td className="py-2 text-right">{row.appointments}</td><td className="py-2 text-right">{row.contracts}</td><td className="py-2 text-right font-bold text-[var(--crm-success)]">{money(row.revenue)}</td></tr>)}</tbody></table></div></div>
+  return (
+    <div className="grid min-h-[190px] min-w-0 gap-2 p-3 lg:grid-cols-[188px_minmax(0,1fr)]">
+      <div className="grid min-w-0 grid-cols-[96px_minmax(0,1fr)] items-center gap-2">
+        <div className="relative grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: gradient }}>
+          <div className="grid h-[60px] w-[60px] place-items-center rounded-full bg-[var(--crm-surface)] text-center">
+            <strong className="text-lg font-extrabold">{total}</strong>
+            <span className="text-[8px] font-bold uppercase text-[var(--crm-text-muted)]">Leads</span>
+          </div>
+        </div>
+        <div className="min-w-0 space-y-1.5">
+          {sources.map((row, index) => (
+            <div key={row.key} className="flex min-w-0 items-center gap-1.5 text-[8px]">
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: SOURCE_COLORS[index] }} />
+              <span className="truncate font-semibold">{row.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="min-w-0 overflow-x-auto">
+        <table className="w-full min-w-[520px] table-fixed text-[9px]">
+          <colgroup><col className="w-[29%]" /><col className="w-[11%]" /><col className="w-[13%]" /><col className="w-[16%]" /><col className="w-[14%]" /><col className="w-[17%]" /></colgroup>
+          <thead className="text-[8px] uppercase text-[var(--crm-text-muted)]"><tr><th className="border-b border-[var(--crm-border)] py-2 text-left">Lead source</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Leads</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Qualified</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Appointments</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Contracts</th><th className="border-b border-[var(--crm-border)] py-2 text-right">Revenue</th></tr></thead>
+          <tbody>{sources.map((row) => <tr key={row.key} className="border-b border-[var(--crm-border)]"><td className="truncate py-2 pr-2 font-bold">{row.label}</td><td className="py-2 text-right">{row.leads}</td><td className="py-2 text-right">{row.qualified}</td><td className="py-2 text-right">{row.appointments}</td><td className="py-2 text-right">{row.contracts}</td><td className="py-2 text-right font-bold text-[var(--crm-success)]">{money(row.revenue)}</td></tr>)}</tbody>
+        </table>
+      </div>
+    </div>
+  )
 }
 
 function QualificationStatus({ report }: { report: OperatingReport }) {
@@ -227,9 +298,33 @@ function ActivityPerformance({ report }: { report: OperatingReport }) {
 }
 
 function AcquisitionFunnel({ report }: { report: OperatingReport }) {
-  const max = Math.max(report.acquisitions.total, 1)
   const colors = ['#1769e0', '#6d28d9', '#0b9348', '#e3a008', '#f05a28', '#d62937']
-  return <div className="space-y-1.5 p-3">{report.acquisitions.stages.map((stage, index) => <Link href={stageHref(stage.key)} key={stage.key} className="mx-auto flex h-8 items-center justify-between px-4 text-[9px] font-bold text-white transition-opacity hover:opacity-90" style={{ width: `${Math.max(54, (stage.value / max) * 100)}%`, background: colors[index], clipPath: 'polygon(3% 0,97% 0,91% 100%,9% 100%)' }}><span>{stage.label}</span><span>{stage.value}<span className="ml-2 opacity-80">{index === 0 ? '100%' : percent(stage.value, report.acquisitions.stages[index - 1].value)}</span></span></Link>)}</div>
+  const widths = [100, 86, 74, 63, 54, 46]
+  return (
+    <div className="flex min-h-[244px] flex-col items-center justify-center p-3">
+      <div className="flex w-full max-w-[720px] flex-col items-center">
+        {report.acquisitions.stages.map((stage, index) => (
+          <Link
+            href={stageHref(stage.key)}
+            key={stage.key}
+            aria-label={`${stage.label}: ${stage.value}, ${index === 0 ? '100%' : percent(stage.value, report.acquisitions.total)} of leads`}
+            className="block h-9 text-[9px] font-bold text-white transition-[filter] hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--crm-info)]"
+            style={{
+              width: `${widths[index]}%`,
+              marginTop: index === 0 ? 0 : '-1px',
+              background: colors[index],
+              clipPath: 'polygon(0 0, 100% 0, 92% 100%, 8% 100%)',
+            }}
+          >
+            <span className="flex h-full items-center justify-between gap-3 px-[12%]">
+              <span>{stage.label}</span>
+              <span className="whitespace-nowrap">{stage.value}<span className="ml-2 opacity-85">{index === 0 ? '100%' : percent(stage.value, report.acquisitions.total)}</span></span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function AgentScorecard({ report }: { report: OperatingReport }) {
@@ -310,6 +405,16 @@ function conicGradient(values: number[], colors: string[]) {
     return `${colors[index % colors.length]} ${start}% ${cursor}%`
   })
   return `conic-gradient(${stops.join(', ')})`
+}
+
+function acquisitionSourceChannel(source: string): AcquisitionSourceChannel | null {
+  const value = source.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (/google_?ads|googleads|gclid|paid_?search|(^|_)ppc(_|$)/.test(value)) return 'google_ads'
+  if (/youtube|you_?tube/.test(value)) return 'youtube'
+  if (/(sms|text)/.test(value) && /(inbound|incoming|received)/.test(value)) return 'inbound_sms'
+  if (/outbound|cold_?call|mojo|dialer/.test(value)) return 'outbound_calls'
+  if (/inbound_?call|incoming_?call|inbound_?ivr|\bivr\b/.test(value)) return 'inbound_call'
+  return null
 }
 
 function rate(numerator: number, denominator: number) { return denominator > 0 ? Math.round((numerator / denominator) * 100) : 0 }

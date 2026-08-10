@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildRevenueLiftModel } from './acquisitions-metrics-dashboard'
-import { buildOperatingReport, type OperatingReportInput } from '@/lib/operating-report'
+import { buildAcquisitionSourceRows, buildRevenueLiftModel } from './acquisitions-metrics-dashboard'
+import { buildOperatingReport, type OperatingReport, type OperatingReportInput } from '@/lib/operating-report'
 
 function reportWithOneHundredLeads() {
   const leads: OperatingReportInput['leads'] = Array.from({ length: 100 }, (_, index) => ({
@@ -47,3 +47,31 @@ describe('buildRevenueLiftModel', () => {
     expect(model.revenueLift).toBeCloseTo(20_720)
   })
 })
+
+describe('buildAcquisitionSourceRows', () => {
+  it('aggregates CRM aliases into the five acquisition channels in business order', () => {
+    const sourceRows = [
+      sourceRow('inbound_ivr_no_input', 7),
+      sourceRow('Tax Delinquent Inbound Sms', 4),
+      sourceRow('inbound_call', 3),
+      sourceRow('inbound_sms', 1),
+      sourceRow('google_ads', 2),
+      sourceRow('ppc_tax', 1),
+      sourceRow('mojo_call', 5),
+      sourceRow('youtube', 6),
+      sourceRow('referral', 9),
+    ]
+
+    expect(buildAcquisitionSourceRows(sourceRows)).toEqual([
+      expect.objectContaining({ label: 'Google Ads', leads: 3 }),
+      expect.objectContaining({ label: 'Outbound Calls', leads: 5 }),
+      expect.objectContaining({ label: 'Inbound Call', leads: 10 }),
+      expect.objectContaining({ label: 'Inbound SMS', leads: 5 }),
+      expect.objectContaining({ label: 'Youtube', leads: 6 }),
+    ])
+  })
+})
+
+function sourceRow(source: string, leads: number): OperatingReport['marketing']['sources'][number] {
+  return { source, leads, qualified: 0, appointments: 0, contracts: 0, revenue: 0, qualificationRate: 0, contractRate: 0 }
+}
