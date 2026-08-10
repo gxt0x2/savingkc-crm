@@ -41,6 +41,16 @@ describe('workspace dashboard navigation', () => {
     expect(navigationRegion.querySelector('a[href="/reports/dispositions"]')).toBeInTheDocument()
   })
 
+  it('keeps the system Andon available from the shared CRM navigation', () => {
+    render(<WorkspaceNav needsReply={0} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Raise an Andon and report an issue' }))
+
+    expect(screen.getByRole('dialog', { name: 'Report an issue' })).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Area' })).toHaveValue('Dashboard')
+    expect(screen.getByRole('textbox', { name: 'What happened' })).toBeVisible()
+  })
+
   it('keeps team dashboards out of the generic reports section', () => {
     navigation.pathname = '/contacts'
     render(<WorkspaceNav needsReply={0} />)

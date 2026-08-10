@@ -37,6 +37,12 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByRole('heading', { name: 'CEO Operating System' })).toBeVisible({ timeout: 20_000 })
+  const andon = page.getByRole('button', { name: 'Raise an Andon and report an issue' })
+  await expect(andon).toBeVisible()
+  await andon.click()
+  await expect(page.getByRole('dialog', { name: 'Report an issue' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Area' })).toHaveValue('Dashboard')
+  await page.getByRole('button', { name: 'Close Andon form' }).click()
   const metrics = page.getByRole('region', { name: 'Company operating metrics' })
   await expect(metrics.getByRole('link', { name: /Revenue/ })).toBeVisible({ timeout: 20_000 })
   await expect(metrics.getByRole('link', { name: /Qualified/ })).toBeVisible()

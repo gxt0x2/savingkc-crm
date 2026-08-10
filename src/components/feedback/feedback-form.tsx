@@ -4,22 +4,27 @@ import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 
 interface Props {
+  defaultSection?: string
   onClose: () => void
   onSubmit: () => void
 }
 
-export function FeedbackForm({ onClose, onSubmit }: Props) {
+const SECTIONS = ['Dashboard', 'Contacts', 'Lead details', 'Conversations', 'Dialer', 'Calendar', 'Tasks', 'Reports', 'Dispositions / Closing', 'Google Ads', 'Workflows', 'ARI Insights', 'AI Assistant', 'Settings', 'Integrations', 'Other']
+
+export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) {
   const [type, setType] = useState<'bug' | 'feature' | 'feedback'>('bug')
-  const [section, setSection] = useState('')
+  const [section, setSection] = useState(defaultSection)
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!description.trim()) return
 
     setLoading(true)
+    setError('')
     try {
       const res = await fetch('/api/feedback/submit', {
         method: 'POST',
@@ -34,25 +39,33 @@ export function FeedbackForm({ onClose, onSubmit }: Props) {
         }),
       })
 
-      if (res.ok) {
-        onSubmit()
-        onClose()
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null) as { error?: string } | null
+        throw new Error(payload?.error || 'The Andon could not be submitted. Please try again.')
       }
+      onSubmit()
+      onClose()
     } catch (err) {
       console.error('Failed to submit feedback:', err)
+      setError(err instanceof Error ? err.message : 'The Andon could not be submitted. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-black text-primary">Report Issue / Request Feature</h2>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="andon-title" className="crm-panel max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-6 text-[var(--crm-ink)] shadow-2xl">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]"><Icon name="warning_amber" className="text-[24px]" /></span>
+            <div><p className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-danger)]">System Andon</p><h2 id="andon-title" className="text-xl font-black">Report an issue</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Stop, flag, and route anything blocking good work.</p></div>
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors"
+            aria-label="Close Andon form"
+            className="crm-icon-button flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
           >
             <Icon name="close" size="text-lg" />
           </button>
@@ -61,8 +74,8 @@ export function FeedbackForm({ onClose, onSubmit }: Props) {
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Type */}
           <div>
-            <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-              Type
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
+              What needs attention?
             </label>
             <div className="grid grid-cols-3 gap-3">
               {(['bug', 'feature', 'feedback'] as const).map((t) => (
@@ -70,10 +83,10 @@ export function FeedbackForm({ onClose, onSubmit }: Props) {
                   key={t}
                   type="button"
                   onClick={() => setType(t)}
-                  className={`px-4 py-3 text-sm font-semibold rounded-lg border-2 transition-colors capitalize ${
+                  className={`rounded-lg border px-3 py-3 text-sm font-semibold transition-colors ${
                     type === t
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-outline-variant/20 hover:border-primary/30'
+                      ? 'border-[var(--crm-danger)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]'
+                      : 'border-[var(--crm-border)] bg-[var(--crm-surface)] hover:border-[var(--crm-border-strong)]'
                   }`}
                 >
                   <Icon
@@ -81,7 +94,7 @@ export function FeedbackForm({ onClose, onSubmit }: Props) {
                     size="text-base"
                     className="inline mr-1.5"
                   />
-                  {t === 'bug' ? 'Bug Report' : t === 'feature' ? 'Feature Request' : 'Feedback'}
+                  {t === 'bug' ? 'System issue' : t === 'feature' ? 'Improvement' : 'Data concern'}
                 </button>
               ))}
             </div>
@@ -89,32 +102,25 @@ export function FeedbackForm({ onClose, onSubmit }: Props) {
 
           {/* Section */}
           <div>
-            <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-              Section
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
+              Area
             </label>
             <select
+              aria-label="Area"
               value={section}
               onChange={(e) => setSection(e.target.value)}
               required
-              className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+              className="crm-field h-11 w-full rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-[var(--crm-info)]/25"
             >
               <option value="">Select section...</option>
-              <option value="Leads">Leads</option>
-              <option value="Pipeline">Pipeline</option>
-              <option value="Conversations">Conversations</option>
-              <option value="Calendar">Calendar</option>
-              <option value="Dashboard">Dashboard</option>
-              <option value="Ari">Ari</option>
-              <option value="Settings">Settings</option>
-              <option value="Integrations">Integrations</option>
-              <option value="Other">Other</option>
+              {SECTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           </div>
 
           {/* Priority */}
           <div>
-            <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-              Priority (Your Assessment)
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
+              Impact
             </label>
             <div className="grid grid-cols-4 gap-2">
               {(['low', 'medium', 'high', 'critical'] as const).map((p) => (
@@ -122,10 +128,10 @@ export function FeedbackForm({ onClose, onSubmit }: Props) {
                   key={p}
                   type="button"
                   onClick={() => setPriority(p)}
-                  className={`px-3 py-2 text-xs font-semibold rounded-lg border-2 transition-colors capitalize ${
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold capitalize transition-colors ${
                     priority === p
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-outline-variant/20 hover:border-primary/30'
+                      ? 'border-[var(--crm-danger)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]'
+                      : 'border-[var(--crm-border)] hover:border-[var(--crm-border-strong)]'
                   }`}
                 >
                   {p}
@@ -136,10 +142,11 @@ export function FeedbackForm({ onClose, onSubmit }: Props) {
 
           {/* Description */}
           <div>
-            <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-              Description
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
+              What happened?
             </label>
             <textarea
+              aria-label="What happened"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
@@ -151,31 +158,33 @@ export function FeedbackForm({ onClose, onSubmit }: Props) {
                   ? "Describe the feature you'd like to see. What problem does it solve?"
                   : 'Share your thoughts, suggestions, or general feedback.'
               }
-              className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="crm-field w-full resize-y rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--crm-info)]/25"
             />
           </div>
 
           {/* Auto-captured info note */}
-          <div className="bg-surface-container rounded-lg p-3 text-xs text-on-surface-variant">
+          <div className="rounded-lg bg-[var(--crm-surface-subtle)] p-3 text-xs text-[var(--crm-text-muted)]">
             <Icon name="info" size="text-sm" className="inline mr-1" />
-            <strong>Auto-captured:</strong> Current page URL, timestamp, your name, browser info
+            <strong>Included automatically:</strong> Current page, timestamp, signed-in agent, and browser information.
           </div>
+
+          {error ? <div role="alert" className="rounded-lg border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--crm-danger)]">{error}</div> : null}
 
           {/* Actions */}
           <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-6 py-3 border border-outline-variant/20 rounded-xl font-bold text-sm hover:bg-slate-50 transition-colors"
+              className="crm-secondary-button flex-1 rounded-xl px-6 py-3 text-sm font-bold"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading || !description.trim() || !section}
-              className="flex-1 px-6 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 rounded-xl bg-[var(--crm-danger)] px-6 py-3 text-sm font-bold text-white transition-all hover:brightness-95 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? 'Submitting...' : 'Submit'}
+              {loading ? 'Sending Andon…' : 'Raise Andon'}
             </button>
           </div>
         </form>

@@ -13,6 +13,7 @@ import { useThemePreference } from '@/hooks/use-theme-preference'
 import { NotificationBell } from './notification-bell'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
+import { SystemAndon } from '@/components/feedback/system-andon'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
@@ -549,6 +550,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ⌘K Command Palette — global search */}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <SystemAndon floating />
     </div>
   )
 }
