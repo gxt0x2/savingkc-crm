@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildAcquisitionSourceRows, buildRevenueLiftModel } from './acquisitions-metrics-dashboard'
+import { buildAcquisitionSourceRows, buildFunnelGeometry, buildRevenueLiftModel } from './acquisitions-metrics-dashboard'
 import { buildOperatingReport, type OperatingReport, type OperatingReportInput } from '@/lib/operating-report'
 
 function reportWithOneHundredLeads() {
@@ -69,6 +69,31 @@ describe('buildAcquisitionSourceRows', () => {
       expect.objectContaining({ label: 'Inbound SMS', leads: 5 }),
       expect.objectContaining({ label: 'Youtube', leads: 6 }),
     ])
+  })
+})
+
+describe('buildFunnelGeometry', () => {
+  const stages = buildFunnelGeometry([
+    { label: 'Leads', value: 100 },
+    { label: 'Qualified', value: 60 },
+    { label: 'Appointments', value: 30 },
+    { label: 'Contracts', value: 10 },
+    { label: 'Closed', value: 0 },
+  ])
+
+  it('keeps every stage centered and equally spaced', () => {
+    expect(stages.map((stage) => stage.bottomY - stage.topY)).toEqual([40, 40, 40, 40, 40])
+    expect(stages.map((stage) => stage.topLeft + stage.topRight)).toEqual([600, 600, 600, 600, 600])
+    expect(stages.map((stage) => stage.bottomLeft + stage.bottomRight)).toEqual([600, 600, 600, 600, 600])
+  })
+
+  it('shares boundaries between stages and tapers toward a readable zero-value stem', () => {
+    for (let index = 0; index < stages.length - 1; index += 1) {
+      expect(stages[index].bottomLeft).toBe(stages[index + 1].topLeft)
+      expect(stages[index].bottomRight).toBe(stages[index + 1].topRight)
+    }
+    expect(stages[0].topRight - stages[0].topLeft).toBe(360)
+    expect(stages.at(-1)!.topRight - stages.at(-1)!.topLeft).toBe(20)
   })
 })
 

@@ -37,6 +37,63 @@ export interface AcquisitionSourceRow {
   revenue: number
 }
 
+interface FunnelStageInput {
+  label: string
+  value: number
+}
+
+export interface FunnelStageGeometry extends FunnelStageInput {
+  index: number
+  ratio: number
+  topY: number
+  bottomY: number
+  topLeft: number
+  topRight: number
+  bottomLeft: number
+  bottomRight: number
+}
+
+const FUNNEL_CENTER_X = 300
+const FUNNEL_MAX_WIDTH = 360
+const FUNNEL_MIN_WIDTH = 20
+const FUNNEL_TOP_Y = 12
+const FUNNEL_STAGE_HEIGHT = 40
+
+export function buildFunnelGeometry(stages: FunnelStageInput[]): FunnelStageGeometry[] {
+  if (stages.length === 0) return []
+
+  const denominator = Math.max(stages[0]?.value ?? 0, ...stages.map((stage) => stage.value), 1)
+  let previousWidth = FUNNEL_MAX_WIDTH
+  const boundaries = stages.map((stage, index) => {
+    const ratio = Math.min(1, Math.max(0, stage.value / denominator))
+    const proportionalWidth = Math.max(FUNNEL_MIN_WIDTH, FUNNEL_MAX_WIDTH * ratio)
+    const width = index === 0 ? FUNNEL_MAX_WIDTH : Math.min(previousWidth, proportionalWidth)
+    previousWidth = width
+    return {
+      width,
+      left: FUNNEL_CENTER_X - width / 2,
+      right: FUNNEL_CENTER_X + width / 2,
+    }
+  })
+
+  return stages.map((stage, index) => {
+    const top = boundaries[index]
+    const bottom = boundaries[index + 1] ?? top
+    const topY = FUNNEL_TOP_Y + index * FUNNEL_STAGE_HEIGHT
+    return {
+      ...stage,
+      index,
+      ratio: Math.min(1, Math.max(0, stage.value / denominator)),
+      topY,
+      bottomY: topY + FUNNEL_STAGE_HEIGHT,
+      topLeft: top.left,
+      topRight: top.right,
+      bottomLeft: bottom.left,
+      bottomRight: bottom.right,
+    }
+  })
+}
+
 const OPTIMIZED_RATES = {
   qualification: 40,
   appointment: 60,
@@ -299,30 +356,78 @@ function ActivityPerformance({ report }: { report: OperatingReport }) {
 
 function AcquisitionFunnel({ report }: { report: OperatingReport }) {
   const colors = ['#1769e0', '#6d28d9', '#0b9348', '#e3a008', '#f05a28', '#d62937']
-  const widths = [100, 86, 74, 63, 54, 46]
+  const stages = buildFunnelGeometry(report.acquisitions.stages)
+  if (stages.length === 0) return <EmptyState title="No funnel activity" detail="No acquisition stages were recorded for this period." />
+
   return (
-    <div className="flex min-h-[244px] flex-col items-center justify-center p-3">
-      <div className="flex w-full max-w-[720px] flex-col items-center">
-        {report.acquisitions.stages.map((stage, index) => (
-          <Link
-            href={stageHref(stage.key)}
-            key={stage.key}
-            aria-label={`${stage.label}: ${stage.value}, ${index === 0 ? '100%' : percent(stage.value, report.acquisitions.total)} of leads`}
-            className="block h-9 text-[9px] font-bold text-white transition-[filter] hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--crm-info)]"
-            style={{
-              width: `${widths[index]}%`,
-              marginTop: index === 0 ? 0 : '-1px',
-              background: colors[index],
-              clipPath: 'polygon(0 0, 100% 0, 92% 100%, 8% 100%)',
-            }}
-          >
-            <span className="flex h-full items-center justify-between gap-3 px-[12%]">
-              <span>{stage.label}</span>
-              <span className="whitespace-nowrap">{stage.value}<span className="ml-2 opacity-85">{index === 0 ? '100%' : percent(stage.value, report.acquisitions.total)}</span></span>
-            </span>
-          </Link>
+    <div className="flex min-h-[268px] items-center justify-center p-3">
+      <svg
+        viewBox="0 0 600 264"
+        role="img"
+        aria-labelledby="acquisition-funnel-title acquisition-funnel-description"
+        className="h-auto w-full max-w-[760px] overflow-visible"
+      >
+        <title id="acquisition-funnel-title">Lead-to-close acquisition funnel</title>
+        <desc id="acquisition-funnel-description">A centered, symmetrical funnel with equally spaced stages. Width represents the share of recorded leads remaining at each stage.</desc>
+        <line x1={FUNNEL_CENTER_X} x2={FUNNEL_CENTER_X} y1="6" y2="258" stroke="var(--crm-border)" strokeDasharray="2 3" />
+        {stages.map((stage, index) => {
+          const stageRecord = report.acquisitions.stages[index]
+          const stagePercent = index === 0 ? '100%' : percent(stage.value, report.acquisitions.total)
+          const centerY = stage.topY + FUNNEL_STAGE_HEIGHT / 2
+          return (
+            <a
+              href={stageHref(stageRecord.key)}
+              key={stageRecord.key}
+              aria-label={`${stage.label}: ${stage.value}, ${stagePercent} of leads`}
+              className="group cursor-pointer outline-none"
+            >
+              <polygon
+                points={`${stage.topLeft},${stage.topY} ${stage.topRight},${stage.topY} ${stage.bottomRight},${stage.bottomY} ${stage.bottomLeft},${stage.bottomY}`}
+                fill={colors[index]}
+                className="transition-[filter] group-hover:brightness-105 group-focus-visible:brightness-110"
+              />
+              <line
+                x1="92"
+                x2={stage.topLeft - 8}
+                y1={centerY}
+                y2={centerY}
+                stroke="var(--crm-border-strong)"
+                strokeWidth="1"
+              />
+              <line
+                x1={stage.topRight + 8}
+                x2="508"
+                y1={centerY}
+                y2={centerY}
+                stroke="var(--crm-border-strong)"
+                strokeWidth="1"
+              />
+              <text x="84" y={centerY + 3} textAnchor="end" fill="var(--crm-text)" className="text-[10px] font-bold">
+                {stage.label}
+              </text>
+              <text x="516" y={centerY + 3} fill="var(--crm-text)" className="text-[10px] font-extrabold">
+                {stage.value}
+              </text>
+              <text x="550" y={centerY + 3} fill="var(--crm-text-muted)" className="text-[9px] font-semibold">
+                {stagePercent}
+              </text>
+            </a>
+          )
+        })}
+        {stages.map((stage) => (
+          <line
+            key={`boundary-${stage.index}`}
+            x1={stage.topLeft}
+            x2={stage.topRight}
+            y1={stage.topY}
+            y2={stage.topY}
+            stroke="white"
+            strokeOpacity="0.9"
+            strokeWidth="1.5"
+            pointerEvents="none"
+          />
         ))}
-      </div>
+      </svg>
     </div>
   )
 }
