@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { buildConversationHubThreads, type ConversationHubActivity, type ConversationHubLead } from '@/lib/operating-model/conversation-hub'
 import { buildOperatingReport, type OperatingActivity, type OperatingBuyer, type OperatingDeal, type OperatingLead, type OperatingMoneyRow, type OperatingOffer, type OperatingReportPeriod } from '@/lib/operating-report'
+import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const NO_STORE_HEADERS: HeadersInit = { 'Cache-Control': 'no-store, max-age=0' }
@@ -62,9 +63,8 @@ export async function GET(request: NextRequest) {
 
   const { data: leadData, error: leadError } = await db
     .from('leads')
-    .select('id, full_name, phone, email, property_address, city, source, station, priority, assigned_agent, opportunity_score, motivation_score, arv, offer_amount, is_favorite, created_at, is_parked')
+    .select('id, full_name, phone, email, property_address, city, source, station, priority, assigned_agent, opportunity_score, motivation_score, arv, offer_amount, classification, dead_reason, is_favorite, created_at, is_parked')
     .eq('is_parked', false)
-    .neq('station', 'dead')
     .order('created_at', { ascending: false })
     .limit(5000)
 
@@ -110,9 +110,10 @@ export async function GET(request: NextRequest) {
   }
 
   const cohortLeads = referenceLeads.filter((lead) => withinPeriod(lead.created_at, since, until))
+  const activeCohortLeads = cohortLeads.filter((lead) => !isNotLeadOutcome(lead.classification, lead.station))
   const hubActivities = activityResult.rows as ConversationHubActivity[]
   const threads = buildConversationHubThreads(
-    cohortLeads.map((lead) => ({ ...lead, classification: null, dead_reason: null, county: null, motivation_score: lead.opportunity_score, arv: null, offer_amount: null, appointment_date: null })) as ConversationHubLead[],
+    activeCohortLeads.map((lead) => ({ ...lead, county: null, motivation_score: lead.opportunity_score, arv: null, offer_amount: null, appointment_date: null })) as ConversationHubLead[],
     hubActivities,
     until,
   )

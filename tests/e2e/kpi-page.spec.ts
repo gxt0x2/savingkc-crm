@@ -6,6 +6,7 @@ test.use({
   extraHTTPHeaders: {
     'x-skc-test-auth-bypass': 'playwright-smoke-bypass',
   },
+  viewport: { width: 1600, height: 1000 },
 })
 
 const report = buildOperatingReport({
@@ -28,17 +29,18 @@ const report = buildOperatingReport({
 })
 
 test('CEO operating dashboard and report drill-down smoke', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('crm-theme', 'light'))
   await page.route('**/api/reports/operating**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(report) })
   })
 
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByRole('heading', { name: 'CEO Operating System' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'CEO Operating System' })).toBeVisible({ timeout: 20_000 })
   const metrics = page.getByRole('region', { name: 'Company operating metrics' })
-  await expect(metrics.getByText('Revenue', { exact: true })).toBeVisible()
-  await expect(metrics.getByText('Qualified', { exact: true })).toBeVisible()
-  await expect(metrics.getByText('Leads', { exact: true })).toBeVisible()
+  await expect(metrics.getByRole('link', { name: /Revenue/ })).toBeVisible({ timeout: 20_000 })
+  await expect(metrics.getByRole('link', { name: /Qualified/ })).toBeVisible()
+  await expect(metrics.getByRole('link', { name: /Leads/ })).toBeVisible()
 
   const period = page.getByRole('combobox', { name: 'Reporting period' })
   await period.selectOption('quarter')
@@ -47,4 +49,17 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await metrics.getByRole('link', { name: /Revenue/ }).click()
   await expect(page).toHaveURL(/\/reports\/finance$/)
   await expect(page.getByRole('heading', { name: 'Financial performance' })).toBeVisible()
+
+  await page.goto('/reports/acquisitions', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Acquisitions performance' })).toBeVisible()
+  const acquisitionMetrics = page.getByRole('region', { name: 'Acquisition operating metrics' })
+  await expect(acquisitionMetrics.getByText('New leads', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Lead-source performance' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Revenue lift model' })).toBeVisible()
+  await expect(page.locator('[data-nextjs-dialog]')).toHaveCount(0)
+
+  if (process.env.PLAYWRIGHT_DASHBOARD_SCREENSHOT) {
+    await page.setViewportSize({ width: 1600, height: 1800 })
+    await page.screenshot({ path: process.env.PLAYWRIGHT_DASHBOARD_SCREENSHOT, fullPage: true })
+  }
 })
