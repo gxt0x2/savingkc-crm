@@ -94,8 +94,8 @@ export function EditOfferModal({ offer, onClose, onSaved, onDeleted }: Props) {
     }
   }
 
-  const input = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 focus:border-[#E32E2E]/60 transition-colors bg-white'
-  const label = 'block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1'
+  const input = 'w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 focus:border-[var(--crm-brand)]/60 transition-colors bg-[var(--crm-surface)]'
+  const label = 'block text-[11px] font-semibold text-[var(--crm-text)] uppercase tracking-wider mb-1'
 
   return (
     <div
@@ -105,30 +105,30 @@ export function EditOfferModal({ offer, onClose, onSaved, onDeleted }: Props) {
       <form
         onSubmit={handleSubmit}
         onClick={e => e.stopPropagation()}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="bg-[var(--crm-surface)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)]">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Edit Offer</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h2 className="text-lg font-bold text-[var(--crm-ink)]">Edit Offer</h2>
+            <p className="text-xs text-[var(--crm-text-muted)] mt-0.5">
               {offer.buyer?.name || 'Buyer'} · {offer.lead?.property_address || 'Property'}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg text-slate-500">
+          <button type="button" onClick={onClose} className="p-1 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-muted)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
 
         <div className="px-6 py-5 space-y-5">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
+            <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{error}</div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={label}>Offer Amount *</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-dim)] text-sm">$</span>
                 <input
                   type="number"
                   required
@@ -142,7 +142,7 @@ export function EditOfferModal({ offer, onClose, onSaved, onDeleted }: Props) {
             <div>
               <label className={label}>Earnest Money</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-dim)] text-sm">$</span>
                 <input
                   type="number"
                   min={0}
@@ -195,14 +195,14 @@ export function EditOfferModal({ offer, onClose, onSaved, onDeleted }: Props) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50">
+        <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
           <div>
             {isAdmin && (
               <button
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting || submitting}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#E32E2E] hover:bg-[#E32E2E]/10 px-3 py-2 rounded-lg disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--crm-brand)] hover:bg-[var(--crm-brand)]/10 px-3 py-2 rounded-lg disabled:opacity-50 transition-colors"
                 title="Delete this offer"
               >
                 <Icon name="delete" size="text-base" />
@@ -211,13 +211,13 @@ export function EditOfferModal({ offer, onClose, onSaved, onDeleted }: Props) {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={onClose} className="text-sm font-semibold text-slate-600 hover:text-slate-900 px-4 py-2">
+            <button type="button" onClick={onClose} className="text-sm font-semibold text-[var(--crm-text)] hover:text-[var(--crm-ink)] px-4 py-2">
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting || deleting}
-              className="bg-[#E32E2E] hover:bg-[#c72626] text-white text-sm font-bold px-5 py-2 rounded-lg disabled:opacity-50 transition-colors"
+              className="bg-[var(--crm-brand)] hover:bg-[var(--crm-brand-hover)] text-[var(--crm-on-brand)] text-sm font-bold px-5 py-2 rounded-lg disabled:opacity-50 transition-colors"
             >
               {submitting ? 'Saving…' : 'Save Changes'}
             </button>

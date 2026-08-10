@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import { CloseoutDialog } from '@/components/dispo/closeout-dialog'
+import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 import { activeDispositionPhases, summarizeDispositionPhase } from '@/lib/dispo/operating-lifecycle'
 import type { DispoDeal, DispoStage, TcFile } from '@/types/dispo'
 
@@ -149,16 +150,16 @@ function AddDealModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
             value={query}
             onChange={(e) => handleSearch(e.target.value)}
           />
-          <p className="text-[10px] text-[var(--ck-text-dim)] mt-1 mb-3">
+          <p className="text-[10px] text-[var(--crm-text-dim)] mt-1 mb-3">
             Search for a lead to add to the dispo pipeline
           </p>
 
           <div className="max-h-64 overflow-y-auto space-y-1">
             {searching && (
-              <div className="text-center py-4 text-[var(--ck-text-dim)] text-sm">Searching...</div>
+              <div className="text-center py-4 text-[var(--crm-text-dim)] text-sm">Searching...</div>
             )}
             {!searching && leads.length === 0 && query.length >= 2 && (
-              <div className="text-center py-4 text-[var(--ck-text-dim)] text-sm">No leads found</div>
+              <div className="text-center py-4 text-[var(--crm-text-dim)] text-sm">No leads found</div>
             )}
             {leads.map((lead) => (
               <div
@@ -169,14 +170,14 @@ function AddDealModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
                   <p className="truncate text-sm font-medium text-[var(--crm-ink)]">
                     {lead.property_address || 'No address'}
                   </p>
-                  <p className="text-xs text-[var(--ck-text-muted)]">
+                  <p className="text-xs text-[var(--crm-text-muted)]">
                     {lead.city} {lead.full_name ? `· ${lead.full_name}` : ''}
                   </p>
                 </div>
                 <button
                   onClick={() => addToPipeline(lead.id)}
                   disabled={adding === lead.id}
-                  className="shrink-0 flex items-center gap-1 rounded-lg bg-[var(--crm-brand)] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[var(--crm-brand-hover)] disabled:opacity-50"
+                  className="shrink-0 flex items-center gap-1 rounded-lg bg-[var(--crm-brand)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-on-brand)] transition-colors hover:bg-[var(--crm-brand-hover)] disabled:opacity-50"
                 >
                   {adding === lead.id ? 'Adding...' : (
                     <>
@@ -235,7 +236,7 @@ function DealDetail({
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-6 py-4">
           <div>
             <h2 className="text-lg font-bold text-[var(--crm-ink)]">{addr}</h2>
-            <p className="text-xs text-[var(--ck-text-muted)]">
+            <p className="text-xs text-[var(--crm-text-muted)]">
               {[city, state].filter(Boolean).join(', ')}
             </p>
           </div>
@@ -288,7 +289,7 @@ function DealDetail({
                 <button
                   type="button"
                   onClick={() => onRequestCloseout(closeoutStatus === 'awaiting_debrief' ? 'debrief' : 'funding')}
-                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--crm-brand)] px-3 py-2.5 text-xs font-black text-white hover:bg-[var(--crm-brand-hover)]"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--crm-brand)] px-3 py-2.5 text-xs font-black text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)]"
                 >
                   <Icon name={closeoutStatus === 'awaiting_debrief' ? 'rate_review' : 'verified'} className="text-base" />
                   {closeoutStatus === 'awaiting_debrief' ? 'Complete required debrief' : 'Close transaction'}
@@ -301,21 +302,21 @@ function DealDetail({
 
           {/* Current Stage */}
           <div>
-            <p className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider mb-2">
+            <p className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider mb-2">
               Current Stage
             </p>
             <span className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold', stageBadgeClass(deal.stage))}>
               <Icon name={stageConfig(deal.stage).icon} size="text-sm" />
               {stageConfig(deal.stage).label}
             </span>
-            <p className="text-xs text-[var(--ck-text-dim)] mt-1">
+            <p className="text-xs text-[var(--crm-text-dim)] mt-1">
               Entered {daysAgo(deal.entered_at)}
             </p>
           </div>
 
           {/* Property Info */}
           <div>
-            <p className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider mb-2">
+            <p className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider mb-2">
               Property Details
             </p>
             <div className="grid grid-cols-2 gap-2">
@@ -328,7 +329,7 @@ function DealDetail({
                 { label: 'Entered', val: formatDate(deal.entered_at) },
               ].map(({ label, val }) => (
                 <div key={label} className="rounded-lg bg-[var(--crm-surface-subtle)] p-3">
-                  <p className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase">{label}</p>
+                  <p className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase">{label}</p>
                   <p className="mt-0.5 text-sm font-semibold text-[var(--crm-ink)]">{val}</p>
                 </div>
               ))}
@@ -337,7 +338,7 @@ function DealDetail({
 
           {/* Activity Summary */}
           <div>
-            <p className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider mb-2">
+            <p className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider mb-2">
               Activity
             </p>
             <div className="grid grid-cols-3 gap-2">
@@ -347,9 +348,9 @@ function DealDetail({
                 { label: 'Offers', val: String(deal.offers_count ?? 0), icon: 'local_offer' },
               ].map(({ label, val, icon }) => (
                 <div key={label} className="rounded-lg bg-[var(--crm-surface-subtle)] p-3 text-center">
-                  <Icon name={icon} className="text-[var(--ck-text-dim)] text-lg mb-1" />
+                  <Icon name={icon} className="text-[var(--crm-text-dim)] text-lg mb-1" />
                   <p className="text-sm font-bold text-[var(--crm-ink)]">{val}</p>
-                  <p className="text-[10px] text-[var(--ck-text-dim)]">{label}</p>
+                  <p className="text-[10px] text-[var(--crm-text-dim)]">{label}</p>
                 </div>
               ))}
             </div>
@@ -358,7 +359,7 @@ function DealDetail({
           {/* Deal Page Link */}
           {deal.deal_page && (
             <div className="rounded-lg bg-[var(--crm-surface-subtle)] p-3">
-              <p className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase mb-1">Deal Page</p>
+              <p className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase mb-1">Deal Page</p>
               <Link
                 href={`/deals/${deal.deal_page.slug}`}
                 target="_blank"
@@ -383,14 +384,14 @@ function DealDetail({
           {/* Notes */}
           {deal.notes && (
             <div className="rounded-lg bg-[var(--crm-surface-subtle)] p-3">
-              <p className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase mb-1">Notes</p>
-              <p className="text-sm text-[var(--ck-text-muted)]">{deal.notes}</p>
+              <p className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase mb-1">Notes</p>
+              <p className="text-sm text-[var(--crm-text-muted)]">{deal.notes}</p>
             </div>
           )}
 
           {/* Move Stage */}
           <div>
-            <p className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider mb-2">
+            <p className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider mb-2">
               Move to Stage
             </p>
             <div className="flex flex-wrap gap-1.5">
@@ -514,49 +515,19 @@ export default function PipelinePage() {
 
   return (
     <div className="mx-auto min-h-full w-full max-w-[1440px] bg-[var(--crm-canvas)] px-4 pb-24 pt-6 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <p className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-[var(--crm-brand)]">Disposition workspace</p>
-          <h1 className="mb-1 text-3xl font-bold tracking-tight text-[var(--crm-ink)]">Pipeline</h1>
-          <p className="text-[var(--ck-text-muted)] text-sm">
-            {loading ? 'Loading...' : `${activeDealCount} active deal${activeDealCount !== 1 ? 's' : ''} in dispo`}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 rounded-lg bg-[var(--crm-brand)] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[var(--crm-brand-hover)]"
-        >
-          <Icon name="add_circle" size="text-lg" />
-          Add Deal
-        </button>
+      <div className="mb-5 overflow-hidden rounded-xl border border-[var(--crm-border)] shadow-[var(--crm-shadow-sm)]">
+        <DispoPageHeader
+          eyebrow="Dispositions"
+          title="Pipeline"
+          description={loading ? 'Loading pipeline…' : `${activeDealCount} active deal${activeDealCount !== 1 ? 's' : ''}. Move each property from marketing to closing with one clear next step.`}
+          actions={(
+            <button onClick={() => setShowAddModal(true)} className="crm-primary-button flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold">
+              <Icon name="add_circle" size="text-lg" />
+              Add deal
+            </button>
+          )}
+        />
       </div>
-
-      <section className="mb-6 overflow-hidden rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm" aria-label="Shared transaction operating model">
-        <div className="flex flex-col gap-4 border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--crm-brand)]">One transaction record</p>
-            <h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Dispositions and Closing Coordination work in parallel</h2>
-            <p className="mt-1 max-w-3xl text-sm text-[var(--crm-text-muted)]">The pipeline owns pricing, buyers, offers, and assignment. Closing Coordination owns title, funding, documents, closing, and aftercare. Required handoffs are shared gates.</p>
-          </div>
-          <Link href="/dispo/tc" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--crm-brand)] px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-[var(--crm-brand-hover)]">
-            <Icon name="fact_check" size="text-base" />
-            Open closing coordination
-          </Link>
-        </div>
-        <div className="grid gap-px bg-[var(--crm-border)] md:grid-cols-3">
-          {[
-            { icon: 'campaign', title: 'Dispositions lane', text: 'Valuation, marketing, buyer offers, negotiation, and assignment.', tone: 'text-[var(--crm-violet)] bg-[var(--crm-violet-soft)]' },
-            { icon: 'verified_user', title: 'Shared gates', text: 'Contract intake, due diligence, offer approval, clear-to-close, and closeout.', tone: 'text-[var(--crm-success)] bg-[var(--crm-success-soft)]' },
-            { icon: 'fact_check', title: 'Closing coordination lane', text: 'Title, EMD, funding, documents, closing, aftercare, and archive.', tone: 'text-[var(--crm-info)] bg-[var(--crm-info-soft)]' },
-          ].map((item) => (
-            <div key={item.title} className="flex items-start gap-3 bg-[var(--crm-surface)] px-5 py-4">
-              <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', item.tone)}><Icon name={item.icon} size="text-lg" /></span>
-              <span><strong className="block text-sm font-black text-[var(--crm-ink)]">{item.title}</strong><span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">{item.text}</span></span>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* Stage Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-6">
@@ -574,8 +545,8 @@ export default function PipelinePage() {
               )}
             >
               <div className="flex items-center gap-1.5 mb-1">
-                <Icon name={s.icon} className="text-[var(--ck-text-dim)]" size="text-sm" />
-                <span className="text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider">
+                <Icon name={s.icon} className="text-[var(--crm-text-dim)]" size="text-sm" />
+                <span className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider">
                   {s.label}
                 </span>
               </div>
@@ -604,7 +575,7 @@ export default function PipelinePage() {
         <div className="relative max-w-sm">
           <Icon
             name="search"
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-dim)]"
             size="text-lg"
           />
           <input
@@ -626,7 +597,7 @@ export default function PipelinePage() {
             className={cn(
               'px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
               stageFilter === key
-                ? 'bg-[var(--crm-brand)] text-white'
+                ? 'bg-[var(--crm-brand)] text-[var(--crm-on-brand)]'
                 : 'border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-text-muted)] hover:border-[var(--crm-brand-border)] hover:bg-[var(--crm-brand-soft)] hover:text-[var(--crm-brand)]'
             )}
           >
@@ -644,12 +615,12 @@ export default function PipelinePage() {
 
       {/* Table */}
       {loading ? (
-        <div className="text-[var(--ck-text-dim)] py-16 text-center">Loading pipeline...</div>
+        <div className="text-[var(--crm-text-dim)] py-16 text-center">Loading pipeline...</div>
       ) : deals.length === 0 ? (
         <div className="text-center py-20">
-          <Icon name="route" className="text-5xl text-[var(--ck-text-dim)] mb-4" />
-          <p className="text-[var(--ck-text-muted)] font-medium text-lg">No deals in pipeline</p>
-          <p className="text-[var(--ck-text-dim)] text-sm mt-1">
+          <Icon name="route" className="text-5xl text-[var(--crm-text-dim)] mb-4" />
+          <p className="text-[var(--crm-text-muted)] font-medium text-lg">No deals in pipeline</p>
+          <p className="text-[var(--crm-text-dim)] text-sm mt-1">
             {stageFilter !== 'all'
               ? `No deals at "${stageConfig(stageFilter as DispoStage).label}" stage.`
               : 'Click "Add Deal" to move a lead into the dispo pipeline.'}
@@ -661,31 +632,31 @@ export default function PipelinePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider">
+                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider">
                     Property
                   </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider">
+                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider">
                     Stage
                   </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider hidden sm:table-cell">
+                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider hidden sm:table-cell">
                     ARV
                   </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider hidden sm:table-cell">
+                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider hidden sm:table-cell">
                     Price
                   </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider hidden md:table-cell">
+                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider hidden md:table-cell">
                     Deal Page
                   </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider hidden md:table-cell">
+                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider hidden md:table-cell">
                     Broadcasts
                   </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider hidden lg:table-cell">
+                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider hidden lg:table-cell">
                     Offers
                   </th>
-                  <th className="min-w-[150px] px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)] hidden lg:table-cell">
+                  <th className="min-w-[150px] px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-[var(--crm-text-dim)] hidden lg:table-cell">
                     Workflow
                   </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--ck-text-dim)] uppercase tracking-wider hidden lg:table-cell">
+                  <th className="text-left px-4 py-3 text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wider hidden lg:table-cell">
                     Entered
                   </th>
                   <th className="w-10 px-4 py-3" />
@@ -715,7 +686,7 @@ export default function PipelinePage() {
                     >
                       <td className="px-4 py-3">
                         <p className="max-w-[200px] truncate font-medium text-[var(--crm-ink)]">{addr}</p>
-                        <p className="text-xs text-[var(--ck-text-dim)]">
+                        <p className="text-xs text-[var(--crm-text-dim)]">
                           {[city, state].filter(Boolean).join(', ')}
                         </p>
                       </td>
@@ -753,7 +724,7 @@ export default function PipelinePage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-[var(--ck-text-muted)] hidden sm:table-cell">
+                      <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden sm:table-cell">
                         {arv}
                       </td>
                       <td className="hidden px-4 py-3 font-semibold text-[var(--crm-ink)] sm:table-cell">
@@ -766,17 +737,17 @@ export default function PipelinePage() {
                             Live
                           </span>
                         ) : (
-                          <span className="text-[var(--ck-text-dim)] text-xs">—</span>
+                          <span className="text-[var(--crm-text-dim)] text-xs">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-[var(--ck-text-muted)] hidden md:table-cell">
+                      <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden md:table-cell">
                         {deal.broadcasts_count || '—'}
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
                         {(deal.offers_count ?? 0) > 0 ? (
                           <span className="font-semibold text-[var(--crm-warning)]">{deal.offers_count}</span>
                         ) : (
-                          <span className="text-[var(--ck-text-dim)]">—</span>
+                          <span className="text-[var(--crm-text-dim)]">—</span>
                         )}
                       </td>
                       <td className="hidden px-4 py-3 lg:table-cell">
@@ -797,11 +768,11 @@ export default function PipelinePage() {
                           <span className="text-xs text-[var(--crm-text-dim)]">Synchronizing</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-[var(--ck-text-dim)] text-xs whitespace-nowrap hidden lg:table-cell">
+                      <td className="px-4 py-3 text-[var(--crm-text-dim)] text-xs whitespace-nowrap hidden lg:table-cell">
                         {daysAgo(deal.entered_at)}
                       </td>
                       <td className="px-4 py-3">
-                        <Icon name="chevron_right" className="text-[var(--ck-text-dim)]" />
+                        <Icon name="chevron_right" className="text-[var(--crm-text-dim)]" />
                       </td>
                     </tr>
                   )

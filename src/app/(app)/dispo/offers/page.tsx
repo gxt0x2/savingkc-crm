@@ -9,6 +9,7 @@ import { NewOfferModal } from '@/components/dispo/new-offer-modal'
 import { EditOfferModal } from '@/components/dispo/edit-offer-modal'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
 import { DocumentManager } from '@/components/documents/document-manager'
+import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 
 // Score an offer 0-100 on how well it aligns with our goals (clean, fast,
 // well-priced close) and the seller's (hit or beat asking). Weights:
@@ -122,16 +123,16 @@ function groupOffersByProperty(offers: BuyerOffer[]) {
 // ---------------------------------------------------------------------------
 function statusBadge(status: BuyerOffer['status']) {
   const map: Record<BuyerOffer['status'], string> = {
-    pending: 'bg-fuchsia-500/20 text-fuchsia-400',
-    submitted: 'bg-amber-500/20 text-amber-300',
-    reviewing: 'bg-yellow-500/20 text-yellow-400',
-    countered: 'bg-purple-500/20 text-purple-400',
-    accepted: 'bg-emerald-500/20 text-emerald-400',
-    rejected: 'bg-[#E32E2E]/20 text-[#f87171]',
-    withdrawn: 'bg-zinc-500/20 text-zinc-400',
-    expired: 'bg-orange-500/20 text-orange-400',
+    pending: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]',
+    submitted: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+    reviewing: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+    countered: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]',
+    accepted: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+    rejected: 'bg-[var(--crm-brand)]/20 text-[var(--crm-danger)]',
+    withdrawn: 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]',
+    expired: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
   }
-  return map[status] ?? 'bg-slate-500/25 text-slate-300'
+  return map[status] ?? 'bg-[var(--crm-surface-raised)] text-[var(--crm-text-dim)]'
 }
 
 // Assignment state → high-contrast pill. Dark-theme friendly: brand red
@@ -140,21 +141,21 @@ function assignmentBadge(offer: BuyerOffer): { label: string; className: string;
   if (offer.assignment_signed_at) {
     return {
       label: 'Assignment Signed',
-      className: 'bg-[#E32E2E] text-white border border-[#E32E2E] shadow-[0_0_0_1px_rgba(227,46,46,0.3)]',
+      className: 'bg-[var(--crm-brand)] text-[var(--crm-on-brand)] border border-[var(--crm-brand)] shadow-[0_0_0_1px_rgba(227,46,46,0.3)]',
       icon: 'verified',
     }
   }
   if (offer.assignment_sent_at) {
     return {
       label: 'Assignment Sent',
-      className: 'bg-amber-400/25 text-amber-300 border border-amber-400/50',
+      className: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)] border border-[var(--crm-warning-border)]',
       icon: 'outgoing_mail',
     }
   }
   if (offer.status === 'accepted') {
     return {
       label: 'Assignment Not Sent',
-      className: 'bg-transparent text-[var(--ck-text-muted)] border border-dashed border-[var(--ck-border-strong)]',
+      className: 'bg-transparent text-[var(--crm-text-muted)] border border-dashed border-[var(--crm-border-strong)]',
       icon: 'description',
     }
   }
@@ -166,10 +167,10 @@ function tcBadge(offer: BuyerOffer): { label: string; className: string } | null
   return {
     label: `TC ${offer.tc_file.status.replace(/_/g, ' ')}`,
     className: offer.tc_file.risk_level === 'blocked'
-      ? 'bg-[#E32E2E]/15 text-[#E32E2E] border border-[#E32E2E]/40'
+      ? 'bg-[var(--crm-brand)]/15 text-[var(--crm-brand)] border border-[var(--crm-brand)]/40'
       : offer.tc_file.risk_level === 'urgent'
-        ? 'bg-orange-500/15 text-orange-500 border border-orange-500/40'
-        : 'bg-emerald-500/15 text-emerald-600 border border-emerald-500/30',
+        ? 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)] border border-[var(--crm-warning-border)]'
+        : 'bg-[var(--crm-success-soft)] text-[var(--crm-success)] border border-[var(--crm-success-border)]',
   }
 }
 
@@ -220,27 +221,27 @@ function CounterModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">Counter Offer</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+      <div className="bg-[var(--crm-surface)] rounded-xl shadow-2xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)]">
+          <h2 className="text-lg font-bold text-[var(--crm-ink)]">Counter Offer</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
+            <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{error}</div>
           )}
-          <div className="bg-slate-50 rounded-lg p-3 text-sm">
-            <p className="text-slate-500">Original offer: <span className="font-bold text-slate-900">{formatCurrency(offer.offer_amount)}</span></p>
+          <div className="bg-[var(--crm-surface-subtle)] rounded-lg p-3 text-sm">
+            <p className="text-[var(--crm-text-muted)]">Original offer: <span className="font-bold text-[var(--crm-ink)]">{formatCurrency(offer.offer_amount)}</span></p>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Counter Amount *</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Counter Amount *</label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-3 flex items-center text-slate-400 text-sm font-semibold">$</span>
+              <span className="absolute inset-y-0 left-3 flex items-center text-[var(--crm-text-dim)] text-sm font-semibold">$</span>
               <input
                 type="number"
-                className="w-full border border-slate-200 rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 focus:border-[#E32E2E]/60"
+                className="w-full border border-[var(--crm-border)] rounded-lg pl-7 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 focus:border-[var(--crm-brand)]/60"
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 placeholder="150000"
@@ -248,9 +249,9 @@ function CounterModal({
             </div>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Notes</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Notes</label>
             <textarea
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 focus:border-[#E32E2E]/60 resize-none"
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 focus:border-[var(--crm-brand)]/60 resize-none"
               rows={3}
               value={notes}
               onChange={e => setNotes(e.target.value)}
@@ -261,14 +262,14 @@ function CounterModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold"
+              className="flex-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-[var(--ck-warn)] text-[#0a0a0a] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 transition-opacity"
+              className="flex-1 bg-[var(--crm-warning)] text-[var(--crm-on-warning)] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 transition-opacity"
             >
               {loading ? 'Sending…' : 'Send Counter'}
             </button>
@@ -303,14 +304,14 @@ function ConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
-        <h2 className="text-lg font-bold text-slate-900 mb-2">{title}</h2>
-        <p className="text-sm text-slate-600 mb-4">{message}</p>
+      <div className="bg-[var(--crm-surface)] rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+        <h2 className="text-lg font-bold text-[var(--crm-ink)] mb-2">{title}</h2>
+        <p className="text-sm text-[var(--crm-text)] mb-4">{message}</p>
         {withReason && (
           <div className="mb-4">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Reason (optional)</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Reason (optional)</label>
             <textarea
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 focus:border-[#E32E2E]/60 resize-none"
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 focus:border-[var(--crm-brand)]/60 resize-none"
               rows={2}
               value={reason}
               onChange={e => setReason(e.target.value)}
@@ -321,7 +322,7 @@ function ConfirmDialog({
         <div className="flex gap-3">
           <button
             onClick={onCancel}
-            className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold"
+            className="flex-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold"
           >
             Cancel
           </button>
@@ -377,7 +378,7 @@ function OfferDetail({
           title="Accept Offer?"
           message={`Accept ${buyer ? `${buyer.name || 'this buyer'}'s` : 'this'} offer of ${formatCurrency(offer.offer_amount)}? This cannot be undone.`}
           confirmLabel="Accept Offer"
-          confirmClass="bg-[var(--ck-success)] text-white hover:opacity-90"
+          confirmClass="bg-[var(--crm-success)] text-[var(--crm-on-brand)] hover:opacity-90"
           onConfirm={handleAccept}
           onCancel={() => setConfirm(null)}
         />
@@ -387,7 +388,7 @@ function OfferDetail({
           title="Reject Offer?"
           message={`Reject ${buyer ? `${buyer.name || 'this buyer'}'s` : 'this'} offer of ${formatCurrency(offer.offer_amount)}?`}
           confirmLabel="Reject"
-          confirmClass="bg-[#E32E2E] text-white hover:bg-[#c72626]"
+          confirmClass="bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)]"
           withReason
           onConfirm={handleReject}
           onCancel={() => setConfirm(null)}
@@ -409,7 +410,7 @@ function OfferDetail({
         />
       )}
 
-      <div className="bg-slate-50 border-t border-slate-100 px-4 py-4">
+      <div className="bg-[var(--crm-surface-subtle)] border-t border-[var(--crm-border)] px-4 py-4">
         <div className="max-w-2xl">
           {/* Detail grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -423,42 +424,42 @@ function OfferDetail({
               { label: 'Submitted', val: formatDate(offer.submitted_at) },
               { label: 'Decided', val: formatDate(offer.decided_at) },
             ].map(({ label, val }) => (
-              <div key={label} className="bg-white rounded-lg p-3">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">{label}</p>
-                <p className="text-sm font-semibold text-slate-900">{val}</p>
+              <div key={label} className="bg-[var(--crm-surface)] rounded-lg p-3">
+                <p className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase tracking-wide mb-1">{label}</p>
+                <p className="text-sm font-semibold text-[var(--crm-ink)]">{val}</p>
               </div>
             ))}
           </div>
 
           {/* Counter info */}
           {offer.counter_amount != null && (
-            <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3 mb-4">
-              <p className="text-xs font-bold text-purple-300 mb-1">Counter Offer: {formatCurrency(offer.counter_amount)}</p>
-              {offer.counter_notes && <p className="text-xs text-purple-400">{offer.counter_notes}</p>}
+            <div className="bg-[var(--crm-violet-soft)] border border-[var(--crm-violet-border)] rounded-lg p-3 mb-4">
+              <p className="text-xs font-bold text-[var(--crm-violet)] mb-1">Counter Offer: {formatCurrency(offer.counter_amount)}</p>
+              {offer.counter_notes && <p className="text-xs text-[var(--crm-violet)]">{offer.counter_notes}</p>}
             </div>
           )}
 
           {/* Notes */}
           {offer.notes && (
-            <div className="bg-white border border-slate-200 rounded-lg p-3 mb-4">
-              <p className="text-xs font-bold text-slate-500 mb-1">Buyer Notes</p>
-              <p className="text-sm text-slate-700">{offer.notes}</p>
+            <div className="bg-[var(--crm-surface)] border border-[var(--crm-border)] rounded-lg p-3 mb-4">
+              <p className="text-xs font-bold text-[var(--crm-text-muted)] mb-1">Buyer Notes</p>
+              <p className="text-sm text-[var(--crm-text)]">{offer.notes}</p>
             </div>
           )}
 
           {/* Buyer contact */}
           {buyer && (
-            <div className="bg-white border border-slate-200 rounded-lg p-3 mb-4 flex items-center gap-4">
+            <div className="bg-[var(--crm-surface)] border border-[var(--crm-border)] rounded-lg p-3 mb-4 flex items-center gap-4">
               <div>
-                <p className="text-xs font-bold text-slate-500 mb-0.5">Buyer</p>
-                <p className="text-sm font-semibold text-slate-900">{buyer.name || 'Buyer'}</p>
-                {buyer.company && <p className="text-xs text-slate-500">{buyer.company}</p>}
+                <p className="text-xs font-bold text-[var(--crm-text-muted)] mb-0.5">Buyer</p>
+                <p className="text-sm font-semibold text-[var(--crm-ink)]">{buyer.name || 'Buyer'}</p>
+                {buyer.company && <p className="text-xs text-[var(--crm-text-muted)]">{buyer.company}</p>}
               </div>
               <div className="flex items-center gap-2 ml-auto">
                 {buyer.phone && (
                   <a
                     href={`tel:${buyer.phone}`}
-                    className="p-2 rounded-lg hover:bg-green-50 text-slate-400 hover:text-green-600 transition-colors"
+                    className="p-2 rounded-lg hover:bg-[var(--crm-success-soft)] text-[var(--crm-text-dim)] hover:text-[var(--crm-success)] transition-colors"
                   >
                     <Icon name="call" size="text-base" />
                   </a>
@@ -466,7 +467,7 @@ function OfferDetail({
                 {buyer.email && (
                   <a
                     href={`mailto:${buyer.email}`}
-                    className="p-2 rounded-lg hover:bg-[#E32E2E]/10 text-slate-400 hover:text-[#f87171] transition-colors"
+                    className="p-2 rounded-lg hover:bg-[var(--crm-brand)]/10 text-[var(--crm-text-dim)] hover:text-[var(--crm-danger)] transition-colors"
                   >
                     <Icon name="mail" size="text-base" />
                   </a>
@@ -477,26 +478,26 @@ function OfferDetail({
 
           {/* Lead info */}
           {lead && (
-            <div className="bg-white border border-slate-200 rounded-lg p-3 mb-4">
-              <p className="text-xs font-bold text-slate-500 mb-0.5">Property</p>
-              <p className="text-sm font-semibold text-slate-900">{lead.property_address}</p>
-              <p className="text-xs text-slate-500">{lead.full_name}</p>
+            <div className="bg-[var(--crm-surface)] border border-[var(--crm-border)] rounded-lg p-3 mb-4">
+              <p className="text-xs font-bold text-[var(--crm-text-muted)] mb-0.5">Property</p>
+              <p className="text-sm font-semibold text-[var(--crm-ink)]">{lead.property_address}</p>
+              <p className="text-xs text-[var(--crm-text-muted)]">{lead.full_name}</p>
             </div>
           )}
 
           {/* Documents */}
           {offer.tc_file && (
-            <div className="bg-white border border-slate-200 rounded-lg p-3 mb-4">
-              <p className="text-xs font-bold text-slate-500 mb-1">Transaction Coordination</p>
+            <div className="bg-[var(--crm-surface)] border border-[var(--crm-border)] rounded-lg p-3 mb-4">
+              <p className="text-xs font-bold text-[var(--crm-text-muted)] mb-1">Transaction Coordination</p>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-bold text-emerald-700">
+                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--crm-success-soft)] px-2 py-1 text-[11px] font-bold text-[var(--crm-success)]">
                   <Icon name="fact_check" size="text-sm" />
                   {offer.tc_file.status.replace(/_/g, ' ')}
                 </span>
                 {offer.tc_file.closing_scheduled_at && (
-                  <span className="text-xs text-slate-500">Closing {formatDate(offer.tc_file.closing_scheduled_at)}</span>
+                  <span className="text-xs text-[var(--crm-text-muted)]">Closing {formatDate(offer.tc_file.closing_scheduled_at)}</span>
                 )}
-                <Link href="/dispo/tc" className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-[#E32E2E] hover:underline">
+                <Link href="/dispo/tc" className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-[var(--crm-brand)] hover:underline">
                   Open TC File
                   <Icon name="arrow_forward" size="text-sm" />
                 </Link>
@@ -520,7 +521,7 @@ function OfferDetail({
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setShowEdit(true)}
-              className="flex items-center gap-1.5 bg-transparent border border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-slate-400 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+              className="flex items-center gap-1.5 bg-transparent border border-[var(--crm-border-strong)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] hover:border-[var(--crm-border-strong)] rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
             >
               <Icon name="edit" size="text-sm" />
               Edit
@@ -528,14 +529,14 @@ function OfferDetail({
             {offer.status === 'accepted' && !offer.assignment_sent_at && (
               <button
                 onClick={onStartAssignment}
-                className="flex items-center gap-1.5 bg-[#E32E2E] hover:bg-[#c72626] text-white rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+                className="flex items-center gap-1.5 bg-[var(--crm-brand)] hover:bg-[var(--crm-brand-hover)] text-[var(--crm-on-brand)] rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
               >
                 <Icon name="description" size="text-sm" />
                 Send Assignment
               </button>
             )}
             {offer.assignment_sent_at && !offer.assignment_signed_at && (
-              <span className="inline-flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/40 text-amber-300 rounded-lg px-4 py-2 text-sm font-semibold">
+              <span className="inline-flex items-center gap-1.5 bg-[var(--crm-warning-soft)] border border-[var(--crm-warning-border)] text-[var(--crm-warning)] rounded-lg px-4 py-2 text-sm font-semibold">
                 <Icon name="outgoing_mail" size="text-sm" />
                 Awaiting buyer signature
               </span>
@@ -545,7 +546,7 @@ function OfferDetail({
                 href={offer.assignment_document_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 bg-[var(--ck-success)] text-white hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
+                className="flex items-center gap-1.5 bg-[var(--crm-success)] text-[var(--crm-on-brand)] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
               >
                 <Icon name="verified" size="text-sm" />
                 View signed contract
@@ -555,21 +556,21 @@ function OfferDetail({
               <>
                 <button
                   onClick={() => setConfirm('accept')}
-                  className="flex items-center gap-1.5 bg-[var(--ck-success)] text-white hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
+                  className="flex items-center gap-1.5 bg-[var(--crm-success)] text-[var(--crm-on-brand)] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
                 >
                   <Icon name="check_circle" size="text-sm" />
                   Accept
                 </button>
                 <button
                   onClick={() => setShowCounter(true)}
-                  className="flex items-center gap-1.5 bg-[var(--ck-warn)] text-[#0a0a0a] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
+                  className="flex items-center gap-1.5 bg-[var(--crm-warning)] text-[var(--crm-on-warning)] hover:opacity-90 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity"
                 >
                   <Icon name="swap_horizontal_circle" size="text-sm" />
                   Counter
                 </button>
                 <button
                   onClick={() => setConfirm('reject')}
-                  className="flex items-center gap-1.5 bg-[#E32E2E]/10 border border-[#E32E2E]/40 text-[var(--ck-accent-bright)] hover:bg-[#E32E2E]/20 hover:border-[#E32E2E]/60 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+                  className="flex items-center gap-1.5 bg-[var(--crm-brand)]/10 border border-[var(--crm-brand)]/40 text-[var(--crm-brand)] hover:bg-[var(--crm-brand)]/20 hover:border-[var(--crm-brand)]/60 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
                 >
                   <Icon name="cancel" size="text-sm" />
                   Reject
@@ -681,21 +682,18 @@ export default function OffersPage() {
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 pt-6 pb-32 max-w-[1440px] mx-auto">
-      {/* Header */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-primary mb-1">Offers</h1>
-          <p className="text-slate-500 text-sm">
-            {loading ? 'Loading…' : `${filtered.length} offer${filtered.length !== 1 ? 's' : ''}`}
-          </p>
-        </div>
-        <button
-          onClick={() => setNewOfferOpen(true)}
-          className="bg-[#E32E2E] hover:bg-[#c72626] text-white text-sm font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
-        >
-          <Icon name="add" size="text-base" />
-          New Offer
-        </button>
+      <div className="mb-5 overflow-hidden rounded-xl border border-[var(--crm-border)] shadow-[var(--crm-shadow-sm)]">
+        <DispoPageHeader
+          eyebrow="Offer desk"
+          title="Offers"
+          description={loading ? 'Loading offers…' : `${filtered.length} offer${filtered.length !== 1 ? 's' : ''}. Compare the terms, choose a buyer, and move the winner to closing.`}
+          actions={(
+            <button onClick={() => setNewOfferOpen(true)} className="crm-primary-button flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold">
+              <Icon name="add" size="text-base" />
+              New offer
+            </button>
+          )}
+        />
       </div>
 
       {newOfferOpen && (
@@ -722,8 +720,8 @@ export default function OffersPage() {
             className={cn(
               'px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
               statusFilter === val
-                ? 'bg-[#E32E2E] text-white'
-                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                ? 'bg-[var(--crm-brand)] text-[var(--crm-on-brand)]'
+                : 'bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'
             )}
           >
             {label}
@@ -732,34 +730,34 @@ export default function OffersPage() {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-4">
+        <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-4 py-3 mb-4">
           {error}
         </div>
       )}
 
       {/* Table */}
       {loading ? (
-        <div className="text-slate-400 py-16 text-center">Loading offers...</div>
+        <div className="text-[var(--crm-text-dim)] py-16 text-center">Loading offers...</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-20">
-          <Icon name="request_quote" className="text-5xl text-slate-200 mb-4" />
-          <p className="text-slate-400 font-medium text-lg">No offers yet</p>
-          <p className="text-slate-400 text-sm mt-1">
+          <Icon name="request_quote" className="text-5xl text-[var(--crm-text-dim)] mb-4" />
+          <p className="text-[var(--crm-text-dim)] font-medium text-lg">No offers yet</p>
+          <p className="text-[var(--crm-text-dim)] text-sm mt-1">
             {statusFilter ? `No ${statusFilter} offers found.` : 'Offers submitted through deal pages will appear here.'}
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="bg-[var(--crm-surface)] rounded-xl border border-[var(--crm-border)] shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Buyer</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Offer Amount</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Close Days</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">Financing</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Submitted</th>
+                <tr className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Buyer</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Offer Amount</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden sm:table-cell">Close Days</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden md:table-cell">Financing</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden lg:table-cell">Submitted</th>
                   <th className="w-10 px-4 py-3" />
                 </tr>
               </thead>
@@ -770,18 +768,18 @@ export default function OffersPage() {
                   const isCompetitive = group.scored.length > 1
                   return (
                     <Fragment key={leadId}>
-                      <tr className="bg-slate-100 border-y border-slate-200">
+                      <tr className="bg-[var(--crm-surface-subtle)] border-y border-[var(--crm-border)]">
                         <td colSpan={7} className="px-4 py-2">
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
-                            <Icon name="home" size="text-sm" className="text-slate-500" />
+                          <div className="flex items-center gap-2 text-xs font-bold text-[var(--crm-text)] uppercase tracking-wider">
+                            <Icon name="home" size="text-sm" className="text-[var(--crm-text-muted)]" />
                             <span>{address}</span>
-                            <span className="ml-1 text-slate-500 font-semibold normal-case tracking-normal">
+                            <span className="ml-1 text-[var(--crm-text-muted)] font-semibold normal-case tracking-normal">
                               · {group.scored.length} offer{group.scored.length !== 1 ? 's' : ''}
                               {group.askingPrice != null && (
-                                <span className="ml-2 text-slate-400">· ask {formatCurrency(group.askingPrice)}</span>
+                                <span className="ml-2 text-[var(--crm-text-dim)]">· ask {formatCurrency(group.askingPrice)}</span>
                               )}
                               {group.isManualTop && (
-                                <span className="ml-2 text-amber-600">· manual top pick</span>
+                                <span className="ml-2 text-[var(--crm-warning)]">· manual top pick</span>
                               )}
                             </span>
                           </div>
@@ -796,12 +794,12 @@ export default function OffersPage() {
                           <Fragment key={offer.id}>
                             <tr
                               className={cn(
-                                'group border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer',
-                                expandedId === offer.id && 'bg-slate-50'
+                                'group border-b border-[var(--crm-border)] hover:bg-[var(--crm-surface-subtle)] transition-colors cursor-pointer',
+                                expandedId === offer.id && 'bg-[var(--crm-surface-subtle)]'
                               )}
                               onClick={() => setExpandedId(expandedId === offer.id ? null : offer.id)}
                             >
-                              <td className="px-4 py-3 text-slate-700">
+                              <td className="px-4 py-3 text-[var(--crm-text)]">
                                 <span className="inline-flex items-center gap-1.5">
                                   <span>{offer.buyer ? (offer.buyer.name || '—') : '—'}</span>
                                   {canToggle && (
@@ -810,30 +808,30 @@ export default function OffersPage() {
                                       title={isTop ? `Top pick — click to clear\n\n${tooltip}` : `Click to make this the top pick\n\n${tooltip}`}
                                       onClick={(e) => { e.stopPropagation(); handleToggleTopPick(offer) }}
                                       className={cn(
-                                        'inline-flex items-center justify-center rounded hover:bg-amber-500/10 transition-colors',
-                                        isTop ? 'text-amber-400' : 'text-slate-300 opacity-0 group-hover:opacity-100 hover:text-amber-400'
+                                        'inline-flex items-center justify-center rounded hover:bg-[var(--crm-warning-soft)] transition-colors',
+                                        isTop ? 'text-[var(--crm-warning)]' : 'text-[var(--crm-text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--crm-warning)]'
                                       )}
                                     >
                                       <Icon name={isTop ? 'star' : 'star_border'} size="text-base" />
                                     </button>
                                   )}
                                   {!canToggle && isTop && (
-                                    <Icon name="star" size="text-base" className="text-amber-400" />
+                                    <Icon name="star" size="text-base" className="text-[var(--crm-warning)]" />
                                   )}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 font-bold text-slate-900">
+                              <td className="px-4 py-3 font-bold text-[var(--crm-ink)]">
                                 {formatCurrency(offer.offer_amount)}
                                 {offer.counter_amount != null && (
-                                  <span className="ml-2 text-xs font-normal text-amber-500">
+                                  <span className="ml-2 text-xs font-normal text-[var(--crm-warning)]">
                                     Counter: {formatCurrency(offer.counter_amount)}
                                   </span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">
+                              <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden sm:table-cell">
                                 {offer.close_days != null ? `${offer.close_days}d` : '—'}
                               </td>
-                              <td className="px-4 py-3 text-slate-500 hidden md:table-cell">
+                              <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden md:table-cell">
                                 {offer.financing_type ?? '—'}
                               </td>
                               <td className="px-4 py-3">
@@ -848,7 +846,7 @@ export default function OffersPage() {
                                     const cls = cn(
                                       'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap',
                                       ab.className,
-                                      isActionable && 'cursor-pointer hover:border-[#E32E2E]/70 hover:text-[var(--ck-accent-bright)] transition-colors'
+                                      isActionable && 'cursor-pointer hover:border-[var(--crm-brand)]/70 hover:text-[var(--crm-brand)] transition-colors'
                                     )
                                     return isActionable ? (
                                       <button
@@ -883,18 +881,18 @@ export default function OffersPage() {
                                   })()}
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-slate-400 text-xs hidden lg:table-cell whitespace-nowrap">
+                              <td className="px-4 py-3 text-[var(--crm-text-dim)] text-xs hidden lg:table-cell whitespace-nowrap">
                                 {formatDate(offer.submitted_at)}
                               </td>
                               <td className="px-4 py-3">
                                 <Icon
                                   name={expandedId === offer.id ? 'expand_less' : 'expand_more'}
-                                  className="text-slate-400"
+                                  className="text-[var(--crm-text-dim)]"
                                 />
                               </td>
                             </tr>
                             {expandedId === offer.id && (
-                              <tr className="border-b border-slate-100">
+                              <tr className="border-b border-[var(--crm-border)]">
                                 <td colSpan={7} className="p-0">
                                   <OfferDetail
                                     offer={offer}
@@ -919,7 +917,7 @@ export default function OffersPage() {
 
       {/* Feedback toast */}
       {feedback && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm font-medium px-4 py-2.5 rounded-lg shadow-xl">
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-[var(--crm-surface-raised)] text-[var(--crm-on-brand)] text-sm font-medium px-4 py-2.5 rounded-lg shadow-xl">
           {feedback}
         </div>
       )}
