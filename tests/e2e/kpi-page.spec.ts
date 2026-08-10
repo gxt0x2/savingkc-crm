@@ -40,7 +40,11 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   const metrics = page.getByRole('region', { name: 'Company operating metrics' })
   await expect(metrics.getByRole('link', { name: /Revenue/ })).toBeVisible({ timeout: 20_000 })
   await expect(metrics.getByRole('link', { name: /Qualified/ })).toBeVisible()
+  await expect(metrics.getByRole('link', { name: /Offers made/ })).toBeVisible()
+  await expect(metrics.getByRole('link', { name: /Under contract/ })).toBeVisible()
   await expect(metrics.getByRole('link', { name: /Leads/ })).toBeVisible()
+  const flowLabels = await metrics.getByRole('group', { name: 'Acquisition flow stages' }).getByRole('link').evaluateAll((links) => links.map((link) => link.getAttribute('aria-label')?.split(':')[0]))
+  expect(flowLabels).toEqual(['Leads', 'Qualified', 'Offers made', 'Under contract', 'Closings'])
 
   const period = page.getByRole('combobox', { name: 'Reporting period' })
   await period.selectOption('quarter')

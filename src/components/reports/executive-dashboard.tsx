@@ -40,14 +40,17 @@ export function ExecutiveDashboard({
 }) {
   const { theme, toggle: toggleTheme } = useThemePreference()
   const range = periodRange(report)
-  const cards = [
+  const summaryCards = [
     { icon: 'payments', label: 'Revenue (period)', value: report.availability.finance ? money(report.core.revenue) : 'Unavailable', numericValue: report.availability.finance ? report.core.revenue : null, detail: `${report.finance.revenueTransactions} recorded transaction${report.finance.revenueTransactions === 1 ? '' : 's'}`, tone: 'green' as const, href: '/reports/finance', series: report.trends.revenue, goal: scaledGoal(report.goals.monthlyRevenue, report, 'monthly') },
     { icon: 'filter_alt', label: 'Pipeline est. revenue', value: report.core.pipelineOfferValue == null ? 'Not recorded' : money(report.core.pipelineOfferValue), numericValue: report.core.pipelineOfferValue, detail: 'Recorded offers on active leads', tone: 'violet' as const, href: '/reports/acquisitions', series: null, goal: null },
-    { icon: 'check_circle', label: 'Closings (period)', value: report.dispositions.closedDeals, numericValue: report.dispositions.closedDeals, detail: 'Recorded closed deals', tone: 'blue' as const, href: '/reports/dispositions', series: report.trends.closings, goal: scaledGoal(report.goals.monthlyClosings, report, 'monthly') },
     { icon: 'person_add', label: 'Assigned (period)', value: report.core.assigned, numericValue: report.core.assigned, detail: `${percent(report.core.assigned, report.core.leads)} of period leads`, tone: 'coral' as const, href: '/contacts?list=all', series: report.trends.assigned, goal: null },
-    { icon: 'description', label: 'Under contract', value: report.core.underContract, numericValue: report.core.underContract, detail: 'Current selected cohort', tone: 'amber' as const, href: '/contacts?min_stage=under_contract', series: report.trends.underContract, goal: null },
-    { icon: 'verified', label: 'Qualified (period)', value: report.core.qualified, numericValue: report.core.qualified, detail: `${percent(report.core.qualified, report.core.leads)} of period leads`, tone: 'blue' as const, href: '/contacts?min_stage=qualified', series: report.trends.qualified, goal: scaledGoal(report.goals.weeklyQualified, report, 'weekly') },
-    { icon: 'group', label: 'Leads (period)', value: report.core.leads, numericValue: report.core.leads, detail: 'New seller records', tone: 'teal' as const, href: '/contacts?list=new', series: report.trends.leads, goal: null },
+  ]
+  const flowCards = [
+    { icon: 'group', label: 'Leads', value: report.core.leads, detail: 'New seller records', tone: 'teal' as const, href: '/contacts?list=new' },
+    { icon: 'verified', label: 'Qualified', value: report.core.qualified, detail: `${percent(report.core.qualified, report.core.leads)} of leads`, tone: 'blue' as const, href: '/contacts?min_stage=qualified' },
+    { icon: 'request_quote', label: 'Offers made', value: report.acquisitions.offers, detail: `${percent(report.acquisitions.offers, report.core.qualified)} of qualified`, tone: 'violet' as const, href: '/contacts?min_stage=offer_made' },
+    { icon: 'description', label: 'Under contract', value: report.core.underContract, detail: `${percent(report.core.underContract, report.acquisitions.offers)} of offers`, tone: 'amber' as const, href: '/contacts?min_stage=under_contract' },
+    { icon: 'check_circle', label: 'Closings', value: report.dispositions.closedDeals, detail: `${percent(report.dispositions.closedDeals, report.core.underContract)} of contracts`, tone: 'green' as const, href: '/reports/dispositions' },
   ]
 
   return (
@@ -89,8 +92,25 @@ export function ExecutiveDashboard({
 
         {isFetching ? <div role="status" className="sr-only">Refreshing dashboard data</div> : null}
 
-        <section aria-label="Company operating metrics" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 2xl:h-[180px] 2xl:grid-cols-7">
-          {cards.map((card) => <CeoMetricCard key={card.label} {...card} />)}
+        <section aria-label="Company operating metrics" className="space-y-2.5">
+          <div>
+            <div className="mb-1.5 flex items-center justify-between px-0.5">
+              <h2 className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">Financial and ownership</h2>
+              <span className="text-[9px] font-semibold text-[var(--crm-text-dim)]">Recorded outcomes and coverage</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {summaryCards.map((card) => <CeoMetricCard key={card.label} {...card} />)}
+            </div>
+          </div>
+          <div role="group" aria-label="Acquisition flow stages">
+            <div className="mb-1.5 flex items-center justify-between px-0.5">
+              <h2 className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">Acquisition flow</h2>
+              <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-[var(--crm-text-dim)]">Lead to close <Icon name="arrow_forward" className="text-[12px]" /></span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              {flowCards.map((card, index) => <CeoFlowCard key={card.label} {...card} showConnector={index < flowCards.length - 1} />)}
+            </div>
+          </div>
         </section>
 
         <section className="grid gap-2.5 xl:grid-cols-[0.70fr_0.72fr_1.08fr] 2xl:h-[230px]">
@@ -145,6 +165,31 @@ function CeoMetricCard({ icon, label, value, numericValue, detail, tone, href, s
         <div className="mt-1 h-1 rounded-full bg-[color-mix(in_srgb,var(--crm-border)_65%,transparent)]"><span className="block h-full rounded-full" style={{ width: `${progress ?? 0}%`, background: palette.color }} /></div>
       </div>
     </Link>
+  )
+}
+
+function CeoFlowCard({ icon, label, value, detail, tone, href, showConnector }: Pick<MetricCardProps, 'icon' | 'label' | 'value' | 'detail' | 'tone' | 'href'> & { showConnector: boolean }) {
+  const palette = TONES[tone]
+  return (
+    <div className="relative min-w-0">
+      <Link
+        href={href}
+        aria-label={`${label}: ${value}. ${detail}`}
+        className="group flex min-h-[112px] flex-col rounded-lg border px-3 py-2.5 shadow-[0_1px_3px_rgba(16,24,40,.05)] transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_5px_14px_rgba(16,24,40,.09)]"
+        style={{ background: `color-mix(in srgb, ${palette.color} 7%, var(--crm-surface))`, borderColor: `color-mix(in srgb, ${palette.color} 18%, var(--crm-border))` }}
+      >
+        <div className="flex items-center gap-2">
+          <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${palette.icon}`}><Icon name={icon} className="text-[16px]" /></span>
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.035em]">{label}</span>
+        </div>
+        <div className="mt-auto flex items-end justify-between gap-3 pt-2">
+          <strong className="text-[26px] font-extrabold leading-7 tracking-[-0.04em] tabular-nums">{value}</strong>
+          <span className="pb-0.5 text-right text-[9px] font-semibold leading-3 text-[var(--crm-text-muted)]">{detail}</span>
+        </div>
+        <span className="mt-2 h-1 rounded-full" style={{ background: palette.color }} />
+      </Link>
+      {showConnector ? <span aria-hidden="true" className="absolute -right-[7px] top-1/2 z-10 hidden h-5 w-5 -translate-y-1/2 place-items-center rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[12px] text-[var(--crm-text-muted)] shadow-sm lg:grid">→</span> : null}
+    </div>
   )
 }
 
