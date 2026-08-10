@@ -130,6 +130,16 @@
       "environment": []
     },
     {
+      "id": "andon",
+      "name": "Andon continuous-improvement system",
+      "owner": "Operations",
+      "status": "active",
+      "routes": ["/reports/andon"],
+      "apiRoutes": ["/api/feedback/log", "/api/feedback/submit", "/api/feedback/update-status", "/api/error/log"],
+      "tables": ["feedback_submissions", "error_log"],
+      "environment": ["VERCEL_ENV"]
+    },
+    {
       "id": "ari",
       "name": "ARI insights and assistant",
       "owner": "Operations",
