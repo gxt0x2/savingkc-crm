@@ -161,10 +161,12 @@ test('closing coordination uses the rebuilt shell and shared theme', async ({ pa
   await page.goto('/dispo/tc', { waitUntil: 'domcontentloaded' });
 
   const shell = page.locator('.crm-workspace-shell');
-  const portal = page.locator('.tc-portal');
+  const heading = page.getByRole('heading', { name: 'Closing coordination' });
+  const portal = page.locator('main').filter({ has: heading });
   await expect(shell).toHaveAttribute('data-theme', 'light');
   await expect(page.getByRole('navigation', { name: 'Dispositions sections' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Closing coordination' })).toBeVisible();
+  await expect(heading).toBeVisible();
+  await expect(page.locator('.tc-portal')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Switch to dark theme' }).click();
   await expect(shell).toHaveAttribute('data-theme', 'dark');
