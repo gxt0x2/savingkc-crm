@@ -4,11 +4,14 @@ import { useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
 import {
-  ANDON_CASCADES,
   ANDON_ISSUE_KINDS,
   ANDON_KIND_LABELS,
+  ANDON_PROCESS_CASCADES,
+  ANDON_WORK_AREAS,
+  extractAndonRecordContext,
   type AndonIssueKind,
   type AndonPriority,
+  type AndonWorkArea,
 } from '@/lib/andon'
 
 interface Props {
@@ -22,18 +25,19 @@ const KIND_ICONS: Record<AndonIssueKind, string> = {
   system: 'bug_report',
   data: 'database',
   improvement: 'lightbulb',
+  ai_glitch: 'smart_toy',
 }
 
-function defaultsForContext(context: string): { kind: AndonIssueKind; workstream: string; category: string } {
-  if (context === 'Google Ads') return { kind: 'process', workstream: 'Marketing', category: 'Google Ads' }
-  if (context === 'Dispositions / Closing') return { kind: 'process', workstream: 'Dispositions', category: 'Transaction coordination' }
+function defaultsForContext(context: string): { kind: AndonIssueKind; workstream: AndonWorkArea; category: string } {
+  if (context === 'Google Ads') return { kind: 'process', workstream: 'Marketing', category: 'PPC Landing Page' }
+  if (context === 'Dispositions / Closing') return { kind: 'process', workstream: 'Dispositions', category: 'Cash Buyer Email Blast' }
   if (['Contacts', 'Lead details', 'Conversations', 'Dialer', 'Calendar', 'Tasks'].includes(context)) {
-    return { kind: 'process', workstream: 'Acquisitions', category: 'Lead intake and assignment' }
+    return { kind: 'process', workstream: 'Acquisitions', category: 'AI Text Bot Sequence' }
   }
-  if (context === 'Workflows') return { kind: 'system', workstream: 'Workflows and automation', category: 'Trigger' }
-  if (context === 'Integrations') return { kind: 'system', workstream: 'Integrations', category: 'Other integration' }
-  if (['Dashboard', 'Reports'].includes(context)) return { kind: 'data', workstream: 'Reporting', category: 'Incorrect metric' }
-  return { kind: 'system', workstream: 'CRM experience', category: 'Navigation or page' }
+  if (context === 'Workflows') return { kind: 'system', workstream: 'Acquisitions', category: 'Callback Automation' }
+  if (context === 'Integrations') return { kind: 'system', workstream: 'Marketing', category: 'Skip Tracing Sync' }
+  if (['Dashboard', 'Reports'].includes(context)) return { kind: 'data', workstream: 'Marketing', category: 'List Import Error' }
+  return { kind: 'system', workstream: 'Acquisitions', category: 'Cold Dialer Lag' }
 }
 
 export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) {
@@ -47,19 +51,15 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const workstreams = Object.keys(ANDON_CASCADES[issueKind])
-  const categories = workstream ? ANDON_CASCADES[issueKind][workstream] ?? [] : []
+  const categories = ANDON_PROCESS_CASCADES[workstream] ?? []
 
   function chooseKind(nextKind: AndonIssueKind) {
-    const nextWorkstream = Object.keys(ANDON_CASCADES[nextKind])[0] ?? ''
     setIssueKind(nextKind)
-    setWorkstream(nextWorkstream)
-    setCategory(nextWorkstream ? ANDON_CASCADES[nextKind][nextWorkstream]?.[0] ?? '' : '')
   }
 
-  function chooseWorkstream(nextWorkstream: string) {
+  function chooseWorkstream(nextWorkstream: AndonWorkArea) {
     setWorkstream(nextWorkstream)
-    setCategory(ANDON_CASCADES[issueKind][nextWorkstream]?.[0] ?? '')
+    setCategory(ANDON_PROCESS_CASCADES[nextWorkstream]?.[0] ?? '')
   }
 
   function updateWhy(index: number, value: string) {
@@ -73,6 +73,7 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
     setLoading(true)
     setError('')
     try {
+      const recordContext = extractAndonRecordContext(window.location.href)
       const response = await fetch('/api/feedback/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -84,6 +85,9 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
           five_whys: fiveWhys,
           priority,
           page_url: window.location.href,
+          record_id: recordContext.recordId,
+          record_type: recordContext.recordType,
+          record_url: recordContext.recordUrl,
           user_agent: navigator.userAgent,
         }),
       })
@@ -116,7 +120,7 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
         <form onSubmit={handleSubmit} className="space-y-4">
           <fieldset>
             <legend className="mb-2 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">1. What needs attention?</legend>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
               {ANDON_ISSUE_KINDS.map((kind) => (
                 <button key={kind} type="button" aria-pressed={issueKind === kind} onClick={() => chooseKind(kind)} className={`rounded-xl border px-2 py-3 text-xs font-bold transition-colors ${issueKind === kind ? 'border-[var(--crm-danger)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)] hover:border-[var(--crm-border-strong)]'}`}>
                   <Icon name={KIND_ICONS[kind]} className="mr-1.5 inline text-[17px]" />{ANDON_KIND_LABELS[kind]}
@@ -128,8 +132,8 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
               2. Core work area
-              <select aria-label="Core work area" value={workstream} onChange={(event) => chooseWorkstream(event.target.value)} required className="crm-field mt-2 h-11 w-full rounded-lg px-3 text-sm font-semibold normal-case tracking-normal outline-none focus:ring-2 focus:ring-[var(--crm-info)]/25">
-                {workstreams.map((option) => <option key={option} value={option}>{option}</option>)}
+              <select aria-label="Core work area" value={workstream} onChange={(event) => chooseWorkstream(event.target.value as AndonWorkArea)} required className="crm-field mt-2 h-11 w-full rounded-lg px-3 text-sm font-semibold normal-case tracking-normal outline-none focus:ring-2 focus:ring-[var(--crm-info)]/25">
+                {ANDON_WORK_AREAS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
             </label>
             <label className="block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
@@ -160,7 +164,7 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
             </div>
           </details>
 
-          <div className="rounded-lg bg-[var(--crm-info-soft)] p-3 text-xs text-[var(--crm-text-muted)]"><Icon name="info" size="text-sm" className="mr-1 inline text-[var(--crm-info)]" /><strong>Included automatically:</strong> current page, timestamp, signed-in agent, and browser.</div>
+          <div className="rounded-lg bg-[var(--crm-info-soft)] p-3 text-xs text-[var(--crm-text-muted)]"><Icon name="info" size="text-sm" className="mr-1 inline text-[var(--crm-info)]" /><strong>Included automatically:</strong> exact CRM record URL, Lead or Property ID when present, timestamp, signed-in agent, and browser.</div>
           {error ? <div role="alert" className="rounded-lg border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--crm-danger)]">{error}</div> : null}
 
           <div className="flex gap-3 pt-1">

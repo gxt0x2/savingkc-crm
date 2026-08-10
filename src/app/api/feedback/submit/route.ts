@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { createClient } from '@/lib/supabase/server'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { ensureAndonStorage } from '@/lib/andon-storage'
 import {
   ANDON_PRIORITIES,
   encodeLegacyAndon,
@@ -35,6 +36,10 @@ export async function POST(req: NextRequest) {
     const description = cleanText(body.description, 5000)
     const priority = cleanText(body.priority, 20)
     const page_url = cleanText(body.page_url, 1000)
+    const record_id = cleanText(body.record_id, 200) || null
+    const requestedRecordType = cleanText(body.record_type, 30)
+    const record_type = ['lead', 'property'].includes(requestedRecordType) ? requestedRecordType : null
+    const record_url = cleanText(body.record_url, 1000) || page_url || null
     const user_agent = cleanText(body.user_agent, 1000)
     const screenshot_url = cleanText(body.screenshot_url, 1000) || null
     const five_whys = Array.isArray(body.five_whys)
@@ -65,6 +70,11 @@ export async function POST(req: NextRequest) {
       five_whys,
       priority,
       page_url,
+      record_id,
+      record_type,
+      record_url,
+      assignee: null,
+      estimated_resolution_at: null,
       user_agent,
       agent_id: user.id,
       agent_name: agent.displayName,
@@ -78,10 +88,24 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
 
-    const missingStructuredColumns = error && (
+    let missingStructuredColumns = error && (
       error.code === 'PGRST204' ||
-      /issue_kind|department|category|five_whys|schema cache|column/i.test(error.message ?? '')
+      /issue_kind|department|category|five_whys|record_id|record_type|record_url|assignee|estimated_resolution_at|schema cache|column/i.test(error.message ?? '')
     )
+
+    if (missingStructuredColumns && await ensureAndonStorage()) {
+      const repaired = await supabase
+        .from('feedback_submissions')
+        .insert(extendedPayload)
+        .select()
+        .single()
+      data = repaired.data
+      error = repaired.error
+      missingStructuredColumns = error && (
+        error.code === 'PGRST204' ||
+        /issue_kind|department|category|five_whys|record_id|record_type|record_url|assignee|estimated_resolution_at|schema cache|column/i.test(error.message ?? '')
+      )
+    }
 
     if (missingStructuredColumns) {
       const fallback = await supabase
@@ -106,7 +130,11 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('Error submitting feedback:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      const storageMissing = error.code === 'PGRST205' || /feedback_submissions.*schema cache|could not find the table/i.test(error.message ?? '')
+      return NextResponse.json(
+        { error: storageMissing ? 'Andon storage is not initialized. Apply the Andon operating-system migration.' : error.message },
+        { status: storageMissing ? 503 : 500 },
+      )
     }
 
     return NextResponse.json({

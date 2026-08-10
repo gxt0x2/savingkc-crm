@@ -49,8 +49,9 @@ describe('workspace dashboard navigation', () => {
 
     expect(screen.getByRole('dialog', { name: 'Report an issue' })).toBeVisible()
     expect(screen.getByRole('button', { name: /Process issue/ })).toBeVisible()
-    expect(screen.getByRole('combobox', { name: 'Core work area' })).toHaveValue('Reporting')
-    expect(screen.getByRole('combobox', { name: 'Specific process' })).toHaveValue('Incorrect metric')
+    expect(screen.getByRole('button', { name: /AI Glitch/ })).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Core work area' })).toHaveValue('Marketing')
+    expect(screen.getByRole('combobox', { name: 'Specific process' })).toHaveValue('List Import Error')
     expect(screen.getByRole('textbox', { name: 'What happened' })).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Why 5' })).toBeVisible()
   })

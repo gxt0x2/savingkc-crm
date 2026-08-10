@@ -70,7 +70,7 @@ export function ExecutiveDashboard({
           {cards.map((card) => <CeoMetricCard key={card.label} {...card} />)}
         </section>
 
-        <section aria-label="Department operating flow" className="grid gap-2.5 xl:grid-cols-2 2xl:h-[230px] 2xl:grid-cols-4">
+        <section aria-label="Department operating flow" className="grid auto-rows-fr gap-2.5 xl:grid-cols-2 2xl:grid-cols-4">
           <MarketingPerformance report={report} />
           <AcquisitionsPerformance report={report} />
           <DispositionsPerformance report={report} />
@@ -128,7 +128,7 @@ function CeoMetricCard({ icon, label, value, numericValue, detail, tone, href, s
 function DashboardPanel({ title, period, tone, href, children }: { title: string; period?: string; tone: Tone; href: string; children: React.ReactNode }) {
   const palette = TONES[tone]
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-[0_1px_3px_rgba(16,24,40,.05)]">
+    <section className="flex min-h-[260px] flex-col overflow-hidden rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-[0_1px_3px_rgba(16,24,40,.05)]">
       <header className="flex h-8 shrink-0 items-center justify-between px-3" style={{ background: `color-mix(in srgb, ${palette.color} 7%, var(--crm-surface))` }}>
         <div className="flex items-baseline gap-1"><h2 className="text-[10px] font-extrabold uppercase tracking-[0.035em]" style={{ color: palette.color }}>{title}</h2>{period ? <span className="text-[9px] font-medium text-[var(--crm-text-muted)]">({period})</span> : null}</div>
         <Link href={href} aria-label={`Open ${title}`} className="text-[9px] font-bold text-[var(--crm-info)] hover:underline">View dashboard <Icon name="arrow_forward" className="text-[11px]" /></Link>
@@ -189,7 +189,7 @@ function DispositionsPerformance({ report }: { report: OperatingReport }) {
 }
 
 function MarketingPerformance({ report }: { report: OperatingReport }) {
-  const sources = report.marketing.sources.slice(0, 4)
+  const sources = report.marketing.sources.slice(0, 5)
   return (
     <DashboardPanel title="Marketing" period="Selected period" tone="violet" href="/reports/marketing">
       <div className="grid h-full min-h-0 grid-rows-[78px_1fr] divide-y divide-[var(--crm-border)]">
