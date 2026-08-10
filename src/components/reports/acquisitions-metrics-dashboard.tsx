@@ -19,9 +19,9 @@ const TONES: Record<Tone, { color: string; icon: string }> = {
 const SOURCE_COLORS = ['#1769e0', '#6d28d9', '#0b9348', '#f05a28', '#e3a008', '#078b87', '#d62937']
 const ACQUISITION_SOURCE_CHANNELS = [
   { key: 'google_general', label: 'Google - General' },
-  { key: 'google_tax_delinquent', label: 'Google - Tax Delinquent' },
+  { key: 'google_tax_delinquent', label: 'Google - Tax' },
   { key: 'cold_calls', label: 'Cold Calls' },
-  { key: 'sms_outreach', label: 'SMS Outreach' },
+  { key: 'sms_outreach', label: 'Cold SMS' },
   { key: 'youtube', label: 'YouTube' },
 ] as const
 type AcquisitionSourceChannel = (typeof ACQUISITION_SOURCE_CHANNELS)[number]['key']
