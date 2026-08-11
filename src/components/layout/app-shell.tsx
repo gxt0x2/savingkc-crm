@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
-import type { CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -47,23 +46,6 @@ function getServerHydrationSnapshot() {
   return false
 }
 
-const TC_LIGHT_THEME = {
-  '--ck-bg': '#f6f7f9',
-  '--ck-surface': '#ffffff',
-  '--ck-surface-elev': '#f8fafc',
-  '--ck-surface-hi': '#eef2f7',
-  '--ck-border': '#d8dee9',
-  '--ck-border-strong': '#cad2df',
-  '--ck-text': '#111827',
-  '--ck-text-muted': '#4b5565',
-  '--ck-text-dim': '#7a8494',
-  '--ck-accent': '#E32E2E',
-  '--ck-accent-bright': '#c42626',
-  '--ck-warn': '#f59e0b',
-  '--ck-success': '#16a34a',
-  '--ck-info': '#2563eb',
-} as CSSProperties
-
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
@@ -106,12 +88,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     isModernDispo ||
     (pathname?.startsWith('/dashboard') ?? false) ||
     isAcquisitionsSettings
-  const isTcCalendar = mode === 'tc' && (pathname?.startsWith('/calendar') ?? false)
-  const isTcSettings = (pathname?.startsWith('/settings') ?? false) && (mode === 'tc' || searchParams.get('portal') === 'tc')
-  const useTcLightTheme = hydrated && (isTcCalendar || isTcSettings)
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
-  const useUserLightTheme = hydrated && !useTcLightTheme && userTheme === 'light'
-  const useLightLogo = useTcLightTheme || useUserLightTheme
+  const useUserLightTheme = hydrated && userTheme === 'light'
+  const useLightLogo = useUserLightTheme
   // The dedicated /dialer workspace already has its own call context and
   // progress UI. Keep the softphone docked there so closing a disposition does
   // not re-open a full-screen dialer over the heir queue.
@@ -120,15 +99,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const html = document.documentElement
     const body = document.body
-
-    if (useTcLightTheme) {
-      html.classList.remove('dark', 'theme-light')
-      body.classList.remove('ck-dark', 'bg-background', 'text-on-surface')
-      html.style.colorScheme = 'light'
-      body.style.background = '#f6f7f9'
-      body.style.color = '#111827'
-      return
-    }
 
     if (useUserLightTheme) {
       html.classList.remove('dark')
@@ -146,7 +116,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     html.style.colorScheme = 'dark'
     body.style.background = ''
     body.style.color = ''
-  }, [useTcLightTheme, useUserLightTheme])
+  }, [useUserLightTheme])
 
   function routeForMode(nextMode: typeof mode) {
     if (nextMode === 'dispositions') return '/dispo/pipeline'
@@ -312,8 +282,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div
       suppressHydrationWarning
-      className={`min-h-screen flex flex-col ${useTcLightTheme ? 'bg-[#f6f7f9] text-[#111827]' : 'lead-cockpit'}`}
-      style={useTcLightTheme ? TC_LIGHT_THEME : undefined}
+      className="min-h-screen flex flex-col lead-cockpit"
     >
       {/* Top Navbar */}
       <header
@@ -412,17 +381,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   'bg-transparent ring-0'
                 }`} />
               </button>
-              {!useTcLightTheme && (
-                <button
-                  type="button"
-                  onClick={toggleTheme}
-                  className="w-10 h-10 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] flex items-center justify-center transition-colors"
-                  aria-label={userTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-                  title={userTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-                >
-                  <HeaderSvg name={userTheme === 'dark' ? 'sun' : 'moon'} className="h-5 w-5 text-[var(--ck-text)]" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="w-10 h-10 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] flex items-center justify-center transition-colors"
+                aria-label={userTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                title={userTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              >
+                <HeaderSvg name={userTheme === 'dark' ? 'sun' : 'moon'} className="h-5 w-5 text-[var(--ck-text)]" />
+              </button>
               <NotificationBell />
               <div className="relative" ref={profileMenuRef}>
                 {profilePhotoUrl ? (

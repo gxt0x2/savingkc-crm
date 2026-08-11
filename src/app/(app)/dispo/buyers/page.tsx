@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
+import { BuyersView } from '@/components/dispo/buyers-view'
 
-export default function BuyersRedirect() {
-  redirect('/dispo/contacts?tab=buyers')
+export default function BuyersPage() {
+  return <BuyersView />
 }

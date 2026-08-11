@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
+import { VendorsView } from '@/components/dispo/vendors-view'
 
-export default function VendorsRedirect() {
-  redirect('/dispo/contacts?tab=vendors')
+export default function VendorsPage() {
+  return <VendorsView />
 }

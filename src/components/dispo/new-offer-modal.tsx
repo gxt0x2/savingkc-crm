@@ -136,8 +136,8 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
     }
   }
 
-  const input = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 transition-colors bg-white'
-  const label = 'block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1'
+  const input = 'w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-[var(--crm-danger-border)] transition-colors bg-[var(--crm-surface)]'
+  const label = 'block text-[11px] font-semibold text-[var(--crm-text)] uppercase tracking-wider mb-1'
 
   return (
     <div
@@ -147,31 +147,31 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
       <form
         onSubmit={handleSubmit}
         onClick={e => e.stopPropagation()}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="bg-[var(--crm-surface)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">New Offer</h2>
-          <button type="button" onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg text-slate-500">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)]">
+          <h2 className="text-lg font-bold text-[var(--crm-ink)]">New Offer</h2>
+          <button type="button" onClick={onClose} className="p-1 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-muted)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
 
         <div className="px-6 py-5 space-y-5">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
+            <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{error}</div>
           )}
 
           {/* Lead selector */}
           <div>
             <label className={label}>Lead / Property *</label>
             {selectedLead ? (
-              <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <div className="flex items-center justify-between bg-[var(--crm-surface-subtle)] border border-[var(--crm-border)] rounded-lg px-3 py-2">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">{selectedLead.property_address || selectedLead.full_name}</p>
-                  <p className="text-xs text-slate-500">{[selectedLead.city, selectedLead.state].filter(Boolean).join(', ')} · {selectedLead.full_name}</p>
+                  <p className="text-sm font-semibold text-[var(--crm-ink)]">{selectedLead.property_address || selectedLead.full_name}</p>
+                  <p className="text-xs text-[var(--crm-text-muted)]">{[selectedLead.city, selectedLead.state].filter(Boolean).join(', ')} · {selectedLead.full_name}</p>
                 </div>
-                <button type="button" onClick={() => { setSelectedLead(null); setLeadQuery('') }} className="text-xs text-red-600 font-semibold">Change</button>
+                <button type="button" onClick={() => { setSelectedLead(null); setLeadQuery('') }} className="text-xs text-[var(--crm-danger)] font-semibold">Change</button>
               </div>
             ) : (
               <>
@@ -183,16 +183,16 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
                   className={input}
                 />
                 {leadResults.length > 0 && (
-                  <div className="mt-1 border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                  <div className="mt-1 border border-[var(--crm-border)] rounded-lg divide-y divide-[var(--crm-border)] max-h-48 overflow-y-auto">
                     {leadResults.map(l => (
                       <button
                         key={l.id}
                         type="button"
                         onClick={() => { setSelectedLead(l); setLeadResults([]); setLeadQuery('') }}
-                        className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                        className="w-full text-left px-3 py-2 hover:bg-[var(--crm-surface-subtle)]"
                       >
-                        <p className="text-sm font-semibold text-slate-900">{l.property_address || l.full_name}</p>
-                        <p className="text-xs text-slate-500">{[l.city, l.state].filter(Boolean).join(', ')} · {l.full_name}</p>
+                        <p className="text-sm font-semibold text-[var(--crm-ink)]">{l.property_address || l.full_name}</p>
+                        <p className="text-xs text-[var(--crm-text-muted)]">{[l.city, l.state].filter(Boolean).join(', ')} · {l.full_name}</p>
                       </button>
                     ))}
                   </div>
@@ -205,20 +205,20 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
           <div>
             <label className={label}>Buyer *</label>
             {selectedBuyer ? (
-              <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <div className="flex items-center justify-between bg-[var(--crm-surface-subtle)] border border-[var(--crm-border)] rounded-lg px-3 py-2">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">
+                  <p className="text-sm font-semibold text-[var(--crm-ink)]">
                     {selectedBuyer.name || selectedBuyer.company || 'Buyer'}
                   </p>
-                  <p className="text-xs text-slate-500">{selectedBuyer.email || selectedBuyer.phone}</p>
+                  <p className="text-xs text-[var(--crm-text-muted)]">{selectedBuyer.email || selectedBuyer.phone}</p>
                 </div>
-                <button type="button" onClick={() => { setSelectedBuyer(null); setBuyerQuery('') }} className="text-xs text-red-600 font-semibold">Change</button>
+                <button type="button" onClick={() => { setSelectedBuyer(null); setBuyerQuery('') }} className="text-xs text-[var(--crm-danger)] font-semibold">Change</button>
               </div>
             ) : newBuyerMode ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-slate-700">New buyer details</span>
-                  <button type="button" onClick={() => setNewBuyerMode(false)} className="text-xs text-[#E32E2E] font-semibold">Search existing instead</button>
+                  <span className="text-xs font-semibold text-[var(--crm-text)]">New buyer details</span>
+                  <button type="button" onClick={() => setNewBuyerMode(false)} className="text-xs text-[var(--crm-brand)] font-semibold">Search existing instead</button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <input className={input} placeholder="Name *" value={form.buyer_name} onChange={e => set('buyer_name', e.target.value)} />
@@ -237,23 +237,23 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
                     placeholder="Search buyers by name, phone, email…"
                     className={input}
                   />
-                  <button type="button" onClick={() => setNewBuyerMode(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 rounded-lg whitespace-nowrap">
+                  <button type="button" onClick={() => setNewBuyerMode(true)} className="bg-[var(--crm-surface-subtle)] hover:bg-[var(--crm-surface-subtle)] text-[var(--crm-text)] text-xs font-semibold px-3 rounded-lg whitespace-nowrap">
                     + New
                   </button>
                 </div>
                 {buyerResults.length > 0 && (
-                  <div className="mt-1 border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                  <div className="mt-1 border border-[var(--crm-border)] rounded-lg divide-y divide-[var(--crm-border)] max-h-48 overflow-y-auto">
                     {buyerResults.map(b => (
                       <button
                         key={b.id}
                         type="button"
                         onClick={() => { setSelectedBuyer(b); setBuyerResults([]); setBuyerQuery('') }}
-                        className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                        className="w-full text-left px-3 py-2 hover:bg-[var(--crm-surface-subtle)]"
                       >
-                        <p className="text-sm font-semibold text-slate-900">
+                        <p className="text-sm font-semibold text-[var(--crm-ink)]">
                           {b.name || b.company || 'Buyer'}
                         </p>
-                        <p className="text-xs text-slate-500">{b.email || b.phone}</p>
+                        <p className="text-xs text-[var(--crm-text-muted)]">{b.email || b.phone}</p>
                       </button>
                     ))}
                   </div>
@@ -267,7 +267,7 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
             <div>
               <label className={label}>Offer Amount *</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-dim)] text-sm">$</span>
                 <input
                   type="number"
                   required
@@ -282,7 +282,7 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
             <div>
               <label className={label}>Earnest Money</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-dim)] text-sm">$</span>
                 <input
                   type="number"
                   min={0}
@@ -335,14 +335,14 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50">
-          <button type="button" onClick={onClose} className="text-sm font-semibold text-slate-600 hover:text-slate-900 px-4 py-2">
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
+          <button type="button" onClick={onClose} className="text-sm font-semibold text-[var(--crm-text)] hover:text-[var(--crm-ink)] px-4 py-2">
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="bg-[#E32E2E] hover:bg-[#c72626] text-white text-sm font-bold px-5 py-2 rounded-lg disabled:opacity-50 transition-colors"
+            className="bg-[var(--crm-brand)] hover:bg-[var(--crm-brand-hover)] text-[var(--crm-on-brand)] text-sm font-bold px-5 py-2 rounded-lg disabled:opacity-50 transition-colors"
           >
             {submitting ? 'Saving…' : 'Create Offer'}
           </button>

@@ -81,12 +81,12 @@ export function AssignmentPreviewModal({ offer, onClose, onSent }: Props) {
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="bg-[var(--ck-surface)] border border-[var(--ck-border)] rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] max-h-[1000px] flex flex-col"
+        className="bg-[var(--crm-surface)] border border-[var(--crm-border)] rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] max-h-[1000px] flex flex-col"
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--ck-border)]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)]">
           <div>
-            <h2 className="text-lg font-bold text-[var(--ck-text)]">Send Assignment Contract</h2>
-            <p className="text-xs text-[var(--ck-text-muted)] mt-0.5">
+            <h2 className="text-lg font-bold text-[var(--crm-ink)]">Send Assignment Contract</h2>
+            <p className="text-xs text-[var(--crm-text-muted)] mt-0.5">
               {offer.buyer?.name || 'Buyer'} · {offer.lead?.property_address || 'Property'}
               {preview?.assigneeEmail && (
                 <span className="ml-2">· will email {preview.assigneeEmail}</span>
@@ -96,21 +96,21 @@ export function AssignmentPreviewModal({ offer, onClose, onSent }: Props) {
           <button
             type="button"
             onClick={handleCancel}
-            className="p-1.5 rounded-lg text-[var(--ck-text-muted)] hover:bg-[var(--ck-surface-hi)]"
+            className="p-1.5 rounded-lg text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface-subtle)]"
           >
             <Icon name="close" size="text-lg" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-hidden bg-white relative">
+        <div className="flex-1 overflow-hidden bg-[var(--crm-surface)] relative">
           {loading ? (
-            <div className="h-full flex items-center justify-center text-slate-500 text-sm">
+            <div className="h-full flex items-center justify-center text-[var(--crm-text-muted)] text-sm">
               <Icon name="hourglass_top" size="text-xl" className="mr-2 animate-spin" />
               Generating preview…
             </div>
           ) : error ? (
             <div className="h-full flex items-center justify-center p-8">
-              <div className="bg-[#E32E2E]/10 border border-[#E32E2E]/40 text-[var(--ck-accent-bright)] rounded-lg px-4 py-3 max-w-md">
+              <div className="bg-[var(--crm-brand)]/10 border border-[var(--crm-brand)]/40 text-[var(--crm-brand)] rounded-lg px-4 py-3 max-w-md">
                 {error}
               </div>
             </div>
@@ -125,7 +125,7 @@ export function AssignmentPreviewModal({ offer, onClose, onSent }: Props) {
                 href={preview.embedSrc}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="absolute top-3 right-3 inline-flex items-center gap-1.5 bg-[var(--ck-surface)] border border-[var(--ck-border-strong)] hover:border-[#E32E2E]/50 text-[var(--ck-text)] hover:text-[var(--ck-accent-bright)] rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors shadow-lg"
+                className="absolute top-3 right-3 inline-flex items-center gap-1.5 bg-[var(--crm-surface)] border border-[var(--crm-border-strong)] hover:border-[var(--crm-brand)]/50 text-[var(--crm-ink)] hover:text-[var(--crm-brand)] rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors shadow-lg"
                 title="Open in a new tab for a larger view"
               >
                 <Icon name="open_in_new" size="text-sm" />
@@ -133,21 +133,21 @@ export function AssignmentPreviewModal({ offer, onClose, onSent }: Props) {
               </a>
             </>
           ) : (
-            <div className="h-full flex items-center justify-center text-slate-500 text-sm p-8">
+            <div className="h-full flex items-center justify-center text-[var(--crm-text-muted)] text-sm p-8">
               Preview unavailable — open directly in DocuSeal to verify.
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
-          <p className="text-xs text-[var(--ck-text-muted)]">
+        <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-[var(--crm-border)] bg-[var(--crm-surface-raised)]">
+          <p className="text-xs text-[var(--crm-text-muted)]">
             Sign as Assignor above. Clicking Send will email the buyer their signing link.
           </p>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleCancel}
-              className="text-sm font-semibold text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] px-4 py-2"
+              className="text-sm font-semibold text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)] px-4 py-2"
             >
               Cancel
             </button>
@@ -155,7 +155,7 @@ export function AssignmentPreviewModal({ offer, onClose, onSent }: Props) {
               type="button"
               onClick={handleSend}
               disabled={loading || sending || !!error}
-              className="flex items-center gap-2 bg-[#E32E2E] hover:bg-[#c72626] text-white text-sm font-bold px-5 py-2 rounded-lg disabled:opacity-50 transition-colors"
+              className="flex items-center gap-2 bg-[var(--crm-brand)] hover:bg-[var(--crm-brand-hover)] text-[var(--crm-on-brand)] text-sm font-bold px-5 py-2 rounded-lg disabled:opacity-50 transition-colors"
             >
               <Icon name="send" size="text-sm" />
               {sending ? 'Sending…' : 'Send to Buyer'}

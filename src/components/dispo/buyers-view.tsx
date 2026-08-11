@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 import { cn, formatCurrency } from '@/lib/utils'
 import {
   useBuyers,
@@ -32,18 +33,18 @@ function formatBuyBox(bb: BuyBox): string {
 
 function tierBadge(tier: string) {
   const map: Record<string, string> = {
-    VIP: 'bg-[#fff8db] text-[#8a5a00]',
-    Standard: 'bg-[#e8f4ff] text-[#075985]',
-    New: 'bg-[#eef2f7] text-[#4b5565]',
+    VIP: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+    Standard: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]',
+    New: 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]',
   }
-  return map[tier] ?? 'bg-slate-100 text-slate-600'
+  return map[tier] ?? 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text)]'
 }
 
 function statusDot(status: Buyer['status']) {
   const map: Record<Buyer['status'], string> = {
-    active: 'bg-emerald-500',
-    inactive: 'bg-slate-400',
-    blacklisted: 'bg-red-500',
+    active: 'bg-[var(--crm-success-soft)]',
+    inactive: 'bg-[var(--crm-surface-raised)]',
+    blacklisted: 'bg-[var(--crm-danger-soft)]',
   }
   return map[status]
 }
@@ -121,32 +122,32 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">Add Buyer</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+      <div className="bg-[var(--crm-surface)] rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)]">
+          <h2 className="text-lg font-bold text-[var(--crm-ink)]">Add Buyer</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
+            <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{error}</div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">First Name *</label>
+              <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">First Name *</label>
               <input
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 value={form.first_name}
                 onChange={e => set('first_name', e.target.value)}
                 placeholder="John"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Last Name *</label>
+              <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Last Name *</label>
               <input
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 value={form.last_name}
                 onChange={e => set('last_name', e.target.value)}
                 placeholder="Smith"
@@ -155,9 +156,9 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Company</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Company</label>
             <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
               value={form.company_name}
               onChange={e => set('company_name', e.target.value)}
               placeholder="Smith Investments LLC"
@@ -166,20 +167,20 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Email</label>
+              <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Email</label>
               <input
                 type="email"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 value={form.email}
                 onChange={e => set('email', e.target.value)}
                 placeholder="john@example.com"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Phone</label>
+              <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Phone</label>
               <input
                 type="tel"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 value={form.phone}
                 onChange={e => set('phone', e.target.value)}
                 placeholder="816-555-0100"
@@ -187,22 +188,22 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
             </div>
           </div>
 
-          <div className="border-t border-slate-100 pt-4">
-            <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Buy Box</p>
+          <div className="border-t border-[var(--crm-border)] pt-4">
+            <p className="text-xs font-bold text-[var(--crm-text)] uppercase tracking-wider mb-3">Buy Box</p>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Zip Codes (comma-separated)</label>
+                <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Zip Codes (comma-separated)</label>
                 <input
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                   value={form.zip_codes}
                   onChange={e => set('zip_codes', e.target.value)}
                   placeholder="64112, 64113, 64114"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Cities (comma-separated)</label>
+                <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Cities (comma-separated)</label>
                 <input
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                   value={form.cities}
                   onChange={e => set('cities', e.target.value)}
                   placeholder="Kansas City, Lee's Summit"
@@ -210,20 +211,20 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Min Price</label>
+                  <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Min Price</label>
                   <input
                     type="number"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                    className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                     value={form.price_min}
                     onChange={e => set('price_min', e.target.value)}
                     placeholder="50000"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Max Price</label>
+                  <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Max Price</label>
                   <input
                     type="number"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                    className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                     value={form.price_max}
                     onChange={e => set('price_max', e.target.value)}
                     placeholder="300000"
@@ -231,7 +232,7 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Property Types</label>
+                <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Property Types</label>
                 <div className="flex flex-wrap gap-2">
                   {PROPERTY_TYPES.map(pt => (
                     <button
@@ -241,8 +242,8 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
                       className={cn(
                         'px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
                         form.property_types.includes(pt)
-                          ? 'bg-[#E32E2E] text-white border-[#E32E2E]'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-[#E32E2E]/50'
+                          ? 'bg-[var(--crm-brand)] text-[var(--crm-on-brand)] border-[var(--crm-brand)]'
+                          : 'bg-[var(--crm-surface)] text-[var(--crm-text)] border-[var(--crm-border)] hover:border-[var(--crm-brand)]/50'
                       )}
                     >
                       {pt}
@@ -254,9 +255,9 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Funding Type</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Funding Type</label>
             <select
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
               value={form.funding_type}
               onChange={e => set('funding_type', e.target.value)}
             >
@@ -266,9 +267,9 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Tags (comma-separated)</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Tags (comma-separated)</label>
             <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
               value={form.tags}
               onChange={e => set('tags', e.target.value)}
               placeholder="cash buyer, repeat, kcmo"
@@ -276,9 +277,9 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Notes</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Notes</label>
             <textarea
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none"
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 resize-none"
               rows={3}
               value={form.notes}
               onChange={e => set('notes', e.target.value)}
@@ -290,14 +291,14 @@ function AddBuyerModal({ onClose, onSuccess }: AddBuyerModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold"
+              className="flex-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={createBuyer.isPending}
-              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
+              className="flex-1 bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
             >
               {createBuyer.isPending ? 'Saving…' : 'Add Buyer'}
             </button>
@@ -359,35 +360,35 @@ function ImportBuyerModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">Import Buyers CSV</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+      <div className="bg-[var(--crm-surface)] rounded-xl shadow-2xl w-full max-w-lg mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)]">
+          <h2 className="text-lg font-bold text-[var(--crm-ink)]">Import Buyers CSV</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
         <div className="px-6 py-4 space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
+            <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{error}</div>
           )}
 
           {result ? (
             <div className="space-y-3">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-sm font-semibold text-green-800 mb-1">Import Complete</p>
-                <p className="text-sm text-green-700">{result.imported} imported, {result.skipped} skipped</p>
+              <div className="bg-[var(--crm-success-soft)] border border-[var(--crm-success-border)] rounded-lg p-4">
+                <p className="text-sm font-semibold text-[var(--crm-success)] mb-1">Import Complete</p>
+                <p className="text-sm text-[var(--crm-success)]">{result.imported} imported, {result.skipped} skipped</p>
               </div>
               {result.errors.length > 0 && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 max-h-40 overflow-y-auto">
-                  <p className="text-xs font-semibold text-amber-300 mb-1">Errors ({result.errors.length})</p>
+                <div className="bg-[var(--crm-warning-soft)] border border-[var(--crm-warning-border)] rounded-lg p-3 max-h-40 overflow-y-auto">
+                  <p className="text-xs font-semibold text-[var(--crm-warning)] mb-1">Errors ({result.errors.length})</p>
                   {result.errors.map((err, i) => (
-                    <p key={i} className="text-xs text-amber-400">{err}</p>
+                    <p key={i} className="text-xs text-[var(--crm-warning)]">{err}</p>
                   ))}
                 </div>
               )}
               <button
                 onClick={onClose}
-                className="w-full bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold"
+                className="w-full bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2 text-sm font-semibold"
               >
                 Done
               </button>
@@ -395,31 +396,31 @@ function ImportBuyerModal({ onClose }: { onClose: () => void }) {
           ) : (
             <>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2">CSV File</label>
-                <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-[#E32E2E]/50 hover:bg-slate-50 transition-colors">
-                  <Icon name="upload_file" size="text-2xl" className="text-slate-400 mb-1" />
-                  <span className="text-sm text-slate-500">{file ? file.name : 'Click to upload CSV'}</span>
+                <label className="block text-xs font-semibold text-[var(--crm-text)] mb-2">CSV File</label>
+                <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-[var(--crm-border)] rounded-xl cursor-pointer hover:border-[var(--crm-brand)]/50 hover:bg-[var(--crm-surface-subtle)] transition-colors">
+                  <Icon name="upload_file" size="text-2xl" className="text-[var(--crm-text-dim)] mb-1" />
+                  <span className="text-sm text-[var(--crm-text-muted)]">{file ? file.name : 'Click to upload CSV'}</span>
                   <input type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
                 </label>
               </div>
 
               {preview.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-slate-600 mb-2">Preview (first 3 rows)</p>
-                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <p className="text-xs font-semibold text-[var(--crm-text)] mb-2">Preview (first 3 rows)</p>
+                  <div className="overflow-x-auto rounded-lg border border-[var(--crm-border)]">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200">
+                        <tr className="bg-[var(--crm-surface-subtle)] border-b border-[var(--crm-border)]">
                           {headers.map((h, i) => (
-                            <th key={i} className="px-2 py-1.5 text-left font-bold text-slate-600 whitespace-nowrap">{h}</th>
+                            <th key={i} className="px-2 py-1.5 text-left font-bold text-[var(--crm-text)] whitespace-nowrap">{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {rows.map((row, ri) => (
-                          <tr key={ri} className="border-b border-slate-100 last:border-0">
+                          <tr key={ri} className="border-b border-[var(--crm-border)] last:border-0">
                             {row.map((cell, ci) => (
-                              <td key={ci} className="px-2 py-1.5 text-slate-600 whitespace-nowrap max-w-[120px] truncate">{cell}</td>
+                              <td key={ci} className="px-2 py-1.5 text-[var(--crm-text)] whitespace-nowrap max-w-[120px] truncate">{cell}</td>
                             ))}
                           </tr>
                         ))}
@@ -432,14 +433,14 @@ function ImportBuyerModal({ onClose }: { onClose: () => void }) {
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={onClose}
-                  className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold"
+                  className="flex-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleImport}
                   disabled={!file || importBuyers.isPending}
-                  className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                  className="flex-1 bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
                 >
                   {importBuyers.isPending ? 'Importing…' : 'Import'}
                 </button>
@@ -508,14 +509,14 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/20" onClick={onClose} />
-      <div className="relative w-96 h-full bg-white shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative w-96 h-full bg-[var(--crm-surface)] shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--crm-border)]">
           <div>
-            <h2 className="font-bold text-slate-900 text-base">{buyer.first_name} {buyer.last_name}</h2>
-            {buyer.company_name && <p className="text-xs text-slate-500">{buyer.company_name}</p>}
+            <h2 className="font-bold text-[var(--crm-ink)] text-base">{buyer.first_name} {buyer.last_name}</h2>
+            {buyer.company_name && <p className="text-xs text-[var(--crm-text-muted)]">{buyer.company_name}</p>}
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
             <Icon name="close" />
           </button>
         </div>
@@ -523,23 +524,23 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           {/* Contact Info */}
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Contact</p>
+            <p className="text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider mb-2">Contact</p>
             <div className="space-y-1.5">
               {buyer.phone && (
-                <div className="flex items-center gap-2 text-sm text-slate-700">
-                  <Icon name="call" size="text-sm" className="text-slate-400" />
+                <div className="flex items-center gap-2 text-sm text-[var(--crm-text)]">
+                  <Icon name="call" size="text-sm" className="text-[var(--crm-text-dim)]" />
                   {buyer.phone}
                 </div>
               )}
               {buyer.phone_2 && (
-                <div className="flex items-center gap-2 text-sm text-slate-700">
-                  <Icon name="phone_forwarded" size="text-sm" className="text-slate-400" />
+                <div className="flex items-center gap-2 text-sm text-[var(--crm-text)]">
+                  <Icon name="phone_forwarded" size="text-sm" className="text-[var(--crm-text-dim)]" />
                   {buyer.phone_2}
                 </div>
               )}
               {buyer.email && (
-                <div className="flex items-center gap-2 text-sm text-slate-700">
-                  <Icon name="mail" size="text-sm" className="text-slate-400" />
+                <div className="flex items-center gap-2 text-sm text-[var(--crm-text)]">
+                  <Icon name="mail" size="text-sm" className="text-[var(--crm-text-dim)]" />
                   {buyer.email}
                 </div>
               )}
@@ -548,40 +549,40 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
 
           {/* Buy Box */}
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Buy Box</p>
-            <div className="bg-slate-50 rounded-lg p-3 space-y-1.5 text-sm text-slate-700">
+            <p className="text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider mb-2">Buy Box</p>
+            <div className="bg-[var(--crm-surface-subtle)] rounded-lg p-3 space-y-1.5 text-sm text-[var(--crm-text)]">
               {bb.zip_codes?.length ? (
-                <div><span className="text-xs font-semibold text-slate-500">Zips: </span>{bb.zip_codes.join(', ')}</div>
+                <div><span className="text-xs font-semibold text-[var(--crm-text-muted)]">Zips: </span>{bb.zip_codes.join(', ')}</div>
               ) : null}
               {bb.cities?.length ? (
-                <div><span className="text-xs font-semibold text-slate-500">Cities: </span>{bb.cities.join(', ')}</div>
+                <div><span className="text-xs font-semibold text-[var(--crm-text-muted)]">Cities: </span>{bb.cities.join(', ')}</div>
               ) : null}
               {(bb.price_min != null || bb.price_max != null) && (
                 <div>
-                  <span className="text-xs font-semibold text-slate-500">Price: </span>
+                  <span className="text-xs font-semibold text-[var(--crm-text-muted)]">Price: </span>
                   {bb.price_min != null ? formatCurrency(bb.price_min) : '?'} – {bb.price_max != null ? formatCurrency(bb.price_max) : '?'}
                 </div>
               )}
               {bb.property_types?.length ? (
-                <div><span className="text-xs font-semibold text-slate-500">Types: </span>{bb.property_types.join(', ')}</div>
+                <div><span className="text-xs font-semibold text-[var(--crm-text-muted)]">Types: </span>{bb.property_types.join(', ')}</div>
               ) : null}
               {!bb.zip_codes?.length && !bb.cities?.length && !bb.price_min && !bb.price_max && (
-                <p className="text-slate-400 italic text-xs">No buy box set</p>
+                <p className="text-[var(--crm-text-dim)] italic text-xs">No buy box set</p>
               )}
             </div>
           </div>
 
           {/* Stats */}
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Stats</p>
+            <p className="text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider mb-2">Stats</p>
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-slate-50 rounded-lg p-3 text-center">
-                <p className="text-xl font-bold text-slate-900">{buyer.deals_closed}</p>
-                <p className="text-xs text-slate-500 mt-0.5">Deals Closed</p>
+              <div className="bg-[var(--crm-surface-subtle)] rounded-lg p-3 text-center">
+                <p className="text-xl font-bold text-[var(--crm-ink)]">{buyer.deals_closed}</p>
+                <p className="text-xs text-[var(--crm-text-muted)] mt-0.5">Deals Closed</p>
               </div>
-              <div className="bg-slate-50 rounded-lg p-3 text-center">
-                <p className="text-xl font-bold text-slate-900">{buyer.funding_type ?? '—'}</p>
-                <p className="text-xs text-slate-500 mt-0.5">Funding</p>
+              <div className="bg-[var(--crm-surface-subtle)] rounded-lg p-3 text-center">
+                <p className="text-xl font-bold text-[var(--crm-ink)]">{buyer.funding_type ?? '—'}</p>
+                <p className="text-xs text-[var(--crm-text-muted)] mt-0.5">Funding</p>
               </div>
             </div>
           </div>
@@ -589,9 +590,9 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
           {/* Status & Tier */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Status</label>
+              <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Status</label>
               <select
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 value={form.status}
                 onChange={e => setField('status', e.target.value)}
               >
@@ -601,9 +602,9 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Tier</label>
+              <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Tier</label>
               <select
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 value={form.tier}
                 onChange={e => setField('tier', e.target.value)}
               >
@@ -616,9 +617,9 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
 
           {/* Tags */}
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Tags (comma-separated)</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Tags (comma-separated)</label>
             <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
               value={form.tags}
               onChange={e => setField('tags', e.target.value)}
               placeholder="cash, repeat, kcmo"
@@ -627,9 +628,9 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Notes</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Notes</label>
             <textarea
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none"
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 resize-none"
               rows={4}
               value={form.notes}
               onChange={e => setField('notes', e.target.value)}
@@ -638,9 +639,9 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-slate-100 space-y-2">
+        <div className="px-5 py-4 border-t border-[var(--crm-border)] space-y-2">
           {feedback && (
-            <p className={cn('text-center text-xs font-semibold', feedback === 'Saved' ? 'text-emerald-600' : 'text-red-600')}>
+            <p className={cn('text-center text-xs font-semibold', feedback === 'Saved' ? 'text-[var(--crm-success)]' : 'text-[var(--crm-danger)]')}>
               {feedback}
             </p>
           )}
@@ -648,14 +649,14 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
             <button
               onClick={handleDelete}
               disabled={deleteBuyers.isPending}
-              className="px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-lg border border-red-200 transition-colors disabled:opacity-50"
+              className="px-3 py-2 text-sm font-semibold text-[var(--crm-danger)] hover:bg-[var(--crm-danger-soft)] rounded-lg border border-[var(--crm-danger-border)] transition-colors disabled:opacity-50"
             >
               <Icon name="delete" size="text-sm" />
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
+              className="flex-1 bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
             >
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
@@ -776,35 +777,29 @@ export function BuyersView() {
         />
       )}
 
-      {/* Header */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-primary mb-1">Buyers</h1>
-          <p className="text-slate-500 text-sm">
-            {isLoading ? 'Loading…' : `${total.toLocaleString()} buyer${total !== 1 ? 's' : ''}`}
-          </p>
-        </div>
-        <div className="flex gap-2 self-start sm:self-auto">
-          <button
-            onClick={() => setShowImport(true)}
-            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold"
-          >
-            <Icon name="upload" size="text-sm" />
-            Import CSV
-          </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold"
-          >
-            <Icon name="add" size="text-sm" />
-            Add Buyer
-          </button>
-        </div>
+      <div className="mb-5 overflow-hidden rounded-xl border border-[var(--crm-border)] shadow-[var(--crm-shadow-sm)]">
+        <DispoPageHeader
+          eyebrow="Buyer network"
+          title="Buyers"
+          description={isLoading ? 'Loading buyers…' : `${total.toLocaleString()} buyer${total !== 1 ? 's' : ''}. Find who fits the property and keep their buy box current.`}
+          actions={(
+            <>
+              <button onClick={() => setShowImport(true)} className="crm-secondary-button flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold">
+                <Icon name="upload" size="text-sm" />
+                Import
+              </button>
+              <button onClick={() => setShowAdd(true)} className="crm-primary-button flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold">
+                <Icon name="add" size="text-sm" />
+                Add buyer
+              </button>
+            </>
+          )}
+        />
       </div>
 
       {/* Search */}
       <div className="mb-4 relative max-w-sm">
-        <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+        <span className="absolute inset-y-0 left-3 flex items-center text-[var(--crm-text-dim)]">
           <Icon name="search" size="text-lg" />
         </span>
         <input
@@ -814,7 +809,7 @@ export function BuyersView() {
             setSearch(e.target.value)
             setSelectedIds(new Set())
           }}
-          className="w-full border border-slate-200 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+          className="w-full border border-[var(--crm-border)] rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
           placeholder="Search buyers by name, company, phone..."
         />
       </div>
@@ -830,15 +825,15 @@ export function BuyersView() {
               className={cn(
                 'px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
                 statusFilter === s
-                  ? 'bg-[#E32E2E] text-white'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  ? 'bg-[var(--crm-brand)] text-[var(--crm-on-brand)]'
+                  : 'bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'
               )}
             >
               {s === '' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
             </button>
           ))}
         </div>
-        <div className="w-px bg-slate-200 self-stretch" />
+        <div className="w-px bg-[var(--crm-surface-subtle)] self-stretch" />
         {/* Tier pills */}
         <div className="flex items-center gap-1">
           {(['', 'VIP', 'Standard', 'New'] as const).map(t => (
@@ -848,8 +843,8 @@ export function BuyersView() {
               className={cn(
                 'px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
                 tierFilter === t
-                  ? 'bg-[#E32E2E] text-white'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  ? 'bg-[var(--crm-brand)] text-[var(--crm-on-brand)]'
+                  : 'bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'
               )}
             >
               {t === '' ? 'All Tiers' : t}
@@ -860,51 +855,51 @@ export function BuyersView() {
 
       {/* Table */}
       {isLoading ? (
-        <div className="text-slate-400 py-16 text-center">Loading buyers...</div>
+        <div className="text-[var(--crm-text-dim)] py-16 text-center">Loading buyers...</div>
       ) : buyers.length === 0 ? (
         <div className="text-center py-16">
-          <Icon name="group" className="text-4xl text-slate-300 mb-3" />
-          <p className="text-slate-400 font-medium">No buyers found</p>
+          <Icon name="group" className="text-4xl text-[var(--crm-text-dim)] mb-3" />
+          <p className="text-[var(--crm-text-dim)] font-medium">No buyers found</p>
           <button
             onClick={() => setShowAdd(true)}
-            className="mt-4 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold"
+            className="mt-4 bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2 text-sm font-semibold"
           >
             Add your first buyer
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="bg-[var(--crm-surface)] rounded-xl border border-[var(--crm-border)] shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
+                <tr className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
                   <th className="w-10 px-3 py-3">
                     <input
                       ref={headerCheckboxRef}
                       type="checkbox"
                       checked={allSelected}
                       onChange={toggleSelectAll}
-                      className="rounded border-slate-300 cursor-pointer"
+                      className="rounded border-[var(--crm-border-strong)] cursor-pointer"
                     />
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">Company</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Phone</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Email</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden xl:table-cell">Buy Box</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Tier</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Deals</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Name</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden md:table-cell">Company</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden sm:table-cell">Phone</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden lg:table-cell">Email</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden xl:table-cell">Buy Box</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Tier</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden sm:table-cell">Deals</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--crm-border)]">
                 {buyers.map(buyer => (
                   <tr
                     key={buyer.id}
                     className={cn(
-                      'hover:bg-slate-50 transition-colors cursor-pointer',
-                      selectedIds.has(buyer.id) && 'bg-[#E32E2E]/5',
-                      selectedBuyerId === buyer.id && 'bg-[#E32E2E]/10'
+                      'hover:bg-[var(--crm-surface-subtle)] transition-colors cursor-pointer',
+                      selectedIds.has(buyer.id) && 'bg-[var(--crm-brand)]/5',
+                      selectedBuyerId === buyer.id && 'bg-[var(--crm-brand)]/10'
                     )}
                     onClick={() => setSelectedBuyerId(buyer.id === selectedBuyerId ? null : buyer.id)}
                   >
@@ -913,16 +908,16 @@ export function BuyersView() {
                         type="checkbox"
                         checked={selectedIds.has(buyer.id)}
                         onChange={() => toggleSelect(buyer.id)}
-                        className="rounded border-slate-300 cursor-pointer"
+                        className="rounded border-[var(--crm-border-strong)] cursor-pointer"
                       />
                     </td>
-                    <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">
+                    <td className="px-4 py-3 font-medium text-[var(--crm-ink)] whitespace-nowrap">
                       {buyer.first_name} {buyer.last_name}
                     </td>
-                    <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{buyer.company_name ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">{buyer.phone ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-500 hidden lg:table-cell truncate max-w-[180px]">{buyer.email ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs hidden xl:table-cell max-w-[220px] truncate">
+                    <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden md:table-cell">{buyer.company_name ?? '—'}</td>
+                    <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden sm:table-cell">{buyer.phone ?? '—'}</td>
+                    <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden lg:table-cell truncate max-w-[180px]">{buyer.email ?? '—'}</td>
+                    <td className="px-4 py-3 text-[var(--crm-text-muted)] text-xs hidden xl:table-cell max-w-[220px] truncate">
                       {formatBuyBox(buyer.buy_box ?? {})}
                     </td>
                     <td className="px-4 py-3">
@@ -930,9 +925,9 @@ export function BuyersView() {
                         {buyer.tier}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-700 font-medium hidden sm:table-cell">{buyer.deals_closed}</td>
+                    <td className="px-4 py-3 text-[var(--crm-text)] font-medium hidden sm:table-cell">{buyer.deals_closed}</td>
                     <td className="px-4 py-3">
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--crm-text)]">
                         <span className={cn('w-2 h-2 rounded-full flex-shrink-0', statusDot(buyer.status))} />
                         <span className="capitalize hidden sm:inline">{buyer.status}</span>
                       </span>
@@ -948,14 +943,14 @@ export function BuyersView() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-[var(--crm-text-muted)]">
             Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
           </p>
           <div className="flex gap-1">
             <button
               disabled={page === 1}
               onClick={() => { setPage(p => p - 1); setSelectedIds(new Set()) }}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              className="px-3 py-1.5 rounded-lg border border-[var(--crm-border)] text-sm text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] disabled:opacity-40"
             >
               <Icon name="chevron_left" size="text-sm" />
             </button>
@@ -968,8 +963,8 @@ export function BuyersView() {
                   className={cn(
                     'px-3 py-1.5 rounded-lg border text-sm font-medium',
                     page === pg
-                      ? 'bg-[#E32E2E] text-white border-[#E32E2E]'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      ? 'bg-[var(--crm-brand)] text-[var(--crm-on-brand)] border-[var(--crm-brand)]'
+                      : 'border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'
                   )}
                 >
                   {pg}
@@ -979,7 +974,7 @@ export function BuyersView() {
             <button
               disabled={page === totalPages}
               onClick={() => { setPage(p => p + 1); setSelectedIds(new Set()) }}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              className="px-3 py-1.5 rounded-lg border border-[var(--crm-border)] text-sm text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] disabled:opacity-40"
             >
               <Icon name="chevron_right" size="text-sm" />
             </button>
@@ -989,25 +984,25 @@ export function BuyersView() {
 
       {/* Floating Bulk Action Bar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white rounded-xl shadow-2xl px-5 py-3 flex items-center gap-4">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[var(--crm-surface-raised)] text-[var(--crm-on-brand)] rounded-xl shadow-2xl px-5 py-3 flex items-center gap-4">
           <span className="text-sm font-semibold whitespace-nowrap">{selectedIds.size} selected</span>
-          <div className="h-5 w-px bg-slate-600" />
+          <div className="h-5 w-px bg-[var(--crm-surface-raised)]" />
 
           <div className="relative" ref={bulkRef}>
             <button
               onClick={() => setBulkStatusOpen(v => !v)}
-              className="text-sm px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition whitespace-nowrap"
+              className="text-sm px-3 py-1.5 bg-[var(--crm-surface-raised)] hover:bg-[var(--crm-surface-raised)] rounded-lg transition whitespace-nowrap"
             >
               <Icon name="swap_horiz" size="text-sm" className="mr-1 align-middle" />
               Status
             </button>
             {bulkStatusOpen && (
-              <div className="absolute bottom-full mb-2 left-0 bg-white text-slate-900 rounded-lg shadow-xl border border-slate-200 py-1 min-w-[160px]">
+              <div className="absolute bottom-full mb-2 left-0 bg-[var(--crm-surface)] text-[var(--crm-ink)] rounded-lg shadow-xl border border-[var(--crm-border)] py-1 min-w-[160px]">
                 {(['active', 'inactive', 'blacklisted'] as Buyer['status'][]).map(s => (
                   <button
                     key={s}
                     onClick={() => handleBulkStatus(s)}
-                    className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-100 capitalize"
+                    className="block w-full text-left px-3 py-2 text-sm hover:bg-[var(--crm-surface-subtle)] capitalize"
                   >
                     {s}
                   </button>
@@ -1019,15 +1014,15 @@ export function BuyersView() {
           <button
             onClick={handleBulkDelete}
             disabled={deleteBuyers.isPending}
-            className="text-sm px-3 py-1.5 bg-red-600 hover:bg-red-500 rounded-lg transition flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50"
+            className="text-sm px-3 py-1.5 bg-[var(--crm-danger-soft)] hover:bg-[var(--crm-danger-soft)] rounded-lg transition flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50"
           >
             <Icon name="delete" size="text-sm" /> Delete
           </button>
 
-          <div className="h-5 w-px bg-slate-600" />
+          <div className="h-5 w-px bg-[var(--crm-surface-raised)]" />
           <button
             onClick={() => setSelectedIds(new Set())}
-            className="p-1.5 hover:bg-slate-700 rounded-lg transition"
+            className="p-1.5 hover:bg-[var(--crm-surface-raised)] rounded-lg transition"
             title="Clear selection"
           >
             <Icon name="close" size="text-sm" />

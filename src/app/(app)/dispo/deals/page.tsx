@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { DealPage, InspectionReport } from '@/types/dispo'
 import { DealStatsPanel } from '@/components/deals/deal-stats-panel'
+import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,9 +58,9 @@ const STEP_LABELS = ['Lead', 'Description', 'Value', 'Price', 'Info', 'Address',
 const TOTAL_STEPS = STEP_LABELS.length
 
 // Shared input class
-const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30'
-const selectCls = inputCls + ' appearance-none bg-white'
-const labelCls = 'block text-sm font-semibold text-slate-700 mb-1'
+const inputCls = 'w-full border border-[var(--crm-border)] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30'
+const selectCls = inputCls + ' appearance-none bg-[var(--crm-surface)]'
+const labelCls = 'block text-sm font-semibold text-[var(--crm-text)] mb-1'
 
 interface ManifestData {
   property?: {
@@ -567,8 +568,8 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   function renderStep0() {
     return (
       <>
-        <h3 className="text-xl font-bold text-slate-900 text-center">Select Lead</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">Which property are you creating a deal for?</p>
+        <h3 className="text-xl font-bold text-[var(--crm-ink)] text-center">Select Lead</h3>
+        <p className="text-sm text-[var(--crm-text-muted)] text-center mb-2">Which property are you creating a deal for?</p>
         <div className="relative">
           <input
             className={inputCls}
@@ -579,12 +580,12 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           />
           {searching && (
             <div className="absolute inset-y-0 right-3 flex items-center">
-              <div className="w-4 h-4 border-2 border-[#E32E2E] border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-[var(--crm-brand)] border-t-transparent rounded-full animate-spin" />
             </div>
           )}
         </div>
         {leads.length > 0 && (
-          <div className="bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          <div className="bg-[var(--crm-surface)] border border-[var(--crm-border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
             {leads.map(lead => (
               <button
                 key={lead.id}
@@ -594,19 +595,19 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
                   setLeadSearch(lead.property_address ?? lead.id)
                   fetchFullLead(lead.id)
                 }}
-                className="w-full text-left px-3 py-2.5 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
+                className="w-full text-left px-3 py-2.5 text-sm hover:bg-[var(--crm-surface-subtle)] border-b border-[var(--crm-border)] last:border-0"
               >
-                <p className="font-medium text-slate-900">{lead.property_address ?? 'Unknown address'}</p>
-                <p className="text-xs text-slate-500">{lead.full_name ?? ''}</p>
+                <p className="font-medium text-[var(--crm-ink)]">{lead.property_address ?? 'Unknown address'}</p>
+                <p className="text-xs text-[var(--crm-text-muted)]">{lead.full_name ?? ''}</p>
               </button>
             ))}
           </div>
         )}
         {selectedLead && (
-          <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-lg px-3 py-2.5">
+          <div className="flex items-center gap-2 bg-[var(--crm-success-soft)] text-[var(--crm-success)] text-sm font-semibold rounded-lg px-3 py-2.5">
             <Icon name="check_circle" size="text-base" />
             {selectedLead.property_address}
-            {loadingLead && <span className="text-xs text-slate-500 ml-auto">Loading details...</span>}
+            {loadingLead && <span className="text-xs text-[var(--crm-text-muted)] ml-auto">Loading details...</span>}
           </div>
         )}
       </>
@@ -617,8 +618,8 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     const hasPrefill = !!fullLead
     return (
       <>
-        <h3 className="text-xl font-bold text-slate-900 text-center">Enter Deal Description</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">
+        <h3 className="text-xl font-bold text-[var(--crm-ink)] text-center">Enter Deal Description</h3>
+        <p className="text-sm text-[var(--crm-text-muted)] text-center mb-2">
           {hasPrefill ? 'Auto-generated from property data. Edit as needed.' : 'What makes your deal a great investment?'}
         </p>
         <div>
@@ -649,7 +650,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     const isNonTurnKey = rehabScope && rehabScope !== 'Turn Key'
     return (
       <>
-        <h3 className="text-xl font-bold text-slate-900 text-center">Deal Value</h3>
+        <h3 className="text-xl font-bold text-[var(--crm-ink)] text-center">Deal Value</h3>
         <div>
           <label className={labelCls}>ARV Estimate</label>
           <input
@@ -682,7 +683,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
             placeholder="e.g. $15,000"
           />
           {isNonTurnKey && !repairEstimateLow && (
-            <p className="text-xs text-red-500 mt-1">Repair estimate is required for non-turnkey deals</p>
+            <p className="text-xs text-[var(--crm-danger)] mt-1">Repair estimate is required for non-turnkey deals</p>
           )}
         </div>
         <div>
@@ -695,7 +696,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
             placeholder="e.g. $25,000"
           />
           {isNonTurnKey && !repairEstimateHigh && (
-            <p className="text-xs text-red-500 mt-1">Repair estimate is required for non-turnkey deals</p>
+            <p className="text-xs text-[var(--crm-danger)] mt-1">Repair estimate is required for non-turnkey deals</p>
           )}
         </div>
       </>
@@ -705,8 +706,8 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   function renderStep3() {
     return (
       <>
-        <h3 className="text-xl font-bold text-slate-900 text-center">Deal Price</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">Let&apos;s calculate how much you could earn.</p>
+        <h3 className="text-xl font-bold text-[var(--crm-ink)] text-center">Deal Price</h3>
+        <p className="text-sm text-[var(--crm-text-muted)] text-center mb-2">Let&apos;s calculate how much you could earn.</p>
         <div>
           <label className={labelCls}>How much do you want to sell it for?</label>
           <input
@@ -727,7 +728,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
             onChange={e => setPurchasePrice(e.target.value)}
             placeholder="e.g. $200,000"
           />
-          <p className="text-xs text-slate-500 mt-1">Buyers will NOT see your purchase price</p>
+          <p className="text-xs text-[var(--crm-text-muted)] mt-1">Buyers will NOT see your purchase price</p>
         </div>
         <div>
           <label className={labelCls}>Minimum EMD</label>
@@ -740,9 +741,9 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           />
         </div>
         <div className="pt-2">
-          <p className="text-base font-semibold text-slate-900">
+          <p className="text-base font-semibold text-[var(--crm-ink)]">
             Profit Potential:{' '}
-            <span className={profitPotential > 0 ? 'text-emerald-600' : profitPotential < 0 ? 'text-red-500' : 'text-slate-900'}>
+            <span className={profitPotential > 0 ? 'text-[var(--crm-success)]' : profitPotential < 0 ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-ink)]'}>
               ${profitPotential.toLocaleString()}
             </span>
           </p>
@@ -754,8 +755,8 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   function renderStep4() {
     return (
       <>
-        <h3 className="text-xl font-bold text-slate-900 text-center">Deal Info</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">Verify the property details are accurate.</p>
+        <h3 className="text-xl font-bold text-[var(--crm-ink)] text-center">Deal Info</h3>
+        <p className="text-sm text-[var(--crm-text-muted)] text-center mb-2">Verify the property details are accurate.</p>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className={labelCls}>Property Type</label>
@@ -822,8 +823,8 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   function renderStep5() {
     return (
       <>
-        <h3 className="text-xl font-bold text-slate-900 text-center">Deal Address</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">Confirm the property address.</p>
+        <h3 className="text-xl font-bold text-[var(--crm-ink)] text-center">Deal Address</h3>
+        <p className="text-sm text-[var(--crm-text-muted)] text-center mb-2">Confirm the property address.</p>
         <div>
           <label className={labelCls}>Street Address</label>
           <input className={inputCls} value={streetAddress} onChange={e => setStreetAddress(e.target.value)} placeholder="123 Main St" autoFocus />
@@ -862,8 +863,8 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
   function renderStep6Terms() {
     return (
       <>
-        <h3 className="text-xl font-bold text-slate-900 text-center">Terms & Conditions</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">Contract terms, addendums, and special conditions.</p>
+        <h3 className="text-xl font-bold text-[var(--crm-ink)] text-center">Terms & Conditions</h3>
+        <p className="text-sm text-[var(--crm-text-muted)] text-center mb-2">Contract terms, addendums, and special conditions.</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>Contract Close Date</label>
@@ -899,7 +900,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           </div>
         </div>
 
-        <div className="border-t border-slate-100 pt-3 space-y-3">
+        <div className="border-t border-[var(--crm-border)] pt-3 space-y-3">
           <div>
             <label className={labelCls}>Post-Occupancy Terms</label>
             <textarea className={inputCls + ' resize-y min-h-[60px]'} rows={2} value={postOccupancy} onChange={e => setPostOccupancy(e.target.value)}
@@ -943,8 +944,8 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
     const totalPhotos = pendingPhotos.length + pendingPhotoUrls.length
     return (
       <>
-        <h3 className="text-xl font-bold text-slate-900 text-center">Photos & Inspection Report</h3>
-        <p className="text-sm text-slate-500 text-center mb-2">Add the media buyers need before the deal page goes live.</p>
+        <h3 className="text-xl font-bold text-[var(--crm-ink)] text-center">Photos & Inspection Report</h3>
+        <p className="text-sm text-[var(--crm-text-muted)] text-center mb-2">Add the media buyers need before the deal page goes live.</p>
 
         {/* File upload */}
         <div
@@ -954,12 +955,12 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           onClick={() => photoInputRef.current?.click()}
           className={cn(
             'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
-            dragOver ? 'border-[#E32E2E] bg-[#E32E2E]/5' : 'border-slate-200 hover:border-slate-300'
+            dragOver ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)]/5' : 'border-[var(--crm-border)] hover:border-[var(--crm-border-strong)]'
           )}
         >
-          <Icon name="add_photo_alternate" className="text-3xl text-slate-300 mb-1" />
-          <p className="text-sm text-slate-500">Drop photos here or click to browse</p>
-          <p className="text-xs text-slate-400 mt-0.5">JPG, PNG, WebP up to 10MB</p>
+          <Icon name="add_photo_alternate" className="text-3xl text-[var(--crm-text-dim)] mb-1" />
+          <p className="text-sm text-[var(--crm-text-muted)]">Drop photos here or click to browse</p>
+          <p className="text-xs text-[var(--crm-text-dim)] mt-0.5">JPG, PNG, WebP up to 10MB</p>
           <input
             ref={photoInputRef}
             type="file"
@@ -971,19 +972,19 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
         </div>
 
         {/* Inspection report upload */}
-        <div className="border border-orange-200 bg-orange-50 rounded-lg p-4">
+        <div className="border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] rounded-lg p-4">
           <div className="flex items-start gap-3">
-            <Icon name="warning" size="text-xl" className="text-orange-500 mt-0.5" />
+            <Icon name="warning" size="text-xl" className="text-[var(--crm-warning)] mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-900">Inspection Report</p>
-              <p className="text-xs text-slate-600 mt-0.5">Upload a PDF so buyers can view it from the public deal page.</p>
+              <p className="text-sm font-bold text-[var(--crm-ink)]">Inspection Report</p>
+              <p className="text-xs text-[var(--crm-text)] mt-0.5">Upload a PDF so buyers can view it from the public deal page.</p>
               {pendingReports.length > 0 && (
                 <div className="mt-3 space-y-1.5">
                   {pendingReports.map((report, i) => (
-                    <div key={`${report.name}-${i}`} className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-xs">
-                      <Icon name="picture_as_pdf" size="text-sm" className="text-orange-500 flex-shrink-0" />
-                      <span className="flex-1 truncate text-slate-700">{report.name}</span>
-                      <button type="button" onClick={() => removeReport(i)} className="text-slate-400 hover:text-red-500 flex-shrink-0">&times;</button>
+                    <div key={`${report.name}-${i}`} className="flex items-center gap-2 rounded-lg bg-[var(--crm-surface)] px-3 py-1.5 text-xs">
+                      <Icon name="picture_as_pdf" size="text-sm" className="text-[var(--crm-warning)] flex-shrink-0" />
+                      <span className="flex-1 truncate text-[var(--crm-text)]">{report.name}</span>
+                      <button type="button" onClick={() => removeReport(i)} className="text-[var(--crm-text-dim)] hover:text-[var(--crm-danger)] flex-shrink-0">&times;</button>
                     </div>
                   ))}
                 </div>
@@ -991,7 +992,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
               <button
                 type="button"
                 onClick={() => reportInputRef.current?.click()}
-                className="mt-3 text-xs font-bold text-orange-700 hover:text-orange-800"
+                className="mt-3 text-xs font-bold text-[var(--crm-warning)] hover:text-[var(--crm-warning)]"
               >
                 + Add Inspection Report
               </button>
@@ -1012,11 +1013,12 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           <div className="grid grid-cols-4 gap-2">
             {photoPreviews.map((src, i) => (
               <div key={`file-${i}`} className="relative group">
+                {/* eslint-disable-next-line @next/next/no-img-element -- local object URLs cannot use the Next image optimizer. */}
                 <img src={src} alt="" className="w-full h-20 object-cover rounded-lg" />
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); removePhoto(i) }}
-                  className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--crm-danger-soft)] text-[var(--crm-on-brand)] rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                 >
                   &times;
                 </button>
@@ -1026,12 +1028,12 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
         )}
 
         {/* URL import — Google Photos, direct links, etc. */}
-        <div className="border-t border-slate-100 pt-4">
+        <div className="border-t border-[var(--crm-border)] pt-4">
           <label className={labelCls}>
             <Icon name="link" size="text-sm" className="inline mr-1 align-text-bottom" />
             Import from URL
           </label>
-          <p className="text-xs text-slate-500 mb-2">Paste Google Photos links, image URLs, or share links — images are auto-converted to JPEG.</p>
+          <p className="text-xs text-[var(--crm-text-muted)] mb-2">Paste Google Photos links, image URLs, or share links — images are auto-converted to JPEG.</p>
           <div className="flex gap-2">
             <textarea
               className={inputCls + ' resize-none flex-1'}
@@ -1045,7 +1047,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
               type="button"
               onClick={addPhotoUrls}
               disabled={!photoUrls.trim()}
-              className="self-end bg-[#E32E2E] text-white text-xs font-semibold px-4 py-2.5 rounded-lg hover:bg-[#C42626] disabled:opacity-40 whitespace-nowrap"
+              className="self-end bg-[var(--crm-brand)] text-[var(--crm-on-brand)] text-xs font-semibold px-4 py-2.5 rounded-lg hover:bg-[var(--crm-brand-hover)] disabled:opacity-40 whitespace-nowrap"
             >
               Add
             </button>
@@ -1055,18 +1057,18 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
         {/* Queued URL previews */}
         {pendingPhotoUrls.length > 0 && (
           <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-slate-600">{pendingPhotoUrls.length} URL{pendingPhotoUrls.length !== 1 ? 's' : ''} queued for import</p>
+            <p className="text-xs font-semibold text-[var(--crm-text)]">{pendingPhotoUrls.length} URL{pendingPhotoUrls.length !== 1 ? 's' : ''} queued for import</p>
             {pendingPhotoUrls.map((url, i) => (
-              <div key={`url-${i}`} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-1.5 text-xs">
-                <Icon name="image" size="text-sm" className="text-slate-400 flex-shrink-0" />
-                <span className="flex-1 truncate text-slate-600">{url}</span>
-                <button type="button" onClick={() => removePhotoUrl(i)} className="text-slate-400 hover:text-red-500 flex-shrink-0">&times;</button>
+              <div key={`url-${i}`} className="flex items-center gap-2 bg-[var(--crm-surface-subtle)] rounded-lg px-3 py-1.5 text-xs">
+                <Icon name="image" size="text-sm" className="text-[var(--crm-text-dim)] flex-shrink-0" />
+                <span className="flex-1 truncate text-[var(--crm-text)]">{url}</span>
+                <button type="button" onClick={() => removePhotoUrl(i)} className="text-[var(--crm-text-dim)] hover:text-[var(--crm-danger)] flex-shrink-0">&times;</button>
               </div>
             ))}
           </div>
         )}
 
-        <p className="text-xs text-slate-400 text-center">
+        <p className="text-xs text-[var(--crm-text-dim)] text-center">
           {totalPhotos} photo{totalPhotos !== 1 ? 's' : ''} ready
           {pendingReports.length > 0 && <span> · {pendingReports.length} report{pendingReports.length !== 1 ? 's' : ''} ready</span>}
           {pendingPhotoUrls.length > 0 && <span> ({pendingPhotoUrls.length} will be imported & converted on create)</span>}
@@ -1083,14 +1085,14 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+      <div className="bg-[var(--crm-surface)] rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
         {/* Header with progress */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)] flex-shrink-0">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold text-slate-900">New Deal</h2>
-            <span className="text-xs text-slate-400">Step {step + 1} of {TOTAL_STEPS}</span>
+            <h2 className="text-lg font-bold text-[var(--crm-ink)]">New Deal</h2>
+            <span className="text-xs text-[var(--crm-text-dim)]">Step {step + 1} of {TOTAL_STEPS}</span>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
@@ -1102,11 +1104,11 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
               <div key={label} className="flex-1 flex flex-col items-center">
                 <div className={cn(
                   'h-1 w-full rounded-full transition-colors',
-                  i <= step ? 'bg-[#E32E2E]' : 'bg-slate-100'
+                  i <= step ? 'bg-[var(--crm-brand)]' : 'bg-[var(--crm-surface-subtle)]'
                 )} />
                 <span className={cn(
                   'text-[9px] mt-1 transition-colors',
-                  i === step ? 'text-[#E32E2E] font-semibold' : i < step ? 'text-slate-500' : 'text-slate-300'
+                  i === step ? 'text-[var(--crm-brand)] font-semibold' : i < step ? 'text-[var(--crm-text-muted)]' : 'text-[var(--crm-text-dim)]'
                 )}>{label}</span>
               </div>
             ))}
@@ -1116,24 +1118,24 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
         {/* Step content */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
+            <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{error}</div>
           )}
           {stepRenderers[step]()}
         </div>
 
         {/* Footer with Back / Next */}
-        <div className="flex gap-3 px-6 py-4 border-t border-slate-100 flex-shrink-0">
+        <div className="flex gap-3 px-6 py-4 border-t border-[var(--crm-border)] flex-shrink-0">
           {step > 0 ? (
             <button
               onClick={goBack}
-              className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-semibold"
+              className="px-5 py-2.5 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg text-sm font-semibold"
             >
               Back
             </button>
           ) : (
             <button
               onClick={onClose}
-              className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-semibold"
+              className="px-5 py-2.5 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg text-sm font-semibold"
             >
               Cancel
             </button>
@@ -1141,7 +1143,7 @@ function CreateDealPageModal({ onClose, onCreated }: { onClose: () => void; onCr
           <button
             onClick={goNext}
             disabled={!canAdvance() || creating}
-            className="flex-1 bg-[#E32E2E] text-white hover:bg-[#C42626] rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-50 transition-colors"
+            className="flex-1 bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-50 transition-colors"
           >
             {creating ? 'Creating...' : isLastStep ? 'Create Deal' : 'Next'}
           </button>
@@ -1180,22 +1182,22 @@ function DealPageCard({ page, onToggle, onCopied, onEdit }: {
 
   return (
     <div className={cn(
-      'bg-white rounded-xl border shadow-sm overflow-hidden transition-all',
-      page.is_active ? 'border-slate-100' : 'border-slate-100 opacity-70'
+      'bg-[var(--crm-surface)] rounded-xl border shadow-sm overflow-hidden transition-all',
+      page.is_active ? 'border-[var(--crm-border)]' : 'border-[var(--crm-border)] opacity-70'
     )}>
       {/* Card header */}
       <div className={cn(
         'h-2 w-full',
-        page.is_active ? 'bg-emerald-400' : 'bg-slate-200'
+        page.is_active ? 'bg-[var(--crm-success-soft)]' : 'bg-[var(--crm-surface-subtle)]'
       )} />
 
       <div className="p-4">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-slate-900 truncate text-sm">
+            <h3 className="font-semibold text-[var(--crm-ink)] truncate text-sm">
               {page.title ?? (page as DealPage & { property_address?: string }).property_address ?? `Deal Page`}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5 truncate">{url}</p>
+            <p className="text-xs text-[var(--crm-text-muted)] mt-0.5 truncate">{url}</p>
           </div>
           <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" title={page.is_active ? 'Active' : 'Inactive'}>
             <input
@@ -1204,34 +1206,34 @@ function DealPageCard({ page, onToggle, onCopied, onEdit }: {
               checked={page.is_active}
               onChange={() => onToggle(page.id, !page.is_active)}
             />
-            <div className="w-9 h-5 bg-slate-200 peer-checked:bg-emerald-500 rounded-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4 transition-colors" />
+            <div className="w-9 h-5 bg-[var(--crm-surface-subtle)] peer-checked:bg-[var(--crm-success-soft)] rounded-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-[var(--crm-surface)] after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4 transition-colors" />
           </label>
         </div>
 
         {/* Live stats (falls back to stored view_count until events accumulate) */}
         <div className="grid grid-cols-4 gap-2 mb-3">
-          <div className="text-center bg-slate-50 rounded-lg py-2">
-            <p className="text-lg font-bold text-slate-900">{liveStats?.views ?? page.view_count}</p>
-            <p className="text-[10px] text-slate-500">Views</p>
+          <div className="text-center bg-[var(--crm-surface-subtle)] rounded-lg py-2">
+            <p className="text-lg font-bold text-[var(--crm-ink)]">{liveStats?.views ?? page.view_count}</p>
+            <p className="text-[10px] text-[var(--crm-text-muted)]">Views</p>
           </div>
-          <div className="text-center bg-slate-50 rounded-lg py-2">
-            <p className="text-lg font-bold text-slate-900">{liveStats?.unique_visitors ?? page.unique_visitors}</p>
-            <p className="text-[10px] text-slate-500">Unique</p>
+          <div className="text-center bg-[var(--crm-surface-subtle)] rounded-lg py-2">
+            <p className="text-lg font-bold text-[var(--crm-ink)]">{liveStats?.unique_visitors ?? page.unique_visitors}</p>
+            <p className="text-[10px] text-[var(--crm-text-muted)]">Unique</p>
           </div>
-          <div className="text-center bg-slate-50 rounded-lg py-2">
-            <p className="text-lg font-bold text-slate-900">{liveStats?.shares ?? 0}</p>
-            <p className="text-[10px] text-slate-500">Shares</p>
+          <div className="text-center bg-[var(--crm-surface-subtle)] rounded-lg py-2">
+            <p className="text-lg font-bold text-[var(--crm-ink)]">{liveStats?.shares ?? 0}</p>
+            <p className="text-[10px] text-[var(--crm-text-muted)]">Shares</p>
           </div>
-          <div className="text-center bg-slate-50 rounded-lg py-2">
-            <p className="text-lg font-bold text-[#E32E2E]">{liveStats?.offers_submitted ?? 0}</p>
-            <p className="text-[10px] text-slate-500">Offers</p>
+          <div className="text-center bg-[var(--crm-surface-subtle)] rounded-lg py-2">
+            <p className="text-lg font-bold text-[var(--crm-brand)]">{liveStats?.offers_submitted ?? 0}</p>
+            <p className="text-[10px] text-[var(--crm-text-muted)]">Offers</p>
           </div>
         </div>
 
         {/* Expandable full stats panel */}
         <button
           onClick={() => setStatsOpen(!statsOpen)}
-          className="w-full flex items-center justify-center gap-1.5 text-[11px] font-semibold text-slate-600 hover:text-slate-900 py-1.5 mb-3 border-t border-b border-slate-100 transition-colors"
+          className="w-full flex items-center justify-center gap-1.5 text-[11px] font-semibold text-[var(--crm-text)] hover:text-[var(--crm-ink)] py-1.5 mb-3 border-t border-b border-[var(--crm-border)] transition-colors"
         >
           <Icon name={statsOpen ? 'expand_less' : 'analytics'} size="text-xs" />
           {statsOpen ? 'Hide analytics' : 'View full analytics'}
@@ -1245,30 +1247,30 @@ function DealPageCard({ page, onToggle, onCopied, onEdit }: {
         {/* Tags */}
         <div className="flex flex-wrap gap-1 mb-4">
           {page.accept_offers && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#E32E2E]/20 text-[#f87171]">Accepts Offers</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-brand)]/20 text-[var(--crm-danger)]">Accepts Offers</span>
           )}
           {page.requires_registration && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300">Reg Required</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]">Reg Required</span>
           )}
           {page.show_arv && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">ARV Shown</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-surface-subtle)] text-[var(--crm-text)]">ARV Shown</span>
           )}
         </div>
 
-        <p className="text-[11px] text-slate-400 mb-3">Created {formatDate(page.created_at)}</p>
+        <p className="text-[11px] text-[var(--crm-text-dim)] mb-3">Created {formatDate(page.created_at)}</p>
 
         {/* Actions */}
         <div className="flex gap-2">
           <button
             onClick={() => onEdit(page)}
-            className="flex-1 flex items-center justify-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
           >
             <Icon name="edit" size="text-xs" />
             Edit
           </button>
           <button
             onClick={copyLink}
-            className="flex-1 flex items-center justify-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
           >
             <Icon name="content_copy" size="text-xs" />
             Copy
@@ -1277,7 +1279,7 @@ function DealPageCard({ page, onToggle, onCopied, onEdit }: {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
             onClick={e => e.stopPropagation()}
           >
             <Icon name="open_in_new" size="text-xs" />
@@ -1430,59 +1432,59 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">Edit Deal Page</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+      <div className="bg-[var(--crm-surface)] rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)]">
+          <h2 className="text-lg font-bold text-[var(--crm-ink)]">Edit Deal Page</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
         <div className="px-6 py-4 space-y-4">
-          {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{err}</div>}
+          {err && <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{err}</div>}
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Title</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Title</label>
             <input value={form.title} onChange={e => set('title', e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30" />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Description</label>
             <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none" />
+              className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 resize-none" />
           </div>
 
           {/* Pricing */}
           <div>
-            <p className="text-xs font-bold text-slate-600 mb-2">Pricing</p>
+            <p className="text-xs font-bold text-[var(--crm-text)] mb-2">Pricing</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Public Offer Price ($)</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Public Offer Price ($)</label>
                 <input
                   type="number"
                   value={form.asking_price}
                   onChange={e => set('asking_price', e.target.value)}
                   placeholder="e.g. 169000"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 />
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Purchase Price ($)</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Purchase Price ($)</label>
                 <input
                   type="number"
                   value={form.purchase_price}
                   onChange={e => set('purchase_price', e.target.value)}
                   placeholder="Internal only"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 />
               </div>
             </div>
-            <p className="mt-1 text-[10px] text-slate-500">Purchase price stays internal; the public offer price is what buyers see on the deal page.</p>
+            <p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">Purchase price stays internal; the public offer price is what buyers see on the deal page.</p>
           </div>
 
           {/* Photos — import via URL, drag to reorder */}
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">
-              Photos ({photos.length}) {photos.length > 0 && <span className="font-normal text-slate-400">— drag to reorder, first = cover</span>}
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">
+              Photos ({photos.length}) {photos.length > 0 && <span className="font-normal text-[var(--crm-text-dim)]">— drag to reorder, first = cover</span>}
             </label>
             {photos.length > 0 && (
               <div className="grid grid-cols-4 gap-2 mb-2">
@@ -1509,16 +1511,17 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
                       i < 5 && i > 0 ? 'ring-1 ring-amber-300' : ''
                     )}
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- the user is ordering remote deal photos before persistence. */}
                     <img src={url} alt="" className="w-full h-16 object-cover" />
                     {i === 0 && (
-                      <span className="absolute bottom-0 left-0 right-0 bg-teal-600/90 text-white text-[9px] font-bold text-center py-0.5">COVER</span>
+                      <span className="absolute bottom-0 left-0 right-0 bg-teal-600/90 text-[var(--crm-on-brand)] text-[9px] font-bold text-center py-0.5">COVER</span>
                     )}
                     {i >= 1 && i <= 4 && (
-                      <span className="absolute bottom-0 left-0 right-0 bg-amber-600/70 text-white text-[9px] text-center py-0.5">#{i + 1}</span>
+                      <span className="absolute bottom-0 left-0 right-0 bg-[var(--crm-warning-soft)] text-[var(--crm-on-brand)] text-[9px] text-center py-0.5">#{i + 1}</span>
                     )}
                     <button type="button"
                       onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--crm-danger-soft)] text-[var(--crm-on-brand)] rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                     >&times;</button>
                   </div>
                 ))}
@@ -1532,40 +1535,40 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
                 onChange={e => setPhotoUrl(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); importPhotoUrls() } }}
                 placeholder="Paste image URL(s) — comma or space separated"
-                className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                className="flex-1 border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 disabled={importingPhotos}
               />
               <button
                 type="button"
                 onClick={importPhotoUrls}
                 disabled={importingPhotos || !photoUrl.trim()}
-                className="bg-[#E32E2E] text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-[#c72626] disabled:opacity-50 whitespace-nowrap"
+                className="bg-[var(--crm-brand)] text-[var(--crm-on-brand)] text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-[var(--crm-brand-hover)] disabled:opacity-50 whitespace-nowrap"
               >
                 {importingPhotos ? 'Importing...' : 'Import'}
               </button>
             </div>
             {photoImportStatus && (
-              <p className={cn('text-xs mt-1', photoImportStatus.startsWith('Error') ? 'text-red-500' : 'text-green-600')}>{photoImportStatus}</p>
+              <p className={cn('text-xs mt-1', photoImportStatus.startsWith('Error') ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-success)]')}>{photoImportStatus}</p>
             )}
           </div>
 
           {/* Inspection Reports */}
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Inspection Reports ({reports.length})</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Inspection Reports ({reports.length})</label>
             {reports.length > 0 && (
               <div className="space-y-1 mb-2">
                 {reports.map((r, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-1.5 text-xs">
-                    <Icon name="description" size="text-sm" className="text-red-400" />
-                    <span className="flex-1 truncate text-slate-700">{r.name}</span>
+                  <div key={i} className="flex items-center gap-2 bg-[var(--crm-surface-subtle)] rounded-lg px-3 py-1.5 text-xs">
+                    <Icon name="description" size="text-sm" className="text-[var(--crm-danger)]" />
+                    <span className="flex-1 truncate text-[var(--crm-text)]">{r.name}</span>
                     <button type="button" onClick={() => setReports(prev => prev.filter((_, j) => j !== i))}
-                      className="text-slate-400 hover:text-red-500">&times;</button>
+                      className="text-[var(--crm-text-dim)] hover:text-[var(--crm-danger)]">&times;</button>
                   </div>
                 ))}
               </div>
             )}
             <button type="button" onClick={() => reportRef.current?.click()}
-              className="text-xs text-primary hover:underline font-semibold">
+              className="text-xs text-[var(--crm-brand)] hover:underline font-semibold">
               {uploadingReport ? 'Uploading...' : '+ Add Report'}
             </button>
             <input ref={reportRef} type="file" accept="application/pdf" className="hidden"
@@ -1574,37 +1577,37 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
 
           {/* Contract Terms */}
           <div>
-            <p className="text-xs font-bold text-slate-600 mb-2">Contract Terms</p>
+            <p className="text-xs font-bold text-[var(--crm-text)] mb-2">Contract Terms</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Close Date</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Close Date</label>
                 <input type="date" value={form.contract_close_date} onChange={e => set('contract_close_date', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30" />
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Earnest Money ($)</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Earnest Money ($)</label>
                 <input type="number" value={form.earnest_money} onChange={e => set('earnest_money', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30" />
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Inspection (days)</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Inspection (days)</label>
                 <input type="number" value={form.inspection_period_days} onChange={e => set('inspection_period_days', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30" />
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Financing</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Financing</label>
                 <input type="text" value={form.financing_terms} onChange={e => set('financing_terms', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30" />
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Assignment Fee ($)</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Assignment Fee ($)</label>
                 <input type="number" value={form.assignment_fee} onChange={e => set('assignment_fee', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30" />
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Condition</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Condition</label>
                 <select value={form.property_condition} onChange={e => set('property_condition', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30">
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30">
                   <option value="">Select...</option>
                   <option value="Excellent">Excellent</option>
                   <option value="Good">Good</option>
@@ -1615,33 +1618,33 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Parking</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Parking</label>
                 <input type="text" value={form.parking} onChange={e => set('parking', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mt-3">
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Repair Est. Low ($)</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Repair Est. Low ($)</label>
                 <input type="number" value={form.repair_estimate_low} onChange={e => set('repair_estimate_low', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30" />
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500 mb-0.5">Repair Est. High ($)</label>
+                <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Repair Est. High ($)</label>
                 <input type="number" value={form.repair_estimate_high} onChange={e => set('repair_estimate_high', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30" />
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30" />
               </div>
             </div>
             <div className="mt-3">
-              <label className="block text-[10px] text-slate-500 mb-0.5">Contract Notes</label>
+              <label className="block text-[10px] text-[var(--crm-text-muted)] mb-0.5">Contract Notes</label>
               <textarea rows={2} value={form.contract_notes} onChange={e => set('contract_notes', e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none" />
+                className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 resize-none" />
             </div>
           </div>
 
           {/* Visibility Toggles */}
           <div>
-            <p className="text-xs font-bold text-slate-600 mb-2">Show on Page</p>
+            <p className="text-xs font-bold text-[var(--crm-text)] mb-2">Show on Page</p>
             <div className="space-y-2">
               {([
                 ['show_address', 'Property Address'],
@@ -1655,38 +1658,38 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
                     onClick={() => set(key, !form[key])}
                     className={cn(
                       'relative w-9 h-5 rounded-full transition-colors cursor-pointer',
-                      form[key] ? 'bg-[#E32E2E]' : 'bg-slate-200'
+                      form[key] ? 'bg-[var(--crm-brand)]' : 'bg-[var(--crm-surface-subtle)]'
                     )}
                   >
                     <span className={cn(
-                      'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform',
+                      'absolute top-0.5 left-0.5 w-4 h-4 bg-[var(--crm-surface)] rounded-full shadow-sm transition-transform',
                       form[key] ? 'translate-x-4' : 'translate-x-0'
                     )} />
                   </div>
-                  <span className="text-sm text-slate-700">{label}</span>
+                  <span className="text-sm text-[var(--crm-text)]">{label}</span>
                 </label>
               ))}
             </div>
           </div>
 
           {/* Delete zone */}
-          <div className="border-t border-slate-100 pt-3">
+          <div className="border-t border-[var(--crm-border)] pt-3">
             {confirmDelete ? (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                <p className="text-xs text-red-700 flex-1">Permanently delete this deal page?</p>
+              <div className="flex items-center gap-2 bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] rounded-lg px-3 py-2">
+                <p className="text-xs text-[var(--crm-danger)] flex-1">Permanently delete this deal page?</p>
                 <button
                   onClick={() => { onDelete(deal.id); onClose() }}
-                  className="text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded px-2.5 py-1"
+                  className="text-xs font-semibold text-[var(--crm-on-brand)] bg-[var(--crm-danger-soft)] hover:bg-[var(--crm-danger-soft)] rounded px-2.5 py-1"
                 >
                   Delete
                 </button>
-                <button onClick={() => setConfirmDelete(false)} className="text-xs font-semibold text-slate-600 hover:text-slate-800">
+                <button onClick={() => setConfirmDelete(false)} className="text-xs font-semibold text-[var(--crm-text)] hover:text-[var(--crm-ink)]">
                   Cancel
                 </button>
               </div>
             ) : (
               <button onClick={() => setConfirmDelete(true)}
-                className="w-full flex items-center justify-center gap-1.5 text-slate-400 hover:text-red-500 text-xs py-1.5 transition-colors">
+                className="w-full flex items-center justify-center gap-1.5 text-[var(--crm-text-dim)] hover:text-[var(--crm-danger)] text-xs py-1.5 transition-colors">
                 <Icon name="delete" size="text-xs" />
                 Delete Deal Page
               </button>
@@ -1695,11 +1698,11 @@ function EditDealPageModal({ deal, onClose, onSaved, onDelete }: { deal: DealPag
 
           <div className="flex gap-3 pt-2 pb-1">
             <button onClick={onClose}
-              className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold">
+              className="flex-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold">
               Cancel
             </button>
             <button onClick={handleSave} disabled={saving}
-              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60">
+              className="flex-1 bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60">
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
@@ -1783,42 +1786,39 @@ export default function DealPagesPage() {
         />
       )}
 
-      {/* Header */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Deal Pages</h1>
-          <p className="text-slate-500 text-sm">
-            {loading ? 'Loading…' : `${pages.length} deal page${pages.length !== 1 ? 's' : ''}`}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 bg-[#E32E2E] text-white hover:bg-[#C42626] rounded-lg px-4 py-2 text-sm font-semibold self-start sm:self-auto"
-        >
-          <Icon name="add" size="text-sm" />
-          Create Deal Page
-        </button>
+      <div className="mb-5 overflow-hidden rounded-xl border border-[var(--crm-border)] shadow-[var(--crm-shadow-sm)]">
+        <DispoPageHeader
+          eyebrow="Buyer-facing properties"
+          title="Deal pages"
+          description={loading ? 'Loading deal pages…' : `${pages.length} active page${pages.length !== 1 ? 's' : ''}. Publish the facts buyers need and collect offers in one place.`}
+          actions={(
+            <button onClick={() => setShowCreate(true)} className="crm-primary-button flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold">
+              <Icon name="add" size="text-sm" />
+              New deal page
+            </button>
+          )}
+        />
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-4">
+        <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-4 py-3 mb-4">
           {error}
         </div>
       )}
 
       {/* Content */}
       {loading ? (
-        <div className="text-slate-400 py-16 text-center">Loading deal pages...</div>
+        <div className="text-[var(--crm-text-dim)] py-16 text-center">Loading deal pages...</div>
       ) : pages.length === 0 ? (
         <div className="text-center py-20">
-          <Icon name="web" className="text-5xl text-slate-200 mb-4" />
-          <p className="text-slate-400 font-medium text-lg">No deal pages yet</p>
-          <p className="text-slate-400 text-sm mt-1 mb-6 max-w-sm mx-auto">
+          <Icon name="web" className="text-5xl text-[var(--crm-text-dim)] mb-4" />
+          <p className="text-[var(--crm-text-dim)] font-medium text-lg">No deal pages yet</p>
+          <p className="text-[var(--crm-text-dim)] text-sm mt-1 mb-6 max-w-sm mx-auto">
             Create one from a lead in disposition stage. Share the link with buyers to collect offers.
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-5 py-2.5 text-sm font-semibold"
+            className="bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-5 py-2.5 text-sm font-semibold"
           >
             Create First Deal Page
           </button>
@@ -1839,8 +1839,8 @@ export default function DealPagesPage() {
 
       {/* Copy feedback toast */}
       {copyFeedback && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm font-medium px-4 py-2.5 rounded-lg shadow-xl flex items-center gap-2">
-          <Icon name="check_circle" size="text-sm" className="text-emerald-400" />
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-[var(--crm-surface-raised)] text-[var(--crm-ink)] text-sm font-medium px-4 py-2.5 rounded-lg shadow-xl flex items-center gap-2">
+          <Icon name="check_circle" size="text-sm" className="text-[var(--crm-success)]" />
           Link copied to clipboard
         </div>
       )}

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 import { cn } from '@/lib/utils'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
@@ -51,15 +52,15 @@ const CATEGORIES: { value: VendorCategory | 'all'; label: string; icon: string }
 ]
 
 const CATEGORY_COLORS: Record<VendorCategory, string> = {
-  contractor: 'bg-[#fff0e5] text-[#9a3412]',
-  escrow:     'bg-[#fff8db] text-[#8a5a00]',
-  title:      'bg-[#f1edff] text-[#5b21b6]',
-  cleanout:   'bg-[#e6fffb] text-[#0f766e]',
-  dumpster:   'bg-[#fff8db] text-[#8a5a00]',
-  inspector:  'bg-[#fdf2f8] text-[#be185d]',
-  appraiser:  'bg-[#fef9c3] text-[#854d0e]',
-  attorney:   'bg-[#fff1f2] text-[#be123c]',
-  other:      'bg-[#eef2f7] text-[#4b5565]',
+  contractor: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+  escrow:     'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+  title:      'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]',
+  cleanout:   'bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+  dumpster:   'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+  inspector:  'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]',
+  appraiser:  'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+  attorney:   'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]',
+  other:      'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]',
 }
 
 // ---------------------------------------------------------------------------
@@ -75,8 +76,8 @@ function StarRating({ rating, onChange }: { rating: number | null; onChange?: (r
           onClick={() => onChange?.(n)}
           className={cn(
             'text-base transition-colors',
-            onChange ? 'cursor-pointer hover:text-yellow-400' : 'cursor-default',
-            (rating ?? 0) >= n ? 'text-yellow-400' : 'text-slate-300'
+            onChange ? 'cursor-pointer hover:text-[var(--crm-warning)]' : 'cursor-default',
+            (rating ?? 0) >= n ? 'text-[var(--crm-warning)]' : 'text-[var(--crm-text-dim)]'
           )}
         >
           <Icon name="star" size="text-base" />
@@ -212,22 +213,22 @@ function AddVendorModal({ onClose, onSuccess }: AddVendorModalProps) {
     }
   }
 
-  const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30'
-  const labelCls = 'block text-xs font-semibold text-slate-600 mb-1'
+  const inputCls = 'w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm text-[var(--crm-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30'
+  const labelCls = 'block text-xs font-semibold text-[var(--crm-text)] mb-1'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">Add Vendor</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+      <div className="bg-[var(--crm-surface)] rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)]">
+          <h2 className="text-lg font-bold text-[var(--crm-ink)]">Add Vendor</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
+            <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{error}</div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
@@ -304,7 +305,7 @@ function AddVendorModal({ onClose, onSuccess }: AddVendorModalProps) {
               onChange={e => set('is_preferred', e.target.checked)}
               className="w-4 h-4 accent-primary"
             />
-            <label htmlFor="is_preferred" className="text-sm font-semibold text-slate-600 cursor-pointer">
+            <label htmlFor="is_preferred" className="text-sm font-semibold text-[var(--crm-text)] cursor-pointer">
               Mark as Preferred Vendor
             </label>
           </div>
@@ -326,13 +327,13 @@ function AddVendorModal({ onClose, onSuccess }: AddVendorModalProps) {
           </div>
 
           <div className="flex gap-3 pt-2 pb-1">
-            <button type="button" onClick={onClose} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold">
+            <button type="button" onClick={onClose} className="flex-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold">
               Cancel
             </button>
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
+              className="flex-1 bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
             >
               {mutation.isPending ? 'Saving…' : 'Add Vendor'}
             </button>
@@ -419,8 +420,8 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
     }
   }
 
-  const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30'
-  const labelCls = 'block text-xs font-semibold text-slate-600 mb-1'
+  const inputCls = 'w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm text-[var(--crm-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30'
+  const labelCls = 'block text-xs font-semibold text-[var(--crm-text)] mb-1'
 
   return (
     <>
@@ -428,13 +429,13 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
 
       {/* Panel */}
-      <div className="fixed top-0 right-0 h-full z-50 w-full max-w-md bg-white shadow-2xl flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+      <div className="fixed top-0 right-0 h-full z-50 w-full max-w-md bg-[var(--crm-surface)] shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)] flex-shrink-0">
           <div>
-            <h2 className="text-base font-bold text-slate-900 leading-tight">{vendor.name}</h2>
-            {vendor.company_name && <p className="text-xs text-slate-500">{vendor.company_name}</p>}
+            <h2 className="text-base font-bold text-[var(--crm-ink)] leading-tight">{vendor.name}</h2>
+            {vendor.company_name && <p className="text-xs text-[var(--crm-text-muted)]">{vendor.company_name}</p>}
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
@@ -442,7 +443,7 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <form onSubmit={handleSave} className="space-y-4" id="edit-vendor-form">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
+              <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{error}</div>
             )}
 
             <div className="grid grid-cols-2 gap-3">
@@ -519,7 +520,7 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
                 onChange={e => set('is_preferred', e.target.checked)}
                 className="w-4 h-4 accent-primary"
               />
-              <label htmlFor="edit_is_preferred" className="text-sm font-semibold text-slate-600 cursor-pointer">
+              <label htmlFor="edit_is_preferred" className="text-sm font-semibold text-[var(--crm-text)] cursor-pointer">
                 Preferred Vendor
               </label>
             </div>
@@ -542,16 +543,16 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex-shrink-0 px-6 py-4 border-t border-slate-100 space-y-3">
+        <div className="flex-shrink-0 px-6 py-4 border-t border-[var(--crm-border)] space-y-3">
           <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold">
+            <button type="button" onClick={onClose} className="flex-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold">
               Cancel
             </button>
             <button
               type="submit"
               form="edit-vendor-form"
               disabled={updateMutation.isPending}
-              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
+              className="flex-1 bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
             >
               {updateMutation.isPending ? 'Saving…' : 'Save Changes'}
             </button>
@@ -561,7 +562,7 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className="w-full text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+              className="w-full text-[var(--crm-danger)] hover:text-[var(--crm-danger)] hover:bg-[var(--crm-danger-soft)] rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
             >
               Delete Vendor
             </button>
@@ -570,7 +571,7 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold"
+                className="flex-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold"
               >
                 Cancel
               </button>
@@ -578,7 +579,7 @@ function EditPanel({ vendor, onClose }: EditPanelProps) {
                 type="button"
                 onClick={() => deleteMutation.mutate([vendor.id])}
                 disabled={deleteMutation.isPending}
-                className="flex-1 bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
+                className="flex-1 bg-[var(--crm-danger-soft)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-danger-soft)] disabled:opacity-60 rounded-lg px-4 py-2 text-sm font-semibold"
               >
                 {deleteMutation.isPending ? 'Deleting…' : 'Confirm Delete'}
               </button>
@@ -618,29 +619,26 @@ export function VendorsView() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-black text-primary tracking-tight">Vendors</h1>
-          <p className="text-sm text-[var(--ck-text-muted)] mt-0.5">
-            {total} vendor{total !== 1 ? 's' : ''} — contractors, title, escrow &amp; more
-          </p>
-        </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-bold shadow-sm transition-colors"
-        >
-          <Icon name="add" size="text-lg" />
-          Add Vendor
-        </button>
+      <div className="mb-5 overflow-hidden rounded-xl border border-[var(--crm-border)] shadow-[var(--crm-shadow-sm)]">
+        <DispoPageHeader
+          eyebrow="Closing partners"
+          title="Partners"
+          description={`${total} partner${total !== 1 ? 's' : ''}. Find title, escrow, contractors, inspectors, and other closing support.`}
+          actions={(
+            <button onClick={() => setShowAdd(true)} className="crm-primary-button flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold">
+              <Icon name="add" size="text-lg" />
+              Add partner
+            </button>
+          )}
+        />
       </div>
 
       {/* Search + Category Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
         <div className="relative flex-1 max-w-sm">
-          <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ck-text-dim)]" />
+          <Icon name="search" size="text-lg" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-dim)]" />
           <input
-            className="w-full bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] rounded-lg pl-9 pr-4 py-2 text-sm text-[var(--ck-text)] placeholder:text-[var(--ck-text-muted)] focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+            className="w-full bg-[var(--crm-surface-raised)] border border-[var(--crm-border)] rounded-lg pl-9 pr-4 py-2 text-sm text-[var(--crm-ink)] placeholder:text-[var(--crm-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
             placeholder="Search vendors…"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -657,8 +655,8 @@ export function VendorsView() {
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors',
               category === c.value
-                ? 'bg-[#E32E2E] text-white border-[#E32E2E]'
-                : 'bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)] border-[var(--ck-border)] hover:border-[#E32E2E]/50 hover:text-[var(--ck-text)]'
+                ? 'bg-[var(--crm-brand)] text-[var(--crm-on-brand)] border-[var(--crm-brand)]'
+                : 'bg-[var(--crm-surface-raised)] text-[var(--crm-text-muted)] border-[var(--crm-border)] hover:border-[var(--crm-brand)]/50 hover:text-[var(--crm-ink)]'
             )}
           >
             <Icon name={c.icon} size="text-sm" />
@@ -668,14 +666,14 @@ export function VendorsView() {
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] shadow-sm">
+      <div className="overflow-hidden rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20 text-[var(--ck-text-muted)]">
+          <div className="flex items-center justify-center py-20 text-[var(--crm-text-muted)]">
             <Icon name="progress_activity" size="text-2xl" className="animate-spin mr-2" />
             Loading vendors…
           </div>
         ) : vendors.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-[var(--ck-text-muted)]">
+          <div className="flex flex-col items-center justify-center py-20 text-[var(--crm-text-muted)]">
             <Icon name="store" size="text-4xl" className="mb-3 opacity-30" />
             <p className="font-semibold">No vendors found</p>
             <p className="text-sm mt-1">Add your first vendor to get started</p>
@@ -684,29 +682,29 @@ export function VendorsView() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--ck-border)]">
-                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--ck-text-muted)] uppercase tracking-wider">Name</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--ck-text-muted)] uppercase tracking-wider hidden sm:table-cell">Company</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--ck-text-muted)] uppercase tracking-wider">Category</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--ck-text-muted)] uppercase tracking-wider hidden md:table-cell">Phone</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--ck-text-muted)] uppercase tracking-wider hidden lg:table-cell">Email</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--ck-text-muted)] uppercase tracking-wider hidden md:table-cell">Rating</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--ck-text-muted)] uppercase tracking-wider hidden sm:table-cell">Status</th>
+                <tr className="border-b border-[var(--crm-border)]">
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Name</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden sm:table-cell">Company</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Category</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden md:table-cell">Phone</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden lg:table-cell">Email</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden md:table-cell">Rating</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden sm:table-cell">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--ck-border)]">
+              <tbody className="divide-y divide-[var(--crm-border)]">
                 {vendors.map(v => (
                   <tr
                     key={v.id}
                     onClick={() => setSelected(v)}
-                    className="cursor-pointer transition-colors hover:bg-[#fff7f7]"
+                    className="cursor-pointer transition-colors hover:bg-[var(--crm-brand-soft)]"
                   >
                     {/* Name + preferred badge */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-[var(--ck-text)]">{v.name}</span>
+                        <span className="font-semibold text-[var(--crm-ink)]">{v.name}</span>
                         {v.is_preferred && (
-                          <span className="inline-flex items-center gap-0.5 rounded-full bg-[#fff8db] px-1.5 py-0.5 text-[10px] font-bold text-[#8a5a00]">
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--crm-warning-soft)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--crm-warning)]">
                             <Icon name="star" size="text-[10px]" />
                             Preferred
                           </span>
@@ -715,8 +713,8 @@ export function VendorsView() {
                     </td>
 
                     {/* Company */}
-                    <td className="px-4 py-3 text-[var(--ck-text-muted)] hidden sm:table-cell">
-                      {v.company_name ?? <span className="text-[var(--ck-text-dim)]">—</span>}
+                    <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden sm:table-cell">
+                      {v.company_name ?? <span className="text-[var(--crm-text-dim)]">—</span>}
                     </td>
 
                     {/* Category badge */}
@@ -727,16 +725,16 @@ export function VendorsView() {
                     </td>
 
                     {/* Phone */}
-                    <td className="px-4 py-3 text-[var(--ck-text-muted)] hidden md:table-cell">
+                    <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden md:table-cell">
                       {v.phone ? (
                         <a
                           href={`tel:${v.phone}`}
                           onClick={e => e.stopPropagation()}
-                          className="hover:text-primary transition-colors"
+                          className="hover:text-[var(--crm-brand)] transition-colors"
                         >
                           {v.phone}
                         </a>
-                      ) : <span className="text-[var(--ck-text-dim)]">—</span>}
+                      ) : <span className="text-[var(--crm-text-dim)]">—</span>}
                     </td>
 
                     {/* Email */}
@@ -745,16 +743,16 @@ export function VendorsView() {
                         <a
                           href={`mailto:${v.email}`}
                           onClick={e => e.stopPropagation()}
-                          className="text-primary hover:underline text-sm"
+                          className="text-[var(--crm-brand)] hover:underline text-sm"
                         >
                           {v.email}
                         </a>
-                      ) : <span className="text-[var(--ck-text-dim)]">—</span>}
+                      ) : <span className="text-[var(--crm-text-dim)]">—</span>}
                     </td>
 
                     {/* Rating */}
                     <td className="px-4 py-3 hidden md:table-cell">
-                      {v.rating ? <StarRating rating={v.rating} /> : <span className="text-[var(--ck-text-dim)]">—</span>}
+                      {v.rating ? <StarRating rating={v.rating} /> : <span className="text-[var(--crm-text-dim)]">—</span>}
                     </td>
 
                     {/* Status dot */}
@@ -762,11 +760,11 @@ export function VendorsView() {
                       <div className="flex items-center gap-1.5">
                         <span className={cn(
                           'w-2 h-2 rounded-full flex-shrink-0',
-                          v.status === 'active' ? 'bg-emerald-500' : 'bg-slate-400'
+                          v.status === 'active' ? 'bg-[var(--crm-success-soft)]' : 'bg-[var(--crm-surface-raised)]'
                         )} />
                         <span className={cn(
                           'text-xs font-semibold capitalize',
-                          v.status === 'active' ? 'text-[#166534]' : 'text-slate-500'
+                          v.status === 'active' ? 'text-[var(--crm-success)]' : 'text-[var(--crm-text-muted)]'
                         )}>
                           {v.status}
                         </span>

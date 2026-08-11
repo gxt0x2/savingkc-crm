@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
+import { DispoPageHeader, DispoWorkspaceTabs, MetricStrip, NextStepCard } from '@/components/dispo/workspace-ui'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import {
@@ -57,11 +58,11 @@ type DetailTab = (typeof DETAIL_TABS)[number]['key']
 type TcPageView = 'files' | 'communications' | 'docs' | 'tasks' | 'reports'
 
 const TC_PAGE_TABS: { key: TcPageView; label: string; href: string; icon: string }[] = [
-  { key: 'files', label: 'Closing queue', href: '/dispo/tc', icon: 'fact_check' },
-  { key: 'communications', label: 'Communications', href: '/dispo/tc?view=communications', icon: 'forum' },
+  { key: 'files', label: 'Files', href: '/dispo/tc', icon: 'fact_check' },
+  { key: 'communications', label: 'Messages', href: '/dispo/tc?view=communications', icon: 'forum' },
   { key: 'docs', label: 'Documents', href: '/dispo/tc?view=docs', icon: 'preview' },
-  { key: 'tasks', label: 'Tasks', href: '/dispo/tc?view=tasks', icon: 'task_alt' },
-  { key: 'reports', label: 'Performance', href: '/dispo/tc?view=reports', icon: 'account_tree' },
+  { key: 'tasks', label: 'Work', href: '/dispo/tc?view=tasks', icon: 'task_alt' },
+  { key: 'reports', label: 'Results', href: '/dispo/tc?view=reports', icon: 'account_tree' },
 ]
 
 interface TcFileTimeline {
@@ -70,20 +71,20 @@ interface TcFileTimeline {
 }
 
 const STATUS_META: Record<TcStatus, { label: string; badge: string; icon: string }> = {
-  not_opened: { label: 'Not Opened', badge: 'border-[#cad2df] bg-[#eef2f7] text-[#4b5565]', icon: 'draft' },
-  opening_package_needed: { label: 'Needs Opening', badge: 'border-[#f7c948] bg-[#fff7d6] text-[#8a5a00]', icon: 'outbox' },
-  opened: { label: 'Opened', badge: 'border-[#9fd5ff] bg-[#e8f4ff] text-[#075985]', icon: 'folder_open' },
-  emd_pending: { label: 'EMD Pending', badge: 'border-[#f9bc8b] bg-[#fff0e5] text-[#9a3412]', icon: 'payments' },
-  title_work: { label: 'Title Work', badge: 'border-[#c4b5fd] bg-[#f1edff] text-[#5b21b6]', icon: 'policy' },
-  clear_to_close: { label: 'Clear to Close', badge: 'border-[#86efac] bg-[#e8fff0] text-[#166534]', icon: 'verified' },
-  scheduled: { label: 'Scheduled', badge: 'border-[#93c5fd] bg-[#eff6ff] text-[#1d4ed8]', icon: 'event_available' },
-  closed: { label: 'Closed', badge: 'border-[#6ee7b7] bg-[#e7fff7] text-[#047857]', icon: 'check_circle' },
-  cancelled: { label: 'Cancelled', badge: 'border-[#fda4af] bg-[#fff1f2] text-[#be123c]', icon: 'cancel' },
+  not_opened: { label: 'Not Opened', badge: 'border-[var(--crm-border-strong)] bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]', icon: 'draft' },
+  opening_package_needed: { label: 'Needs Opening', badge: 'border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]', icon: 'outbox' },
+  opened: { label: 'Opened', badge: 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]', icon: 'folder_open' },
+  emd_pending: { label: 'EMD Pending', badge: 'border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]', icon: 'payments' },
+  title_work: { label: 'Title Work', badge: 'border-[var(--crm-violet-border)] bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]', icon: 'policy' },
+  clear_to_close: { label: 'Clear to Close', badge: 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]', icon: 'verified' },
+  scheduled: { label: 'Scheduled', badge: 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]', icon: 'event_available' },
+  closed: { label: 'Closed', badge: 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]', icon: 'check_circle' },
+  cancelled: { label: 'Cancelled', badge: 'border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]', icon: 'cancel' },
 }
 
-const fieldClass = 'w-full rounded-lg border !border-[#cad2df] !bg-[#ffffff] px-3 py-2 text-sm !text-[#111827] outline-none transition focus:!border-[#E32E2E] focus:ring-2 focus:ring-[#E32E2E]/15 placeholder:!text-[#7a8494]'
-const fieldLabelClass = 'text-[11px] font-bold uppercase text-[#697386]'
-const secondaryButtonClass = 'inline-flex items-center justify-center gap-2 rounded-lg border border-[#cad2df] bg-[#ffffff] px-3 py-2 text-sm font-bold text-[#253041] transition hover:border-[#E32E2E]/40 hover:bg-[#fff7f7]'
+const fieldClass = 'w-full rounded-lg border !border-[var(--crm-border-strong)] !bg-[var(--crm-surface)] px-3 py-2 text-sm !text-[var(--crm-ink)] outline-none transition focus:!border-[var(--crm-brand)] focus:ring-2 focus:ring-[var(--crm-brand)]/15 placeholder:!text-[var(--crm-text-dim)]'
+const fieldLabelClass = 'text-[11px] font-bold uppercase text-[var(--crm-text-muted)]'
+const secondaryButtonClass = 'inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-3 py-2 text-sm font-bold text-[var(--crm-text)] transition hover:border-[var(--crm-brand)]/40 hover:bg-[var(--crm-brand-soft)]'
 
 interface TcDocumentTemplate {
   id: string
@@ -160,10 +161,10 @@ function normalizePageView(value: string | null): TcPageView {
 
 function riskClass(risk: string) {
   const map: Record<string, string> = {
-    normal: 'border-[#86efac] bg-[#e8fff0] text-[#166534]',
-    watch: 'border-[#f7c948] bg-[#fff8db] text-[#8a5a00]',
-    urgent: 'border-[#fb923c] bg-[#fff0e5] text-[#9a3412]',
-    blocked: 'border-[#E32E2E]/35 bg-[#fff1f1] text-[#b42318]',
+    normal: 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+    watch: 'border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+    urgent: 'border-[var(--crm-warning)] bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+    blocked: 'border-[var(--crm-brand)]/35 bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]',
   }
   return map[risk] ?? map.normal
 }
@@ -174,10 +175,10 @@ function openTaskCount(file: TcFile) {
 
 function taskStatusClass(status: TcTask['status']) {
   const map: Record<TcTask['status'], string> = {
-    open: 'border-[#cad2df] bg-[#ffffff] text-[#697386]',
-    done: 'border-[#86efac] bg-[#e8fff0] text-[#166534]',
-    waived: 'border-[#d8dee9] bg-[#f6f7f9] text-[#697386]',
-    blocked: 'border-[#E32E2E]/35 bg-[#fff1f1] text-[#b42318]',
+    open: 'border-[var(--crm-border-strong)] bg-[var(--crm-surface)] text-[var(--crm-text-muted)]',
+    done: 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+    waived: 'border-[var(--crm-border)] bg-[var(--crm-canvas)] text-[var(--crm-text-muted)]',
+    blocked: 'border-[var(--crm-brand)]/35 bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]',
   }
   return map[status]
 }
@@ -211,9 +212,9 @@ function laneLabel(lane: DispositionOperatingLane) {
 }
 
 function laneClass(lane: DispositionOperatingLane) {
-  if (lane === 'dispositions') return 'border-[#c4b5fd] bg-[#f1edff] text-[#5b21b6]'
-  if (lane === 'coordination') return 'border-[#93c5fd] bg-[#eff6ff] text-[#1d4ed8]'
-  return 'border-[#86efac] bg-[#e8fff0] text-[#166534]'
+  if (lane === 'dispositions') return 'border-[var(--crm-violet-border)] bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]'
+  if (lane === 'coordination') return 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
+  return 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]'
 }
 
 function ContactTile({
@@ -234,32 +235,32 @@ function ContactTile({
   href?: string
 }) {
   return (
-    <div className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
+    <div className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-raised)] p-3">
       <div className="mb-2 flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#fff1f1] text-[#E32E2E]">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--crm-danger-soft)] text-[var(--crm-brand)]">
           <Icon name={icon} size="text-sm" />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-black uppercase text-[#697386]">{label}</p>
-          <p className="truncate text-sm font-bold text-[#111827]">{name}</p>
+          <p className="text-[11px] font-black uppercase text-[var(--crm-text-muted)]">{label}</p>
+          <p className="truncate text-sm font-bold text-[var(--crm-ink)]">{name}</p>
         </div>
       </div>
-      {context && <p className="mb-2 truncate text-xs text-[#697386]">{context}</p>}
+      {context && <p className="mb-2 truncate text-xs text-[var(--crm-text-muted)]">{context}</p>}
       <div className="flex flex-wrap gap-2">
         {phone && (
-          <a href={`tel:${phone}`} className="inline-flex items-center gap-1 rounded-md border border-[#cad2df] bg-white px-2 py-1 text-xs font-bold text-[#4b5565] hover:border-[#E32E2E]/40 hover:bg-[#fff7f7]">
+          <a href={`tel:${phone}`} className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-2 py-1 text-xs font-bold text-[var(--crm-text-muted)] hover:border-[var(--crm-brand)]/40 hover:bg-[var(--crm-brand-soft)]">
             <Icon name="call" size="text-xs" />
             {phone}
           </a>
         )}
         {email && (
-          <a href={`mailto:${email}`} className="inline-flex items-center gap-1 rounded-md border border-[#cad2df] bg-white px-2 py-1 text-xs font-bold text-[#4b5565] hover:border-[#E32E2E]/40 hover:bg-[#fff7f7]">
+          <a href={`mailto:${email}`} className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-2 py-1 text-xs font-bold text-[var(--crm-text-muted)] hover:border-[var(--crm-brand)]/40 hover:bg-[var(--crm-brand-soft)]">
             <Icon name="mail" size="text-xs" />
             Email
           </a>
         )}
         {href && (
-          <Link href={href} className="inline-flex items-center gap-1 rounded-md border border-[#cad2df] bg-white px-2 py-1 text-xs font-bold text-[#4b5565] hover:border-[#E32E2E]/40 hover:bg-[#fff7f7]">
+          <Link href={href} className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-2 py-1 text-xs font-bold text-[var(--crm-text-muted)] hover:border-[var(--crm-brand)]/40 hover:bg-[var(--crm-brand-soft)]">
             <Icon name="open_in_new" size="text-xs" />
             Open
           </Link>
@@ -325,6 +326,15 @@ function DetailDrawer({
     () => (file.tasks ?? []).filter((task) => !operatingTaskTypes.has(task.task_type)),
     [file.tasks, operatingTaskTypes],
   )
+  const nextWork = useMemo(() => {
+    for (const phase of operatingPhases) {
+      for (const definition of phase.tasks) {
+        const task = taskByType.get(definition.taskType)
+        if (task?.status === 'blocked' || task?.status === 'open') return { phase, definition, task }
+      }
+    }
+    return null
+  }, [operatingPhases, taskByType])
   const templatesByTaskType = useMemo(() => {
     const byTaskType = new Map<string, TcDocumentTemplate[]>()
     for (const template of templates) {
@@ -629,12 +639,12 @@ function DetailDrawer({
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex justify-end bg-[#111827]/35 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--crm-ink)]/35 backdrop-blur-sm" onClick={onClose}>
       <aside
-        className="h-full w-full max-w-2xl overflow-y-auto border-l border-[#d8dee9] bg-[#f8fafc] shadow-2xl"
+        className="h-full w-full max-w-2xl overflow-y-auto border-l border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#d8dee9] bg-[#ffffff] px-6 py-5">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-6 py-5">
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-black', STATUS_META[file.status].badge)}>
@@ -645,74 +655,83 @@ function DetailDrawer({
                 {file.risk_level}
               </span>
             </div>
-            <h2 className="truncate text-xl font-black text-[#111827]">{file.lead?.property_address || 'TC File'}</h2>
-            <p className="mt-1 text-sm text-[#697386]">
+            <h2 className="truncate text-xl font-black text-[var(--crm-ink)]">{file.lead?.property_address || 'TC File'}</h2>
+            <p className="mt-1 text-sm text-[var(--crm-text-muted)]">
               {file.lead?.full_name || 'No seller'} · {file.offer?.buyer?.name || file.offer?.buyer?.company || 'No buyer'}
             </p>
-            <p className="mt-2 text-[11px] font-bold uppercase text-[#697386]">
+            <p className="mt-2 text-[11px] font-bold uppercase text-[var(--crm-text-muted)]">
               {saveState === 'saving' ? 'Autosaving' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Autosave failed' : 'Instant autosave'}
             </p>
           </div>
-          <button onClick={onClose} className="rounded-lg border border-[#cad2df] bg-[#ffffff] p-2 text-[#4b5565] hover:bg-[#fff7f7]" aria-label="Close TC file">
+          <button onClick={onClose} className="rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] p-2 text-[var(--crm-text-muted)] hover:bg-[var(--crm-brand-soft)]" aria-label="Close TC file">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
 
         <div className="space-y-6 px-6 py-5">
-          {error && <div className="rounded-lg border border-[#E32E2E]/35 bg-[#fff1f1] px-3 py-2 text-sm font-semibold text-[#b42318]">{error}</div>}
+          {error && <div className="rounded-lg border border-[var(--crm-brand)]/35 bg-[var(--crm-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--crm-danger)]">{error}</div>}
+
+          <NextStepCard
+            title={nextWork?.definition.label || 'All required work is complete'}
+            detail={nextWork ? `${nextWork.phase.label} · ${laneLabel(nextWork.definition.lane)}${nextWork.task.due_at ? ` · Due ${formatDate(nextWork.task.due_at)}` : ''}` : 'Review the file, confirm closing, and complete the closeout.'}
+            blocked={nextWork?.task.status === 'blocked'}
+            complete={!nextWork}
+            actionLabel={nextWork ? (nextWork.task.status === 'blocked' ? 'Resolve block' : 'Mark done') : undefined}
+            onAction={nextWork ? () => updateTask(nextWork.task, nextWork.task.status === 'blocked' ? 'open' : 'done') : undefined}
+          />
 
           {activeDraft && (
-            <section className="overflow-hidden rounded-xl border border-[#c4b5fd] bg-[#ffffff] shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e1e6ee] bg-[#f6f3ff] px-4 py-3">
+            <section className="overflow-hidden rounded-xl border border-[var(--crm-violet-border)] bg-[var(--crm-surface)] shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-violet-soft)] px-4 py-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Icon name="edit_note" size="text-base" className="text-[#6d3fd1]" />
-                    <h3 className="text-sm font-black text-[#111827]">{activeDraft.template?.title || 'Communication draft'}</h3>
+                    <Icon name="edit_note" size="text-base" className="text-[var(--crm-violet)]" />
+                    <h3 className="text-sm font-black text-[var(--crm-ink)]">{activeDraft.template?.title || 'Communication draft'}</h3>
                     <span className={cn(
                       'rounded-full px-2 py-0.5 text-[10px] font-black uppercase',
-                      activeDraft.status === 'sent' ? 'bg-[#e8fff0] text-[#166534]' : activeDraft.status === 'approved' ? 'bg-[#e8f4ff] text-[#1d4ed8]' : 'bg-[#fff1f1] text-[#b42318]',
+                      activeDraft.status === 'sent' ? 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : activeDraft.status === 'approved' ? 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' : 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]',
                     )}>{activeDraft.status}</span>
                   </div>
-                  <p className="mt-1 text-xs font-semibold text-[#697386]">
+                  <p className="mt-1 text-xs font-semibold text-[var(--crm-text-muted)]">
                     {activeDraft.recipient_role} · {activeDraft.recipient_email || activeDraft.recipient_phone || 'recipient not yet available'}
                   </p>
                 </div>
-                <button type="button" onClick={() => setActiveDraft(null)} className="grid h-8 w-8 place-items-center rounded-lg border border-[#cad2df] bg-white text-[#697386]" aria-label="Close draft review"><Icon name="close" size="text-sm" /></button>
+                <button type="button" onClick={() => setActiveDraft(null)} className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] text-[var(--crm-text-muted)]" aria-label="Close draft review"><Icon name="close" size="text-sm" /></button>
               </div>
 
               <div className="space-y-3 p-4">
-                {draftNotice ? <div className="rounded-lg border border-[#93c5fd] bg-[#eff6ff] px-3 py-2 text-xs font-bold text-[#1d4ed8]">{draftNotice}</div> : null}
+                {draftNotice ? <div className="rounded-lg border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-info)]">{draftNotice}</div> : null}
                 {!activeDraft.recipient_email && activeDraft.channel === 'email' ? (
-                  <div className="rounded-lg border border-[#f7c948] bg-[#fff7d6] px-3 py-2 text-xs font-bold text-[#8a5a00]">Add the {activeDraft.recipient_role}&apos;s email address before sending.</div>
+                  <div className="rounded-lg border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-warning)]">Add the {activeDraft.recipient_role}&apos;s email address before sending.</div>
                 ) : null}
                 {unresolvedDraftFields.length > 0 ? (
-                  <div className="rounded-lg border border-[#f7c948] bg-[#fff7d6] px-3 py-2 text-xs text-[#8a5a00]">
+                  <div className="rounded-lg border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs text-[var(--crm-warning)]">
                     <strong>{unresolvedDraftFields.length} fields still require human input:</strong> {unresolvedDraftFields.join(', ')}
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-[#86efac] bg-[#e8fff0] px-3 py-2 text-xs font-bold text-[#166534]">All merge fields have been resolved. Read the complete message before approval.</div>
+                  <div className="rounded-lg border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-success)]">All merge fields have been resolved. Read the complete message before approval.</div>
                 )}
 
                 <label className="block space-y-1">
                   <span className={fieldLabelClass}>Subject</span>
-                  <input value={draftSubject} onChange={(event) => setDraftSubject(event.target.value)} disabled={activeDraft.status !== 'pending'} className={cn(fieldClass, 'disabled:bg-[#f1f3f6] disabled:text-[#697386]')} />
+                  <input value={draftSubject} onChange={(event) => setDraftSubject(event.target.value)} disabled={activeDraft.status !== 'pending'} className={cn(fieldClass, 'disabled:bg-[var(--crm-canvas)] disabled:text-[var(--crm-text-muted)]')} />
                 </label>
                 <label className="block space-y-1">
                   <span className={fieldLabelClass}>Message</span>
-                  <textarea value={draftBody} onChange={(event) => setDraftBody(event.target.value)} disabled={activeDraft.status !== 'pending'} rows={15} className={cn(fieldClass, 'resize-y leading-6 disabled:bg-[#f1f3f6] disabled:text-[#697386]')} />
+                  <textarea value={draftBody} onChange={(event) => setDraftBody(event.target.value)} disabled={activeDraft.status !== 'pending'} rows={15} className={cn(fieldClass, 'resize-y leading-6 disabled:bg-[var(--crm-canvas)] disabled:text-[var(--crm-text-muted)]')} />
                 </label>
 
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e1e6ee] pt-3">
-                  <p className="max-w-sm text-[11px] leading-5 text-[#697386]">Creating a draft never sends it. Approval locks the reviewed body; sending requires a second explicit confirmation.</p>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--crm-border)] pt-3">
+                  <p className="max-w-sm text-[11px] leading-5 text-[var(--crm-text-muted)]">Creating a draft never sends it. Approval locks the reviewed body; sending requires a second explicit confirmation.</p>
                   <div className="flex flex-wrap gap-2">
                     {activeDraft.status === 'pending' ? (
                       <>
                         <button type="button" onClick={() => persistDraft()} disabled={draftAction !== 'idle'} className={secondaryButtonClass}><Icon name="save" size="text-sm" />{draftAction === 'saving' ? 'Saving…' : 'Save'}</button>
-                        <button type="button" onClick={() => persistDraft('approved')} disabled={draftAction !== 'idle' || unresolvedDraftFields.length > 0 || !draftBody.trim()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-3 py-2 text-sm font-black text-white transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="verified" size="text-sm" />{draftAction === 'approving' ? 'Approving…' : 'Approve'}</button>
+                        <button type="button" onClick={() => persistDraft('approved')} disabled={draftAction !== 'idle' || unresolvedDraftFields.length > 0 || !draftBody.trim()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--crm-info)] px-3 py-2 text-sm font-black text-[var(--crm-on-brand)] transition hover:bg-[var(--crm-info)] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="verified" size="text-sm" />{draftAction === 'approving' ? 'Approving…' : 'Approve'}</button>
                       </>
                     ) : null}
                     {activeDraft.status === 'approved' ? (
-                      <button type="button" onClick={sendApprovedDraft} disabled={draftAction !== 'idle' || (activeDraft.channel === 'email' && !activeDraft.recipient_email)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#E32E2E] px-3 py-2 text-sm font-black text-white transition hover:bg-[#c42626] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="send" size="text-sm" />{draftAction === 'sending' ? 'Sending…' : 'Confirm & send'}</button>
+                      <button type="button" onClick={sendApprovedDraft} disabled={draftAction !== 'idle' || (activeDraft.channel === 'email' && !activeDraft.recipient_email)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--crm-brand)] px-3 py-2 text-sm font-black text-[var(--crm-on-brand)] transition hover:bg-[var(--crm-brand-hover)] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="send" size="text-sm" />{draftAction === 'sending' ? 'Sending…' : 'Confirm & send'}</button>
                     ) : null}
                   </div>
                 </div>
@@ -720,12 +739,15 @@ function DetailDrawer({
             </section>
           )}
 
-          <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
-            <div className="mb-4 flex items-center gap-2">
-              <Icon name="tune" size="text-base" className="text-[#E32E2E]" />
-              <h3 className="text-sm font-black text-[#111827]">File Controls</h3>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <details className="group overflow-hidden rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)]">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 marker:content-none">
+              <Icon name="tune" size="text-base" className="text-[var(--crm-brand)]" />
+              <span className="flex-1 text-sm font-black text-[var(--crm-ink)]">File details</span>
+              <span className="text-xs font-semibold text-[var(--crm-text-muted)]">Status, dates, fee</span>
+              <Icon name="expand_more" size="text-lg" className="text-[var(--crm-text-muted)] transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="border-t border-[var(--crm-border)] p-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="space-y-1">
                 <span className={fieldLabelClass}>Status</span>
                 <select value={status} onChange={(e) => setStatus(e.target.value as TcStatus)} className={fieldClass} style={{ colorScheme: 'light' }}>
@@ -744,34 +766,35 @@ function DetailDrawer({
                 <span className={fieldLabelClass}>Assignment Fee</span>
                 <input type="number" value={assignmentFee} onChange={(e) => setAssignmentFee(e.target.value)} className={fieldClass} />
               </label>
+              </div>
+
+              <label className="mt-3 block space-y-1">
+                <span className={fieldLabelClass}>Next Action</span>
+                <textarea value={nextAction} onChange={(e) => setNextAction(e.target.value)} rows={3} className={cn(fieldClass, 'resize-none')} />
+              </label>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {file.lead_id && (
+                  <Link href={`/leads/${file.lead_id}`} className={secondaryButtonClass}>
+                    <Icon name="person" size="text-sm" /> Lead
+                  </Link>
+                )}
+                {file.offer?.assignment_document_url && (
+                  <a href={file.offer.assignment_document_url} target="_blank" rel="noreferrer" className={secondaryButtonClass}>
+                    <Icon name="description" size="text-sm" /> Assignment
+                  </a>
+                )}
+              </div>
             </div>
+          </details>
 
-            <label className="mt-3 block space-y-1">
-              <span className={fieldLabelClass}>Next Action</span>
-              <textarea value={nextAction} onChange={(e) => setNextAction(e.target.value)} rows={3} className={cn(fieldClass, 'resize-none')} />
-            </label>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {file.lead_id && (
-                <Link href={`/leads/${file.lead_id}`} className={secondaryButtonClass}>
-                  <Icon name="person" size="text-sm" /> Lead
-                </Link>
-              )}
-              {file.offer?.assignment_document_url && (
-                <a href={file.offer.assignment_document_url} target="_blank" rel="noreferrer" className={secondaryButtonClass}>
-                  <Icon name="description" size="text-sm" /> Assignment
-                </a>
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
+          <section className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-4">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Icon name="contacts" size="text-base" className="text-[#E32E2E]" />
-                <h3 className="text-sm font-black text-[#111827]">Shared Contacts</h3>
+                <Icon name="contacts" size="text-base" className="text-[var(--crm-brand)]" />
+                <h3 className="text-sm font-black text-[var(--crm-ink)]">Shared Contacts</h3>
               </div>
-              <Link href="/dispo/contacts" className="text-xs font-bold text-[#E32E2E] hover:text-[#c42626]">
+              <Link href="/dispo/contacts" className="text-xs font-bold text-[var(--crm-brand)] hover:text-[var(--crm-brand-hover)]">
                 Directory
               </Link>
             </div>
@@ -806,13 +829,13 @@ function DetailDrawer({
             </div>
           </section>
 
-          <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
+          <section className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-4">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Icon name="forum" size="text-base" className="text-[#E32E2E]" />
-                <h3 className="text-sm font-black text-[#111827]">Communications & Docs</h3>
+                <Icon name="forum" size="text-base" className="text-[var(--crm-brand)]" />
+                <h3 className="text-sm font-black text-[var(--crm-ink)]">Communications & Docs</h3>
               </div>
-              <span className="text-xs font-bold text-[#697386]">Lead + TC file history</span>
+              <span className="text-xs font-bold text-[var(--crm-text-muted)]">Lead + TC file history</span>
             </div>
 
             <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
@@ -824,8 +847,8 @@ function DetailDrawer({
                   className={cn(
                     'inline-flex items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-black transition-colors',
                     activeDetailTab === tab.key
-                      ? 'border-[#E32E2E] bg-[#fff1f1] text-[#b42318]'
-                      : 'border-[#cad2df] bg-[#ffffff] text-[#4b5565] hover:border-[#E32E2E]/40 hover:bg-[#fff7f7]'
+                      ? 'border-[var(--crm-brand)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]'
+                      : 'border-[var(--crm-border-strong)] bg-[var(--crm-surface)] text-[var(--crm-text-muted)] hover:border-[var(--crm-brand)]/40 hover:bg-[var(--crm-brand-soft)]'
                   )}
                 >
                   <Icon name={tab.icon} size="text-sm" />
@@ -837,30 +860,30 @@ function DetailDrawer({
             {activeDetailTab === 'communications' && (
               <div className="space-y-2">
                 {loadingComms ? (
-                  <div className="rounded-lg border border-dashed border-[#cad2df] bg-[#fbfcfe] px-4 py-8 text-center text-sm font-semibold text-[#697386]">
+                  <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface-raised)] px-4 py-8 text-center text-sm font-semibold text-[var(--crm-text-muted)]">
                     Loading communications...
                   </div>
                 ) : communications.length > 0 ? (
                   communications.map((item) => (
-                    <div key={item.id} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
+                    <div key={item.id} className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-raised)] p-3">
                       <div className="mb-2 flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-2">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#fff1f1] text-[#E32E2E]">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--crm-danger-soft)] text-[var(--crm-brand)]">
                             <Icon name={communicationIcon(item.activity_type)} size="text-sm" />
                           </span>
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-bold capitalize text-[#111827]">{communicationLabel(item)}</p>
-                            <p className="text-[11px] font-semibold text-[#697386]">
+                            <p className="truncate text-sm font-bold capitalize text-[var(--crm-ink)]">{communicationLabel(item)}</p>
+                            <p className="text-[11px] font-semibold text-[var(--crm-text-muted)]">
                               {formatDateTime(item.created_at)}{item.agent ? ` · ${item.agent}` : ''}
                             </p>
                           </div>
                         </div>
                       </div>
-                      {item.description && <p className="whitespace-pre-wrap text-sm text-[#4b5565]">{item.description}</p>}
+                      {item.description && <p className="whitespace-pre-wrap text-sm text-[var(--crm-text-muted)]">{item.description}</p>}
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-lg border border-dashed border-[#cad2df] bg-[#fbfcfe] px-4 py-8 text-center text-sm font-semibold text-[#697386]">
+                  <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface-raised)] px-4 py-8 text-center text-sm font-semibold text-[var(--crm-text-muted)]">
                     No TC-related lead communications found yet.
                   </div>
                 )}
@@ -870,23 +893,23 @@ function DetailDrawer({
             {activeDetailTab === 'activity' && (
               <div className="space-y-2">
                 {loadingComms ? (
-                  <div className="rounded-lg border border-dashed border-[#cad2df] bg-[#fbfcfe] px-4 py-8 text-center text-sm font-semibold text-[#697386]">
+                  <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface-raised)] px-4 py-8 text-center text-sm font-semibold text-[var(--crm-text-muted)]">
                     Loading TC activity...
                   </div>
                 ) : events.length > 0 ? (
                   events.map((event) => (
-                    <div key={event.id} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
+                    <div key={event.id} className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-raised)] p-3">
                       <div className="flex items-start gap-2">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#eef2f7] text-[#4b5565]">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]">
                           <Icon name="history" size="text-sm" />
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-bold text-[#111827]">{event.event_type.replace(/_/g, ' ')}</p>
-                          <p className="text-[11px] font-semibold text-[#697386]">
+                          <p className="text-sm font-bold text-[var(--crm-ink)]">{event.event_type.replace(/_/g, ' ')}</p>
+                          <p className="text-[11px] font-semibold text-[var(--crm-text-muted)]">
                             {formatDateTime(event.created_at)}{event.actor ? ` · ${event.actor}` : ''}
                           </p>
                           {event.payload && Object.keys(event.payload).length > 0 && (
-                            <pre className="mt-2 max-h-28 overflow-auto rounded-md bg-[#f8fafc] p-2 text-[11px] text-[#4b5565]">
+                            <pre className="mt-2 max-h-28 overflow-auto rounded-md bg-[var(--crm-surface-subtle)] p-2 text-[11px] text-[var(--crm-text-muted)]">
                               {JSON.stringify(event.payload, null, 2)}
                             </pre>
                           )}
@@ -895,7 +918,7 @@ function DetailDrawer({
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-lg border border-dashed border-[#cad2df] bg-[#fbfcfe] px-4 py-8 text-center text-sm font-semibold text-[#697386]">
+                  <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface-raised)] px-4 py-8 text-center text-sm font-semibold text-[var(--crm-text-muted)]">
                     No TC activity has been logged for this file yet.
                   </div>
                 )}
@@ -904,11 +927,11 @@ function DetailDrawer({
 
             {activeDetailTab === 'docs' && (
               <div className="space-y-3">
-                <div className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
+                <div className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-raised)] p-3">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-black text-[#111827]">Assignment Contract</p>
-                      <p className="text-xs font-semibold text-[#697386]">
+                      <p className="text-sm font-black text-[var(--crm-ink)]">Assignment Contract</p>
+                      <p className="text-xs font-semibold text-[var(--crm-text-muted)]">
                         Review signed docs or launch the DocuSeal iframe preview from the TC file.
                       </p>
                     </div>
@@ -926,7 +949,7 @@ function DetailDrawer({
                   </div>
 
                   {file.offer?.assignment_document_url ? (
-                    <div className="h-[520px] overflow-hidden rounded-lg border border-[#cad2df] bg-white">
+                    <div className="h-[520px] overflow-hidden rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-surface)]">
                       <iframe
                         src={file.offer.assignment_document_url}
                         title="Assignment document"
@@ -934,7 +957,7 @@ function DetailDrawer({
                       />
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-dashed border-[#cad2df] bg-[#ffffff] px-4 py-8 text-center text-sm font-semibold text-[#697386]">
+                    <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-4 py-8 text-center text-sm font-semibold text-[var(--crm-text-muted)]">
                       No signed assignment document is attached yet.
                     </div>
                   )}
@@ -943,16 +966,16 @@ function DetailDrawer({
             )}
           </section>
 
-          <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
+          <section className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-4">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <Icon name="account_tree" size="text-base" className="text-[#E32E2E]" />
-                  <h3 className="text-sm font-black text-[#111827]">Operating workflow</h3>
+                  <Icon name="account_tree" size="text-base" className="text-[var(--crm-brand)]" />
+                  <h3 className="text-sm font-black text-[var(--crm-ink)]">Operating workflow</h3>
                 </div>
-                <p className="mt-1 text-xs font-semibold text-[#697386]">One transaction record with Dispositions, Closing Coordination, and shared gates.</p>
+                <p className="mt-1 text-xs font-semibold text-[var(--crm-text-muted)]">One transaction record with Dispositions, Closing Coordination, and shared gates.</p>
               </div>
-              <span className="rounded-full border border-[#cad2df] bg-[#f8fafc] px-2.5 py-1 text-xs font-black text-[#4b5565]">{openTaskCount(file)} open</span>
+              <span className="rounded-full border border-[var(--crm-border-strong)] bg-[var(--crm-surface-subtle)] px-2.5 py-1 text-xs font-black text-[var(--crm-text-muted)]">{openTaskCount(file)} open</span>
             </div>
 
             <div className="space-y-3">
@@ -964,40 +987,40 @@ function DetailDrawer({
                 }))
 
                 return (
-                  <details key={phase.id} open={!summary.gateComplete || index === operatingPhases.length - 1} className="group overflow-hidden rounded-xl border border-[#d8dee9] bg-[#fbfcfe]">
+                  <details key={phase.id} open={!summary.gateComplete || index === operatingPhases.length - 1} className="group overflow-hidden rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-raised)]">
                     <summary className="cursor-pointer list-none px-4 py-3 marker:content-none">
                       <div className="flex items-center gap-3">
                         <span className={cn(
                           'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black',
-                          summary.gateComplete ? 'bg-[#e8fff0] text-[#166534]' : summary.blocked > 0 ? 'bg-[#fff1f1] text-[#b42318]' : 'bg-[#e8f4ff] text-[#075985]',
+                          summary.gateComplete ? 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : summary.blocked > 0 ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]',
                         )}>
                           {summary.gateComplete ? <Icon name="check" size="text-base" /> : index + 1}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-black text-[#111827]">{phase.label}</span>
-                            {summary.gateComplete && <span className="rounded-full bg-[#e8fff0] px-2 py-0.5 text-[10px] font-black uppercase text-[#166534]">Gate clear</span>}
-                            {summary.blocked > 0 && <span className="rounded-full bg-[#fff1f1] px-2 py-0.5 text-[10px] font-black uppercase text-[#b42318]">{summary.blocked} blocked</span>}
+                            <span className="text-sm font-black text-[var(--crm-ink)]">{phase.label}</span>
+                            {summary.gateComplete && <span className="rounded-full bg-[var(--crm-success-soft)] px-2 py-0.5 text-[10px] font-black uppercase text-[var(--crm-success)]">Gate clear</span>}
+                            {summary.blocked > 0 && <span className="rounded-full bg-[var(--crm-danger-soft)] px-2 py-0.5 text-[10px] font-black uppercase text-[var(--crm-danger)]">{summary.blocked} blocked</span>}
                           </span>
-                          <span className="mt-0.5 block text-xs font-semibold text-[#697386]">{phase.description}</span>
+                          <span className="mt-0.5 block text-xs font-semibold text-[var(--crm-text-muted)]">{phase.description}</span>
                         </span>
                         <span className="text-right">
-                          <span className="block text-sm font-black text-[#111827]">{summary.percent}%</span>
-                          <span className="block text-[10px] font-bold text-[#697386]">{summary.completed}/{summary.total}</span>
+                          <span className="block text-sm font-black text-[var(--crm-ink)]">{summary.percent}%</span>
+                          <span className="block text-[10px] font-bold text-[var(--crm-text-muted)]">{summary.completed}/{summary.total}</span>
                         </span>
-                        <Icon name="expand_more" size="text-lg" className="text-[#697386] transition group-open:rotate-180" />
+                        <Icon name="expand_more" size="text-lg" className="text-[var(--crm-text-muted)] transition group-open:rotate-180" />
                       </div>
-                      <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-[#e1e6ee]">
-                        <span className="block h-full rounded-full bg-[#E32E2E] transition-all" style={{ width: `${summary.percent}%` }} />
+                      <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-[var(--crm-border)]">
+                        <span className="block h-full rounded-full bg-[var(--crm-brand)] transition-all" style={{ width: `${summary.percent}%` }} />
                       </span>
                     </summary>
 
-                    <div className="space-y-2 border-t border-[#e1e6ee] bg-[#ffffff] p-3">
-                      <p className="rounded-lg bg-[#f8fafc] px-3 py-2 text-xs font-bold text-[#4b5565]">
+                    <div className="space-y-2 border-t border-[var(--crm-border)] bg-[var(--crm-surface)] p-3">
+                      <p className="rounded-lg bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs font-bold text-[var(--crm-text-muted)]">
                         Gate: {phase.completionGate}
                       </p>
                       {phaseTasks.map(({ definition, task }) => (
-                        <div key={definition.taskType} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
+                        <div key={definition.taskType} className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-raised)] p-3">
                           <div className="flex items-start gap-3">
                             {task ? (
                               <button
@@ -1005,24 +1028,24 @@ function DetailDrawer({
                                 onClick={() => updateTask(task, task.status === 'done' ? 'open' : 'done')}
                                 className={cn(
                                   'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition',
-                                  task.status === 'done' ? 'border-[#22c55e] bg-[#22c55e] text-[#ffffff]' : 'border-[#cad2df] bg-[#ffffff] text-[#697386] hover:border-[#E32E2E]/40',
+                                  task.status === 'done' ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-[var(--crm-surface)]' : 'border-[var(--crm-border-strong)] bg-[var(--crm-surface)] text-[var(--crm-text-muted)] hover:border-[var(--crm-brand)]/40',
                                 )}
                                 aria-label={task.status === 'done' ? `Reopen ${task.label}` : `Complete ${task.label}`}
                               >
                                 <Icon name={task.status === 'done' ? 'check' : task.status === 'blocked' ? 'block' : 'radio_button_unchecked'} size="text-sm" />
                               </button>
                             ) : (
-                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-[#cad2df] bg-white text-[#9aa3b2]">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface)] text-[var(--crm-text-dim)]">
                                 <Icon name="sync" size="text-sm" />
                               </span>
                             )}
                             <div className="min-w-0 flex-1">
-                              <p className={cn('text-sm font-bold', task?.status === 'done' ? 'text-[#7a8494] line-through' : 'text-[#253041]')}>{definition.label}</p>
+                              <p className={cn('text-sm font-bold', task?.status === 'done' ? 'text-[var(--crm-text-dim)] line-through' : 'text-[var(--crm-text)]')}>{definition.label}</p>
                               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                 <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-black', laneClass(definition.lane))}>{laneLabel(definition.lane)}</span>
-                                <span className="rounded-full border border-[#cad2df] bg-white px-2 py-0.5 text-[10px] font-black text-[#697386]">Evidence: {definition.evidence}</span>
-                                {definition.gate && <span className="rounded-full border border-[#f7c948] bg-[#fff7d6] px-2 py-0.5 text-[10px] font-black text-[#8a5a00]">Required gate</span>}
-                                {task?.due_at && <span className="text-[10px] font-bold text-[#697386]">Due {formatDate(task.due_at)}</span>}
+                                <span className="rounded-full border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-2 py-0.5 text-[10px] font-black text-[var(--crm-text-muted)]">Evidence: {definition.evidence}</span>
+                                {definition.gate && <span className="rounded-full border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-2 py-0.5 text-[10px] font-black text-[var(--crm-warning)]">Required gate</span>}
+                                {task?.due_at && <span className="text-[10px] font-bold text-[var(--crm-text-muted)]">Due {formatDate(task.due_at)}</span>}
                               </div>
                             </div>
                             {task && (
@@ -1032,7 +1055,7 @@ function DetailDrawer({
                                   value={task.assigned_to ?? ''}
                                   onChange={(event) => updateTaskAssignee(task, event.target.value || null)}
                                   onClick={(event) => event.stopPropagation()}
-                                  className="max-w-[160px] rounded-md border border-[#cad2df] bg-white px-2 py-1 text-[10px] font-bold text-[#4b5565]"
+                                  className="max-w-[160px] rounded-md border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-2 py-1 text-[10px] font-bold text-[var(--crm-text-muted)]"
                                   aria-label={`Assign ${task.label}`}
                                 >
                                   <option value="">Unassigned</option>
@@ -1042,22 +1065,22 @@ function DetailDrawer({
                             )}
                           </div>
                           {task && task.status !== 'done' && (
-                            <div className="mt-2 flex justify-end gap-2 border-t border-[#e1e6ee] pt-2">
+                            <div className="mt-2 flex justify-end gap-2 border-t border-[var(--crm-border)] pt-2">
                               {task.status === 'blocked' ? (
-                                <button type="button" onClick={() => updateTask(task, 'open')} className="text-[11px] font-black text-[#1d4ed8] hover:underline">Resolve block</button>
+                                <button type="button" onClick={() => updateTask(task, 'open')} className="text-[11px] font-black text-[var(--crm-info)] hover:underline">Resolve block</button>
                               ) : (
-                                <button type="button" onClick={() => updateTask(task, 'blocked')} className="text-[11px] font-black text-[#b42318] hover:underline">Mark blocked</button>
+                                <button type="button" onClick={() => updateTask(task, 'blocked')} className="text-[11px] font-black text-[var(--crm-danger)] hover:underline">Mark blocked</button>
                               )}
                               {!definition.gate && task.status !== 'waived' && (
-                                <button type="button" onClick={() => updateTask(task, 'waived')} className="text-[11px] font-black text-[#697386] hover:underline">Waive</button>
+                                <button type="button" onClick={() => updateTask(task, 'waived')} className="text-[11px] font-black text-[var(--crm-text-muted)] hover:underline">Waive</button>
                               )}
                             </div>
                           )}
                           {(templatesByTaskType.get(definition.taskType)?.length ?? 0) > 0 ? (
-                            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[#e1e6ee] pt-2">
-                              <span className="mr-auto text-[10px] font-black uppercase tracking-[0.1em] text-[#697386]">Linked communication</span>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--crm-border)] pt-2">
+                              <span className="mr-auto text-[10px] font-black uppercase tracking-[0.1em] text-[var(--crm-text-muted)]">Linked communication</span>
                               {(templatesByTaskType.get(definition.taskType) ?? []).map((template) => (
-                                  <button key={template.id} type="button" onClick={() => prepareTemplate(template)} disabled={Boolean(preparingTemplateId)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#c4b5fd] bg-[#f6f3ff] px-2.5 py-1.5 text-[11px] font-black text-[#6d3fd1] transition hover:bg-[#eee8ff] disabled:opacity-50">
+                                  <button key={template.id} type="button" onClick={() => prepareTemplate(template)} disabled={Boolean(preparingTemplateId)} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--crm-violet-border)] bg-[var(--crm-violet-soft)] px-2.5 py-1.5 text-[11px] font-black text-[var(--crm-violet)] transition hover:bg-[var(--crm-violet-soft)] disabled:opacity-50">
                                     <Icon name="mail" size="text-sm" />
                                     {preparingTemplateId === template.id ? 'Preparing…' : `Prepare ${template.audience} email`}
                                   </button>
@@ -1072,29 +1095,29 @@ function DetailDrawer({
               })}
 
               {operatingPhases.length === 0 && (
-                <div className="rounded-lg border border-dashed border-[#cad2df] bg-[#fbfcfe] px-4 py-8 text-center text-sm font-semibold text-[#697386]">
+                <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface-raised)] px-4 py-8 text-center text-sm font-semibold text-[var(--crm-text-muted)]">
                   This transaction is cancelled or no longer in the active operating workflow.
                 </div>
               )}
             </div>
 
             {manualTasks.length > 0 && (
-              <details className="mt-4 overflow-hidden rounded-xl border border-[#d8dee9] bg-[#fbfcfe]">
-                <summary className="cursor-pointer px-4 py-3 text-sm font-black text-[#253041]">Existing manual tasks ({manualTasks.length})</summary>
-                <div className="space-y-2 border-t border-[#e1e6ee] bg-white p-3">
+              <details className="mt-4 overflow-hidden rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-raised)]">
+                <summary className="cursor-pointer px-4 py-3 text-sm font-black text-[var(--crm-text)]">Existing manual tasks ({manualTasks.length})</summary>
+                <div className="space-y-2 border-t border-[var(--crm-border)] bg-[var(--crm-surface)] p-3">
                   {manualTasks.map((task) => (
-                    <div key={task.id} className="flex items-center gap-3 rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] px-3 py-2">
+                    <div key={task.id} className="flex items-center gap-3 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-raised)] px-3 py-2">
                       <button
                         type="button"
                         onClick={() => updateTask(task, task.status === 'done' ? 'open' : 'done')}
-                        className={cn('flex h-8 w-8 items-center justify-center rounded-lg border', task.status === 'done' ? 'border-[#22c55e] bg-[#22c55e] text-white' : 'border-[#cad2df] bg-white text-[#697386]')}
+                        className={cn('flex h-8 w-8 items-center justify-center rounded-lg border', task.status === 'done' ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-[var(--crm-on-brand)]' : 'border-[var(--crm-border-strong)] bg-[var(--crm-surface)] text-[var(--crm-text-muted)]')}
                         aria-label={task.status === 'done' ? `Reopen ${task.label}` : `Complete ${task.label}`}
                       >
                         <Icon name={task.status === 'done' ? 'check' : 'radio_button_unchecked'} size="text-sm" />
                       </button>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-[#253041]">{task.label}</p>
-                        {task.due_at && <p className="text-xs text-[#697386]">Due {formatDate(task.due_at)}</p>}
+                        <p className="truncate text-sm font-semibold text-[var(--crm-text)]">{task.label}</p>
+                        {task.due_at && <p className="text-xs text-[var(--crm-text-muted)]">Due {formatDate(task.due_at)}</p>}
                       </div>
                       <span className={cn('rounded-full border px-2 py-1 text-[10px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
                     </div>
@@ -1104,11 +1127,11 @@ function DetailDrawer({
             )}
           </section>
 
-          <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] p-4">
+          <section className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-4">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Icon name="article" size="text-base" className="text-[#E32E2E]" />
-                <h3 className="text-sm font-black text-[#111827]">Templates</h3>
+                <Icon name="article" size="text-base" className="text-[var(--crm-brand)]" />
+                <h3 className="text-sm font-black text-[var(--crm-ink)]">Templates</h3>
               </div>
               <button onClick={() => startEditTemplate('new')} className={secondaryButtonClass}>
                 <Icon name="add" size="text-sm" />
@@ -1117,7 +1140,7 @@ function DetailDrawer({
             </div>
 
             {editingTemplate && (
-              <div className="mb-3 rounded-lg border border-[#d8dee9] bg-[#f8fafc] p-3">
+              <div className="mb-3 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-3">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <input
                     value={templateDraft.title}
@@ -1161,8 +1184,8 @@ function DetailDrawer({
                   />
                 </div>
                 <div className="mt-3 flex justify-end gap-2">
-                  <button onClick={() => setEditingTemplate(null)} className="rounded-lg px-3 py-2 text-xs font-bold text-[#697386] hover:bg-[#eef2f7]">Cancel</button>
-                  <button onClick={saveTemplate} className="inline-flex items-center gap-2 rounded-lg bg-[#E32E2E] px-3 py-2 text-xs font-bold text-[#ffffff] hover:bg-[#c42626]">
+                  <button onClick={() => setEditingTemplate(null)} className="rounded-lg px-3 py-2 text-xs font-bold text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface-subtle)]">Cancel</button>
+                  <button onClick={saveTemplate} className="inline-flex items-center gap-2 rounded-lg bg-[var(--crm-brand)] px-3 py-2 text-xs font-bold text-[var(--crm-surface)] hover:bg-[var(--crm-brand-hover)]">
                     <Icon name="save" size="text-sm" />
                     Save Template
                   </button>
@@ -1172,20 +1195,20 @@ function DetailDrawer({
 
             <div className="space-y-2">
               {templates.map((template) => (
-                <div key={template.id} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-3">
+                <div key={template.id} className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-raised)] p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-[220px] flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-bold text-[#111827]">{template.title}</p>
-                        {template.system ? <span className="rounded-full bg-[#e8fff0] px-2 py-0.5 text-[9px] font-black uppercase text-[#166534]">Governed</span> : <span className="rounded-full bg-[#eef2f7] px-2 py-0.5 text-[9px] font-black uppercase text-[#4b5565]">Custom</span>}
+                        <p className="text-sm font-bold text-[var(--crm-ink)]">{template.title}</p>
+                        {template.system ? <span className="rounded-full bg-[var(--crm-success-soft)] px-2 py-0.5 text-[9px] font-black uppercase text-[var(--crm-success)]">Governed</span> : <span className="rounded-full bg-[var(--crm-surface-subtle)] px-2 py-0.5 text-[9px] font-black uppercase text-[var(--crm-text-muted)]">Custom</span>}
                       </div>
-                      <p className="mt-0.5 text-[11px] font-bold uppercase text-[#697386]">{template.audience} · {communicationTemplateDepartmentLabel(template.department)} · {communicationTemplatePhaseLabel(template.phase_id)}</p>
-                      {template.subject && <p className="mt-2 truncate text-xs text-[#4b5565]">{template.subject}</p>}
-                      <p className="mt-1 text-[10px] font-semibold text-[#7a8494]">{template.source_label}</p>
+                      <p className="mt-0.5 text-[11px] font-bold uppercase text-[var(--crm-text-muted)]">{template.audience} · {communicationTemplateDepartmentLabel(template.department)} · {communicationTemplatePhaseLabel(template.phase_id)}</p>
+                      {template.subject && <p className="mt-2 truncate text-xs text-[var(--crm-text-muted)]">{template.subject}</p>}
+                      <p className="mt-1 text-[10px] font-semibold text-[var(--crm-text-dim)]">{template.source_label}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {template.template_type === 'email' ? (
-                        <button onClick={() => prepareTemplate(template)} disabled={Boolean(preparingTemplateId)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#6d3fd1] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#5b2fbd] disabled:opacity-50">
+                        <button onClick={() => prepareTemplate(template)} disabled={Boolean(preparingTemplateId)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--crm-violet)] px-3 py-2 text-sm font-bold text-[var(--crm-on-brand)] transition hover:bg-[var(--crm-violet)] disabled:opacity-50">
                           <Icon name="edit_note" size="text-sm" />
                           {preparingTemplateId === template.id ? 'Preparing…' : 'Prepare draft'}
                         </button>
@@ -1197,7 +1220,7 @@ function DetailDrawer({
                       {!template.system ? (
                         <>
                           <button onClick={() => startEditTemplate(template)} className={secondaryButtonClass}><Icon name="edit" size="text-sm" />Edit</button>
-                          <button onClick={() => deleteTemplate(template)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#E32E2E]/35 bg-[#fff1f1] px-3 py-2 text-sm font-bold text-[#b42318] transition hover:bg-[#ffe5e5]"><Icon name="delete" size="text-sm" />Delete</button>
+                          <button onClick={() => deleteTemplate(template)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--crm-brand)]/35 bg-[var(--crm-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-danger)] transition hover:bg-[var(--crm-danger-soft)]"><Icon name="delete" size="text-sm" />Delete</button>
                         </>
                       ) : null}
                     </div>
@@ -1205,7 +1228,7 @@ function DetailDrawer({
                 </div>
               ))}
               {templates.length === 0 && (
-                <div className="rounded-lg border border-dashed border-[#cad2df] bg-[#fbfcfe] px-4 py-8 text-center text-sm font-semibold text-[#697386]">
+                <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface-raised)] px-4 py-8 text-center text-sm font-semibold text-[var(--crm-text-muted)]">
                   No templates yet.
                 </div>
               )}
@@ -1367,28 +1390,28 @@ export default function TransactionCoordinatorPage() {
         value: files.filter((file) => file.status === 'not_opened' || file.status === 'opening_package_needed').length,
         detail: 'Files waiting on opening package work',
         icon: 'outbox',
-        tone: 'bg-[#fff7d6] text-[#8a5a00]',
+        tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
       },
       {
         label: 'Title work',
         value: files.filter((file) => file.status === 'title_work' || file.title_company_id).length,
         detail: 'Files with title work active or assigned',
         icon: 'policy',
-        tone: 'bg-[#f1edff] text-[#5b21b6]',
+        tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]',
       },
       {
         label: 'Docs ready',
         value: pageDocs.length,
         detail: 'Assignments or previews ready for review',
         icon: 'description',
-        tone: 'bg-[#e8f4ff] text-[#075985]',
+        tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]',
       },
       {
         label: 'Open tasks',
         value: openTasks.length,
         detail: 'Open or blocked TC tasks across files',
         icon: 'task_alt',
-        tone: 'bg-[#fff1f1] text-[#b42318]',
+        tone: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]',
       },
     ]
   }, [files, pageDocs.length, pageTasks])
@@ -1417,65 +1440,32 @@ export default function TransactionCoordinatorPage() {
   }
 
   const metricCards = [
-    { label: 'Active transactions', value: stats.open, icon: 'folder_open', tone: 'bg-[#e8f4ff] text-[#075985]' },
-    { label: 'Blocked', value: stats.blocked, icon: 'report', tone: 'bg-[#fff1f1] text-[#b42318]' },
-    { label: 'Closings scheduled', value: stats.scheduled, icon: 'event_available', tone: 'bg-[#eff6ff] text-[#1d4ed8]' },
-    { label: 'Assignment fees', value: formatCurrency(stats.fees), icon: 'payments', tone: 'bg-[#e8fff0] text-[#166534]' },
+    { label: 'Open files', value: stats.open, icon: 'folder_open', tone: 'info' as const },
+    { label: 'Need help', value: stats.blocked, icon: 'report', tone: 'danger' as const },
+    { label: 'Closing soon', value: stats.scheduled, icon: 'event_available', tone: 'warning' as const },
+    { label: 'Assignment fees', value: formatCurrency(stats.fees), icon: 'payments', tone: 'success' as const },
   ]
 
   return (
-    <main className="tc-portal min-h-full bg-[var(--crm-canvas)] text-[var(--crm-ink)]">
-      <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b border-[#d8dee9] pb-5">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E32E2E]">Dispositions operating system</p>
-            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111827]">Closing coordination</h1>
-            <p suppressHydrationWarning className="mt-1 max-w-2xl text-sm text-[#4b5565]">One shared transaction record for title, funding, assignment, closing, post-close, and the handoffs between Dispositions and Closing Coordination.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {TC_PAGE_TABS.map((tab) => {
-              const active = pageView === tab.key
-              return (
-                <Link
-                  key={tab.key}
-                  href={tab.href}
-                  prefetch={false}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-black transition',
-                    active
-                      ? 'border-[#E32E2E] bg-[#E32E2E] text-white shadow-sm shadow-[#E32E2E]/20'
-                      : 'border-[#cad2df] bg-[#ffffff] text-[#253041] hover:border-[#E32E2E]/40 hover:bg-[#fff7f7]'
-                  )}
-                >
-                  <Icon name={tab.icon} size="text-sm" className={active ? 'text-white' : 'text-[#697386]'} />
-                  {tab.label}
-                </Link>
-              )
-            })}
-            <button onClick={fetchFiles} className={secondaryButtonClass}>
-              <Icon name="refresh" size="text-sm" /> Refresh
-            </button>
-          </div>
+    <main className="min-h-full bg-[var(--crm-canvas)] text-[var(--crm-ink)]">
+      <div className="mx-auto max-w-[1440px] space-y-4 px-4 py-4 sm:px-6 lg:px-8">
+        <div className="overflow-hidden rounded-xl border border-[var(--crm-border)] shadow-[var(--crm-shadow-sm)]">
+          <DispoPageHeader
+            eyebrow="Dispositions"
+            title="Closing coordination"
+            description="Open a file, see what is due, and complete the next step. Dispositions and Closing Coordination work from the same record."
+            actions={(
+              <button onClick={fetchFiles} className={secondaryButtonClass}>
+                <Icon name="refresh" size="text-sm" /> Refresh
+              </button>
+            )}
+          />
+          <DispoWorkspaceTabs tabs={TC_PAGE_TABS} activeKey={pageView} />
         </div>
 
-        <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {metricCards.map((card) => (
-            <div key={card.label} className="rounded-lg border border-[#d8dee9] bg-[#ffffff] px-4 py-3 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase text-[#697386]">{card.label}</p>
-                  <p className="mt-1 text-2xl font-black text-[#111827]">{card.value}</p>
-                </div>
-                <span className={cn('flex h-10 w-10 items-center justify-center rounded-lg', card.tone)}>
-                  <Icon name={card.icon} size="text-xl" />
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <MetricStrip items={metricCards} />
 
-        {error && <div className="mb-4 rounded-lg border border-[#E32E2E]/35 bg-[#fff1f1] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</div>}
+        {error && <div className="mb-4 rounded-lg border border-[var(--crm-brand)]/35 bg-[var(--crm-danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--crm-danger)]">{error}</div>}
 
         {pageView === 'files' && (
           <>
@@ -1487,8 +1477,8 @@ export default function TransactionCoordinatorPage() {
                   className={cn(
                     'whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-black transition-colors',
                     activeTab === tab.key
-                      ? 'border-[#E32E2E] bg-[#E32E2E] text-[#ffffff]'
-                      : 'border-[#cad2df] bg-[#ffffff] text-[#4b5565] hover:border-[#E32E2E]/40 hover:bg-[#fff7f7]'
+                      ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)] text-[var(--crm-surface)]'
+                      : 'border-[var(--crm-border-strong)] bg-[var(--crm-surface)] text-[var(--crm-text-muted)] hover:border-[var(--crm-brand)]/40 hover:bg-[var(--crm-brand-soft)]'
                   )}
                 >
                   {tab.label}
@@ -1496,10 +1486,10 @@ export default function TransactionCoordinatorPage() {
               ))}
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
+            <div className="overflow-hidden rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
               <div className="overflow-x-auto">
                 <div className="min-w-[980px]">
-                  <div className="grid grid-cols-[1.35fr_0.95fr_0.9fr_0.72fr_0.72fr_0.9fr_1.05fr] gap-3 border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3 text-[11px] font-black uppercase text-[#697386]">
+                  <div className="grid grid-cols-[1.35fr_0.95fr_0.9fr_0.72fr_0.72fr_0.9fr_1.05fr] gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-4 py-3 text-[11px] font-black uppercase text-[var(--crm-text-muted)]">
                     <span>Property</span>
                     <span>Buyer</span>
                     <span>Title</span>
@@ -1509,26 +1499,26 @@ export default function TransactionCoordinatorPage() {
                     <span>Next Action</span>
                   </div>
                   {loading ? (
-                    <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">Loading TC files...</div>
+                    <div className="px-4 py-12 text-center text-sm font-semibold text-[var(--crm-text-muted)]">Loading TC files...</div>
                   ) : filtered.length === 0 ? (
                     <div className="px-4 py-14 text-center">
-                      <Icon name="fact_check" size="text-3xl" className="mx-auto mb-2 text-[#cad2df]" />
-                      <p className="text-sm font-bold text-[#253041]">No active closing files in this view.</p>
-                      <p className="mt-1 text-xs text-[#697386]">Real Dispositions records appear here as the shared operating workflow activates.</p>
+                      <Icon name="fact_check" size="text-3xl" className="mx-auto mb-2 text-[var(--crm-border-strong)]" />
+                      <p className="text-sm font-bold text-[var(--crm-text)]">No active closing files in this view.</p>
+                      <p className="mt-1 text-xs text-[var(--crm-text-muted)]">Real Dispositions records appear here as the shared operating workflow activates.</p>
                     </div>
                   ) : (
-                    <div className="divide-y divide-[#e1e6ee]">
+                    <div className="divide-y divide-[var(--crm-border)]">
                       {filtered.map((file) => {
                         const progress = operatingProgress(file)
                         return (
                         <button
                           key={file.id}
                           onClick={() => setSelected(file)}
-                          className="grid w-full grid-cols-[1.35fr_0.95fr_0.9fr_0.72fr_0.72fr_0.9fr_1.05fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
+                          className="grid w-full grid-cols-[1.35fr_0.95fr_0.9fr_0.72fr_0.72fr_0.9fr_1.05fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[var(--crm-brand-soft)]"
                         >
                           <span className="min-w-0">
-                            <span className="block truncate font-bold text-[#111827]">{file.lead?.property_address || 'No address'}</span>
-                            <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#697386]">
+                            <span className="block truncate font-bold text-[var(--crm-ink)]">{file.lead?.property_address || 'No address'}</span>
+                            <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--crm-text-muted)]">
                               <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-black', STATUS_META[file.status].badge)}>
                                 <Icon name={STATUS_META[file.status].icon} size="text-sm" />
                                 {statusLabel(file.status)}
@@ -1536,22 +1526,22 @@ export default function TransactionCoordinatorPage() {
                               <span>{openTaskCount(file)} open tasks</span>
                             </span>
                           </span>
-                          <span className="truncate text-[#4b5565]">{file.offer?.buyer?.name || file.offer?.buyer?.company || '—'}</span>
-                          <span className="truncate text-[#4b5565]">{file.title_company?.name || file.file_number || 'Not assigned'}</span>
-                          <span className="text-[#4b5565]">{formatDate(tcClosingDate(file))}</span>
+                          <span className="truncate text-[var(--crm-text-muted)]">{file.offer?.buyer?.name || file.offer?.buyer?.company || '—'}</span>
+                          <span className="truncate text-[var(--crm-text-muted)]">{file.title_company?.name || file.file_number || 'Not assigned'}</span>
+                          <span className="text-[var(--crm-text-muted)]">{formatDate(tcClosingDate(file))}</span>
                           <span>
                             <span className={cn('inline-flex rounded-full border px-2 py-1 text-[11px] font-black uppercase', riskClass(file.risk_level))}>{file.risk_level}</span>
                           </span>
                           <span className="min-w-0">
-                            <span className="flex items-center justify-between gap-2 text-[11px] font-black text-[#253041]">
+                            <span className="flex items-center justify-between gap-2 text-[11px] font-black text-[var(--crm-text)]">
                               <span>{progress.percent}%</span>
-                              <span className="text-[#697386]">{progress.completed}/{progress.total}</span>
+                              <span className="text-[var(--crm-text-muted)]">{progress.completed}/{progress.total}</span>
                             </span>
-                            <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[#e1e6ee]">
-                              <span className={cn('block h-full rounded-full', progress.blocked > 0 ? 'bg-[#E32E2E]' : 'bg-[#22c55e]')} style={{ width: `${progress.percent}%` }} />
+                            <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[var(--crm-border)]">
+                              <span className={cn('block h-full rounded-full', progress.blocked > 0 ? 'bg-[var(--crm-brand)]' : 'bg-[var(--crm-success)]')} style={{ width: `${progress.percent}%` }} />
                             </span>
                           </span>
-                          <span className="truncate text-[#4b5565]">{file.next_action || '—'}</span>
+                          <span className="truncate text-[var(--crm-text-muted)]">{file.next_action || '—'}</span>
                         </button>
                         )
                       })}
@@ -1564,32 +1554,32 @@ export default function TransactionCoordinatorPage() {
         )}
 
         {pageView === 'communications' && (
-          <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
-            <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-              <h2 className="text-sm font-black text-[#111827]">Communications</h2>
+          <section className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
+            <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-4 py-3">
+              <h2 className="text-sm font-black text-[var(--crm-ink)]">Communications</h2>
             </div>
-            <div className="divide-y divide-[#e1e6ee]">
+            <div className="divide-y divide-[var(--crm-border)]">
               {loadingTimeline ? (
-                <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">Loading communications...</div>
+                <div className="px-4 py-12 text-center text-sm font-semibold text-[var(--crm-text-muted)]">Loading communications...</div>
               ) : pageCommunications.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">No communications found.</div>
+                <div className="px-4 py-12 text-center text-sm font-semibold text-[var(--crm-text-muted)]">No communications found.</div>
               ) : (
                 pageCommunications.map(({ file, item }) => (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => setSelected(file)}
-                    className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[#fff7f7]"
+                    className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--crm-brand-soft)]"
                   >
-                    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#fff1f1] text-[#E32E2E]">
+                    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--crm-danger-soft)] text-[var(--crm-brand)]">
                       <Icon name={communicationIcon(item.activity_type)} size="text-base" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-black text-[#111827]">{communicationLabel(item)}</span>
-                      <span className="mt-0.5 block text-xs font-semibold text-[#697386]">
+                      <span className="block text-sm font-black text-[var(--crm-ink)]">{communicationLabel(item)}</span>
+                      <span className="mt-0.5 block text-xs font-semibold text-[var(--crm-text-muted)]">
                         {file.lead?.property_address || 'No property'} · {formatDateTime(item.created_at)}
                       </span>
-                      {item.description && <span className="mt-2 line-clamp-2 block text-sm text-[#4b5565]">{item.description}</span>}
+                      {item.description && <span className="mt-2 line-clamp-2 block text-sm text-[var(--crm-text-muted)]">{item.description}</span>}
                     </span>
                   </button>
                 ))
@@ -1599,23 +1589,23 @@ export default function TransactionCoordinatorPage() {
         )}
 
         {pageView === 'docs' && (
-          <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
-            <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-              <h2 className="text-sm font-black text-[#111827]">Documents</h2>
-              <p className="mt-1 text-xs font-semibold text-[#697386]">Contracts, receipts, title work, approvals, and closing evidence tied to the transaction record.</p>
+          <section className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
+            <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-4 py-3">
+              <h2 className="text-sm font-black text-[var(--crm-ink)]">Documents</h2>
+              <p className="mt-1 text-xs font-semibold text-[var(--crm-text-muted)]">Contracts, receipts, title work, approvals, and closing evidence tied to the transaction record.</p>
             </div>
             <div className="grid grid-cols-1 gap-4 p-4 xl:grid-cols-2">
               {loading ? (
-                <div className="rounded-lg border border-dashed border-[#cad2df] px-4 py-12 text-center text-sm font-semibold text-[#697386] xl:col-span-2">Loading docs...</div>
+                <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] px-4 py-12 text-center text-sm font-semibold text-[var(--crm-text-muted)] xl:col-span-2">Loading docs...</div>
               ) : pageDocs.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-[#cad2df] px-4 py-12 text-center text-sm font-semibold text-[#697386] xl:col-span-2">No docs ready for review.</div>
+                <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] px-4 py-12 text-center text-sm font-semibold text-[var(--crm-text-muted)] xl:col-span-2">No docs ready for review.</div>
               ) : (
                 pageDocs.map((file) => (
-                  <div key={file.id} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] p-4">
+                  <div key={file.id} className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-raised)] p-4">
                     <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-[#111827]">{file.lead?.property_address || 'No property'}</p>
-                        <p className="mt-0.5 text-xs font-semibold text-[#697386]">{file.offer?.buyer?.name || file.offer?.buyer?.company || 'No buyer'}</p>
+                        <p className="truncate text-sm font-black text-[var(--crm-ink)]">{file.lead?.property_address || 'No property'}</p>
+                        <p className="mt-0.5 text-xs font-semibold text-[var(--crm-text-muted)]">{file.offer?.buyer?.name || file.offer?.buyer?.company || 'No buyer'}</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {file.offer?.assignment_document_url ? (
@@ -1636,7 +1626,7 @@ export default function TransactionCoordinatorPage() {
                       </div>
                     </div>
                     {file.offer?.assignment_document_url ? (
-                      <div className="h-[360px] overflow-hidden rounded-lg border border-[#cad2df] bg-white">
+                      <div className="h-[360px] overflow-hidden rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-surface)]">
                         <iframe
                           src={file.offer.assignment_document_url}
                           title={`Assignment document for ${file.lead?.property_address || 'TC file'}`}
@@ -1644,7 +1634,7 @@ export default function TransactionCoordinatorPage() {
                         />
                       </div>
                     ) : (
-                      <div className="rounded-lg border border-dashed border-[#cad2df] bg-white px-4 py-10 text-center text-sm font-semibold text-[#697386]">
+                      <div className="rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-4 py-10 text-center text-sm font-semibold text-[var(--crm-text-muted)]">
                         Assignment preview pending.
                       </div>
                     )}
@@ -1656,20 +1646,20 @@ export default function TransactionCoordinatorPage() {
         )}
 
         {pageView === 'tasks' && (
-          <section className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
-            <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
+          <section className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
+            <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-4 py-3">
               <div>
-                <h2 className="text-sm font-black text-[#111827]">Role queue</h2>
-                <p className="mt-1 text-xs font-semibold text-[#697386]">Due work across Dispositions, Closing Coordination, and shared handoffs.</p>
+                <h2 className="text-sm font-black text-[var(--crm-ink)]">Role queue</h2>
+                <p className="mt-1 text-xs font-semibold text-[var(--crm-text-muted)]">Due work across Dispositions, Closing Coordination, and shared handoffs.</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <select value={taskLane} onChange={(event) => setTaskLane(event.target.value as typeof taskLane)} className="rounded-lg border border-[#cad2df] bg-white px-3 py-2 text-xs font-black text-[#253041]" aria-label="Filter tasks by team lane">
+                <select value={taskLane} onChange={(event) => setTaskLane(event.target.value as typeof taskLane)} className="rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-3 py-2 text-xs font-black text-[var(--crm-text)]" aria-label="Filter tasks by team lane">
                   <option value="all">All teams</option>
                   <option value="dispositions">Dispositions</option>
                   <option value="coordination">Closing coordination</option>
                   <option value="shared">Shared gates</option>
                 </select>
-                <select value={taskState} onChange={(event) => setTaskState(event.target.value as typeof taskState)} className="rounded-lg border border-[#cad2df] bg-white px-3 py-2 text-xs font-black text-[#253041]" aria-label="Filter tasks by status">
+                <select value={taskState} onChange={(event) => setTaskState(event.target.value as typeof taskState)} className="rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-3 py-2 text-xs font-black text-[var(--crm-text)]" aria-label="Filter tasks by status">
                   <option value="active">Active work</option>
                   <option value="all">All statuses</option>
                   <option value="open">Open</option>
@@ -1679,11 +1669,11 @@ export default function TransactionCoordinatorPage() {
                 </select>
               </div>
             </div>
-            <div className="divide-y divide-[#e1e6ee]">
+            <div className="divide-y divide-[var(--crm-border)]">
               {loading ? (
-                <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">Loading tasks...</div>
+                <div className="px-4 py-12 text-center text-sm font-semibold text-[var(--crm-text-muted)]">Loading tasks...</div>
               ) : visiblePageTasks.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm font-semibold text-[#697386]">No tasks match this role queue.</div>
+                <div className="px-4 py-12 text-center text-sm font-semibold text-[var(--crm-text-muted)]">No tasks match this role queue.</div>
               ) : (
                 visiblePageTasks.map(({ file, task }) => {
                   const operating = dispositionTaskDefinition(task.task_type)
@@ -1692,20 +1682,20 @@ export default function TransactionCoordinatorPage() {
                     key={task.id}
                     type="button"
                     onClick={() => setSelected(file)}
-                    className="grid w-full grid-cols-[1.4fr_1fr_0.8fr_0.7fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
+                    className="grid w-full grid-cols-[1.4fr_1fr_0.8fr_0.7fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[var(--crm-brand-soft)]"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate font-bold text-[#111827]">{task.label}</span>
-                      <span className="mt-0.5 block truncate text-xs font-semibold text-[#697386]">{file.lead?.property_address || 'No property'}</span>
+                      <span className="block truncate font-bold text-[var(--crm-ink)]">{task.label}</span>
+                      <span className="mt-0.5 block truncate text-xs font-semibold text-[var(--crm-text-muted)]">{file.lead?.property_address || 'No property'}</span>
                       {operating && (
                         <span className="mt-1 flex flex-wrap gap-1.5">
                           <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-black', laneClass(operating.definition.lane))}>{laneLabel(operating.definition.lane)}</span>
-                          <span className="rounded-full border border-[#cad2df] bg-white px-2 py-0.5 text-[10px] font-black text-[#697386]">{operating.phase.label}</span>
+                          <span className="rounded-full border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-2 py-0.5 text-[10px] font-black text-[var(--crm-text-muted)]">{operating.phase.label}</span>
                         </span>
                       )}
                     </span>
-                    <span className="truncate text-[#4b5565]">{task.assigned_to || 'Unassigned'}</span>
-                    <span className="text-[#4b5565]">{formatDate(task.due_at)}</span>
+                    <span className="truncate text-[var(--crm-text-muted)]">{task.assigned_to || 'Unassigned'}</span>
+                    <span className="text-[var(--crm-text-muted)]">{formatDate(task.due_at)}</span>
                     <span>
                       <span className={cn('inline-flex rounded-full border px-2 py-1 text-[11px] font-black uppercase', taskStatusClass(task.status))}>{task.status}</span>
                     </span>
@@ -1719,19 +1709,19 @@ export default function TransactionCoordinatorPage() {
 
         {pageView === 'reports' && (
           <section className="space-y-4">
-            <div className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
-              <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-                <h2 className="text-sm font-black text-[#111827]">Transaction performance</h2>
-                <p className="mt-1 text-xs font-semibold text-[#697386]">Shared Dispositions and Closing Coordination performance from the same live transaction records.</p>
+            <div className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
+              <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-4 py-3">
+                <h2 className="text-sm font-black text-[var(--crm-ink)]">Transaction performance</h2>
+                <p className="mt-1 text-xs font-semibold text-[var(--crm-text-muted)]">Shared Dispositions and Closing Coordination performance from the same live transaction records.</p>
               </div>
               <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
                 {reportRows.map((row) => (
-                  <div key={row.label} className="rounded-lg border border-[#e1e6ee] bg-[#fbfcfe] px-4 py-3">
+                  <div key={row.label} className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-raised)] px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-xs font-bold uppercase text-[#697386]">{row.label}</p>
-                        <p className="mt-1 text-2xl font-black text-[#111827]">{row.value}</p>
-                        <p className="mt-1 text-xs font-semibold text-[#697386]">{row.detail}</p>
+                        <p className="text-xs font-bold uppercase text-[var(--crm-text-muted)]">{row.label}</p>
+                        <p className="mt-1 text-2xl font-black text-[var(--crm-ink)]">{row.value}</p>
+                        <p className="mt-1 text-xs font-semibold text-[var(--crm-text-muted)]">{row.detail}</p>
                       </div>
                       <span className={cn('flex h-10 w-10 items-center justify-center rounded-lg', row.tone)}>
                         <Icon name={row.icon} size="text-xl" />
@@ -1743,28 +1733,28 @@ export default function TransactionCoordinatorPage() {
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <div className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
-                <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-                  <h3 className="text-sm font-black text-[#111827]">Upcoming Closings</h3>
+              <div className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
+                <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-4 py-3">
+                  <h3 className="text-sm font-black text-[var(--crm-ink)]">Upcoming Closings</h3>
                 </div>
-                <div className="divide-y divide-[#e1e6ee]">
+                <div className="divide-y divide-[var(--crm-border)]">
                   {loading ? (
-                    <div className="px-4 py-10 text-center text-sm font-semibold text-[#697386]">Loading closing report...</div>
+                    <div className="px-4 py-10 text-center text-sm font-semibold text-[var(--crm-text-muted)]">Loading closing report...</div>
                   ) : upcomingClosings.length === 0 ? (
-                    <div className="px-4 py-10 text-center text-sm font-semibold text-[#697386]">No scheduled closings yet.</div>
+                    <div className="px-4 py-10 text-center text-sm font-semibold text-[var(--crm-text-muted)]">No scheduled closings yet.</div>
                   ) : (
                     upcomingClosings.map((file) => (
                       <button
                         key={file.id}
                         type="button"
                         onClick={() => setSelected(file)}
-                        className="grid w-full grid-cols-[1.3fr_0.8fr_0.8fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
+                        className="grid w-full grid-cols-[1.3fr_0.8fr_0.8fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[var(--crm-brand-soft)]"
                       >
                         <span className="min-w-0">
-                          <span className="block truncate font-bold text-[#111827]">{file.lead?.property_address || 'No property'}</span>
-                          <span className="mt-0.5 block truncate text-xs font-semibold text-[#697386]">{file.offer?.buyer?.name || file.offer?.buyer?.company || 'No buyer'}</span>
+                          <span className="block truncate font-bold text-[var(--crm-ink)]">{file.lead?.property_address || 'No property'}</span>
+                          <span className="mt-0.5 block truncate text-xs font-semibold text-[var(--crm-text-muted)]">{file.offer?.buyer?.name || file.offer?.buyer?.company || 'No buyer'}</span>
                         </span>
-                        <span className="font-semibold text-[#4b5565]">{formatDate(tcClosingDate(file))}</span>
+                        <span className="font-semibold text-[var(--crm-text-muted)]">{formatDate(tcClosingDate(file))}</span>
                         <span className={cn('justify-self-start rounded-full border px-2 py-1 text-[11px] font-black uppercase', STATUS_META[file.status].badge)}>
                           {statusLabel(file.status)}
                         </span>
@@ -1774,26 +1764,26 @@ export default function TransactionCoordinatorPage() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
-                <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-                  <h3 className="text-sm font-black text-[#111827]">Blocked / Watch Items</h3>
+              <div className="rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
+                <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-4 py-3">
+                  <h3 className="text-sm font-black text-[var(--crm-ink)]">Blocked / Watch Items</h3>
                 </div>
-                <div className="divide-y divide-[#e1e6ee]">
+                <div className="divide-y divide-[var(--crm-border)]">
                   {loading ? (
-                    <div className="px-4 py-10 text-center text-sm font-semibold text-[#697386]">Loading risk report...</div>
+                    <div className="px-4 py-10 text-center text-sm font-semibold text-[var(--crm-text-muted)]">Loading risk report...</div>
                   ) : blockedFiles.length === 0 ? (
-                    <div className="px-4 py-10 text-center text-sm font-semibold text-[#697386]">No blocked files right now.</div>
+                    <div className="px-4 py-10 text-center text-sm font-semibold text-[var(--crm-text-muted)]">No blocked files right now.</div>
                   ) : (
                     blockedFiles.map((file) => (
                       <button
                         key={file.id}
                         type="button"
                         onClick={() => setSelected(file)}
-                        className="grid w-full grid-cols-[1fr_0.7fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[#fff7f7]"
+                        className="grid w-full grid-cols-[1fr_0.7fr] gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-[var(--crm-brand-soft)]"
                       >
                         <span className="min-w-0">
-                          <span className="block truncate font-bold text-[#111827]">{file.lead?.property_address || 'No property'}</span>
-                          <span className="mt-0.5 block truncate text-xs font-semibold text-[#697386]">{file.risk_reason || file.next_action || 'Needs TC review'}</span>
+                          <span className="block truncate font-bold text-[var(--crm-ink)]">{file.lead?.property_address || 'No property'}</span>
+                          <span className="mt-0.5 block truncate text-xs font-semibold text-[var(--crm-text-muted)]">{file.risk_reason || file.next_action || 'Needs TC review'}</span>
                         </span>
                         <span className={cn('justify-self-start rounded-full border px-2 py-1 text-[11px] font-black uppercase', riskClass(file.risk_level))}>{file.risk_level}</span>
                       </button>
@@ -1806,24 +1796,24 @@ export default function TransactionCoordinatorPage() {
         )}
 
         {pageView === 'communications' && pageEvents.length > 0 && (
-          <section className="mt-4 rounded-lg border border-[#d8dee9] bg-[#ffffff] shadow-sm">
-            <div className="border-b border-[#e1e6ee] bg-[#f8fafc] px-4 py-3">
-              <h2 className="text-sm font-black text-[#111827]">TC Activity</h2>
+          <section className="mt-4 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-sm">
+            <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-4 py-3">
+              <h2 className="text-sm font-black text-[var(--crm-ink)]">TC Activity</h2>
             </div>
-            <div className="divide-y divide-[#e1e6ee]">
+            <div className="divide-y divide-[var(--crm-border)]">
               {pageEvents.slice(0, 20).map(({ file, event }) => (
                 <button
                   key={event.id}
                   type="button"
                   onClick={() => setSelected(file)}
-                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[#fff7f7]"
+                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--crm-brand-soft)]"
                 >
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#eef2f7] text-[#4b5565]">
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]">
                     <Icon name="history" size="text-base" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-black text-[#111827]">{event.event_type.replace(/_/g, ' ')}</span>
-                    <span className="mt-0.5 block text-xs font-semibold text-[#697386]">
+                    <span className="block text-sm font-black text-[var(--crm-ink)]">{event.event_type.replace(/_/g, ' ')}</span>
+                    <span className="mt-0.5 block text-xs font-semibold text-[var(--crm-text-muted)]">
                       {file.lead?.property_address || 'No property'} · {formatDateTime(event.created_at)}
                     </span>
                   </span>

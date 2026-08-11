@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 import { cn, formatCurrency } from '@/lib/utils'
 import { useBroadcasts, useBroadcast, useCreateBroadcast, useSendBroadcast } from '@/hooks/use-broadcasts'
 import type { DealBroadcast, BroadcastRecipient } from '@/types/dispo'
@@ -11,13 +12,13 @@ import type { DealBroadcast, BroadcastRecipient } from '@/types/dispo'
 // ---------------------------------------------------------------------------
 function statusBadge(status: DealBroadcast['status']) {
   const map: Record<DealBroadcast['status'], string> = {
-    draft: 'bg-slate-500/20 text-slate-300',
-    scheduled: 'bg-amber-500/20 text-amber-300',
-    sending: 'bg-amber-500/20 text-amber-300',
-    sent: 'bg-emerald-500/20 text-emerald-300',
-    cancelled: 'bg-red-500/20 text-red-300',
+    draft: 'bg-[var(--crm-surface-raised)] text-[var(--crm-text-dim)]',
+    scheduled: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+    sending: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]',
+    sent: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+    cancelled: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]',
   }
-  return map[status] ?? 'bg-slate-100 text-slate-600'
+  return map[status] ?? 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text)]'
 }
 
 function formatDate(iso: string | null) {
@@ -42,25 +43,25 @@ function RecipientRow({ recipient }: { recipient: BroadcastRecipient }) {
   const name = buyer ? `${buyer.first_name} ${buyer.last_name}` : recipient.buyer_id
 
   function smsBadge() {
-    if (recipient.sms_replied) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">Replied</span>
-    if (recipient.sms_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300">Sent</span>
-    return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">Not sent</span>
+    if (recipient.sms_replied) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-success-soft)] text-[var(--crm-success)]">Replied</span>
+    if (recipient.sms_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]">Sent</span>
+    return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-surface-raised)] text-[var(--crm-text-dim)]">Not sent</span>
   }
 
   function emailBadge() {
-    if (recipient.email_clicked_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">Clicked</span>
-    if (recipient.email_opened_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300">Opened</span>
-    if (recipient.email_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">Sent</span>
-    return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/20 text-slate-400">—</span>
+    if (recipient.email_clicked_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-success-soft)] text-[var(--crm-success)]">Clicked</span>
+    if (recipient.email_opened_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]">Opened</span>
+    if (recipient.email_sent_at) return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-surface-raised)] text-[var(--crm-text-dim)]">Sent</span>
+    return <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--crm-surface-raised)] text-[var(--crm-text-dim)]">—</span>
   }
 
   return (
-    <tr className="border-b border-slate-100 hover:bg-slate-50">
-      <td className="px-4 py-2.5 text-sm font-medium text-slate-900">{name}</td>
-      <td className="px-4 py-2.5 text-sm text-slate-500">{buyer?.company_name ?? '—'}</td>
+    <tr className="border-b border-[var(--crm-border)] hover:bg-[var(--crm-surface-subtle)]">
+      <td className="px-4 py-2.5 text-sm font-medium text-[var(--crm-ink)]">{name}</td>
+      <td className="px-4 py-2.5 text-sm text-[var(--crm-text-muted)]">{buyer?.company_name ?? '—'}</td>
       <td className="px-4 py-2.5">{smsBadge()}</td>
       <td className="px-4 py-2.5">{emailBadge()}</td>
-      <td className="px-4 py-2.5 text-xs text-slate-400">{recipient.match_score ?? '—'}</td>
+      <td className="px-4 py-2.5 text-xs text-[var(--crm-text-dim)]">{recipient.match_score ?? '—'}</td>
     </tr>
   )
 }
@@ -98,7 +99,7 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
 
   if (isLoading || !broadcast) {
     return (
-      <div className="mt-4 bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center text-slate-400">
+      <div className="mt-4 bg-[var(--crm-surface)] rounded-xl border border-[var(--crm-border)] shadow-sm p-8 text-center text-[var(--crm-text-dim)]">
         {isLoading ? 'Loading broadcast…' : 'Broadcast not found'}
       </div>
     )
@@ -108,19 +109,19 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
   const address = getAddress(snap)
 
   return (
-    <div className="mt-4 bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+    <div className="mt-4 bg-[var(--crm-surface)] rounded-xl border border-[var(--crm-border)] shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--crm-border)]">
         <div>
-          <h3 className="font-bold text-slate-900">{address}</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Broadcast {broadcast.id.slice(0, 8)}… · {formatDateTime(broadcast.sent_at ?? broadcast.created_at)}</p>
+          <h3 className="font-bold text-[var(--crm-ink)]">{address}</h3>
+          <p className="text-xs text-[var(--crm-text-muted)] mt-0.5">Broadcast {broadcast.id.slice(0, 8)}… · {formatDateTime(broadcast.sent_at ?? broadcast.created_at)}</p>
         </div>
-        <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+        <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
           <Icon name="close" />
         </button>
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-100 border-b border-slate-100">
+      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-[var(--crm-border)] border-b border-[var(--crm-border)]">
         {[
           { label: 'Recipients', val: broadcast.total_recipients },
           { label: 'SMS Replies', val: broadcast.sms_replies },
@@ -128,23 +129,23 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
           { label: 'Offers', val: broadcast.offers_received },
         ].map(({ label, val }) => (
           <div key={label} className="px-5 py-4 text-center">
-            <p className="text-2xl font-bold text-slate-900">{val}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+            <p className="text-2xl font-bold text-[var(--crm-ink)]">{val}</p>
+            <p className="text-xs text-[var(--crm-text-muted)] mt-0.5">{label}</p>
           </div>
         ))}
       </div>
 
       {/* Deal snapshot */}
       {Object.keys(snap).length > 0 && (
-        <div className="px-5 py-4 border-b border-slate-100">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Deal Snapshot</p>
+        <div className="px-5 py-4 border-b border-[var(--crm-border)]">
+          <p className="text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider mb-2">Deal Snapshot</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {(['arv', 'asking_price', 'est_assignment', 'beds', 'baths', 'sqft'] as string[])
               .filter(k => snap[k] != null)
               .map(k => (
-                <div key={k} className="bg-slate-50 rounded-lg px-3 py-2">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">{k.replace(/_/g, ' ')}</p>
-                  <p className="text-sm font-semibold text-slate-900">
+                <div key={k} className="bg-[var(--crm-surface-subtle)] rounded-lg px-3 py-2">
+                  <p className="text-[10px] font-bold text-[var(--crm-text-dim)] uppercase">{k.replace(/_/g, ' ')}</p>
+                  <p className="text-sm font-semibold text-[var(--crm-ink)]">
                     {typeof snap[k] === 'number' && k.includes('price') || k === 'arv' || k === 'est_assignment'
                       ? formatCurrency(snap[k] as number)
                       : String(snap[k])}
@@ -157,25 +158,25 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
 
       {/* Send form */}
       {broadcast.status === 'draft' && (
-        <div className="px-5 py-4 border-b border-slate-100">
+        <div className="px-5 py-4 border-b border-[var(--crm-border)]">
           {feedback && (
-            <div className="mb-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-lg px-3 py-2">{feedback}</div>
+            <div className="mb-3 bg-[var(--crm-success-soft)] border border-[var(--crm-success-border)] text-[var(--crm-success)] text-sm rounded-lg px-3 py-2">{feedback}</div>
           )}
           {!showSendForm ? (
             <button
               onClick={() => setShowSendForm(true)}
-              className="bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2"
+              className="bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2"
             >
               <Icon name="send" size="text-sm" />
               Send Broadcast
             </button>
           ) : (
             <div className="space-y-3">
-              <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Compose Message</p>
+              <p className="text-xs font-bold text-[var(--crm-text)] uppercase tracking-wider">Compose Message</p>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">SMS Body</label>
+                <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">SMS Body</label>
                 <textarea
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none"
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 resize-none"
                   rows={3}
                   value={smsBody}
                   onChange={e => setSmsBody(e.target.value)}
@@ -183,18 +184,18 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Email Subject</label>
+                <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Email Subject</label>
                 <input
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                   value={emailSubject}
                   onChange={e => setEmailSubject(e.target.value)}
                   placeholder="New Deal Available — 64112"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Email Body</label>
+                <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Email Body</label>
                 <textarea
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30 resize-none"
+                  className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30 resize-none"
                   rows={4}
                   value={emailBody}
                   onChange={e => setEmailBody(e.target.value)}
@@ -204,14 +205,14 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowSendForm(false)}
-                  className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold"
+                  className="bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSend}
                   disabled={sendBroadcast.isPending}
-                  className="bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 flex items-center gap-2"
+                  className="bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 flex items-center gap-2"
                 >
                   <Icon name="send" size="text-sm" />
                   {sendBroadcast.isPending ? 'Sending…' : `Send to ${broadcast.total_recipients} buyers`}
@@ -224,21 +225,21 @@ function BroadcastDetail({ broadcastId, onClose }: { broadcastId: string; onClos
 
       {/* Recipients */}
       <div className="px-5 py-4">
-        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+        <p className="text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider mb-3">
           Recipients ({recipients.length})
         </p>
         {recipients.length === 0 ? (
-          <p className="text-sm text-slate-400 italic">No recipients yet</p>
+          <p className="text-sm text-[var(--crm-text-dim)] italic">No recipients yet</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-100">
+          <div className="overflow-x-auto rounded-lg border border-[var(--crm-border)]">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="text-left px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Buyer</th>
-                  <th className="text-left px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Company</th>
-                  <th className="text-left px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">SMS</th>
-                  <th className="text-left px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Email</th>
-                  <th className="text-left px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Score</th>
+                <tr className="bg-[var(--crm-surface-subtle)] border-b border-[var(--crm-border)]">
+                  <th className="text-left px-4 py-2 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Buyer</th>
+                  <th className="text-left px-4 py-2 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Company</th>
+                  <th className="text-left px-4 py-2 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">SMS</th>
+                  <th className="text-left px-4 py-2 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Email</th>
+                  <th className="text-left px-4 py-2 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Score</th>
                 </tr>
               </thead>
               <tbody>
@@ -297,49 +298,49 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">New Broadcast</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
+      <div className="bg-[var(--crm-surface)] rounded-xl shadow-2xl w-full max-w-lg mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--crm-border)]">
+          <h2 className="text-lg font-bold text-[var(--crm-ink)]">New Broadcast</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--crm-surface-subtle)] rounded-lg text-[var(--crm-text-dim)]">
             <Icon name="close" size="text-lg" />
           </button>
         </div>
         <div className="px-6 py-4 space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
+            <div className="bg-[var(--crm-danger-soft)] border border-[var(--crm-danger-border)] text-[var(--crm-danger)] text-sm rounded-lg px-3 py-2">{error}</div>
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Search Lead by Address</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-1">Search Lead by Address</label>
             <div className="relative">
               <input
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E32E2E]/30"
+                className="w-full border border-[var(--crm-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--crm-brand)]/30"
                 value={leadSearch}
                 onChange={e => { setLeadSearch(e.target.value); debouncedSearchLeads(e.target.value) }}
                 placeholder="123 Main St..."
               />
               {searching && (
                 <div className="absolute inset-y-0 right-3 flex items-center">
-                  <div className="w-4 h-4 border-2 border-[#E32E2E] border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-[var(--crm-brand)] border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
             </div>
             {leads.length > 0 && (
-              <div className="mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              <div className="mt-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
                 {leads.map(lead => (
                   <button
                     key={lead.id}
                     onClick={() => { setSelectedLead(lead); setLeads([]); setLeadSearch(lead.property_address ?? lead.id) }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--crm-surface-subtle)] border-b border-[var(--crm-border)] last:border-0"
                   >
-                    <p className="font-medium text-slate-900">{lead.property_address ?? 'Unknown address'}</p>
-                    <p className="text-xs text-slate-500">{lead.full_name ?? ''}</p>
+                    <p className="font-medium text-[var(--crm-ink)]">{lead.property_address ?? 'Unknown address'}</p>
+                    <p className="text-xs text-[var(--crm-text-muted)]">{lead.full_name ?? ''}</p>
                   </button>
                 ))}
               </div>
             )}
             {selectedLead && (
-              <div className="mt-2 flex items-center gap-2 bg-[#E32E2E]/10 text-primary text-xs font-semibold rounded-lg px-3 py-2">
+              <div className="mt-2 flex items-center gap-2 bg-[var(--crm-brand)]/10 text-[var(--crm-brand)] text-xs font-semibold rounded-lg px-3 py-2">
                 <Icon name="check_circle" size="text-sm" />
                 {selectedLead.property_address}
               </div>
@@ -347,7 +348,7 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-2">Broadcast Type</label>
+            <label className="block text-xs font-semibold text-[var(--crm-text)] mb-2">Broadcast Type</label>
             <div className="space-y-2">
               {([
                 { val: 'auto_match', label: 'Auto Match', desc: 'Automatically match buyers based on buy box criteria' },
@@ -358,7 +359,7 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
                   key={opt.val}
                   className={cn(
                     'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
-                    broadcastType === opt.val ? 'border-[#E32E2E] bg-[#E32E2E]/5' : 'border-slate-200 hover:bg-slate-50'
+                    broadcastType === opt.val ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)]/5' : 'border-[var(--crm-border)] hover:bg-[var(--crm-surface-subtle)]'
                   )}
                 >
                   <input
@@ -370,8 +371,8 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
                     className="mt-0.5"
                   />
                   <div>
-                    <p className="text-sm font-semibold text-slate-900">{opt.label}</p>
-                    <p className="text-xs text-slate-500">{opt.desc}</p>
+                    <p className="text-sm font-semibold text-[var(--crm-ink)]">{opt.label}</p>
+                    <p className="text-xs text-[var(--crm-text-muted)]">{opt.desc}</p>
                   </div>
                 </label>
               ))}
@@ -381,14 +382,14 @@ function NewBroadcastModal({ onClose, onCreated }: { onClose: () => void; onCrea
           <div className="flex gap-3 pt-1">
             <button
               onClick={onClose}
-              className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold"
+              className="flex-1 bg-[var(--crm-surface)] border border-[var(--crm-border)] text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)] rounded-lg px-4 py-2 text-sm font-semibold"
             >
               Cancel
             </button>
             <button
               onClick={handleCreate}
               disabled={createBroadcast.isPending || !selectedLead}
-              className="flex-1 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
+              className="flex-1 bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60"
             >
               {createBroadcast.isPending ? 'Creating…' : 'Create Broadcast'}
             </button>
@@ -418,65 +419,62 @@ export default function BroadcastsPage() {
         />
       )}
 
-      {/* Header */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Broadcasts</h1>
-          <p className="text-slate-500 text-sm">
-            {isLoading ? 'Loading…' : `${broadcasts.length} broadcast${broadcasts.length !== 1 ? 's' : ''}`}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowNew(true)}
-          className="flex items-center gap-2 bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-4 py-2 text-sm font-semibold self-start sm:self-auto"
-        >
-          <Icon name="campaign" size="text-sm" />
-          New Broadcast
-        </button>
+      <div className="mb-5 overflow-hidden rounded-xl border border-[var(--crm-border)] shadow-[var(--crm-shadow-sm)]">
+        <DispoPageHeader
+          eyebrow="Buyer marketing"
+          title="Marketing"
+          description={isLoading ? 'Loading buyer marketing…' : `${broadcasts.length} campaign${broadcasts.length !== 1 ? 's' : ''}. Send a property to the right buyers and track the response.`}
+          actions={(
+            <button onClick={() => setShowNew(true)} className="crm-primary-button flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold">
+              <Icon name="campaign" size="text-sm" />
+              New campaign
+            </button>
+          )}
+        />
       </div>
 
       {/* Table */}
       {isLoading ? (
-        <div className="text-slate-400 py-16 text-center">Loading broadcasts...</div>
+        <div className="text-[var(--crm-text-dim)] py-16 text-center">Loading broadcasts...</div>
       ) : broadcasts.length === 0 ? (
         <div className="text-center py-20">
-          <Icon name="campaign" className="text-5xl text-slate-200 mb-4" />
-          <p className="text-slate-400 font-medium text-lg">No broadcasts yet</p>
-          <p className="text-slate-400 text-sm mt-1 mb-6">Create a broadcast to blast your buyers about a new deal</p>
+          <Icon name="campaign" className="text-5xl text-[var(--crm-text-dim)] mb-4" />
+          <p className="text-lg font-bold text-[var(--crm-ink)]">No campaigns yet</p>
+          <p className="mt-1 mb-6 text-sm text-[var(--crm-text-muted)]">Choose a property and send it to matching buyers.</p>
           <button
             onClick={() => setShowNew(true)}
-            className="bg-[#E32E2E] text-white hover:bg-[#c72626] rounded-lg px-5 py-2.5 text-sm font-semibold"
+            className="bg-[var(--crm-brand)] text-[var(--crm-on-brand)] hover:bg-[var(--crm-brand-hover)] rounded-lg px-5 py-2.5 text-sm font-semibold"
           >
-            Create First Broadcast
+            Create first campaign
           </button>
         </div>
       ) : (
         <>
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="bg-[var(--crm-surface)] rounded-xl border border-[var(--crm-border)] shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50">
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Deal Address</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Recipients</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">Sent At</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">SMS Replies</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Email Opens</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">Offers</th>
+                  <tr className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
+                    <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Deal Address</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider">Status</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden sm:table-cell">Recipients</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden md:table-cell">Sent At</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden sm:table-cell">SMS Replies</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden lg:table-cell">Email Opens</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold text-[var(--crm-text-muted)] uppercase tracking-wider hidden md:table-cell">Offers</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[var(--crm-border)]">
                   {broadcasts.map(bc => (
                     <tr
                       key={bc.id}
                       className={cn(
-                        'hover:bg-slate-50 transition-colors cursor-pointer',
-                        selectedId === bc.id && 'bg-[#E32E2E]/5'
+                        'hover:bg-[var(--crm-surface-subtle)] transition-colors cursor-pointer',
+                        selectedId === bc.id && 'bg-[var(--crm-brand)]/5'
                       )}
                       onClick={() => setSelectedId(selectedId === bc.id ? null : bc.id)}
                     >
-                      <td className="px-4 py-3 font-medium text-slate-900">
+                      <td className="px-4 py-3 font-medium text-[var(--crm-ink)]">
                         {getAddress(bc.deal_snapshot)}
                       </td>
                       <td className="px-4 py-3">
@@ -484,11 +482,11 @@ export default function BroadcastsPage() {
                           {bc.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-700 hidden sm:table-cell">{bc.total_recipients}</td>
-                      <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{formatDate(bc.sent_at)}</td>
-                      <td className="px-4 py-3 text-slate-700 hidden sm:table-cell">{bc.sms_replies}</td>
-                      <td className="px-4 py-3 text-slate-700 hidden lg:table-cell">{bc.email_opens}</td>
-                      <td className="px-4 py-3 text-slate-700 hidden md:table-cell">{bc.offers_received}</td>
+                      <td className="px-4 py-3 text-[var(--crm-text)] hidden sm:table-cell">{bc.total_recipients}</td>
+                      <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden md:table-cell">{formatDate(bc.sent_at)}</td>
+                      <td className="px-4 py-3 text-[var(--crm-text)] hidden sm:table-cell">{bc.sms_replies}</td>
+                      <td className="px-4 py-3 text-[var(--crm-text)] hidden lg:table-cell">{bc.email_opens}</td>
+                      <td className="px-4 py-3 text-[var(--crm-text)] hidden md:table-cell">{bc.offers_received}</td>
                     </tr>
                   ))}
                 </tbody>

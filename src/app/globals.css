@@ -86,12 +86,17 @@ body {
   --crm-success-border: #8ac6a6;
   --crm-warning: #9a4b00;
   --crm-warning-soft: #fff3de;
+  --crm-warning-border: #e7b86e;
+  --crm-on-warning: #202124;
   --crm-danger: #c8242d;
   --crm-danger-soft: #fbeaec;
+  --crm-danger-border: #e9a8ad;
   --crm-info: #2563a6;
   --crm-info-soft: #eaf2fb;
+  --crm-info-border: #94b9df;
   --crm-violet: #6d4cb3;
   --crm-violet-soft: #f0ecfa;
+  --crm-violet-border: #b7a6dc;
   --crm-action: #4f46d9;
   --crm-action-soft: #eeefff;
   --crm-action-border: #9aa4ff;
@@ -158,12 +163,17 @@ body {
   --crm-success-border: #427457;
   --crm-warning: #f0ae52;
   --crm-warning-soft: #3e3221;
+  --crm-warning-border: #795c32;
+  --crm-on-warning: #17181a;
   --crm-danger: #f06a72;
   --crm-danger-soft: #44272b;
+  --crm-danger-border: #794047;
   --crm-info: #72a9e3;
   --crm-info-soft: #223448;
+  --crm-info-border: #3e5f7f;
   --crm-violet: #a78bde;
   --crm-violet-soft: #302a43;
+  --crm-violet-border: #5d507f;
   --crm-action: #a9b0ff;
   --crm-action-soft: #282848;
   --crm-action-border: #565a8a;
@@ -430,10 +440,16 @@ body {
   --crm-success: #0c7540;
   --crm-success-soft: #e8f5ee;
   --crm-success-border: #8ac6a6;
+  --crm-warning: #9a4b00;
+  --crm-warning-soft: #fff3de;
+  --crm-warning-border: #e7b86e;
+  --crm-on-warning: #202124;
   --crm-danger: #c8242d;
   --crm-danger-soft: #fbeaec;
+  --crm-danger-border: #e9a8ad;
   --crm-info: #2563a6;
   --crm-info-soft: #eaf2fb;
+  --crm-info-border: #94b9df;
   --crm-action: #4f46d9;
   --crm-action-soft: #eeefff;
   --crm-action-border: #9aa4ff;
@@ -450,8 +466,7 @@ body {
   --ck-accent-bright: #aa1e26;
   --crm-violet: #6d4cb3;
   --crm-violet-soft: #f0ecfa;
-  --crm-warning: #9a4b00;
-  --crm-warning-soft: #fff3de;
+  --crm-violet-border: #b7a6dc;
   color: var(--ck-text);
   color-scheme: light;
 }
@@ -476,10 +491,16 @@ html.dark .crm-modal-surface {
   --crm-success: #55c68a;
   --crm-success-soft: #203a2c;
   --crm-success-border: #427457;
+  --crm-warning: #f0ae52;
+  --crm-warning-soft: #3e3221;
+  --crm-warning-border: #795c32;
+  --crm-on-warning: #17181a;
   --crm-danger: #f06a72;
   --crm-danger-soft: #44272b;
+  --crm-danger-border: #794047;
   --crm-info: #72a9e3;
   --crm-info-soft: #223448;
+  --crm-info-border: #3e5f7f;
   --crm-action: #a9b0ff;
   --crm-action-soft: #282848;
   --crm-action-border: #565a8a;
@@ -496,8 +517,7 @@ html.dark .crm-modal-surface {
   --ck-accent-bright: #eb6068;
   --crm-violet: #a78bde;
   --crm-violet-soft: #302a43;
-  --crm-warning: #f0ae52;
-  --crm-warning-soft: #3e3221;
+  --crm-violet-border: #5d507f;
   color-scheme: dark;
 }
 
@@ -973,133 +993,4 @@ html.dark .crm-modal-surface {
 }
 @media (prefers-reduced-motion: reduce) {
   .ck-attention { animation: none; }
-}
-
-/* ─── Transaction Coordination portal: shared CRM theme contract ─────────── */
-.tc-portal {
-  --ck-bg: var(--crm-canvas);
-  --ck-surface: var(--crm-surface);
-  --ck-surface-elev: var(--crm-surface-raised);
-  --ck-surface-hi: var(--crm-surface-subtle);
-  --ck-border: var(--crm-border);
-  --ck-border-strong: var(--crm-border-strong);
-  --ck-text: var(--crm-ink);
-  --ck-text-muted: var(--crm-text-muted);
-  --ck-text-dim: var(--crm-text-dim);
-  color-scheme: inherit;
-}
-
-.tc-portal .bg-\[\#141414\],
-.tc-portal .bg-\[\#0f0f0f\] {
-  background-color: var(--crm-surface);
-}
-
-.tc-portal [class~="bg-white/[0.03]"],
-.tc-portal [class~="bg-white/[0.04]"] {
-  background-color: var(--crm-surface-raised);
-}
-
-.tc-portal [class~="bg-white/5"],
-.tc-portal [class~="bg-black/20"] {
-  background-color: var(--crm-surface-subtle);
-}
-
-.tc-portal [class~="border-white/10"],
-.tc-portal [class~="border-white/20"] {
-  border-color: var(--crm-border);
-}
-
-.tc-portal [class~="divide-white/10"] > :not([hidden]) ~ :not([hidden]) {
-  border-color: var(--crm-border);
-}
-
-.tc-portal .text-white {
-  color: var(--crm-ink);
-}
-
-.tc-portal .text-black {
-  color: var(--crm-ink) !important;
-}
-
-.tc-portal .bg-\[\#E32E2E\],
-.tc-portal .bg-\[\#E32E2E\] .text-white,
-.tc-portal .bg-emerald-500,
-.tc-portal .bg-emerald-500 .text-black {
-  color: #ffffff !important;
-}
-
-.tc-portal input:not([type="checkbox"]):not([type="radio"]),
-.tc-portal textarea,
-.tc-portal select {
-  background-color: var(--crm-surface) !important;
-  border-color: var(--crm-border) !important;
-  color: var(--crm-ink) !important;
-  color-scheme: inherit;
-}
-
-.tc-portal input::placeholder,
-.tc-portal textarea::placeholder {
-  color: var(--crm-text-dim) !important;
-}
-
-/* TC predates the shared design tokens, so normalize its remaining neutral
-   utilities at the portal boundary. Semantic status colors remain intact. */
-.tc-portal [class*="bg-[#ffffff]"],
-.tc-portal [class*="bg-[#fbfcfe]"],
-.tc-portal [class*="bg-[#f8fafc]"] {
-  background-color: var(--crm-surface) !important;
-}
-
-.tc-portal [class*="bg-[#f6f7f9]"],
-.tc-portal [class*="bg-[#eef2f7]"] {
-  background-color: var(--crm-surface-subtle) !important;
-}
-
-.tc-portal [class*="border-[#cad2df]"],
-.tc-portal [class*="border-[#d8dee9]"],
-.tc-portal [class*="border-[#e1e6ee]"] {
-  border-color: var(--crm-border) !important;
-}
-
-.tc-portal [class*="text-[#111827]"],
-.tc-portal [class*="text-[#253041]"] {
-  color: var(--crm-ink) !important;
-}
-
-.tc-portal [class*="text-[#4b5565]"],
-.tc-portal [class*="text-[#697386]"] {
-  color: var(--crm-text-muted) !important;
-}
-
-.tc-portal [class*="text-[#7a8494]"] {
-  color: var(--crm-text-dim) !important;
-}
-
-.tc-portal [class*="bg-[#E32E2E]"],
-.tc-portal [class*="bg-[#c42626]"] {
-  background-color: var(--crm-brand) !important;
-}
-
-.tc-portal [class*="border-[#E32E2E]"] {
-  border-color: var(--crm-brand) !important;
-}
-
-.tc-portal [class*="text-[#E32E2E]"],
-.tc-portal [class*="text-[#c42626]"] {
-  color: var(--crm-brand) !important;
-}
-
-.tc-portal [class*="bg-[#fff7f7]"],
-.tc-portal [class*="bg-[#ffe5e5]"] {
-  background-color: var(--crm-brand-soft) !important;
-}
-
-.tc-portal [class*="bg-[#fff1f1]"],
-.tc-portal [class*="bg-[#fff1f2]"] {
-  background-color: var(--crm-danger-soft) !important;
-}
-
-.tc-portal [class*="text-[#b42318]"],
-.tc-portal [class*="text-[#be123c]"] {
-  color: var(--crm-danger) !important;
 }

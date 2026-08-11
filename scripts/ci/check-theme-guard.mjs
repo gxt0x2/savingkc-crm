@@ -92,6 +92,37 @@ assert(
   'Theme guard failed: portaled cockpit modal must inherit the active document theme.'
 );
 
+assert(
+  !appShell.includes('TC_LIGHT_THEME') &&
+    !appShell.includes('useTcLightTheme') &&
+    !globals.includes('.tc-portal'),
+  'Theme guard failed: Closing Coordination must inherit the shared CRM theme without a legacy compatibility wrapper.'
+);
+
+for (const relPath of [
+  'src/app/(app)/dispo/pipeline/page.tsx',
+  'src/app/(app)/dispo/tc/page.tsx',
+  'src/app/(app)/dispo/offers/page.tsx',
+  'src/app/(app)/dispo/deals/page.tsx',
+  'src/app/(app)/dispo/broadcasts/page.tsx',
+  'src/app/(app)/dispo/contacts/page.tsx',
+  'src/components/dispo/buyers-view.tsx',
+  'src/components/dispo/vendors-view.tsx',
+  'src/components/dispo/assignment-preview-modal.tsx',
+  'src/components/dispo/edit-offer-modal.tsx',
+  'src/components/dispo/new-offer-modal.tsx',
+]) {
+  const source = read(relPath);
+  assert(
+    !/#[0-9a-f]{3,8}\b/i.test(source),
+    `Theme guard failed: ${relPath} reintroduced a hard-coded color instead of a shared CRM token.`
+  );
+  assert(
+    !/var\(--ck-/.test(source),
+    `Theme guard failed: ${relPath} reintroduced a legacy cockpit token instead of a shared CRM token.`
+  );
+}
+
 for (const relPath of [
   'src/app/(app)/leads/[id]/page.tsx',
   'src/components/ui/collapsible-card.tsx',
