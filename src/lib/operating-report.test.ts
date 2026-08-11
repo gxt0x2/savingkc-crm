@@ -16,7 +16,7 @@ function input(overrides: Partial<OperatingReportInput> = {}): OperatingReportIn
       { id: 'lead-2', attentionState: 'needs_reply', owner: null, lastActivityAt: '2026-07-12T12:15:00.000Z', primaryNextAction: null },
     ],
     activities: [
-      { id: 'a1', lead_id: 'lead-1', activity_type: 'call', description: 'Outbound call connected live', agent: 'Ernest', metadata: { direction: 'outbound', outcome: 'connected' }, created_at: '2026-07-10T12:05:00.000Z' },
+      { id: 'a1', lead_id: 'lead-1', activity_type: 'call', description: 'Outbound call connected live', agent: 'Ernest', metadata: { direction: 'outbound', outcome: 'connected', duration_seconds: 180 }, created_at: '2026-07-10T12:05:00.000Z' },
       { id: 'a2', lead_id: 'lead-1', activity_type: 'sms_outbound', description: 'Follow up', agent: 'Ernest', metadata: { direction: 'outbound' }, created_at: '2026-07-10T12:06:00.000Z' },
       { id: 'a3', lead_id: 'lead-1', activity_type: 'sms_inbound', description: 'Yes', agent: 'Ernest', metadata: { direction: 'inbound' }, created_at: '2026-07-10T12:07:00.000Z' },
     ],
@@ -38,8 +38,10 @@ describe('buildOperatingReport', () => {
     expect(report.core).toMatchObject({ revenue: 25_000, expenses: 5_000, netRevenue: 20_000, leads: 2, qualified: 2, underContract: 1, needsReply: 1 })
     expect(report.acquisitions.averageSpeedToLeadMinutes).toBe(5)
     expect(report.acquisitions.appointmentShowRate).toBe(100)
-    expect(report.communications).toMatchObject({ calls: 1, connectedCalls: 1, callConnectionRate: 100, sms: 2, inboundSms: 1, outboundSms: 1, unclassifiedSms: 0, smsResponseRate: 100 })
-    expect(report.dispositions).toMatchObject({ closedDeals: 1, offers: 1, averageDaysToBuyer: 6, assignmentRevenue: 25_000, averageAssignmentFee: 25_000, debriefOutstanding: 1 })
+    expect(report.acquisitions.costs).toEqual({ recordedSpend: 5_000, rows: 1, costPerLead: 2_500, costPerOpportunity: 2_500, costPerTransaction: 5_000 })
+    expect(report.communications).toMatchObject({ calls: 1, callDurationSeconds: 180, averageCallDurationSeconds: 180, connectedCalls: 1, callConnectionRate: 100, sms: 2, inboundSms: 1, outboundSms: 1, unclassifiedSms: 0, smsResponseRate: 100 })
+    expect(report.communications.agents[0]).toMatchObject({ agent: 'Ernest', callDurationSeconds: 180, averageCallDurationSeconds: 180 })
+    expect(report.dispositions).toMatchObject({ assignedDeals: 1, closedDeals: 1, offers: 1, averageDaysToBuyer: 6, assignmentRevenue: 25_000, averageAssignmentFee: 25_000, debriefOutstanding: 1 })
     expect(report.finance).toMatchObject({ grossRevenue: 25_000, expenses: 5_000, netRevenue: 20_000, profitMargin: 80 })
   })
 
@@ -82,6 +84,26 @@ describe('buildOperatingReport', () => {
     }))
 
     expect(report.communications).toMatchObject({ sms: 1, inboundSms: 0, outboundSms: 0, unclassifiedSms: 1 })
+  })
+
+  it('keeps not-lead outcomes in qualification reporting but out of active-work attention', () => {
+    const base = input()
+    const report = buildOperatingReport(input({
+      leads: [
+        ...base.leads,
+        { id: 'lead-dead', full_name: 'Wrong Number', property_address: null, city: null, source: 'direct_mail', station: 'dead', priority: null, assigned_agent: null, opportunity_score: 0, classification: 'dead', dead_reason: 'wrong_number', is_favorite: false, phone: null, email: null, created_at: '2026-07-14T12:00:00.000Z' },
+      ],
+      threads: [
+        ...base.threads,
+        { id: 'lead-dead', attentionState: 'needs_reply', owner: null, lastActivityAt: null, primaryNextAction: null },
+      ],
+    }))
+
+    expect(report.acquisitions).toMatchObject({ total: 3, notLeads: 1 })
+    expect(report.acquisitions.attention.needsReply).toBe(1)
+    expect(report.acquisitions.dataQuality.missingPhone).toBe(0)
+    expect(report.acquisitions.unqualifiedReasons).toEqual([{ reason: 'Wrong or disconnected number', count: 1 }])
+    expect(report.acquisitions.unqualifiedBySource).toEqual([{ source: 'direct_mail', count: 1 }])
   })
 
   it('builds dashboard trends, configured goals, agent ownership, and offer management from recorded rows', () => {

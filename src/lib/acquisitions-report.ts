@@ -81,24 +81,25 @@ export function buildAcquisitionsReport(
   now = new Date(),
 ) {
   const threadById = new Map(threads.map((thread) => [thread.id, thread]))
+  const activeContacts = contacts.filter((contact) => !['closed_won', 'closed_lost', 'dead'].includes(contact.station))
   const total = contacts.length
   const qualified = contacts.filter((contact) => isAtLeast(contact, 'qualified')).length
   const appointments = contacts.filter((contact) => isAtLeast(contact, 'appointment_set')).length
   const offers = contacts.filter((contact) => isAtLeast(contact, 'offer_made')).length
   const contracts = contacts.filter((contact) => isAtLeast(contact, 'under_contract')).length
   const closed = contacts.filter((contact) => isAtLeast(contact, 'closed_won')).length
-  const active = contacts.filter((contact) => !['closed_won', 'closed_lost', 'dead'].includes(contact.station)).length
+  const active = activeContacts.length
 
-  const needsReply = contacts.filter((contact) => threadById.get(contact.id)?.attentionState === 'needs_reply').length
-  const overdue = contacts.filter((contact) => threadById.get(contact.id)?.primaryNextAction?.overdue).length
-  const unassigned = contacts.filter((contact) => !threadById.get(contact.id)?.owner).length
-  const hot = contacts.filter((contact) => contact.score >= 75 || contact.isFavorite).length
-  const stale = contacts.filter((contact) => {
+  const needsReply = activeContacts.filter((contact) => threadById.get(contact.id)?.attentionState === 'needs_reply').length
+  const overdue = activeContacts.filter((contact) => threadById.get(contact.id)?.primaryNextAction?.overdue).length
+  const unassigned = activeContacts.filter((contact) => !threadById.get(contact.id)?.owner).length
+  const hot = activeContacts.filter((contact) => contact.score >= 75 || contact.isFavorite).length
+  const stale = activeContacts.filter((contact) => {
     const activity = validDate(threadById.get(contact.id)?.lastActivityAt ?? contact.lastContactAt)
     return activity !== null && now.getTime() - activity.getTime() > 7 * 86_400_000
   }).length
-  const noActivity = contacts.filter((contact) => !validDate(threadById.get(contact.id)?.lastActivityAt ?? contact.lastContactAt)).length
-  const missingNextAction = contacts.filter((contact) => !threadById.get(contact.id)?.primaryNextAction).length
+  const noActivity = activeContacts.filter((contact) => !validDate(threadById.get(contact.id)?.lastActivityAt ?? contact.lastContactAt)).length
+  const missingNextAction = activeContacts.filter((contact) => !threadById.get(contact.id)?.primaryNextAction).length
 
   const speedSamples = contacts.flatMap((contact) => {
     const created = validDate(contact.createdAt)
@@ -155,8 +156,8 @@ export function buildAcquisitionsReport(
     closed,
     attention: { needsReply, overdue, unassigned, hot, stale },
     dataQuality: {
-      missingPhone: contacts.filter((contact) => !contact.phone).length,
-      missingEmail: contacts.filter((contact) => !contact.email).length,
+      missingPhone: activeContacts.filter((contact) => !contact.phone).length,
+      missingEmail: activeContacts.filter((contact) => !contact.email).length,
       noActivity,
       unassigned,
       missingNextAction,

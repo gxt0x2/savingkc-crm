@@ -1,6 +1,7 @@
 import { buildAcquisitionsReport, type AcquisitionContact, type AcquisitionThread } from './acquisitions-report'
+import { deadReasonLabel, isNotLeadOutcome } from './lead-outcomes'
 
-export type OperatingReportPeriod = '30d' | 'quarter' | 'ytd' | 'all'
+export type OperatingReportPeriod = 'today' | '30d' | 'quarter' | 'ytd' | 'all' | 'custom'
 
 export interface OperatingLead {
   id: string
@@ -15,6 +16,8 @@ export interface OperatingLead {
   motivation_score?: number | null
   arv?: number | null
   offer_amount?: number | null
+  classification?: string | null
+  dead_reason?: string | null
   is_favorite: boolean | null
   phone: string | null
   email: string | null
@@ -168,6 +171,28 @@ function isCommunication(activity: OperatingActivity): boolean {
     activity.activity_type.includes('sms')
 }
 
+function callDurationSeconds(activity: OperatingActivity): number {
+  if (!activity.activity_type.toLowerCase().includes('call')) return 0
+  const metadata = activity.metadata ?? {}
+  const candidates = [
+    metadata.duration,
+    metadata.duration_seconds,
+    metadata.callDuration,
+    metadata.call_duration,
+    metadata.recordingDuration,
+  ]
+  for (const candidate of candidates) {
+    const parsed = Number(candidate)
+    if (Number.isFinite(parsed) && parsed > 0) return Math.round(parsed)
+  }
+  return 0
+}
+
+function isAcquisitionCost(row: OperatingMoneyRow): boolean {
+  const descriptor = [row.category, row.source, row.description].filter(Boolean).join(' ').toLowerCase()
+  return /advertis|marketing|google|facebook|meta|ppc|direct mail|mailers?|lead list|lead vendor|mojo|call tools|campaign|seo/.test(descriptor)
+}
+
 function moneySum(rows: OperatingMoneyRow[]): number {
   return rows.reduce((sum, row) => sum + number(row.amount), 0)
 }
@@ -296,16 +321,17 @@ export function buildOperatingReport(input: OperatingReportInput) {
   const inboundSms = sms.filter(isInbound).length
   const outboundSms = sms.filter(isOutbound).length
   const unclassifiedSms = sms.filter((activity) => !isInbound(activity) && !isOutbound(activity)).length
-  const agentMap = new Map<string, { calls: number; connected: number; sms: number; inbound: number; outbound: number }>()
+  const agentMap = new Map<string, { calls: number; connected: number; sms: number; inbound: number; outbound: number; callDurationSeconds: number }>()
   for (const activity of input.activities.filter(isCommunication)) {
     const metadataOwner = activity.metadata?.agent_name ?? activity.metadata?.assigned_to ?? activity.metadata?.owner
     const rawAgent = (activity.agent || (typeof metadataOwner === 'string' ? metadataOwner : '') || 'Unassigned').trim()
     const agentKey = rawAgent.toLocaleLowerCase()
     const agent = ({ casey: 'Casey', ernest: 'Ernest', gertha: 'Gertha', system: 'System', team: 'Team', unassigned: 'Unassigned' } as Record<string, string>)[agentKey]
       ?? rawAgent.replace(/\b\w/g, (character) => character.toUpperCase())
-    const row = agentMap.get(agent) ?? { calls: 0, connected: 0, sms: 0, inbound: 0, outbound: 0 }
+    const row = agentMap.get(agent) ?? { calls: 0, connected: 0, sms: 0, inbound: 0, outbound: 0, callDurationSeconds: 0 }
     if (activity.activity_type.toLowerCase().includes('call')) {
       row.calls += 1
+      row.callDurationSeconds += callDurationSeconds(activity)
       if (isConnectedCall(activity)) row.connected += 1
     }
     if (activity.activity_type.toLowerCase().includes('sms')) row.sms += 1
@@ -314,7 +340,12 @@ export function buildOperatingReport(input: OperatingReportInput) {
     agentMap.set(agent, row)
   }
   const agents = [...agentMap.entries()]
-    .map(([agent, row]) => ({ agent, ...row, contactRate: percentage(row.connected, row.calls) }))
+    .map(([agent, row]) => ({
+      agent,
+      ...row,
+      averageCallDurationSeconds: row.calls > 0 ? Math.round(row.callDurationSeconds / row.calls) : null,
+      contactRate: percentage(row.connected, row.calls),
+    }))
     .sort((left, right) => right.calls + right.sms - (left.calls + left.sms))
 
   const offerLeadIds = new Set(input.offers.map((offer) => offer.lead_id))
@@ -385,6 +416,12 @@ export function buildOperatingReport(input: OperatingReportInput) {
     .slice(0, 8)
 
   const activeBuyers = input.buyers.filter((buyer) => buyer.status == null || buyer.status === 'active')
+  const rangeStart = reportStart(input)
+  const rangeEnd = new Date(input.until).getTime()
+  const newBuyers = input.buyers.filter((buyer) => {
+    const created = timestamp(buyer.created_at)
+    return created !== null && created >= rangeStart && created <= rangeEnd
+  })
   const repeatBuyers = input.buyers.filter((buyer) => number(buyer.deals_closed) > 1)
   const vipBuyers = input.buyers.filter((buyer) => buyer.tier?.toLowerCase() === 'vip')
   const inactiveBuyers = input.buyers.filter((buyer) => buyer.status != null && buyer.status !== 'active')
@@ -434,6 +471,8 @@ export function buildOperatingReport(input: OperatingReportInput) {
 
   const grossRevenue = moneySum(input.revenue)
   const expenses = moneySum(input.expenses)
+  const acquisitionCostRows = input.expenses.filter(isAcquisitionCost)
+  const acquisitionSpend = acquisitionCostRows.length > 0 ? moneySum(acquisitionCostRows) : null
   const netRevenue = grossRevenue - expenses
   const expenseGroups = new Map<string, number>()
   for (const expense of input.expenses) {
@@ -477,9 +516,32 @@ export function buildOperatingReport(input: OperatingReportInput) {
       : 'No lead-source records were created in this period.',
   ]
 
-  const activeLeadRows = input.leads.filter((lead) => !['closed_won', 'closed_lost', 'dead'].includes(lead.station ?? 'new'))
+  const activeLeadRows = input.leads.filter((lead) => !isNotLeadOutcome(lead.classification, lead.station) && !['closed_won'].includes(lead.station ?? 'new'))
+  const notLeadRows = input.leads.filter((lead) => isNotLeadOutcome(lead.classification, lead.station))
+  const unqualifiedReasonGroups = new Map<string, number>()
+  const unqualifiedSourceGroups = new Map<string, number>()
+  for (const lead of notLeadRows) {
+    const reason = deadReasonLabel(lead.dead_reason) || 'Reason not recorded'
+    const source = lead.source?.trim() || 'Unknown source'
+    unqualifiedReasonGroups.set(reason, (unqualifiedReasonGroups.get(reason) ?? 0) + 1)
+    unqualifiedSourceGroups.set(source, (unqualifiedSourceGroups.get(source) ?? 0) + 1)
+  }
+  const unqualifiedReasons = [...unqualifiedReasonGroups.entries()]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason))
+  const unqualifiedBySource = [...unqualifiedSourceGroups.entries()]
+    .map(([source, count]) => ({ source, count }))
+    .sort((left, right) => right.count - left.count || left.source.localeCompare(right.source))
   const pipelineOfferValues = activeLeadRows.flatMap((lead) => lead.offer_amount == null ? [] : [number(lead.offer_amount)])
   const pipelineOfferValue = pipelineOfferValues.length > 0 ? pipelineOfferValues.reduce((sum, value) => sum + value, 0) : null
+  const pipelineRevenueByStage = [...activeLeadRows.reduce((groups, lead) => {
+    const value = lead.offer_amount == null ? 0 : number(lead.offer_amount)
+    const stage = lead.station ?? 'new'
+    groups.set(stage, (groups.get(stage) ?? 0) + value)
+    return groups
+  }, new Map<string, number>()).entries()]
+    .filter(([, value]) => value > 0)
+    .sort((left, right) => right[1] - left[1])
   const assignedLeads = input.leads.filter((lead) => Boolean(lead.assigned_agent?.trim())).length
   const stageAtLeast = (lead: OperatingLead, stage: string) => {
     const stages = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won']
@@ -534,14 +596,25 @@ export function buildOperatingReport(input: OperatingReportInput) {
     acquisitions: {
       ...acquisitions,
       agents: acquisitionAgents,
+      notLeads: notLeadRows.length,
+      unqualifiedReasons,
+      unqualifiedBySource,
       appointmentsRecorded: input.appointments.length,
       attendedAppointments,
       noShowAppointments,
       appointmentShowRate: percentage(attendedAppointments, attendedAppointments + noShowAppointments),
+      costs: {
+        recordedSpend: acquisitionSpend,
+        rows: acquisitionCostRows.length,
+        costPerLead: acquisitionSpend == null || acquisitions.total === 0 ? null : Math.round(acquisitionSpend / acquisitions.total),
+        costPerOpportunity: acquisitionSpend == null || acquisitions.qualified === 0 ? null : Math.round(acquisitionSpend / acquisitions.qualified),
+        costPerTransaction: acquisitionSpend == null || closedDeals.length === 0 ? null : Math.round(acquisitionSpend / closedDeals.length),
+      },
     },
     marketing: { sources },
     dispositions: {
       activeDeals: activeDeals.length,
+      assignedDeals: acceptedDeals.length,
       closedDeals: closedDeals.length,
       offers: input.offers.length,
       offersPerProperty,
@@ -553,6 +626,8 @@ export function buildOperatingReport(input: OperatingReportInput) {
       buyerDemandScore,
       offerCoverage,
       debriefCompletion,
+      newBuyers: newBuyers.length,
+      propertiesMarketed: input.deals.filter((deal) => ['marketing', 'offers_in', 'negotiating', 'under_contract', 'closed'].includes(deal.stage)).length,
       activeBuyers: activeBuyers.length,
       repeatBuyers: repeatBuyers.length,
       vipBuyers: vipBuyers.length,
@@ -573,9 +648,12 @@ export function buildOperatingReport(input: OperatingReportInput) {
       averageRevenuePerTransaction: input.revenue.length > 0 ? Math.round(grossRevenue / input.revenue.length) : null,
       expenseCategories,
       recentTransactions,
+      pipelineRevenueByStage,
     },
     communications: {
       calls: calls.length,
+      callDurationSeconds: calls.reduce((sum, activity) => sum + callDurationSeconds(activity), 0),
+      averageCallDurationSeconds: calls.length > 0 ? Math.round(calls.reduce((sum, activity) => sum + callDurationSeconds(activity), 0) / calls.length) : null,
       connectedCalls,
       callConnectionRate: percentage(connectedCalls, calls.length),
       sms: sms.length,

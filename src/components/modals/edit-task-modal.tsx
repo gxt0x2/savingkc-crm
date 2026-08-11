@@ -53,23 +53,16 @@ export function EditTaskModal({
     setSaving(true)
 
     try {
-      const metadata = {
-        task_type: taskType,
-        due_date: new Date(dueDate).toISOString(),
-        assigned_to: assignedTo,
-        priority: initialMetadata.priority || 'normal',
-        status,
-        notes: notes.trim() || undefined,
-        source: initialMetadata.source || 'lead_detail_task',
-      }
-
-      const res = await fetch(`/api/leads/activities/${taskId}`, {
+      const res = await fetch(`/api/calendar/tasks/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          description: title.trim(),
-          metadata,
-          activity_type: 'task'
+          title: title.trim(),
+          taskType,
+          dueDate: new Date(dueDate).toISOString(),
+          assignedTo: assignedTo || null,
+          status: status === 'completed' ? 'completed' : 'pending',
+          notes: notes.trim(),
         }),
       })
 
@@ -81,7 +74,13 @@ export function EditTaskModal({
         return
       }
 
-      onSaved(taskId, title.trim(), metadata)
+      onSaved(taskId, title.trim(), {
+        task_type: taskType,
+        due_date: new Date(dueDate).toISOString(),
+        assigned_to: assignedTo || null,
+        status,
+        notes: notes.trim(),
+      })
       onClose()
     } catch (err) {
       console.error('Error updating task:', err)
@@ -95,7 +94,7 @@ export function EditTaskModal({
     setDeleting(true)
 
     try {
-      const res = await fetch(`/api/leads/activities/${taskId}`, {
+      const res = await fetch(`/api/calendar/tasks/${taskId}`, {
         method: 'DELETE',
       })
 
@@ -118,38 +117,38 @@ export function EditTaskModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" onClick={onClose}>
       <form
-        className="ck-dark bg-surface-container-lowest rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-outline-variant/20"
+        className="crm-panel-raised relative w-full max-w-md overflow-hidden rounded-2xl"
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
       >
-        <div className="px-6 pt-6 pb-4 border-b border-outline-variant/10">
+        <div className="border-b border-[var(--crm-border)] px-6 pb-4 pt-6">
           <div className="flex items-center gap-2">
-            <Icon name="task_alt" className="text-primary" />
-            <h2 className="text-lg font-black text-primary">Edit Task</h2>
+            <Icon name="task_alt" className="text-[var(--crm-brand)]" />
+            <h2 className="text-xl font-black text-[var(--crm-ink)]">Edit task</h2>
           </div>
         </div>
         <div className="px-6 py-5 space-y-4">
           <div>
-            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Title</label>
+            <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Title</label>
             <input
               ref={titleRef}
               autoFocus
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Follow up with seller, Run comps..."
-              className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="crm-field w-full rounded-lg px-3 py-2 text-sm outline-none"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Type</label>
+              <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Type</label>
               <select
                 value={taskType}
                 onChange={(e) => setTaskType(e.target.value)}
-                className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
+                className="crm-field w-full rounded-lg px-3 py-2 text-sm"
               >
                 <option value="follow_up">Follow-up</option>
                 <option value="callback">Callback</option>
@@ -160,62 +159,62 @@ export function EditTaskModal({
               </select>
             </div>
             <div>
-              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Status</label>
+              <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Status</label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
+                className="crm-field w-full rounded-lg px-3 py-2 text-sm"
               >
                 <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
               </select>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Assigned To</label>
+              <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Assigned To</label>
               <select
                 value={assignedTo}
                 onChange={(e) => setAssignedTo(e.target.value)}
-                className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
+                className="crm-field w-full rounded-lg px-3 py-2 text-sm"
               >
                 <option value="Casey">Casey</option>
                 <option value="Ernest">Ernest</option>
+                <option value="Gertha">Gertha</option>
+                <option value="">Unassigned</option>
               </select>
             </div>
             <div>
-              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Due Date</label>
+              <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Due Date</label>
               <input
                 type="datetime-local"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
+                className="crm-field w-full rounded-lg px-3 py-2 text-sm"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">
-              Notes <span className="text-on-surface-variant/50">(optional)</span>
+            <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
+              Notes <span className="font-medium text-[var(--crm-text-dim)]">(optional)</span>
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Additional details..."
               rows={2}
-              className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm resize-none"
+              className="crm-field w-full resize-none rounded-lg px-3 py-2 text-sm"
             />
           </div>
         </div>
-        <div className="px-6 py-4 bg-surface-container-high border-t border-outline-variant/10 flex justify-between">
+        <div className="flex justify-between border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-6 py-4">
           <button
             type="button"
             onClick={() => setShowDeleteConfirm(true)}
             disabled={deleting}
-            className="px-4 py-2 text-sm font-medium text-error hover:bg-error/10 rounded-lg disabled:opacity-50"
+            className="rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-sm font-bold text-[var(--crm-danger)] disabled:opacity-50"
           >
             Delete Task
           </button>
@@ -223,14 +222,14 @@ export function EditTaskModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container rounded-lg"
+              className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-bold"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving || !title.trim()}
-              className="px-6 py-2 bg-primary text-on-primary font-bold rounded-lg text-sm hover:opacity-90 disabled:opacity-40 flex items-center gap-2"
+              className="crm-primary-button flex items-center gap-2 rounded-lg px-6 py-2 text-sm font-bold disabled:opacity-40"
             >
               {saving ? (
                 <>
@@ -250,16 +249,16 @@ export function EditTaskModal({
         {/* Delete Confirmation */}
         {showDeleteConfirm && (
           <div className="absolute inset-0 bg-black/70 rounded-xl flex items-center justify-center p-6">
-            <div className="ck-dark bg-surface-container-lowest rounded-xl p-6 shadow-xl max-w-sm border border-outline-variant/20">
-              <h3 className="text-lg font-bold text-error mb-2">Delete Task?</h3>
-              <p className="text-sm text-on-surface-variant mb-4">
+            <div className="crm-panel-raised max-w-sm rounded-xl p-6 shadow-xl">
+              <h3 className="mb-2 text-lg font-bold text-[var(--crm-danger)]">Delete task?</h3>
+              <p className="mb-4 text-sm text-[var(--crm-text-muted)]">
                 This action cannot be undone. The task will be permanently deleted.
               </p>
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-low rounded-lg transition-all"
+                  className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-bold"
                 >
                   Cancel
                 </button>
@@ -270,7 +269,7 @@ export function EditTaskModal({
                     handleDelete()
                   }}
                   disabled={deleting}
-                  className="px-4 py-2 bg-error text-white text-sm font-bold rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
+                  className="rounded-lg bg-[var(--crm-danger)] px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
                 >
                   {deleting ? 'Deleting...' : 'Delete'}
                 </button>

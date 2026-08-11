@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
+import { SystemAndon } from '@/components/feedback/system-andon'
 import { cn } from '@/lib/utils'
 
 type NavItem = { label: string; icon: string; href: string; activeOn: string[] }
@@ -23,6 +24,7 @@ const DASHBOARD_ITEMS: NavItem[] = [
   { label: 'Company overview', icon: 'space_dashboard', href: '/dashboard', activeOn: ['/dashboard'] },
   { label: 'Acquisitions', icon: 'track_changes', href: '/reports/acquisitions', activeOn: ['/reports/acquisitions'] },
   { label: 'Dispositions', icon: 'sell', href: '/reports/dispositions', activeOn: ['/reports/dispositions'] },
+  { label: 'Andon system', icon: 'warning_amber', href: '/reports/andon', activeOn: ['/reports/andon'] },
 ]
 
 const REPORT_ITEMS: NavItem[] = [
@@ -124,7 +126,7 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
         </div>
         <div className="mt-3 space-y-1 border-t border-white/10 pt-3">{OPERATING_ITEMS.map((item) => <WorkspaceNavLink key={item.label} item={item} pathname={pathname} collapsed={collapsed} needsReply={needsReply} />)}</div>
       </nav>
-      <button type="button" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'} className={cn('m-4 flex items-center gap-2 border-t border-white/10 pt-4 text-xs font-semibold text-[var(--crm-nav-muted)] hover:text-[var(--crm-nav-text)]', collapsed && 'justify-center')}><Icon name={collapsed ? 'chevron_right' : 'chevron_left'} />{collapsed ? <span className="sr-only">Expand</span> : 'Collapse'}</button>
+      <div className="space-y-2 border-t border-white/10 px-4 pb-4 pt-3"><SystemAndon collapsed={collapsed} /><button type="button" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'} className={cn('flex w-full items-center gap-2 pt-1 text-xs font-semibold text-[var(--crm-nav-muted)] hover:text-[var(--crm-nav-text)]', collapsed && 'justify-center')}><Icon name={collapsed ? 'chevron_right' : 'chevron_left'} />{collapsed ? <span className="sr-only">Expand</span> : 'Collapse'}</button></div>
     </aside>
   )
 }

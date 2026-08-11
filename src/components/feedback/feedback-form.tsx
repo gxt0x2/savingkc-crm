@@ -1,182 +1,175 @@
 'use client'
 
 import { useState } from 'react'
+
 import { Icon } from '@/components/ui/icon'
+import {
+  ANDON_ISSUE_KINDS,
+  ANDON_KIND_LABELS,
+  ANDON_PROCESS_CASCADES,
+  ANDON_WORK_AREAS,
+  extractAndonRecordContext,
+  type AndonIssueKind,
+  type AndonPriority,
+  type AndonWorkArea,
+} from '@/lib/andon'
 
 interface Props {
+  defaultSection?: string
   onClose: () => void
   onSubmit: () => void
 }
 
-export function FeedbackForm({ onClose, onSubmit }: Props) {
-  const [type, setType] = useState<'bug' | 'feature' | 'feedback'>('bug')
-  const [section, setSection] = useState('')
-  const [description, setDescription] = useState('')
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium')
-  const [loading, setLoading] = useState(false)
+const KIND_ICONS: Record<AndonIssueKind, string> = {
+  process: 'account_tree',
+  system: 'bug_report',
+  data: 'database',
+  improvement: 'lightbulb',
+  ai_glitch: 'smart_toy',
+}
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!description.trim()) return
+function defaultsForContext(context: string): { kind: AndonIssueKind; workstream: AndonWorkArea; category: string } {
+  if (context === 'Google Ads') return { kind: 'process', workstream: 'Marketing', category: 'PPC Landing Page' }
+  if (context === 'Dispositions / Closing') return { kind: 'process', workstream: 'Dispositions', category: 'Cash Buyer Email Blast' }
+  if (['Contacts', 'Lead details', 'Conversations', 'Dialer', 'Calendar', 'Tasks'].includes(context)) {
+    return { kind: 'process', workstream: 'Acquisitions', category: 'AI Text Bot Sequence' }
+  }
+  if (context === 'Workflows') return { kind: 'system', workstream: 'Acquisitions', category: 'Callback Automation' }
+  if (context === 'Integrations') return { kind: 'system', workstream: 'Marketing', category: 'Skip Tracing Sync' }
+  if (['Dashboard', 'Reports'].includes(context)) return { kind: 'data', workstream: 'Marketing', category: 'List Import Error' }
+  return { kind: 'system', workstream: 'Acquisitions', category: 'Cold Dialer Lag' }
+}
+
+export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) {
+  const initial = defaultsForContext(defaultSection)
+  const [issueKind, setIssueKind] = useState<AndonIssueKind>(initial.kind)
+  const [workstream, setWorkstream] = useState(initial.workstream)
+  const [category, setCategory] = useState(initial.category)
+  const [description, setDescription] = useState('')
+  const [fiveWhys, setFiveWhys] = useState(['', '', '', '', ''])
+  const [priority, setPriority] = useState<AndonPriority>('medium')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const categories = ANDON_PROCESS_CASCADES[workstream] ?? []
+
+  function chooseKind(nextKind: AndonIssueKind) {
+    setIssueKind(nextKind)
+  }
+
+  function chooseWorkstream(nextWorkstream: AndonWorkArea) {
+    setWorkstream(nextWorkstream)
+    setCategory(ANDON_PROCESS_CASCADES[nextWorkstream]?.[0] ?? '')
+  }
+
+  function updateWhy(index: number, value: string) {
+    setFiveWhys((current) => current.map((why, whyIndex) => whyIndex === index ? value : why))
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!description.trim() || !workstream || !category) return
 
     setLoading(true)
+    setError('')
     try {
-      const res = await fetch('/api/feedback/submit', {
+      const recordContext = extractAndonRecordContext(window.location.href)
+      const response = await fetch('/api/feedback/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type,
-          section,
+          issue_kind: issueKind,
+          department: workstream,
+          category,
           description,
+          five_whys: fiveWhys,
           priority,
           page_url: window.location.href,
+          record_id: recordContext.recordId,
+          record_type: recordContext.recordType,
+          record_url: recordContext.recordUrl,
           user_agent: navigator.userAgent,
         }),
       })
 
-      if (res.ok) {
-        onSubmit()
-        onClose()
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(payload?.error || 'The Andon could not be submitted. Please try again.')
       }
+      onSubmit()
+      onClose()
     } catch (err) {
-      console.error('Failed to submit feedback:', err)
+      console.error('Failed to submit Andon:', err)
+      setError(err instanceof Error ? err.message : 'The Andon could not be submitted. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-black text-primary">Report Issue / Request Feature</h2>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors"
-          >
-            <Icon name="close" size="text-lg" />
-          </button>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="andon-title" className="crm-panel max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 text-[var(--crm-ink)] shadow-2xl sm:p-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]"><Icon name="warning_amber" className="text-[24px]" /></span>
+            <div><p className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-danger)]">System Andon</p><h2 id="andon-title" className="text-xl font-black">Report an issue</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Identify the issue, route it once, and preserve the root-cause trail.</p></div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close Andon form" className="crm-icon-button flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"><Icon name="close" size="text-lg" /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Type */}
-          <div>
-            <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-              Type
-            </label>
-            <div className="grid grid-cols-3 gap-3">
-              {(['bug', 'feature', 'feedback'] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setType(t)}
-                  className={`px-4 py-3 text-sm font-semibold rounded-lg border-2 transition-colors capitalize ${
-                    type === t
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-outline-variant/20 hover:border-primary/30'
-                  }`}
-                >
-                  <Icon
-                    name={t === 'bug' ? 'bug_report' : t === 'feature' ? 'lightbulb' : 'chat'}
-                    size="text-base"
-                    className="inline mr-1.5"
-                  />
-                  {t === 'bug' ? 'Bug Report' : t === 'feature' ? 'Feature Request' : 'Feedback'}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <fieldset>
+            <legend className="mb-2 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">1. What needs attention?</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {ANDON_ISSUE_KINDS.map((kind) => (
+                <button key={kind} type="button" aria-pressed={issueKind === kind} onClick={() => chooseKind(kind)} className={`rounded-xl border px-2 py-3 text-xs font-bold transition-colors ${issueKind === kind ? 'border-[var(--crm-danger)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)] hover:border-[var(--crm-border-strong)]'}`}>
+                  <Icon name={KIND_ICONS[kind]} className="mr-1.5 inline text-[17px]" />{ANDON_KIND_LABELS[kind]}
                 </button>
               ))}
             </div>
+          </fieldset>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
+              2. Core work area
+              <select aria-label="Core work area" value={workstream} onChange={(event) => chooseWorkstream(event.target.value as AndonWorkArea)} required className="crm-field mt-2 h-11 w-full rounded-lg px-3 text-sm font-semibold normal-case tracking-normal outline-none focus:ring-2 focus:ring-[var(--crm-info)]/25">
+                {ANDON_WORK_AREAS.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
+              3. Specific process
+              <select aria-label="Specific process" value={category} onChange={(event) => setCategory(event.target.value)} required className="crm-field mt-2 h-11 w-full rounded-lg px-3 text-sm font-semibold normal-case tracking-normal outline-none focus:ring-2 focus:ring-[var(--crm-info)]/25">
+                {categories.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
           </div>
 
-          {/* Section */}
-          <div>
-            <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-              Section
-            </label>
-            <select
-              value={section}
-              onChange={(e) => setSection(e.target.value)}
-              required
-              className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
-            >
-              <option value="">Select section...</option>
-              <option value="Leads">Leads</option>
-              <option value="Pipeline">Pipeline</option>
-              <option value="Conversations">Conversations</option>
-              <option value="Calendar">Calendar</option>
-              <option value="Dashboard">Dashboard</option>
-              <option value="Ari">Ari</option>
-              <option value="Settings">Settings</option>
-              <option value="Integrations">Integrations</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          {/* Priority */}
-          <div>
-            <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-              Priority (Your Assessment)
-            </label>
+          <fieldset>
+            <legend className="mb-2 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">4. Impact</legend>
             <div className="grid grid-cols-4 gap-2">
-              {(['low', 'medium', 'high', 'critical'] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPriority(p)}
-                  className={`px-3 py-2 text-xs font-semibold rounded-lg border-2 transition-colors capitalize ${
-                    priority === p
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-outline-variant/20 hover:border-primary/30'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
+              {(['low', 'medium', 'high', 'critical'] as const).map((level) => <button key={level} type="button" aria-pressed={priority === level} onClick={() => setPriority(level)} className={`rounded-lg border px-2 py-2 text-xs font-semibold capitalize transition-colors ${priority === level ? 'border-[var(--crm-danger)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-border)] hover:border-[var(--crm-border-strong)]'}`}>{level}</button>)}
             </div>
-          </div>
+          </fieldset>
 
-          {/* Description */}
-          <div>
-            <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              required
-              rows={6}
-              placeholder={
-                type === 'bug'
-                  ? 'What happened? What were you trying to do? What did you expect to happen?'
-                  : type === 'feature'
-                  ? "Describe the feature you'd like to see. What problem does it solve?"
-                  : 'Share your thoughts, suggestions, or general feedback.'
-              }
-              className="w-full border border-outline-variant/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
+            5. What happened?
+            <textarea aria-label="What happened" value={description} onChange={(event) => setDescription(event.target.value)} required rows={4} placeholder="What were you doing, what happened, and what should have happened?" className="crm-field mt-2 w-full resize-y rounded-lg px-3 py-2 text-sm font-medium normal-case tracking-normal outline-none focus:ring-2 focus:ring-[var(--crm-info)]/25" />
+          </label>
 
-          {/* Auto-captured info note */}
-          <div className="bg-surface-container rounded-lg p-3 text-xs text-on-surface-variant">
-            <Icon name="info" size="text-sm" className="inline mr-1" />
-            <strong>Auto-captured:</strong> Current page URL, timestamp, your name, browser info
-          </div>
+          <details className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-3" open>
+            <summary className="cursor-pointer text-xs font-black uppercase tracking-wider text-[var(--crm-ink)]">6. Five Whys <span className="font-medium normal-case tracking-normal text-[var(--crm-text-muted)]">- add what is known now</span></summary>
+            <p className="mb-3 mt-1 text-[11px] text-[var(--crm-text-muted)]">Each answer should explain the answer above it. Missing answers stay visible on the Andon dashboard for follow-up.</p>
+            <div className="space-y-2">
+              {fiveWhys.map((why, index) => <label key={index} className="grid items-center gap-2 text-xs font-bold sm:grid-cols-[58px_1fr]"><span>Why {index + 1}</span><input aria-label={`Why ${index + 1}`} value={why} onChange={(event) => updateWhy(index, event.target.value)} placeholder={index === 0 ? 'Why did it happen?' : 'Why was that true?'} className="crm-field h-9 rounded-lg px-3 text-xs font-medium" /></label>)}
+            </div>
+          </details>
 
-          {/* Actions */}
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-6 py-3 border border-outline-variant/20 rounded-xl font-bold text-sm hover:bg-slate-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || !description.trim() || !section}
-              className="flex-1 px-6 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Submitting...' : 'Submit'}
-            </button>
+          <div className="rounded-lg bg-[var(--crm-info-soft)] p-3 text-xs text-[var(--crm-text-muted)]"><Icon name="info" size="text-sm" className="mr-1 inline text-[var(--crm-info)]" /><strong>Included automatically:</strong> exact CRM record URL, Lead or Property ID when present, timestamp, signed-in agent, and browser.</div>
+          {error ? <div role="alert" className="rounded-lg border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--crm-danger)]">{error}</div> : null}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="crm-secondary-button flex-1 rounded-xl px-6 py-3 text-sm font-bold">Cancel</button>
+            <button type="submit" disabled={loading || !description.trim() || !workstream || !category} className="flex-1 rounded-xl bg-[var(--crm-danger)] px-6 py-3 text-sm font-bold text-white transition-all hover:brightness-95 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-50">{loading ? 'Sending Andon…' : 'Raise Andon'}</button>
           </div>
         </form>
       </div>

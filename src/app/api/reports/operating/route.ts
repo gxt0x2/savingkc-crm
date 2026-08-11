@@ -6,14 +6,21 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { buildConversationHubThreads, type ConversationHubActivity, type ConversationHubLead } from '@/lib/operating-model/conversation-hub'
 import { buildOperatingReport, type OperatingActivity, type OperatingBuyer, type OperatingDeal, type OperatingLead, type OperatingMoneyRow, type OperatingOffer, type OperatingReportPeriod } from '@/lib/operating-report'
+import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const NO_STORE_HEADERS: HeadersInit = { 'Cache-Control': 'no-store, max-age=0' }
-const PERIODS = new Set<OperatingReportPeriod>(['30d', 'quarter', 'ytd', 'all'])
+const PERIODS = new Set<OperatingReportPeriod>(['today', '30d', 'quarter', 'ytd', 'all', 'custom'])
 const PAGE_SIZE = 1000
 
 function periodStart(period: OperatingReportPeriod, now: Date): Date | null {
   if (period === 'all') return null
+  if (period === 'today') {
+    const start = new Date(now)
+    start.setHours(0, 0, 0, 0)
+    return start
+  }
+  if (period === 'custom') return new Date(now.getTime() - 30 * 86_400_000)
   if (period === '30d') return new Date(now.getTime() - 30 * 86_400_000)
   if (period === 'ytd') return new Date(now.getFullYear(), 0, 1)
   return new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)
@@ -56,15 +63,21 @@ async function loadActivities(leadIds: string[]) {
 export async function GET(request: NextRequest) {
   const requested = request.nextUrl.searchParams.get('period') as OperatingReportPeriod | null
   const period = requested && PERIODS.has(requested) ? requested : '30d'
-  const until = new Date()
-  const since = periodStart(period, until)
+  const requestedStart = request.nextUrl.searchParams.get('start')
+  const requestedEnd = request.nextUrl.searchParams.get('end')
+  const parsedEnd = requestedEnd ? new Date(requestedEnd) : null
+  const until = parsedEnd && Number.isFinite(parsedEnd.getTime()) ? parsedEnd : new Date()
+  const parsedStart = requestedStart ? new Date(requestedStart) : null
+  const since = parsedStart && Number.isFinite(parsedStart.getTime()) ? parsedStart : periodStart(period, until)
+  if (since && since.getTime() > until.getTime()) {
+    return NextResponse.json({ error: 'The report start date must be before the end date.' }, { status: 400, headers: NO_STORE_HEADERS })
+  }
   const db = supabaseAdmin()
 
   const { data: leadData, error: leadError } = await db
     .from('leads')
-    .select('id, full_name, phone, email, property_address, city, source, station, priority, assigned_agent, opportunity_score, motivation_score, arv, offer_amount, is_favorite, created_at, is_parked')
+    .select('id, full_name, phone, email, property_address, city, source, station, priority, assigned_agent, opportunity_score, motivation_score, arv, offer_amount, classification, dead_reason, is_favorite, created_at, is_parked')
     .eq('is_parked', false)
-    .neq('station', 'dead')
     .order('created_at', { ascending: false })
     .limit(5000)
 
@@ -110,9 +123,10 @@ export async function GET(request: NextRequest) {
   }
 
   const cohortLeads = referenceLeads.filter((lead) => withinPeriod(lead.created_at, since, until))
+  const activeCohortLeads = cohortLeads.filter((lead) => !isNotLeadOutcome(lead.classification, lead.station))
   const hubActivities = activityResult.rows as ConversationHubActivity[]
   const threads = buildConversationHubThreads(
-    cohortLeads.map((lead) => ({ ...lead, classification: null, dead_reason: null, county: null, motivation_score: lead.opportunity_score, arv: null, offer_amount: null, appointment_date: null })) as ConversationHubLead[],
+    activeCohortLeads.map((lead) => ({ ...lead, county: null, motivation_score: lead.opportunity_score, arv: null, offer_amount: null, appointment_date: null })) as ConversationHubLead[],
     hubActivities,
     until,
   )

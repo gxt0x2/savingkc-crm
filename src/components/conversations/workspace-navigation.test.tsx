@@ -30,7 +30,7 @@ describe('workspace dashboard navigation', () => {
     navigation.search = ''
   })
 
-  it('exposes company, acquisitions, and dispositions as dashboards', () => {
+  it('exposes company, team, and Andon dashboards', () => {
     render(<WorkspaceNav needsReply={0} />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
@@ -39,6 +39,21 @@ describe('workspace dashboard navigation', () => {
     expect(within(navigationRegion).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
     expect(within(navigationRegion).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('href', '/reports/acquisitions')
     expect(navigationRegion.querySelector('a[href="/reports/dispositions"]')).toBeInTheDocument()
+    expect(within(navigationRegion).getByRole('link', { name: /Andon system/ })).toHaveAttribute('href', '/reports/andon')
+  })
+
+  it('keeps the system Andon available from the shared CRM navigation', () => {
+    render(<WorkspaceNav needsReply={0} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Raise an Andon and report an issue' }))
+
+    expect(screen.getByRole('dialog', { name: 'Report an issue' })).toBeVisible()
+    expect(screen.getByRole('button', { name: /Process issue/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: /AI Glitch/ })).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Core work area' })).toHaveValue('Marketing')
+    expect(screen.getByRole('combobox', { name: 'Specific process' })).toHaveValue('List Import Error')
+    expect(screen.getByRole('textbox', { name: 'What happened' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'Why 5' })).toBeVisible()
   })
 
   it('keeps team dashboards out of the generic reports section', () => {
@@ -75,5 +90,6 @@ describe('workspace dashboard navigation', () => {
     expect(within(switcher).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
     expect(within(switcher).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('aria-current', 'page')
     expect(within(switcher).getByRole('link', { name: /Dispositions/ })).toHaveAttribute('href', '/reports/dispositions')
+    expect(within(switcher).getByRole('link', { name: /Andon system/ })).toHaveAttribute('href', '/reports/andon')
   })
 })
