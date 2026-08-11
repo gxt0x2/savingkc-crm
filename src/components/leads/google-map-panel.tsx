@@ -276,7 +276,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
 
             const panoramaOptions: Record<string, unknown> = {
               pov: { heading: 0, pitch: 0 },
-              zoom: 0,
+              zoom: 1,
               addressControl: false,
               clickToGo: false,
               enableCloseButton: false,
@@ -289,7 +289,8 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
               visible: true,
             }
 
-            panoramaOptions.position = data.location.latLng ?? location
+            if (data.location.pano) panoramaOptions.pano = data.location.pano
+            else panoramaOptions.position = data.location.latLng ?? location
 
             const panorama = new google.maps.StreetViewPanorama(canvasRef.current, panoramaOptions)
             panoramaRef.current = panorama

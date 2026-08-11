@@ -77,10 +77,11 @@ describe('StreetViewPanel', () => {
     expect(container.firstElementChild).toHaveStyle({ height: '100%' })
     expect(constructPanorama).toHaveBeenCalledWith(canvas, expect.objectContaining({
       clickToGo: false,
-      position: location,
+      pano: 'test-pano',
       visible: true,
+      zoom: 1,
     }))
-    expect(constructPanorama.mock.calls[0]?.[1]).not.toHaveProperty('pano')
+    expect(constructPanorama.mock.calls[0]?.[1]).not.toHaveProperty('position')
     await waitFor(() => expect(screen.getByText('Drag to look around')).toBeInTheDocument())
 
     expect(nativeSurface).not.toBeNull()
