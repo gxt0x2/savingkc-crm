@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildAcquisitionSourceRows, buildFunnelGeometry, buildRevenueLiftModel } from './acquisitions-metrics-dashboard'
+import { buildFunnelGeometry, buildRevenueLiftModel } from './acquisitions-metrics-dashboard'
+import { buildAcquisitionSourceRows } from '@/lib/acquisition-source-channels'
 import { buildOperatingReport, type OperatingReport, type OperatingReportInput } from '@/lib/operating-report'
 
 function reportWithOneHundredLeads() {
