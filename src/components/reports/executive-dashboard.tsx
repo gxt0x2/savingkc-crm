@@ -70,7 +70,7 @@ export function ExecutiveDashboard({
           {cards.map((card) => <CeoMetricCard key={card.label} {...card} />)}
         </section>
 
-        <section aria-label="Department operating flow" className="grid auto-rows-fr gap-2.5 xl:grid-cols-2 2xl:grid-cols-4">
+        <section aria-label="Department operating flow" className="grid auto-rows-fr gap-2.5 lg:grid-cols-2">
           <MarketingPerformance report={report} />
           <AcquisitionsPerformance report={report} />
           <DispositionsPerformance report={report} />

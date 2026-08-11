@@ -50,6 +50,16 @@ test('marketing attribution and acquisition KPIs stay aligned', async ({ page })
   await expect(marketing.getByText('Inbound IVR', { exact: true })).toHaveCount(0)
   await expect(marketing.getByText('Tax Delinquent Inbound Sms', { exact: true })).toHaveCount(0)
 
+  const departmentFlow = page.getByRole('region', { name: 'Department operating flow' })
+  const departmentRows = await departmentFlow.getByRole('heading').evaluateAll((headings) => headings.map((heading) => ({
+    label: heading.textContent?.trim(),
+    top: Math.round(heading.closest('section')?.getBoundingClientRect().top ?? 0),
+  })))
+  expect(departmentRows.map(({ label }) => label)).toEqual(['Marketing', 'Acquisitions', 'Dispositions', 'Revenue'])
+  expect(departmentRows[0].top).toBe(departmentRows[1].top)
+  expect(departmentRows[2].top).toBe(departmentRows[3].top)
+  expect(departmentRows[2].top).toBeGreaterThan(departmentRows[0].top)
+
   await page.goto('/reports/acquisitions', { waitUntil: 'domcontentloaded' })
 
   const metrics = page.getByRole('region', { name: 'Acquisition operating metrics' })
