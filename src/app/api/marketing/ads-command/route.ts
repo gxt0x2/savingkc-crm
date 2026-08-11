@@ -807,7 +807,7 @@ function buildFunnel(
     {
       ...FUNNEL[7],
       n: qualified,
-      breakdown: qualified > 0 ? [{ label: 'Qualified CRM stage', value: qualified, color: FUNNEL[7].c }] : [],
+      breakdown: qualified > 0 ? [{ label: 'Opportunity CRM stage', value: qualified, color: FUNNEL[7].c }] : [],
     },
   ]
 
@@ -882,7 +882,7 @@ function buildKpis(
     { lab: 'Impressions', val: current.impressions, fmt: 'num', delta: pctDelta(current.impressions, previous.impressions), good: true },
     { lab: 'Clicks', val: currentClicks, fmt: 'num', delta: pctDelta(currentClicks, previous.clicks), good: true },
     { lab: 'Leads', val: leads, fmt: 'num', delta: pctDelta(leads, previousLeads), good: true },
-    { lab: 'Qualified', val: qualified, fmt: 'num', delta: pctDelta(qualified, previousQualified), good: true },
+    { lab: 'Opportunities', val: qualified, fmt: 'num', delta: pctDelta(qualified, previousQualified), good: true },
     { lab: 'Cost / Lead', val: safeCost(current.spend, leads), fmt: 'usd', delta: pctDelta(safeCost(current.spend, leads), safeCost(previous.spend, previousLeads)), good: false },
     { lab: 'Cost / Deal', val: safeCost(current.spend, dealCount), fmt: 'usd', delta: 0, good: dealCount > 0 },
     { lab: 'Pipeline Assignment Value', val: pipelineValue, fmt: 'k', delta: 0, good: true },
@@ -1291,7 +1291,7 @@ function buildLeadRows(
 function eventLabel(name: string | null): string {
   const value = text(name)
   if (value === 'lead_submitted') return 'Lead Submitted'
-  if (value === 'qualified_lead') return 'Qualified Lead'
+  if (value === 'qualified_lead') return 'Opportunity'
   if (value === 'lead_stage3_completed') return 'Step 3 Complete'
   if (value === 'appointment_booked') return 'Appointment Booked'
   if (value === 'call_connected_60s') return 'Call 60+ Seconds'

@@ -40,7 +40,7 @@ function money(value?: number | null) {
   return value ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value) : '—'
 }
 
-const stages = ['New', 'Contacted', 'Qualified', 'Offer']
+const stages = ['New', 'Contacted', 'Opportunity', 'Offer']
 
 const TAG_TONE = {
   brand: 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]',

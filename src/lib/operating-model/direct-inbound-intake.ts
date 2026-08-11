@@ -19,7 +19,7 @@ export function buildDirectInboundLeadSeed(input: DirectInboundLeadSeedInput) {
     priority: 'warm',
     classification: null,
     assigned_agent: input.assignedAgent,
-    notes: `Connected inbound call to ${input.calledNumber}. Seller status has not been qualified.`,
+    notes: `Connected inbound call to ${input.calledNumber}. The seller has not been confirmed as an opportunity.`,
   }
 }
 

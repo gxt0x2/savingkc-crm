@@ -177,7 +177,7 @@ const QUEUE_PRESETS: Array<{ id: QueuePreset; label: string; icon: string; descr
   { id: 'scheduled_today', label: 'Calendar Scheduled Today', icon: 'today', description: 'Calendar tasks, callbacks, and appointments due today.' },
   { id: 'followups_today', label: 'Follow-ups Today', icon: 'event_upcoming', description: 'Callbacks and next-step work due now.' },
   { id: 'stale_30', label: 'Not Contacted in 30 Days', icon: 'history', description: 'Callable leads with no recent call, SMS, or voicemail activity.' },
-  { id: 'warm_followups', label: 'Warm Follow-ups', icon: 'local_fire_department', description: 'Hot, high-priority, qualified, and motivated sellers.' },
+  { id: 'warm_followups', label: 'Warm Follow-ups', icon: 'local_fire_department', description: 'Hot, high-priority opportunities and motivated sellers.' },
   { id: 'cold_prospecting', label: 'Cold Prospecting', icon: 'ac_unit', description: 'Fresh or untouched records for outbound sessions.' },
   { id: 'tax_2yr', label: '2-Year Tax Delinquent', icon: 'request_quote', description: 'Tax delinquent prospects marked around two years.' },
   { id: 'deceased_3yr', label: '3+ Year Deceased Tax', icon: 'account_balance', description: 'Deceased-owner tax leads for the heir dialer workflow.' },

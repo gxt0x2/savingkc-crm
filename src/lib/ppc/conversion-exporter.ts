@@ -443,7 +443,7 @@ function createDefaultNotifier(client: SupabaseClient): PpcConversionExportNotif
         }
       }
 
-      let leadName = text(eventPayload(row).lead_name) || 'Qualified PPC lead'
+      let leadName = text(eventPayload(row).lead_name) || 'PPC opportunity'
       let address = text(eventPayload(row).property_address) || text(eventPayload(row).address)
 
       if (row.lead_id) {
@@ -454,7 +454,7 @@ function createDefaultNotifier(client: SupabaseClient): PpcConversionExportNotif
           .maybeSingle()
 
         if (error) {
-          console.error('[ppc/conversion-exporter] lead lookup failed for qualified lead SMS', {
+          console.error('[ppc/conversion-exporter] lead lookup failed for opportunity SMS', {
             leadId: row.lead_id,
             error,
           })
@@ -470,7 +470,7 @@ function createDefaultNotifier(client: SupabaseClient): PpcConversionExportNotif
       const prefix = hasUserIdentifiers ? 'PPC ECL verified' : 'PPC ECL ISSUE'
       const addressPart = address ? ` at ${address}` : ''
       const body = compactSmsBody(
-        `${prefix}: ${leadName}${addressPart}. Qualified lead sent to Google Ads. ${identifierStatus}. Click: ${clickIdType}. ${leadUrl(row.lead_id)}`,
+        `${prefix}: ${leadName}${addressPart}. Opportunity sent to Google Ads. ${identifierStatus}. Click: ${clickIdType}. ${leadUrl(row.lead_id)}`,
       )
 
       const result = await safeSendSMS({ body, from, to })
@@ -501,7 +501,7 @@ async function maybeNotifyQualifiedLeadExport(
     const notifier = deps.notifier ?? createDefaultNotifier(supabaseAdmin())
     return await notifier.notifyQualifiedLeadExport(row, destinations, now)
   } catch (error) {
-    console.error('[ppc/conversion-exporter] qualified lead SMS alert failed', {
+    console.error('[ppc/conversion-exporter] opportunity SMS alert failed', {
       rowId: row.id,
       leadId: row.lead_id,
       error,

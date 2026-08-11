@@ -70,11 +70,11 @@ export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; 
   },
   contacted: {
     label: 'Leads',
-    description: 'Contacted sellers currently being worked and qualified.',
+    description: 'Contacted sellers currently moving through qualification.',
   },
   qualified: {
     label: 'Opportunities',
-    description: 'Qualified sellers ready for appointment or offer progression.',
+    description: 'Sellers who meet the opportunity standard and are ready for appointment or offer progression.',
   },
   appointment_set: {
     label: 'Appointment Set',

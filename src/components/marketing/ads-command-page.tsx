@@ -241,7 +241,7 @@ const METRICS: Record<MetricKey, { label: string; color: string; axis: 'y' | 'y1
   spend: { label: 'Spend', color: '#f87171', axis: 'y', fmt: formatUsd },
   cpl: { label: 'CPL', color: '#14b8a6', axis: 'y', fmt: formatUsd },
   leads: { label: 'Leads', color: '#22c55e', axis: 'y1', fmt: formatNum },
-  qualified: { label: 'Qualified', color: '#eab308', axis: 'y1', fmt: formatNum },
+  qualified: { label: 'Opportunities', color: '#eab308', axis: 'y1', fmt: formatNum },
   clicks: { label: 'Clicks', color: '#a1a1aa', axis: 'y1', fmt: formatNum },
   conversions: { label: 'Conversions', color: '#60a5fa', axis: 'y1', fmt: formatNum },
 }
@@ -958,8 +958,8 @@ function makeFunnelBreakdown(step: FunnelRow, period: MarketingPeriod): Marketin
   return {
     title: step.name,
     subtitle: step.breakdownLabel,
-    metricLabel: step.name === 'Impressions' ? 'impressions' : step.name === 'Qualified' ? 'qualified leads' : 'clicks',
-    total: step.name === 'Impressions' || step.name === 'Leads' || step.name === 'Qualified'
+    metricLabel: step.name === 'Impressions' ? 'impressions' : step.name === 'Opportunity' ? 'opportunities' : 'clicks',
+    total: step.name === 'Impressions' || step.name === 'Leads' || step.name === 'Opportunity'
       ? scaleN(step.n, period)
       : breakdownTotal(items),
     items,
@@ -1184,7 +1184,7 @@ function ExportHealthCard({ health }: { health: ExportHealth }) {
       <div className="panel-head">
         <div>
           <h2>Google Ads Export Health</h2>
-          <div className="cap">Qualified lead, appointment, and call conversion delivery to Google Ads</div>
+          <div className="cap">Opportunity, appointment, and call conversion delivery to Google Ads</div>
         </div>
         <span className="export-health-state" style={{ color: tone, borderColor: `${tone}55`, background: `${tone}16` }}>
           {exportHealthLabel(health.status)}
@@ -1661,7 +1661,7 @@ function buildJourney(lead: LeadRow) {
     { h: 'New Lead Created', d: `Entered pipeline · SmartSkip enrichment · ${lead.county}` },
     { h: 'Attempted Contact', d: `Casey: ${lead.dials} dial${lead.dials === 1 ? '' : 's'} via Twilio` },
     { h: 'Connected', d: `${lead.connects} live connect${lead.connects === 1 ? '' : 's'} · ${lead.talk} min talk time` },
-    { h: 'Qualified', d: `Motivation confirmed · scored ${lead.score} (${lead.verdict})` },
+    { h: 'Opportunity', d: `Motivation confirmed · scored ${lead.score} (${lead.verdict})` },
     { h: 'Appointment Set', d: `Walkthrough scheduled · ${lead.prop}` },
     { h: 'Offer Made', d: `Offer presented · projected spread ${formatUsd(lead.spread)}` },
     { h: 'Under Contract', d: 'Signed via DocuSeal · spread locked' },

@@ -102,7 +102,7 @@ interface SavedView {
 const STAGE_LABELS: Record<DealStage, string> = {
   new: 'New',
   contacted: 'Contacted',
-  qualified: 'Qualified',
+  qualified: 'Opportunity',
   appointment_set: 'Appointment set',
   offer_made: 'Offer made',
   under_contract: 'Under contract',

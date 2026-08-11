@@ -76,7 +76,7 @@ describe('buildAcquisitionSourceRows', () => {
 describe('buildFunnelGeometry', () => {
   const stages = buildFunnelGeometry([
     { label: 'Leads', value: 100 },
-    { label: 'Qualified', value: 60 },
+    { label: 'Opportunities', value: 60 },
     { label: 'Appointments', value: 30 },
     { label: 'Contracts', value: 10 },
     { label: 'Closed', value: 0 },

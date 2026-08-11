@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { StreetViewPanel } from '@/components/leads/google-map-panel'
+import { LeadOpportunityPanel, LEAD_WORKSPACE_STAGES } from '@/components/leads/lead-opportunity-panel'
+import { RecordOfferModal } from '@/components/leads/record-offer-modal'
 import { StageSelector } from '@/components/leads/stage-selector'
 import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
 import { formatPhone, toProperCase } from '@/lib/format'
@@ -90,14 +92,6 @@ const WORKSPACE_SECTIONS: { key: LeadWorkspaceSection; icon: string; label: stri
   { key: 'activity', icon: 'history', label: 'Activity log', activeTone: 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]', iconTone: 'text-[var(--crm-brand)]' },
 ]
 
-const STAGES = [
-  { keys: ['new'], label: 'New' },
-  { keys: ['contacted', 'lead', 'leads'], label: 'Contacted' },
-  { keys: ['qualified', 'qualifying', 'opportunity'], label: 'Qualified' },
-  { keys: ['offer_made', 'negotiations', 'offer'], label: 'Offer' },
-  { keys: ['under_contract', 'in_closing', 'contract'], label: 'Contract' },
-]
-
 const ACTIVITY_META: Record<string, { icon: string; label: string; tone: string }> = {
   sms: { icon: 'chat_bubble', label: 'SMS', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
   call: { icon: 'call', label: 'Call', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
@@ -107,6 +101,7 @@ const ACTIVITY_META: Record<string, { icon: string; label: string; tone: string 
   agent_note: { icon: 'description', label: 'Internal note', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
   task: { icon: 'check_circle', label: 'Task', tone: 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]' },
   appointment: { icon: 'calendar_month', label: 'Appointment', tone: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
+  offer: { icon: 'request_quote', label: 'Offer', tone: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' },
 }
 
 const COMMUNICATION_FILTERS: { key: LeadCommunicationFilter; label: string; icon: string }[] = [
@@ -170,6 +165,7 @@ export function LeadWorkspace({
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [operationsPanelOpen, setOperationsPanelOpen] = useState(false)
   const [streetViewOpen, setStreetViewOpen] = useState(false)
+  const [offerModalOpen, setOfferModalOpen] = useState(false)
   const sectionHeadingRef = useRef<HTMLDivElement>(null)
   const name = toProperCase(lead.full_name) || 'Unknown contact'
   const firstName = name.split(/\s+/)[0]
@@ -177,13 +173,22 @@ export function LeadWorkspace({
   const owner = toProperCase(lead.assigned_agent) || 'Unassigned'
   const address = [lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', ')
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${encodeURIComponent(address)}&fov=90&pitch=4&key=${process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''}`
-  const stageIndex = Math.max(0, STAGES.findIndex((stage) => stage.keys.includes((lead.station || 'new').toLowerCase())))
+  const stageIndex = Math.max(0, LEAD_WORKSPACE_STAGES.findIndex((stage) => stage.keys.includes((lead.station || 'new').toLowerCase())))
   const normalizedActivities = useMemo(() => normalizeLeadConversation(activities), [activities])
   const communicationCounts = useMemo(() => leadConversationCounts(normalizedActivities), [normalizedActivities])
   const visibleActivities = useMemo(
     () => filterLeadConversation(normalizedActivities, communicationFilter),
     [communicationFilter, normalizedActivities],
   )
+  const latestOfferActivity = useMemo(() => [...activities]
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+    .find((activity) => activity.activity_type === 'offer' || typeof activity.metadata?.offer_method === 'string'),
+  [activities])
+  const latestOfferMethod = latestOfferActivity?.metadata?.offer_method === 'written'
+    ? 'Written'
+    : latestOfferActivity?.metadata?.offer_method === 'verbal'
+      ? 'Verbal'
+      : null
   const nextTask = activities.find((activity) => activity.activity_type === 'task')
   const appointmentIsPast = Boolean(appointment && new Date(appointment.scheduledAt).getTime() < Date.now())
   const nextAction = appointmentIsPast
@@ -239,6 +244,11 @@ export function LeadWorkspace({
   function openStreetView() {
     closePanels()
     setStreetViewOpen(true)
+  }
+
+  function openOffer() {
+    closePanels()
+    setOfferModalOpen(true)
   }
 
   function selectSection(section: LeadWorkspaceSection) {
@@ -305,6 +315,16 @@ export function LeadWorkspace({
         <StreetViewModal address={address} onClose={() => setStreetViewOpen(false)} />,
         document.body,
       ) : null}
+      {offerModalOpen ? createPortal(
+        <RecordOfferModal
+          leadId={lead.id}
+          leadName={name}
+          currentAmount={lead.offer_amount}
+          onClose={() => setOfferModalOpen(false)}
+          onSaved={onRefresh}
+        />,
+        document.body,
+      ) : null}
       <div className="mx-auto max-w-[1640px] px-4 pb-8 pt-4 xl:px-6">
         <header className="crm-panel-raised relative overflow-hidden rounded-xl px-4 py-3.5 sm:px-5">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -335,7 +355,7 @@ export function LeadWorkspace({
                     ) : null}
                     <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-success)]">
                       <Icon name="flag" className="text-[13px]" />
-                      {STAGES[stageIndex]?.label || toProperCase(lead.station) || 'New'}
+                      {LEAD_WORKSPACE_STAGES[stageIndex]?.label || toProperCase(lead.station) || 'New'}
                     </span>
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--crm-text-muted)]">
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-[8px] font-bold text-[var(--crm-surface)]">{owner.slice(0, 2).toUpperCase()}</span>
@@ -366,28 +386,15 @@ export function LeadWorkspace({
               <ActionButton icon="mail" label="Email" onClick={onEmail} disabled={!lead.email} tone="violet" />
               <button
                 type="button"
-                onClick={openContextPanel}
-                aria-expanded={contextPanelOpen}
-                aria-controls="lead-context-panel"
-                className="crm-secondary-button flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold sm:text-sm"
-              >
-                <Icon name="home_work" className="text-[17px] text-[var(--crm-info)]" />
-                Property
-              </button>
-              <button
-                type="button"
                 onClick={openOperationsPanel}
                 aria-expanded={operationsPanelOpen}
                 aria-controls="lead-operations-panel"
-                aria-label="Open lead controls"
-                title="Lead controls"
-                className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"
+                aria-label="Open more lead actions"
+                title="More lead actions"
+                className="crm-secondary-button flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-bold sm:text-sm"
               >
                 <Icon name="tune" className="text-[18px]" />
-              </button>
-              <button type="button" onClick={onContract} className="crm-primary-button flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-bold sm:text-sm">
-                <Icon name="description" className="text-[17px]" />
-                Create contract
+                More
               </button>
             </div>
           </div>
@@ -566,13 +573,16 @@ export function LeadWorkspace({
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => { closePanels(); onAppointment() }} className="crm-secondary-button flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="event" className="text-[18px]" />Appointment</button>
                 <button type="button" onClick={() => { closePanels(); onTask() }} className="crm-secondary-button flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="add_task" className="text-[18px]" />New task</button>
+                <button type="button" onClick={openOffer} className="crm-secondary-button flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="request_quote" className="text-[18px]" />{lead.offer_amount ? 'Update offer' : 'Record offer'}</button>
                 <button type="button" onClick={openContextPanel} className="crm-secondary-button flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="home_work" className="text-[18px]" />Property</button>
-                <button type="button" onClick={() => { closePanels(); onEdit() }} className="crm-secondary-button flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="edit" className="text-[18px]" />Edit lead</button>
+                <button type="button" onClick={() => { closePanels(); onEdit() }} className="crm-secondary-button col-span-2 flex h-11 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="edit" className="text-[18px]" />Edit contact and property</button>
               </div>
-              <button type="button" onClick={() => { closePanels(); onContract() }} className="crm-primary-button mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-bold">
-                <Icon name="description" className="text-[18px]" />
-                Create contract
-              </button>
+              {lead.offer_amount ? (
+                <button type="button" onClick={() => { closePanels(); onContract() }} className="crm-primary-button mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-bold">
+                  <Icon name="description" className="text-[18px]" />
+                  Create contract
+                </button>
+              ) : null}
             </div>
           </aside>
         ) : null}
@@ -672,66 +682,25 @@ export function LeadWorkspace({
             </div>
           </section>
 
-          <section className="crm-panel flex h-[calc(100vh-300px)] min-h-[560px] max-h-[820px] flex-col overflow-hidden rounded-xl">
-            <CardHeader title="Opportunity" icon="paid" />
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              <SectionLabel>Deal stage</SectionLabel>
-              <div className="mt-5 flex items-start">
-                {STAGES.map((stage, index) => {
-                  const complete = index < stageIndex
-                  const current = index === stageIndex
-                  return (
-                    <div key={stage.label} className="relative flex flex-1 flex-col items-center">
-                      {index > 0 ? <span className={cn('absolute right-1/2 top-3 h-0.5 w-full', index <= stageIndex ? 'bg-[var(--crm-success)]' : 'bg-[var(--crm-border)]')} /> : null}
-                      <span className={cn('relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-bold', complete ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-white' : current ? 'border-[var(--crm-success)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'border-[var(--crm-border-strong)] bg-[var(--crm-surface)] text-[var(--crm-text-dim)]')}>
-                        {complete ? <Icon name="check" className="text-[14px]" /> : current ? <span className="h-2 w-2 rounded-full bg-[var(--crm-success)]" /> : null}
-                      </span>
-                      <span className={cn('mt-2 text-center text-[10px] font-semibold', current ? 'text-[var(--crm-success)]' : 'text-[var(--crm-text-muted)]')}>{stage.label}</span>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <dl className="mt-7 space-y-4 border-t border-[var(--crm-border)] pt-5 text-sm">
-                <DataRow label="Motivation score" value={`${score ?? lead.motivation_score ?? '—'}${score != null || lead.motivation_score != null ? ' / 100' : ''}`} accent />
-                <DataRow label="Estimated value" value={formatMoney(lead.arv ?? assessedValue)} />
-                <DataRow label="Our offer" value={formatMoney(lead.offer_amount)} />
-              </dl>
-
-              <div className="my-6 border-t border-[var(--crm-border)]" />
-              <SectionLabel>Next steps</SectionLabel>
-              <div className="mt-3 space-y-2">
-                <NextStep label="Call seller" value={lead.phone ? 'Ready now' : 'Phone missing'} onClick={onCall} disabled={!lead.phone} />
-                <NextStep
-                  label={appointmentIsPast ? 'Record appointment outcome' : 'Schedule appointment'}
-                  value={appointmentIsPast ? 'Required' : appointment ? 'Scheduled' : 'Not set'}
-                  onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment}
-                />
-                <NextStep label="Review offer" value={lead.offer_amount ? formatMoney(lead.offer_amount) : 'Not set'} onClick={onContract} />
-              </div>
-
-              {appointment ? (
-                <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] p-4 text-left hover:brightness-95">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--crm-violet)] text-white"><Icon name="calendar_month" /></span>
-                  <span>
-                    <span className="block text-xs font-black uppercase tracking-[0.08em] text-[var(--crm-violet)]">{appointmentIsPast ? 'Appointment outcome required' : 'Appointment scheduled'}</span>
-                    <span className="mt-1 block text-sm font-bold text-[var(--crm-ink)]">{new Date(appointment.scheduledAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
-                    <span className="mt-0.5 block text-xs text-[var(--crm-text-muted)]">{appointment.address || lead.property_address}</span>
-                  </span>
-                </button>
-              ) : (
-                <button type="button" onClick={onAppointment} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--crm-brand-border)] px-4 py-4 text-sm font-bold text-[var(--crm-brand)] hover:bg-[var(--crm-brand-soft)]">
-                  <Icon name="event" />
-                  Schedule appointment
-                </button>
-              )}
-
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                <button type="button" onClick={onTask} className="crm-secondary-button flex h-10 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="add_task" />New task</button>
-                <button type="button" onClick={onEdit} className="crm-secondary-button flex h-10 items-center justify-center gap-2 rounded-lg text-xs font-bold"><Icon name="edit" />More details</button>
-              </div>
-            </div>
-          </section>
+          <LeadOpportunityPanel
+            station={lead.station}
+            score={score}
+            motivationScore={lead.motivation_score}
+            estimatedValue={lead.arv ?? assessedValue}
+            offerAmount={lead.offer_amount}
+            offerMethod={latestOfferMethod}
+            phoneAvailable={Boolean(lead.phone)}
+            propertyAddress={lead.property_address}
+            appointment={appointment}
+            appointmentIsPast={appointmentIsPast}
+            onCall={onCall}
+            onAppointment={onAppointment}
+            onAppointmentOutcome={onAppointmentOutcome}
+            onOffer={openOffer}
+            onContract={onContract}
+            onTask={onTask}
+            onEdit={onEdit}
+          />
         </main>
         ) : (
           <section
@@ -883,14 +852,15 @@ function StreetViewModal({ address, onClose }: { address: string; onClose: () =>
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6"
-      onClick={onClose}
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
     >
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="lead-street-view-title"
         className="crm-panel-raised w-full max-w-5xl overflow-hidden rounded-2xl shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-center gap-3 border-b border-[var(--crm-border)] px-4 py-3 sm:px-5">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--crm-info-soft)] text-[var(--crm-info)]">
@@ -910,7 +880,9 @@ function StreetViewModal({ address, onClose }: { address: string; onClose: () =>
             <Icon name="close" />
           </button>
         </header>
-        <StreetViewPanel address={address} height="min(72vh, 620px)" />
+        <div className="h-[min(72vh,620px)] w-full">
+          <StreetViewPanel address={address} height="100%" />
+        </div>
       </section>
     </div>
   )
@@ -1038,15 +1010,5 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
         ) : null}
       </div>
     </article>
-  )
-}
-
-function NextStep({ label, value, onClick, disabled }: { label: string; value: string; onClick: () => void; disabled?: boolean }) {
-  return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-disabled={disabled} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-[var(--crm-surface-subtle)] disabled:cursor-not-allowed disabled:opacity-55">
-      <span className="h-5 w-5 rounded-full border-2 border-[var(--crm-border-strong)]" />
-      <span className="text-sm font-semibold text-[var(--crm-text)]">{label}</span>
-      <span className="ml-auto text-xs font-bold text-[var(--crm-warning)]">{value}</span>
-    </button>
   )
 }

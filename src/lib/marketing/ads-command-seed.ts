@@ -248,7 +248,7 @@ export const KPI: KpiItem[] = [
   { lab: 'Impressions', val: 18420, fmt: 'num', delta: 9.4, good: true },
   { lab: 'Clicks', val: 612, fmt: 'num', delta: 12.4, good: true },
   { lab: 'Leads', val: 47, fmt: 'num', delta: 15.0, good: true },
-  { lab: 'Qualified', val: 19, fmt: 'num', delta: 5.6, good: true },
+  { lab: 'Opportunities', val: 19, fmt: 'num', delta: 5.6, good: true },
   { lab: 'Cost / Lead', val: 89.7, fmt: 'usd', delta: -6.1, good: true },
   { lab: 'Cost / Deal', val: 1406, fmt: 'usd', delta: -11.3, good: true },
   { lab: 'Pipeline Assignment Value', val: 312000, fmt: 'k', delta: 22.0, good: true },
@@ -427,10 +427,10 @@ export const FUNNEL: FunnelRow[] = [
     ],
   },
   {
-    name: 'Qualified',
+    name: 'Opportunity',
     n: 19,
     c: '#166534',
-    breakdownLabel: 'Qualified lead reason',
+    breakdownLabel: 'Opportunity reason',
     breakdown: [
       { label: 'High motivation', value: 8, color: '#166534' },
       { label: 'Equity confirmed', value: 5, color: '#22c55e' },
@@ -498,7 +498,7 @@ export const STAGES: StageRow[] = [
   { key: 'new', name: 'New Lead', icon: 'spark' },
   { key: 'attempt', name: 'Attempted', icon: 'phone' },
   { key: 'connected', name: 'Connected', icon: 'chat' },
-  { key: 'qualified', name: 'Qualified', icon: 'check' },
+  { key: 'qualified', name: 'Opportunity', icon: 'check' },
   { key: 'appt', name: 'Appointment', icon: 'cal' },
   { key: 'offer', name: 'Offer Made', icon: 'doc' },
   { key: 'contract', name: 'Under Contract', icon: 'sign' },
@@ -518,7 +518,7 @@ export const LEADS: LeadRow[] = [
 ]
 
 export const OUTBOX: OutboxRow[] = [
-  { id: 'ob01', leadId: 2, leadName: 'Estate of D. Reyes', event: 'Qualified Lead', category: 'form', status: 'Awaiting approval', approved: false, role: 'primary', clickId: 'CjwKCAjw8u_q9zABwE', clickIdType: 'gclid', campaign: 'Search 2026', keyword: 'we buy houses kc', value: 25000, attempts: 0, lastError: null, dryRun: false, exportable: true, approvalRequired: true, exportNote: null, sentAt: null, eventTime: new Date().toISOString(), ageDays: 0 },
+  { id: 'ob01', leadId: 2, leadName: 'Estate of D. Reyes', event: 'Opportunity', category: 'form', status: 'Awaiting approval', approved: false, role: 'primary', clickId: 'CjwKCAjw8u_q9zABwE', clickIdType: 'gclid', campaign: 'Search 2026', keyword: 'we buy houses kc', value: 25000, attempts: 0, lastError: null, dryRun: false, exportable: true, approvalRequired: true, exportNote: null, sentAt: null, eventTime: new Date().toISOString(), ageDays: 0 },
   { id: 'ob02', leadId: 3, leadName: 'Janelle Cooper', event: 'Lead Submitted', category: 'form', status: 'Website/GTM only', approved: false, role: 'secondary', clickId: 'Cj0KCQjwz9_tiredwcB', clickIdType: 'gclid', campaign: 'Search 2026', keyword: 'sell rental property kc', value: 0, attempts: 1, lastError: null, dryRun: false, exportable: false, approvalRequired: false, exportNote: 'Tracked by website/GTM primary conversion', sentAt: new Date().toISOString(), eventTime: new Date(Date.now() - 86_400_000).toISOString(), ageDays: 1 },
 ]
 

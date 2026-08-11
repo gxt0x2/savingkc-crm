@@ -48,7 +48,9 @@ The current `leads` record may remain as a compatibility aggregate during migrat
 
 The canonical acquisition stages are:
 
-`new -> contacted -> qualified -> offer_made -> under_contract -> disposition -> closed`
+`New -> Contacted -> Opportunity -> Offer Made -> Under Contract -> Disposition -> Closed`
+
+The stored stage key `qualified` remains a compatibility identifier for existing records, reports, and integrations. Product interfaces must present that stage as **Opportunity**; integrations translate at the system boundary.
 
 `dead` is a terminal branch with a required reason. Recycling creates a new or reopened opportunity event; it does not erase history.
 

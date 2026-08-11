@@ -138,11 +138,11 @@ export const STAGE_DEFINITIONS: Record<StageId, StageDefinition> = {
     timeoutHours: 168, // 7 days - alert if no follow-up
   },
 
-  // STAGE 3: QUALIFIED
+  // STAGE 3: OPPORTUNITY (stored as `qualified` for data compatibility)
   qualified: {
     id: 'qualified',
     number: 3,
-    name: 'Qualified',
+    name: 'Opportunity',
     description: 'All 4 qualification pillars captured',
     requirements: [
       {

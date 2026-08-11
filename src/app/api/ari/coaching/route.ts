@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase-lazy'
 import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
 // In-memory cache (5 min TTL)
-let cache: { key: string; data: any; ts: number } | null = null
+let cache: { key: string; data: unknown; ts: number } | null = null
 const CACHE_TTL = 5 * 60 * 1000
 
 export async function GET(req: NextRequest) {
@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
     const eodResult = {
       mode: 'eod',
       stats: { calls, smsSent, smsReceived, tasksCompleted: completedCount, totalTasks: todayTasks + completedCount },
-      wrapUp: buildEodWrapUp(agent, calls, smsSent, completedCount, todayTasks),
+      wrapUp: buildEodWrapUp(agent, calls, smsSent, completedCount),
     }
     cache = { key: cacheKey, data: eodResult, ts: Date.now() }
     return NextResponse.json(eodResult)
@@ -132,7 +132,7 @@ function buildNudges(data: {
   }
 
   if (data.noOfferCount > 0) {
-    nudges.push(`${data.noOfferCount} lead${data.noOfferCount > 1 ? 's are' : ' is'} qualified with no offer yet — money on the table`)
+    nudges.push(`${data.noOfferCount} opportunit${data.noOfferCount > 1 ? 'ies have' : 'y has'} no offer yet — money on the table`)
   }
 
   if (nudges.length === 0 && data.hotLeadCount > 0) {
@@ -154,7 +154,7 @@ function buildMomentum(calls: number): string | null {
   return `${calls} dial${calls > 1 ? 's' : ''} in — you're warming up, let's go!`
 }
 
-function buildEodWrapUp(agent: string, calls: number, sms: number, tasksCompleted: number, remaining: number): string {
+function buildEodWrapUp(agent: string, calls: number, sms: number, tasksCompleted: number): string {
   if (calls >= 50) return `Incredible day ${agent} — ${calls} dials is crushing it. Rest up and come back strong tomorrow.`
   if (calls >= 30) return `Solid day ${agent} — ${calls} dials and ${tasksCompleted} tasks done. Keep that energy going tomorrow.`
   if (calls >= 10) return `Good effort ${agent} — ${calls} dials today. Push for 50 tomorrow and watch the pipeline grow.`

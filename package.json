@@ -22,6 +22,7 @@
     "gate:kpi-coverage": "node scripts/ci/check-kpi-coverage.mjs",
     "gate:proxy": "node scripts/ci/check-proxy-registration.mjs",
     "gate:theme": "node scripts/ci/check-theme-guard.mjs",
+    "gate:terminology": "node scripts/ci/check-opportunity-terminology.mjs",
     "gate:routes": "node scripts/ci/check-route-integrity.mjs",
     "gate:crm-controls": "node scripts/ci/check-crm-control-integrity.mjs",
     "gate:hygiene": "node scripts/ci/check-code-hygiene.mjs",

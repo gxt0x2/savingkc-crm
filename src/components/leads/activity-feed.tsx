@@ -61,10 +61,11 @@ const typeConfig: Record<string, { icon: string; tint: string; ink: string; labe
   voicemail:       { icon: 'voicemail',   tint: 'rgba(52,199,89,0.14)',  ink: '#34C759', label: 'Voicemail' },
   status_change:   { icon: 'sync_alt',    tint: 'rgba(227,46,46,0.14)',  ink: '#E32E2E', label: 'Status' },
   appointment:     { icon: 'event',       tint: 'rgba(227,46,46,0.14)',  ink: '#E32E2E', label: 'Appt' },
+  offer:           { icon: 'request_quote', tint: 'rgba(52,199,89,0.14)', ink: '#168343', label: 'Offer' },
   task:            { icon: 'check',       tint: 'rgba(227,46,46,0.10)',  ink: '#E32E2E', label: 'Task' },
 }
 
-const MILESTONES = new Set(['status_change', 'appointment'])
+const MILESTONES = new Set(['status_change', 'appointment', 'offer'])
 
 // ─── Format timestamp (Apple-y: relative for recent, then absolute) ─────────
 function relTime(ts: string): string {

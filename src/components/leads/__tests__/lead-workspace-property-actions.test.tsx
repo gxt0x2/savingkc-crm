@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LeadWorkspace, type LeadWorkspaceLead } from '../lead-workspace'
 
 vi.mock('@/components/leads/google-map-panel', () => ({
-  StreetViewPanel: ({ address }: { address: string }) => <div data-testid="street-view-panel">Street View for {address}</div>,
+  StreetViewPanel: ({ address, height }: { address: string; height?: number | string }) => <div data-testid="street-view-panel" data-height={height}>Street View for {address}</div>,
 }))
 
 const lead: LeadWorkspaceLead = {
@@ -70,9 +70,36 @@ describe('LeadWorkspace property actions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Street View for 6509 W 74TH ST, Overland Park, KS, 66204' }))
 
-    expect(screen.getByRole('dialog', { name: 'Street View · 6509 W 74TH ST, Overland Park, KS, 66204' })).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Street View · 6509 W 74TH ST, Overland Park, KS, 66204' })
+    expect(dialog).toBeInTheDocument()
     expect(screen.getByTestId('street-view-panel')).toHaveTextContent('6509 W 74TH ST, Overland Park, KS, 66204')
+    expect(screen.getByTestId('street-view-panel')).toHaveAttribute('data-height', '100%')
+    expect(screen.getByTestId('street-view-panel').parentElement).toHaveClass('h-[min(72vh,620px)]')
     expect(onOpenProperty).not.toHaveBeenCalled()
+
+    fireEvent.pointerDown(dialog)
+    fireEvent.pointerUp(dialog.parentElement!)
+    expect(dialog).toBeInTheDocument()
+  })
+
+  it('uses Opportunity terminology and keeps routine header actions concise', () => {
+    renderWorkspace()
+
+    expect(screen.getAllByText('Opportunity').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Qualified')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open more lead actions' })).toHaveTextContent('More')
+    expect(screen.queryByRole('button', { name: 'Property' })).not.toBeInTheDocument()
+  })
+
+  it('opens a manual verbal or written offer form from the Opportunity panel', () => {
+    renderWorkspace()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Update offer of $180,000' }))
+
+    expect(screen.getByRole('dialog', { name: 'Record an offer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Verbal/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Written/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByLabelText('Offer amount')).toHaveValue('180000')
   })
 
   it('opens county property details from the Property details controls', () => {
