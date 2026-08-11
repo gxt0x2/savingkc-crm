@@ -28,7 +28,6 @@ interface StreetViewData {
 
 interface StreetViewPanoramaInstance {
   getZoom(): number
-  setZoom(zoom: number): void
   setVisible(visible: boolean): void
 }
 
@@ -290,8 +289,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
               visible: true,
             }
 
-            if (data.location.pano) panoramaOptions.pano = data.location.pano
-            else panoramaOptions.position = data.location.latLng ?? location
+            panoramaOptions.position = data.location.latLng ?? location
 
             const panorama = new google.maps.StreetViewPanorama(canvasRef.current, panoramaOptions)
             panoramaRef.current = panorama
@@ -305,7 +303,6 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
                 return
               }
 
-              panorama.setZoom(0)
               zoomReadyTimer = setTimeout(waitForStableZoom, 50)
             }
 
