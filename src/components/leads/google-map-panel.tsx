@@ -106,7 +106,7 @@ async function loadMapsJs(): Promise<GoogleMapsApi> {
 
     const script = document.createElement('script')
     script.id = 'savingkc-gmaps-js'
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=quarterly`
     script.async = true
     script.defer = true
     script.onload = () => window.google ? resolve(window.google) : reject(new Error('Maps failed to initialize.'))
@@ -327,9 +327,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
               return
             }
 
-            panoramaRef.current = new google.maps.StreetViewPanorama(canvasRef.current, {
-              pano: data.location.pano,
-              position: data.location.latLng ?? location,
+            const panoramaOptions: Record<string, unknown> = {
               pov: { heading: 0, pitch: 0 },
               zoom: 0,
               addressControl: false,
@@ -342,7 +340,12 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
               panControl: false,
               scrollwheel: false,
               visible: true,
-            })
+            }
+
+            if (data.location.pano) panoramaOptions.pano = data.location.pano
+            else panoramaOptions.position = data.location.latLng ?? location
+
+            panoramaRef.current = new google.maps.StreetViewPanorama(canvasRef.current, panoramaOptions)
             panoramaRef.current.setZoom(0)
 
             clearLoadingTimer()

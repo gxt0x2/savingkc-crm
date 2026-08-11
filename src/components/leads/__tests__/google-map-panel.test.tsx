@@ -76,6 +76,7 @@ describe('StreetViewPanel', () => {
       pano: 'test-pano',
       visible: true,
     }))
+    expect(constructPanorama.mock.calls[0]?.[1]).not.toHaveProperty('position')
 
     const dragSurface = screen.getByTestId('street-view-drag-surface')
     fireEvent.pointerDown(dragSurface, {
