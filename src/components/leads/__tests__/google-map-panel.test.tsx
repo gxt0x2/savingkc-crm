@@ -69,13 +69,13 @@ describe('StreetViewPanel', () => {
     expect(canvas).toHaveStyle({ height: '100%' })
     expect(container.firstElementChild).toHaveStyle({ height: '100%' })
     expect(constructPanorama).toHaveBeenCalledWith(canvas, expect.objectContaining({
-      clickToGo: true,
+      clickToGo: false,
       pano: 'test-pano',
       visible: true,
     }))
 
-    const panoramaFrame = canvas.querySelector('iframe')
-    fireEvent.pointerDown(panoramaFrame!.contentDocument!, {
+    const dragSurface = screen.getByTestId('street-view-drag-surface')
+    fireEvent.pointerDown(dragSurface, {
       button: 0,
       buttons: 1,
       clientX: 20,
@@ -83,15 +83,15 @@ describe('StreetViewPanel', () => {
       isPrimary: true,
       pointerId: 7,
     })
-    fireEvent.pointerMove(window, { buttons: 1, clientX: 500, clientY: 400, pointerId: 7 })
+    fireEvent.pointerMove(dragSurface, { buttons: 1, clientX: 500, clientY: 400, pointerId: 7 })
     expect(setPov).toHaveBeenCalledWith(expect.objectContaining({
       heading: expect.any(Number),
       pitch: expect.any(Number),
     }))
 
-    fireEvent.pointerUp(window, { buttons: 0, clientX: 500, clientY: 400, pointerId: 7 })
+    fireEvent.pointerUp(dragSurface, { buttons: 0, clientX: 500, clientY: 400, pointerId: 7 })
     const updateCountAfterRelease = setPov.mock.calls.length
-    fireEvent.pointerMove(window, { buttons: 0, clientX: 600, clientY: 450, pointerId: 7 })
+    fireEvent.pointerMove(dragSurface, { buttons: 0, clientX: 600, clientY: 450, pointerId: 7 })
     expect(setPov).toHaveBeenCalledTimes(updateCountAfterRelease)
 
     unmount()

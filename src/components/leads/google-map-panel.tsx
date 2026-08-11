@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { RefObject } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, RefObject } from 'react'
 
 const BUILD_TIME_GMAPS_KEY = (
   process.env.NEXT_PUBLIC_GMAPS_KEY ||
@@ -127,129 +127,6 @@ function googleStreetViewUrl(address: string, location?: { lat: number; lng: num
   return googleMapsSearchUrl(address)
 }
 
-function installPanoramaDragController(
-  container: HTMLElement,
-  panorama: StreetViewPanoramaInstance,
-): () => void {
-  let activeFrameDocument: Document | null = null
-  let dragging = false
-  let pointerId = 1
-  let startPoint = { x: 0, y: 0 }
-  let startPov = { heading: 0, pitch: 0 }
-
-  function isGoogleControl(target: EventTarget | null): boolean {
-    const element = target as Element | null
-    if (typeof element?.closest !== 'function') return false
-    return Boolean(element.closest('button, a, input, select, textarea, [role="button"], [role="link"]'))
-  }
-
-  function framePoint(event: PointerEvent) {
-    const frameRect = container.querySelector('iframe')?.getBoundingClientRect()
-    return {
-      x: event.clientX + (frameRect?.left ?? 0),
-      y: event.clientY + (frameRect?.top ?? 0),
-    }
-  }
-
-  function updatePov(point: { x: number; y: number }) {
-    if (!dragging) return
-    const heading = startPov.heading - ((point.x - startPoint.x) * 0.25)
-    const pitch = Math.max(-85, Math.min(85, startPov.pitch + ((point.y - startPoint.y) * 0.15)))
-    if (Number.isFinite(heading) && Number.isFinite(pitch)) {
-      panorama.setPov({ heading, pitch })
-    }
-  }
-
-  function finishDrag() {
-    dragging = false
-    container.removeAttribute('data-dragging')
-    if (activeFrameDocument) activeFrameDocument.documentElement.style.cursor = 'grab'
-  }
-
-  const onFramePointerDown = (event: Event) => {
-    const pointerEvent = event as PointerEvent
-    if (pointerEvent.button !== 0 || !pointerEvent.isPrimary || isGoogleControl(pointerEvent.target)) return
-
-    dragging = true
-    pointerId = pointerEvent.pointerId || 1
-    startPoint = framePoint(pointerEvent)
-    const currentPov = panorama.getPov()
-    startPov = {
-      heading: Number.isFinite(currentPov.heading) ? currentPov.heading : 0,
-      pitch: Number.isFinite(currentPov.pitch) ? currentPov.pitch : 0,
-    }
-    container.setAttribute('data-dragging', 'true')
-    if (activeFrameDocument) activeFrameDocument.documentElement.style.cursor = 'grabbing'
-    pointerEvent.preventDefault()
-    pointerEvent.stopImmediatePropagation()
-  }
-  const onFramePointerMove = (event: Event) => {
-    const pointerEvent = event as PointerEvent
-    if (!dragging || (pointerEvent.pointerId || 1) !== pointerId) return
-    updatePov(framePoint(pointerEvent))
-    pointerEvent.preventDefault()
-    pointerEvent.stopImmediatePropagation()
-  }
-  const onFramePointerEnd = (event: Event) => {
-    const pointerEvent = event as PointerEvent
-    if (!dragging || (pointerEvent.pointerId || 1) !== pointerId) return
-    finishDrag()
-    pointerEvent.preventDefault()
-    pointerEvent.stopImmediatePropagation()
-  }
-
-  function attachFrameListeners() {
-    const frame = container.querySelector('iframe')
-    const frameDocument = frame?.contentDocument
-    if (!frameDocument || frameDocument === activeFrameDocument) return
-
-    activeFrameDocument?.removeEventListener('pointerdown', onFramePointerDown, true)
-    activeFrameDocument?.removeEventListener('pointermove', onFramePointerMove, true)
-    activeFrameDocument?.removeEventListener('pointerup', onFramePointerEnd, true)
-    activeFrameDocument?.removeEventListener('pointercancel', onFramePointerEnd, true)
-
-    activeFrameDocument = frameDocument
-    frameDocument.documentElement.style.cursor = 'grab'
-    frameDocument.addEventListener('pointerdown', onFramePointerDown, true)
-    frameDocument.addEventListener('pointermove', onFramePointerMove, true)
-    frameDocument.addEventListener('pointerup', onFramePointerEnd, true)
-    frameDocument.addEventListener('pointercancel', onFramePointerEnd, true)
-  }
-
-  const onWindowPointerMove = (event: PointerEvent) => {
-    if (!dragging || (event.pointerId || 1) !== pointerId) return
-    updatePov({ x: event.clientX, y: event.clientY })
-    if (event.buttons === 0) finishDrag()
-  }
-  const onWindowPointerEnd = (event: PointerEvent) => {
-    if (!dragging || (event.pointerId || 1) !== pointerId) return
-    finishDrag()
-  }
-  const onWindowBlur = () => finishDrag()
-  const frameObserver = new MutationObserver(attachFrameListeners)
-
-  attachFrameListeners()
-  frameObserver.observe(container, { childList: true, subtree: true })
-
-  window.addEventListener('pointerup', onWindowPointerEnd, true)
-  window.addEventListener('pointercancel', onWindowPointerEnd, true)
-  window.addEventListener('pointermove', onWindowPointerMove, true)
-  window.addEventListener('blur', onWindowBlur)
-
-  return () => {
-    frameObserver.disconnect()
-    window.removeEventListener('pointerup', onWindowPointerEnd, true)
-    window.removeEventListener('pointercancel', onWindowPointerEnd, true)
-    window.removeEventListener('pointermove', onWindowPointerMove, true)
-    window.removeEventListener('blur', onWindowBlur)
-    activeFrameDocument?.removeEventListener('pointerdown', onFramePointerDown, true)
-    activeFrameDocument?.removeEventListener('pointermove', onFramePointerMove, true)
-    activeFrameDocument?.removeEventListener('pointerup', onFramePointerEnd, true)
-    activeFrameDocument?.removeEventListener('pointercancel', onFramePointerEnd, true)
-    activeFrameDocument = null
-  }
-}
-
 function keylessMapEmbedUrl(address: string): string {
   return `https://maps.google.com/maps?q=${encodeURIComponent(address)}&z=18&t=k&output=embed`
 }
@@ -330,9 +207,17 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
   const loadingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mapsApiRef = useRef<GoogleMapsApi | null>(null)
   const panoramaRef = useRef<StreetViewPanoramaInstance | null>(null)
+  const dragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    heading: number
+    pitch: number
+  } | null>(null)
   const [fallbackUrl, setFallbackUrl] = useState(() => googleMapsSearchUrl(address))
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [dragging, setDragging] = useState(false)
 
   function clearLoadingTimer() {
     if (!loadingTimer.current) return
@@ -340,9 +225,65 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     loadingTimer.current = null
   }
 
+  function beginDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !event.isPrimary || !panoramaRef.current) return
+    const pov = panoramaRef.current.getPov()
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      heading: Number.isFinite(pov.heading) ? pov.heading : 0,
+      pitch: Number.isFinite(pov.pitch) ? pov.pitch : 0,
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    event.preventDefault()
+    setDragging(true)
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current
+    const panorama = panoramaRef.current
+    if (!drag || !panorama || drag.pointerId !== event.pointerId) return
+
+    const heading = drag.heading - ((event.clientX - drag.startX) * 0.25)
+    const pitch = Math.max(-85, Math.min(85, drag.pitch + ((event.clientY - drag.startY) * 0.15)))
+    if (Number.isFinite(heading) && Number.isFinite(pitch)) {
+      panorama.setPov({ heading, pitch })
+    }
+    event.preventDefault()
+  }
+
+  function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    dragRef.current = null
+    setDragging(false)
+  }
+
+  function moveWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const panorama = panoramaRef.current
+    if (!panorama) return
+    const delta = {
+      ArrowLeft: { heading: -10, pitch: 0 },
+      ArrowRight: { heading: 10, pitch: 0 },
+      ArrowUp: { heading: 0, pitch: -5 },
+      ArrowDown: { heading: 0, pitch: 5 },
+    }[event.key]
+    if (!delta) return
+
+    const pov = panorama.getPov()
+    panorama.setPov({
+      heading: (Number.isFinite(pov.heading) ? pov.heading : 0) + delta.heading,
+      pitch: Math.max(-85, Math.min(85, (Number.isFinite(pov.pitch) ? pov.pitch : 0) + delta.pitch)),
+    })
+    event.preventDefault()
+  }
+
   useEffect(() => {
     let cancelled = false
-    let removePanoramaDragController: (() => void) | null = null
     clearLoadingTimer()
     loadingTimer.current = setTimeout(() => {
       if (cancelled) return
@@ -385,21 +326,17 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
               position: data.location.latLng ?? location,
               pov: { heading: 0, pitch: 0 },
               zoom: 0,
-              addressControl: true,
-              clickToGo: true,
+              addressControl: false,
+              clickToGo: false,
               enableCloseButton: false,
-              fullscreenControl: true,
-              linksControl: true,
+              fullscreenControl: false,
+              linksControl: false,
               motionTracking: false,
               motionTrackingControl: false,
-              panControl: true,
-              scrollwheel: true,
+              panControl: false,
+              scrollwheel: false,
               visible: true,
             })
-            removePanoramaDragController = installPanoramaDragController(
-              canvasRef.current,
-              panoramaRef.current,
-            )
 
             clearLoadingTimer()
             setLoading(false)
@@ -416,7 +353,6 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     return () => {
       cancelled = true
       clearLoadingTimer()
-      removePanoramaDragController?.()
       if (panoramaRef.current) {
         mapsApiRef.current?.maps.event?.clearInstanceListeners(panoramaRef.current)
         panoramaRef.current.setVisible(false)
@@ -434,6 +370,39 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
         aria-label={`Interactive Street View for ${address}`}
         style={{ width: '100%', height: '100%' }}
       />
+
+      {!loading && !error ? (
+        <>
+          <div
+            role="application"
+            tabIndex={0}
+            data-testid="street-view-drag-surface"
+            aria-label={`Drag to look around Street View for ${address}. Use arrow keys for precise movement.`}
+            className={dragging
+              ? 'absolute inset-0 z-[2] cursor-grabbing touch-none outline-none'
+              : 'absolute inset-0 z-[2] cursor-grab touch-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--crm-info)]'}
+            onPointerDown={beginDrag}
+            onPointerMove={moveDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onLostPointerCapture={endDrag}
+            onKeyDown={moveWithKeyboard}
+          />
+          <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[3] flex items-center justify-between gap-3">
+            <span className="rounded-lg bg-black/70 px-3 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm">
+              Drag to look around
+            </span>
+            <a
+              href={fallbackUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="pointer-events-auto rounded-lg border border-white/20 bg-black/70 px-3 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/85"
+            >
+              Open in Google Maps
+            </a>
+          </div>
+        </>
+      ) : null}
 
       {(loading || error) && (
         <div
