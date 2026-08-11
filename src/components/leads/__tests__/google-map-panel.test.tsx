@@ -13,9 +13,10 @@ describe('StreetViewPanel', () => {
     delete window.__savingkcGmapsKey
   })
 
-  it('uses a native panorama and forwards outside pointer release back into its same-origin frame', async () => {
+  it('owns panorama dragging and stops updates after pointer release outside its frame', async () => {
     const location = { lat: () => 38.991, lng: () => -94.654 }
     const constructPanorama = vi.fn()
+    const setPov = vi.fn()
     const setVisible = vi.fn()
     const clearInstanceListeners = vi.fn()
 
@@ -43,6 +44,8 @@ describe('StreetViewPanel', () => {
         element.appendChild(document.createElement('iframe'))
       }
 
+      getPov = () => ({ heading: 10, pitch: 5 })
+      setPov = setPov
       setVisible = setVisible
     }
 
@@ -72,16 +75,24 @@ describe('StreetViewPanel', () => {
     }))
 
     const panoramaFrame = canvas.querySelector('iframe')
-    const bridgedMouseUp = vi.fn()
-    panoramaFrame?.contentDocument?.addEventListener('mouseup', bridgedMouseUp)
-    panoramaFrame?.contentDocument?.dispatchEvent(new MouseEvent('mousedown', {
-      bubbles: true,
+    fireEvent.pointerDown(panoramaFrame!.contentDocument!, {
+      button: 0,
       buttons: 1,
       clientX: 20,
       clientY: 30,
+      isPrimary: true,
+      pointerId: 7,
+    })
+    fireEvent.pointerMove(window, { buttons: 1, clientX: 500, clientY: 400, pointerId: 7 })
+    expect(setPov).toHaveBeenCalledWith(expect.objectContaining({
+      heading: expect.any(Number),
+      pitch: expect.any(Number),
     }))
-    fireEvent.mouseUp(window, { buttons: 0, clientX: 500, clientY: 400 })
-    expect(bridgedMouseUp).toHaveBeenCalledTimes(1)
+
+    fireEvent.pointerUp(window, { buttons: 0, clientX: 500, clientY: 400, pointerId: 7 })
+    const updateCountAfterRelease = setPov.mock.calls.length
+    fireEvent.pointerMove(window, { buttons: 0, clientX: 600, clientY: 450, pointerId: 7 })
+    expect(setPov).toHaveBeenCalledTimes(updateCountAfterRelease)
 
     unmount()
     expect(clearInstanceListeners).toHaveBeenCalledTimes(1)

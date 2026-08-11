@@ -27,6 +27,8 @@ interface StreetViewData {
 }
 
 interface StreetViewPanoramaInstance {
+  getPov(): { heading: number; pitch: number }
+  setPov(pov: { heading: number; pitch: number }): void
   setVisible(visible: boolean): void
 }
 
@@ -125,35 +127,75 @@ function googleStreetViewUrl(address: string, location?: { lat: number; lng: num
   return googleMapsSearchUrl(address)
 }
 
-function installPanoramaPointerReleaseGuard(container: HTMLElement): () => void {
+function installPanoramaDragController(
+  container: HTMLElement,
+  panorama: StreetViewPanoramaInstance,
+): () => void {
   let activeFrameDocument: Document | null = null
   let dragging = false
   let pointerId = 1
-  let lastPoint = { clientX: 0, clientY: 0, screenX: 0, screenY: 0 }
+  let startPoint = { x: 0, y: 0 }
+  let startPov = { heading: 0, pitch: 0 }
+
+  function isGoogleControl(target: EventTarget | null): boolean {
+    const element = target as Element | null
+    if (typeof element?.closest !== 'function') return false
+    return Boolean(element.closest('button, a, input, select, textarea, [role="button"], [role="link"]'))
+  }
+
+  function framePoint(event: PointerEvent) {
+    const frameRect = container.querySelector('iframe')?.getBoundingClientRect()
+    return {
+      x: event.clientX + (frameRect?.left ?? 0),
+      y: event.clientY + (frameRect?.top ?? 0),
+    }
+  }
+
+  function updatePov(point: { x: number; y: number }) {
+    if (!dragging) return
+    const heading = startPov.heading - ((point.x - startPoint.x) * 0.25)
+    const pitch = Math.max(-85, Math.min(85, startPov.pitch + ((point.y - startPoint.y) * 0.15)))
+    if (Number.isFinite(heading) && Number.isFinite(pitch)) {
+      panorama.setPov({ heading, pitch })
+    }
+  }
+
+  function finishDrag() {
+    dragging = false
+    container.removeAttribute('data-dragging')
+    if (activeFrameDocument) activeFrameDocument.documentElement.style.cursor = 'grab'
+  }
 
   const onFramePointerDown = (event: Event) => {
     const pointerEvent = event as PointerEvent
+    if (pointerEvent.button !== 0 || !pointerEvent.isPrimary || isGoogleControl(pointerEvent.target)) return
+
     dragging = true
     pointerId = pointerEvent.pointerId || 1
-    lastPoint = {
-      clientX: pointerEvent.clientX,
-      clientY: pointerEvent.clientY,
-      screenX: pointerEvent.screenX,
-      screenY: pointerEvent.screenY,
+    startPoint = framePoint(pointerEvent)
+    const currentPov = panorama.getPov()
+    startPov = {
+      heading: Number.isFinite(currentPov.heading) ? currentPov.heading : 0,
+      pitch: Number.isFinite(currentPov.pitch) ? currentPov.pitch : 0,
     }
+    container.setAttribute('data-dragging', 'true')
+    if (activeFrameDocument) activeFrameDocument.documentElement.style.cursor = 'grabbing'
+    pointerEvent.preventDefault()
+    pointerEvent.stopImmediatePropagation()
   }
-  const onFrameMouseDown = (event: Event) => {
-    const mouseEvent = event as MouseEvent
-    dragging = true
-    lastPoint = {
-      clientX: mouseEvent.clientX,
-      clientY: mouseEvent.clientY,
-      screenX: mouseEvent.screenX,
-      screenY: mouseEvent.screenY,
-    }
+  const onFramePointerMove = (event: Event) => {
+    const pointerEvent = event as PointerEvent
+    if (!dragging || (pointerEvent.pointerId || 1) !== pointerId) return
+    updatePov(framePoint(pointerEvent))
+    pointerEvent.preventDefault()
+    pointerEvent.stopImmediatePropagation()
   }
-  const onFramePointerEnd = () => {
-    dragging = false
+  const onFramePointerEnd = (event: Event) => {
+    const pointerEvent = event as PointerEvent
+    if (!dragging || (pointerEvent.pointerId || 1) !== pointerId) return
+    finishDrag()
+    pointerEvent.preventDefault()
+    pointerEvent.stopImmediatePropagation()
   }
 
   function attachFrameListeners() {
@@ -162,87 +204,48 @@ function installPanoramaPointerReleaseGuard(container: HTMLElement): () => void 
     if (!frameDocument || frameDocument === activeFrameDocument) return
 
     activeFrameDocument?.removeEventListener('pointerdown', onFramePointerDown, true)
-    activeFrameDocument?.removeEventListener('mousedown', onFrameMouseDown, true)
+    activeFrameDocument?.removeEventListener('pointermove', onFramePointerMove, true)
     activeFrameDocument?.removeEventListener('pointerup', onFramePointerEnd, true)
     activeFrameDocument?.removeEventListener('pointercancel', onFramePointerEnd, true)
-    activeFrameDocument?.removeEventListener('mouseup', onFramePointerEnd, true)
 
     activeFrameDocument = frameDocument
+    frameDocument.documentElement.style.cursor = 'grab'
     frameDocument.addEventListener('pointerdown', onFramePointerDown, true)
-    frameDocument.addEventListener('mousedown', onFrameMouseDown, true)
+    frameDocument.addEventListener('pointermove', onFramePointerMove, true)
     frameDocument.addEventListener('pointerup', onFramePointerEnd, true)
     frameDocument.addEventListener('pointercancel', onFramePointerEnd, true)
-    frameDocument.addEventListener('mouseup', onFramePointerEnd, true)
   }
 
-  function releasePanoramaPointer(point = lastPoint) {
-    attachFrameListeners()
-    if (!dragging) return
-
-    const frame = container.querySelector('iframe')
-    const frameDocument = frame?.contentDocument
-    const frameWindow = frame?.contentWindow
-    if (!frame || !frameDocument || !frameWindow) return
-
-    const frameRect = frame.getBoundingClientRect()
-    const localPoint = {
-      clientX: point.clientX - frameRect.left,
-      clientY: point.clientY - frameRect.top,
-      screenX: point.screenX,
-      screenY: point.screenY,
-    }
-
-    try {
-      for (const element of frameDocument.querySelectorAll<HTMLElement>('*')) {
-        if (element.hasPointerCapture?.(pointerId)) {
-          element.releasePointerCapture(pointerId)
-        }
-      }
-
-      frameDocument.dispatchEvent(new MouseEvent('mouseup', {
-        bubbles: true,
-        cancelable: true,
-        button: 0,
-        buttons: 0,
-        ...localPoint,
-        view: frameWindow,
-      }))
-      dragging = false
-    } catch {
-      // Google currently renders the native panorama into a same-origin about:blank frame.
-      // If that implementation changes, normal in-frame pointer release still remains intact.
-    }
+  const onWindowPointerMove = (event: PointerEvent) => {
+    if (!dragging || (event.pointerId || 1) !== pointerId) return
+    updatePov({ x: event.clientX, y: event.clientY })
+    if (event.buttons === 0) finishDrag()
   }
-
-  const onPointerEnd = (event: PointerEvent) => releasePanoramaPointer(event)
-  const onMouseUp = (event: MouseEvent) => releasePanoramaPointer(event)
-  const onPointerMove = (event: PointerEvent) => {
-    if (event.buttons === 0) releasePanoramaPointer(event)
+  const onWindowPointerEnd = (event: PointerEvent) => {
+    if (!dragging || (event.pointerId || 1) !== pointerId) return
+    finishDrag()
   }
-  const onWindowBlur = () => releasePanoramaPointer()
+  const onWindowBlur = () => finishDrag()
   const frameObserver = new MutationObserver(attachFrameListeners)
 
   attachFrameListeners()
   frameObserver.observe(container, { childList: true, subtree: true })
 
-  window.addEventListener('pointerup', onPointerEnd, true)
-  window.addEventListener('pointercancel', onPointerEnd, true)
-  window.addEventListener('pointermove', onPointerMove, true)
-  window.addEventListener('mouseup', onMouseUp, true)
+  window.addEventListener('pointerup', onWindowPointerEnd, true)
+  window.addEventListener('pointercancel', onWindowPointerEnd, true)
+  window.addEventListener('pointermove', onWindowPointerMove, true)
   window.addEventListener('blur', onWindowBlur)
 
   return () => {
     frameObserver.disconnect()
-    window.removeEventListener('pointerup', onPointerEnd, true)
-    window.removeEventListener('pointercancel', onPointerEnd, true)
-    window.removeEventListener('pointermove', onPointerMove, true)
-    window.removeEventListener('mouseup', onMouseUp, true)
+    window.removeEventListener('pointerup', onWindowPointerEnd, true)
+    window.removeEventListener('pointercancel', onWindowPointerEnd, true)
+    window.removeEventListener('pointermove', onWindowPointerMove, true)
     window.removeEventListener('blur', onWindowBlur)
     activeFrameDocument?.removeEventListener('pointerdown', onFramePointerDown, true)
-    activeFrameDocument?.removeEventListener('mousedown', onFrameMouseDown, true)
+    activeFrameDocument?.removeEventListener('pointermove', onFramePointerMove, true)
     activeFrameDocument?.removeEventListener('pointerup', onFramePointerEnd, true)
     activeFrameDocument?.removeEventListener('pointercancel', onFramePointerEnd, true)
-    activeFrameDocument?.removeEventListener('mouseup', onFramePointerEnd, true)
     activeFrameDocument = null
   }
 }
@@ -339,7 +342,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
 
   useEffect(() => {
     let cancelled = false
-    let removePointerReleaseGuard: (() => void) | null = null
+    let removePanoramaDragController: (() => void) | null = null
     clearLoadingTimer()
     loadingTimer.current = setTimeout(() => {
       if (cancelled) return
@@ -393,7 +396,10 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
               scrollwheel: true,
               visible: true,
             })
-            removePointerReleaseGuard = installPanoramaPointerReleaseGuard(canvasRef.current)
+            removePanoramaDragController = installPanoramaDragController(
+              canvasRef.current,
+              panoramaRef.current,
+            )
 
             clearLoadingTimer()
             setLoading(false)
@@ -410,7 +416,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     return () => {
       cancelled = true
       clearLoadingTimer()
-      removePointerReleaseGuard?.()
+      removePanoramaDragController?.()
       if (panoramaRef.current) {
         mapsApiRef.current?.maps.event?.clearInstanceListeners(panoramaRef.current)
         panoramaRef.current.setVisible(false)
