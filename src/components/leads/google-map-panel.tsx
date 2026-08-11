@@ -27,8 +27,13 @@ interface StreetViewData {
 }
 
 interface StreetViewPanoramaInstance {
+  getPov(): { heading: number; pitch: number }
   getZoom(): number
   setVisible(visible: boolean): void
+}
+
+interface GoogleMapsEventListener {
+  remove(): void
 }
 
 interface GoogleMapsApi {
@@ -55,6 +60,11 @@ interface GoogleMapsApi {
       options: Record<string, unknown>,
     ) => StreetViewPanoramaInstance
     event?: {
+      addListener(
+        instance: unknown,
+        eventName: string,
+        handler: () => void,
+      ): GoogleMapsEventListener
       clearInstanceListeners(instance: unknown): void
     }
     StreetViewSource: { OUTDOOR: string }
@@ -239,7 +249,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
       const active = activePointerRef.current
       if (!active || active.pointerId !== event.pointerId) return
       activePointerRef.current = null
-      if (event.target === active.target) return
+      if (event.target instanceof Node && canvasRef.current?.contains(event.target)) return
 
       active.target.dispatchEvent(new PointerEvent(event.type, {
         bubbles: true,
@@ -361,6 +371,15 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
 
             const panorama = new google.maps.StreetViewPanorama(canvasRef.current, panoramaOptions)
             panoramaRef.current = panorama
+
+            const syncPovDiagnostics = () => {
+              if (!canvasRef.current) return
+              const pov = panorama.getPov()
+              canvasRef.current.dataset.streetViewHeading = String(pov.heading)
+              canvasRef.current.dataset.streetViewPitch = String(pov.pitch)
+            }
+            google.maps.event?.addListener(panorama, 'pov_changed', syncPovDiagnostics)
+            syncPovDiagnostics()
 
             const waitForStableZoom = () => {
               if (cancelled || panoramaRef.current !== panorama) return

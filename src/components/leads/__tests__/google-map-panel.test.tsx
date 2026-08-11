@@ -18,6 +18,7 @@ describe('StreetViewPanel', () => {
     const constructPanorama = vi.fn()
     const setVisible = vi.fn()
     const clearInstanceListeners = vi.fn()
+    const addListener = vi.fn(() => ({ remove: vi.fn() }))
     const forwardedPointerUp = vi.fn()
     let nativeSurface: HTMLDivElement | null = null
     let zoomReads = 0
@@ -49,6 +50,7 @@ describe('StreetViewPanel', () => {
       }
 
       getZoom = () => zoomReads++ === 0 ? Number.NaN : 0
+      getPov = () => ({ heading: 92, pitch: 1 })
       setVisible = setVisible
     }
 
@@ -60,7 +62,7 @@ describe('StreetViewPanel', () => {
         StreetViewService: MockStreetViewService,
         StreetViewPanorama: MockStreetViewPanorama,
         StreetViewSource: { OUTDOOR: 'outdoor' },
-        event: { clearInstanceListeners },
+        event: { addListener, clearInstanceListeners },
       },
     }
 
@@ -80,6 +82,8 @@ describe('StreetViewPanel', () => {
     }))
     expect(constructPanorama.mock.calls[0]?.[1]).not.toHaveProperty('position')
     await waitFor(() => expect(screen.getByText('Drag to look around')).toBeInTheDocument())
+    expect(canvas).toHaveAttribute('data-street-view-heading', '92')
+    expect(canvas).toHaveAttribute('data-street-view-pitch', '1')
 
     expect(nativeSurface).not.toBeNull()
     fireEvent.pointerDown(nativeSurface!, {
@@ -91,9 +95,23 @@ describe('StreetViewPanel', () => {
       pointerId: 7,
     })
 
+    const otherNativeSurface = document.createElement('div')
+    canvas.appendChild(otherNativeSurface)
+    fireEvent.pointerUp(otherNativeSurface, { buttons: 0, clientX: 40, clientY: 30, pointerId: 7 })
+    expect(forwardedPointerUp).not.toHaveBeenCalled()
+
+    fireEvent.pointerDown(nativeSurface!, {
+      button: 0,
+      buttons: 1,
+      clientX: 20,
+      clientY: 30,
+      isPrimary: true,
+      pointerId: 8,
+    })
+
     const outside = document.createElement('div')
     document.body.appendChild(outside)
-    fireEvent.pointerUp(outside, { buttons: 0, clientX: 500, clientY: 400, pointerId: 7 })
+    fireEvent.pointerUp(outside, { buttons: 0, clientX: 500, clientY: 400, pointerId: 8 })
     expect(forwardedPointerUp).toHaveBeenCalledTimes(1)
     outside.remove()
 
