@@ -74,7 +74,13 @@ describe('StreetViewPanel', () => {
     const panoramaFrame = canvas.querySelector('iframe')
     const bridgedMouseUp = vi.fn()
     panoramaFrame?.contentDocument?.addEventListener('mouseup', bridgedMouseUp)
-    fireEvent.pointerMove(window, { buttons: 0, pointerId: 7 })
+    panoramaFrame?.contentDocument?.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      buttons: 1,
+      clientX: 20,
+      clientY: 30,
+    }))
+    fireEvent.mouseUp(window, { buttons: 0, clientX: 500, clientY: 400 })
     expect(bridgedMouseUp).toHaveBeenCalledTimes(1)
 
     unmount()

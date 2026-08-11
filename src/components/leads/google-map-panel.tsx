@@ -126,11 +126,71 @@ function googleStreetViewUrl(address: string, location?: { lat: number; lng: num
 }
 
 function installPanoramaPointerReleaseGuard(container: HTMLElement): () => void {
-  function releasePanoramaPointer(pointerId = 1) {
+  let activeFrameDocument: Document | null = null
+  let dragging = false
+  let pointerId = 1
+  let lastPoint = { clientX: 0, clientY: 0, screenX: 0, screenY: 0 }
+
+  const onFramePointerDown = (event: Event) => {
+    const pointerEvent = event as PointerEvent
+    dragging = true
+    pointerId = pointerEvent.pointerId || 1
+    lastPoint = {
+      clientX: pointerEvent.clientX,
+      clientY: pointerEvent.clientY,
+      screenX: pointerEvent.screenX,
+      screenY: pointerEvent.screenY,
+    }
+  }
+  const onFrameMouseDown = (event: Event) => {
+    const mouseEvent = event as MouseEvent
+    dragging = true
+    lastPoint = {
+      clientX: mouseEvent.clientX,
+      clientY: mouseEvent.clientY,
+      screenX: mouseEvent.screenX,
+      screenY: mouseEvent.screenY,
+    }
+  }
+  const onFramePointerEnd = () => {
+    dragging = false
+  }
+
+  function attachFrameListeners() {
+    const frame = container.querySelector('iframe')
+    const frameDocument = frame?.contentDocument
+    if (!frameDocument || frameDocument === activeFrameDocument) return
+
+    activeFrameDocument?.removeEventListener('pointerdown', onFramePointerDown, true)
+    activeFrameDocument?.removeEventListener('mousedown', onFrameMouseDown, true)
+    activeFrameDocument?.removeEventListener('pointerup', onFramePointerEnd, true)
+    activeFrameDocument?.removeEventListener('pointercancel', onFramePointerEnd, true)
+    activeFrameDocument?.removeEventListener('mouseup', onFramePointerEnd, true)
+
+    activeFrameDocument = frameDocument
+    frameDocument.addEventListener('pointerdown', onFramePointerDown, true)
+    frameDocument.addEventListener('mousedown', onFrameMouseDown, true)
+    frameDocument.addEventListener('pointerup', onFramePointerEnd, true)
+    frameDocument.addEventListener('pointercancel', onFramePointerEnd, true)
+    frameDocument.addEventListener('mouseup', onFramePointerEnd, true)
+  }
+
+  function releasePanoramaPointer(point = lastPoint) {
+    attachFrameListeners()
+    if (!dragging) return
+
     const frame = container.querySelector('iframe')
     const frameDocument = frame?.contentDocument
     const frameWindow = frame?.contentWindow
-    if (!frameDocument || !frameWindow) return
+    if (!frame || !frameDocument || !frameWindow) return
+
+    const frameRect = frame.getBoundingClientRect()
+    const localPoint = {
+      clientX: point.clientX - frameRect.left,
+      clientY: point.clientY - frameRect.top,
+      screenX: point.screenX,
+      screenY: point.screenY,
+    }
 
     try {
       for (const element of frameDocument.querySelectorAll<HTMLElement>('*')) {
@@ -139,35 +199,31 @@ function installPanoramaPointerReleaseGuard(container: HTMLElement): () => void 
         }
       }
 
-      if (typeof PointerEvent === 'function') {
-        frameDocument.dispatchEvent(new PointerEvent('pointerup', {
-          bubbles: true,
-          cancelable: true,
-          buttons: 0,
-          isPrimary: true,
-          pointerId,
-          pointerType: 'mouse',
-          view: frameWindow,
-        }))
-      }
       frameDocument.dispatchEvent(new MouseEvent('mouseup', {
         bubbles: true,
         cancelable: true,
+        button: 0,
         buttons: 0,
+        ...localPoint,
         view: frameWindow,
       }))
+      dragging = false
     } catch {
       // Google currently renders the native panorama into a same-origin about:blank frame.
       // If that implementation changes, normal in-frame pointer release still remains intact.
     }
   }
 
-  const onPointerEnd = (event: PointerEvent) => releasePanoramaPointer(event.pointerId)
-  const onMouseUp = () => releasePanoramaPointer()
+  const onPointerEnd = (event: PointerEvent) => releasePanoramaPointer(event)
+  const onMouseUp = (event: MouseEvent) => releasePanoramaPointer(event)
   const onPointerMove = (event: PointerEvent) => {
-    if (event.buttons === 0) releasePanoramaPointer(event.pointerId)
+    if (event.buttons === 0) releasePanoramaPointer(event)
   }
   const onWindowBlur = () => releasePanoramaPointer()
+  const frameObserver = new MutationObserver(attachFrameListeners)
+
+  attachFrameListeners()
+  frameObserver.observe(container, { childList: true, subtree: true })
 
   window.addEventListener('pointerup', onPointerEnd, true)
   window.addEventListener('pointercancel', onPointerEnd, true)
@@ -176,11 +232,18 @@ function installPanoramaPointerReleaseGuard(container: HTMLElement): () => void 
   window.addEventListener('blur', onWindowBlur)
 
   return () => {
+    frameObserver.disconnect()
     window.removeEventListener('pointerup', onPointerEnd, true)
     window.removeEventListener('pointercancel', onPointerEnd, true)
     window.removeEventListener('pointermove', onPointerMove, true)
     window.removeEventListener('mouseup', onMouseUp, true)
     window.removeEventListener('blur', onWindowBlur)
+    activeFrameDocument?.removeEventListener('pointerdown', onFramePointerDown, true)
+    activeFrameDocument?.removeEventListener('mousedown', onFrameMouseDown, true)
+    activeFrameDocument?.removeEventListener('pointerup', onFramePointerEnd, true)
+    activeFrameDocument?.removeEventListener('pointercancel', onFramePointerEnd, true)
+    activeFrameDocument?.removeEventListener('mouseup', onFramePointerEnd, true)
+    activeFrameDocument = null
   }
 }
 
