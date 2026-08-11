@@ -27,6 +27,8 @@ interface StreetViewData {
 }
 
 interface StreetViewPanoramaInstance {
+  getZoom(): number
+  setZoom(zoom: number): void
   setVisible(visible: boolean): void
 }
 
@@ -235,6 +237,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
 
   useEffect(() => {
     let cancelled = false
+    let zoomReadyTimer: ReturnType<typeof setTimeout> | null = null
     clearLoadingTimer()
     loadingTimer.current = setTimeout(() => {
       if (cancelled) return
@@ -290,10 +293,23 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
             if (data.location.pano) panoramaOptions.pano = data.location.pano
             else panoramaOptions.position = data.location.latLng ?? location
 
-            panoramaRef.current = new google.maps.StreetViewPanorama(canvasRef.current, panoramaOptions)
+            const panorama = new google.maps.StreetViewPanorama(canvasRef.current, panoramaOptions)
+            panoramaRef.current = panorama
 
-            clearLoadingTimer()
-            setLoading(false)
+            const waitForStableZoom = () => {
+              if (cancelled || panoramaRef.current !== panorama) return
+              const zoom = panorama.getZoom()
+              if (Number.isFinite(zoom)) {
+                clearLoadingTimer()
+                setLoading(false)
+                return
+              }
+
+              panorama.setZoom(0)
+              zoomReadyTimer = setTimeout(waitForStableZoom, 50)
+            }
+
+            waitForStableZoom()
           })
         })
       })
@@ -307,6 +323,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     return () => {
       cancelled = true
       clearLoadingTimer()
+      if (zoomReadyTimer) clearTimeout(zoomReadyTimer)
       const captured = capturedPointerRef.current
       if (captured?.target.hasPointerCapture?.(captured.pointerId)) {
         captured.target.releasePointerCapture(captured.pointerId)
@@ -356,7 +373,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
           style={{
             background: error ? 'rgba(0,0,0,0.72)' : 'var(--crm-surface)',
             color: error ? '#fff' : 'inherit',
-            pointerEvents: error ? 'auto' : 'none',
+            pointerEvents: 'auto',
           }}
         >
           {error ? (

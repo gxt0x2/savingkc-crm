@@ -16,12 +16,14 @@ describe('StreetViewPanel', () => {
   it('captures the native panorama pointer so Google receives releases outside its frame', async () => {
     const location = { lat: () => 38.991, lng: () => -94.654 }
     const constructPanorama = vi.fn()
+    const setZoom = vi.fn()
     const setVisible = vi.fn()
     const clearInstanceListeners = vi.fn()
     const setPointerCapture = vi.fn()
     const hasPointerCapture = vi.fn(() => true)
     const releasePointerCapture = vi.fn()
     let nativeSurface: HTMLDivElement | null = null
+    let panoramaZoom = Number.NaN
 
     class MockGeocoder {
       geocode(
@@ -51,6 +53,11 @@ describe('StreetViewPanel', () => {
         element.appendChild(nativeSurface)
       }
 
+      getZoom = () => panoramaZoom
+      setZoom = (zoom: number) => {
+        panoramaZoom = zoom
+        setZoom(zoom)
+      }
       setVisible = setVisible
     }
 
@@ -79,6 +86,8 @@ describe('StreetViewPanel', () => {
       visible: true,
     }))
     expect(constructPanorama.mock.calls[0]?.[1]).not.toHaveProperty('position')
+    await waitFor(() => expect(setZoom).toHaveBeenCalledWith(0))
+    await waitFor(() => expect(screen.getByText('Drag to look around')).toBeInTheDocument())
 
     expect(nativeSurface).not.toBeNull()
     fireEvent.pointerDown(nativeSurface!, {
