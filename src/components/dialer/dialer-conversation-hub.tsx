@@ -458,7 +458,7 @@ const PROSPECTING_TEMPLATE_SEEDS: SmsTemplateRow[] = [
 const STAGE_OPTIONS = [
   { value: 'new', label: 'New' },
   { value: 'contacted', label: 'Contacted' },
-  { value: 'qualified', label: 'Qualified' },
+  { value: 'qualified', label: 'Opportunity' },
   { value: 'appointment_set', label: 'Appointment Set' },
   { value: 'offer_made', label: 'Offer Made' },
   { value: 'under_contract', label: 'Under Contract' },

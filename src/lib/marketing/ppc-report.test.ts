@@ -643,7 +643,7 @@ describe('ppc report', () => {
       expect.arrayContaining([
         expect.objectContaining({
           eventName: 'qualified_lead',
-          eventLabel: 'Qualified Lead',
+          eventLabel: 'Opportunity',
           id: 'outbox-qualified-review',
           suggestedQualityScore: 2,
         }),

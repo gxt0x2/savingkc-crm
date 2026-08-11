@@ -7,7 +7,7 @@ import { DEAD_REASONS } from '@/lib/lead-outcomes'
 const STAGE_OPTIONS: { value: DealStage; label: string }[] = [
   { value: 'new', label: 'New' },
   { value: 'contacted', label: 'Leads' },
-  { value: 'qualified', label: 'Opportunities' },
+  { value: 'qualified', label: 'Opportunity' },
   { value: 'appointment_set', label: 'Appointment Set' },
   { value: 'offer_made', label: 'Offer Made' },
   { value: 'under_contract', label: 'In Closing' },

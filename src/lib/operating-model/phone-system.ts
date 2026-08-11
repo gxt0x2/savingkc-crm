@@ -135,7 +135,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
     healthNote: 'Standard seller intake and acquisition routing.',
     workflowId: 'acquisitions-seller-call-flow',
     inboundPath: ['Twilio number', '/api/twiml-voice', 'Seller IVR', '/api/ivr/handle-input', 'Acquisitions team'],
-    answeredPath: 'Qualified seller input rings the acquisition team and records the call after answer.',
+    answeredPath: 'Seller inquiries ring the acquisition team and record the call after answer.',
     noAnswerPath: 'No input is logged and routed through the general no-input follow-up and voicemail path.',
     smsPath: 'Inbound SMS enters /api/twilio-sms-webhook, resolves identity, records the message, and updates attention.',
     smsSenderPolicy: 'Approved for conversation sends; the API validates the selected identity and records Twilio\'s actual sender.',

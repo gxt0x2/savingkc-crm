@@ -13,7 +13,7 @@ interface ActivityTableProps {
 const STAGE_LABELS: Record<string, string> = {
   contacted: 'Leads',
   qualifying: 'Qualifying',
-  qualified: 'Opportunities',
+  qualified: 'Opportunity',
   appt_set: 'Appt Set',
   negotiations: 'Negotiations',
   offer_made: 'Offer Made',

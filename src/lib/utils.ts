@@ -48,7 +48,7 @@ export function stageLabel(stage: string): string {
     not_contacted: 'Not Contacted',
     contacted: 'Leads',
     qualifying: 'Qualifying',
-    qualified: 'Opportunities',
+    qualified: 'Opportunity',
     appt_set: 'Appt Set',
     appointment_set: 'Appointment Set',
     negotiations: 'Negotiations',

@@ -16,7 +16,7 @@ const PAID_LEAD_SOURCES = new Set([
 
 const EXPECTED_SIGNAL_LABELS: Record<string, string> = {
   lead_submitted: 'Form Submitted',
-  qualified_lead: 'Qualified Lead',
+  qualified_lead: 'Opportunity',
   appointment_booked: 'Appointment Booked',
 }
 

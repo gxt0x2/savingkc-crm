@@ -294,7 +294,7 @@ function diagnose(manifest: ManifestData, props: FavoriteOrFoolProps): Diagnosis
   if (props.classification === 'opportunity') {
     proofOfLife.push('Scored as opportunity by pipeline')
   } else if (props.classification === 'lead') {
-    proofOfLife.push('Qualified lead in pipeline')
+    proofOfLife.push('Opportunity in pipeline')
   }
   if (props.classification === 'dead') {
     foolSignals.push('Pipeline classified as dead')

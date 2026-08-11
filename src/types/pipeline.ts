@@ -43,7 +43,7 @@ export const ARCHIVED_STAGES: readonly TerminalStage[] = [
 export const STAGE_LABELS: Record<DealStage, string> = {
   new: 'New',
   contacted: 'Leads',
-  qualified: 'Opportunities',
+  qualified: 'Opportunity',
   appointment_set: 'Appointment Set',
   offer_made: 'Offer Made',
   under_contract: 'Under Contract',

@@ -883,7 +883,7 @@ function outboxStatus(row: PpcOutboxRow): string {
 function eventLabel(name: string | null): string {
   const value = text(name)
   if (value === 'lead_submitted') return 'Final Form Submit'
-  if (value === 'qualified_lead') return 'Qualified Lead'
+  if (value === 'qualified_lead') return 'Opportunity'
   if (value === 'lead_stage3_completed') return 'Step 3 Complete'
   if (value === 'appointment_booked') return 'Appointment Booked'
   if (value === 'call_connected_60s') return 'Call 60+ Seconds'
@@ -1041,7 +1041,7 @@ function buildJourneySteps({
       key: 'step_3',
       label: 'Step 3 Ready',
       status: step3At ? 'complete' : 'missing',
-      detail: step3At ? 'Qualified/contact step' : 'Not reached',
+      detail: step3At ? 'Opportunity/contact step' : 'Not reached',
       at: step3At,
     },
     {
@@ -1282,7 +1282,7 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     { key: 'leads', label: 'PPC CRM Leads', count: totalLeads },
     { key: 'stage3', label: 'Stage 3 Ready', count: states.filter((state) => state.stage3Complete).length },
     { key: 'submits', label: 'Final Form Submit', count: formSubmits },
-    { key: 'qualified', label: 'Qualified', count: qualified },
+    { key: 'qualified', label: 'Opportunities', count: qualified },
     { key: 'appointments', label: 'Appointment Set', count: appointments },
     { key: 'contracts', label: 'Contract / Closing', count: contracts },
   ]

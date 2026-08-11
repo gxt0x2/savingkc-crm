@@ -68,7 +68,7 @@ test('marketing attribution and acquisition KPIs stay aligned', async ({ page })
   expect(labels).toEqual([
     'Meaningful conversations',
     'Speed to lead',
-    'Qualified',
+    'Opportunities',
     'Appointments attended',
     'Under contract',
   ])

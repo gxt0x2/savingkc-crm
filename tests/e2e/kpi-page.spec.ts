@@ -56,14 +56,14 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await page.getByRole('button', { name: 'Close Andon form' }).click()
   const metrics = page.getByRole('region', { name: 'Company operating metrics' })
   await expect(metrics.getByRole('link', { name: /Revenue/ })).toBeVisible({ timeout: 20_000 })
-  await expect(metrics.getByRole('link', { name: /Qualified/ })).toBeVisible()
+  await expect(metrics.getByRole('link', { name: /Opportunities/ })).toBeVisible()
   await expect(metrics.getByRole('link', { name: /Offers made/ })).toBeVisible()
   await expect(metrics.getByRole('link', { name: /Under contract/ })).toBeVisible()
   await expect(metrics.getByRole('link', { name: /Leads/ })).toBeVisible()
   await expect(page.getByText('Attributed leads', { exact: true })).toBeVisible()
   await expect(page.getByText('Google - General', { exact: true })).toBeVisible()
   const metricLabels = await metrics.getByRole('link').evaluateAll((links) => links.map((link) => link.getAttribute('aria-label')?.split(':')[0]))
-  expect(metricLabels).toEqual(['Revenue (period)', 'Pipeline est. revenue', 'Closings (period)', 'Assigned (period)', 'Under contract', 'Offers made', 'Qualified (period)', 'Leads (period)'])
+  expect(metricLabels).toEqual(['Revenue (period)', 'Pipeline est. revenue', 'Closings (period)', 'Assigned (period)', 'Under contract', 'Offers made', 'Opportunities (period)', 'Leads (period)'])
   const metricRows = await metrics.getByRole('link').evaluateAll((links) => links.map((link) => Math.round(link.getBoundingClientRect().top)))
   expect(new Set(metricRows).size).toBe(1)
 
@@ -94,7 +94,7 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   expect(acquisitionMetricLabels).toEqual([
     'Meaningful conversations',
     'Speed to lead',
-    'Qualified',
+    'Opportunities',
     'Appointments attended',
     'Under contract',
   ])

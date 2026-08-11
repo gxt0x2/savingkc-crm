@@ -3,6 +3,21 @@ import { supabase } from '@/lib/supabase-lazy'
 import { requireUserOrSecret } from '@/lib/api/admin-auth'
 import { getLeadQualificationStatuses } from '@/lib/qualification-policy'
 
+type PipelineAction = {
+  id: string
+  full_name: string | null
+  phone: string | null
+  property_address: string | null
+  city: string | null
+  station: string | null
+  priority: string | null
+  motivation_score: number | null
+  offer_amount: number | null
+  action_type: string
+  action_label: string
+  action_detail: string
+}
+
 export async function GET(request: Request) {
   const unauthorized = await requireUserOrSecret(request)
   if (unauthorized) return unauthorized
@@ -49,10 +64,7 @@ export async function GET(request: Request) {
       leads.filter((lead) => lead.station === 'qualified').map((lead) => lead.id),
     )
 
-    const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
-    const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000
-
-    const actions: any[] = []
+    const actions: PipelineAction[] = []
 
     for (const lead of leads) {
       const lastActivity = lastActivityMap.get(lead.id)
@@ -73,7 +85,7 @@ export async function GET(request: Request) {
         } else if (!lead.offer_amount) {
           action_type = 'send_offer'
           action_label = 'SEND OFFER'
-          action_detail = `Qualified, pillars complete${lead.motivation_score ? `, motivation ${lead.motivation_score}/10` : ''}`
+          action_detail = `Opportunity, pillars complete${lead.motivation_score ? `, motivation ${lead.motivation_score}/10` : ''}`
         } else if (daysSinceActivity > 5) {
           action_type = 'follow_up'
           action_label = 'FOLLOW UP'

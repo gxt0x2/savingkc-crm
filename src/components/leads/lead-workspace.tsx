@@ -93,7 +93,7 @@ const WORKSPACE_SECTIONS: { key: LeadWorkspaceSection; icon: string; label: stri
 const STAGES = [
   { keys: ['new'], label: 'New' },
   { keys: ['contacted', 'lead', 'leads'], label: 'Contacted' },
-  { keys: ['qualified', 'qualifying', 'opportunity'], label: 'Qualified' },
+  { keys: ['qualified', 'qualifying', 'opportunity'], label: 'Opportunity' },
   { keys: ['offer_made', 'negotiations', 'offer'], label: 'Offer' },
   { keys: ['under_contract', 'in_closing', 'contract'], label: 'Contract' },
 ]

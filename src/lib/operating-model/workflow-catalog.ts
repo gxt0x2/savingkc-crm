@@ -290,7 +290,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
   {
     id: 'ppc-conversion-export',
     name: 'Google Ads Offline Conversion Export',
-    description: 'Validates eligible CRM outcomes and exports approved qualified conversions to Google Ads.',
+    description: 'Validates eligible CRM outcomes and exports approved opportunity conversions to Google Ads.',
     category: 'reporting', status: 'active', health: 'healthy', owner: SYSTEM_OWNER,
     trigger: { type: 'scheduled', schedule: 'Every 15 minutes' },
     actions: [{ type: 'execute', label: 'Claim eligible outbox rows' }, { type: 'execute', label: 'Validate attribution and conversion policy' }, { type: 'execute', label: 'Upload and record provider result' }],

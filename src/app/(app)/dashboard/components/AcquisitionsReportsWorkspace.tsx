@@ -48,8 +48,8 @@ interface ReportData {
 const VIEW_COPY: Record<ReportView, { eyebrow: string; title: string; description: string }> = {
   overview: { eyebrow: 'Reports workspace', title: 'Operating overview', description: 'The few signals leadership needs before opening a deeper report.' },
   acquisitions: { eyebrow: 'Acquisitions performance', title: 'Acquisitions command center', description: 'Pipeline attention, conversion, source quality, activity, and revenue in one operating view.' },
-  agents: { eyebrow: 'Coaching and capacity', title: 'Agent performance', description: 'Calling activity, appointment outcomes, and the behaviors that create qualified opportunities.' },
-  marketing: { eyebrow: 'Lead-source intelligence', title: 'Marketing performance', description: 'Which sources create qualified sellers, appointments, and signed contracts.' },
+  agents: { eyebrow: 'Coaching and capacity', title: 'Agent performance', description: 'Calling activity, appointment outcomes, and the behaviors that create real opportunities.' },
+  marketing: { eyebrow: 'Lead-source intelligence', title: 'Marketing performance', description: 'Which sources create opportunities, appointments, and signed contracts.' },
   dispositions: { eyebrow: 'Contract-to-close', title: 'Disposition performance', description: 'Pipeline handoff, contracts, closes, and realized economics.' },
   'data-quality': { eyebrow: 'Operating integrity', title: 'Data quality', description: 'Missing ownership, next actions, contact fields, and activity that weaken automation and reporting.' },
 }
@@ -162,7 +162,7 @@ function OverviewView({ report, revenue }: { report: Report; revenue: number }) 
       <AttentionGrid report={report} />
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon="group_add" label="New leads" value={report.stages[0].value} detail={`${report.active} active pipeline records`} tone="info" href="/contacts?list=new" />
-        <MetricCard icon="verified" label="Qualified" value={report.qualified} detail={`${rate(report.qualified, report.total)}% of leads`} tone="success" href="/contacts?min_stage=qualified" />
+        <MetricCard icon="verified" label="Opportunities" value={report.qualified} detail={`${rate(report.qualified, report.total)}% of leads`} tone="success" href="/contacts?min_stage=qualified" />
         <MetricCard icon="description" label="Under contract" value={report.contracts} detail={`${report.closed} closed won`} tone="violet" href="/contacts?min_stage=under_contract" />
         <MetricCard icon="payments" label="Revenue" value={moneyShort(revenue)} detail="Recorded CRM financials" tone="brand" href="/dashboard?view=dispositions" />
       </section>
@@ -234,7 +234,7 @@ function MarketingView({ report }: { report: Report }) {
     <>
       <section className="grid gap-4 md:grid-cols-3">
         <MetricCard icon="ads_click" label="Lead sources" value={report.sources.length} detail={`${report.total} leads represented`} tone="info" href="/marketing" />
-        <MetricCard icon="verified" label="Qualified leads" value={report.qualified} detail={`${rate(report.qualified, report.total)}% qualification rate`} tone="success" href="/contacts?min_stage=qualified" />
+        <MetricCard icon="verified" label="Opportunities" value={report.qualified} detail={`${rate(report.qualified, report.total)}% opportunity rate`} tone="success" href="/contacts?min_stage=qualified" />
         <MetricCard icon="description" label="Contracts" value={report.contracts} detail={`${rate(report.contracts, report.total)}% lead-to-contract`} tone="violet" href="/contacts?min_stage=under_contract" />
       </section>
       <SourcePerformance report={report} expanded />
@@ -371,7 +371,7 @@ function SourcePerformance({ report, expanded = false }: { report: Report; expan
   return (
     <section className="crm-panel overflow-hidden rounded-2xl">
       <div className="flex items-center justify-between border-b border-[var(--crm-border)] px-5 py-4"><div><p className="crm-eyebrow">Source quality</p><h2 className="mt-1 text-lg font-black">Which channels create real pipeline</h2></div><Link href="/marketing" className="text-xs font-black text-[var(--crm-brand)] hover:underline">Full marketing view</Link></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-xs"><thead className="bg-[var(--crm-surface-subtle)] text-[10px] uppercase tracking-[0.12em] text-[var(--crm-text-muted)]"><tr><th className="px-5 py-3">Source</th><th className="px-3 py-3 text-right">Leads</th><th className="px-3 py-3 text-right">Qualified</th><th className="px-3 py-3 text-right">Appointments</th><th className="px-3 py-3 text-right">Contracts</th><th className="px-5 py-3 text-right">Avg score</th></tr></thead><tbody className="divide-y divide-[var(--crm-border)]">{rows.map((source) => <tr key={source.source} className="hover:bg-[var(--crm-surface-subtle)]"><td className="px-5 py-3 font-bold">{formatLeadSource(source.source)}</td><td className="px-3 py-3 text-right tabular-nums">{source.leads}</td><td className="px-3 py-3 text-right tabular-nums text-[var(--crm-success)]">{source.qualified}</td><td className="px-3 py-3 text-right tabular-nums text-[var(--crm-info)]">{source.appointments}</td><td className="px-3 py-3 text-right font-black tabular-nums text-[var(--crm-violet)]">{source.contracts}</td><td className="px-5 py-3 text-right"><span className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-1 font-black text-[var(--crm-violet)]">{source.averageScore}</span></td></tr>)}</tbody></table></div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-xs"><thead className="bg-[var(--crm-surface-subtle)] text-[10px] uppercase tracking-[0.12em] text-[var(--crm-text-muted)]"><tr><th className="px-5 py-3">Source</th><th className="px-3 py-3 text-right">Leads</th><th className="px-3 py-3 text-right">Opportunities</th><th className="px-3 py-3 text-right">Appointments</th><th className="px-3 py-3 text-right">Contracts</th><th className="px-5 py-3 text-right">Avg score</th></tr></thead><tbody className="divide-y divide-[var(--crm-border)]">{rows.map((source) => <tr key={source.source} className="hover:bg-[var(--crm-surface-subtle)]"><td className="px-5 py-3 font-bold">{formatLeadSource(source.source)}</td><td className="px-3 py-3 text-right tabular-nums">{source.leads}</td><td className="px-3 py-3 text-right tabular-nums text-[var(--crm-success)]">{source.qualified}</td><td className="px-3 py-3 text-right tabular-nums text-[var(--crm-info)]">{source.appointments}</td><td className="px-3 py-3 text-right font-black tabular-nums text-[var(--crm-violet)]">{source.contracts}</td><td className="px-5 py-3 text-right"><span className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-1 font-black text-[var(--crm-violet)]">{source.averageScore}</span></td></tr>)}</tbody></table></div>
       {rows.length === 0 ? <p className="px-5 py-10 text-center text-sm text-[var(--crm-text-muted)]">No source data in this reporting period.</p> : null}
     </section>
   )

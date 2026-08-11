@@ -129,7 +129,7 @@ export function buildAcquisitionsReport(
 
   const stages = [
     { key: 'leads', label: 'Leads', value: total },
-    { key: 'qualified', label: 'Qualified', value: qualified },
+    { key: 'qualified', label: 'Opportunities', value: qualified },
     { key: 'appointments', label: 'Appointments', value: appointments },
     { key: 'offers', label: 'Offers', value: offers },
     { key: 'contracts', label: 'Contracts', value: contracts },

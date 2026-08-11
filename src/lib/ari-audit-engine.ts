@@ -20,7 +20,7 @@ export interface AuditFinding {
   description: string
   lead_id?: string
   agent_id?: string
-  metadata?: any
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -167,11 +167,12 @@ async function findOverdueTasks(): Promise<AuditFinding[]> {
   if (error || !tasks || tasks.length === 0) return findings
 
   // Group by agent
+  type OverdueTask = NonNullable<typeof tasks>[number]
   const byAgent = tasks.reduce((acc, task) => {
     const agent = task.metadata?.assigned_to || task.agent || 'Unknown'
     acc[agent] = (acc[agent] || []).concat(task)
     return acc
-  }, {} as Record<string, any[]>)
+  }, {} as Record<string, OverdueTask[]>)
 
   for (const [agent, agentTasks] of Object.entries(byAgent)) {
     findings.push({
@@ -205,7 +206,7 @@ async function findRequirementViolations(): Promise<AuditFinding[]> {
       findings.push({
         audit_type: 'requirement_violation',
         severity: 'high',
-        description: `${lead.full_name} is marked Qualified but missing: ${missingPillars.join(', ')}. Complete pillars before advancing.`,
+        description: `${lead.full_name} is marked as an Opportunity but is missing: ${missingPillars.join(', ')}. Complete pillars before advancing.`,
         lead_id: lead.id,
         metadata: { missing_pillars: missingPillars },
       })
@@ -348,7 +349,6 @@ export async function verifySystemHealth() {
     if (!worker.check_interval_minutes) continue // Webhooks don't have intervals
 
     const expectedIntervalMs = worker.check_interval_minutes * 60 * 1000
-    const lastRunMs = worker.last_run ? now.getTime() - new Date(worker.last_run).getTime() : null
     const lastSuccessMs = worker.last_success ? now.getTime() - new Date(worker.last_success).getTime() : null
 
     let status = 'unknown'
@@ -397,8 +397,6 @@ export async function verifySystemHealth() {
  * Detects patterns and creates coaching nudges for agents
  */
 export async function generateCoachingNudges(agentId: string) {
-  const today = new Date().toISOString().split('T')[0]
-
   // Get agent stats for last 2 days
   const { data: stats, error } = await supabase
     .from('agent_daily_stats')
@@ -462,15 +460,16 @@ export async function generateCoachingNudges(agentId: string) {
     .gte('created_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
 
   if (missedLeads) {
-    const leadCounts = missedLeads.reduce((acc: Record<string, { name: string; count: number }>, item: any) => {
+    type MissedLead = NonNullable<typeof missedLeads>[number]
+    const leadCounts = missedLeads.reduce((acc: Record<string, { name: string; count: number }>, item: MissedLead) => {
       if (!acc[item.lead_id]) {
-        acc[item.lead_id] = { name: item.leads?.full_name || 'Unknown', count: 0 }
+        acc[item.lead_id] = { name: item.leads?.[0]?.full_name || 'Unknown', count: 0 }
       }
       acc[item.lead_id].count++
       return acc
     }, {})
 
-    for (const [leadId, info] of Object.entries(leadCounts)) {
+    for (const info of Object.values(leadCounts)) {
       if (info.count >= 3) {
         await supabase.from('ari_nudges').insert({
           agent_id: agentId,
