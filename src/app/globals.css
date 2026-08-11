@@ -49,7 +49,7 @@
   --color-inverse-primary: #bdc7d9;
   --color-surface-tint: #555f6f;
 
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 
 body {

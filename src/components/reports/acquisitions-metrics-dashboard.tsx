@@ -2,6 +2,7 @@ import Link from 'next/link'
 
 import { Icon } from '@/components/ui/icon'
 import { formatLeadSource } from '@/lib/contact-display'
+import { buildAcquisitionSourceRows } from '@/lib/acquisition-source-channels'
 import type { OperatingReport } from '@/lib/operating-report'
 
 type Tone = 'green' | 'violet' | 'blue' | 'coral' | 'amber' | 'teal' | 'red'
@@ -17,25 +18,6 @@ const TONES: Record<Tone, { color: string; icon: string }> = {
 }
 
 const SOURCE_COLORS = ['#1769e0', '#6d28d9', '#0b9348', '#f05a28', '#e3a008', '#078b87', '#d62937']
-const ACQUISITION_SOURCE_CHANNELS = [
-  { key: 'google_general', label: 'Google - General' },
-  { key: 'google_tax_delinquent', label: 'Google - Tax' },
-  { key: 'cold_calls', label: 'Cold Calls' },
-  { key: 'sms_outreach', label: 'Cold SMS' },
-  { key: 'youtube', label: 'YouTube' },
-] as const
-type AcquisitionSourceChannel = (typeof ACQUISITION_SOURCE_CHANNELS)[number]['key']
-type OperatingSourceRow = OperatingReport['marketing']['sources'][number]
-
-export interface AcquisitionSourceRow {
-  key: AcquisitionSourceChannel
-  label: string
-  leads: number
-  qualified: number
-  appointments: number
-  contracts: number
-  revenue: number
-}
 
 interface FunnelStageInput {
   label: string
@@ -148,49 +130,21 @@ export function buildRevenueLiftModel(report: OperatingReport): RevenueLiftModel
   }
 }
 
-export function buildAcquisitionSourceRows(sourceRows: OperatingSourceRow[]): AcquisitionSourceRow[] {
-  const rows = new Map<AcquisitionSourceChannel, AcquisitionSourceRow>(
-    ACQUISITION_SOURCE_CHANNELS.map((channel) => [channel.key, {
-      ...channel,
-      leads: 0,
-      qualified: 0,
-      appointments: 0,
-      contracts: 0,
-      revenue: 0,
-    }]),
-  )
-
-  for (const sourceRow of sourceRows) {
-    const channel = acquisitionSourceChannel(sourceRow.source)
-    if (!channel) continue
-    const row = rows.get(channel)!
-    row.leads += sourceRow.leads
-    row.qualified += sourceRow.qualified
-    row.appointments += sourceRow.appointments
-    row.contracts += sourceRow.contracts
-    row.revenue += sourceRow.revenue
-  }
-
-  return ACQUISITION_SOURCE_CHANNELS.map(({ key }) => rows.get(key)!)
-}
-
 export function AcquisitionsMetricsDashboard({ report }: { report: OperatingReport }) {
   const attended = report.acquisitions.appointmentShowRate == null
     ? null
     : Math.round(report.acquisitions.appointmentsRecorded * report.acquisitions.appointmentShowRate / 100)
   const cards = [
-    { icon: 'group_add', label: 'New leads', value: report.acquisitions.total, detail: `${report.acquisitions.notLeads} marked not a lead`, tone: 'teal' as const, href: '/contacts?list=new', series: report.trends.leads, goal: null },
-    { icon: 'verified', label: 'Qualified', value: report.acquisitions.qualified, detail: `${percent(report.acquisitions.qualified, report.acquisitions.total)} qualification rate`, tone: 'blue' as const, href: '/contacts?min_stage=qualified', series: report.trends.qualified, goal: scaledGoal(report.goals.weeklyQualified, report, 'weekly') },
-    { icon: 'calendar_month', label: 'Appointments', value: report.acquisitions.appointmentsRecorded, detail: attended == null ? 'Attendance not recorded' : `${attended} recorded attended`, tone: 'violet' as const, href: '/calendar?department=acquisitions', series: report.trends.appointments, goal: scaledGoal(report.goals.weeklyAppointments, report, 'weekly') },
-    { icon: 'description', label: 'Under contract', value: report.acquisitions.contracts, detail: `${percent(report.acquisitions.contracts, report.acquisitions.total)} lead-to-contract`, tone: 'amber' as const, href: '/contacts?min_stage=under_contract', series: report.trends.underContract, goal: null },
+    { icon: 'forum', label: 'Meaningful conversations', value: report.communications.connectedCalls, detail: `${nullablePercent(report.communications.callConnectionRate)} connection rate`, tone: 'green' as const, href: '/reports/call-sms', series: report.trends.calls, goal: scaledGoal(report.goals.dailyCalls, report, 'daily') },
     { icon: 'speed', label: 'Speed to lead', value: formatMinutes(report.acquisitions.averageSpeedToLeadMinutes), detail: 'First recorded outbound action', tone: 'coral' as const, href: '/reports/call-sms', series: null, goal: 2 },
-    { icon: 'forum', label: 'Connected calls', value: report.communications.connectedCalls, detail: `${nullablePercent(report.communications.callConnectionRate)} connection rate`, tone: 'green' as const, href: '/reports/call-sms', series: report.trends.calls, goal: scaledGoal(report.goals.dailyCalls, report, 'daily') },
-    { icon: 'task_alt', label: 'Closed won', value: report.dispositions.closedDeals, detail: `${percent(report.dispositions.closedDeals, report.acquisitions.total)} of period leads`, tone: 'red' as const, href: '/reports/dispositions', series: report.trends.closings, goal: scaledGoal(report.goals.monthlyClosings, report, 'monthly') },
+    { icon: 'verified', label: 'Qualified', value: report.acquisitions.qualified, detail: `${percent(report.acquisitions.qualified, report.acquisitions.total)} qualification rate`, tone: 'blue' as const, href: '/contacts?min_stage=qualified', series: report.trends.qualified, goal: scaledGoal(report.goals.weeklyQualified, report, 'weekly') },
+    { icon: 'calendar_month', label: 'Appointments attended', value: attended ?? 'Not recorded', detail: attended == null ? 'Attendance outcome not recorded' : `${attended} attended of ${report.acquisitions.appointmentsRecorded} recorded`, tone: 'violet' as const, href: '/calendar?department=acquisitions', series: report.trends.appointments, goal: scaledGoal(report.goals.weeklyAppointments, report, 'weekly') },
+    { icon: 'description', label: 'Under contract', value: report.acquisitions.contracts, detail: `${percent(report.acquisitions.contracts, report.acquisitions.total)} lead-to-contract`, tone: 'amber' as const, href: '/contacts?min_stage=under_contract', series: report.trends.underContract, goal: null },
   ]
 
   return (
     <div className="space-y-2.5">
-      <section aria-label="Acquisition operating metrics" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+      <section aria-label="Acquisition operating metrics" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
         {cards.map((card) => <AcquisitionMetricCard key={card.label} {...card} />)}
       </section>
 
@@ -259,7 +213,7 @@ function AcquisitionMetricCard({ icon, label, value, detail, tone, href, series,
   const progress = goal != null && goal > 0 && numericValue != null ? Math.min(100, Math.round((numericValue / goal) * 100)) : null
   const movement = series ? seriesMomentum(series) : null
   return (
-    <Link href={href} className="group flex min-h-[164px] flex-col rounded-lg border p-3 shadow-[0_1px_3px_rgba(16,24,40,.05)] transition-all hover:-translate-y-px hover:shadow-[0_4px_12px_rgba(16,24,40,.09)]" style={{ background: `color-mix(in srgb, ${palette.color} 7%, var(--crm-surface))`, borderColor: `color-mix(in srgb, ${palette.color} 18%, var(--crm-border))` }}>
+    <Link href={href} aria-label={`${label}: ${value}. ${detail}`} className="group flex min-h-[164px] flex-col rounded-lg border p-3 shadow-[0_1px_3px_rgba(16,24,40,.05)] transition-all hover:-translate-y-px hover:shadow-[0_4px_12px_rgba(16,24,40,.09)]" style={{ background: `color-mix(in srgb, ${palette.color} 7%, var(--crm-surface))`, borderColor: `color-mix(in srgb, ${palette.color} 18%, var(--crm-border))` }}>
       <div className="flex items-center gap-2"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${palette.icon}`}><Icon name={icon} className="text-[16px]" /></span><span className="min-w-0 flex-1 text-[10px] font-bold leading-3.5">{label}</span><Icon name="arrow_outward" className="text-[13px] opacity-0 group-hover:opacity-100" /></div>
       <strong className={`mt-2 block font-extrabold leading-7 tracking-[-0.035em] ${String(value).length > 12 ? 'text-[17px]' : 'text-[25px]'}`}>{value}</strong>
       <span className="mt-0.5 min-h-6 text-[9px] font-medium leading-3 text-[var(--crm-text-muted)]">{detail}</span>
@@ -510,16 +464,6 @@ function conicGradient(values: number[], colors: string[]) {
     return `${colors[index % colors.length]} ${start}% ${cursor}%`
   })
   return `conic-gradient(${stops.join(', ')})`
-}
-
-function acquisitionSourceChannel(source: string): AcquisitionSourceChannel | null {
-  const value = source.trim().toLowerCase().replace(/[\s-]+/g, '_')
-  if (/(tax_?delinquent|delinquent_?tax|ppc_?tax|tax_?ppc)/.test(value)) return 'google_tax_delinquent'
-  if (/google_?ads|googleads|gclid|paid_?search|(^|_)ppc(_|$)/.test(value)) return 'google_general'
-  if (/youtube|you_?tube/.test(value)) return 'youtube'
-  if (/outbound|cold_?call|mojo|dialer/.test(value)) return 'cold_calls'
-  if (/(sms|text)/.test(value)) return 'sms_outreach'
-  return null
 }
 
 function rate(numerator: number, denominator: number) { return denominator > 0 ? Math.round((numerator / denominator) * 100) : 0 }

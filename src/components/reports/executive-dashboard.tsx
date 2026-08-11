@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 import { Icon } from '@/components/ui/icon'
 import { ReportDateRangeControl, type OperatingCustomRange } from '@/components/reports/report-date-range-control'
-import { formatLeadSource } from '@/lib/contact-display'
+import { buildAcquisitionSourceRows } from '@/lib/acquisition-source-channels'
 import type { OperatingReport, OperatingReportPeriod } from '@/lib/operating-report'
 
 type Tone = 'green' | 'violet' | 'blue' | 'coral' | 'amber' | 'teal' | 'red'
@@ -70,7 +70,7 @@ export function ExecutiveDashboard({
           {cards.map((card) => <CeoMetricCard key={card.label} {...card} />)}
         </section>
 
-        <section aria-label="Department operating flow" className="grid auto-rows-fr gap-2.5 xl:grid-cols-2 2xl:grid-cols-4">
+        <section aria-label="Department operating flow" className="grid auto-rows-fr gap-2.5 lg:grid-cols-2">
           <MarketingPerformance report={report} />
           <AcquisitionsPerformance report={report} />
           <DispositionsPerformance report={report} />
@@ -189,15 +189,17 @@ function DispositionsPerformance({ report }: { report: OperatingReport }) {
 }
 
 function MarketingPerformance({ report }: { report: OperatingReport }) {
-  const sources = report.marketing.sources.slice(0, 5)
+  const sources = buildAcquisitionSourceRows(report.marketing.sources)
+  const attributedLeads = sources.reduce((total, source) => total + source.leads, 0)
+  const attributedQualified = sources.reduce((total, source) => total + source.qualified, 0)
   return (
     <DashboardPanel title="Marketing" period="Selected period" tone="violet" href="/reports/marketing">
       <div className="grid h-full min-h-0 grid-rows-[78px_1fr] divide-y divide-[var(--crm-border)]">
         <div className="grid grid-cols-2 divide-x divide-[var(--crm-border)]">
-          <div className="flex flex-col items-center justify-center"><strong className="text-2xl font-black">{report.core.leads}</strong><span className="text-[9px] font-bold text-[var(--crm-text-muted)]">All leads</span></div>
-          <div className="flex flex-col items-center justify-center"><strong className="text-2xl font-black text-[var(--crm-info)]">{report.core.qualified}</strong><span className="text-[9px] font-bold text-[var(--crm-text-muted)]">Qualified leads</span></div>
+          <div className="flex flex-col items-center justify-center"><strong className="text-2xl font-black">{attributedLeads}</strong><span className="text-[9px] font-bold text-[var(--crm-text-muted)]">Attributed leads</span></div>
+          <div className="flex flex-col items-center justify-center"><strong className="text-2xl font-black text-[var(--crm-info)]">{attributedQualified}</strong><span className="text-[9px] font-bold text-[var(--crm-text-muted)]">Qualified leads</span></div>
         </div>
-        <div className="min-w-0 px-3 py-2"><div className="grid grid-cols-[1fr_44px_52px] gap-1 border-b border-[var(--crm-border)] pb-1 text-[8px] font-bold uppercase text-[var(--crm-text-muted)]"><span>Top lead source</span><span className="text-right">Leads</span><span className="text-right">Qualified</span></div>{sources.length > 0 ? sources.map((source) => <Link href="/reports/marketing" key={source.source} className="grid grid-cols-[1fr_44px_52px] gap-1 border-b border-[var(--crm-border)] py-1.5 text-[9px] hover:bg-[var(--crm-surface-subtle)]"><strong className="truncate">{formatLeadSource(source.source)}</strong><span className="text-right">{source.leads}</span><span className="text-right font-bold text-[var(--crm-info)]">{source.qualified}</span></Link>) : <div className="grid h-full place-items-center text-[10px] text-[var(--crm-text-muted)]">No recorded lead sources</div>}
+        <div className="min-w-0 px-3 py-2"><div className="grid grid-cols-[1fr_44px_52px] gap-1 border-b border-[var(--crm-border)] pb-1 text-[8px] font-bold uppercase text-[var(--crm-text-muted)]"><span>Lead source</span><span className="text-right">Leads</span><span className="text-right">Qualified</span></div>{sources.map((source) => <Link href="/reports/acquisitions" key={source.key} className="grid grid-cols-[1fr_44px_52px] gap-1 border-b border-[var(--crm-border)] py-1.5 text-[9px] hover:bg-[var(--crm-surface-subtle)]"><strong className="truncate">{source.label}</strong><span className="text-right">{source.leads}</span><span className="text-right font-bold text-[var(--crm-info)]">{source.qualified}</span></Link>)}
         </div>
       </div>
     </DashboardPanel>

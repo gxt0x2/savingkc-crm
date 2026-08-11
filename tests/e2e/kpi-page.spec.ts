@@ -60,6 +60,8 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await expect(metrics.getByRole('link', { name: /Offers made/ })).toBeVisible()
   await expect(metrics.getByRole('link', { name: /Under contract/ })).toBeVisible()
   await expect(metrics.getByRole('link', { name: /Leads/ })).toBeVisible()
+  await expect(page.getByText('Attributed leads', { exact: true })).toBeVisible()
+  await expect(page.getByText('Google - General', { exact: true })).toBeVisible()
   const metricLabels = await metrics.getByRole('link').evaluateAll((links) => links.map((link) => link.getAttribute('aria-label')?.split(':')[0]))
   expect(metricLabels).toEqual(['Revenue (period)', 'Pipeline est. revenue', 'Closings (period)', 'Assigned (period)', 'Under contract', 'Offers made', 'Qualified (period)', 'Leads (period)'])
   const metricRows = await metrics.getByRole('link').evaluateAll((links) => links.map((link) => Math.round(link.getBoundingClientRect().top)))
@@ -87,7 +89,15 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await page.goto('/reports/acquisitions', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Acquisitions performance', level: 1 })).toBeVisible()
   const acquisitionMetrics = page.getByRole('region', { name: 'Acquisition operating metrics' })
-  await expect(acquisitionMetrics.getByText('New leads', { exact: true })).toBeVisible()
+  await expect(acquisitionMetrics.getByRole('link')).toHaveCount(5)
+  const acquisitionMetricLabels = await acquisitionMetrics.getByRole('link').evaluateAll((links) => links.map((link) => link.getAttribute('aria-label')?.split(':')[0]))
+  expect(acquisitionMetricLabels).toEqual([
+    'Meaningful conversations',
+    'Speed to lead',
+    'Qualified',
+    'Appointments attended',
+    'Under contract',
+  ])
   await expect(page.getByRole('heading', { name: 'Lead-source performance' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Revenue lift model' })).toBeVisible()
   await expect(page.locator('[data-nextjs-dialog]')).toHaveCount(0)
