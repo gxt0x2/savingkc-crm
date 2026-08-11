@@ -13,13 +13,15 @@ describe('StreetViewPanel', () => {
     delete window.__savingkcGmapsKey
   })
 
-  it('owns panorama dragging and stops updates after pointer release outside its frame', async () => {
+  it('captures the native panorama pointer so Google receives releases outside its frame', async () => {
     const location = { lat: () => 38.991, lng: () => -94.654 }
     const constructPanorama = vi.fn()
-    const setPov = vi.fn()
-    const setZoom = vi.fn()
     const setVisible = vi.fn()
     const clearInstanceListeners = vi.fn()
+    const setPointerCapture = vi.fn()
+    const hasPointerCapture = vi.fn(() => true)
+    const releasePointerCapture = vi.fn()
+    let nativeSurface: HTMLDivElement | null = null
 
     class MockGeocoder {
       geocode(
@@ -42,13 +44,13 @@ describe('StreetViewPanel', () => {
     class MockStreetViewPanorama {
       constructor(element: HTMLElement, options: Record<string, unknown>) {
         constructPanorama(element, options)
-        element.appendChild(document.createElement('iframe'))
+        nativeSurface = document.createElement('div')
+        nativeSurface.setPointerCapture = setPointerCapture
+        nativeSurface.hasPointerCapture = hasPointerCapture
+        nativeSurface.releasePointerCapture = releasePointerCapture
+        element.appendChild(nativeSurface)
       }
 
-      getPov = () => ({ heading: 10, pitch: 5 })
-      getZoom = () => 0
-      setPov = setPov
-      setZoom = setZoom
       setVisible = setVisible
     }
 
@@ -78,8 +80,8 @@ describe('StreetViewPanel', () => {
     }))
     expect(constructPanorama.mock.calls[0]?.[1]).not.toHaveProperty('position')
 
-    const dragSurface = screen.getByTestId('street-view-drag-surface')
-    fireEvent.pointerDown(dragSurface, {
+    expect(nativeSurface).not.toBeNull()
+    fireEvent.pointerDown(nativeSurface!, {
       button: 0,
       buttons: 1,
       clientX: 20,
@@ -87,19 +89,11 @@ describe('StreetViewPanel', () => {
       isPrimary: true,
       pointerId: 7,
     })
-    fireEvent.pointerMove(dragSurface, { buttons: 1, clientX: 500, clientY: 400, pointerId: 7 })
-    expect(setZoom).toHaveBeenCalledWith(0)
-    expect(setPov).toHaveBeenCalledWith(expect.objectContaining({
-      heading: expect.any(Number),
-      pitch: expect.any(Number),
-      zoom: 0,
-    }))
-    expect(setZoom.mock.invocationCallOrder.at(-1)).toBeLessThan(setPov.mock.invocationCallOrder.at(-1) ?? 0)
+    expect(setPointerCapture).toHaveBeenCalledWith(7)
 
-    fireEvent.pointerUp(dragSurface, { buttons: 0, clientX: 500, clientY: 400, pointerId: 7 })
-    const updateCountAfterRelease = setPov.mock.calls.length
-    fireEvent.pointerMove(dragSurface, { buttons: 0, clientX: 600, clientY: 450, pointerId: 7 })
-    expect(setPov).toHaveBeenCalledTimes(updateCountAfterRelease)
+    fireEvent.pointerUp(nativeSurface!, { buttons: 0, clientX: 500, clientY: 400, pointerId: 7 })
+    expect(hasPointerCapture).toHaveBeenCalledWith(7)
+    expect(releasePointerCapture).toHaveBeenCalledWith(7)
 
     unmount()
     expect(clearInstanceListeners).toHaveBeenCalledTimes(1)

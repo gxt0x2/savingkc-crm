@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, RefObject } from 'react'
+import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 
 const BUILD_TIME_GMAPS_KEY = (
   process.env.NEXT_PUBLIC_GMAPS_KEY ||
@@ -27,10 +27,6 @@ interface StreetViewData {
 }
 
 interface StreetViewPanoramaInstance {
-  getPov(): { heading: number; pitch: number }
-  getZoom(): number
-  setPov(pov: { heading: number; pitch: number; zoom?: number }): void
-  setZoom(zoom: number): void
   setVisible(visible: boolean): void
 }
 
@@ -209,17 +205,10 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
   const loadingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mapsApiRef = useRef<GoogleMapsApi | null>(null)
   const panoramaRef = useRef<StreetViewPanoramaInstance | null>(null)
-  const dragRef = useRef<{
-    pointerId: number
-    startX: number
-    startY: number
-    heading: number
-    pitch: number
-  } | null>(null)
+  const capturedPointerRef = useRef<{ pointerId: number; target: Element } | null>(null)
   const [fallbackUrl, setFallbackUrl] = useState(() => googleMapsSearchUrl(address))
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [dragging, setDragging] = useState(false)
 
   function clearLoadingTimer() {
     if (!loadingTimer.current) return
@@ -227,71 +216,21 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     loadingTimer.current = null
   }
 
-  function beginDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || !event.isPrimary || !panoramaRef.current) return
-    const pov = panoramaRef.current.getPov()
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      heading: Number.isFinite(pov.heading) ? pov.heading : 0,
-      pitch: Number.isFinite(pov.pitch) ? pov.pitch : 0,
-    }
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-    event.preventDefault()
-    setDragging(true)
+  function capturePanoramaPointer(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !event.isPrimary || !(event.target instanceof Element)) return
+    const target = event.target
+    if (typeof target.setPointerCapture !== 'function') return
+    target.setPointerCapture(event.pointerId)
+    capturedPointerRef.current = { pointerId: event.pointerId, target }
   }
 
-  function moveDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    const drag = dragRef.current
-    const panorama = panoramaRef.current
-    if (!drag || !panorama || drag.pointerId !== event.pointerId) return
-
-    const heading = drag.heading - ((event.clientX - drag.startX) * 0.25)
-    const pitch = Math.max(-85, Math.min(85, drag.pitch + ((event.clientY - drag.startY) * 0.15)))
-    if (Number.isFinite(heading) && Number.isFinite(pitch)) {
-      const zoom = panorama.getZoom()
-      const safeZoom = Number.isFinite(zoom) ? zoom : 0
-      panorama.setZoom(safeZoom)
-      // The Maps renderer currently validates zoom inside its internal POV payload,
-      // even though the public API exposes zoom separately. Supplying both prevents
-      // a NaN camera state without changing the documented heading/pitch behavior.
-      panorama.setPov({ heading, pitch, zoom: safeZoom })
+  function releasePanoramaPointer(event: ReactPointerEvent<HTMLDivElement>) {
+    const captured = capturedPointerRef.current
+    if (!captured || captured.pointerId !== event.pointerId) return
+    if (captured.target.hasPointerCapture?.(event.pointerId)) {
+      captured.target.releasePointerCapture(event.pointerId)
     }
-    event.preventDefault()
-  }
-
-  function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    const drag = dragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-    dragRef.current = null
-    setDragging(false)
-  }
-
-  function moveWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
-    const panorama = panoramaRef.current
-    if (!panorama) return
-    const delta = {
-      ArrowLeft: { heading: -10, pitch: 0 },
-      ArrowRight: { heading: 10, pitch: 0 },
-      ArrowUp: { heading: 0, pitch: -5 },
-      ArrowDown: { heading: 0, pitch: 5 },
-    }[event.key]
-    if (!delta) return
-
-    const pov = panorama.getPov()
-    const zoom = panorama.getZoom()
-    const safeZoom = Number.isFinite(zoom) ? zoom : 0
-    panorama.setZoom(safeZoom)
-    panorama.setPov({
-      heading: (Number.isFinite(pov.heading) ? pov.heading : 0) + delta.heading,
-      pitch: Math.max(-85, Math.min(85, (Number.isFinite(pov.pitch) ? pov.pitch : 0) + delta.pitch)),
-      zoom: safeZoom,
-    })
-    event.preventDefault()
+    capturedPointerRef.current = null
   }
 
   useEffect(() => {
@@ -352,7 +291,6 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
             else panoramaOptions.position = data.location.latLng ?? location
 
             panoramaRef.current = new google.maps.StreetViewPanorama(canvasRef.current, panoramaOptions)
-            panoramaRef.current.setZoom(0)
 
             clearLoadingTimer()
             setLoading(false)
@@ -369,6 +307,11 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     return () => {
       cancelled = true
       clearLoadingTimer()
+      const captured = capturedPointerRef.current
+      if (captured?.target.hasPointerCapture?.(captured.pointerId)) {
+        captured.target.releasePointerCapture(captured.pointerId)
+      }
+      capturedPointerRef.current = null
       if (panoramaRef.current) {
         mapsApiRef.current?.maps.event?.clearInstanceListeners(panoramaRef.current)
         panoramaRef.current.setVisible(false)
@@ -384,40 +327,27 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
         ref={canvasRef}
         data-testid="street-view-canvas"
         aria-label={`Interactive Street View for ${address}`}
+        onPointerDownCapture={capturePanoramaPointer}
+        onPointerUpCapture={releasePanoramaPointer}
+        onPointerCancelCapture={releasePanoramaPointer}
+        onLostPointerCapture={releasePanoramaPointer}
         style={{ width: '100%', height: '100%' }}
       />
 
       {!loading && !error ? (
-        <>
-          <div
-            role="application"
-            tabIndex={0}
-            data-testid="street-view-drag-surface"
-            aria-label={`Drag to look around Street View for ${address}. Use arrow keys for precise movement.`}
-            className={dragging
-              ? 'absolute inset-0 z-[2] cursor-grabbing touch-none outline-none'
-              : 'absolute inset-0 z-[2] cursor-grab touch-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--crm-info)]'}
-            onPointerDown={beginDrag}
-            onPointerMove={moveDrag}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            onLostPointerCapture={endDrag}
-            onKeyDown={moveWithKeyboard}
-          />
-          <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[3] flex items-center justify-between gap-3">
-            <span className="rounded-lg bg-black/70 px-3 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm">
-              Drag to look around
-            </span>
-            <a
-              href={fallbackUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="pointer-events-auto rounded-lg border border-white/20 bg-black/70 px-3 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/85"
-            >
-              Open in Google Maps
-            </a>
-          </div>
-        </>
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[3] flex items-center justify-between gap-3">
+          <span className="rounded-lg bg-black/70 px-3 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm">
+            Drag to look around
+          </span>
+          <a
+            href={fallbackUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="pointer-events-auto rounded-lg border border-white/20 bg-black/70 px-3 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/85"
+          >
+            Open in Google Maps
+          </a>
+        </div>
       ) : null}
 
       {(loading || error) && (
