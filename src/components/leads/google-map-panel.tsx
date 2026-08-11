@@ -19,6 +19,17 @@ interface GeocodeResult {
   geometry: { location: LatLng }
 }
 
+interface StreetViewData {
+  location?: {
+    pano?: string
+    latLng?: LatLng
+  }
+}
+
+interface StreetViewPanoramaInstance {
+  setVisible(visible: boolean): void
+}
+
 interface GoogleMapsApi {
   maps: {
     Geocoder: new () => {
@@ -32,6 +43,19 @@ interface GoogleMapsApi {
       options: Record<string, unknown>,
     ) => unknown
     Marker: new (options: Record<string, unknown>) => unknown
+    StreetViewService: new () => {
+      getPanorama(
+        request: { location: LatLng; radius: number },
+        callback: (data: StreetViewData | null, status: string) => void,
+      ): void
+    }
+    StreetViewPanorama: new (
+      element: HTMLElement,
+      options: Record<string, unknown>,
+    ) => StreetViewPanoramaInstance
+    event?: {
+      clearInstanceListeners(instance: unknown): void
+    }
   }
 }
 
@@ -177,8 +201,10 @@ export function StreetViewPanel(props: PanelProps) {
 }
 
 function StreetViewContent({ address, height = 500 }: PanelProps) {
+  const canvasRef = useRef<HTMLDivElement | null>(null)
   const loadingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [embedUrl, setEmbedUrl] = useState<string | null>(null)
+  const mapsApiRef = useRef<GoogleMapsApi | null>(null)
+  const panoramaRef = useRef<StreetViewPanoramaInstance | null>(null)
   const [fallbackUrl, setFallbackUrl] = useState(() => googleMapsSearchUrl(address))
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -191,8 +217,6 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
 
   useEffect(() => {
     let cancelled = false
-    const controller = new AbortController()
-
     clearLoadingTimer()
     loadingTimer.current = setTimeout(() => {
       if (cancelled) return
@@ -201,39 +225,56 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
       setLoading(false)
     }, MAP_LOAD_TIMEOUT_MS)
 
-    getMapsKey()
-      .then(async (key) => {
-        const params = new URLSearchParams({ address, key })
-        const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`, {
-          signal: controller.signal,
+    loadMapsJs()
+      .then((google) => {
+        if (cancelled || !canvasRef.current) return
+        mapsApiRef.current = google
+
+        const geocoder = new google.maps.Geocoder()
+        geocoder.geocode({ address }, (results, status) => {
+          if (cancelled || !canvasRef.current) return
+          if (status !== 'OK' || !results?.[0]) {
+            clearLoadingTimer()
+            setError('Street View could not locate this address.')
+            setLoading(false)
+            return
+          }
+
+          const location = results[0].geometry.location
+          const coordinates = { lat: location.lat(), lng: location.lng() }
+          setFallbackUrl(googleStreetViewUrl(address, coordinates))
+
+          const service = new google.maps.StreetViewService()
+          service.getPanorama({ location, radius: 100 }, (data, panoramaStatus) => {
+            if (cancelled || !canvasRef.current) return
+            if (panoramaStatus !== 'OK' || !data?.location) {
+              clearLoadingTimer()
+              setError('Street View imagery is not available near this property.')
+              setLoading(false)
+              return
+            }
+
+            panoramaRef.current = new google.maps.StreetViewPanorama(canvasRef.current, {
+              pano: data.location.pano,
+              position: data.location.latLng ?? location,
+              pov: { heading: 0, pitch: 0 },
+              zoom: 0,
+              addressControl: true,
+              clickToGo: true,
+              enableCloseButton: false,
+              fullscreenControl: true,
+              linksControl: true,
+              motionTracking: false,
+              motionTrackingControl: false,
+              panControl: true,
+              scrollwheel: true,
+              visible: true,
+            })
+
+            clearLoadingTimer()
+            setLoading(false)
+          })
         })
-        const data = await res.json().catch(() => null) as {
-          status?: string
-          error_message?: string
-          results?: Array<{ geometry?: { location?: { lat: number; lng: number } } }>
-        } | null
-
-        if (cancelled) return
-
-        if (!res.ok || !data || data.status !== 'OK') {
-          clearLoadingTimer()
-          setError(data?.error_message || 'Street View could not locate this address.')
-          setLoading(false)
-          return
-        }
-
-        const location = data.results?.[0]?.geometry?.location
-        if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
-          clearLoadingTimer()
-          setError('Street View could not locate this address.')
-          setLoading(false)
-          return
-        }
-
-        setFallbackUrl(googleStreetViewUrl(address, location))
-        setEmbedUrl(
-          `https://www.google.com/maps/embed/v1/streetview?key=${encodeURIComponent(key)}&location=${location.lat},${location.lng}&fov=90&heading=0&pitch=0`
-        )
       })
       .catch((err) => {
         if (cancelled) return
@@ -244,37 +285,32 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
 
     return () => {
       cancelled = true
-      controller.abort()
       clearLoadingTimer()
+      if (panoramaRef.current) {
+        mapsApiRef.current?.maps.event?.clearInstanceListeners(panoramaRef.current)
+        panoramaRef.current.setVisible(false)
+        panoramaRef.current = null
+      }
+      mapsApiRef.current = null
     }
   }, [address])
 
   return (
     <div className="relative" style={{ width: '100%', height }}>
-      {embedUrl && !error ? (
-        <iframe
-          src={embedUrl}
-          width="100%"
-          height="100%"
-          style={{ border: 0, display: 'block', height: '100%' }}
-          allowFullScreen
-          loading="eager"
-          title="Street View"
-          onLoad={() => {
-            clearLoadingTimer()
-            setLoading(false)
-          }}
-        />
-      ) : (
-        <div style={{ width: '100%', height }} />
-      )}
+      <div
+        ref={canvasRef}
+        data-testid="street-view-canvas"
+        aria-label={`Interactive Street View for ${address}`}
+        style={{ width: '100%', height: '100%' }}
+      />
 
       {(loading || error) && (
         <div
           className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-sm"
           style={{
-            background: error ? 'rgba(0,0,0,0.72)' : 'transparent',
+            background: error ? 'rgba(0,0,0,0.72)' : 'var(--crm-surface)',
             color: error ? '#fff' : 'inherit',
+            pointerEvents: error ? 'auto' : 'none',
           }}
         >
           {error ? (
@@ -290,7 +326,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
               </a>
             </>
           ) : (
-            'Loading...'
+            'Loading interactive Street View...'
           )}
         </div>
       )}
