@@ -16,7 +16,8 @@ describe('StreetViewPanel', () => {
   it('owns panorama dragging and stops updates after pointer release outside its frame', async () => {
     const location = { lat: () => 38.991, lng: () => -94.654 }
     const constructPanorama = vi.fn()
-    const setOptions = vi.fn()
+    const setPov = vi.fn()
+    const setZoom = vi.fn()
     const setVisible = vi.fn()
     const clearInstanceListeners = vi.fn()
 
@@ -46,7 +47,8 @@ describe('StreetViewPanel', () => {
 
       getPov = () => ({ heading: 10, pitch: 5 })
       getZoom = () => 0
-      setOptions = setOptions
+      setPov = setPov
+      setZoom = setZoom
       setVisible = setVisible
     }
 
@@ -85,18 +87,17 @@ describe('StreetViewPanel', () => {
       pointerId: 7,
     })
     fireEvent.pointerMove(dragSurface, { buttons: 1, clientX: 500, clientY: 400, pointerId: 7 })
-    expect(setOptions).toHaveBeenCalledWith(expect.objectContaining({
-      pov: expect.objectContaining({
-        heading: expect.any(Number),
-        pitch: expect.any(Number),
-      }),
-      zoom: 0,
+    expect(setZoom).toHaveBeenCalledWith(0)
+    expect(setPov).toHaveBeenCalledWith(expect.objectContaining({
+      heading: expect.any(Number),
+      pitch: expect.any(Number),
     }))
+    expect(setZoom.mock.invocationCallOrder.at(-1)).toBeLessThan(setPov.mock.invocationCallOrder.at(-1) ?? 0)
 
     fireEvent.pointerUp(dragSurface, { buttons: 0, clientX: 500, clientY: 400, pointerId: 7 })
-    const updateCountAfterRelease = setOptions.mock.calls.length
+    const updateCountAfterRelease = setPov.mock.calls.length
     fireEvent.pointerMove(dragSurface, { buttons: 0, clientX: 600, clientY: 450, pointerId: 7 })
-    expect(setOptions).toHaveBeenCalledTimes(updateCountAfterRelease)
+    expect(setPov).toHaveBeenCalledTimes(updateCountAfterRelease)
 
     unmount()
     expect(clearInstanceListeners).toHaveBeenCalledTimes(1)

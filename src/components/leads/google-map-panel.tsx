@@ -29,10 +29,8 @@ interface StreetViewData {
 interface StreetViewPanoramaInstance {
   getPov(): { heading: number; pitch: number }
   getZoom(): number
-  setOptions(options: {
-    pov?: { heading: number; pitch: number }
-    zoom?: number
-  }): void
+  setPov(pov: { heading: number; pitch: number }): void
+  setZoom(zoom: number): void
   setVisible(visible: boolean): void
 }
 
@@ -253,10 +251,8 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     const pitch = Math.max(-85, Math.min(85, drag.pitch + ((event.clientY - drag.startY) * 0.15)))
     if (Number.isFinite(heading) && Number.isFinite(pitch)) {
       const zoom = panorama.getZoom()
-      panorama.setOptions({
-        pov: { heading, pitch },
-        zoom: Number.isFinite(zoom) ? zoom : 0,
-      })
+      panorama.setZoom(Number.isFinite(zoom) ? zoom : 0)
+      panorama.setPov({ heading, pitch })
     }
     event.preventDefault()
   }
@@ -284,12 +280,10 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
 
     const pov = panorama.getPov()
     const zoom = panorama.getZoom()
-    panorama.setOptions({
-      pov: {
-        heading: (Number.isFinite(pov.heading) ? pov.heading : 0) + delta.heading,
-        pitch: Math.max(-85, Math.min(85, (Number.isFinite(pov.pitch) ? pov.pitch : 0) + delta.pitch)),
-      },
-      zoom: Number.isFinite(zoom) ? zoom : 0,
+    panorama.setZoom(Number.isFinite(zoom) ? zoom : 0)
+    panorama.setPov({
+      heading: (Number.isFinite(pov.heading) ? pov.heading : 0) + delta.heading,
+      pitch: Math.max(-85, Math.min(85, (Number.isFinite(pov.pitch) ? pov.pitch : 0) + delta.pitch)),
     })
     event.preventDefault()
   }
@@ -349,6 +343,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
               scrollwheel: false,
               visible: true,
             })
+            panoramaRef.current.setZoom(0)
 
             clearLoadingTimer()
             setLoading(false)
