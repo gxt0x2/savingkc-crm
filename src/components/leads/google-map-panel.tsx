@@ -206,7 +206,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
   const loadingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mapsApiRef = useRef<GoogleMapsApi | null>(null)
   const panoramaRef = useRef<StreetViewPanoramaInstance | null>(null)
-  const capturedPointerRef = useRef<{ pointerId: number; target: Element } | null>(null)
+  const activePointerRef = useRef<{ pointerId: number; target: Element } | null>(null)
   const [fallbackUrl, setFallbackUrl] = useState(() => googleMapsSearchUrl(address))
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -217,22 +217,68 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     loadingTimer.current = null
   }
 
-  function capturePanoramaPointer(event: ReactPointerEvent<HTMLDivElement>) {
+  function rememberPanoramaPointer(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || !event.isPrimary || !(event.target instanceof Element)) return
-    const target = event.target
-    if (typeof target.setPointerCapture !== 'function') return
-    target.setPointerCapture(event.pointerId)
-    capturedPointerRef.current = { pointerId: event.pointerId, target }
+    activePointerRef.current = { pointerId: event.pointerId, target: event.target }
   }
 
-  function releasePanoramaPointer(event: ReactPointerEvent<HTMLDivElement>) {
-    const captured = capturedPointerRef.current
-    if (!captured || captured.pointerId !== event.pointerId) return
-    if (captured.target.hasPointerCapture?.(event.pointerId)) {
-      captured.target.releasePointerCapture(event.pointerId)
+  useEffect(() => {
+    function finishPointer(event: PointerEvent) {
+      const active = activePointerRef.current
+      if (!active || active.pointerId !== event.pointerId) return
+      activePointerRef.current = null
+      if (event.target === active.target) return
+
+      active.target.dispatchEvent(new PointerEvent(event.type, {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        pointerId: event.pointerId,
+        pointerType: event.pointerType,
+        isPrimary: event.isPrimary,
+        button: event.button,
+        buttons: event.buttons,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      }))
+
+      if (event.type === 'pointerup') {
+        active.target.dispatchEvent(new MouseEvent('mouseup', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          button: event.button,
+          buttons: event.buttons,
+          clientX: event.clientX,
+          clientY: event.clientY,
+        }))
+      }
     }
-    capturedPointerRef.current = null
-  }
+
+    function cancelOnBlur() {
+      const active = activePointerRef.current
+      if (!active) return
+      activePointerRef.current = null
+      active.target.dispatchEvent(new PointerEvent('pointercancel', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        pointerId: active.pointerId,
+        pointerType: 'mouse',
+        isPrimary: true,
+      }))
+    }
+
+    window.addEventListener('pointerup', finishPointer, true)
+    window.addEventListener('pointercancel', finishPointer, true)
+    window.addEventListener('blur', cancelOnBlur)
+    return () => {
+      window.removeEventListener('pointerup', finishPointer, true)
+      window.removeEventListener('pointercancel', finishPointer, true)
+      window.removeEventListener('blur', cancelOnBlur)
+      activePointerRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -322,11 +368,6 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
       cancelled = true
       clearLoadingTimer()
       if (zoomReadyTimer) clearTimeout(zoomReadyTimer)
-      const captured = capturedPointerRef.current
-      if (captured?.target.hasPointerCapture?.(captured.pointerId)) {
-        captured.target.releasePointerCapture(captured.pointerId)
-      }
-      capturedPointerRef.current = null
       if (panoramaRef.current) {
         mapsApiRef.current?.maps.event?.clearInstanceListeners(panoramaRef.current)
         panoramaRef.current.setVisible(false)
@@ -342,10 +383,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
         ref={canvasRef}
         data-testid="street-view-canvas"
         aria-label={`Interactive Street View for ${address}`}
-        onPointerDownCapture={capturePanoramaPointer}
-        onPointerUpCapture={releasePanoramaPointer}
-        onPointerCancelCapture={releasePanoramaPointer}
-        onLostPointerCapture={releasePanoramaPointer}
+        onPointerDownCapture={rememberPanoramaPointer}
         style={{ width: '100%', height: '100%' }}
       />
 

@@ -13,14 +13,12 @@ describe('StreetViewPanel', () => {
     delete window.__savingkcGmapsKey
   })
 
-  it('captures the native panorama pointer so Google receives releases outside its frame', async () => {
+  it('forwards an outside pointer release back to the native panorama surface', async () => {
     const location = { lat: () => 38.991, lng: () => -94.654 }
     const constructPanorama = vi.fn()
     const setVisible = vi.fn()
     const clearInstanceListeners = vi.fn()
-    const setPointerCapture = vi.fn()
-    const hasPointerCapture = vi.fn(() => true)
-    const releasePointerCapture = vi.fn()
+    const forwardedPointerUp = vi.fn()
     let nativeSurface: HTMLDivElement | null = null
     let zoomReads = 0
 
@@ -46,9 +44,7 @@ describe('StreetViewPanel', () => {
       constructor(element: HTMLElement, options: Record<string, unknown>) {
         constructPanorama(element, options)
         nativeSurface = document.createElement('div')
-        nativeSurface.setPointerCapture = setPointerCapture
-        nativeSurface.hasPointerCapture = hasPointerCapture
-        nativeSurface.releasePointerCapture = releasePointerCapture
+        nativeSurface.addEventListener('pointerup', forwardedPointerUp)
         element.appendChild(nativeSurface)
       }
 
@@ -93,11 +89,12 @@ describe('StreetViewPanel', () => {
       isPrimary: true,
       pointerId: 7,
     })
-    expect(setPointerCapture).toHaveBeenCalledWith(7)
 
-    fireEvent.pointerUp(nativeSurface!, { buttons: 0, clientX: 500, clientY: 400, pointerId: 7 })
-    expect(hasPointerCapture).toHaveBeenCalledWith(7)
-    expect(releasePointerCapture).toHaveBeenCalledWith(7)
+    const outside = document.createElement('div')
+    document.body.appendChild(outside)
+    fireEvent.pointerUp(outside, { buttons: 0, clientX: 500, clientY: 400, pointerId: 7 })
+    expect(forwardedPointerUp).toHaveBeenCalledTimes(1)
+    outside.remove()
 
     unmount()
     expect(clearInstanceListeners).toHaveBeenCalledTimes(1)
