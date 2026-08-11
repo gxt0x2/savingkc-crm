@@ -70,11 +70,16 @@ describe('LeadWorkspace property actions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Street View for 6509 W 74TH ST, Overland Park, KS, 66204' }))
 
-    expect(screen.getByRole('dialog', { name: 'Street View · 6509 W 74TH ST, Overland Park, KS, 66204' })).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Street View · 6509 W 74TH ST, Overland Park, KS, 66204' })
+    expect(dialog).toBeInTheDocument()
     expect(screen.getByTestId('street-view-panel')).toHaveTextContent('6509 W 74TH ST, Overland Park, KS, 66204')
     expect(screen.getByTestId('street-view-panel')).toHaveAttribute('data-height', '100%')
     expect(screen.getByTestId('street-view-panel').parentElement).toHaveClass('h-[min(72vh,620px)]')
     expect(onOpenProperty).not.toHaveBeenCalled()
+
+    fireEvent.pointerDown(dialog)
+    fireEvent.pointerUp(dialog.parentElement!)
+    expect(dialog).toBeInTheDocument()
   })
 
   it('uses Opportunity terminology and keeps routine header actions concise', () => {

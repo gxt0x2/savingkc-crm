@@ -852,14 +852,15 @@ function StreetViewModal({ address, onClose }: { address: string; onClose: () =>
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6"
-      onClick={onClose}
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
     >
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="lead-street-view-title"
         className="crm-panel-raised w-full max-w-5xl overflow-hidden rounded-2xl shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-center gap-3 border-b border-[var(--crm-border)] px-4 py-3 sm:px-5">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--crm-info-soft)] text-[var(--crm-info)]">

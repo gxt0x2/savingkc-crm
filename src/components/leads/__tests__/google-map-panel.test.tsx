@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { StreetViewPanel } from '../google-map-panel'
@@ -13,7 +13,7 @@ describe('StreetViewPanel', () => {
     delete window.__savingkcGmapsKey
   })
 
-  it('uses a same-document panorama so drag release cannot be trapped in a cross-origin iframe', async () => {
+  it('uses a native panorama and forwards outside pointer release back into its same-origin frame', async () => {
     const location = { lat: () => 38.991, lng: () => -94.654 }
     const constructPanorama = vi.fn()
     const setVisible = vi.fn()
@@ -40,6 +40,7 @@ describe('StreetViewPanel', () => {
     class MockStreetViewPanorama {
       constructor(element: HTMLElement, options: Record<string, unknown>) {
         constructPanorama(element, options)
+        element.appendChild(document.createElement('iframe'))
       }
 
       setVisible = setVisible
@@ -64,12 +65,17 @@ describe('StreetViewPanel', () => {
     const canvas = screen.getByTestId('street-view-canvas')
     expect(canvas).toHaveStyle({ height: '100%' })
     expect(container.firstElementChild).toHaveStyle({ height: '100%' })
-    expect(container.querySelector('iframe')).toBeNull()
     expect(constructPanorama).toHaveBeenCalledWith(canvas, expect.objectContaining({
       clickToGo: true,
       pano: 'test-pano',
       visible: true,
     }))
+
+    const panoramaFrame = canvas.querySelector('iframe')
+    const bridgedMouseUp = vi.fn()
+    panoramaFrame?.contentDocument?.addEventListener('mouseup', bridgedMouseUp)
+    fireEvent.pointerMove(window, { buttons: 0, pointerId: 7 })
+    expect(bridgedMouseUp).toHaveBeenCalledTimes(1)
 
     unmount()
     expect(clearInstanceListeners).toHaveBeenCalledTimes(1)

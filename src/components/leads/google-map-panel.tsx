@@ -125,6 +125,65 @@ function googleStreetViewUrl(address: string, location?: { lat: number; lng: num
   return googleMapsSearchUrl(address)
 }
 
+function installPanoramaPointerReleaseGuard(container: HTMLElement): () => void {
+  function releasePanoramaPointer(pointerId = 1) {
+    const frame = container.querySelector('iframe')
+    const frameDocument = frame?.contentDocument
+    const frameWindow = frame?.contentWindow
+    if (!frameDocument || !frameWindow) return
+
+    try {
+      for (const element of frameDocument.querySelectorAll<HTMLElement>('*')) {
+        if (element.hasPointerCapture?.(pointerId)) {
+          element.releasePointerCapture(pointerId)
+        }
+      }
+
+      if (typeof PointerEvent === 'function') {
+        frameDocument.dispatchEvent(new PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          buttons: 0,
+          isPrimary: true,
+          pointerId,
+          pointerType: 'mouse',
+          view: frameWindow,
+        }))
+      }
+      frameDocument.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true,
+        buttons: 0,
+        view: frameWindow,
+      }))
+    } catch {
+      // Google currently renders the native panorama into a same-origin about:blank frame.
+      // If that implementation changes, normal in-frame pointer release still remains intact.
+    }
+  }
+
+  const onPointerEnd = (event: PointerEvent) => releasePanoramaPointer(event.pointerId)
+  const onMouseUp = () => releasePanoramaPointer()
+  const onPointerMove = (event: PointerEvent) => {
+    if (event.buttons === 0) releasePanoramaPointer(event.pointerId)
+  }
+  const onWindowBlur = () => releasePanoramaPointer()
+
+  window.addEventListener('pointerup', onPointerEnd, true)
+  window.addEventListener('pointercancel', onPointerEnd, true)
+  window.addEventListener('pointermove', onPointerMove, true)
+  window.addEventListener('mouseup', onMouseUp, true)
+  window.addEventListener('blur', onWindowBlur)
+
+  return () => {
+    window.removeEventListener('pointerup', onPointerEnd, true)
+    window.removeEventListener('pointercancel', onPointerEnd, true)
+    window.removeEventListener('pointermove', onPointerMove, true)
+    window.removeEventListener('mouseup', onMouseUp, true)
+    window.removeEventListener('blur', onWindowBlur)
+  }
+}
+
 function keylessMapEmbedUrl(address: string): string {
   return `https://maps.google.com/maps?q=${encodeURIComponent(address)}&z=18&t=k&output=embed`
 }
@@ -217,6 +276,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
 
   useEffect(() => {
     let cancelled = false
+    let removePointerReleaseGuard: (() => void) | null = null
     clearLoadingTimer()
     loadingTimer.current = setTimeout(() => {
       if (cancelled) return
@@ -270,6 +330,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
               scrollwheel: true,
               visible: true,
             })
+            removePointerReleaseGuard = installPanoramaPointerReleaseGuard(canvasRef.current)
 
             clearLoadingTimer()
             setLoading(false)
@@ -286,6 +347,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     return () => {
       cancelled = true
       clearLoadingTimer()
+      removePointerReleaseGuard?.()
       if (panoramaRef.current) {
         mapsApiRef.current?.maps.event?.clearInstanceListeners(panoramaRef.current)
         panoramaRef.current.setVisible(false)
