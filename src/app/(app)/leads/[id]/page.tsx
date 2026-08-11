@@ -1688,6 +1688,7 @@ export default function LeadDetailPage() {
         task: 'Task',
         appointment: 'Appointment',
         appointment_outcome: 'Appointment Outcome',
+        offer: 'Offer',
         contract_sent: 'Contract Sent',
         letter_tracking: 'Mail',
         status_change: 'Status update',

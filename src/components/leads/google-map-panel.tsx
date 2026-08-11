@@ -172,7 +172,11 @@ function PanelShell({
   )
 }
 
-export function StreetViewPanel({ address, height = 500 }: PanelProps) {
+export function StreetViewPanel(props: PanelProps) {
+  return <StreetViewContent key={props.address} {...props} />
+}
+
+function StreetViewContent({ address, height = 500 }: PanelProps) {
   const loadingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [embedUrl, setEmbedUrl] = useState<string | null>(null)
   const [fallbackUrl, setFallbackUrl] = useState(() => googleMapsSearchUrl(address))
@@ -188,11 +192,6 @@ export function StreetViewPanel({ address, height = 500 }: PanelProps) {
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
-
-    setEmbedUrl(null)
-    setFallbackUrl(googleMapsSearchUrl(address))
-    setError(null)
-    setLoading(true)
 
     clearLoadingTimer()
     loadingTimer.current = setTimeout(() => {
@@ -256,8 +255,8 @@ export function StreetViewPanel({ address, height = 500 }: PanelProps) {
         <iframe
           src={embedUrl}
           width="100%"
-          height={typeof height === 'number' ? String(height) : height}
-          style={{ border: 0, display: 'block' }}
+          height="100%"
+          style={{ border: 0, display: 'block', height: '100%' }}
           allowFullScreen
           loading="eager"
           title="Street View"
