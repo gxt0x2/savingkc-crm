@@ -92,6 +92,7 @@ describe('StreetViewPanel', () => {
     expect(setPov).toHaveBeenCalledWith(expect.objectContaining({
       heading: expect.any(Number),
       pitch: expect.any(Number),
+      zoom: 0,
     }))
     expect(setZoom.mock.invocationCallOrder.at(-1)).toBeLessThan(setPov.mock.invocationCallOrder.at(-1) ?? 0)
 

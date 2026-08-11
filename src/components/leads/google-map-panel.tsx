@@ -29,7 +29,7 @@ interface StreetViewData {
 interface StreetViewPanoramaInstance {
   getPov(): { heading: number; pitch: number }
   getZoom(): number
-  setPov(pov: { heading: number; pitch: number }): void
+  setPov(pov: { heading: number; pitch: number; zoom?: number }): void
   setZoom(zoom: number): void
   setVisible(visible: boolean): void
 }
@@ -251,8 +251,12 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
     const pitch = Math.max(-85, Math.min(85, drag.pitch + ((event.clientY - drag.startY) * 0.15)))
     if (Number.isFinite(heading) && Number.isFinite(pitch)) {
       const zoom = panorama.getZoom()
-      panorama.setZoom(Number.isFinite(zoom) ? zoom : 0)
-      panorama.setPov({ heading, pitch })
+      const safeZoom = Number.isFinite(zoom) ? zoom : 0
+      panorama.setZoom(safeZoom)
+      // The Maps renderer currently validates zoom inside its internal POV payload,
+      // even though the public API exposes zoom separately. Supplying both prevents
+      // a NaN camera state without changing the documented heading/pitch behavior.
+      panorama.setPov({ heading, pitch, zoom: safeZoom })
     }
     event.preventDefault()
   }
@@ -280,10 +284,12 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
 
     const pov = panorama.getPov()
     const zoom = panorama.getZoom()
-    panorama.setZoom(Number.isFinite(zoom) ? zoom : 0)
+    const safeZoom = Number.isFinite(zoom) ? zoom : 0
+    panorama.setZoom(safeZoom)
     panorama.setPov({
       heading: (Number.isFinite(pov.heading) ? pov.heading : 0) + delta.heading,
       pitch: Math.max(-85, Math.min(85, (Number.isFinite(pov.pitch) ? pov.pitch : 0) + delta.pitch)),
+      zoom: safeZoom,
     })
     event.preventDefault()
   }
