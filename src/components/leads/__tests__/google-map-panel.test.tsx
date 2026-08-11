@@ -33,7 +33,7 @@ describe('StreetViewPanel', () => {
 
     class MockStreetViewService {
       getPanorama(
-        _request: { location: typeof location; radius: number },
+        _request: { location: typeof location; radius: number; source: string },
         callback: (data: { location: { pano: string; latLng: typeof location } }, status: string) => void,
       ) {
         callback({ location: { pano: 'test-pano', latLng: location } }, 'OK')
@@ -59,6 +59,7 @@ describe('StreetViewPanel', () => {
         Marker: class {},
         StreetViewService: MockStreetViewService,
         StreetViewPanorama: MockStreetViewPanorama,
+        StreetViewSource: { OUTDOOR: 'outdoor' },
         event: { clearInstanceListeners },
       },
     }

@@ -46,7 +46,7 @@ interface GoogleMapsApi {
     Marker: new (options: Record<string, unknown>) => unknown
     StreetViewService: new () => {
       getPanorama(
-        request: { location: LatLng; radius: number },
+        request: { location: LatLng; radius: number; source: string },
         callback: (data: StreetViewData | null, status: string) => void,
       ): void
     }
@@ -57,6 +57,7 @@ interface GoogleMapsApi {
     event?: {
       clearInstanceListeners(instance: unknown): void
     }
+    StreetViewSource: { OUTDOOR: string }
   }
 }
 
@@ -124,6 +125,17 @@ function googleStreetViewUrl(address: string, location?: { lat: number; lng: num
   }
 
   return googleMapsSearchUrl(address)
+}
+
+function headingBetween(from: LatLng, to: LatLng): number {
+  const fromLat = from.lat() * Math.PI / 180
+  const toLat = to.lat() * Math.PI / 180
+  const deltaLng = (to.lng() - from.lng()) * Math.PI / 180
+  const y = Math.sin(deltaLng) * Math.cos(toLat)
+  const x = Math.cos(fromLat) * Math.sin(toLat)
+    - Math.sin(fromLat) * Math.cos(toLat) * Math.cos(deltaLng)
+
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
 }
 
 function keylessMapEmbedUrl(address: string): string {
@@ -311,7 +323,11 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
           setFallbackUrl(googleStreetViewUrl(address, coordinates))
 
           const service = new google.maps.StreetViewService()
-          service.getPanorama({ location, radius: 100 }, (data, panoramaStatus) => {
+          service.getPanorama({
+            location,
+            radius: 100,
+            source: google.maps.StreetViewSource.OUTDOOR,
+          }, (data, panoramaStatus) => {
             if (cancelled || !canvasRef.current) return
             if (panoramaStatus !== 'OK' || !data?.location) {
               clearLoadingTimer()
@@ -321,7 +337,12 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
             }
 
             const panoramaOptions: Record<string, unknown> = {
-              pov: { heading: 0, pitch: 0 },
+              pov: {
+                heading: data.location.latLng
+                  ? headingBetween(data.location.latLng, location)
+                  : 0,
+                pitch: 0,
+              },
               zoom: 1,
               addressControl: false,
               clickToGo: false,
