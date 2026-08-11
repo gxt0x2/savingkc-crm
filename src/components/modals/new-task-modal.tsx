@@ -113,22 +113,23 @@ export function NewTaskModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" onClick={onClose}>
       <form
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="crm-modal-surface bg-surface-container-lowest w-full max-w-md overflow-hidden rounded-xl border border-outline-variant/20 shadow-2xl"
+        className="crm-panel-raised w-full max-w-md overflow-hidden rounded-2xl"
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
       >
-        <div className="px-6 pt-6 pb-4 border-b border-outline-variant/10">
-          <h2 id={titleId} className="text-lg font-black text-primary">New Task</h2>
+        <div className="border-b border-[var(--crm-border)] px-6 pb-4 pt-6">
+          <p className="crm-eyebrow">Task workspace</p>
+          <h2 id={titleId} className="mt-1 text-xl font-black text-[var(--crm-ink)]">Add task</h2>
         </div>
         <div className="px-6 py-5 space-y-4">
           <div>
-            <label htmlFor={`${fieldIdPrefix}-title`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Title</label>
+            <label htmlFor={`${fieldIdPrefix}-title`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Title</label>
             <input
               id={`${fieldIdPrefix}-title`}
               ref={titleRef}
@@ -136,14 +137,14 @@ export function NewTaskModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Follow up with seller, Run comps..."
-              className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="crm-field w-full rounded-lg px-3 py-2 text-sm outline-none"
             />
           </div>
 
           {showLeadSelector && !initialLeadId && (
             <div>
-              <label htmlFor={`${fieldIdPrefix}-lead`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">
-                Attach to Lead <span className="text-on-surface-variant/50">(optional)</span>
+              <label htmlFor={`${fieldIdPrefix}-lead`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">
+                Attach to Lead <span className="font-medium text-[var(--crm-text-dim)]">(optional)</span>
               </label>
               <input
                 id={`${fieldIdPrefix}-lead`}
@@ -154,14 +155,14 @@ export function NewTaskModal({
                   loadLeads(e.target.value)
                 }}
                 placeholder="Search leads by name or address..."
-                className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 mb-2"
+                className="crm-field mb-2 w-full rounded-lg px-3 py-2 text-sm outline-none"
               />
               {leadSearch && (
-                <div className="max-h-32 overflow-y-auto border border-outline-variant/30 rounded-lg">
+                <div className="max-h-32 overflow-y-auto rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)]">
                   {loadingLeads ? (
-                    <p className="px-3 py-2 text-xs text-on-surface-variant">Loading...</p>
+                    <p className="px-3 py-2 text-xs text-[var(--crm-text-muted)]">Loading...</p>
                   ) : leads.length === 0 ? (
-                    <p className="px-3 py-2 text-xs text-on-surface-variant">No leads found</p>
+                    <p className="px-3 py-2 text-xs text-[var(--crm-text-muted)]">No leads found</p>
                   ) : (
                     leads.map((lead) => (
                       <button
@@ -171,11 +172,11 @@ export function NewTaskModal({
                           setLeadId(lead.id)
                           setLeadSearch(lead.full_name || lead.property_address || '')
                         }}
-                        className="w-full text-left px-3 py-2 hover:bg-surface-container text-sm border-b border-outline-variant/10 last:border-b-0"
+                        className="w-full border-b border-[var(--crm-border)] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--crm-surface-subtle)]"
                       >
                         <div className="font-medium">{lead.full_name || 'Unknown'}</div>
                         {lead.property_address && (
-                          <div className="text-xs text-on-surface-variant">{lead.property_address}</div>
+                          <div className="text-xs text-[var(--crm-text-muted)]">{lead.property_address}</div>
                         )}
                       </button>
                     ))
@@ -183,22 +184,22 @@ export function NewTaskModal({
                 </div>
               )}
               {leadId && !leadSearch.includes('Search') && (
-                <p className="text-xs text-primary mt-1">✓ Attached to: {leadSearch}</p>
+                <p className="mt-1 text-xs font-semibold text-[var(--crm-success)]">✓ Attached to: {leadSearch}</p>
               )}
             </div>
           )}
 
           {initialLeadId && leadName && (
-            <div className="bg-surface-container rounded-lg px-3 py-2">
-              <p className="text-xs text-on-surface-variant mb-0.5">Attached to:</p>
-              <p className="text-sm font-medium text-primary">{leadName}</p>
+            <div className="rounded-lg bg-[var(--crm-info-soft)] px-3 py-2">
+              <p className="mb-0.5 text-xs text-[var(--crm-text-muted)]">Attached to:</p>
+              <p className="text-sm font-medium text-[var(--crm-info)]">{leadName}</p>
             </div>
           )}
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label htmlFor={`${fieldIdPrefix}-type`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Type</label>
-              <select id={`${fieldIdPrefix}-type`} value={taskType} onChange={(e) => setTaskType(e.target.value)} className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm">
+              <label htmlFor={`${fieldIdPrefix}-type`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Type</label>
+              <select id={`${fieldIdPrefix}-type`} value={taskType} onChange={(e) => setTaskType(e.target.value)} className="crm-field w-full rounded-lg px-3 py-2 text-sm">
                 <option value="follow_up">Follow-up</option>
                 <option value="callback">Callback</option>
                 <option value="appointment">Appointment</option>
@@ -208,19 +209,21 @@ export function NewTaskModal({
               </select>
             </div>
             <div>
-              <label htmlFor={`${fieldIdPrefix}-owner`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Assigned To</label>
-              <select id={`${fieldIdPrefix}-owner`} value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm">
+              <label htmlFor={`${fieldIdPrefix}-owner`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Assigned To</label>
+              <select id={`${fieldIdPrefix}-owner`} value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="crm-field w-full rounded-lg px-3 py-2 text-sm">
                 <option value="Casey">Casey</option>
                 <option value="Ernest">Ernest</option>
+                <option value="Gertha">Gertha</option>
+                <option value="">Unassigned</option>
               </select>
             </div>
             <div>
-              <label htmlFor={`${fieldIdPrefix}-role`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Role</label>
+              <label htmlFor={`${fieldIdPrefix}-role`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Role</label>
               <select
                 id={`${fieldIdPrefix}-role`}
                 value={role}
                 onChange={(e) => setRole(e.target.value as 'setter' | 'closer' | 'admin')}
-                className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
+                className="crm-field w-full rounded-lg px-3 py-2 text-sm"
               >
                 <option value="setter">Setter</option>
                 <option value="closer">Closer</option>
@@ -229,37 +232,33 @@ export function NewTaskModal({
             </div>
           </div>
           <div>
-            <label htmlFor={`${fieldIdPrefix}-due`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Due Date</label>
+            <label htmlFor={`${fieldIdPrefix}-due`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Due Date</label>
             <input
               id={`${fieldIdPrefix}-due`}
               type="datetime-local"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
+              className="crm-field w-full rounded-lg px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label htmlFor={`${fieldIdPrefix}-notes`} className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1 block">Notes <span className="text-on-surface-variant/50">(optional)</span></label>
+            <label htmlFor={`${fieldIdPrefix}-notes`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Notes <span className="font-medium text-[var(--crm-text-dim)]">(optional)</span></label>
             <textarea
               id={`${fieldIdPrefix}-notes`}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Additional details..."
               rows={2}
-              className="w-full border border-outline-variant/30 rounded-lg px-3 py-2 text-sm resize-none"
+              className="crm-field w-full resize-none rounded-lg px-3 py-2 text-sm"
             />
           </div>
         </div>
-        <div className="px-6 py-4 bg-surface-container-high border-t border-outline-variant/10 flex justify-between">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container rounded-lg">Cancel</button>
+        <div className="flex justify-between border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-6 py-4">
+          <button type="button" onClick={onClose} className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-bold">Cancel</button>
           <button
             type="submit"
             disabled={saving || !title.trim()}
-            className="px-6 py-2 text-white font-bold rounded-lg text-sm hover:opacity-90 disabled:opacity-40 transition-opacity"
-            style={{
-              background: 'var(--ck-accent)',
-              boxShadow: '0 4px 16px rgba(239,68,68,0.22)',
-            }}
+            className="crm-primary-button rounded-lg px-6 py-2 text-sm font-bold disabled:opacity-40"
           >
             {saving ? 'Creating...' : 'Create Task'}
           </button>

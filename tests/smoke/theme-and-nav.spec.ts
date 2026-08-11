@@ -124,7 +124,9 @@ for (const route of crmWorkspaceRoutes) {
     await expect(page.getByRole('button', { name: 'Switch to dark theme' })).toBeVisible();
     const commandSearch = route === '/contacts'
       ? page.getByPlaceholder('Search contacts...')
-      : page.getByPlaceholder('Search contacts, properties, or messages...');
+      : route === '/tasks'
+        ? page.getByPlaceholder('Search tasks...')
+        : page.getByPlaceholder('Search contacts, properties, or messages...');
     await expect(commandSearch).toBeVisible();
     await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
     await expect(page.locator('a[href="/contacts"]').filter({ hasText: 'Contacts' })).toBeVisible();

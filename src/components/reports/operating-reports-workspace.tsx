@@ -5,7 +5,9 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Icon } from '@/components/ui/icon'
+import { AcquisitionsMetricsDashboard } from '@/components/reports/acquisitions-metrics-dashboard'
 import { ExecutiveDashboard } from '@/components/reports/executive-dashboard'
+import { defaultOperatingCustomRange, operatingRangeQuery, ReportDateRangeControl, type OperatingCustomRange } from '@/components/reports/report-date-range-control'
 import { formatLeadSource } from '@/lib/contact-display'
 import type { OperatingReport, OperatingReportPeriod } from '@/lib/operating-report'
 
@@ -20,13 +22,6 @@ const VIEW_COPY: Record<OperatingReportView, { eyebrow: string; title: string; d
   'call-sms': { eyebrow: 'Reports · Call/SMS', title: 'Call and SMS performance', description: 'Connected calls, messages, response signals, agent activity, and unresolved seller attention.' },
 }
 
-const PERIOD_LABELS: Record<OperatingReportPeriod, string> = {
-  '30d': 'Last 30 days',
-  quarter: 'This quarter',
-  ytd: 'Year to date',
-  all: 'All time',
-}
-
 const TONES = {
   green: { icon: 'bg-[#e8f8ef] text-[#07883f]', line: '#07883f', border: 'border-[#c7ead4]' },
   violet: { icon: 'bg-[#f2ecff] text-[#6d28d9]', line: '#7c3aed', border: 'border-[#ddd0fa]' },
@@ -37,11 +32,11 @@ const TONES = {
   red: { icon: 'bg-[#ffeded] text-[var(--crm-brand)]', line: '#e32e2e', border: 'border-[var(--crm-brand-border)]' },
 } as const
 
-function useOperatingReport(period: OperatingReportPeriod) {
+function useOperatingReport(period: OperatingReportPeriod, customRange: OperatingCustomRange) {
   return useQuery<OperatingReport>({
-    queryKey: ['operating-report', period],
+    queryKey: ['operating-report', period, customRange.start, customRange.end],
     queryFn: async () => {
-      const response = await fetch(`/api/reports/operating?period=${period}`, { cache: 'no-store' })
+      const response = await fetch(`/api/reports/operating?${operatingRangeQuery(period, customRange)}`, { cache: 'no-store' })
       if (!response.ok) throw new Error('Operating report unavailable')
       return response.json() as Promise<OperatingReport>
     },
@@ -52,7 +47,8 @@ function useOperatingReport(period: OperatingReportPeriod) {
 
 export function OperatingReportsWorkspace({ view }: { view: OperatingReportView }) {
   const [period, setPeriod] = useState<OperatingReportPeriod>('30d')
-  const { data, error, isLoading, isFetching, refetch } = useOperatingReport(period)
+  const [customRange, setCustomRange] = useState<OperatingCustomRange>(defaultOperatingCustomRange)
+  const { data, error, isLoading, isFetching, refetch } = useOperatingReport(period, customRange)
   const copy = VIEW_COPY[view]
 
   if (isLoading) return <ReportSkeleton copy={copy} />
@@ -61,7 +57,7 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
   }
 
   if (view === 'dashboard') {
-    return <ExecutiveDashboard report={data} period={period} onPeriodChange={setPeriod} isFetching={isFetching} />
+    return <ExecutiveDashboard report={data} period={period} customRange={customRange} onPeriodChange={setPeriod} onCustomRangeChange={setCustomRange} isFetching={isFetching} />
   }
 
   return (
@@ -85,13 +81,7 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
               </Link>
             </>
           ) : null}
-          <label className="flex h-10 items-center gap-2 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 shadow-sm">
-            <Icon name="date_range" className="text-[19px] text-[var(--crm-brand)]" />
-            <span className="sr-only">Reporting period</span>
-            <select aria-label="Reporting period" value={period} onChange={(event) => setPeriod(event.target.value as OperatingReportPeriod)} className="bg-transparent text-xs font-black text-[var(--crm-ink)] outline-none">
-              {Object.entries(PERIOD_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
+          <ReportDateRangeControl period={period} customRange={customRange} onPeriodChange={setPeriod} onCustomRangeChange={setCustomRange} />
           <span className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-3 text-xs font-black text-[var(--crm-success)]">
             <span className={`h-2 w-2 rounded-full bg-[#11a857] ${isFetching ? 'animate-pulse' : ''}`} />
             Live CRM · {formatTimestamp(data.generatedAt)}
@@ -110,31 +100,7 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
 }
 
 function AcquisitionsView({ report }: { report: OperatingReport }) {
-  return (
-    <>
-      <NumberedPanel number="1" title="Core acquisition metrics" hint="Lead-to-contract execution">
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
-          <MetricCard icon="group_add" label="Leads" value={report.acquisitions.total} numericValue={report.acquisitions.total} detail="Created in selected period" tone="teal" href="/contacts?list=new" series={report.trends.leads} />
-          <MetricCard icon="schedule" label="Speed to lead" value={minutes(report.acquisitions.averageSpeedToLeadMinutes)} numericValue={report.acquisitions.averageSpeedToLeadMinutes} detail="First recorded outbound action" tone="blue" href="/reports/call-sms" />
-          <MetricCard icon="event_available" label="Appointments" value={available(report.availability.appointments, report.acquisitions.appointmentsRecorded)} numericValue={report.acquisitions.appointmentsRecorded} detail={report.acquisitions.appointmentShowRate == null ? 'Show rate not recorded' : `${report.acquisitions.appointmentShowRate}% recorded show rate`} tone="violet" href="/calendar?department=acquisitions" series={report.trends.appointments} goal={scaledGoal(report.goals.weeklyAppointments, report, 'weekly')} />
-          <MetricCard icon="description" label="Under contract" value={report.acquisitions.contracts} numericValue={report.acquisitions.contracts} detail={`${percent(report.acquisitions.contracts, report.acquisitions.total)} lead-to-contract`} tone="amber" href="/contacts?min_stage=under_contract" series={report.trends.underContract} />
-          <MetricCard icon="mark_chat_unread" label="Needs reply" value={report.acquisitions.attention.needsReply} numericValue={report.acquisitions.attention.needsReply} detail="Current unresolved attention" tone="red" href="/conversations?reply=needs_reply" />
-        </div>
-      </NumberedPanel>
-      <section className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
-        <NumberedPanel number="2" title="Acquisition funnel" hint="Conversion by operating stage" actionHref="/contacts"><FunnelContent report={report} /></NumberedPanel>
-        <NumberedPanel number="3" title="Attention and bottlenecks" actionHref="/tasks"><BottleneckRows report={report} acquisitionsOnly /></NumberedPanel>
-      </section>
-      <section className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
-        <NumberedPanel number="4" title="Lead-source quality" hint="Which sources advance" actionHref="/reports/marketing"><SourceRows rows={report.marketing.sources} /></NumberedPanel>
-        <NumberedPanel number="5" title="Communication activity" actionHref="/reports/call-sms"><ActivityGrid report={report} /></NumberedPanel>
-      </section>
-      <section className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
-        <NumberedPanel number="6" title="Agent ownership performance"><AcquisitionAgentTable report={report} /></NumberedPanel>
-        <NumberedPanel number="7" title="Data quality"><DataQualityRows report={report} /></NumberedPanel>
-      </section>
-    </>
-  )
+  return <AcquisitionsMetricsDashboard report={report} />
 }
 
 function MarketingView({ report }: { report: OperatingReport }) {
@@ -396,22 +362,6 @@ function ActivityGrid({ report }: { report: OperatingReport }) {
   return <div className="grid grid-cols-2 gap-2">{rows.map(([label, value, icon, tone]) => <div key={label} className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-3"><div className="flex items-center gap-2"><span className={`flex h-8 w-8 items-center justify-center rounded-full ${TONES[tone].icon}`}><Icon name={icon} className="text-base" /></span><span className="text-[10px] font-bold text-[var(--crm-text-muted)]">{label}</span></div><strong className="mt-2 block text-2xl font-black">{value}</strong></div>)}</div>
 }
 
-function AcquisitionAgentTable({ report }: { report: OperatingReport }) {
-  if (report.acquisitions.agents.length === 0) return <EmptyState icon="support_agent" title="No assigned lead records" detail="No agent ownership data is recorded for this period." />
-  return <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-[10px]"><thead className="text-[9px] uppercase tracking-[0.05em] text-[var(--crm-text-muted)]"><tr><th className="pb-2">Owner</th><th className="pb-2 text-right">Leads</th><th className="pb-2 text-right">Qualified</th><th className="pb-2 text-right">Appointments</th><th className="pb-2 text-right">Contracts</th><th className="pb-2 text-right">Contract rate</th></tr></thead><tbody className="divide-y divide-[var(--crm-border)]">{report.acquisitions.agents.map((row) => <tr key={row.agent}><td className="py-2 font-black">{row.agent}</td><td className="py-2 text-right">{row.leads}</td><td className="py-2 text-right">{row.qualified}</td><td className="py-2 text-right">{row.appointments}</td><td className="py-2 text-right">{row.contracts}</td><td className="py-2 text-right font-black text-[var(--crm-success)]">{nullablePercent(row.contractRate)}</td></tr>)}</tbody></table></div>
-}
-
-function DataQualityRows({ report }: { report: OperatingReport }) {
-  const rows = [
-    ['Missing phone', report.acquisitions.dataQuality.missingPhone],
-    ['Missing email', report.acquisitions.dataQuality.missingEmail],
-    ['No activity', report.acquisitions.dataQuality.noActivity],
-    ['Unassigned', report.acquisitions.dataQuality.unassigned],
-    ['Missing next action', report.acquisitions.dataQuality.missingNextAction],
-  ] as Array<[string, number]>
-  return <div className="space-y-2">{rows.map(([label, value]) => <div key={label}><div className="mb-1 flex justify-between text-[10px]"><span className="font-bold">{label}</span><strong className={value > 0 ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-success)]'}>{value}</strong></div><div className="h-1.5 rounded-full bg-[var(--crm-surface-subtle)]"><span className="block h-full rounded-full bg-[var(--crm-brand)]" style={{ width: `${Math.min(100, percentNumber(value, report.acquisitions.total))}%` }} /></div></div>)}</div>
-}
-
 function SourceMix({ report }: { report: OperatingReport }) {
   const total = Math.max(report.marketing.sources.reduce((sum, row) => sum + row.leads, 0), 1)
   const colors = ['#1769e0', '#6d4cb3', '#0d9c56', '#ef6b2e', '#d59600', '#087f7b']
@@ -527,11 +477,9 @@ function percent(numerator: number, denominator: number) { return denominator > 
 function nullablePercent(value: number | null) { return value == null ? 'Not recorded' : `${value}%` }
 function nullableDecimal(value: number | null) { return value == null ? 'Not recorded' : value.toFixed(1) }
 function nullableDays(value: number | null) { return value == null ? 'Not recorded' : `${value.toFixed(1)}d` }
-function minutes(value: number | null) { return value == null ? 'Not recorded' : value >= 60 ? `${Math.floor(value / 60)}h ${value % 60}m` : `${value}m` }
 function shortDate(value: string | null) { return value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not recorded' }
 function formatTimestamp(value: string) { return new Date(value).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) }
 function available(condition: boolean, value: string | number) { return condition ? value : 'Unavailable' }
-function percentNumber(numerator: number, denominator: number) { return denominator > 0 ? Math.round((numerator / denominator) * 100) : 0 }
 function compactNumber(value: number) { return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value) }
 function seriesMomentum(series: OperatingReport['trends']['leads']): number | null {
   if (series.length < 2) return null

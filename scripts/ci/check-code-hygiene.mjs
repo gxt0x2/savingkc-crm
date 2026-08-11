@@ -211,7 +211,7 @@ if (changed.has('package.json')) {
   for (const dependency of Object.keys(currentDependencies)) {
     if (beforeDependencies[dependency] || dependency.startsWith('@types/')) continue
     const escaped = dependency.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    if (!new RegExp(`(?:from\\s+|require\\(|import\\()\\s*['"]${escaped}(?:/|['"])`).test(source)) {
+    if (!new RegExp(`(?:from\\s+|require\\(|import\\(|import\\s+)\\s*['"]${escaped}(?:/|['"])`).test(source)) {
       fail(`New dependency has no runtime import in src or scripts: ${dependency}`)
     }
   }
