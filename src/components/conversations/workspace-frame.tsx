@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { createContext, FormEvent, Suspense, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, FormEvent, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
@@ -72,13 +72,23 @@ export function WorkspaceFrame({
   const [pageCommandBarActive, setPageCommandBarActive] = useState(false)
   const [pageHeaderHidden, setPageHeaderHidden] = useState(false)
   const [commandBarHost, setCommandBarHost] = useState<HTMLDivElement | null>(null)
+  const [attentionQueryEnabled, setAttentionQueryEnabled] = useState(false)
   const { theme, toggle: toggleTheme } = useThemePreference()
   const userProfile = useMemo(() => resolveAgentTelephonyProfile(userEmail), [userEmail])
   const { data: hubPayload } = useQuery({
     queryKey: conversationHubQueryKey,
     queryFn: () => fetchConversationHub<{ attentionState?: string }>(),
     staleTime: conversationHubStaleTime,
+    enabled: attentionQueryEnabled,
   })
+
+  useEffect(() => {
+    // A navigation badge must not compete with the active page for bandwidth,
+    // database work, or hydration time. Load it as idle follow-up work; routes
+    // that need the hub immediately use the same React Query cache key.
+    const timeoutId = window.setTimeout(() => setAttentionQueryEnabled(true), 750)
+    return () => window.clearTimeout(timeoutId)
+  }, [])
   const hubNeedsReply = useMemo(
     () => (hubPayload?.items ?? []).filter((item) => item.attentionState === 'needs_reply').length,
     [hubPayload],

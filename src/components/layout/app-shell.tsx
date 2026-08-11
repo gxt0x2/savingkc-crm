@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CommandPalette } from './command-palette'
-import { DialerPanel, CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar'
+import type { CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar'
 import { useAuth } from '@/hooks/use-auth'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useThemePreference } from '@/hooks/use-theme-preference'
@@ -13,9 +13,17 @@ import { NotificationBell } from './notification-bell'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
 import { SystemAndon } from '@/components/feedback/system-andon'
+import { preloadGlobalDialer } from '@/components/telephony/global-dialer-button'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
+const DialerPanel = dynamic(
+  () => import('@/components/telephony/telephony-bar').then((mod) => mod.DialerPanel),
+  {
+    ssr: false,
+    loading: () => <div role="status" className="fixed bottom-5 right-5 z-[70] rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-3 text-xs font-black shadow-[var(--crm-shadow-lg)]">Opening phone…</div>,
+  },
+)
 
 function HeaderSvg({ name, className = 'h-5 w-5' }: { name: 'menu' | 'search' | 'phone' | 'sun' | 'moon' | 'close'; className?: string }) {
   const paths = {
@@ -51,6 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showDialer, setShowDialer] = useState(false)
+  const [dialerMounted, setDialerMounted] = useState(false)
   const [dialerStatus, setDialerStatus] = useState<CallStatus>('offline')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot)
@@ -146,7 +155,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   function handleDialerStatusChange(status: CallStatus) {
     setDialerStatus(status)
-    if (status === 'incoming') setShowDialer(true)
+    if (status === 'incoming') {
+      setDialerMounted(true)
+      setShowDialer(true)
+    }
   }
 
   useEffect(() => {
@@ -164,6 +176,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueueCallerPlan(null)
         setPendingQueueAutoDial(false)
         setPendingQueueRingCount(null)
+        setDialerMounted(true)
         setShowDialer(true)
       }
     }
@@ -174,6 +187,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setPendingQueueCallerPlan(null)
       setPendingQueueAutoDial(false)
       setPendingQueueRingCount(null)
+      setDialerMounted(true)
       setShowDialer(true)
     }
     function handleOpenDialerQueue(e: Event) {
@@ -186,6 +200,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueueAutoDial(Boolean(detail.autoDial))
         setPendingQueueRingCount(typeof detail.ringCount === 'number' ? detail.ringCount : null)
         setPendingDialLead(null)
+        setDialerMounted(true)
         setShowDialer(true)
       }
     }
@@ -201,7 +216,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function loadProfile() {
-      if (!user?.email) return
+      // The rebuilt workspace renders its signed-in identity from the auth
+      // session and does not use the legacy profile-photo header. Avoid an
+      // unnecessary settings request on every modern CRM first load.
+      if (isConversationWorkspace || !user?.email) return
       console.log('[AppShell] Loading profile for email:', user.email)
       try {
         const res = await fetch(`/api/settings?email=${encodeURIComponent(user.email)}`)
@@ -245,7 +263,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     }
     loadProfile()
-  }, [user])
+  }, [isConversationWorkspace, user])
 
   if (isConversationWorkspace) {
     return (
@@ -254,7 +272,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         data-theme={userTheme}
       >
         <WorkspaceFrame userEmail={user?.email}>{children}</WorkspaceFrame>
-        <DialerPanel
+        {dialerMounted ? <DialerPanel
           open={showDialer}
           onClose={() => {
             setShowDialer(false)
@@ -274,7 +292,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           pendingQueueRingCount={pendingQueueRingCount}
           presentation={dialerPresentation}
           signedInEmail={user?.email}
-        />
+        /> : null}
       </div>
     )
   }
@@ -368,7 +386,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowDialer(!showDialer)}
+                onClick={() => {
+                  setDialerMounted(true)
+                  setShowDialer((value) => !value)
+                }}
+                onPointerEnter={() => { void preloadGlobalDialer() }}
+                onFocus={() => { void preloadGlobalDialer() }}
                 className="relative w-10 h-10 rounded-lg bg-[#E32E2E] hover:bg-[#C42626] flex items-center justify-center transition-colors shadow-sm shadow-[#E32E2E]/30"
                 aria-label="Open dialer"
                 title="Open dialer"
@@ -501,7 +524,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Dialer Panel — Twilio softphone */}
-      <DialerPanel
+      {dialerMounted ? <DialerPanel
         open={showDialer}
         onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null); setPendingQueueAutoDial(false); setPendingQueueRingCount(null) }}
         onStatusChange={handleDialerStatusChange}
@@ -513,7 +536,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         pendingQueueRingCount={pendingQueueRingCount}
         presentation={dialerPresentation}
         signedInEmail={user?.email}
-      />
+      /> : null}
 
       {/* ⌘K Command Palette — global search */}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

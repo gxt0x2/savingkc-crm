@@ -39,6 +39,7 @@ describe('workspace dashboard navigation', () => {
     expect(within(navigationRegion).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
     expect(within(navigationRegion).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('href', '/reports/acquisitions')
     expect(navigationRegion.querySelector('a[href="/reports/dispositions"]')).toBeInTheDocument()
+    expect(within(navigationRegion).getByRole('link', { name: /Bingo Board/ })).toHaveAttribute('href', '/reports/bottlenecks')
     expect(within(navigationRegion).getByRole('link', { name: /Andon system/ })).toHaveAttribute('href', '/reports/andon')
   })
 
@@ -90,6 +91,16 @@ describe('workspace dashboard navigation', () => {
     expect(within(switcher).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
     expect(within(switcher).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('aria-current', 'page')
     expect(within(switcher).getByRole('link', { name: /Dispositions/ })).toHaveAttribute('href', '/reports/dispositions')
+    expect(within(switcher).getByRole('link', { name: /Bingo Board/ })).toHaveAttribute('href', '/reports/bottlenecks')
+    expect(within(switcher).getByRole('link', { name: /Andon system/ })).toHaveAttribute('href', '/reports/andon')
+  })
+
+  it('keeps the Bingo Board attached to the dashboard switcher', () => {
+    navigation.pathname = '/reports/bottlenecks'
+    render(<WorkspaceContextNav />)
+
+    const switcher = screen.getByRole('navigation', { name: 'Dashboards sections' })
+    expect(within(switcher).getByRole('link', { name: /Bingo Board/ })).toHaveAttribute('aria-current', 'page')
     expect(within(switcher).getByRole('link', { name: /Andon system/ })).toHaveAttribute('href', '/reports/andon')
   })
 })
