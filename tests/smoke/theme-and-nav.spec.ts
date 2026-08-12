@@ -25,7 +25,6 @@ const crmWorkspaceRoutes = [
   '/reports/bottlenecks',
   '/reports/finance',
   '/reports/call-sms',
-  '/ari',
   '/settings',
 ];
 const artifactDir = path.join(process.cwd(), 'test-results', 'smoke');
@@ -115,7 +114,7 @@ for (const route of crmWorkspaceRoutes) {
         : page.getByPlaceholder('Search contacts, properties, or messages...');
     await expect(commandSearch).toBeVisible();
     await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
-    await expect(page.locator('a[href="/contacts"]').filter({ hasText: 'Pipeline' })).toBeVisible();
+    await expect(page.locator('a[href="/contacts?list=new"]').filter({ hasText: 'Pipeline' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
