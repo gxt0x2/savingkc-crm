@@ -29,7 +29,7 @@ describe('LeadStatusControl', () => {
 
     render(<LeadStatusControl leadId="lead-1" classification="lead" station="contacted" agent="Ernest" onChanged={onChanged} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Change lead status. Current: Lead' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change pipeline status. Current: Lead' }))
     fireEvent.click(screen.getByRole('button', { name: /Not a lead/ }))
     fireEvent.click(screen.getByLabelText('Wrong or disconnected number'))
     fireEvent.click(screen.getByRole('button', { name: 'Mark not a lead' }))
@@ -47,7 +47,7 @@ describe('LeadStatusControl', () => {
   it('requires useful notes for Other', () => {
     render(<LeadStatusControl leadId="lead-1" classification="lead" station="new" />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Change lead status. Current: Lead' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change pipeline status. Current: Lead' }))
     fireEvent.click(screen.getByRole('button', { name: /Not a lead/ }))
     fireEvent.click(screen.getByLabelText('Other — see notes'))
 
@@ -75,7 +75,7 @@ describe('LeadStatusControl', () => {
 
     render(<LeadStatusControl leadId="lead-1" classification="dead" station="dead" deadReason="listed" />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Change lead status. Current: Not a lead — Listed with an agent' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change pipeline status. Current: Not a lead — Listed with an agent' }))
     fireEvent.click(screen.getByRole('button', { name: 'Lead' }))
     fireEvent.click(screen.getByRole('button', { name: 'Restore as lead' }))
 
@@ -83,5 +83,58 @@ describe('LeadStatusControl', () => {
       method: 'PATCH',
       body: expect.stringContaining('"dead_reason":null'),
     })))
+  })
+
+  it('adds unclassified New intake to Leads and advances it to the contacted stage', async () => {
+    const onChanged = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        lead: {
+          classification: 'lead',
+          station: 'contacted',
+          priority: 'warm',
+          dead_reason: null,
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<LeadStatusControl leadId="intake-1" classification={null} station="new" agent="Ernest" onChanged={onChanged} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change pipeline status. Current: New intake' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Lead' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Leads' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads', expect.objectContaining({
+      method: 'PATCH',
+      body: expect.stringContaining('"classification":"lead","station":"contacted"'),
+    })))
+    await waitFor(() => expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({
+      classification: 'lead',
+      station: 'contacted',
+    })))
+  })
+
+  it('returns an incorrectly classified lead to unclassified New intake', async () => {
+    const onChanged = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, lead: { classification: null, station: 'new', priority: 'warm', dead_reason: null } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<LeadStatusControl leadId="lead-1" classification="lead" station="contacted" agent="Ernest" onChanged={onChanged} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change pipeline status. Current: Lead' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New intake' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Return to New' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads', expect.objectContaining({
+      method: 'PATCH',
+      body: expect.stringContaining('"classification":null,"station":"new"'),
+    })))
+    expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ classification: null, station: 'new' }))
   })
 })

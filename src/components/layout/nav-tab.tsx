@@ -6,7 +6,7 @@ import { useAppMode } from '@/hooks/use-app-mode'
 
 const acquisitionTabs = [
   { label: 'ARI', href: '/ari', icon: 'assistant' },
-  { label: 'Contacts', href: '/contacts', icon: 'contacts' },
+  { label: 'Pipeline', href: '/contacts', icon: 'account_tree' },
   { label: 'Conversations', href: '/conversations', icon: 'forum' },
   { label: 'Workflows', href: '/workflows', icon: 'account_tree' },
   { label: 'Calendar', href: '/calendar?department=acquisitions', icon: 'calendar_today' },

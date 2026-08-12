@@ -98,12 +98,12 @@
     },
     {
       "id": "contacts",
-      "name": "Contacts and lead workspace",
+      "name": "Acquisitions pipeline workspace",
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/contacts", "/leads/[id]"],
       "apiRoutes": ["/api/contacts", "/api/leads", "/api/leads/[id]"],
-      "tables": ["leads", "lead_activities", "lead_tasks", "manifest_history"],
+      "tables": ["leads", "lead_activities", "lead_tasks", "manifests", "manifest_history"],
       "environment": []
     },
     {

@@ -3,7 +3,7 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { getContactSignal, isOutboundAttempt, type ContactActivityLike, type ContactSignal } from '@/lib/contact-display'
+import { getContactSignal, getOutreachStatus, isOutboundAttempt, type ContactActivityLike, type ContactSignal, type OutreachStatus } from '@/lib/contact-display'
 import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
@@ -43,6 +43,7 @@ export interface ContactRow {
   createdAt: string | null
   firstOutboundAt: string | null
   contactSignal: ContactSignal | null
+  outreachStatus: OutreachStatus
   updatedAt: string | null
 }
 
@@ -79,7 +80,7 @@ const CONTACT_STAGES = new Set<DealStage>([
   'closed_lost',
   'dead',
 ])
-const CONTACT_ACTIVITY_TYPES = ['call', 'sms', 'email', 'voicemail', 'missed_call']
+const CONTACT_ACTIVITY_TYPES = ['call', 'sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'email_sent', 'email_received', 'voicemail', 'missed_call']
 
 function getContactStation(station: string | null | undefined): DealStage | null {
   const normalized = normalizeDealStage(station) ?? 'new'
@@ -175,9 +176,11 @@ export async function GET(request: NextRequest) {
 
   const firstOutboundByLead = new Map<string, string>()
   const latestSignalByLead = new Map<string, ContactSignal>()
+  const communicationsByLead = new Map<string, ContactActivityLike[]>()
   for (const activity of (activities ?? []) as ContactActivityLike[]) {
     const leadId = typeof activity.lead_id === 'string' ? activity.lead_id : null
     if (!leadId) continue
+    communicationsByLead.set(leadId, [...(communicationsByLead.get(leadId) ?? []), activity])
 
     if (!firstOutboundByLead.has(leadId) && isOutboundAttempt(activity) && activity.created_at) {
       firstOutboundByLead.set(leadId, activity.created_at)
@@ -215,6 +218,7 @@ export async function GET(request: NextRequest) {
       createdAt: lead.created_at,
       firstOutboundAt: firstOutboundByLead.get(lead.id) ?? null,
       contactSignal: latestSignalByLead.get(lead.id) ?? null,
+      outreachStatus: getOutreachStatus(communicationsByLead.get(lead.id) ?? []),
       updatedAt: lead.updated_at,
     })
   }

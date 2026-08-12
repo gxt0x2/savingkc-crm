@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CONTACT_SMART_LISTS,
   contactMatchesSmartList,
+  contactPipelineStatusLabel,
   contactSmartListCounts,
   normalizeContactSmartListOrder,
   type SmartListContact,
@@ -11,7 +12,7 @@ import {
 function contact(overrides: Partial<SmartListContact>): SmartListContact {
   return {
     station: 'new',
-    classification: 'lead',
+    classification: null,
     score: 10,
     isFavorite: false,
     attentionState: 'resolved',
@@ -60,12 +61,12 @@ describe('contact smart lists', () => {
 
   it('maps stage and operating queues while keeping every dead classification inactive', () => {
     const contacts = [
-      contact({ station: 'new', score: 80, attentionState: 'needs_reply', owner: null }),
-      contact({ station: 'contacted' }),
-      contact({ station: 'qualified' }),
-      contact({ station: 'appointment_set' }),
-      contact({ station: 'offer_made', primaryNextAction: { overdue: true } }),
-      contact({ station: 'under_contract' }),
+      contact({ station: 'new', classification: null, score: 80, attentionState: 'needs_reply', owner: null }),
+      contact({ station: 'contacted', classification: 'lead' }),
+      contact({ station: 'qualified', classification: 'opportunity' }),
+      contact({ station: 'appointment_set', classification: 'opportunity' }),
+      contact({ station: 'offer_made', classification: 'opportunity', primaryNextAction: { overdue: true } }),
+      contact({ station: 'under_contract', classification: 'opportunity' }),
       contact({ station: 'under_contract', classification: 'dead', isFavorite: true }),
       contact({ station: 'dead', classification: 'dead' }),
       contact({ station: 'closed_lost', classification: 'lead' }),
@@ -85,5 +86,33 @@ describe('contact smart lists', () => {
       unassigned: 1,
       not_leads: 3,
     })
+  })
+
+  it('uses classification instead of communication activity to separate New from Leads', () => {
+    const newForm = contact({ station: 'new', classification: null })
+    const unclassifiedCaller = contact({ station: 'contacted', classification: null, attentionState: 'resolved' })
+    const confirmedLead = contact({ station: 'contacted', classification: 'lead', attentionState: 'needs_reply' })
+    const legacyConfirmedLead = contact({ station: 'new', classification: 'lead' })
+    const opportunity = contact({ station: 'qualified', classification: 'opportunity' })
+
+    expect(contactMatchesSmartList(newForm, 'new')).toBe(true)
+    expect(contactMatchesSmartList(unclassifiedCaller, 'new')).toBe(true)
+    expect(contactMatchesSmartList(confirmedLead, 'new')).toBe(false)
+    expect(contactMatchesSmartList(legacyConfirmedLead, 'new')).toBe(false)
+    expect(contactMatchesSmartList(opportunity, 'new')).toBe(false)
+
+    expect(contactMatchesSmartList(newForm, 'contacted')).toBe(false)
+    expect(contactMatchesSmartList(unclassifiedCaller, 'contacted')).toBe(false)
+    expect(contactMatchesSmartList(confirmedLead, 'contacted')).toBe(true)
+    expect(contactMatchesSmartList(legacyConfirmedLead, 'contacted')).toBe(true)
+  })
+
+  it('labels rows by their actual pipeline classification and stage', () => {
+    expect(contactPipelineStatusLabel(contact({ station: 'new', classification: null }))).toBe('New intake')
+    expect(contactPipelineStatusLabel(contact({ station: 'contacted', classification: 'lead' }))).toBe('Lead')
+    expect(contactPipelineStatusLabel(contact({ station: 'qualified', classification: 'opportunity' }))).toBe('Opportunity')
+    expect(contactPipelineStatusLabel(contact({ station: 'appointment_set', classification: 'opportunity' }))).toBe('Appointment set')
+    expect(contactPipelineStatusLabel(contact({ station: 'under_contract', classification: 'opportunity' }))).toBe('In closing')
+    expect(contactPipelineStatusLabel(contact({ station: 'dead', classification: 'dead' }))).toBe('Not a lead')
   })
 })

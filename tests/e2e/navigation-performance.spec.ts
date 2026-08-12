@@ -21,7 +21,7 @@ async function ensureAuthenticated(page: Page) {
 }
 
 const transitions = [
-  { label: 'Contacts', href: '/contacts', readyHeading: /All|New|Hot|Leads|Opportunities/i },
+  { label: 'Pipeline', href: '/contacts', readyHeading: /All|New|Hot|Leads|Opportunities/i },
   { label: 'Conversations', href: '/conversations', readyHeading: /Conversations/i },
   { label: 'Dialer', href: '/dialer', readyHeading: /Dialer/i },
   { label: 'Workflows', href: '/workflows', readyHeading: /Workflows/i },

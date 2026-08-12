@@ -2,6 +2,7 @@ import { formatPhone, normalizePhoneDisplayText, toProperCase } from '@/lib/form
 
 export type ContactDirection = 'inbound' | 'outbound' | 'unknown'
 export type ContactOutcome = 'answered' | 'missed' | 'attempted' | 'sent' | 'received' | 'unknown'
+export type OutreachStatus = 'unattempted' | 'attempted_no_response' | 'connected_unclassified'
 
 export interface ContactActivityLike {
   lead_id?: string | null
@@ -136,6 +137,31 @@ export function isOutboundAttempt(activity: ContactActivityLike): boolean {
   if (getActivityDirection(activity) !== 'outbound') return false
   const text = activityText(activity)
   return /\b(call|sms|email|voicemail|outbound_call|sms_sent|sms_outbound|email_sent)\b/.test(text)
+}
+
+export function getOutreachStatus(activities: ContactActivityLike[]): OutreachStatus {
+  let hasOutboundAttempt = false
+  let connectedCall = false
+  let inboundMessage = false
+
+  for (const activity of activities) {
+    const direction = getActivityDirection(activity)
+    const outcome = getActivityOutcome(activity)
+    const text = activityText(activity)
+
+    if (isOutboundAttempt(activity)) hasOutboundAttempt = true
+    if (/\bcall\b/.test(text) && outcome === 'answered') connectedCall = true
+    if (direction === 'inbound' && /\b(sms|text|email)\b/.test(text)) inboundMessage = true
+  }
+
+  if (connectedCall || inboundMessage) return 'connected_unclassified'
+  return hasOutboundAttempt ? 'attempted_no_response' : 'unattempted'
+}
+
+export function outreachStatusLabel(status: OutreachStatus): string {
+  if (status === 'attempted_no_response') return 'Attempted — no response'
+  if (status === 'connected_unclassified') return 'Connected — needs classification'
+  return 'Unattempted'
 }
 
 export function getContactSignal(activity: ContactActivityLike): ContactSignal | null {

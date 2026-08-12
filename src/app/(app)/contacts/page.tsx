@@ -22,12 +22,13 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Icon } from '@/components/ui/icon'
-import { formatLeadSource, getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
+import { formatLeadSource, getAvatarLabel, getDisplayLeadName, outreachStatusLabel, type OutreachStatus } from '@/lib/contact-display'
 import { formatPhone } from '@/lib/format'
 import type { ContactSignal } from '@/lib/contact-display'
 import type { DealStage } from '@/types/pipeline'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
+import { PipelineFilterSelect, PipelineModal, PipelineModalActions } from '@/components/pipeline/pipeline-controls'
 import { DEAD_REASONS, deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { useAuth } from '@/hooks/use-auth'
 import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
@@ -37,6 +38,7 @@ import {
   CONTACT_SMART_LISTS,
   DEFAULT_CONTACT_SMART_LIST_ORDER,
   contactMatchesSmartList,
+  contactPipelineStatusLabel,
   contactSmartListCounts,
   normalizeContactSmartListOrder,
   type ContactSmartList,
@@ -63,6 +65,7 @@ interface ContactRow {
   createdAt: string | null
   firstOutboundAt: string | null
   contactSignal: ContactSignal | null
+  outreachStatus: OutreachStatus
   updatedAt: string | null
 }
 
@@ -87,7 +90,7 @@ type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
 type ContactDialog = 'add' | 'import' | 'view' | null
 type ToolbarMenu = 'filters' | 'sort' | null
 type ContactScope = 'active' | 'not_leads'
-type BulkAction = '' | 'assign:Ernest' | 'assign:Casey' | 'assign:Gertha' | 'assign:unassigned' | `stage:${DealStage}` | 'not_lead'
+type BulkAction = '' | 'assign:Ernest' | 'assign:Casey' | 'assign:Gertha' | 'assign:unassigned' | 'classify:new' | 'classify:lead' | `stage:${DealStage}` | 'not_lead'
 
 interface SavedView {
   id: string
@@ -97,6 +100,7 @@ interface SavedView {
   source: string
   tag: string
   attention: string
+  outreach: string
 }
 
 const STAGE_LABELS: Record<DealStage, string> = {
@@ -155,7 +159,7 @@ const STAGE_TONES: Record<DealStage, string> = {
 
 const EMPTY_CONTACT = { fullName: '', phone: '', email: '', address: '', city: '', state: '', zip: '', source: 'manual_crm' }
 const CONTACT_QUERY_KEY = (scope: ContactScope) => ['contact-workspace', scope] as const
-const BULK_STAGE_OPTIONS: DealStage[] = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract']
+const BULK_STAGE_OPTIONS: DealStage[] = ['qualified', 'appointment_set', 'offer_made', 'under_contract']
 
 function formatRelativeDate(value: string | null): string {
   if (!value) return 'No activity'
@@ -255,6 +259,7 @@ export default function ContactsPage() {
   const [tagFilter, setTagFilter] = useState('')
   const [activityFilter, setActivityFilter] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
+  const [outreachFilter, setOutreachFilter] = useState('')
   const [dataGapFilter, setDataGapFilter] = useState<DataGap>('')
   const [sortBy, setSortBy] = useState<'priority' | 'recent' | 'name'>('priority')
   const [page, setPage] = useState(1)
@@ -311,6 +316,8 @@ export default function ContactsPage() {
     if (requestedSource) setSourceFilter(requestedSource)
     const requestedAttention = params.get('attention')
     if (requestedAttention && ['needs_reply', 'waiting_on_contact', 'resolved'].includes(requestedAttention)) setAttentionFilter(requestedAttention)
+    const requestedOutreach = params.get('outreach')
+    if (requestedOutreach && ['unattempted', 'attempted_no_response', 'connected_unclassified'].includes(requestedOutreach)) setOutreachFilter(requestedOutreach)
   }, [])
 
   const counts = useMemo(() => contactSmartListCounts(allKnownItems), [allKnownItems])
@@ -333,6 +340,7 @@ export default function ContactsPage() {
       if (sourceFilter && item.source !== sourceFilter) return false
       if (tagFilter && !item.tags.includes(tagFilter)) return false
       if (attentionFilter && item.attentionState !== attentionFilter) return false
+      if (outreachFilter && item.outreachStatus !== outreachFilter) return false
       if (dataGapFilter === 'missing_phone' && item.phone) return false
       if (dataGapFilter === 'missing_email' && item.email) return false
       if (dataGapFilter === 'missing_next_action' && item.primaryNextAction) return false
@@ -352,9 +360,9 @@ export default function ContactsPage() {
       const attentionRank = (item: ContactWorkspaceRow) => item.attentionState === 'needs_reply' ? 0 : item.primaryNextAction?.overdue ? 1 : 2
       return attentionRank(a) - attentionRank(b) || b.score - a.score
     })
-  }, [activityFilter, attentionFilter, dataGapFilter, items, minimumStageFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
+  }, [activityFilter, attentionFilter, dataGapFilter, items, minimumStageFilter, outreachFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
 
-  useEffect(() => setPage(1), [activityFilter, attentionFilter, dataGapFilter, minimumStageFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
+  useEffect(() => setPage(1), [activityFilter, attentionFilter, dataGapFilter, minimumStageFilter, outreachFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
 
   useEffect(() => {
     setSelectedIds((current) => {
@@ -449,6 +457,10 @@ export default function ContactsPage() {
         if (bulkAction.startsWith('assign:')) {
           const owner = bulkAction.slice('assign:'.length)
           fields = { assigned_agent: owner === 'unassigned' ? null : owner }
+        } else if (bulkAction === 'classify:lead') {
+          fields = { classification: 'lead', station: 'contacted', priority: 'warm' }
+        } else if (bulkAction === 'classify:new') {
+          fields = { classification: null, station: 'new', priority: 'warm', opportunity_score: 0, dead_reason: null, dead_at: null, dead_by: null }
         } else if (bulkAction.startsWith('stage:')) {
           fields = { station: bulkAction.slice('stage:'.length) }
         } else {
@@ -502,12 +514,16 @@ export default function ContactsPage() {
     setTagFilter('')
     setActivityFilter('')
     setAttentionFilter('')
+    setOutreachFilter('')
     setDataGapFilter('')
   }
 
   function selectSmartList(nextSmartList: ContactSmartList) {
     setSmartList(nextSmartList)
     setToolbarMenu(null)
+    setSelectedIds(new Set())
+    setBulkAction('')
+    setBulkMessage(null)
     const params = new URLSearchParams(window.location.search)
     if (nextSmartList === 'all') params.delete('list')
     else params.set('list', nextSmartList)
@@ -597,7 +613,7 @@ export default function ContactsPage() {
     event.preventDefault()
     const label = viewName.trim()
     if (!label) return
-    const next = [...savedViews, { id: crypto.randomUUID(), label, owner: ownerFilter, stage: stageFilter, source: sourceFilter, tag: tagFilter, attention: attentionFilter }]
+    const next = [...savedViews, { id: crypto.randomUUID(), label, owner: ownerFilter, stage: stageFilter, source: sourceFilter, tag: tagFilter, attention: attentionFilter, outreach: outreachFilter }]
     setSavedViews(next)
     window.localStorage.setItem('savingkc-contact-views', JSON.stringify(next))
     setViewName('')
@@ -611,11 +627,12 @@ export default function ContactsPage() {
     setSourceFilter(view.source)
     setTagFilter(view.tag)
     setAttentionFilter(view.attention)
+    setOutreachFilter(view.outreach ?? '')
   }
 
-  const hasFilters = Boolean(ownerFilter || stageFilter || minimumStageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter || dataGapFilter)
+  const hasFilters = Boolean(ownerFilter || stageFilter || minimumStageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter || outreachFilter || dataGapFilter)
     || ['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList)
-  const activeFilterCount = [ownerFilter, stageFilter, minimumStageFilter, sourceFilter, tagFilter, activityFilter, attentionFilter, dataGapFilter].filter(Boolean).length
+  const activeFilterCount = [ownerFilter, stageFilter, minimumStageFilter, sourceFilter, tagFilter, activityFilter, attentionFilter, outreachFilter, dataGapFilter].filter(Boolean).length
     + (['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList) ? 1 : 0)
   const smartListCopy = CONTACT_SMART_LIST_COPY[smartList]
   const hasCustomSmartListOrder = smartListOrder.some((id, index) => id !== DEFAULT_CONTACT_SMART_LIST_ORDER[index])
@@ -623,7 +640,7 @@ export default function ContactsPage() {
   const contactsCommandBar = (
     <div data-testid="contacts-command-header" className="grid min-w-0 items-center gap-3 lg:grid-cols-[minmax(11rem,1fr)_minmax(13rem,26rem)_auto]">
       <div data-header-slot="context" className="min-w-0">
-        <p className="crm-eyebrow">Contacts smart list</p>
+        <p className="crm-eyebrow">Pipeline</p>
         <div className="flex items-center gap-2">
           <h1 className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{smartListCopy.label}</h1>
           <span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-xs font-bold text-[var(--crm-info)]">{counts[smartList]}</span>
@@ -646,7 +663,7 @@ export default function ContactsPage() {
           <div className="flex items-stretch border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
             <DndContext sensors={smartListSensors} collisionDetection={closestCenter} onDragEnd={handleSmartListDragEnd}>
               <SortableContext items={smartListOrder} strategy={horizontalListSortingStrategy}>
-                <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label="Contact smart lists">
+                <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label="Pipeline smart lists">
                   {orderedSmartLists.map(({ id, label }) => (
                     <SortableSmartListTab
                       key={id}
@@ -671,15 +688,16 @@ export default function ContactsPage() {
                 {toolbarMenu === 'filters' ? <div id="contact-filter-panel" role="dialog" aria-label="Contact filters" className="crm-panel absolute left-0 top-11 z-40 w-[min(30rem,calc(100vw-3rem))] rounded-xl p-4 shadow-xl">
                   <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold text-[var(--crm-ink)]">Filters</h2><p className="text-xs text-[var(--crm-text-muted)]">Narrow the active smart list without losing table space.</p></div><button type="button" onClick={() => setToolbarMenu(null)} aria-label="Close filters" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="close" /></button></div>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <FilterSelect label="Lead status" value={smartList === 'not_leads' ? 'not_leads' : ''} onChange={(value) => selectSmartList(value === 'not_leads' ? 'not_leads' : 'all')} options={[["not_leads", "Not a lead"]]} />
-                    <FilterSelect label="Owner" value={ownerFilter} onChange={setOwnerFilter} options={[["__unassigned", "Unassigned"], ...owners.map((value) => [value, value] as [string, string])]} />
-                    <FilterSelect label="Stage" value={stageFilter} onChange={setStageFilter} options={Object.entries(STAGE_LABELS)} />
-                    <FilterSelect label="Minimum stage" value={minimumStageFilter} onChange={setMinimumStageFilter} options={Object.entries(STAGE_LABELS).filter(([value]) => STAGE_RANK[value as DealStage] >= 0)} />
-                    <FilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter} options={sources.map((value) => [value, formatLeadSource(value)])} />
-                    <FilterSelect label="Tags" value={tagFilter} onChange={setTagFilter} options={tags.map((value) => [value, value])} />
-                    <FilterSelect label="Last activity" value={activityFilter} onChange={setActivityFilter} options={[["day", "Past 24 hours"], ["week", "Past 7 days"], ["stale", "More than 7 days"], ["none", "No activity"]]} />
-                    <FilterSelect label="Data quality" value={dataGapFilter} onChange={(value) => setDataGapFilter(value as DataGap)} options={[["missing_phone", "Missing phone"], ["missing_email", "Missing email"], ["missing_next_action", "Missing next action"]]} />
-                    <FilterSelect label="Conversation state" value={attentionFilter} onChange={setAttentionFilter} options={[["needs_reply", "Needs reply"], ["waiting_on_contact", "Waiting on contact"], ["resolved", "Resolved"]]} />
+                    <PipelineFilterSelect label="Lead status" value={smartList === 'not_leads' ? 'not_leads' : ''} onChange={(value) => selectSmartList(value === 'not_leads' ? 'not_leads' : 'all')} options={[["not_leads", "Not a lead"]]} />
+                    <PipelineFilterSelect label="Owner" value={ownerFilter} onChange={setOwnerFilter} options={[["__unassigned", "Unassigned"], ...owners.map((value) => [value, value] as [string, string])]} />
+                    <PipelineFilterSelect label="Stage" value={stageFilter} onChange={setStageFilter} options={Object.entries(STAGE_LABELS)} />
+                    <PipelineFilterSelect label="Minimum stage" value={minimumStageFilter} onChange={setMinimumStageFilter} options={Object.entries(STAGE_LABELS).filter(([value]) => STAGE_RANK[value as DealStage] >= 0)} />
+                    <PipelineFilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter} options={sources.map((value) => [value, formatLeadSource(value)])} />
+                    <PipelineFilterSelect label="Tags" value={tagFilter} onChange={setTagFilter} options={tags.map((value) => [value, value])} />
+                    <PipelineFilterSelect label="Last activity" value={activityFilter} onChange={setActivityFilter} options={[["day", "Past 24 hours"], ["week", "Past 7 days"], ["stale", "More than 7 days"], ["none", "No activity"]]} />
+                    <PipelineFilterSelect label="Data quality" value={dataGapFilter} onChange={(value) => setDataGapFilter(value as DataGap)} options={[["missing_phone", "Missing phone"], ["missing_email", "Missing email"], ["missing_next_action", "Missing next action"]]} />
+                    <PipelineFilterSelect label="Conversation state" value={attentionFilter} onChange={setAttentionFilter} options={[["needs_reply", "Needs reply"], ["waiting_on_contact", "Waiting on contact"], ["resolved", "Resolved"]]} />
+                    <PipelineFilterSelect label="Outreach status" value={outreachFilter} onChange={setOutreachFilter} options={[["unattempted", "Unattempted"], ["attempted_no_response", "Attempted — no response"], ["connected_unclassified", "Connected — needs classification"]]} />
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--crm-border)] pt-3">
                     {savedViews.map((view) => <button type="button" key={view.id} onClick={() => applyView(view)} className="rounded-full border border-[var(--crm-border)] px-3 py-1.5 text-xs font-semibold hover:border-[var(--crm-brand-border)] hover:text-[var(--crm-brand)]">{view.label}</button>)}
@@ -710,6 +728,10 @@ export default function ContactsPage() {
                   <option value="assign:Gertha">Assign to Gertha</option>
                   <option value="assign:unassigned">Set unassigned</option>
                 </optgroup>
+                <optgroup label="Classify intake">
+                  {smartList === 'contacted' ? <option value="classify:new">Return to New</option> : null}
+                  <option value="classify:lead">Add to Leads</option>
+                </optgroup>
                 <optgroup label="Move stage">
                   {BULK_STAGE_OPTIONS.map((stage) => <option key={stage} value={`stage:${stage}`}>{STAGE_LABELS[stage]}</option>)}
                 </optgroup>
@@ -737,6 +759,7 @@ export default function ContactsPage() {
                 const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || 'Define next action'
                 const selectedRow = detailsOpen && selected?.id === row.id
                 const notLead = isNotLeadOutcome(row.classification, row.station)
+                const pipelineStatus = contactPipelineStatusLabel(row)
                 const rowAttention = row.primaryNextAction?.overdue
                   ? 'border-l-[var(--crm-danger)]'
                   : row.attentionState === 'needs_reply'
@@ -753,8 +776,8 @@ export default function ContactsPage() {
                     <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedId(row.id); setDetailsOpen(true) }} onDoubleClick={(event) => { event.stopPropagation(); router.push(`/leads/${row.id}`) }} title="Double-click to open the full lead workspace" className="flex min-w-0 items-center gap-2.5 rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--crm-info)]"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[var(--crm-ink)]">{displayName}</strong><small className="text-[var(--crm-text-muted)]">{formatPhone(row.phone) || 'No phone'}</small></span></button>
                     <span className="min-w-0"><strong className="block truncate font-medium text-[var(--crm-text)]">{property}</strong><small className="text-[var(--crm-text-dim)]">{row.city || ''}</small></span>
                     <span className="min-w-0">
-                      <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>{notLead ? 'Not a lead' : 'Lead'}</span>
-                      <small className={`mt-1 block truncate text-[10px] ${notLead && !row.deadReason ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}>{notLead ? deadReasonLabel(row.deadReason) || 'Reason required' : STAGE_LABELS[row.station]}</small>
+                      <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : row.classification ? 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]'}`}>{pipelineStatus}</span>
+                      <small className={`mt-1 block truncate text-[10px] ${notLead && !row.deadReason ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}>{notLead ? deadReasonLabel(row.deadReason) || 'Reason required' : row.classification === null ? outreachStatusLabel(row.outreachStatus) : STAGE_LABELS[row.station]}</small>
                     </span>
                     <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-action)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>
                     <span>{row.owner || 'Unassigned'}</span><span className="text-[var(--crm-text-muted)]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[var(--crm-text-muted)]">{formatLeadSource(row.source)}</span>
@@ -806,11 +829,11 @@ export default function ContactsPage() {
         </aside> : null}
       </main>
 
-      {dialog ? <ContactModal title={dialog === 'add' ? 'Add contact' : dialog === 'import' ? 'Import contacts' : 'Save current view'} onClose={() => { if (!saving) setDialog(null) }}>
+      {dialog ? <PipelineModal title={dialog === 'add' ? 'Add contact' : dialog === 'import' ? 'Import contacts' : 'Save current view'} onClose={() => { if (!saving) setDialog(null) }}>
         {dialog === 'add' ? <form onSubmit={submitAddContact} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">{Object.entries({ fullName: 'Full name', phone: 'Phone', email: 'Email', address: 'Property address', city: 'City', state: 'State', zip: 'ZIP', source: 'Source' }).map(([key, label]) => <label key={key} className={key === 'address' ? 'sm:col-span-2' : ''}><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">{label}</span><input type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'} value={contactForm[key as keyof typeof contactForm]} onChange={(event) => setContactForm((current) => ({ ...current, [key]: event.target.value }))} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label>)}</div>
           {dialogError ? <p className="text-sm font-semibold text-[var(--ck-accent)]">{dialogError}</p> : null}
-          <ModalActions saving={saving} submitLabel="Create contact" onCancel={() => setDialog(null)} />
+          <PipelineModalActions saving={saving} submitLabel="Create contact" onCancel={() => setDialog(null)} />
         </form> : null}
         {dialog === 'import' ? <div className="space-y-4">
           <p className="text-sm leading-6 text-[var(--ck-text-muted)]">Upload a CSV with any of these columns: name, phone, email, address, city, state, ZIP, or source.</p>
@@ -819,8 +842,8 @@ export default function ContactsPage() {
           {dialogError ? <p className="text-sm font-semibold text-[var(--ck-accent)]">{dialogError}</p> : null}
           <div className="flex gap-3"><button type="button" disabled={saving} onClick={() => setDialog(null)} className="h-10 flex-1 rounded-lg border border-[var(--ck-border-strong)] text-sm font-bold">Cancel</button><button type="button" disabled={saving || !csvRows.length} onClick={() => void submitImport()} className="h-10 flex-1 rounded-lg bg-[var(--ck-accent)] text-sm font-bold text-white disabled:opacity-50">{saving ? 'Importing…' : 'Import contacts'}</button></div>
         </div> : null}
-        {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[var(--ck-text-muted)]">Save the current owner, stage, source, tag, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label><ModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
-      </ContactModal> : null}
+        {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[var(--ck-text-muted)]">Save the current owner, stage, source, tag, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label><PipelineModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
+      </PipelineModal> : null}
     </>
   )
 }
@@ -861,16 +884,4 @@ function SortableSmartListTab({
   >
     {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${active ? tone.count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{count}</span>
   </button>
-}
-
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: [string, string][] }) {
-  return <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className={`h-9 w-full rounded-lg border px-3 text-xs font-semibold ${value ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'crm-field'}`}><option value="">{label}</option>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select>
-}
-
-function ContactModal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#111827]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section role="dialog" aria-modal="true" aria-label={title} className="crm-modal-surface max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] shadow-2xl"><header className="flex items-center justify-between border-b border-[var(--ck-border)] px-6 py-4"><h2 className="text-lg font-bold text-[var(--ck-text)]">{title}</h2><button type="button" onClick={onClose} aria-label="Close dialog" className="text-[var(--ck-text-muted)] hover:text-[var(--ck-accent)]"><Icon name="close" /></button></header><div className="p-6">{children}</div></section></div>
-}
-
-function ModalActions({ saving, submitLabel, onCancel }: { saving: boolean; submitLabel: string; onCancel: () => void }) {
-  return <div className="flex gap-3 pt-2"><button type="button" disabled={saving} onClick={onCancel} className="h-10 flex-1 rounded-lg border border-[var(--ck-border-strong)] text-sm font-bold">Cancel</button><button type="submit" disabled={saving} className="h-10 flex-1 rounded-lg bg-[var(--ck-accent)] text-sm font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : submitLabel}</button></div>
 }
