@@ -76,13 +76,13 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
 
   const expectedLinks = new Map([
     ['Dashboard', '/dashboard'],
-    ['Pipeline', '/contacts'],
+    ['Bottlenecks', '/reports/bottlenecks'],
+    ['Pipeline', '/contacts?list=new'],
     ['Conversations', '/conversations'],
     ['Calendar', '/calendar?department=acquisitions'],
+    ['Dialer', '/dialer'],
     ['Task', '/tasks'],
-    ['Dispositions', '/dispo/pipeline'],
-    ['ARI Insights', '/ari'],
-    ['Workflows', '/workflows'],
+    ['Reports', '/reports/acquisitions'],
     ['Settings', '/settings'],
   ]);
 
@@ -91,26 +91,10 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
     await expect(destination).toBeVisible();
   }
 
-  await page.getByRole('button', { name: 'Expand dashboard menu' }).click();
-  const dashboardLinks = new Map([
-    ['Acquisitions', '/reports/acquisitions'],
-    ['Dispositions', '/reports/dispositions'],
-    ['Bingo Board', '/reports/bottlenecks'],
-  ]);
-  for (const [name, href] of dashboardLinks) {
-    await expect(page.locator(`a[href="${href}"]`).filter({ hasText: name })).toBeVisible();
-  }
-
-  await page.getByRole('button', { name: 'Reports' }).click();
-  const reportLinks = new Map([
-    ['Marketing', '/reports/marketing'],
-    ['Finance', '/reports/finance'],
-    ['Call/SMS', '/reports/call-sms'],
-  ]);
-  for (const [name, href] of reportLinks) {
-    await expect(page.locator(`a[href="${href}"]`).filter({ hasText: name })).toBeVisible();
-  }
-
+  await expect(page.getByRole('link', { name: 'Bingo Board' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'AI Assistant' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'ARI Insights' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open AI Assistant' })).toBeVisible();
   await expect(page.locator('a[href="#"]')).toHaveCount(0);
 });
 

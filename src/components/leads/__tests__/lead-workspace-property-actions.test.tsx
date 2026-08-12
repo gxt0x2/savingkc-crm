@@ -96,7 +96,9 @@ describe('LeadWorkspace property actions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Update offer of $180,000' }))
 
-    expect(screen.getByRole('dialog', { name: 'Record an offer' })).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Record an offer' })
+    expect(dialog).toBeInTheDocument()
+    expect(dialog.closest('.crm-workspace-shell')).toHaveAttribute('data-theme', 'dark')
     expect(screen.getByRole('button', { name: /Verbal/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /Written/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByLabelText('Offer amount')).toHaveValue('180000')

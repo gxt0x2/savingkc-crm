@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { WorkspaceChrome, WorkspaceFrame } from './workspace-frame'
@@ -68,5 +68,22 @@ describe('WorkspaceFrame route persistence', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Open phone' })).toBeInTheDocument()
+  })
+
+  it('opens the persistent giraffe assistant from the lower-right launcher', () => {
+    render(
+      <WorkspaceFrame needsReply={0}>
+        <main>Pipeline route</main>
+      </WorkspaceFrame>,
+    )
+
+    const launcher = screen.getByRole('button', { name: 'Open AI Assistant' })
+    expect(launcher).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(launcher)
+
+    expect(screen.getByRole('dialog', { name: 'AI Assistant' })).toBeVisible()
+    expect(screen.getByLabelText('Ask the AI Assistant')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Close AI Assistant' })).toBeVisible()
   })
 })

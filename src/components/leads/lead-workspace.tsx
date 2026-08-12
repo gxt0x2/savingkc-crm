@@ -315,15 +315,14 @@ export function LeadWorkspace({
         <StreetViewModal address={address} onClose={() => setStreetViewOpen(false)} />,
         document.body,
       ) : null}
-      {offerModalOpen ? createPortal(
+      {offerModalOpen ? (
         <RecordOfferModal
           leadId={lead.id}
           leadName={name}
           currentAmount={lead.offer_amount}
           onClose={() => setOfferModalOpen(false)}
           onSaved={onRefresh}
-        />,
-        document.body,
+        />
       ) : null}
       <div className="mx-auto max-w-[1640px] px-4 pb-8 pt-4 xl:px-6">
         <header className="crm-panel-raised relative overflow-hidden rounded-xl px-4 py-3.5 sm:px-5">

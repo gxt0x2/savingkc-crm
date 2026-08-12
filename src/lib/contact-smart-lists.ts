@@ -29,7 +29,6 @@ export interface SmartListContact {
 }
 
 export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartListNavigationId; label: string }> = [
-  { id: 'hot', label: 'Hot' },
   { id: 'new', label: 'New' },
   { id: 'contacted', label: 'Leads' },
   { id: 'qualified', label: 'Opportunities' },

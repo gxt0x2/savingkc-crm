@@ -18,7 +18,7 @@ const VIEW_COPY: Record<OperatingReportView, { eyebrow: string; title: string; d
   marketing: { eyebrow: 'Reports · Marketing', title: 'Marketing performance', description: 'Lead-source quality measured by seller records, stage advancement, contracts, and attributed revenue.' },
   acquisitions: { eyebrow: 'Team dashboard · Acquisitions', title: 'Acquisitions performance', description: 'The operating path from new inquiry to opportunity, appointment, contract, and close.' },
   dispositions: { eyebrow: 'Team dashboard · Dispositions', title: 'Dispositions performance', description: 'Buyer demand, offers, contract-to-close execution, assignment economics, and the post-close debrief loop.' },
-  bottlenecks: { eyebrow: 'Operating system · Bottlenecks', title: 'Bingo Board', description: 'One live board for the constraints blocking seller response, follow-up, ownership, offers, and completed closeout loops.' },
+  bottlenecks: { eyebrow: 'Operating system · Bottlenecks', title: 'Bottleneck Board', description: 'One live board for the constraints blocking seller response, follow-up, ownership, offers, and completed closeout loops.' },
   finance: { eyebrow: 'Reports · Finance', title: 'Financial performance', description: 'Recorded revenue and expenses only. Seed and sample transactions are excluded.' },
   'call-sms': { eyebrow: 'Reports · Call/SMS', title: 'Call and SMS performance', description: 'Connected calls, messages, response signals, agent activity, and unresolved seller attention.' },
 }

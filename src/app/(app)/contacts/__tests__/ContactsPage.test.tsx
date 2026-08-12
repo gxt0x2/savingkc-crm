@@ -77,7 +77,6 @@ describe('ContactsPage smart-list workspace', () => {
     const navigation = screen.getByRole('navigation', { name: 'Pipeline smart lists' })
     const smartListButtons = within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder '))
     expect(smartListButtons.map((button) => button.textContent?.replace(/\d+$/, '').trim())).toEqual([
-      'Hot',
       'New',
       'Leads',
       'Opportunities',
@@ -86,10 +85,10 @@ describe('ContactsPage smart-list workspace', () => {
       'In Closing',
       'All',
     ])
-    expect(screen.getByRole('heading', { name: 'All' })).toBeInTheDocument()
-    expect(screen.getByText('Every active acquisition record, excluding contacts marked Not a lead.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'New' })).toBeInTheDocument()
+    expect(screen.getByText('Unclassified new intake from calls, forms, imports, or other sources awaiting a pipeline decision.')).toBeInTheDocument()
     expect(screen.getAllByText('New Intake')).toHaveLength(2)
-    expect(screen.getByText('Active Lead')).toBeInTheDocument()
+    expect(screen.queryByText('Active Lead')).not.toBeInTheDocument()
     expect(screen.queryByText('Dead Record')).not.toBeInTheDocument()
   })
 
@@ -109,14 +108,13 @@ describe('ContactsPage smart-list workspace', () => {
   })
 
   it('restores a customized smart-list order using the whole tab as the drag target', () => {
-    window.localStorage.setItem(CONTACT_SMART_LIST_ORDER_STORAGE_KEY, JSON.stringify(['all', 'hot', 'new']))
+    window.localStorage.setItem(CONTACT_SMART_LIST_ORDER_STORAGE_KEY, JSON.stringify(['all', 'new']))
     render(<ContactsPage />)
 
     const navigation = screen.getByRole('navigation', { name: 'Pipeline smart lists' })
     const smartListButtons = within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder '))
     expect(smartListButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
       'All 2',
-      'Hot 0',
       'New 1',
       'Leads 1',
       'Opportunities 0',
@@ -129,7 +127,6 @@ describe('ContactsPage smart-list workspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset smart-list order' }))
     expect(within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder ')).map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Hot 0',
       'New 1',
       'Leads 1',
       'Opportunities 0',

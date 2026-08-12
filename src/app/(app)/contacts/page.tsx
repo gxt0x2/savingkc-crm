@@ -247,7 +247,7 @@ export default function ContactsPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const [smartList, setSmartList] = useState<ContactSmartList>('all')
+  const [smartList, setSmartList] = useState<ContactSmartList>('new')
   const [smartListOrder, setSmartListOrder] = useState<ContactSmartListNavigationId[]>([...DEFAULT_CONTACT_SMART_LIST_ORDER])
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
