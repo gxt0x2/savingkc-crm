@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase-lazy'
 import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { getLeadQualificationStatus, qualificationError } from '@/lib/qualification-policy'
+import { isPipelineClassification, PIPELINE_CLASSIFICATION } from '@/lib/pipeline-classification'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,38 +19,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
-const LEAD_TRIAGE = {
-  opportunity: {
-    label: 'Real Opportunity',
-    station: 'qualified',
-    priority: 'hot',
-    score: 85,
-  },
-  lead: {
-    label: 'Lead',
-    station: 'contacted',
-    priority: 'warm',
-    score: 55,
-  },
-  dead: {
-    label: 'Dead',
-    station: 'dead',
-    priority: 'cold',
-    score: 0,
-  },
-} as const
-
-type LeadTriageClassification = keyof typeof LEAD_TRIAGE
-
 type WebsiteLeadAttribution = Record<string, unknown>
 
 const WEBSITE_LEAD_SOURCE = 'website_form'
 const GOOGLE_ADS_LEAD_SOURCE = 'google_ads'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-function isLeadTriageClassification(value: unknown): value is LeadTriageClassification {
-  return typeof value === 'string' && value in LEAD_TRIAGE
-}
 
 function cleanString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -182,7 +156,8 @@ async function removeMergedPartialLead(sessionLead: { id: string; form_status?: 
 }
 
 function withoutFormStatus<T extends Record<string, unknown>>(fields: T): Omit<T, 'form_status'> {
-  const { form_status: _formStatus, ...rest } = fields
+  const rest = { ...fields }
+  delete rest.form_status
   return rest
 }
 
@@ -564,10 +539,11 @@ export async function PATCH(req: NextRequest) {
         : typeof activity?.notes === 'string'
           ? activity.notes.trim()
           : ''
+    const classificationWasRequested = Object.prototype.hasOwnProperty.call(fields, 'classification')
     const requestedClassification = fields.classification
     const triageClassification = requestedClassification === null || requestedClassification === undefined
       ? null
-      : isLeadTriageClassification(requestedClassification)
+      : isPipelineClassification(requestedClassification)
         ? requestedClassification
         : undefined
 
@@ -575,7 +551,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid lead classification' }, { status: 400, headers: corsHeaders })
     }
 
-    const previousTriageLead = triageClassification
+    const previousTriageLead = classificationWasRequested
       ? await supabase
         .from('leads')
         .select('classification, station, priority')
@@ -584,7 +560,7 @@ export async function PATCH(req: NextRequest) {
       : null
 
     if (triageClassification) {
-      const triage = LEAD_TRIAGE[triageClassification]
+      const triage = PIPELINE_CLASSIFICATION[triageClassification]
       fields.station ??= triage.station
       fields.priority ??= triage.priority
       fields.opportunity_score = typeof fields.opportunity_score === 'number'
@@ -786,7 +762,7 @@ export async function PATCH(req: NextRequest) {
               if (dispo === 'offer_made') manifest.currentStation = 'offer_made'
               manifest.priority = 'hot'
             } else if (dispo === 'not_interested' || dispo === 'dead') {
-              const triage = LEAD_TRIAGE.dead
+              const triage = PIPELINE_CLASSIFICATION.dead
               manifest.priority = 'cold'
               if (!manifest.scoring) {
                 manifest.scoring = {
@@ -877,8 +853,12 @@ export async function PATCH(req: NextRequest) {
           if (!manifest.situation.motivation) manifest.situation.motivation = {}
           manifest.situation.motivation.score = manifestFields.motivation_score
         }
-        if (isLeadTriageClassification(manifestFields.classification)) {
-          const triage = LEAD_TRIAGE[manifestFields.classification]
+        if (manifestFields.classification === null) {
+          ;(manifest as { scoring?: unknown }).scoring = null
+          directFields.classification = null
+          if (typeof manifestFields.opportunity_score === 'number') directFields.opportunity_score = manifestFields.opportunity_score
+        } else if (isPipelineClassification(manifestFields.classification)) {
+          const triage = PIPELINE_CLASSIFICATION[manifestFields.classification]
           if (!manifest.scoring) {
             manifest.scoring = {
               opportunity_score: triage.score,
@@ -956,6 +936,17 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
+    if (classificationWasRequested && triageClassification === null) {
+      const { error: manifestClearError } = await supabase
+        .from('manifests')
+        .update({ classification: null, opportunity_score: 0 })
+        .eq('lead_id', id)
+      if (manifestClearError) {
+        console.error('[leads PATCH] Failed to clear manifest classification snapshot:', manifestClearError.message)
+        return NextResponse.json({ success: false, error: manifestClearError.message }, { status: 500, headers: corsHeaders })
+      }
+    }
+
     // Return updated lead
     const { data, error: fetchError } = await supabase
       .from('leads')
@@ -978,14 +969,14 @@ export async function PATCH(req: NextRequest) {
       }).catch((error) => console.error('[leads PATCH] PPC qualified conversion queue failed:', error))
     }
 
-    if (triageClassification && previousTriageData?.classification !== triageClassification) {
-      const triage = LEAD_TRIAGE[triageClassification]
+    if (classificationWasRequested && previousTriageData?.classification !== triageClassification) {
+      const triage = triageClassification ? PIPELINE_CLASSIFICATION[triageClassification] : null
       const { error: triageActivityError } = await supabase.from('lead_activities').insert({
         lead_id: id,
         activity_type: markingDead ? 'outcome' : 'status_change',
         description: markingDead && deadReason
-          ? `Manual triage: ${triage.label} - ${deadReasonLabel(deadReason)}${deadOutcomeNotes ? ` - ${deadOutcomeNotes}` : ''}`
-          : `Manual triage: ${triage.label}`,
+          ? `Manual triage: ${triage?.label} - ${deadReasonLabel(deadReason)}${deadOutcomeNotes ? ` - ${deadOutcomeNotes}` : ''}`
+          : triage ? `Manual triage: ${triage.label}` : 'Manual triage: Returned to New intake',
         agent: activityAgent,
         metadata: {
           source: 'lead_detail_triage',

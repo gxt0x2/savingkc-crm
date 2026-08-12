@@ -5,6 +5,7 @@ import {
   getActivityOutcome,
   getAvatarLabel,
   getDisplayLeadName,
+  getOutreachStatus,
   isOutboundAttempt,
 } from './contact-display'
 
@@ -50,5 +51,16 @@ describe('contact-display', () => {
 
   it('formats elapsed time between system entry and first outbound', () => {
     expect(formatDurationBetween('2026-05-20T10:00:00.000Z', '2026-05-20T12:35:00.000Z')).toBe('2h 35m')
+  })
+
+  it('separates untouched intake, unanswered outreach, and meaningful contact', () => {
+    const outbound = { activity_type: 'sms', description: 'Text sent', metadata: { direction: 'outbound' }, created_at: '2026-08-12T12:00:00Z' }
+    const reply = { activity_type: 'sms', description: 'Seller replied', metadata: { direction: 'inbound' }, created_at: '2026-08-12T12:05:00Z' }
+    const connectedCall = { activity_type: 'call', description: 'Outbound call connected live', metadata: { direction: 'outbound', outcome: 'connected' }, created_at: '2026-08-12T12:00:00Z' }
+
+    expect(getOutreachStatus([])).toBe('unattempted')
+    expect(getOutreachStatus([outbound])).toBe('attempted_no_response')
+    expect(getOutreachStatus([outbound, reply])).toBe('connected_unclassified')
+    expect(getOutreachStatus([connectedCall])).toBe('connected_unclassified')
   })
 })

@@ -22,7 +22,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Icon } from '@/components/ui/icon'
-import { formatLeadSource, getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
+import { formatLeadSource, getAvatarLabel, getDisplayLeadName, outreachStatusLabel, type OutreachStatus } from '@/lib/contact-display'
 import { formatPhone } from '@/lib/format'
 import type { ContactSignal } from '@/lib/contact-display'
 import type { DealStage } from '@/types/pipeline'
@@ -64,6 +64,7 @@ interface ContactRow {
   createdAt: string | null
   firstOutboundAt: string | null
   contactSignal: ContactSignal | null
+  outreachStatus: OutreachStatus
   updatedAt: string | null
 }
 
@@ -88,7 +89,7 @@ type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
 type ContactDialog = 'add' | 'import' | 'view' | null
 type ToolbarMenu = 'filters' | 'sort' | null
 type ContactScope = 'active' | 'not_leads'
-type BulkAction = '' | 'assign:Ernest' | 'assign:Casey' | 'assign:Gertha' | 'assign:unassigned' | 'classify:lead' | `stage:${DealStage}` | 'not_lead'
+type BulkAction = '' | 'assign:Ernest' | 'assign:Casey' | 'assign:Gertha' | 'assign:unassigned' | 'classify:new' | 'classify:lead' | `stage:${DealStage}` | 'not_lead'
 
 interface SavedView {
   id: string
@@ -98,6 +99,7 @@ interface SavedView {
   source: string
   tag: string
   attention: string
+  outreach: string
 }
 
 const STAGE_LABELS: Record<DealStage, string> = {
@@ -256,6 +258,7 @@ export default function ContactsPage() {
   const [tagFilter, setTagFilter] = useState('')
   const [activityFilter, setActivityFilter] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
+  const [outreachFilter, setOutreachFilter] = useState('')
   const [dataGapFilter, setDataGapFilter] = useState<DataGap>('')
   const [sortBy, setSortBy] = useState<'priority' | 'recent' | 'name'>('priority')
   const [page, setPage] = useState(1)
@@ -312,6 +315,8 @@ export default function ContactsPage() {
     if (requestedSource) setSourceFilter(requestedSource)
     const requestedAttention = params.get('attention')
     if (requestedAttention && ['needs_reply', 'waiting_on_contact', 'resolved'].includes(requestedAttention)) setAttentionFilter(requestedAttention)
+    const requestedOutreach = params.get('outreach')
+    if (requestedOutreach && ['unattempted', 'attempted_no_response', 'connected_unclassified'].includes(requestedOutreach)) setOutreachFilter(requestedOutreach)
   }, [])
 
   const counts = useMemo(() => contactSmartListCounts(allKnownItems), [allKnownItems])
@@ -334,6 +339,7 @@ export default function ContactsPage() {
       if (sourceFilter && item.source !== sourceFilter) return false
       if (tagFilter && !item.tags.includes(tagFilter)) return false
       if (attentionFilter && item.attentionState !== attentionFilter) return false
+      if (outreachFilter && item.outreachStatus !== outreachFilter) return false
       if (dataGapFilter === 'missing_phone' && item.phone) return false
       if (dataGapFilter === 'missing_email' && item.email) return false
       if (dataGapFilter === 'missing_next_action' && item.primaryNextAction) return false
@@ -353,9 +359,9 @@ export default function ContactsPage() {
       const attentionRank = (item: ContactWorkspaceRow) => item.attentionState === 'needs_reply' ? 0 : item.primaryNextAction?.overdue ? 1 : 2
       return attentionRank(a) - attentionRank(b) || b.score - a.score
     })
-  }, [activityFilter, attentionFilter, dataGapFilter, items, minimumStageFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
+  }, [activityFilter, attentionFilter, dataGapFilter, items, minimumStageFilter, outreachFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
 
-  useEffect(() => setPage(1), [activityFilter, attentionFilter, dataGapFilter, minimumStageFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
+  useEffect(() => setPage(1), [activityFilter, attentionFilter, dataGapFilter, minimumStageFilter, outreachFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
 
   useEffect(() => {
     setSelectedIds((current) => {
@@ -452,6 +458,8 @@ export default function ContactsPage() {
           fields = { assigned_agent: owner === 'unassigned' ? null : owner }
         } else if (bulkAction === 'classify:lead') {
           fields = { classification: 'lead', station: 'contacted', priority: 'warm' }
+        } else if (bulkAction === 'classify:new') {
+          fields = { classification: null, station: 'new', priority: 'warm', opportunity_score: 0, dead_reason: null, dead_at: null, dead_by: null }
         } else if (bulkAction.startsWith('stage:')) {
           fields = { station: bulkAction.slice('stage:'.length) }
         } else {
@@ -505,12 +513,16 @@ export default function ContactsPage() {
     setTagFilter('')
     setActivityFilter('')
     setAttentionFilter('')
+    setOutreachFilter('')
     setDataGapFilter('')
   }
 
   function selectSmartList(nextSmartList: ContactSmartList) {
     setSmartList(nextSmartList)
     setToolbarMenu(null)
+    setSelectedIds(new Set())
+    setBulkAction('')
+    setBulkMessage(null)
     const params = new URLSearchParams(window.location.search)
     if (nextSmartList === 'all') params.delete('list')
     else params.set('list', nextSmartList)
@@ -600,7 +612,7 @@ export default function ContactsPage() {
     event.preventDefault()
     const label = viewName.trim()
     if (!label) return
-    const next = [...savedViews, { id: crypto.randomUUID(), label, owner: ownerFilter, stage: stageFilter, source: sourceFilter, tag: tagFilter, attention: attentionFilter }]
+    const next = [...savedViews, { id: crypto.randomUUID(), label, owner: ownerFilter, stage: stageFilter, source: sourceFilter, tag: tagFilter, attention: attentionFilter, outreach: outreachFilter }]
     setSavedViews(next)
     window.localStorage.setItem('savingkc-contact-views', JSON.stringify(next))
     setViewName('')
@@ -614,11 +626,12 @@ export default function ContactsPage() {
     setSourceFilter(view.source)
     setTagFilter(view.tag)
     setAttentionFilter(view.attention)
+    setOutreachFilter(view.outreach ?? '')
   }
 
-  const hasFilters = Boolean(ownerFilter || stageFilter || minimumStageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter || dataGapFilter)
+  const hasFilters = Boolean(ownerFilter || stageFilter || minimumStageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter || outreachFilter || dataGapFilter)
     || ['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList)
-  const activeFilterCount = [ownerFilter, stageFilter, minimumStageFilter, sourceFilter, tagFilter, activityFilter, attentionFilter, dataGapFilter].filter(Boolean).length
+  const activeFilterCount = [ownerFilter, stageFilter, minimumStageFilter, sourceFilter, tagFilter, activityFilter, attentionFilter, outreachFilter, dataGapFilter].filter(Boolean).length
     + (['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList) ? 1 : 0)
   const smartListCopy = CONTACT_SMART_LIST_COPY[smartList]
   const hasCustomSmartListOrder = smartListOrder.some((id, index) => id !== DEFAULT_CONTACT_SMART_LIST_ORDER[index])
@@ -683,6 +696,7 @@ export default function ContactsPage() {
                     <FilterSelect label="Last activity" value={activityFilter} onChange={setActivityFilter} options={[["day", "Past 24 hours"], ["week", "Past 7 days"], ["stale", "More than 7 days"], ["none", "No activity"]]} />
                     <FilterSelect label="Data quality" value={dataGapFilter} onChange={(value) => setDataGapFilter(value as DataGap)} options={[["missing_phone", "Missing phone"], ["missing_email", "Missing email"], ["missing_next_action", "Missing next action"]]} />
                     <FilterSelect label="Conversation state" value={attentionFilter} onChange={setAttentionFilter} options={[["needs_reply", "Needs reply"], ["waiting_on_contact", "Waiting on contact"], ["resolved", "Resolved"]]} />
+                    <FilterSelect label="Outreach status" value={outreachFilter} onChange={setOutreachFilter} options={[["unattempted", "Unattempted"], ["attempted_no_response", "Attempted — no response"], ["connected_unclassified", "Connected — needs classification"]]} />
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--crm-border)] pt-3">
                     {savedViews.map((view) => <button type="button" key={view.id} onClick={() => applyView(view)} className="rounded-full border border-[var(--crm-border)] px-3 py-1.5 text-xs font-semibold hover:border-[var(--crm-brand-border)] hover:text-[var(--crm-brand)]">{view.label}</button>)}
@@ -714,6 +728,7 @@ export default function ContactsPage() {
                   <option value="assign:unassigned">Set unassigned</option>
                 </optgroup>
                 <optgroup label="Classify intake">
+                  {smartList === 'contacted' ? <option value="classify:new">Return to New</option> : null}
                   <option value="classify:lead">Add to Leads</option>
                 </optgroup>
                 <optgroup label="Move stage">
@@ -761,7 +776,7 @@ export default function ContactsPage() {
                     <span className="min-w-0"><strong className="block truncate font-medium text-[var(--crm-text)]">{property}</strong><small className="text-[var(--crm-text-dim)]">{row.city || ''}</small></span>
                     <span className="min-w-0">
                       <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : row.classification ? 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]'}`}>{pipelineStatus}</span>
-                      <small className={`mt-1 block truncate text-[10px] ${notLead && !row.deadReason ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}>{notLead ? deadReasonLabel(row.deadReason) || 'Reason required' : STAGE_LABELS[row.station]}</small>
+                      <small className={`mt-1 block truncate text-[10px] ${notLead && !row.deadReason ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}>{notLead ? deadReasonLabel(row.deadReason) || 'Reason required' : row.classification === null ? outreachStatusLabel(row.outreachStatus) : STAGE_LABELS[row.station]}</small>
                     </span>
                     <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-action)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>
                     <span>{row.owner || 'Unassigned'}</span><span className="text-[var(--crm-text-muted)]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[var(--crm-text-muted)]">{formatLeadSource(row.source)}</span>

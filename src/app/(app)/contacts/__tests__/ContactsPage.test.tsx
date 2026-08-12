@@ -35,6 +35,7 @@ const baseContact = {
   createdAt: '2026-08-01T12:00:00Z',
   firstOutboundAt: null,
   contactSignal: null,
+  outreachStatus: 'unattempted' as const,
   updatedAt: null,
   attentionState: 'resolved' as const,
   owner: 'Casey',
@@ -195,12 +196,28 @@ describe('ContactsPage smart-list workspace', () => {
     expect(pushMock).toHaveBeenCalledWith('/leads/new-intake')
   })
 
-  it('labels the workspace Pipeline and exposes Add to Leads as a bulk classification', () => {
+  it('labels the workspace Pipeline and exposes safe bulk classifications', () => {
     render(<ContactsPage />)
 
     expect(screen.getByText('Pipeline')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select New Intake' }))
-    const bulkAction = screen.getByRole('combobox', { name: 'Bulk action' })
-    expect(within(bulkAction).getByRole('option', { name: 'Add to Leads' })).toHaveValue('classify:lead')
+    expect(within(screen.getByRole('combobox', { name: 'Bulk action' })).getByRole('option', { name: 'Add to Leads' })).toHaveValue('classify:lead')
+    expect(within(screen.getByRole('combobox', { name: 'Bulk action' })).queryByRole('option', { name: 'Return to New' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Leads 1$/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Active Lead' }))
+    expect(within(screen.getByRole('combobox', { name: 'Bulk action' })).getByRole('option', { name: 'Return to New' })).toHaveValue('classify:new')
+  })
+
+  it('filters New intake by real outreach status', () => {
+    render(<ContactsPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /^New 1$/ }))
+    expect(screen.getByText('Unattempted')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    const filters = screen.getByRole('dialog', { name: 'Contact filters' })
+    expect(within(filters).getByRole('combobox', { name: 'Outreach status' })).toBeInTheDocument()
+    fireEvent.change(within(filters).getByRole('combobox', { name: 'Outreach status' }), { target: { value: 'attempted_no_response' } })
+    expect(screen.queryByText('New Intake')).not.toBeInTheDocument()
   })
 })

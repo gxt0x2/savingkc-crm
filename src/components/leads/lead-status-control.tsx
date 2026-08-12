@@ -43,6 +43,7 @@ export function LeadStatusControl({
 }: LeadStatusControlProps) {
   const currentlyNotLead = isNotLeadOutcome(classification, station)
   const currentlyUnclassified = !currentlyNotLead && !classification
+  const canReturnToNew = classification === 'lead' && ['new', 'contacted'].includes(station ?? '')
   const currentStatusLabel = currentlyNotLead
     ? `Not a lead${deadReasonLabel(deadReason) ? ` — ${deadReasonLabel(deadReason)}` : ''}`
     : classification === 'opportunity'
@@ -52,7 +53,7 @@ export function LeadStatusControl({
         : 'New intake'
   const canonicalReason = canonicalDeadReason(deadReason)
   const [open, setOpen] = useState(false)
-  const [selectedStatus, setSelectedStatus] = useState<'lead' | 'not_a_lead'>(currentlyNotLead ? 'not_a_lead' : 'lead')
+  const [selectedStatus, setSelectedStatus] = useState<'new_intake' | 'lead' | 'not_a_lead'>(currentlyNotLead ? 'not_a_lead' : currentlyUnclassified ? 'new_intake' : 'lead')
   const [selectedReason, setSelectedReason] = useState(canonicalReason ?? '')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -64,7 +65,7 @@ export function LeadStatusControl({
     if (saving) return
     setOpen(false)
     setError(null)
-    setSelectedStatus(currentlyNotLead ? 'not_a_lead' : 'lead')
+    setSelectedStatus(currentlyNotLead ? 'not_a_lead' : currentlyUnclassified ? 'new_intake' : 'lead')
     setSelectedReason(canonicalReason ?? '')
     setNotes('')
   }
@@ -75,13 +76,18 @@ export function LeadStatusControl({
   async function saveLeadStatus() {
     if (saving) return
     const markingNotLead = selectedStatus === 'not_a_lead'
+    const returningToNew = selectedStatus === 'new_intake'
     if (markingNotLead && !selectedReason) return
     if (markingNotLead && selectedReason === 'other' && !notes.trim()) {
       setError('Add a note when Other is selected.')
       return
     }
 
-    if (!markingNotLead && !currentlyNotLead && classification) {
+    if (!markingNotLead && !returningToNew && !currentlyNotLead && classification) {
+      closeDialog()
+      return
+    }
+    if (returningToNew && currentlyUnclassified) {
       closeDialog()
       return
     }
@@ -91,6 +97,8 @@ export function LeadStatusControl({
     try {
       const nextStation = markingNotLead
         ? 'dead'
+        : returningToNew
+          ? 'new'
         : currentlyNotLead || currentlyUnclassified
           ? 'contacted'
           : station || 'contacted'
@@ -106,6 +114,16 @@ export function LeadStatusControl({
           opportunity_score: 0,
           deadReason: selectedReason,
           deadReasonNotes: notes.trim() || null,
+        } : returningToNew ? {
+          id: leadId,
+          actor: agent || 'Ernest',
+          classification: null,
+          station: 'new',
+          priority: 'warm',
+          opportunity_score: 0,
+          dead_reason: null,
+          dead_at: null,
+          dead_by: null,
         } : {
           id: leadId,
           actor: agent || 'Ernest',
@@ -125,7 +143,7 @@ export function LeadStatusControl({
       if (!response.ok || !payload.success) throw new Error(payload.error || 'Lead status could not be saved')
 
       onChanged?.({
-        classification: payload.lead?.classification ?? (markingNotLead ? 'dead' : 'lead'),
+        classification: payload.lead?.classification ?? (markingNotLead ? 'dead' : returningToNew ? null : 'lead'),
         station: payload.lead?.station ?? nextStation,
         priority: payload.lead?.priority ?? (markingNotLead ? 'cold' : 'warm'),
         dead_reason: payload.lead?.dead_reason ?? (markingNotLead ? selectedReason : null),
@@ -142,7 +160,7 @@ export function LeadStatusControl({
     <button
       type="button"
       onClick={() => {
-        setSelectedStatus(currentlyNotLead ? 'not_a_lead' : 'lead')
+        setSelectedStatus(currentlyNotLead ? 'not_a_lead' : currentlyUnclassified ? 'new_intake' : 'lead')
         setSelectedReason(canonicalReason ?? '')
         setOpen(true)
       }}
@@ -189,6 +207,23 @@ export function LeadStatusControl({
 
         <div className="space-y-5 px-6 py-5">
           <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="Choose lead status">
+            {canReturnToNew || currentlyUnclassified ? (
+              <button
+                type="button"
+                aria-label="New intake"
+                onClick={() => setSelectedStatus('new_intake')}
+                aria-pressed={selectedStatus === 'new_intake'}
+                className={cn(
+                  'rounded-xl border-2 p-4 text-left transition-colors',
+                  selectedStatus === 'new_intake'
+                    ? 'border-[var(--crm-info)] bg-[var(--crm-info-soft)]'
+                    : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] hover:border-[var(--crm-info)]/50',
+                )}
+              >
+                <span className="flex items-center justify-between gap-2 font-black text-[var(--crm-info)]"><span className="flex items-center gap-2"><Icon name="person_search" />New intake</span>{selectedStatus === 'new_intake' ? <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--crm-info)] text-white"><Icon name="check" className="text-[16px]" /></span> : null}</span>
+                <span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">Keep this unclassified in New until an agent confirms the pipeline decision.</span>
+              </button>
+            ) : null}
             <button
               ref={leadButtonRef}
               type="button"
@@ -264,16 +299,16 @@ export function LeadStatusControl({
           <button type="button" onClick={closeDialog} disabled={saving} className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-bold">Cancel</button>
           <button
             type="button"
-            aria-label={saving ? 'Saving pipeline status' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : 'Confirm lead'}
+            aria-label={saving ? 'Saving pipeline status' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : selectedStatus === 'new_intake' ? canReturnToNew ? 'Return to New' : 'Keep in New' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : 'Confirm lead'}
             onClick={() => void saveLeadStatus()}
             disabled={saving || (selectedStatus === 'not_a_lead' && (!selectedReason || (selectedReason === 'other' && !notes.trim())))}
             className={cn(
               'flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50',
-              selectedStatus === 'not_a_lead' ? 'bg-[var(--crm-brand)]' : 'bg-[var(--crm-success)]',
+              selectedStatus === 'not_a_lead' ? 'bg-[var(--crm-brand)]' : selectedStatus === 'new_intake' ? 'bg-[var(--crm-info)]' : 'bg-[var(--crm-success)]',
             )}
           >
-            <Icon name={saving ? 'progress_activity' : selectedStatus === 'not_a_lead' ? 'person_off' : 'verified'} className={saving ? 'animate-spin' : ''} />
-            {saving ? 'Saving…' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : 'Confirm lead'}
+            <Icon name={saving ? 'progress_activity' : selectedStatus === 'not_a_lead' ? 'person_off' : selectedStatus === 'new_intake' ? 'person_search' : 'verified'} className={saving ? 'animate-spin' : ''} />
+            {saving ? 'Saving…' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : selectedStatus === 'new_intake' ? canReturnToNew ? 'Return to New' : 'Keep in New' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : 'Confirm lead'}
           </button>
         </div>
       </div>

@@ -116,4 +116,25 @@ describe('LeadStatusControl', () => {
       station: 'contacted',
     })))
   })
+
+  it('returns an incorrectly classified lead to unclassified New intake', async () => {
+    const onChanged = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, lead: { classification: null, station: 'new', priority: 'warm', dead_reason: null } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<LeadStatusControl leadId="lead-1" classification="lead" station="contacted" agent="Ernest" onChanged={onChanged} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change pipeline status. Current: Lead' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New intake' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Return to New' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads', expect.objectContaining({
+      method: 'PATCH',
+      body: expect.stringContaining('"classification":null,"station":"new"'),
+    })))
+    expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ classification: null, station: 'new' }))
+  })
 })
