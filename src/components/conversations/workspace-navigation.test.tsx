@@ -63,18 +63,18 @@ describe('workspace navigation', () => {
     expect(within(switcher).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
     expect(within(switcher).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('aria-current', 'page')
     expect(within(switcher).getByRole('link', { name: /Dispositions/ })).toHaveAttribute('href', '/reports/dispositions')
-    expect(within(switcher).getByRole('link', { name: /Marketing/ })).toHaveAttribute('href', '/marketing')
+    expect(within(switcher).getByRole('link', { name: /Marketing/ })).toHaveAttribute('href', '/reports/marketing')
     expect(within(switcher).queryByRole('link', { name: /Bottlenecks/ })).not.toBeInTheDocument()
     expect(within(switcher).queryByRole('link', { name: /Bingo Board/ })).not.toBeInTheDocument()
   })
 
-  it('keeps the Google Ads command center inside the dashboard navigation', () => {
-    navigation.pathname = '/marketing'
+  it('keeps Google Ads as a subpage of the Marketing dashboard', () => {
+    navigation.pathname = '/marketing/google-ads'
     render(<WorkspaceContextNav />)
 
-    const switcher = screen.getByRole('navigation', { name: 'Dashboards sections' })
-    expect(within(switcher).getByRole('link', { name: /Marketing/ })).toHaveAttribute('aria-current', 'page')
-    expect(within(switcher).getByRole('link', { name: /Marketing/ })).toHaveAttribute('href', '/marketing')
-    expect(within(switcher).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
+    const marketingNav = screen.getByRole('navigation', { name: 'Marketing sections' })
+    expect(within(marketingNav).getByRole('link', { name: /Overview/ })).toHaveAttribute('href', '/reports/marketing')
+    expect(within(marketingNav).getByRole('link', { name: /Google Ads/ })).toHaveAttribute('aria-current', 'page')
+    expect(within(marketingNav).getByRole('link', { name: /Google Ads/ })).toHaveAttribute('href', '/marketing/google-ads')
   })
 })

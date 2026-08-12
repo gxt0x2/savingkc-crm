@@ -11,7 +11,7 @@ const acquisitionTabs = [
   { label: 'Workflows', href: '/workflows', icon: 'account_tree' },
   { label: 'Calendar', href: '/calendar?department=acquisitions', icon: 'calendar_today' },
   { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },
-  { label: 'Ads', href: '/marketing', icon: 'monitoring' },
+  { label: 'Ads', href: '/marketing/google-ads', icon: 'monitoring' },
   { label: 'KPIs', href: '/dashboard', icon: 'insights' },
 ]
 

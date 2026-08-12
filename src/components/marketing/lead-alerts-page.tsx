@@ -195,7 +195,7 @@ export function LeadAlertsPage() {
         <div className="alert-wrap">
           <header className="alert-header">
             <div>
-              <Link className="back-link" href="/marketing">Ads Command</Link>
+              <Link className="back-link" href="/marketing/google-ads">Google Ads</Link>
               <h1>Lead Alert Audit</h1>
               <p>Every team notification path for form and call leads from the last {days} day{days === 1 ? '' : 's'}.</p>
             </div>

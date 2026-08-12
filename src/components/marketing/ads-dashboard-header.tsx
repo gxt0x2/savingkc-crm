@@ -18,9 +18,9 @@ export function AdsDashboardHeader({ syncedLabel, googleAdsFreshness, crmFreshne
         </div>
         <div className="ads-dashboard-actions">
           <span className="ads-sync-pill"><span className="live-dot" /> {syncedLabel}</span>
-          <Link className="ads-header-action" href="/reports/marketing" aria-label="CRM attribution report">
+          <Link className="ads-header-action" href="/reports/marketing" aria-label="Marketing overview">
             <Icon name="analytics" className="text-[17px]" />
-            CRM attribution
+            Marketing overview
           </Link>
           <Link className="ads-header-action" href="/marketing/calls?source=google_ads">
             <Icon name="record_voice_over" className="text-[17px]" />

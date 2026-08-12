@@ -207,7 +207,7 @@ export function CallRecordingsPage() {
         <div className="recording-wrap">
           <header className="recording-header">
             <div>
-              <Link className="back-link" href="/marketing">Ads Command</Link>
+              <Link className="back-link" href="/marketing/google-ads">Google Ads</Link>
               <h1>Call Recording Review</h1>
               <p>Seller-call recordings over {formatDuration(minDuration)} from the last {days} days.</p>
             </div>

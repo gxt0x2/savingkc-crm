@@ -126,10 +126,11 @@ const googleAdsAssertions = [
     message: 'Google Ads page must inherit the CRM light/dark theme instead of forcing light mode',
   },
   {
-    passes: workspaceContextNav.includes("{ label: 'Marketing', href: '/marketing', icon: 'campaign', matchPath: '/marketing' }")
+    passes: workspaceContextNav.includes("{ label: 'Marketing', href: '/reports/marketing', icon: 'campaign', matchPath: '/reports/marketing' }")
+      && workspaceContextNav.includes("{ label: 'Google Ads', href: '/marketing/google-ads', icon: 'ads_click', matchPath: '/marketing/google-ads' }")
       && googleAdsHeader.includes('Team dashboard · Marketing')
-      && googleAdsHeader.includes('CRM attribution report'),
-    message: 'the current dashboard navigation must open the themed Google Ads workspace and preserve CRM attribution access',
+      && googleAdsHeader.includes('Marketing overview'),
+    message: 'the Marketing dashboard must remain primary while Google Ads stays available as a themed subpage',
   },
   {
     passes: googleAdsApi.includes("const googleOnly = sourceFilter === 'google_ads'")

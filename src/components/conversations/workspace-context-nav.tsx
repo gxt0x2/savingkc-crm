@@ -23,7 +23,7 @@ const DASHBOARD_CONTEXT_ITEMS: ContextItem[] = [
   { label: 'Company overview', href: '/dashboard', icon: 'space_dashboard', matchPath: '/dashboard' },
   { label: 'Acquisitions', href: '/reports/acquisitions', icon: 'track_changes', matchPath: '/reports/acquisitions' },
   { label: 'Dispositions', href: '/reports/dispositions', icon: 'sell', matchPath: '/reports/dispositions' },
-  { label: 'Marketing', href: '/marketing', icon: 'campaign', matchPath: '/marketing' },
+  { label: 'Marketing', href: '/reports/marketing', icon: 'campaign', matchPath: '/reports/marketing' },
 ]
 
 const GROUPS: ContextGroup[] = [
@@ -78,7 +78,8 @@ const GROUPS: ContextGroup[] = [
     label: 'Marketing',
     pathPrefix: '/marketing',
     items: [
-      { label: 'Google Ads', href: '/marketing', icon: 'space_dashboard', matchPath: '/marketing' },
+      { label: 'Overview', href: '/reports/marketing', icon: 'space_dashboard', matchPath: '/reports/marketing' },
+      { label: 'Google Ads', href: '/marketing/google-ads', icon: 'ads_click', matchPath: '/marketing/google-ads' },
       { label: 'Call recordings', href: '/marketing/calls', icon: 'record_voice_over', matchPath: '/marketing/calls' },
       { label: 'Lead alerts', href: '/marketing/alerts', icon: 'notification_important', matchPath: '/marketing/alerts' },
       { label: 'Landing pages', href: '/marketing/heatmaps', icon: 'ads_click', matchPath: '/marketing/heatmaps' },
@@ -113,13 +114,7 @@ const GROUPS: ContextGroup[] = [
 export function WorkspaceContextNav() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  // The Google Ads command center is the Marketing department dashboard. Its
-  // child tools keep their own Marketing sub-navigation, while the root route
-  // remains part of the same dashboard switcher as Company, Acquisitions, and
-  // Dispositions.
-  const group = pathname === '/marketing'
-    ? { label: 'Dashboards', pathPrefix: '/marketing', items: DASHBOARD_CONTEXT_ITEMS }
-    : GROUPS.find((candidate) => pathname.startsWith(candidate.pathPrefix))
+  const group = GROUPS.find((candidate) => pathname.startsWith(candidate.pathPrefix))
 
   if (!group) return null
 

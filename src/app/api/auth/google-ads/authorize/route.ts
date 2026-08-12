@@ -14,13 +14,13 @@ function redirectWithError(origin: string, returnTo: string, value: string) {
   return NextResponse.redirect(errorUrl)
 }
 
-// GET /api/auth/google-ads/authorize?return_to=/marketing
+// GET /api/auth/google-ads/authorize?return_to=/marketing/google-ads
 // Starts a dedicated Google Ads OAuth flow so the exporter can upload approved
 // offline conversions without reusing the Gmail/Calendar token.
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const rawReturnTo = url.searchParams.get('return_to')
-  const returnTo = rawReturnTo?.startsWith('/') ? rawReturnTo : '/marketing'
+  const returnTo = rawReturnTo?.startsWith('/') ? rawReturnTo : '/marketing/google-ads'
   const origin = url.origin
 
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID
