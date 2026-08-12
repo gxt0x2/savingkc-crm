@@ -22,6 +22,7 @@ const crmWorkspaceRoutes = [
   '/reports/marketing',
   '/reports/acquisitions',
   '/reports/dispositions',
+  '/reports/bottlenecks',
   '/reports/finance',
   '/reports/call-sms',
   '/ari',
@@ -94,6 +95,7 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
   const dashboardLinks = new Map([
     ['Acquisitions', '/reports/acquisitions'],
     ['Dispositions', '/reports/dispositions'],
+    ['Bingo Board', '/reports/bottlenecks'],
   ]);
   for (const [name, href] of dashboardLinks) {
     await expect(page.locator(`a[href="${href}"]`).filter({ hasText: name })).toBeVisible();
