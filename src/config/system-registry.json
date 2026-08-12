@@ -183,7 +183,7 @@
       "status": "active",
       "routes": ["/ari", "/ai"],
       "apiRoutes": ["/api/ari/chat", "/api/ai/command"],
-      "tables": ["ari_briefings", "ari_briefing_events", "ari_audit_events"],
+      "tables": ["ari_briefings", "ari_briefing_events", "ari_audit_events", "roles"],
       "environment": ["OPENAI_API_KEY"]
     },
     {
