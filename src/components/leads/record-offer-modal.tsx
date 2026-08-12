@@ -1,6 +1,7 @@
 'use client'
 
 import { useId, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { Icon } from '@/components/ui/icon'
 import type { OfferMethod } from '@/lib/lead-offer'
@@ -63,8 +64,8 @@ export function RecordOfferModal({
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm sm:p-6" onMouseDown={onClose}>
+  const modal = (
+    <div className="crm-workspace-shell fixed inset-0 z-[110] flex items-center justify-center bg-black/65 p-3 text-[var(--crm-ink)] backdrop-blur-sm sm:p-6" data-theme={readActiveTheme()} onMouseDown={onClose}>
       <div
         ref={dialogRef}
         role="dialog"
@@ -162,4 +163,15 @@ export function RecordOfferModal({
       </div>
     </div>
   )
+
+  return typeof document === 'undefined' ? modal : createPortal(modal, document.body)
+}
+
+function readActiveTheme(): 'light' | 'dark' {
+  if (typeof document !== 'undefined') {
+    const shellTheme = document.querySelector<HTMLElement>('.crm-workspace-shell')?.dataset.theme
+    if (shellTheme === 'light' || shellTheme === 'dark') return shellTheme
+  }
+  if (typeof window !== 'undefined') return window.localStorage.getItem('crm-theme') === 'light' ? 'light' : 'dark'
+  return 'dark'
 }

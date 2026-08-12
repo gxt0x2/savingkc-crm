@@ -105,7 +105,9 @@ for (const file of files) {
 }
 
 const googleAdsPage = fs.readFileSync('src/components/marketing/ads-command-page.tsx', 'utf8')
+const googleAdsHeader = fs.readFileSync('src/components/marketing/ads-dashboard-header.tsx', 'utf8')
 const googleAdsApi = fs.readFileSync('src/app/api/marketing/ads-command/route.ts', 'utf8')
+const workspaceContextNav = fs.readFileSync('src/components/conversations/workspace-context-nav.tsx', 'utf8')
 const googleAdsAssertions = [
   {
     passes: googleAdsPage.includes("new URLSearchParams({ period: reportingPeriod, src: 'g' })"),
@@ -122,6 +124,12 @@ const googleAdsAssertions = [
   {
     passes: !googleAdsPage.includes('data-theme="light"'),
     message: 'Google Ads page must inherit the CRM light/dark theme instead of forcing light mode',
+  },
+  {
+    passes: workspaceContextNav.includes("{ label: 'Marketing', href: '/marketing', icon: 'campaign', matchPath: '/marketing' }")
+      && googleAdsHeader.includes('Team dashboard · Marketing')
+      && googleAdsHeader.includes('CRM attribution report'),
+    message: 'the current dashboard navigation must open the themed Google Ads workspace and preserve CRM attribution access',
   },
   {
     passes: googleAdsApi.includes("const googleOnly = sourceFilter === 'google_ads'")

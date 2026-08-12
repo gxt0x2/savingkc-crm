@@ -25,7 +25,6 @@ function contact(overrides: Partial<SmartListContact>): SmartListContact {
 describe('contact smart lists', () => {
   it('keeps the approved labels and order', () => {
     expect(CONTACT_SMART_LISTS.map(({ label }) => label)).toEqual([
-      'Hot',
       'New',
       'Leads',
       'Opportunities',
@@ -39,7 +38,6 @@ describe('contact smart lists', () => {
   it('restores a saved tab order without losing new or invalid smart lists', () => {
     expect(normalizeContactSmartListOrder(['all', 'hot', 'all', 'not_leads', 'new'])).toEqual([
       'all',
-      'hot',
       'new',
       'contacted',
       'qualified',

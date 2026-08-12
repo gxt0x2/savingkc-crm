@@ -24,67 +24,38 @@ vi.mock('next/image', () => ({
   default: ({ alt }: { alt: string }) => <span aria-label={alt || undefined} role={alt ? 'img' : undefined} />,
 }))
 
-describe('workspace dashboard navigation', () => {
+describe('workspace navigation', () => {
   beforeEach(() => {
     navigation.pathname = '/dashboard'
     navigation.search = ''
   })
 
-  it('exposes company, team, and Andon dashboards', () => {
-    render(<WorkspaceNav needsReply={0} />)
+  it('uses the approved compact nine-item order and hides retired menu labels', () => {
+    render(<WorkspaceNav needsReply={3} />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
-    expect(within(navigationRegion).getByRole('link', { name: /Dashboard$/ })).toHaveAttribute('href', '/dashboard')
-    expect(within(navigationRegion).getByRole('button', { name: 'Collapse dashboard menu' })).toHaveAttribute('aria-expanded', 'true')
-    expect(within(navigationRegion).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
-    expect(within(navigationRegion).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('href', '/reports/acquisitions')
-    expect(navigationRegion.querySelector('a[href="/reports/dispositions"]')).toBeInTheDocument()
-    expect(within(navigationRegion).getByRole('link', { name: /Bingo Board/ })).toHaveAttribute('href', '/reports/bottlenecks')
-    expect(within(navigationRegion).getByRole('link', { name: /Andon system/ })).toHaveAttribute('href', '/reports/andon')
+    const labels = within(navigationRegion).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
+    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Reports', 'Settings'])
+    expect(within(navigationRegion).getByRole('link', { name: 'Pipeline' })).toHaveAttribute('href', '/contacts?list=new')
+    expect(within(navigationRegion).getByRole('link', { name: 'Issue Log' })).toHaveAttribute('href', '/reports/andon')
+    expect(within(navigationRegion).queryByRole('link', { name: 'Bottlenecks' })).not.toBeInTheDocument()
+    expect(within(navigationRegion).queryByRole('link', { name: 'Bingo Board' })).not.toBeInTheDocument()
+    expect(within(navigationRegion).queryByRole('link', { name: 'AI Assistant' })).not.toBeInTheDocument()
+    expect(within(navigationRegion).queryByRole('link', { name: 'ARI Insights' })).not.toBeInTheDocument()
   })
 
   it('keeps the system Andon available from the shared CRM navigation', () => {
     render(<WorkspaceNav needsReply={0} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Raise an Andon and report an issue' }))
-
     expect(screen.getByRole('dialog', { name: 'Report an issue' })).toBeVisible()
     expect(screen.getByRole('button', { name: /Process issue/ })).toBeVisible()
     expect(screen.getByRole('button', { name: /AI Glitch/ })).toBeVisible()
-    expect(screen.getByRole('combobox', { name: 'Core work area' })).toHaveValue('Marketing')
-    expect(screen.getByRole('combobox', { name: 'Specific process' })).toHaveValue('List Import Error')
     expect(screen.getByRole('textbox', { name: 'What happened' })).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Why 5' })).toBeVisible()
   })
 
-  it('keeps team dashboards out of the generic reports section', () => {
-    navigation.pathname = '/contacts'
-    render(<WorkspaceNav needsReply={0} />)
-
-    const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
-    expect(within(navigationRegion).getByRole('link', { name: /Pipeline/ })).toHaveAttribute('href', '/contacts')
-    expect(within(navigationRegion).getByRole('link', { name: /Dashboard$/ })).toBeVisible()
-    expect(within(navigationRegion).getByRole('button', { name: 'Expand dashboard menu' })).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(within(navigationRegion).getByRole('button', { name: /Reports/ }))
-
-    const reportsButton = within(navigationRegion).getByRole('button', { name: /Reports/ })
-    expect(reportsButton).toHaveAttribute('aria-expanded', 'true')
-    expect(within(navigationRegion).getByRole('link', { name: /Marketing/ })).toBeInTheDocument()
-    expect(within(navigationRegion).getByRole('link', { name: /Finance/ })).toBeInTheDocument()
-    expect(navigationRegion.querySelector('a[href="/reports/acquisitions"]')).not.toBeInTheDocument()
-    expect(navigationRegion.querySelector('a[href="/reports/dispositions"]')).not.toBeInTheDocument()
-  })
-
-  it('keeps one direct dispositions portal entry for the shared operating workspace', () => {
-    navigation.pathname = '/contacts'
-    render(<WorkspaceNav needsReply={0} />)
-
-    const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
-    expect(within(navigationRegion).getByRole('link', { name: /^Dispositions$/ })).toHaveAttribute('href', '/dispo/pipeline')
-    expect(within(navigationRegion).queryByRole('link', { name: /^Transaction coordination$/ })).not.toBeInTheDocument()
-  })
-
-  it('shows the dashboard switcher on each team dashboard', () => {
+  it('shows Marketing in the dashboard context bar instead of the retired Bottlenecks board', () => {
     navigation.pathname = '/reports/acquisitions'
     render(<WorkspaceContextNav />)
 
@@ -92,16 +63,18 @@ describe('workspace dashboard navigation', () => {
     expect(within(switcher).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
     expect(within(switcher).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('aria-current', 'page')
     expect(within(switcher).getByRole('link', { name: /Dispositions/ })).toHaveAttribute('href', '/reports/dispositions')
-    expect(within(switcher).getByRole('link', { name: /Bingo Board/ })).toHaveAttribute('href', '/reports/bottlenecks')
-    expect(within(switcher).getByRole('link', { name: /Andon system/ })).toHaveAttribute('href', '/reports/andon')
+    expect(within(switcher).getByRole('link', { name: /Marketing/ })).toHaveAttribute('href', '/marketing')
+    expect(within(switcher).queryByRole('link', { name: /Bottlenecks/ })).not.toBeInTheDocument()
+    expect(within(switcher).queryByRole('link', { name: /Bingo Board/ })).not.toBeInTheDocument()
   })
 
-  it('keeps the Bingo Board attached to the dashboard switcher', () => {
-    navigation.pathname = '/reports/bottlenecks'
+  it('keeps the Google Ads command center inside the dashboard navigation', () => {
+    navigation.pathname = '/marketing'
     render(<WorkspaceContextNav />)
 
     const switcher = screen.getByRole('navigation', { name: 'Dashboards sections' })
-    expect(within(switcher).getByRole('link', { name: /Bingo Board/ })).toHaveAttribute('aria-current', 'page')
-    expect(within(switcher).getByRole('link', { name: /Andon system/ })).toHaveAttribute('href', '/reports/andon')
+    expect(within(switcher).getByRole('link', { name: /Marketing/ })).toHaveAttribute('aria-current', 'page')
+    expect(within(switcher).getByRole('link', { name: /Marketing/ })).toHaveAttribute('href', '/marketing')
+    expect(within(switcher).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
   })
 })

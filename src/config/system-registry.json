@@ -161,7 +161,7 @@
       "name": "Department reporting",
       "owner": "Operations",
       "status": "active",
-      "routes": ["/reports", "/reports/marketing", "/reports/dispositions", "/reports/bottlenecks", "/reports/finance", "/reports/call-sms"],
+      "routes": ["/reports", "/reports/marketing", "/reports/dispositions", "/reports/finance", "/reports/call-sms"],
       "apiRoutes": ["/api/reports/operating", "/api/financials"],
       "tables": ["leads", "call_logs", "communications", "dispo_deals", "tc_files"],
       "environment": []
@@ -183,7 +183,7 @@
       "status": "active",
       "routes": ["/ari", "/ai"],
       "apiRoutes": ["/api/ari/chat", "/api/ai/command"],
-      "tables": ["ari_briefings", "ari_briefing_events", "ari_audit_events"],
+      "tables": ["ari_briefings", "ari_briefing_events", "ari_audit_events", "roles"],
       "environment": ["OPENAI_API_KEY"]
     },
     {

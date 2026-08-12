@@ -56,10 +56,7 @@ export function ExecutiveDashboard({
           <div className="flex flex-wrap items-center gap-2">
             <ReportDateRangeControl period={period} customRange={customRange} onPeriodChange={onPeriodChange} onCustomRangeChange={onCustomRangeChange} />
             <Link href="/reports/andon" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-3 text-[10px] font-bold text-[var(--crm-danger)] shadow-[var(--crm-shadow-sm)] hover:border-[var(--crm-danger)]">
-              <Icon name="warning_amber" className="text-[17px]" /> Andon system
-            </Link>
-            <Link href="/ari" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 text-[10px] font-bold shadow-[var(--crm-shadow-sm)] hover:border-[var(--crm-violet)]">
-              <Icon name="auto_awesome" className="text-[17px] text-[var(--crm-violet)]" /> Ask AI Assistant
+              <Icon name="warning_amber" className="text-[17px]" /> Issue Log
             </Link>
           </div>
         </header>
@@ -77,10 +74,8 @@ export function ExecutiveDashboard({
           <RevenuePerformance report={report} />
         </section>
 
-        <section className="grid gap-2.5 xl:grid-cols-2 2xl:h-[224px] 2xl:grid-cols-[.96fr_.70fr_1.42fr]">
+        <section className="2xl:h-[224px]">
           <ActiveBottlenecks report={report} />
-          <AiInsights report={report} />
-          <AiAssistant report={report} />
         </section>
       </div>
     </main>
@@ -213,20 +208,7 @@ function RevenuePerformance({ report }: { report: OperatingReport }) {
 }
 
 function ActiveBottlenecks({ report }: { report: OperatingReport }) {
-  return <DashboardPanel title="Active bottlenecks" tone="amber" href="/tasks"><div className="px-3 py-1"><div className="grid grid-cols-[1fr_58px_44px_44px] gap-1 border-b border-[var(--crm-border)] py-1 text-[8px] font-bold uppercase text-[var(--crm-text-muted)]"><span>Issue</span><span>Dept.</span><span className="text-right">Impact</span><span className="text-right">Status</span></div>{report.bottlenecks.slice(0, 5).map((row) => <Link key={row.key} href={row.href} className="grid grid-cols-[1fr_58px_44px_44px] items-center gap-1 border-b border-[var(--crm-border)] py-2 text-[9px] hover:bg-[var(--crm-surface-subtle)]"><strong className="truncate">{row.label}</strong><span className="truncate text-[var(--crm-text-muted)]">{row.department}</span><span className="text-right font-bold">{row.count}</span><span className={`rounded-full px-1 py-0.5 text-center text-[8px] font-bold ${row.severity === 'high' ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : row.severity === 'medium' ? 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' : 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>{row.severity === 'clear' ? 'Clear' : row.severity}</span></Link>)}</div></DashboardPanel>
-}
-
-function AiInsights({ report }: { report: OperatingReport }) {
-  return <DashboardPanel title="AI insights" tone="blue" href="/ari"><div className="space-y-2 px-3 py-2">{report.insights.slice(0, 4).map((insight) => { const attention = /need|below|outstanding|unassigned|overdue/i.test(insight); return <div key={insight} className="flex gap-2 text-[9px] font-medium leading-3.5"><Icon name={attention ? 'warning_amber' : 'check_circle'} className={`mt-0.5 text-[13px] ${attention ? 'text-[var(--crm-warning)]' : 'text-[var(--crm-success)]'}`} /><span>{insight}</span></div>})}</div></DashboardPanel>
-}
-
-function AiAssistant({ report }: { report: OperatingReport }) {
-  const prompts = ['How is my pipeline performing?', 'Why are contracts down?', 'Show my revenue forecast', 'What bottleneck needs attention?']
-  return <DashboardPanel title="AI assistant" tone="violet" href="/ari"><div className="grid h-full grid-cols-[1fr_112px] gap-2 px-3 py-2"><div className="min-w-0"><p className="text-[10px] font-medium">Hi Ernest, how can I help you today?</p><div className="mt-2 grid grid-cols-2 gap-1">{prompts.map((prompt) => <Link key={prompt} href={`/ari?prompt=${encodeURIComponent(prompt)}`} className="truncate rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface)] px-2 py-1.5 text-[8px] font-semibold text-[var(--crm-text-muted)] hover:border-[var(--crm-violet)] hover:text-[var(--crm-violet)]">{prompt}</Link>)}</div><form action="/ari" className="mt-3 flex h-9 items-center rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] px-2"><input name="prompt" aria-label="Ask ARI a question" placeholder="Type your question..." className="min-w-0 flex-1 bg-transparent text-[9px] outline-none" /><button type="submit" aria-label="Send question to ARI" className="grid h-6 w-6 place-items-center rounded-full bg-[var(--crm-info-soft)] text-[var(--crm-info)]"><Icon name="arrow_forward" className="text-[13px]" /></button></form><p className="mt-2 text-[8px] text-[var(--crm-text-muted)]">Live context: {report.core.leads} leads · {report.core.needsReply} replies need attention</p></div><AriRobot /></div></DashboardPanel>
-}
-
-function AriRobot() {
-  return <svg aria-hidden="true" viewBox="0 0 120 150" className="h-full max-h-[160px] w-full self-end"><defs><linearGradient id="ariBody" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#eff6ff" /><stop offset="1" stopColor="#c9dcff" /></linearGradient></defs><ellipse cx="60" cy="137" rx="37" ry="7" fill="#dbe6f7" /><path d="M31 81c0-18 13-31 29-31s29 13 29 31v36c0 12-10 21-22 21H53c-12 0-22-9-22-21z" fill="url(#ariBody)" stroke="#78a7ff" strokeWidth="2" /><rect x="25" y="25" width="70" height="52" rx="25" fill="#f7fbff" stroke="#78a7ff" strokeWidth="2" /><rect x="33" y="34" width="54" height="34" rx="16" fill="#102358" /><circle cx="50" cy="51" r="5" fill="#42e8ff" /><circle cx="70" cy="51" r="5" fill="#42e8ff" /><path d="M51 61c6 4 12 4 18 0" fill="none" stroke="#42e8ff" strokeWidth="2" strokeLinecap="round" /><path d="M60 25V15" stroke="#78a7ff" strokeWidth="3" strokeLinecap="round" /><circle cx="60" cy="12" r="4" fill="#7c3aed" /><path d="M31 91 17 106M89 91l14 15" stroke="#78a7ff" strokeWidth="7" strokeLinecap="round" /><circle cx="15" cy="109" r="6" fill="#eaf2ff" stroke="#78a7ff" strokeWidth="2" /><circle cx="105" cy="109" r="6" fill="#eaf2ff" stroke="#78a7ff" strokeWidth="2" /><rect x="46" y="83" width="28" height="22" rx="7" fill="#ffffff" stroke="#78a7ff" /><path d="m55 94 4 4 7-9" fill="none" stroke="#6d28d9" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /><path d="M47 137v8M73 137v8" stroke="#78a7ff" strokeWidth="8" strokeLinecap="round" /></svg>
+  return <DashboardPanel title="Open issues" tone="amber" href="/reports/andon"><div className="px-3 py-1"><div className="grid grid-cols-[1fr_120px_80px_80px] gap-2 border-b border-[var(--crm-border)] py-1 text-[9px] font-bold uppercase text-[var(--crm-text-muted)]"><span>Issue</span><span>Department</span><span className="text-right">Impact</span><span className="text-right">Status</span></div>{report.bottlenecks.slice(0, 5).map((row) => <Link key={row.key} href={row.href} className="grid grid-cols-[1fr_120px_80px_80px] items-center gap-2 border-b border-[var(--crm-border)] py-2 text-[10px] hover:bg-[var(--crm-surface-subtle)]"><strong className="truncate">{row.label}</strong><span className="truncate text-[var(--crm-text-muted)]">{row.department}</span><span className="text-right font-bold">{row.count}</span><span className={`rounded-full px-1 py-0.5 text-center text-[9px] font-bold ${row.severity === 'high' ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : row.severity === 'medium' ? 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' : 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>{row.severity === 'clear' ? 'Clear' : row.severity}</span></Link>)}</div></DashboardPanel>
 }
 
 function MiniSparkline({ series, color, label }: { series: OperatingReport['trends']['leads']; color: string; label: string }) {

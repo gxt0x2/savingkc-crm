@@ -34,7 +34,6 @@ const requiredRoutes = [
   '/(app)/reports/acquisitions/page',
   '/(app)/reports/marketing/page',
   '/(app)/reports/dispositions/page',
-  '/(app)/reports/bottlenecks/page',
   '/(app)/reports/andon/page',
   '/(app)/reports/finance/page',
   '/(app)/reports/call-sms/page',

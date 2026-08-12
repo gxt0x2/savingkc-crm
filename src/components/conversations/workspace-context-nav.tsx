@@ -23,8 +23,7 @@ const DASHBOARD_CONTEXT_ITEMS: ContextItem[] = [
   { label: 'Company overview', href: '/dashboard', icon: 'space_dashboard', matchPath: '/dashboard' },
   { label: 'Acquisitions', href: '/reports/acquisitions', icon: 'track_changes', matchPath: '/reports/acquisitions' },
   { label: 'Dispositions', href: '/reports/dispositions', icon: 'sell', matchPath: '/reports/dispositions' },
-  { label: 'Bingo Board', href: '/reports/bottlenecks', icon: 'grid_view', matchPath: '/reports/bottlenecks' },
-  { label: 'Andon system', href: '/reports/andon', icon: 'warning_amber', matchPath: '/reports/andon' },
+  { label: 'Marketing', href: '/marketing', icon: 'campaign', matchPath: '/marketing' },
 ]
 
 const GROUPS: ContextGroup[] = [
@@ -45,12 +44,12 @@ const GROUPS: ContextGroup[] = [
   },
   {
     label: 'Dashboards',
-    pathPrefix: '/reports/andon',
+    pathPrefix: '/reports/marketing',
     items: DASHBOARD_CONTEXT_ITEMS,
   },
   {
     label: 'Dashboards',
-    pathPrefix: '/reports/bottlenecks',
+    pathPrefix: '/reports/andon',
     items: DASHBOARD_CONTEXT_ITEMS,
   },
   {
@@ -114,7 +113,13 @@ const GROUPS: ContextGroup[] = [
 export function WorkspaceContextNav() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const group = GROUPS.find((candidate) => pathname.startsWith(candidate.pathPrefix))
+  // The Google Ads command center is the Marketing department dashboard. Its
+  // child tools keep their own Marketing sub-navigation, while the root route
+  // remains part of the same dashboard switcher as Company, Acquisitions, and
+  // Dispositions.
+  const group = pathname === '/marketing'
+    ? { label: 'Dashboards', pathPrefix: '/marketing', items: DASHBOARD_CONTEXT_ITEMS }
+    : GROUPS.find((candidate) => pathname.startsWith(candidate.pathPrefix))
 
   if (!group) return null
 

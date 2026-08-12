@@ -12,6 +12,7 @@ import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub
 import { WorkspaceNav } from './workspace-nav'
 import { WorkspaceContextNav } from './workspace-context-nav'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { GiraffeAssistant } from '@/components/ai/giraffe-assistant'
 
 type WorkspaceChromeContextValue = {
   commandBarHost: HTMLDivElement | null
@@ -165,6 +166,7 @@ export function WorkspaceFrame({
             <WorkspaceContextNav />
           </Suspense>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+          <GiraffeAssistant />
         </WorkspaceChromeContext.Provider>
       </div>
     </div>

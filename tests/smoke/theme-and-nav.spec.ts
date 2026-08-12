@@ -22,17 +22,16 @@ const crmWorkspaceRoutes = [
   '/reports/marketing',
   '/reports/acquisitions',
   '/reports/dispositions',
-  '/reports/bottlenecks',
+  '/reports/andon',
   '/reports/finance',
   '/reports/call-sms',
-  '/ari',
   '/settings',
 ];
 const artifactDir = path.join(process.cwd(), 'test-results', 'smoke');
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    if (!window.localStorage.getItem('crm-theme-smoke-seeded')) {
+    if (window.localStorage.getItem('crm-theme-smoke-seeded') !== 'true') {
       window.localStorage.setItem('crm-theme', 'light');
       window.localStorage.setItem('crm-theme-smoke-seeded', 'true');
     }
@@ -76,13 +75,13 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
 
   const expectedLinks = new Map([
     ['Dashboard', '/dashboard'],
-    ['Pipeline', '/contacts'],
+    ['Issue Log', '/reports/andon'],
+    ['Pipeline', '/contacts?list=new'],
     ['Conversations', '/conversations'],
     ['Calendar', '/calendar?department=acquisitions'],
+    ['Dialer', '/dialer'],
     ['Task', '/tasks'],
-    ['Dispositions', '/dispo/pipeline'],
-    ['ARI Insights', '/ari'],
-    ['Workflows', '/workflows'],
+    ['Reports', '/reports/acquisitions'],
     ['Settings', '/settings'],
   ]);
 
@@ -91,27 +90,46 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
     await expect(destination).toBeVisible();
   }
 
-  await page.getByRole('button', { name: 'Expand dashboard menu' }).click();
-  const dashboardLinks = new Map([
-    ['Acquisitions', '/reports/acquisitions'],
-    ['Dispositions', '/reports/dispositions'],
-    ['Bingo Board', '/reports/bottlenecks'],
-  ]);
-  for (const [name, href] of dashboardLinks) {
-    await expect(page.locator(`a[href="${href}"]`).filter({ hasText: name })).toBeVisible();
-  }
-
-  await page.getByRole('button', { name: 'Reports' }).click();
-  const reportLinks = new Map([
-    ['Marketing', '/reports/marketing'],
-    ['Finance', '/reports/finance'],
-    ['Call/SMS', '/reports/call-sms'],
-  ]);
-  for (const [name, href] of reportLinks) {
-    await expect(page.locator(`a[href="${href}"]`).filter({ hasText: name })).toBeVisible();
-  }
-
+  await expect(page.getByRole('link', { name: 'Bingo Board' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Bottlenecks' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'AI Assistant' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'ARI Insights' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open AI Assistant' })).toBeVisible();
   await expect(page.locator('a[href="#"]')).toHaveCount(0);
+});
+
+test('Issue Log is the sole Andon dashboard and Marketing replaces the retired dashboard tab', async ({ page }) => {
+  await page.goto('/reports/bottlenecks', { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/reports\/andon$/);
+  await expect(page.getByRole('heading', { name: 'Issue Log' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Issue Log', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('navigation', { name: 'Dashboards sections' }).getByRole('link', { name: /Marketing/ })).toHaveAttribute('href', '/marketing');
+  await expect(page.getByRole('heading', { name: 'Bottleneck Board' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Open AI Assistant' }).click();
+  await expect(page.getByText(/SavingKC's recorded goals/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Attach evidence' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start voice dictation' })).toBeAttached();
+
+  await page.getByLabel('Attach files to AI request').setInputFiles({
+    name: 'operating-note.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('Verify this evidence against SavingKC goals and operating path.'),
+  });
+  await expect(page.getByText('operating-note.txt')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove operating-note.txt' })).toBeVisible();
+});
+
+test('Marketing dashboard opens the current Google Ads workspace and preserves CRM attribution access', async ({ page }) => {
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  const marketingDashboard = page.getByRole('navigation', { name: 'Dashboards sections' }).getByRole('link', { name: /Marketing/ });
+  await expect(marketingDashboard).toHaveAttribute('href', '/marketing');
+  await marketingDashboard.click();
+
+  await expect(page).toHaveURL(/\/marketing$/);
+  await expect(page.getByRole('heading', { name: 'Google Ads performance', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'CRM attribution report' })).toHaveAttribute('href', '/reports/marketing');
+  await expect(page.getByRole('navigation', { name: 'Dashboards sections' }).getByRole('link', { name: /Marketing/ })).toHaveAttribute('aria-current', 'page');
 });
 
 for (const route of crmWorkspaceRoutes) {
@@ -131,7 +149,7 @@ for (const route of crmWorkspaceRoutes) {
         : page.getByPlaceholder('Search contacts, properties, or messages...');
     await expect(commandSearch).toBeVisible();
     await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
-    await expect(page.locator('a[href="/contacts"]').filter({ hasText: 'Pipeline' })).toBeVisible();
+    await expect(page.locator('a[href="/contacts?list=new"]').filter({ hasText: 'Pipeline' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 

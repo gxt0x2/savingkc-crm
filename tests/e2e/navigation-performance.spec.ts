@@ -21,10 +21,10 @@ async function ensureAuthenticated(page: Page) {
 }
 
 const transitions = [
-  { label: 'Pipeline', href: '/contacts', readyHeading: /All|New|Hot|Leads|Opportunities/i },
+  { label: 'Pipeline', href: '/contacts', readyHeading: /New|Leads|Opportunities/i },
   { label: 'Conversations', href: '/conversations', readyHeading: /Conversations/i },
   { label: 'Dialer', href: '/dialer', readyHeading: /Dialer/i },
-  { label: 'Workflows', href: '/workflows', readyHeading: /Workflows/i },
+  { label: 'Task', href: '/tasks', readyHeading: /All|Due today|Overdue|Upcoming|Completed/i },
   { label: 'Dashboard', href: '/dashboard', readyHeading: /CEO Operating System/i },
 ] as const
 

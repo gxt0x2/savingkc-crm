@@ -6,6 +6,15 @@ const gitSha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || "l
 const buildTime = process.env.BUILD_TIME || new Date().toISOString();
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        source: '/reports/bottlenecks',
+        destination: '/reports/andon',
+        permanent: false,
+      },
+    ];
+  },
   turbopack: {
     root: path.resolve(__dirname),
   },

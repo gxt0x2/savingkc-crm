@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { AdsDashboardHeader } from '@/components/marketing/ads-dashboard-header'
 import {
   DROP_LABEL,
   MICRO_STEPS,
@@ -2605,22 +2606,12 @@ export function AdsCommandPage() {
     )
   }
 
-  const pageHeader = (
-    <header className="bar live-only crm-page-header">
-      <div className="brand-heading">
-        <span>Google Ads intelligence</span>
-        <h1>Search performance</h1>
-        <p>Campaign delivery, attributed seller leads, call outcomes, and offline conversion health.</p>
-      </div>
-      <div className="header-status">
-        <span className="live-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'Loading live data'}</span>
-        <span className="fresh-pill">Tracking: {formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</span>
-        <span className="fresh-pill">Google Ads: {formatFreshness(adsData?.freshness.googleAdsImportedAt)}</span>
-        <Link className="fresh-pill call-review-link" href="/marketing/alerts?source=google_ads">Lead Alerts</Link>
-        <Link className="fresh-pill call-review-link" href="/marketing/calls?source=google_ads">Call Review</Link>
-        <Link className="fresh-pill call-review-link" href="/marketing/heatmaps?source=google_ads">Heatmaps</Link>
-      </div>
-    </header>
+  const dashboardHeader = (
+    <AdsDashboardHeader
+      syncedLabel={adsData?.syncedLabel ?? 'Loading live data'}
+      googleAdsFreshness={formatFreshness(adsData?.freshness.googleAdsImportedAt)}
+      crmFreshness={formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}
+    />
   )
 
   if (!hasHydrated || !adsData) {
@@ -2629,7 +2620,7 @@ export function AdsCommandPage() {
         <style>{ADS_COMMAND_STYLES}</style>
         <div className="ads-command" suppressHydrationWarning>
           <div className="wrap">
-            {pageHeader}
+            {dashboardHeader}
             <section className={`dashboard-state crm-panel ${loadError ? 'is-error' : ''}`} aria-live="polite">
               <span className="dashboard-state-icon">{loadError ? '!' : ''}</span>
               <div>
@@ -2656,7 +2647,7 @@ export function AdsCommandPage() {
       <style>{ADS_COMMAND_STYLES}</style>
       <div className="ads-command" suppressHydrationWarning>
         <div className="wrap">
-          {pageHeader}
+          {dashboardHeader}
 
           <div className="layout-grid">
             {sectionOrder.map((sectionId) => (
@@ -2740,7 +2731,7 @@ const ADS_COMMAND_STYLES = `
 .ads-command button,
 .ads-command select { font-family: var(--font-sans); }
 .ads-command .mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1, "lnum" 1; }
-.ads-command .wrap { max-width: 1480px; margin: 0 auto; padding: 20px clamp(16px,2.4vw,32px) 64px; }
+.ads-command .wrap { max-width: 1720px; margin: 0 auto; padding: 16px clamp(12px,2vw,24px) 64px; }
 .ads-command .bar { display:flex; align-items:center; gap:18px; margin-bottom:18px; }
 .ads-command .bar.live-only { justify-content:space-between; flex-wrap:wrap; border:1px solid var(--line); border-radius:var(--radius-xl); background:var(--surface); padding:16px 18px; box-shadow:var(--shadow-sm); }
 .ads-command .brand { display:flex; align-items:center; gap:12px; }
