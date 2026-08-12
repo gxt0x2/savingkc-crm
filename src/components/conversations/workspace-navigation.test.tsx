@@ -35,9 +35,10 @@ describe('workspace navigation', () => {
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
     const labels = within(navigationRegion).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
-    expect(labels).toEqual(['Dashboard', 'Bottlenecks', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Reports', 'Settings'])
+    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Reports', 'Settings'])
     expect(within(navigationRegion).getByRole('link', { name: 'Pipeline' })).toHaveAttribute('href', '/contacts?list=new')
-    expect(within(navigationRegion).getByRole('link', { name: 'Bottlenecks' })).toHaveAttribute('href', '/reports/bottlenecks')
+    expect(within(navigationRegion).getByRole('link', { name: 'Issue Log' })).toHaveAttribute('href', '/reports/andon')
+    expect(within(navigationRegion).queryByRole('link', { name: 'Bottlenecks' })).not.toBeInTheDocument()
     expect(within(navigationRegion).queryByRole('link', { name: 'Bingo Board' })).not.toBeInTheDocument()
     expect(within(navigationRegion).queryByRole('link', { name: 'AI Assistant' })).not.toBeInTheDocument()
     expect(within(navigationRegion).queryByRole('link', { name: 'ARI Insights' })).not.toBeInTheDocument()
@@ -54,7 +55,7 @@ describe('workspace navigation', () => {
     expect(screen.getByRole('textbox', { name: 'Why 5' })).toBeVisible()
   })
 
-  it('shows team dashboards and one Bottlenecks destination in the dashboard context bar', () => {
+  it('shows Marketing in the dashboard context bar instead of the retired Bottlenecks board', () => {
     navigation.pathname = '/reports/acquisitions'
     render(<WorkspaceContextNav />)
 
@@ -62,7 +63,8 @@ describe('workspace navigation', () => {
     expect(within(switcher).getByRole('link', { name: /Company overview/ })).toHaveAttribute('href', '/dashboard')
     expect(within(switcher).getByRole('link', { name: /Acquisitions/ })).toHaveAttribute('aria-current', 'page')
     expect(within(switcher).getByRole('link', { name: /Dispositions/ })).toHaveAttribute('href', '/reports/dispositions')
-    expect(within(switcher).getByRole('link', { name: /Bottlenecks/ })).toHaveAttribute('href', '/reports/bottlenecks')
+    expect(within(switcher).getByRole('link', { name: /Marketing/ })).toHaveAttribute('href', '/reports/marketing')
+    expect(within(switcher).queryByRole('link', { name: /Bottlenecks/ })).not.toBeInTheDocument()
     expect(within(switcher).queryByRole('link', { name: /Bingo Board/ })).not.toBeInTheDocument()
   })
 })

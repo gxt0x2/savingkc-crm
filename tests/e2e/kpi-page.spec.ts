@@ -76,9 +76,9 @@ test('CEO operating dashboard and report drill-down smoke', async ({ page }) => 
   await period.selectOption('quarter')
   await expect(period).toHaveValue('quarter')
 
-  await page.getByRole('link', { name: /Andon system/ }).first().click()
+  await page.getByRole('link', { name: /Issue Log/ }).first().click()
   await expect(page).toHaveURL(/\/reports\/andon$/)
-  await expect(page.getByRole('heading', { name: 'Andon system' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Issue Log' })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Andon date range' })).toHaveValue('30d')
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 

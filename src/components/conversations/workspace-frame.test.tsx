@@ -84,6 +84,9 @@ describe('WorkspaceFrame route persistence', () => {
 
     expect(screen.getByRole('dialog', { name: 'AI Assistant' })).toBeVisible()
     expect(screen.getByLabelText('Ask the AI Assistant')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Attach evidence' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Start voice dictation' })).toBeInTheDocument()
+    expect(screen.getByText(/SavingKC's recorded goals/)).toBeVisible()
     expect(screen.getByRole('button', { name: 'Close AI Assistant' })).toBeVisible()
   })
 })

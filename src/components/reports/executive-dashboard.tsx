@@ -56,7 +56,7 @@ export function ExecutiveDashboard({
           <div className="flex flex-wrap items-center gap-2">
             <ReportDateRangeControl period={period} customRange={customRange} onPeriodChange={onPeriodChange} onCustomRangeChange={onCustomRangeChange} />
             <Link href="/reports/andon" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-3 text-[10px] font-bold text-[var(--crm-danger)] shadow-[var(--crm-shadow-sm)] hover:border-[var(--crm-danger)]">
-              <Icon name="warning_amber" className="text-[17px]" /> Andon system
+              <Icon name="warning_amber" className="text-[17px]" /> Issue Log
             </Link>
           </div>
         </header>
@@ -208,7 +208,7 @@ function RevenuePerformance({ report }: { report: OperatingReport }) {
 }
 
 function ActiveBottlenecks({ report }: { report: OperatingReport }) {
-  return <DashboardPanel title="Active bottlenecks" tone="amber" href="/reports/bottlenecks"><div className="px-3 py-1"><div className="grid grid-cols-[1fr_120px_80px_80px] gap-2 border-b border-[var(--crm-border)] py-1 text-[9px] font-bold uppercase text-[var(--crm-text-muted)]"><span>Issue</span><span>Department</span><span className="text-right">Impact</span><span className="text-right">Status</span></div>{report.bottlenecks.slice(0, 5).map((row) => <Link key={row.key} href={row.href} className="grid grid-cols-[1fr_120px_80px_80px] items-center gap-2 border-b border-[var(--crm-border)] py-2 text-[10px] hover:bg-[var(--crm-surface-subtle)]"><strong className="truncate">{row.label}</strong><span className="truncate text-[var(--crm-text-muted)]">{row.department}</span><span className="text-right font-bold">{row.count}</span><span className={`rounded-full px-1 py-0.5 text-center text-[9px] font-bold ${row.severity === 'high' ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : row.severity === 'medium' ? 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' : 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>{row.severity === 'clear' ? 'Clear' : row.severity}</span></Link>)}</div></DashboardPanel>
+  return <DashboardPanel title="Open issues" tone="amber" href="/reports/andon"><div className="px-3 py-1"><div className="grid grid-cols-[1fr_120px_80px_80px] gap-2 border-b border-[var(--crm-border)] py-1 text-[9px] font-bold uppercase text-[var(--crm-text-muted)]"><span>Issue</span><span>Department</span><span className="text-right">Impact</span><span className="text-right">Status</span></div>{report.bottlenecks.slice(0, 5).map((row) => <Link key={row.key} href={row.href} className="grid grid-cols-[1fr_120px_80px_80px] items-center gap-2 border-b border-[var(--crm-border)] py-2 text-[10px] hover:bg-[var(--crm-surface-subtle)]"><strong className="truncate">{row.label}</strong><span className="truncate text-[var(--crm-text-muted)]">{row.department}</span><span className="text-right font-bold">{row.count}</span><span className={`rounded-full px-1 py-0.5 text-center text-[9px] font-bold ${row.severity === 'high' ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : row.severity === 'medium' ? 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' : 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>{row.severity === 'clear' ? 'Clear' : row.severity}</span></Link>)}</div></DashboardPanel>
 }
 
 function MiniSparkline({ series, color, label }: { series: OperatingReport['trends']['leads']; color: string; label: string }) {

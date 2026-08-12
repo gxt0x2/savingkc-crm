@@ -11,14 +11,13 @@ import { defaultOperatingCustomRange, operatingRangeQuery, ReportDateRangeContro
 import { formatLeadSource } from '@/lib/contact-display'
 import type { OperatingReport, OperatingReportPeriod } from '@/lib/operating-report'
 
-export type OperatingReportView = 'dashboard' | 'marketing' | 'acquisitions' | 'dispositions' | 'bottlenecks' | 'finance' | 'call-sms'
+export type OperatingReportView = 'dashboard' | 'marketing' | 'acquisitions' | 'dispositions' | 'finance' | 'call-sms'
 
 const VIEW_COPY: Record<OperatingReportView, { eyebrow: string; title: string; description: string }> = {
   dashboard: { eyebrow: 'SavingKC command center', title: 'CEO Operating System', description: 'A real-time view of attention, pipeline, communication, disposition, and recorded economics.' },
   marketing: { eyebrow: 'Reports · Marketing', title: 'Marketing performance', description: 'Lead-source quality measured by seller records, stage advancement, contracts, and attributed revenue.' },
   acquisitions: { eyebrow: 'Team dashboard · Acquisitions', title: 'Acquisitions performance', description: 'The operating path from new inquiry to opportunity, appointment, contract, and close.' },
   dispositions: { eyebrow: 'Team dashboard · Dispositions', title: 'Dispositions performance', description: 'Buyer demand, offers, contract-to-close execution, assignment economics, and the post-close debrief loop.' },
-  bottlenecks: { eyebrow: 'Operating system · Bottlenecks', title: 'Bottleneck Board', description: 'One live board for the constraints blocking seller response, follow-up, ownership, offers, and completed closeout loops.' },
   finance: { eyebrow: 'Reports · Finance', title: 'Financial performance', description: 'Recorded revenue and expenses only. Seed and sample transactions are excluded.' },
   'call-sms': { eyebrow: 'Reports · Call/SMS', title: 'Call and SMS performance', description: 'Connected calls, messages, response signals, agent activity, and unresolved seller attention.' },
 }
@@ -94,7 +93,6 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
       {view === 'acquisitions' ? <AcquisitionsView report={data} /> : null}
       {view === 'marketing' ? <MarketingView report={data} /> : null}
       {view === 'dispositions' ? <DispositionsView report={data} /> : null}
-      {view === 'bottlenecks' ? <BottleneckBoardView report={data} /> : null}
       {view === 'finance' ? <FinanceView report={data} /> : null}
       {view === 'call-sms' ? <CallSmsView report={data} /> : null}
     </main>
@@ -170,73 +168,6 @@ function DispositionsView({ report }: { report: OperatingReport }) {
       <section className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
         <NumberedPanel number="9" title="Active bottlenecks" actionHref="/tasks"><BottleneckRows report={report} /></NumberedPanel>
         <NumberedPanel number="10" title="ARI disposition insights" actionHref="/ari"><InsightRows report={report} /></NumberedPanel>
-      </section>
-    </>
-  )
-}
-
-function BottleneckBoardView({ report }: { report: OperatingReport }) {
-  const activeRows = report.bottlenecks.filter((row) => row.count > 0)
-  const highRows = activeRows.filter((row) => row.severity === 'high')
-  const openWorkItems = activeRows.reduce((sum, row) => sum + row.count, 0)
-  const departments = ['Acquisitions', 'Dispositions'] as const
-
-  return (
-    <>
-      <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon="grid_view" label="Active squares" value={activeRows.length} numericValue={activeRows.length} detail="Constraints requiring action" tone="red" href="/reports/bottlenecks" />
-        <MetricCard icon="priority_high" label="High pressure" value={highRows.length} numericValue={highRows.length} detail="Immediate operating risk" tone="coral" href="/reports/bottlenecks" />
-        <MetricCard icon="group" label="Open work items" value={openWorkItems} numericValue={openWorkItems} detail="Recorded items inside active squares" tone="amber" href="/reports/bottlenecks" />
-        <MetricCard icon="task_alt" label="Clear squares" value={report.bottlenecks.length - activeRows.length} numericValue={report.bottlenecks.length - activeRows.length} detail="Controls currently on standard" tone="green" href="/reports/bottlenecks" />
-      </section>
-
-      <section aria-label="Bottleneck board" className="grid gap-3 xl:grid-cols-2">
-        {departments.map((department) => {
-          const rows = report.bottlenecks.filter((row) => row.department === department)
-          const departmentCount = rows.reduce((sum, row) => sum + row.count, 0)
-          return (
-            <section key={department} className="crm-panel overflow-hidden rounded-2xl">
-              <header className="flex items-center justify-between gap-3 border-b border-[var(--crm-border)] px-5 py-4">
-                <div>
-                  <p className="crm-eyebrow">{department}</p>
-                  <h2 className="mt-1 text-lg font-black">{departmentCount > 0 ? `${departmentCount} affected record${departmentCount === 1 ? '' : 's'}` : 'No active constraint'}</h2>
-                </div>
-                <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] ${departmentCount > 0 ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>
-                  {departmentCount > 0 ? 'Action needed' : 'Clear'}
-                </span>
-              </header>
-              <div className="grid gap-2.5 p-4 sm:grid-cols-2">
-                {rows.map((row) => {
-                  const active = row.count > 0
-                  return (
-                    <Link key={row.key} href={row.href} className="group flex min-h-32 flex-col rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4 transition-colors hover:border-[var(--crm-brand-border)] hover:bg-[var(--crm-surface)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${active ? row.severity === 'high' ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' : 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>
-                          <Icon name={active ? 'priority_high' : 'check'} className="text-[19px]" />
-                        </span>
-                        <strong className="text-3xl font-black tabular-nums">{row.count}</strong>
-                      </div>
-                      <h3 className="mt-3 text-sm font-black">{row.label}</h3>
-                      <span className="mt-auto flex items-center gap-1 pt-3 text-[10px] font-black text-[var(--crm-info)]">
-                        {active ? 'Open affected work' : 'Review control'} <Icon name="arrow_forward" className="text-sm transition-transform group-hover:translate-x-0.5" />
-                      </span>
-                    </Link>
-                  )
-                })}
-              </div>
-            </section>
-          )
-        })}
-      </section>
-
-      <section className="crm-panel flex flex-col gap-3 rounded-2xl px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="crm-eyebrow">Attached issue workflow</p>
-          <h2 className="mt-1 text-sm font-black">A bottleneck points to the affected work; Andon owns investigation, assignment, five whys, resolution, and reopen history.</h2>
-        </div>
-        <Link href="/reports/andon" className="crm-primary-button inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-black">
-          Open Andon queue <Icon name="arrow_forward" />
-        </Link>
       </section>
     </>
   )

@@ -23,7 +23,7 @@ const DASHBOARD_CONTEXT_ITEMS: ContextItem[] = [
   { label: 'Company overview', href: '/dashboard', icon: 'space_dashboard', matchPath: '/dashboard' },
   { label: 'Acquisitions', href: '/reports/acquisitions', icon: 'track_changes', matchPath: '/reports/acquisitions' },
   { label: 'Dispositions', href: '/reports/dispositions', icon: 'sell', matchPath: '/reports/dispositions' },
-  { label: 'Bottlenecks', href: '/reports/bottlenecks', icon: 'warning_amber', matchPath: '/reports/bottlenecks' },
+  { label: 'Marketing', href: '/reports/marketing', icon: 'campaign', matchPath: '/reports/marketing' },
 ]
 
 const GROUPS: ContextGroup[] = [
@@ -44,7 +44,7 @@ const GROUPS: ContextGroup[] = [
   },
   {
     label: 'Dashboards',
-    pathPrefix: '/reports/bottlenecks',
+    pathPrefix: '/reports/marketing',
     items: DASHBOARD_CONTEXT_ITEMS,
   },
   {
