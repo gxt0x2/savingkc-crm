@@ -132,7 +132,7 @@ test('Marketing dashboard remains primary and opens Google Ads as a subpage', as
   await expect(page).toHaveURL(/\/reports\/marketing$/);
   await expect(page.getByRole('heading', { name: 'Marketing performance', exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Dashboards sections' }).getByRole('link', { name: /Marketing/ })).toHaveAttribute('aria-current', 'page');
-  await page.getByRole('link', { name: 'Google Ads', exact: true }).click();
+  await page.locator('a[href="/marketing/google-ads"]').filter({ hasText: 'Google Ads' }).click();
 
   await expect(page).toHaveURL(/\/marketing\/google-ads$/);
   await expect(page.getByRole('heading', { name: 'Google Ads performance', exact: true })).toBeVisible();

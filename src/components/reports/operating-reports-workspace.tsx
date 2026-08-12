@@ -51,12 +51,9 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
   const { data, error, isLoading, isFetching, refetch } = useOperatingReport(period, customRange)
   const copy = VIEW_COPY[view]
 
-  if (isLoading) return <ReportSkeleton copy={copy} />
-  if (error || !data) {
-    return <ReportError onRetry={() => void refetch()} />
-  }
-
   if (view === 'dashboard') {
+    if (isLoading) return <ReportSkeleton copy={copy} />
+    if (error || !data) return <ReportError onRetry={() => void refetch()} />
     return <ExecutiveDashboard report={data} period={period} customRange={customRange} onPeriodChange={setPeriod} onCustomRangeChange={setCustomRange} isFetching={isFetching} />
   }
 
@@ -88,19 +85,23 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
             </>
           ) : null}
           <ReportDateRangeControl period={period} customRange={customRange} onPeriodChange={setPeriod} onCustomRangeChange={setCustomRange} />
-          <span className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-3 text-xs font-black text-[var(--crm-success)]">
-            <span className={`h-2 w-2 rounded-full bg-[#11a857] ${isFetching ? 'animate-pulse' : ''}`} />
-            Live CRM · {formatTimestamp(data.generatedAt)}
+          <span className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-black ${data ? 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : error ? 'border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>
+            <span className={`h-2 w-2 rounded-full ${data ? 'bg-[#11a857]' : error ? 'bg-[var(--crm-danger)]' : 'bg-[var(--crm-text-dim)]'} ${isFetching ? 'animate-pulse' : ''}`} />
+            {data ? `Live CRM · ${formatTimestamp(data.generatedAt)}` : error ? 'CRM data unavailable' : 'Loading CRM data'}
           </span>
         </div>
       </header>
 
-      <CoverageNotice report={data} />
-      {view === 'acquisitions' ? <AcquisitionsView report={data} /> : null}
-      {view === 'marketing' ? <MarketingView report={data} /> : null}
-      {view === 'dispositions' ? <DispositionsView report={data} /> : null}
-      {view === 'finance' ? <FinanceView report={data} /> : null}
-      {view === 'call-sms' ? <CallSmsView report={data} /> : null}
+      {isLoading ? <ReportPanelSkeleton /> : error || !data ? <ReportErrorPanel onRetry={() => void refetch()} /> : (
+        <>
+          <CoverageNotice report={data} />
+          {view === 'acquisitions' ? <AcquisitionsView report={data} /> : null}
+          {view === 'marketing' ? <MarketingView report={data} /> : null}
+          {view === 'dispositions' ? <DispositionsView report={data} /> : null}
+          {view === 'finance' ? <FinanceView report={data} /> : null}
+          {view === 'call-sms' ? <CallSmsView report={data} /> : null}
+        </>
+      )}
     </main>
   )
 }
@@ -470,6 +471,14 @@ function ReportSkeleton({ copy }: { copy: (typeof VIEW_COPY)[OperatingReportView
 
 function ReportError({ onRetry }: { onRetry: () => void }) {
   return <main className="mx-auto max-w-[900px] px-5 py-12"><div className="crm-panel rounded-2xl p-10 text-center"><Icon name="cloud_off" className="text-4xl text-[var(--crm-brand)]" /><h1 className="mt-3 text-xl font-black">Operating data is temporarily unavailable</h1><p className="mt-2 text-sm text-[var(--crm-text-muted)]">The dashboard will not substitute sample data for the missing CRM response.</p><button type="button" onClick={onRetry} className="crm-primary-button mt-5 rounded-lg px-4 py-2.5 text-sm font-black">Try again</button></div></main>
+}
+
+function ReportPanelSkeleton() {
+  return <div aria-label="Loading report data" className="space-y-3"><div className="grid animate-pulse gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-40 rounded-2xl bg-[var(--crm-surface-subtle)]" />)}</div><div className="h-80 animate-pulse rounded-2xl bg-[var(--crm-surface-subtle)]" /></div>
+}
+
+function ReportErrorPanel({ onRetry }: { onRetry: () => void }) {
+  return <section className="crm-panel rounded-2xl p-10 text-center"><Icon name="cloud_off" className="text-4xl text-[var(--crm-brand)]" /><h2 className="mt-3 text-xl font-black">Operating data is temporarily unavailable</h2><p className="mt-2 text-sm text-[var(--crm-text-muted)]">Dashboard navigation remains available while the CRM response recovers. No sample data is substituted.</p><button type="button" onClick={onRetry} className="crm-primary-button mt-5 rounded-lg px-4 py-2.5 text-sm font-black">Try again</button></section>
 }
 
 function stageHref(key: string) {
