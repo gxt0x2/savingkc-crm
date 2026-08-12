@@ -46,6 +46,43 @@
         "reason": "The approved acquisitions and dispositions template catalog is kept intact for this release; freeze growth while templates move to data-backed modules.",
         "targetDate": "2026-10-31"
       }
+    ],
+    "retiredRuntimeRoutes": [
+      {
+        "path": "src/app/api/auth/setup/route.ts",
+        "replacement": "Supabase user administration plus authenticated CRM profile management",
+        "reason": "Production code must never contain seeded user credentials."
+      },
+      {
+        "path": "src/app/api/deals/[slug]/test-inspection-report/route.ts",
+        "replacement": "deal_pages.inspection_reports and /api/deals/upload",
+        "reason": "Buyer-facing deal pages must expose uploaded records, never generated placeholder reports."
+      },
+      {
+        "path": "src/app/api/deploy/route.ts",
+        "replacement": "Vercel deployments and GitHub checks",
+        "reason": "The local deploy-log polling model is no longer part of the hosted CRM."
+      },
+      {
+        "path": "src/app/api/migrate/route.ts",
+        "replacement": "versioned Supabase migrations or authenticated /api/admin/migrate",
+        "reason": "Database DDL cannot be exposed through an unauthenticated runtime route."
+      },
+      {
+        "path": "src/app/api/push/test/route.ts",
+        "replacement": "a local operations script or authenticated admin diagnostic",
+        "reason": "A public test sender must not notify every subscribed agent."
+      },
+      {
+        "path": "src/app/api/setup-twilio/route.ts",
+        "replacement": "src/lib/telephony/twiml-app.ts and controlled telephony operations",
+        "reason": "A GET request must not create or rewrite shared Twilio infrastructure."
+      },
+      {
+        "path": "src/app/api/setup/manifests/route.ts",
+        "replacement": "versioned Supabase migrations",
+        "reason": "Migration SQL belongs in source-controlled migrations, not a runtime response."
+      }
     ]
   },
   "features": [
@@ -259,7 +296,7 @@
       "routes": ["/settings/system-health"],
       "apiRoutes": ["/api/system-hygiene", "/api/cron/data-retention"],
       "tables": ["data_retention_policies", "data_retention_runs", "system_workers", "manifest_history", "hot_score_audit_trail", "google_ads_reporting_sync_runs", "openai_ads_reporting_sync_runs", "sms_delivery_log"],
-      "environment": ["DATA_RETENTION_MUTATIONS_ENABLED", "CRON_SECRET", "ADMIN_API_SECRET", "HYGIENE_BASE_REF", "GITHUB_BASE_REF"],
+      "environment": ["DATA_RETENTION_MUTATIONS_ENABLED", "CRON_SECRET", "ADMIN_API_SECRET", "HYGIENE_BASE_REF", "GITHUB_BASE_REF", "WORKTREE_AUDIT_MAIN_REF"],
       "crons": [
         { "path": "/api/cron/data-retention", "schedule": "30 11 * * *" }
       ]
