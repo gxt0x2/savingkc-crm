@@ -31,8 +31,10 @@ const artifactDir = path.join(process.cwd(), 'test-results', 'smoke');
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('crm-theme', 'light');
-    window.localStorage.setItem('crm-theme-smoke-seeded', 'true');
+    if (window.localStorage.getItem('crm-theme-smoke-seeded') !== 'true') {
+      window.localStorage.setItem('crm-theme', 'light');
+      window.localStorage.setItem('crm-theme-smoke-seeded', 'true');
+    }
   });
 });
 
