@@ -105,6 +105,7 @@ for (const file of files) {
 }
 
 const googleAdsPage = fs.readFileSync('src/components/marketing/ads-command-page.tsx', 'utf8')
+const googleAdsHeader = fs.readFileSync('src/components/marketing/ads-dashboard-header.tsx', 'utf8')
 const googleAdsApi = fs.readFileSync('src/app/api/marketing/ads-command/route.ts', 'utf8')
 const workspaceContextNav = fs.readFileSync('src/components/conversations/workspace-context-nav.tsx', 'utf8')
 const googleAdsAssertions = [
@@ -126,8 +127,8 @@ const googleAdsAssertions = [
   },
   {
     passes: workspaceContextNav.includes("{ label: 'Marketing', href: '/marketing', icon: 'campaign', matchPath: '/marketing' }")
-      && googleAdsPage.includes('Team dashboard · Marketing')
-      && googleAdsPage.includes('CRM attribution report'),
+      && googleAdsHeader.includes('Team dashboard · Marketing')
+      && googleAdsHeader.includes('CRM attribution report'),
     message: 'the current dashboard navigation must open the themed Google Ads workspace and preserve CRM attribution access',
   },
   {

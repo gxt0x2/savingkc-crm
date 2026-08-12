@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Icon } from '@/components/ui/icon'
+import { AdsDashboardHeader } from '@/components/marketing/ads-dashboard-header'
 import {
   DROP_LABEL,
   MICRO_STEPS,
@@ -2606,49 +2606,12 @@ export function AdsCommandPage() {
     )
   }
 
-  const pageHeader = (
-    <header className="ads-dashboard-header">
-      <div className="ads-dashboard-heading">
-        <span>Team dashboard · Marketing</span>
-        <h1>Google Ads performance</h1>
-        <p>Live Google Search spend, demand, seller attribution, call outcomes, and offline conversion health.</p>
-      </div>
-      <div className="ads-dashboard-actions">
-        <span className="ads-sync-pill"><span className="live-dot" /> {adsData?.syncedLabel ?? 'Loading live data'}</span>
-        <Link className="ads-header-action" href="/reports/marketing" aria-label="CRM attribution report">
-          <Icon name="analytics" className="text-[17px]" />
-          CRM attribution
-        </Link>
-        <Link className="ads-header-action" href="/marketing/calls?source=google_ads">
-          <Icon name="record_voice_over" className="text-[17px]" />
-          Call review
-        </Link>
-        <Link className="ads-header-action" href="/marketing/alerts?source=google_ads">
-          <Icon name="notification_important" className="text-[17px]" />
-          Lead alerts
-        </Link>
-      </div>
-    </header>
-  )
-
-  const dataFreshness = (
-    <section className="ads-freshness-strip" aria-label="Google Ads data freshness">
-      <div>
-        <Icon name="ads_click" className="text-[18px]" />
-        <span>Google Ads import</span>
-        <strong>{formatFreshness(adsData?.freshness.googleAdsImportedAt)}</strong>
-      </div>
-      <div>
-        <Icon name="conversion_path" className="text-[18px]" />
-        <span>CRM tracking</span>
-        <strong>{formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}</strong>
-      </div>
-      <Link href="/marketing/heatmaps?source=google_ads">
-        <Icon name="web_traffic" className="text-[18px]" />
-        Landing-page diagnostics
-        <Icon name="arrow_forward" className="text-[16px]" />
-      </Link>
-    </section>
+  const dashboardHeader = (
+    <AdsDashboardHeader
+      syncedLabel={adsData?.syncedLabel ?? 'Loading live data'}
+      googleAdsFreshness={formatFreshness(adsData?.freshness.googleAdsImportedAt)}
+      crmFreshness={formatFreshness(adsData?.freshness.liveTrackingUpdatedAt)}
+    />
   )
 
   if (!hasHydrated || !adsData) {
@@ -2657,8 +2620,7 @@ export function AdsCommandPage() {
         <style>{ADS_COMMAND_STYLES}</style>
         <div className="ads-command" suppressHydrationWarning>
           <div className="wrap">
-            {pageHeader}
-            {dataFreshness}
+            {dashboardHeader}
             <section className={`dashboard-state crm-panel ${loadError ? 'is-error' : ''}`} aria-live="polite">
               <span className="dashboard-state-icon">{loadError ? '!' : ''}</span>
               <div>
@@ -2685,8 +2647,7 @@ export function AdsCommandPage() {
       <style>{ADS_COMMAND_STYLES}</style>
       <div className="ads-command" suppressHydrationWarning>
         <div className="wrap">
-          {pageHeader}
-          {dataFreshness}
+          {dashboardHeader}
 
           <div className="layout-grid">
             {sectionOrder.map((sectionId) => (
@@ -2771,24 +2732,6 @@ const ADS_COMMAND_STYLES = `
 .ads-command select { font-family: var(--font-sans); }
 .ads-command .mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1, "lnum" 1; }
 .ads-command .wrap { max-width: 1720px; margin: 0 auto; padding: 16px clamp(12px,2vw,24px) 64px; }
-.ads-command .ads-dashboard-header { display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; border:1px solid var(--line); border-radius:16px; background:var(--surface); padding:16px 20px; box-shadow:var(--shadow-sm); }
-.ads-command .ads-dashboard-heading { min-width:280px; flex:1 1 520px; }
-.ads-command .ads-dashboard-heading > span { display:block; margin-bottom:4px; color:var(--accent); font-size:10px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
-.ads-command .ads-dashboard-heading h1 { margin:0; color:var(--text); font-size:25px; font-weight:900; line-height:1.05; letter-spacing:-.035em; }
-.ads-command .ads-dashboard-heading p { max-width:760px; margin:5px 0 0; color:var(--text-secondary); font-size:12px; font-weight:600; line-height:1.4; }
-.ads-command .ads-dashboard-actions { display:flex; flex:0 1 auto; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
-.ads-command .ads-sync-pill,
-.ads-command .ads-header-action { min-height:38px; display:inline-flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--line); border-radius:11px; padding:0 12px; font-size:11px; font-weight:850; text-decoration:none; white-space:nowrap; }
-.ads-command .ads-sync-pill { color:var(--success); border-color:var(--crm-success-border); background:var(--success-soft); }
-.ads-command .ads-header-action { color:var(--text); background:var(--surface); transition:background .12s ease,border-color .12s ease,color .12s ease; }
-.ads-command .ads-header-action:hover { color:var(--accent); border-color:var(--crm-brand-border); background:var(--crm-brand-soft); }
-.ads-command .ads-freshness-strip { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)) minmax(240px,auto); gap:8px; margin:10px 0 14px; }
-.ads-command .ads-freshness-strip > div,
-.ads-command .ads-freshness-strip > a { min-width:0; min-height:42px; display:flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:11px; background:var(--surface); padding:0 12px; color:var(--text-secondary); font-size:10px; font-weight:800; text-decoration:none; }
-.ads-command .ads-freshness-strip > div > span { color:var(--text-tertiary); text-transform:uppercase; letter-spacing:.055em; }
-.ads-command .ads-freshness-strip > div > strong { margin-left:auto; color:var(--text); font-size:11px; }
-.ads-command .ads-freshness-strip > a { justify-content:center; color:var(--info); }
-.ads-command .ads-freshness-strip > a:hover { border-color:var(--crm-info-border); background:var(--info-soft); }
 .ads-command .bar { display:flex; align-items:center; gap:18px; margin-bottom:18px; }
 .ads-command .bar.live-only { justify-content:space-between; flex-wrap:wrap; border:1px solid var(--line); border-radius:var(--radius-xl); background:var(--surface); padding:16px 18px; box-shadow:var(--shadow-sm); }
 .ads-command .brand { display:flex; align-items:center; gap:12px; }
@@ -3206,6 +3149,6 @@ const ADS_COMMAND_STYLES = `
 @media (max-width:1100px) { .ads-command .capture-health-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ads-command .capture-stage-list { grid-template-columns:repeat(4,minmax(0,1fr)); } }
 @media (max-width:780px) { .ads-command .capture-health-grid, .ads-command .capture-stage-list { grid-template-columns:repeat(2,minmax(0,1fr)); } .ads-command .capture-source-head, .ads-command .capture-gap-line { flex-direction:column; align-items:flex-start; } }
 @media (max-width:920px) { .ads-command .stage-top { grid-template-columns:1fr; align-items:flex-start; } .ads-command .qbadges { margin-left:0; } .ads-command .stage-body, .ads-command .micro-body { grid-template-columns:1fr; } .ads-command .statside, .ads-command .micro-side { display:none; } .ads-command .stage { inset:10px; width:auto; } }
-@media (max-width:720px) { .ads-command .ads-dashboard-header { align-items:flex-start; padding:15px; } .ads-command .ads-dashboard-actions { justify-content:flex-start; } .ads-command .ads-freshness-strip { grid-template-columns:1fr; } .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .bar.live-only { padding:14px; } .ads-command .header-status { justify-content:flex-start; } .ads-command .panel { padding:18px 15px; overflow:hidden; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .campaign-source-row { align-items:flex-start; flex-direction:column; gap:4px; } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
+@media (max-width:720px) { .ads-command .kpis { grid-template-columns:repeat(2,1fr); } .ads-command .wrap { padding-inline:14px; } .ads-command .bar.live-only { padding:14px; } .ads-command .header-status { justify-content:flex-start; } .ads-command .panel { padding:18px 15px; overflow:hidden; } .ads-command .heatmap-launch { grid-template-columns:1fr; } .ads-command .heatmap-open { width:100%; } .ads-command .table-scroll table { min-width:680px; } .ads-command .export-health-grid, .ads-command .outbox-summary { grid-template-columns:repeat(2,1fr); } .ads-command .export-health-foot { grid-template-columns:1fr; } .ads-command .ft-row { grid-template-columns:1fr 70px 52px; } .ads-command .ft-row span:last-child { grid-column:1/-1; color:var(--text-tertiary); } .ads-command .campaign-source-row { align-items:flex-start; flex-direction:column; gap:4px; } .ads-command .paid-row { grid-template-columns:64px 1fr; } .ads-command .paid-status { grid-column:2; justify-self:start; } .ads-command .micro-summary, .ads-command .pj-metrics { grid-template-columns:1fr; } .ads-command .breakdown-total { grid-template-columns:1fr; align-items:start; } .ads-command .breakdown-line { align-items:flex-start; flex-direction:column; gap:6px; } }
 @media (max-width:640px) { .ads-command .roster { grid-template-columns:1fr; } .ads-command .live-pill { font-size:11px; } }
 `
