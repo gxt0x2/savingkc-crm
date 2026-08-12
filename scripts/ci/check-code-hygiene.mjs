@@ -89,6 +89,12 @@ for (const feature of registry.features) {
   if (feature.status === 'deprecated' && !feature.retirement) {
     fail(`Deprecated feature ${feature.id} must include a retirement plan.`)
   }
+  if (feature.status === 'deprecated' && feature.retirement) {
+    const retirementDate = new Date(`${feature.retirement.targetDate ?? ''}T23:59:59Z`)
+    if (!feature.retirement.reason || Number.isNaN(retirementDate.getTime()) || retirementDate < new Date()) {
+      fail(`Deprecated feature ${feature.id} must have a reason and an unexpired retirement target.`)
+    }
+  }
 }
 
 const appFiles = listFiles(join(root, 'src/app')).filter((file) => /\/(page|route)\.tsx?$/.test(file))
@@ -122,6 +128,7 @@ const pollingApprovals = new Map(registry.policies.approvedPolling.map((approval
 const oversizedApprovals = new Map(
   (registry.policies.approvedOversizedSources ?? []).map((approval) => [approval.path, approval]),
 )
+const retiredRuntimeRoutes = registry.policies.retiredRuntimeRoutes ?? []
 const suspiciousName = /(^|\/)(?:.*[-_.](?:old|bak|backup|copy|tmp)|.*\d{4}[-_]\d{2}[-_]\d{2}.*)\.(?:[cm]?[jt]sx?|css|json)$/i
 const codeFile = /\.(?:[cm]?[jt]sx?|css)$/
 
@@ -133,6 +140,27 @@ for (const approval of oversizedApprovals.values()) {
   const targetDate = new Date(`${approval.targetDate}T23:59:59Z`)
   if (Number.isNaN(targetDate.getTime()) || targetDate < new Date()) {
     fail(`Oversized-source approval is expired or invalid: ${approval.path} (${approval.targetDate})`)
+  }
+}
+
+for (const retirement of retiredRuntimeRoutes) {
+  if (!retirement.path || !retirement.replacement || !retirement.reason) {
+    fail(`Retired runtime route policy is incomplete: ${retirement.path || '<missing path>'}`)
+    continue
+  }
+  if (!retirement.path.startsWith('src/app/api/') || !retirement.path.endsWith('/route.ts')) {
+    fail(`Retired runtime route must identify an App Router API handler: ${retirement.path}`)
+    continue
+  }
+  if (existsSync(join(root, retirement.path))) {
+    fail(`Retired runtime route was restored: ${retirement.path}. Use ${retirement.replacement}.`)
+  }
+}
+
+for (const file of listFiles(join(root, 'src/app/api')).filter((path) => /\/route\.[cm]?[jt]sx?$/.test(path))) {
+  const content = readFileSync(join(root, file), 'utf8')
+  if (/\bpassword\s*:\s*['"][^'"]+['"]/.test(content)) {
+    fail(`Literal password is not allowed in a production API handler: ${file}`)
   }
 }
 

@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import OfferForm from './offer-form'
@@ -90,7 +91,6 @@ function IconWarningTriangle({ className = '' }: { className?: string }) {
 }
 /* ── Card wrapper — consistent styling ── */
 const card = 'bg-white border border-[#eaeaea] rounded-2xl'
-const TEST_DEAL_SLUG = '28_iezio'
 type DealStatus = 'active' | 'pending' | 'closed'
 type PublicLead = {
   property_address: string | null
@@ -121,14 +121,6 @@ const DEAL_STATUS_META: Record<DealStatus, { label: string; className: string }>
     label: 'Closed',
     className: 'border-slate-300 bg-slate-100 text-slate-700',
   },
-}
-
-function testInspectionReport(slug: string) {
-  return {
-    name: 'Test Inspection Report',
-    url: `/api/deals/${slug}/test-inspection-report`,
-    uploaded_at: '2026-05-25T00:00:00.000Z',
-  }
 }
 
 function buildLocationLine(
@@ -319,11 +311,7 @@ export default async function DealPage({
     : fallbackPhotos
   const videos: string[] = dealPage.videos || []
   const dbInspectionReports: { name: string; url: string; uploaded_at: string }[] = dealPage.inspection_reports || []
-  const inspectionReports = dbInspectionReports.length > 0
-    ? dbInspectionReports
-    : slug === TEST_DEAL_SLUG
-      ? [testInspectionReport(slug)]
-      : []
+  const inspectionReports = dbInspectionReports
 
   const askingPrice = dealPage.asking_price ?? null
   const overviewText = displayDescription(dealPage.description)
@@ -623,7 +611,13 @@ export default async function DealPage({
             {/* Wholesaler Card */}
             <div className={`${card} p-6`}>
               <div className="flex flex-col items-center text-center mb-4">
-                <img src="/ernest-profile.png" alt="Ernest Dodson" className="w-14 h-14 rounded-full object-cover mb-3" />
+                <Image
+                  src="/ernest-profile.png"
+                  alt="Ernest Dodson"
+                  width={56}
+                  height={56}
+                  className="mb-3 h-14 w-14 rounded-full object-cover"
+                />
                 <p className="text-[15px] font-semibold text-[#1a1a1a]">Ernest Dodson</p>
                 <p className="text-[13px] text-[#888] mt-0.5">Saving KC Homebuyers</p>
                 <p className="mt-1 text-[12px] font-bold uppercase tracking-[0.14em] text-[#16a34a]">Dispositions</p>
