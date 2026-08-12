@@ -66,11 +66,11 @@ export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; 
   },
   new: {
     label: 'New',
-    description: 'New seller inquiries awaiting qualification and first contact.',
+    description: 'Unclassified new intake from calls, forms, imports, or other sources awaiting a pipeline decision.',
   },
   contacted: {
     label: 'Leads',
-    description: 'Contacted sellers currently moving through qualification.',
+    description: 'Seller records an agent explicitly confirmed as leads.',
   },
   qualified: {
     label: 'Opportunities',
@@ -114,6 +114,19 @@ export function isActiveAcquisitionContact(contact: SmartListContact): boolean {
   return !isNotLeadOutcome(contact.classification, contact.station)
 }
 
+export function contactPipelineStatusLabel(
+  contact: Pick<SmartListContact, 'station' | 'classification'>,
+): string {
+  if (isNotLeadOutcome(contact.classification, contact.station)) return 'Not a lead'
+  if (contact.station === 'appointment_set') return 'Appointment set'
+  if (contact.station === 'offer_made') return 'Offer made'
+  if (contact.station === 'under_contract') return 'In closing'
+  if (contact.station === 'closed_won') return 'Closed won'
+  if (contact.station === 'qualified' || contact.classification === 'opportunity') return 'Opportunity'
+  if (contact.classification === 'lead') return 'Lead'
+  return 'New intake'
+}
+
 export function contactMatchesSmartList(contact: SmartListContact, smartList: ContactSmartList): boolean {
   const active = isActiveAcquisitionContact(contact)
   if (smartList === 'not_leads') return !active
@@ -123,11 +136,18 @@ export function contactMatchesSmartList(contact: SmartListContact, smartList: Co
     case 'hot':
       return contact.station !== 'under_contract' && (contact.score >= 75 || contact.isFavorite)
     case 'new':
-      return contact.station === 'new'
+      // Communication activity does not qualify a record. New is the intake
+      // queue for records that have not yet received a pipeline classification.
+      return contact.classification === null && (contact.station === 'new' || contact.station === 'contacted')
     case 'contacted':
-      return contact.station === 'contacted'
+      // Keep older explicitly-classified leads discoverable even when a legacy
+      // write left their station at new. Later pipeline stages take precedence.
+      return contact.classification === 'lead' && (contact.station === 'new' || contact.station === 'contacted')
     case 'qualified':
-      return contact.station === 'qualified'
+      return contact.station === 'qualified' || (
+        contact.classification === 'opportunity' &&
+        (contact.station === 'new' || contact.station === 'contacted')
+      )
     case 'appointment_set':
       return contact.station === 'appointment_set'
     case 'offer_made':

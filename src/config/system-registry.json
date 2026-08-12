@@ -98,7 +98,7 @@
     },
     {
       "id": "contacts",
-      "name": "Contacts and lead workspace",
+      "name": "Acquisitions pipeline workspace",
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/contacts", "/leads/[id]"],

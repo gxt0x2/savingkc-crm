@@ -42,6 +42,14 @@ export function LeadStatusControl({
   variant = 'badge',
 }: LeadStatusControlProps) {
   const currentlyNotLead = isNotLeadOutcome(classification, station)
+  const currentlyUnclassified = !currentlyNotLead && !classification
+  const currentStatusLabel = currentlyNotLead
+    ? `Not a lead${deadReasonLabel(deadReason) ? ` — ${deadReasonLabel(deadReason)}` : ''}`
+    : classification === 'opportunity'
+      ? 'Opportunity'
+      : classification === 'lead'
+        ? 'Lead'
+        : 'New intake'
   const canonicalReason = canonicalDeadReason(deadReason)
   const [open, setOpen] = useState(false)
   const [selectedStatus, setSelectedStatus] = useState<'lead' | 'not_a_lead'>(currentlyNotLead ? 'not_a_lead' : 'lead')
@@ -83,9 +91,9 @@ export function LeadStatusControl({
     try {
       const nextStation = markingNotLead
         ? 'dead'
-        : currentlyNotLead
+        : currentlyNotLead || currentlyUnclassified
           ? 'contacted'
-          : station || 'new'
+          : station || 'contacted'
       const response = await fetch('/api/leads', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -138,18 +146,20 @@ export function LeadStatusControl({
         setSelectedReason(canonicalReason ?? '')
         setOpen(true)
       }}
-      aria-label={`Change lead status. Current: ${currentlyNotLead ? `Not a lead${visibleReason ? ` — ${visibleReason}` : ''}` : 'Lead'}`}
+      aria-label={`Change pipeline status. Current: ${currentStatusLabel}`}
       className={cn(
         'group inline-flex min-w-0 items-center border font-bold transition-all hover:-translate-y-px hover:shadow-sm',
         variant === 'panel' ? 'w-full justify-between rounded-xl px-3 py-2.5 text-sm' : 'max-w-[360px] rounded-md px-2 py-0.5 text-[11px]',
         currentlyNotLead
           ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'
-          : 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
+          : currentlyUnclassified
+            ? 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
+            : 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
       )}
     >
       <span className="flex min-w-0 items-center gap-1.5">
-        <Icon name={currentlyNotLead ? 'person_off' : 'verified'} className={variant === 'panel' ? 'text-[18px]' : 'text-[14px]'} />
-        <span className="truncate">{currentlyNotLead ? `Not a lead${visibleReason ? ` · ${visibleReason}` : ''}` : 'Lead'}</span>
+        <Icon name={currentlyNotLead ? 'person_off' : currentlyUnclassified ? 'person_search' : 'verified'} className={variant === 'panel' ? 'text-[18px]' : 'text-[14px]'} />
+        <span className="truncate">{currentlyNotLead ? `Not a lead${visibleReason ? ` · ${visibleReason}` : ''}` : currentStatusLabel}</span>
       </span>
       {variant === 'panel' ? <Icon name="chevron_right" className="shrink-0 text-[18px] transition-transform group-hover:translate-x-0.5" /> : null}
     </button>
@@ -170,8 +180,8 @@ export function LeadStatusControl({
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="fact_check" /></span>
             <div>
-              <h2 id={titleId} className="text-lg font-black text-[var(--crm-ink)]">Lead status</h2>
-              <p className="mt-0.5 text-xs text-[var(--crm-text-muted)]">Make the qualification explicit before the record leaves active work.</p>
+              <h2 id={titleId} className="text-lg font-black text-[var(--crm-ink)]">Pipeline status</h2>
+              <p className="mt-0.5 text-xs text-[var(--crm-text-muted)]">Add new intake to Leads, or record why it should leave active work.</p>
             </div>
           </div>
           <button type="button" onClick={closeDialog} aria-label="Close lead status dialog" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="close" /></button>
@@ -193,7 +203,7 @@ export function LeadStatusControl({
               )}
             >
               <span className="flex items-center justify-between gap-2 font-black text-[var(--crm-success)]"><span className="flex items-center gap-2"><Icon name="verified" />Lead</span>{selectedStatus === 'lead' ? <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--crm-success)] text-white"><Icon name="check" className="text-[16px]" /></span> : null}</span>
-              <span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">A real seller relationship that should remain in the acquisition pipeline.</span>
+              <span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">Confirm this is a seller lead and move it from New into Leads.</span>
             </button>
             <button
               type="button"
@@ -254,7 +264,7 @@ export function LeadStatusControl({
           <button type="button" onClick={closeDialog} disabled={saving} className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-bold">Cancel</button>
           <button
             type="button"
-            aria-label={saving ? 'Saving lead status' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : currentlyNotLead ? 'Restore as lead' : 'Confirm lead'}
+            aria-label={saving ? 'Saving pipeline status' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : 'Confirm lead'}
             onClick={() => void saveLeadStatus()}
             disabled={saving || (selectedStatus === 'not_a_lead' && (!selectedReason || (selectedReason === 'other' && !notes.trim())))}
             className={cn(
@@ -263,7 +273,7 @@ export function LeadStatusControl({
             )}
           >
             <Icon name={saving ? 'progress_activity' : selectedStatus === 'not_a_lead' ? 'person_off' : 'verified'} className={saving ? 'animate-spin' : ''} />
-            {saving ? 'Saving…' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : currentlyNotLead ? 'Restore as lead' : 'Confirm lead'}
+            {saving ? 'Saving…' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : 'Confirm lead'}
           </button>
         </div>
       </div>

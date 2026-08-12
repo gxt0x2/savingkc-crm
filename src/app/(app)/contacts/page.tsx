@@ -37,6 +37,7 @@ import {
   CONTACT_SMART_LISTS,
   DEFAULT_CONTACT_SMART_LIST_ORDER,
   contactMatchesSmartList,
+  contactPipelineStatusLabel,
   contactSmartListCounts,
   normalizeContactSmartListOrder,
   type ContactSmartList,
@@ -87,7 +88,7 @@ type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
 type ContactDialog = 'add' | 'import' | 'view' | null
 type ToolbarMenu = 'filters' | 'sort' | null
 type ContactScope = 'active' | 'not_leads'
-type BulkAction = '' | 'assign:Ernest' | 'assign:Casey' | 'assign:Gertha' | 'assign:unassigned' | `stage:${DealStage}` | 'not_lead'
+type BulkAction = '' | 'assign:Ernest' | 'assign:Casey' | 'assign:Gertha' | 'assign:unassigned' | 'classify:lead' | `stage:${DealStage}` | 'not_lead'
 
 interface SavedView {
   id: string
@@ -155,7 +156,7 @@ const STAGE_TONES: Record<DealStage, string> = {
 
 const EMPTY_CONTACT = { fullName: '', phone: '', email: '', address: '', city: '', state: '', zip: '', source: 'manual_crm' }
 const CONTACT_QUERY_KEY = (scope: ContactScope) => ['contact-workspace', scope] as const
-const BULK_STAGE_OPTIONS: DealStage[] = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract']
+const BULK_STAGE_OPTIONS: DealStage[] = ['qualified', 'appointment_set', 'offer_made', 'under_contract']
 
 function formatRelativeDate(value: string | null): string {
   if (!value) return 'No activity'
@@ -449,6 +450,8 @@ export default function ContactsPage() {
         if (bulkAction.startsWith('assign:')) {
           const owner = bulkAction.slice('assign:'.length)
           fields = { assigned_agent: owner === 'unassigned' ? null : owner }
+        } else if (bulkAction === 'classify:lead') {
+          fields = { classification: 'lead', station: 'contacted', priority: 'warm' }
         } else if (bulkAction.startsWith('stage:')) {
           fields = { station: bulkAction.slice('stage:'.length) }
         } else {
@@ -623,7 +626,7 @@ export default function ContactsPage() {
   const contactsCommandBar = (
     <div data-testid="contacts-command-header" className="grid min-w-0 items-center gap-3 lg:grid-cols-[minmax(11rem,1fr)_minmax(13rem,26rem)_auto]">
       <div data-header-slot="context" className="min-w-0">
-        <p className="crm-eyebrow">Contacts smart list</p>
+        <p className="crm-eyebrow">Pipeline</p>
         <div className="flex items-center gap-2">
           <h1 className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{smartListCopy.label}</h1>
           <span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-xs font-bold text-[var(--crm-info)]">{counts[smartList]}</span>
@@ -646,7 +649,7 @@ export default function ContactsPage() {
           <div className="flex items-stretch border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
             <DndContext sensors={smartListSensors} collisionDetection={closestCenter} onDragEnd={handleSmartListDragEnd}>
               <SortableContext items={smartListOrder} strategy={horizontalListSortingStrategy}>
-                <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label="Contact smart lists">
+                <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label="Pipeline smart lists">
                   {orderedSmartLists.map(({ id, label }) => (
                     <SortableSmartListTab
                       key={id}
@@ -710,6 +713,9 @@ export default function ContactsPage() {
                   <option value="assign:Gertha">Assign to Gertha</option>
                   <option value="assign:unassigned">Set unassigned</option>
                 </optgroup>
+                <optgroup label="Classify intake">
+                  <option value="classify:lead">Add to Leads</option>
+                </optgroup>
                 <optgroup label="Move stage">
                   {BULK_STAGE_OPTIONS.map((stage) => <option key={stage} value={`stage:${stage}`}>{STAGE_LABELS[stage]}</option>)}
                 </optgroup>
@@ -737,6 +743,7 @@ export default function ContactsPage() {
                 const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || 'Define next action'
                 const selectedRow = detailsOpen && selected?.id === row.id
                 const notLead = isNotLeadOutcome(row.classification, row.station)
+                const pipelineStatus = contactPipelineStatusLabel(row)
                 const rowAttention = row.primaryNextAction?.overdue
                   ? 'border-l-[var(--crm-danger)]'
                   : row.attentionState === 'needs_reply'
@@ -753,7 +760,7 @@ export default function ContactsPage() {
                     <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedId(row.id); setDetailsOpen(true) }} onDoubleClick={(event) => { event.stopPropagation(); router.push(`/leads/${row.id}`) }} title="Double-click to open the full lead workspace" className="flex min-w-0 items-center gap-2.5 rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--crm-info)]"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold ${avatarTone}`}>{getAvatarLabel(row.fullName, row.phone, row.source)}</span><span className="min-w-0"><strong className="block truncate text-[var(--crm-ink)]">{displayName}</strong><small className="text-[var(--crm-text-muted)]">{formatPhone(row.phone) || 'No phone'}</small></span></button>
                     <span className="min-w-0"><strong className="block truncate font-medium text-[var(--crm-text)]">{property}</strong><small className="text-[var(--crm-text-dim)]">{row.city || ''}</small></span>
                     <span className="min-w-0">
-                      <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}>{notLead ? 'Not a lead' : 'Lead'}</span>
+                      <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : row.classification ? 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]'}`}>{pipelineStatus}</span>
                       <small className={`mt-1 block truncate text-[10px] ${notLead && !row.deadReason ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}>{notLead ? deadReasonLabel(row.deadReason) || 'Reason required' : STAGE_LABELS[row.station]}</small>
                     </span>
                     <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-action)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>

@@ -62,6 +62,7 @@ describe('workspace dashboard navigation', () => {
     render(<WorkspaceNav needsReply={0} />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
+    expect(within(navigationRegion).getByRole('link', { name: /Pipeline/ })).toHaveAttribute('href', '/contacts')
     expect(within(navigationRegion).getByRole('link', { name: /Dashboard$/ })).toBeVisible()
     expect(within(navigationRegion).getByRole('button', { name: 'Expand dashboard menu' })).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(within(navigationRegion).getByRole('button', { name: /Reports/ }))

@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 type NavItem = { label: string; icon: string; href: string; activeOn: string[] }
 
 const PRIMARY_ITEMS: NavItem[] = [
-  { label: 'Contacts', icon: 'group', href: '/contacts', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
+  { label: 'Pipeline', icon: 'account_tree', href: '/contacts', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
   { label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] },
   { label: 'Dialer', icon: 'dialpad', href: '/dialer', activeOn: ['/dialer'] },
   { label: 'Calendar', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
