@@ -103,7 +103,7 @@ test('Issue Log is the sole Andon dashboard and Marketing replaces the retired d
   await expect(page).toHaveURL(/\/reports\/andon$/);
   await expect(page.getByRole('heading', { name: 'Issue Log' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Issue Log', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('navigation', { name: 'Dashboards sections' }).getByRole('link', { name: /Marketing/ })).toHaveAttribute('href', '/reports/marketing');
+  await expect(page.getByRole('navigation', { name: 'Dashboards sections' }).getByRole('link', { name: /Marketing/ })).toHaveAttribute('href', '/marketing');
   await expect(page.getByRole('heading', { name: 'Bottleneck Board' })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Open AI Assistant' }).click();
@@ -118,6 +118,18 @@ test('Issue Log is the sole Andon dashboard and Marketing replaces the retired d
   });
   await expect(page.getByText('operating-note.txt')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove operating-note.txt' })).toBeVisible();
+});
+
+test('Marketing dashboard opens the current Google Ads workspace and preserves CRM attribution access', async ({ page }) => {
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  const marketingDashboard = page.getByRole('navigation', { name: 'Dashboards sections' }).getByRole('link', { name: /Marketing/ });
+  await expect(marketingDashboard).toHaveAttribute('href', '/marketing');
+  await marketingDashboard.click();
+
+  await expect(page).toHaveURL(/\/marketing$/);
+  await expect(page.getByRole('heading', { name: 'Google Ads performance', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'CRM attribution report' })).toHaveAttribute('href', '/reports/marketing');
+  await expect(page.getByRole('navigation', { name: 'Dashboards sections' }).getByRole('link', { name: /Marketing/ })).toHaveAttribute('aria-current', 'page');
 });
 
 for (const route of crmWorkspaceRoutes) {
