@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
     const limit = parsed.data.limit ?? 6
     const pattern = `%${query}%`
-    const selection = 'id, full_name, property_address, city, state, station, priority, source, assigned_to, updated_at'
+    const selection = 'id, full_name, property_address, city, state, station, priority, source, updated_at'
     const [byName, byAddress] = await Promise.all([
       db.from('leads').select(selection).ilike('full_name', pattern).order('updated_at', { ascending: false }).limit(limit),
       db.from('leads').select(selection).ilike('property_address', pattern).order('updated_at', { ascending: false }).limit(limit),
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   const [tasksResult, appointmentsResult, leadsResult] = await Promise.all([
     db.from('tasks').select('id, title, description, contact_id, due_date, assigned_to, status, type').in('status', ['pending', 'overdue']).order('due_date', { ascending: true, nullsFirst: false }).limit(limit),
     db.from('appointments').select('id, lead_id, scheduled_at, type, status, assigned_to').in('status', ['scheduled', 'confirmed']).gte('scheduled_at', generatedAt).lte('scheduled_at', nextWeek).order('scheduled_at', { ascending: true }).limit(limit),
-    db.from('leads').select('id, full_name, property_address, city, state, station, priority, assigned_to, updated_at').in('station', ASSISTANT_ACTIVE_STAGES).lt('updated_at', staleCutoff).order('updated_at', { ascending: true }).limit(limit),
+    db.from('leads').select('id, full_name, property_address, city, state, station, priority, updated_at').in('station', ASSISTANT_ACTIVE_STAGES).lt('updated_at', staleCutoff).order('updated_at', { ascending: true }).limit(limit),
   ])
 
   if (tasksResult.error || appointmentsResult.error || leadsResult.error) {
