@@ -57,13 +57,14 @@ export async function POST(request: Request) {
     db.from('leads').select('id, full_name, property_address, city, state, station, priority, updated_at').in('station', ASSISTANT_ACTIVE_STAGES).lt('updated_at', staleCutoff).order('updated_at', { ascending: true }).limit(limit),
   ])
 
-  if (tasksResult.error || appointmentsResult.error || leadsResult.error) {
+  const missingLegacyTasks = tasksResult.error?.code === 'PGRST205' || tasksResult.error?.code === '42P01'
+  if ((!missingLegacyTasks && tasksResult.error) || appointmentsResult.error || leadsResult.error) {
     console.error('[assistant-read] attention query failed', tasksResult.error || appointmentsResult.error || leadsResult.error)
     return NextResponse.json({ error: 'CRM attention query failed' }, { status: 500, headers })
   }
 
   const leadIds = new Set<string>()
-  for (const task of tasksResult.data || []) if (task.contact_id) leadIds.add(String(task.contact_id))
+  for (const task of missingLegacyTasks ? [] : (tasksResult.data || [])) if (task.contact_id) leadIds.add(String(task.contact_id))
   for (const appointment of appointmentsResult.data || []) if (appointment.lead_id) leadIds.add(String(appointment.lead_id))
   const related = leadIds.size
     ? await db.from('leads').select('id, full_name, property_address, station').in('id', Array.from(leadIds))
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
   if (related.error) return NextResponse.json({ error: 'CRM relationship query failed' }, { status: 500, headers })
   const leadById = new Map((related.data || []).map((lead) => [String(lead.id), lead]))
 
-  const tasks = (tasksResult.data || []).map((task) => ({ ...task, lead: task.contact_id ? leadById.get(String(task.contact_id)) || null : null, crmUrl: task.contact_id ? crmLeadUrl(String(task.contact_id)) : null }))
+  const tasks = (missingLegacyTasks ? [] : (tasksResult.data || [])).map((task) => ({ ...task, lead: task.contact_id ? leadById.get(String(task.contact_id)) || null : null, crmUrl: task.contact_id ? crmLeadUrl(String(task.contact_id)) : null }))
   const appointments = (appointmentsResult.data || []).map((appointment) => ({ ...appointment, lead: appointment.lead_id ? leadById.get(String(appointment.lead_id)) || null : null, crmUrl: appointment.lead_id ? crmLeadUrl(String(appointment.lead_id)) : null }))
   const staleLeads = (leadsResult.data || []).map((lead) => ({ ...lead, crmUrl: crmLeadUrl(String(lead.id)) }))
 
