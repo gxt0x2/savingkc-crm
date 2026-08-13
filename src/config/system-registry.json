@@ -141,9 +141,9 @@
       "name": "Acquisitions reporting",
       "owner": "Acquisitions",
       "status": "active",
-      "routes": ["/reports/acquisitions"],
-      "apiRoutes": ["/api/stage/advance", "/api/stage/validate"],
-      "tables": ["leads", "lead_stage_history", "offers"],
+      "routes": ["/reports/acquisitions", "/my-day"],
+      "apiRoutes": ["/api/stage/advance", "/api/stage/validate", "/api/my-day"],
+      "tables": ["leads", "lead_stage_history", "lead_activities", "agent_daily_stats", "appointments", "roles", "offers"],
       "environment": []
     },
     {
