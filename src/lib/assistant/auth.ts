@@ -9,7 +9,13 @@ function safeEqual(left: string, right: string): boolean {
 export function authorizeAssistantRequest(request: Request): { email: string } | null {
   const configuredSecret = process.env.CRM_ASSISTANT_API_SECRET?.trim()
   const suppliedSecret = request.headers.get('x-crm-assistant-secret')?.trim()
-  if (!configuredSecret || !suppliedSecret || !safeEqual(configuredSecret, suppliedSecret)) return null
+  if (!configuredSecret || !suppliedSecret || !safeEqual(configuredSecret, suppliedSecret)) {
+    console.warn('[assistant-auth] rejected credential', {
+      hasConfiguredSecret: Boolean(configuredSecret),
+      suppliedSecretLength: suppliedSecret?.length ?? 0,
+    })
+    return null
+  }
 
   const email = request.headers.get('x-savingkc-user-email')?.trim().toLowerCase()
   if (!email) return null
@@ -21,5 +27,9 @@ export function authorizeAssistantRequest(request: Request): { email: string } |
       .filter(Boolean),
   )
 
-  return allowedEmails.has(email) ? { email } : null
+  if (!allowedEmails.has(email)) {
+    console.warn('[assistant-auth] rejected identity', { hasEmail: true, allowedEmailCount: allowedEmails.size })
+    return null
+  }
+  return { email }
 }
