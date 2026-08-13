@@ -37,6 +37,8 @@ const PUBLIC_API_EXACT = new Set([
 ])
 
 const PUBLIC_API_PREFIXES = [
+  // Assistant routes authenticate a dedicated service secret and user allowlist internally.
+  '/api/assistant/',
   '/api/ivr/',
   '/api/audio/',
   '/api/mojo/',
