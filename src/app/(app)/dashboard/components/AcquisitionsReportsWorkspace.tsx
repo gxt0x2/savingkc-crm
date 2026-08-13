@@ -233,12 +233,12 @@ function MarketingView({ report }: { report: Report }) {
   return (
     <>
       <section className="grid gap-4 md:grid-cols-3">
-        <MetricCard icon="ads_click" label="Lead sources" value={report.sources.length} detail={`${report.total} leads represented`} tone="info" href="/marketing" />
+        <MetricCard icon="ads_click" label="Lead sources" value={report.sources.length} detail={`${report.total} leads represented`} tone="info" href="/reports/marketing" />
         <MetricCard icon="verified" label="Opportunities" value={report.qualified} detail={`${rate(report.qualified, report.total)}% opportunity rate`} tone="success" href="/contacts?min_stage=qualified" />
         <MetricCard icon="description" label="Contracts" value={report.contracts} detail={`${rate(report.contracts, report.total)}% lead-to-contract`} tone="violet" href="/contacts?min_stage=under_contract" />
       </section>
       <SourcePerformance report={report} expanded />
-      <div className="flex justify-end"><Link href="/marketing" className="crm-primary-button inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold">Open marketing command center <Icon name="arrow_forward" /></Link></div>
+      <div className="flex justify-end"><Link href="/reports/marketing" className="crm-primary-button inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold">Open marketing dashboard <Icon name="arrow_forward" /></Link></div>
     </>
   )
 }
@@ -370,7 +370,7 @@ function SourcePerformance({ report, expanded = false }: { report: Report; expan
   const rows = report.sources.slice(0, expanded ? 12 : 7)
   return (
     <section className="crm-panel overflow-hidden rounded-2xl">
-      <div className="flex items-center justify-between border-b border-[var(--crm-border)] px-5 py-4"><div><p className="crm-eyebrow">Source quality</p><h2 className="mt-1 text-lg font-black">Which channels create real pipeline</h2></div><Link href="/marketing" className="text-xs font-black text-[var(--crm-brand)] hover:underline">Full marketing view</Link></div>
+      <div className="flex items-center justify-between border-b border-[var(--crm-border)] px-5 py-4"><div><p className="crm-eyebrow">Source quality</p><h2 className="mt-1 text-lg font-black">Which channels create real pipeline</h2></div><Link href="/reports/marketing" className="text-xs font-black text-[var(--crm-brand)] hover:underline">Full marketing view</Link></div>
       <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-xs"><thead className="bg-[var(--crm-surface-subtle)] text-[10px] uppercase tracking-[0.12em] text-[var(--crm-text-muted)]"><tr><th className="px-5 py-3">Source</th><th className="px-3 py-3 text-right">Leads</th><th className="px-3 py-3 text-right">Opportunities</th><th className="px-3 py-3 text-right">Appointments</th><th className="px-3 py-3 text-right">Contracts</th><th className="px-5 py-3 text-right">Avg score</th></tr></thead><tbody className="divide-y divide-[var(--crm-border)]">{rows.map((source) => <tr key={source.source} className="hover:bg-[var(--crm-surface-subtle)]"><td className="px-5 py-3 font-bold">{formatLeadSource(source.source)}</td><td className="px-3 py-3 text-right tabular-nums">{source.leads}</td><td className="px-3 py-3 text-right tabular-nums text-[var(--crm-success)]">{source.qualified}</td><td className="px-3 py-3 text-right tabular-nums text-[var(--crm-info)]">{source.appointments}</td><td className="px-3 py-3 text-right font-black tabular-nums text-[var(--crm-violet)]">{source.contracts}</td><td className="px-5 py-3 text-right"><span className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-1 font-black text-[var(--crm-violet)]">{source.averageScore}</span></td></tr>)}</tbody></table></div>
       {rows.length === 0 ? <p className="px-5 py-10 text-center text-sm text-[var(--crm-text-muted)]">No source data in this reporting period.</p> : null}
     </section>

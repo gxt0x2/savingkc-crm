@@ -51,12 +51,9 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
   const { data, error, isLoading, isFetching, refetch } = useOperatingReport(period, customRange)
   const copy = VIEW_COPY[view]
 
-  if (isLoading) return <ReportSkeleton copy={copy} />
-  if (error || !data) {
-    return <ReportError onRetry={() => void refetch()} />
-  }
-
   if (view === 'dashboard') {
+    if (isLoading) return <ReportSkeleton copy={copy} />
+    if (error || !data) return <ReportError onRetry={() => void refetch()} />
     return <ExecutiveDashboard report={data} period={period} customRange={customRange} onPeriodChange={setPeriod} onCustomRangeChange={setCustomRange} isFetching={isFetching} />
   }
 
@@ -69,6 +66,12 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
           <p className="mt-0.5 max-w-4xl text-xs font-medium text-[var(--crm-text-muted)]">{copy.description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {view === 'marketing' ? (
+            <Link href="/marketing/google-ads" className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
+              <Icon name="ads_click" className="text-[18px]" />
+              Google Ads
+            </Link>
+          ) : null}
           {view === 'dispositions' ? (
             <>
               <Link href="/dispo/pipeline" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
@@ -82,19 +85,23 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
             </>
           ) : null}
           <ReportDateRangeControl period={period} customRange={customRange} onPeriodChange={setPeriod} onCustomRangeChange={setCustomRange} />
-          <span className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-3 text-xs font-black text-[var(--crm-success)]">
-            <span className={`h-2 w-2 rounded-full bg-[#11a857] ${isFetching ? 'animate-pulse' : ''}`} />
-            Live CRM · {formatTimestamp(data.generatedAt)}
+          <span className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-black ${data ? 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : error ? 'border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>
+            <span className={`h-2 w-2 rounded-full ${data ? 'bg-[#11a857]' : error ? 'bg-[var(--crm-danger)]' : 'bg-[var(--crm-text-dim)]'} ${isFetching ? 'animate-pulse' : ''}`} />
+            {data ? `Live CRM · ${formatTimestamp(data.generatedAt)}` : error ? 'CRM data unavailable' : 'Loading CRM data'}
           </span>
         </div>
       </header>
 
-      <CoverageNotice report={data} />
-      {view === 'acquisitions' ? <AcquisitionsView report={data} /> : null}
-      {view === 'marketing' ? <MarketingView report={data} /> : null}
-      {view === 'dispositions' ? <DispositionsView report={data} /> : null}
-      {view === 'finance' ? <FinanceView report={data} /> : null}
-      {view === 'call-sms' ? <CallSmsView report={data} /> : null}
+      {isLoading ? <ReportPanelSkeleton /> : error || !data ? <ReportErrorPanel onRetry={() => void refetch()} /> : (
+        <>
+          <CoverageNotice report={data} />
+          {view === 'acquisitions' ? <AcquisitionsView report={data} /> : null}
+          {view === 'marketing' ? <MarketingView report={data} /> : null}
+          {view === 'dispositions' ? <DispositionsView report={data} /> : null}
+          {view === 'finance' ? <FinanceView report={data} /> : null}
+          {view === 'call-sms' ? <CallSmsView report={data} /> : null}
+        </>
+      )}
     </main>
   )
 }
@@ -109,14 +116,14 @@ function MarketingView({ report }: { report: OperatingReport }) {
     <>
       <NumberedPanel number="1" title="Core marketing metrics" hint="CRM-attributed outcomes">
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard icon="campaign" label="Lead sources" value={report.marketing.sources.length} numericValue={report.marketing.sources.length} detail="Sources with recorded leads" tone="violet" href="/marketing" />
+          <MetricCard icon="campaign" label="Lead sources" value={report.marketing.sources.length} numericValue={report.marketing.sources.length} detail="Sources with recorded leads" tone="violet" href="/reports/marketing" />
           <MetricCard icon="group_add" label="Leads" value={report.core.leads} numericValue={report.core.leads} detail="Created in selected period" tone="teal" href="/contacts?list=new" series={report.trends.leads} />
           <MetricCard icon="verified" label="Opportunities" value={report.core.qualified} numericValue={report.core.qualified} detail={`${percent(report.core.qualified, report.core.leads)} opportunity rate`} tone="blue" href="/contacts?min_stage=qualified" series={report.trends.qualified} goal={scaledGoal(report.goals.weeklyQualified, report, 'weekly')} />
-          <MetricCard icon="trophy" label="Top source" value={top ? formatLeadSource(top.source) : 'No data'} numericValue={top?.leads ?? null} detail={top ? `${top.leads} recorded leads` : 'No lead-source records'} tone="green" href="/marketing" />
+          <MetricCard icon="trophy" label="Top source" value={top ? formatLeadSource(top.source) : 'No data'} numericValue={top?.leads ?? null} detail={top ? `${top.leads} recorded leads` : 'No lead-source records'} tone="green" href="/reports/marketing" />
         </div>
       </NumberedPanel>
       <section className="grid gap-3 xl:grid-cols-[1.25fr_0.75fr]">
-        <NumberedPanel number="2" title="Lead-source outcomes" hint="Leads, qualification, contracts, and revenue" actionHref="/marketing"><SourceRows rows={report.marketing.sources} expanded /></NumberedPanel>
+        <NumberedPanel number="2" title="Lead-source outcomes" hint="Leads, qualification, contracts, and revenue" actionHref="/reports/marketing"><SourceRows rows={report.marketing.sources} expanded /></NumberedPanel>
         <NumberedPanel number="3" title="Source mix" hint="Share of recorded leads"><SourceMix report={report} /></NumberedPanel>
       </section>
       <section className="grid gap-3 xl:grid-cols-[1fr_1fr]">
@@ -125,7 +132,7 @@ function MarketingView({ report }: { report: OperatingReport }) {
       </section>
       <section className="crm-panel flex flex-col gap-3 rounded-2xl px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
         <div><p className="crm-eyebrow">Measurement boundary</p><h2 className="mt-1 text-sm font-black">CRM outcomes here; ad-platform economics stay in the Marketing command center.</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Spend, CPL, campaign delivery, and conversion-export health are never backfilled with sample values on this report.</p></div>
-        <Link href="/marketing" className="crm-secondary-button inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-black">Open Marketing command center <Icon name="arrow_forward" /></Link>
+        <Link href="/marketing/google-ads" className="crm-secondary-button inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-black">Open Google Ads metrics <Icon name="arrow_forward" /></Link>
       </section>
     </>
   )
@@ -464,6 +471,14 @@ function ReportSkeleton({ copy }: { copy: (typeof VIEW_COPY)[OperatingReportView
 
 function ReportError({ onRetry }: { onRetry: () => void }) {
   return <main className="mx-auto max-w-[900px] px-5 py-12"><div className="crm-panel rounded-2xl p-10 text-center"><Icon name="cloud_off" className="text-4xl text-[var(--crm-brand)]" /><h1 className="mt-3 text-xl font-black">Operating data is temporarily unavailable</h1><p className="mt-2 text-sm text-[var(--crm-text-muted)]">The dashboard will not substitute sample data for the missing CRM response.</p><button type="button" onClick={onRetry} className="crm-primary-button mt-5 rounded-lg px-4 py-2.5 text-sm font-black">Try again</button></div></main>
+}
+
+function ReportPanelSkeleton() {
+  return <div aria-label="Loading report data" className="space-y-3"><div className="grid animate-pulse gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-40 rounded-2xl bg-[var(--crm-surface-subtle)]" />)}</div><div className="h-80 animate-pulse rounded-2xl bg-[var(--crm-surface-subtle)]" /></div>
+}
+
+function ReportErrorPanel({ onRetry }: { onRetry: () => void }) {
+  return <section className="crm-panel rounded-2xl p-10 text-center"><Icon name="cloud_off" className="text-4xl text-[var(--crm-brand)]" /><h2 className="mt-3 text-xl font-black">Operating data is temporarily unavailable</h2><p className="mt-2 text-sm text-[var(--crm-text-muted)]">Dashboard navigation remains available while the CRM response recovers. No sample data is substituted.</p><button type="button" onClick={onRetry} className="crm-primary-button mt-5 rounded-lg px-4 py-2.5 text-sm font-black">Try again</button></section>
 }
 
 function stageHref(key: string) {

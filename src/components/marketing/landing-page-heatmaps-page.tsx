@@ -220,7 +220,7 @@ export function LandingPageHeatmapsPage() {
         <div className="heatmap-wrap">
           <header className="heatmap-header">
             <div>
-              <Link className="back-link" href="/marketing">Ads Command</Link>
+              <Link className="back-link" href="/marketing/google-ads">Google Ads</Link>
               <h1>Landing Page Heatmaps</h1>
               <p>Event attention by page, section, CTA, FAQ, video, and specificity.</p>
             </div>

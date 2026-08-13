@@ -1,5 +1,5 @@
-import { AdsCommandPage } from '@/components/marketing/ads-command-page'
+import { redirect } from 'next/navigation'
 
 export default function MarketingPage() {
-  return <AdsCommandPage />
+  redirect('/reports/marketing')
 }

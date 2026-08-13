@@ -21,6 +21,7 @@ const requiredRoutes = [
   '/(app)/tasks/page',
   '/(app)/workflows/page',
   '/(app)/marketing/page',
+  '/(app)/marketing/google-ads/page',
   '/(app)/dialer/page',
   '/(app)/dispo/pipeline/page',
   '/(app)/dispo/deals/page',
