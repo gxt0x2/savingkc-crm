@@ -6,13 +6,9 @@ function safeEqual(left: string, right: string): boolean {
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer)
 }
 
-function bearerToken(request: Request): string | null {
-  return request.headers.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || null
-}
-
 export function authorizeAssistantRequest(request: Request): { email: string } | null {
   const configuredSecret = process.env.CRM_ASSISTANT_API_SECRET?.trim()
-  const suppliedSecret = bearerToken(request)
+  const suppliedSecret = request.headers.get('x-crm-assistant-secret')?.trim()
   if (!configuredSecret || !suppliedSecret || !safeEqual(configuredSecret, suppliedSecret)) return null
 
   const email = request.headers.get('x-savingkc-user-email')?.trim().toLowerCase()
