@@ -44,6 +44,18 @@ describe('workspace navigation', () => {
     expect(within(navigationRegion).queryByRole('link', { name: 'ARI Insights' })).not.toBeInTheDocument()
   })
 
+  it('shows My Day only for Casey and keeps it out of every other agent menu', () => {
+    const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
+    const caseyNavigation = screen.getByRole('navigation', { name: 'CRM navigation' })
+    expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
+      'Dashboard', 'My Day', 'Issue Log', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Reports', 'Settings',
+    ])
+    expect(within(caseyNavigation).getByRole('link', { name: 'My Day' })).toHaveAttribute('href', '/my-day')
+
+    rerender(<WorkspaceNav needsReply={0} userEmail="ernest@savingkc.com" />)
+    expect(screen.queryByRole('link', { name: 'My Day' })).not.toBeInTheDocument()
+  })
+
   it('keeps the system Andon available from the shared CRM navigation', () => {
     render(<WorkspaceNav needsReply={0} />)
 

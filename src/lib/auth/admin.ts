@@ -3,8 +3,13 @@ import { createClient } from '@/lib/supabase/server'
 export async function getCurrentUserEmail(): Promise<string | null> {
   try {
     const sb = await createClient()
-    const { data: { user } } = await sb.auth.getUser()
-    return user?.email?.toLowerCase() ?? null
+    // The proxy already verifies the asymmetric session token before an app
+    // request reaches this helper. Reuse those verified claims locally so
+    // identity-aware server pages do not pay a second regional Auth request.
+    const { data, error } = await sb.auth.getClaims()
+    if (error) return null
+    const email = data?.claims?.email
+    return typeof email === 'string' ? email.trim().toLowerCase() || null : null
   } catch {
     return null
   }

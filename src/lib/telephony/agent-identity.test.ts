@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { MAIN_SAVINGKC_CALLER_ID, resolveAgentTelephonyProfile } from './agent-identity'
+import { isCaseyCrmUser, MAIN_SAVINGKC_CALLER_ID, resolveAgentTelephonyProfile } from './agent-identity'
 
 describe('resolveAgentTelephonyProfile', () => {
   it('defaults Ernest and Casey to their recorded company numbers', () => {
@@ -26,5 +26,12 @@ describe('resolveAgentTelephonyProfile', () => {
       hasDedicatedCallerId: false,
     })
     expect(resolveAgentTelephonyProfile('new.user@savingkc.com').defaultCallerId).toBe(MAIN_SAVINGKC_CALLER_ID)
+  })
+
+  it('uses an exact Casey account match for her private workspace', () => {
+    expect(isCaseyCrmUser('casey@savingkc.com')).toBe(true)
+    expect(isCaseyCrmUser('CASEY@SAVINGKC.COM')).toBe(true)
+    expect(isCaseyCrmUser('casey.personal@example.com')).toBe(false)
+    expect(isCaseyCrmUser('ernest@savingkc.com')).toBe(false)
   })
 })

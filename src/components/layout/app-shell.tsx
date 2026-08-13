@@ -92,6 +92,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/opportunities') ?? false) ||
     (pathname?.startsWith('/in-closing') ?? false) ||
     (pathname?.startsWith('/dialer') ?? false) ||
+    (pathname?.startsWith('/my-day') ?? false) ||
     isAcquisitionsCalendar ||
     (pathname?.startsWith('/marketing') ?? false) ||
     isModernDispo ||

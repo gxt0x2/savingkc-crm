@@ -23,6 +23,7 @@ const requiredRoutes = [
   '/(app)/marketing/page',
   '/(app)/marketing/google-ads/page',
   '/(app)/dialer/page',
+  '/(app)/my-day/page',
   '/(app)/dispo/pipeline/page',
   '/(app)/dispo/deals/page',
   '/(app)/dispo/buyers/page',
@@ -40,6 +41,7 @@ const requiredRoutes = [
   '/(app)/reports/call-sms/page',
   '/(app)/settings/page',
   '/api/ai/command/route',
+  '/api/my-day/route',
   '/api/workflows/phone-system/route',
   '/api/workflows/summary/route',
 ];
