@@ -64,7 +64,7 @@ export interface MyDayMetric {
 }
 
 export interface MyDayWeeklyRow {
-  key: 'calls' | 'conversations' | 'opportunities' | 'appointments'
+  key: 'calls' | 'conversations' | 'opportunities' | 'appointments' | 'offers' | 'contracts'
   label: string
   icon: string
   tone: MyDayMetric['tone']
@@ -373,6 +373,8 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     },
     { key: 'opportunities', label: 'Opportunities', icon: 'person_search', tone: 'coral', days: valuesByDay(opportunityEntries.values(), days), total: null },
     { key: 'appointments', label: 'Appointments Set', icon: 'event', tone: 'sky', days: valuesByDay(appointmentEntries.values(), days), total: null },
+    { key: 'offers', label: 'Offers Made', icon: 'sell', tone: 'green', days: valuesByDay(offerEntries.values(), days), total: null },
+    { key: 'contracts', label: 'Under Contract', icon: 'description', tone: 'indigo', days: valuesByDay(contractEntries.values(), days), total: null },
   ]
   const weeklyRows = weeklyRowValues.map((row) => ({ ...row, total: total(row.days) }))
 

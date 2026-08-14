@@ -88,11 +88,25 @@ function habitValue(value: number | null) {
   return value === null ? '—' : `${value}%`
 }
 
+function ordinalDay(day: number) {
+  const remainder = day % 100
+  if (remainder >= 11 && remainder <= 13) return `${day}th`
+  return `${day}${day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th'}`
+}
+
+function formatWeekRange(endValue: string) {
+  const end = new Date(`${endValue}T12:00:00Z`)
+  const start = new Date(end)
+  start.setUTCDate(end.getUTCDate() - 6)
+  const month = (date: Date) => new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(date)
+  return `${month(start)} ${ordinalDay(start.getUTCDate())} – ${month(end)} ${ordinalDay(end.getUTCDate())}`
+}
+
 function FunnelCard({ metrics }: { metrics: MyDayMetric[] }) {
   return (
-    <section aria-labelledby="conversion-funnel-title" className="crm-panel rounded-xl px-4 py-3 sm:px-5">
-      <h2 id="conversion-funnel-title" className="text-[15px] font-black">Conversion Funnel</h2>
-      <div className="mt-2 overflow-x-auto">
+    <section aria-labelledby="conversion-funnel-title" className="crm-panel rounded-xl px-4 py-4 sm:px-5">
+      <h2 id="conversion-funnel-title" className="text-[22px] font-black tracking-[-0.02em]">Conversion Funnel</h2>
+      <div className="mt-3 overflow-x-auto">
         <div className="grid min-w-[900px] grid-cols-6 lg:min-w-0">
           {metrics.map((metric, index) => {
           const tone = TONE_STYLES[metric.tone]
@@ -103,15 +117,15 @@ function FunnelCard({ metrics }: { metrics: MyDayMetric[] }) {
                   <Icon name={metric.icon} className={cn('text-[25px]', tone.icon)} />
                 </div>
                 <div className="min-w-0">
-                  <p className="max-w-[94px] text-[10px] font-extrabold leading-[1.25] text-[var(--crm-text)]">{metric.label}</p>
-                  <p className="mt-1 text-[24px] font-black leading-none">{metricValue(metric.value)}</p>
+                  <p className="max-w-[108px] text-[13px] font-extrabold leading-[1.25] text-[var(--crm-text)]">{metric.label}</p>
+                  <p className="mt-1 text-[28px] font-black leading-none">{metricValue(metric.value)}</p>
                 </div>
                 {index < metrics.length - 1 ? <Icon name="chevron_right" className="ml-auto shrink-0 text-[20px] text-[var(--crm-text-dim)]" /> : null}
               </div>
               <div className="relative mt-1 h-3 border-t border-dashed border-[var(--crm-border-strong)]">
                 <span className={cn('absolute -top-[4px] left-6 h-2 w-2 rounded-full ring-4 ring-[var(--crm-surface)]', tone.dot)} />
               </div>
-              {index > 0 ? <p className={cn('text-center text-[11px] font-black', tone.text)}>{metric.conversion === null ? 'Not recorded' : `${metric.conversion.toFixed(1)}%`}</p> : <p className="text-center text-[11px] font-black text-transparent" aria-hidden="true">—</p>}
+              {index > 0 ? <p className={cn('text-center text-xs font-black', tone.text)}>{metric.conversion === null ? 'Not recorded' : `${metric.conversion.toFixed(1)}%`}</p> : <p className="text-center text-xs font-black text-transparent" aria-hidden="true">—</p>}
             </div>
           )
           })}
@@ -126,7 +140,7 @@ function WeeklySnapshot({ data }: { data: MyDayData }) {
     <section aria-labelledby="weekly-snapshot-title" className="crm-panel overflow-hidden rounded-xl">
       <div className="flex items-baseline justify-between gap-3">
         <h2 id="weekly-snapshot-title" className="px-5 pt-4 text-[22px] font-black tracking-[-0.02em]">Weekly Snapshot</h2>
-        <p className="px-5 pt-4 text-xs font-bold text-[var(--crm-text-muted)]">{data.week.start} – {data.week.end}</p>
+        <p className="px-5 pt-4 text-sm font-bold text-[var(--crm-text-muted)]">{formatWeekRange(data.week.end)}</p>
       </div>
       <div className="mt-3 overflow-x-auto px-5">
         <table className="w-full min-w-[840px] table-fixed border-collapse border border-[var(--crm-border)] text-[13px]">
@@ -166,13 +180,13 @@ function WeeklySnapshot({ data }: { data: MyDayData }) {
 function CommitmentsCard({ data }: { data: MyDayData }) {
   return (
     <section aria-labelledby="next-commitments-title" className="crm-panel flex min-h-[284px] flex-col rounded-xl">
-      <h2 id="next-commitments-title" className="px-4 pt-3 text-[15px] font-black">Next Commitments</h2>
+      <h2 id="next-commitments-title" className="px-4 pt-4 text-[22px] font-black tracking-[-0.02em]">Next Commitments</h2>
       <div className="mt-1 flex-1 px-4">
         {data.commitments.length === 0 ? (
           <div className="flex h-full min-h-[190px] flex-col items-center justify-center text-center">
             <Icon name="event_available" className="text-[28px] text-[var(--crm-success)]" />
-            <p className="mt-2 text-xs font-bold">No upcoming commitments</p>
-            <p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">Casey’s next 14 days are clear.</p>
+            <p className="mt-2 text-sm font-extrabold">No upcoming commitments</p>
+            <p className="mt-1 text-xs text-[var(--crm-text-muted)]">Casey’s next 14 days are clear.</p>
           </div>
         ) : (
           <ol className="relative border-l-2 border-[#d8e5ff] pl-4">
@@ -206,15 +220,15 @@ function QueueCard({ data, selected, onToggle, onAction, onCreateCallingList }: 
   return (
     <section aria-labelledby="priority-queue-title" className="crm-panel flex min-h-[284px] min-w-0 flex-col rounded-xl">
       <div className="flex items-center gap-2 px-4 pt-3">
-        <h2 id="priority-queue-title" className="text-[15px] font-black">Priority Queue / Next Best Actions</h2>
-        <span className="rounded-full bg-[var(--crm-surface-subtle)] px-2 py-0.5 text-[9px] font-black text-[var(--crm-text-muted)]">{data.queue.length}</span>
+        <h2 id="priority-queue-title" className="text-[22px] font-black tracking-[-0.02em]">Priority Queue / Next Best Actions</h2>
+        <span className="rounded-full bg-[var(--crm-surface-subtle)] px-2 py-0.5 text-xs font-black text-[var(--crm-text-muted)]">{data.queue.length}</span>
       </div>
       <div className="mt-1 flex-1 overflow-x-auto px-4">
         {data.queue.length === 0 ? (
           <div className="flex min-h-[190px] flex-col items-center justify-center text-center"><Icon name="task_alt" className="text-[28px] text-[var(--crm-success)]" /><p className="mt-2 text-xs font-bold">Queue cleared</p><p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">No open Casey tasks require action.</p></div>
         ) : (
-          <table className="w-full min-w-[720px] table-fixed text-[9px]">
-            <thead className="text-[8px] font-black text-[var(--crm-text-muted)]">
+          <table className="w-full min-w-[820px] table-fixed text-[12px]">
+            <thead className="text-[10px] font-black uppercase tracking-[0.04em] text-[var(--crm-text-muted)]">
               <tr><th className="w-8 py-1"><span className="sr-only">Select</span></th><th className="w-[30%] py-1 text-left">Lead / Task</th><th className="w-[22%] py-1 text-left">Stage / Source</th><th className="w-[14%] py-1 text-left">Priority</th><th className="w-[16%] py-1 text-center">Next Action</th><th className="py-1 text-left">Due By</th></tr>
             </thead>
             <tbody>
@@ -224,11 +238,11 @@ function QueueCard({ data, selected, onToggle, onAction, onCreateCallingList }: 
                 const avatarTones = ['bg-[#e7efff] text-[#235fc0]', 'bg-[#eee8ff] text-[#6d28d9]', 'bg-[#e8f7ef] text-[#08753f]', 'bg-[#fff0e8] text-[#b84b14]']
                 return (
                   <tr key={item.id} className="border-t border-[var(--crm-border)] hover:bg-[var(--crm-surface-subtle)]">
-                    <td className="py-1.5"><input type="checkbox" checked={selected.has(item.id)} onChange={() => onToggle(item.id)} aria-label={`Select ${item.leadName}`} className="h-3.5 w-3.5 accent-[#1769e0]" /></td>
-                    <td className="py-1.5 pr-2"><Link href={item.leadId ? `/leads/${item.leadId}` : '/tasks'} prefetch className="flex min-w-0 items-center gap-2"><span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[8px] font-black', avatarTones[index % avatarTones.length])}>{initials}</span><span className="min-w-0"><strong className="block truncate">{item.leadName}</strong><span className="block truncate text-[8px] text-[var(--crm-text-muted)]">{item.property}</span></span></Link></td>
-                    <td className="py-1.5 pr-2"><span className={cn('inline-flex rounded border px-2 py-0.5 text-[8px] font-bold', stageStyle)}>{item.stage}</span><span className="mt-0.5 block truncate text-[8px] text-[var(--crm-text-muted)]">{item.source}</span></td>
-                    <td className="py-1.5"><span className={cn('inline-flex min-w-[58px] justify-center rounded border px-2 py-0.5 text-[8px] font-bold', PRIORITY_STYLES[item.priority])}>{item.priority}</span></td>
-                    <td className="py-1.5 text-center"><button type="button" onClick={() => onAction(item)} className={cn('inline-flex min-w-[70px] items-center justify-center gap-1 rounded border px-2 py-1 text-[8px] font-black', item.action === 'Open' ? 'border-[#1769e0] bg-transparent text-[#1769e0]' : 'border-[#1769e0] bg-[#1769e0] text-white hover:bg-[#0d55bc]')}><Icon name={item.action === 'Call' ? 'call' : item.action === 'SMS' ? 'sms' : 'open_in_new'} className="text-[12px]" />{item.action}</button></td>
+                    <td className="py-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => onToggle(item.id)} aria-label={`Select ${item.leadName}`} className="h-4 w-4 accent-[var(--crm-brand)]" /></td>
+                    <td className="py-2 pr-2"><Link href={item.leadId ? `/leads/${item.leadId}` : '/tasks'} prefetch className="flex min-w-0 items-center gap-2"><span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-black', avatarTones[index % avatarTones.length])}>{initials}</span><span className="min-w-0"><strong className="block truncate text-xs">{item.leadName}</strong><span className="block truncate text-[10px] text-[var(--crm-text-muted)]">{item.property}</span></span></Link></td>
+                    <td className="py-2 pr-2"><span className={cn('inline-flex rounded border px-2 py-0.5 text-[10px] font-bold', stageStyle)}>{item.stage}</span><span className="mt-0.5 block truncate text-[10px] text-[var(--crm-text-muted)]">{item.source}</span></td>
+                    <td className="py-2"><span className={cn('inline-flex min-w-[64px] justify-center rounded border px-2 py-0.5 text-[10px] font-bold', PRIORITY_STYLES[item.priority])}>{item.priority}</span></td>
+                    <td className="py-2 text-center"><button type="button" onClick={() => onAction(item)} className={cn('inline-flex min-w-[76px] items-center justify-center gap-1 rounded border px-2 py-1.5 text-[10px] font-black', item.action === 'Open' ? 'border-[var(--crm-info)] bg-transparent text-[var(--crm-info)]' : 'border-[var(--crm-brand)] bg-[var(--crm-brand)] text-white hover:bg-[var(--crm-brand-hover)]')}><Icon name={item.action === 'Call' ? 'call' : item.action === 'SMS' ? 'sms' : 'open_in_new'} className="text-[14px]" />{item.action}</button></td>
                     <td className={cn('py-1.5 font-bold', item.dueAt && new Date(item.dueAt).getTime() < new Date(data.generatedAt).getTime() ? 'text-[var(--crm-danger)]' : '')}>{formatDateTime(item.dueAt, 'due', data.generatedAt)}</td>
                   </tr>
                 )
@@ -238,8 +252,8 @@ function QueueCard({ data, selected, onToggle, onAction, onCreateCallingList }: 
         )}
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-[var(--crm-border)] px-4 py-2">
-        <span className="text-[9px] font-black text-[var(--crm-text-muted)]">{selected.size} selected</span>
-        <button type="button" onClick={onCreateCallingList} disabled={callableSelected.length === 0} className="crm-primary-button inline-flex min-w-[245px] items-center justify-center gap-2 rounded-md px-4 py-2 text-[10px] font-black disabled:cursor-not-allowed disabled:opacity-45"><Icon name="format_list_numbered" className="text-[15px]" />Create Calling List ({callableSelected.length})</button>
+        <span className="text-xs font-black text-[var(--crm-text-muted)]">{selected.size} selected</span>
+        <button type="button" onClick={onCreateCallingList} disabled={callableSelected.length === 0} className="crm-primary-button inline-flex min-w-[245px] items-center justify-center gap-2 rounded-md px-4 py-2.5 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45"><Icon name="format_list_numbered" className="text-[17px]" />Create Calling List ({callableSelected.length})</button>
       </div>
     </section>
   )
