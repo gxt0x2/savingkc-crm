@@ -15,6 +15,7 @@ import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
 import { SystemAndon } from '@/components/feedback/system-andon'
 import { preloadGlobalDialer } from '@/components/telephony/global-dialer-button'
 import { getServerViewedAgentEmailSnapshot, getViewedAgentEmailSnapshot, subscribeToViewedAgentChange } from '@/lib/viewed-agent-session'
+import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
@@ -107,6 +108,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // progress UI. Keep the softphone docked there so closing a disposition does
   // not re-open a full-screen dialer over the heir queue.
   const dialerPresentation = pathname?.startsWith('/dialer') ? 'dock' : 'modal'
+  const effectiveWorkspaceEmail = viewedAgentEmail || user?.email
+  const shouldRedirectCaseyDashboard = pathname === '/dashboard' && isCaseyCrmUser(effectiveWorkspaceEmail)
+
+  useEffect(() => {
+    if (shouldRedirectCaseyDashboard) router.replace('/my-day')
+  }, [router, shouldRedirectCaseyDashboard])
 
   useEffect(() => {
     const html = document.documentElement
@@ -274,7 +281,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="min-h-screen bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
         data-theme={userTheme}
       >
-        <WorkspaceFrame userEmail={viewedAgentEmail || user?.email}>{children}</WorkspaceFrame>
+        <WorkspaceFrame userEmail={effectiveWorkspaceEmail}>
+          {shouldRedirectCaseyDashboard ? (
+            <div role="status" className="grid min-h-full place-items-center text-sm font-semibold text-[var(--crm-text-muted)]">
+              Opening Casey’s My Day…
+            </div>
+          ) : children}
+        </WorkspaceFrame>
         {dialerMounted ? <DialerPanel
           open={showDialer}
           onClose={() => {

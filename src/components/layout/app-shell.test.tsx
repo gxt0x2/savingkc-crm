@@ -5,11 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell } from './app-shell'
 
-const navigation = vi.hoisted(() => ({ pathname: '/dashboard' }))
+const navigation = vi.hoisted(() => ({ pathname: '/dashboard', replace: vi.fn() }))
 
 vi.mock('next/navigation', () => ({
   usePathname: () => navigation.pathname,
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: navigation.replace }),
   useSearchParams: () => new URLSearchParams(),
 }))
 
@@ -39,6 +39,7 @@ vi.mock('@/components/conversations/workspace-frame', () => ({
 describe('AppShell first-load work', () => {
   beforeEach(() => {
     navigation.pathname = '/dashboard'
+    navigation.replace.mockReset()
     window.sessionStorage.clear()
     vi.stubGlobal('fetch', vi.fn())
   })
@@ -59,11 +60,14 @@ describe('AppShell first-load work', () => {
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
   })
 
-  it('renders the workspace for the owner-selected agent without changing signed-in auth', () => {
+  it('redirects an owner-selected Casey workspace to My Day without painting the company dashboard', () => {
     window.sessionStorage.setItem('savingkc:viewed-agent-email', 'casey@savingkc.com')
 
     render(<AppShell><main>Dashboard content</main></AppShell>)
 
     expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-user-email', 'casey@savingkc.com')
+    expect(navigation.replace).toHaveBeenCalledWith('/my-day')
+    expect(screen.queryByText('Dashboard content')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Opening Casey’s My Day…')
   })
 })
