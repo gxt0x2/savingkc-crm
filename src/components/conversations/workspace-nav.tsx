@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { SystemAndon } from '@/components/feedback/system-andon'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
+import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 
 type NavItem = { label: string; icon: string; href: string; activeOn: string[] }
 
@@ -51,9 +52,12 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
   )
 }
 
-export function WorkspaceNav({ needsReply }: { needsReply: number }) {
+export function WorkspaceNav({ needsReply, userEmail }: { needsReply: number; userEmail?: string | null }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const navItems = isCaseyCrmUser(userEmail)
+    ? [NAV_ITEMS[0], { label: 'My Day', icon: 'today', href: '/my-day', activeOn: ['/my-day'] }, ...NAV_ITEMS.slice(1)]
+    : NAV_ITEMS
 
   return (
     <aside className={cn('hidden shrink-0 flex-col border-r border-black/15 bg-[var(--crm-nav)] text-[var(--crm-nav-text)] transition-[width] duration-200 lg:flex', collapsed ? 'w-[64px]' : 'w-[192px]')}>
@@ -62,7 +66,7 @@ export function WorkspaceNav({ needsReply }: { needsReply: number }) {
         <Image src="/logo.png" alt={collapsed ? '' : 'Saving KC Homebuyers'} width={489} height={141} className={cn('h-auto object-contain', collapsed ? 'w-[48px]' : 'w-[138px]')} style={{ filter: 'url(#crm-logo-dark)' }} />
       </Link>
       <nav className="flex-1 space-y-1 overflow-y-auto px-2.5 py-3" aria-label="CRM navigation">
-        {NAV_ITEMS.map((item) => <WorkspaceNavLink key={item.label} item={item} pathname={pathname} collapsed={collapsed} needsReply={needsReply} />)}
+        {navItems.map((item) => <WorkspaceNavLink key={item.label} item={item} pathname={pathname} collapsed={collapsed} needsReply={needsReply} />)}
       </nav>
       <div className="space-y-2 border-t border-white/10 px-3 pb-3 pt-3">
         <SystemAndon collapsed={collapsed} />

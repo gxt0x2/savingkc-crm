@@ -44,6 +44,14 @@ describe('workspace navigation', () => {
     expect(within(navigationRegion).queryByRole('link', { name: 'ARI Insights' })).not.toBeInTheDocument()
   })
 
+  it('shows My Day only in Casey’s navigation', () => {
+    const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
+    expect(screen.getByRole('link', { name: 'My Day' })).toHaveAttribute('href', '/my-day')
+
+    rerender(<WorkspaceNav needsReply={0} userEmail="ernest@savingkc.com" />)
+    expect(screen.queryByRole('link', { name: 'My Day' })).not.toBeInTheDocument()
+  })
+
   it('keeps the system Andon available from the shared CRM navigation', () => {
     render(<WorkspaceNav needsReply={0} />)
 
