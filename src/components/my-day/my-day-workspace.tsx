@@ -1,10 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
+import { CaseyAndonQueue } from '@/components/my-day/casey-andon-queue'
 import { MY_DAY_TIME_ZONE, type MyDayData, type MyDayMetric, type MyDayQueueItem } from '@/lib/my-day'
 import { cn } from '@/lib/utils'
 
@@ -177,7 +177,7 @@ function WeeklySnapshot({ data }: { data: MyDayData }) {
   )
 }
 
-function CommitmentsCard({ data }: { data: MyDayData }) {
+export function CommitmentsCard({ data }: { data: MyDayData }) {
   return (
     <section aria-labelledby="next-commitments-title" className="crm-panel flex min-h-[284px] flex-col rounded-xl">
       <h2 id="next-commitments-title" className="px-4 pt-4 text-[22px] font-black tracking-[-0.02em]">Next Commitments</h2>
@@ -209,7 +209,7 @@ function CommitmentsCard({ data }: { data: MyDayData }) {
   )
 }
 
-function QueueCard({ data, selected, onToggle, onAction, onCreateCallingList }: {
+export function QueueCard({ data, selected, onToggle, onAction, onCreateCallingList }: {
   data: MyDayData
   selected: Set<string>
   onToggle: (id: string) => void
@@ -260,9 +260,7 @@ function QueueCard({ data, selected, onToggle, onAction, onCreateCallingList }: 
 }
 
 export function MyDayWorkspace({ initialData }: { initialData: MyDayData }) {
-  const router = useRouter()
   const [data, setData] = useState(initialData)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const months = useMemo(() => monthOptions(initialData.month), [initialData.month])
@@ -276,39 +274,11 @@ export function MyDayWorkspace({ initialData }: { initialData: MyDayData }) {
       const payload = await response.json()
       if (!response.ok) throw new Error(payload?.error || 'The month could not load.')
       setData(payload as MyDayData)
-      setSelected(new Set())
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The month could not load.')
     } finally {
       setLoading(false)
     }
-  }
-
-  function toggleQueueItem(id: string) {
-    setSelected((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function runAction(item: MyDayQueueItem) {
-    if (item.action === 'Call' && item.leadId && item.phone) {
-      window.dispatchEvent(new CustomEvent('open-dialer', { detail: { leadId: item.leadId, phone: item.phone, name: item.leadName } }))
-      return
-    }
-    if (item.action === 'SMS' && item.leadId) {
-      router.push(`/conversations?lead=${encodeURIComponent(item.leadId)}`)
-      return
-    }
-    router.push(item.leadId ? `/leads/${item.leadId}` : '/tasks')
-  }
-
-  function createCallingList() {
-    const leadIds = data.queue.filter((item) => selected.has(item.id) && item.leadId && item.phone).map((item) => item.leadId!)
-    if (leadIds.length === 0) return
-    router.push(`/dialer?lead_ids=${encodeURIComponent(leadIds.join(','))}&return_to=${encodeURIComponent('/my-day')}`)
   }
 
   return (
@@ -341,10 +311,7 @@ export function MyDayWorkspace({ initialData }: { initialData: MyDayData }) {
       {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void changeMonth(data.month, true)} className="underline">Retry</button></div> : null}
       <FunnelCard metrics={data.funnel} />
       <WeeklySnapshot data={data} />
-      <div className="grid min-w-0 gap-2.5 lg:grid-cols-[270px_minmax(0,1fr)]">
-        <CommitmentsCard data={data} />
-        <QueueCard data={data} selected={selected} onToggle={toggleQueueItem} onAction={runAction} onCreateCallingList={createCallingList} />
-      </div>
+      <CaseyAndonQueue />
       {loading ? <div role="status" aria-live="polite" className="absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-[var(--crm-canvas)]/70 backdrop-blur-[1px]"><span className="rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2 text-xs font-black shadow-lg">Loading Casey’s month…</span></div> : null}
     </main>
   )
