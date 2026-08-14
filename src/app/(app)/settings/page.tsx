@@ -8,6 +8,9 @@ import { useAuth } from '@/hooks/use-auth'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { GmailConnect } from '@/components/settings/gmail-connect'
 import { GoogleAdsConnect } from '@/components/settings/google-ads-connect'
+import { useRouter } from 'next/navigation'
+import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
+import { readViewedAgentEmail, setViewedAgentEmail } from '@/lib/viewed-agent-session'
 
 interface AgentProfile {
   email: string
@@ -84,6 +87,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function SettingsPage() {
+  const router = useRouter()
   const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'
   const releaseSha = process.env.NEXT_PUBLIC_RELEASE_SHA || 'local'
   const shortSha = releaseSha === 'local' ? 'local' : releaseSha.slice(0, 7)
@@ -113,15 +117,17 @@ export default function SettingsPage() {
           setAllProfiles(allData.profiles)
         }
 
-        // Fetch current user profile
-        const res = await fetch(`/api/settings?email=${encodeURIComponent(userEmail)}`)
+        // Owners can keep a viewed-agent workspace active across route changes.
+        // This changes presentation only; API authorization still uses auth.
+        const viewedEmail = readViewedAgentEmail(userEmail)
+        const res = await fetch(`/api/settings?email=${encodeURIComponent(viewedEmail)}`)
         const data = await res.json()
         if (data.profile) {
           setProfile({ ...DEFAULT_PROFILE, ...data.profile })
-          setSelectedEmail(userEmail)
+          setSelectedEmail(viewedEmail)
         } else {
-          setProfile({ ...DEFAULT_PROFILE, email: userEmail })
-          setSelectedEmail(userEmail)
+          setProfile({ ...DEFAULT_PROFILE, email: viewedEmail })
+          setSelectedEmail(viewedEmail)
         }
       } catch {}
       setLoading(false)
@@ -132,6 +138,7 @@ export default function SettingsPage() {
   // Switch to a different agent's profile
   async function switchAgent(email: string) {
     setSelectedEmail(email)
+    setViewedAgentEmail(email)
     try {
       const res = await fetch(`/api/settings?email=${encodeURIComponent(email)}`)
       const data = await res.json()
@@ -139,6 +146,7 @@ export default function SettingsPage() {
         setProfile({ ...DEFAULT_PROFILE, ...data.profile })
       }
     } catch {}
+    if (isCaseyCrmUser(email)) router.push('/my-day')
   }
 
   function updateProfile<K extends keyof AgentProfile>(key: K, value: AgentProfile[K]) {
@@ -257,7 +265,7 @@ export default function SettingsPage() {
               <Icon name="admin_panel_settings" size="text-lg" className="text-red-600" />
               <div className="flex-1">
                 <label className="block text-xs font-bold text-red-700 uppercase tracking-wider mb-1">
-                  Viewing Agent Profile
+                  Viewing Agent Workspace
                 </label>
                 <select
                   value={selectedEmail}

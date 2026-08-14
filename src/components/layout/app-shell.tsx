@@ -14,6 +14,7 @@ import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller
 import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
 import { SystemAndon } from '@/components/feedback/system-andon'
 import { preloadGlobalDialer } from '@/components/telephony/global-dialer-button'
+import { getServerViewedAgentEmailSnapshot, getViewedAgentEmailSnapshot, subscribeToViewedAgentChange } from '@/lib/viewed-agent-session'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
@@ -65,6 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
+  const viewedAgentEmail = useSyncExternalStore(subscribeToViewedAgentChange, getViewedAgentEmailSnapshot, getServerViewedAgentEmailSnapshot)
   const { mode, setMode } = useAppMode()
   const router = useRouter()
   const pathname = usePathname()
@@ -272,7 +274,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="min-h-screen bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
         data-theme={userTheme}
       >
-        <WorkspaceFrame userEmail={user?.email}>{children}</WorkspaceFrame>
+        <WorkspaceFrame userEmail={viewedAgentEmail || user?.email}>{children}</WorkspaceFrame>
         {dialerMounted ? <DialerPanel
           open={showDialer}
           onClose={() => {

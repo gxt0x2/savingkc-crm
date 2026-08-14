@@ -33,12 +33,13 @@ vi.mock('@/hooks/use-theme-preference', () => ({
 }))
 
 vi.mock('@/components/conversations/workspace-frame', () => ({
-  WorkspaceFrame: ({ children }: { children: React.ReactNode }) => <div data-testid="workspace-frame">{children}</div>,
+  WorkspaceFrame: ({ children, userEmail }: { children: React.ReactNode; userEmail?: string | null }) => <div data-testid="workspace-frame" data-user-email={userEmail}>{children}</div>,
 }))
 
 describe('AppShell first-load work', () => {
   beforeEach(() => {
     navigation.pathname = '/dashboard'
+    window.sessionStorage.clear()
     vi.stubGlobal('fetch', vi.fn())
   })
 
@@ -56,5 +57,13 @@ describe('AppShell first-load work', () => {
     act(() => window.dispatchEvent(new Event('open-global-dialer')))
 
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
+  })
+
+  it('renders the workspace for the owner-selected agent without changing signed-in auth', () => {
+    window.sessionStorage.setItem('savingkc:viewed-agent-email', 'casey@savingkc.com')
+
+    render(<AppShell><main>Dashboard content</main></AppShell>)
+
+    expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-user-email', 'casey@savingkc.com')
   })
 })
