@@ -61,24 +61,26 @@ function input(overrides: Partial<BuildMyDayInput> = {}): BuildMyDayInput {
 }
 
 describe('Casey My Day model', () => {
-  it('builds the six-stage funnel from recorded Casey stats and stage events', () => {
+  it('builds the seven-stage funnel from recorded Casey stats and stage events', () => {
     const report = buildMyDay(input())
     expect(report.funnel.map((metric) => [metric.label, metric.value])).toEqual([
       ['Calls', 30],
       ['Meaningful Conversations', 9],
+      ['Leads', 1],
       ['Opportunities', 1],
       ['Appointments Set', 1],
       ['Offers Made', 1],
       ['Under Contract', 0],
     ])
     expect(report.funnel[1].conversion).toBe(30)
-    expect(report.funnel[3].conversion).toBe(100)
+    expect(report.funnel[4].conversion).toBe(100)
   })
 
   it('keeps the weekly snapshot aligned Monday through Friday and calculates habits', () => {
     const report = buildMyDay(input())
     expect(report.week.dayLabels).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
     expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 20, 0, 0, 0])
+    expect(report.week.rows.find((row) => row.key === 'leads')?.days).toEqual([1, 0, 0, 0, 0])
     expect(report.habits.find((habit) => habit.key === 'vision')?.value).toBe(100)
     expect(report.habits.find((habit) => habit.key === 'objections')?.value).toBe(90)
     expect(report.habits.find((habit) => habit.key === 'followup')?.value).toBe(80)

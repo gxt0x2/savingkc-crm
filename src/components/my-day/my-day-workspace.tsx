@@ -107,7 +107,7 @@ function FunnelCard({ metrics }: { metrics: MyDayMetric[] }) {
     <section aria-labelledby="conversion-funnel-title" className="crm-panel rounded-xl px-4 py-4 sm:px-5">
       <h2 id="conversion-funnel-title" className="text-[22px] font-black tracking-[-0.02em]">Conversion Funnel</h2>
       <div className="mt-3 overflow-x-auto">
-        <div className="grid min-w-[900px] grid-cols-6 lg:min-w-0">
+        <div className="grid min-w-[1080px] grid-cols-7 xl:min-w-0">
           {metrics.map((metric, index) => {
           const tone = TONE_STYLES[metric.tone]
           return (

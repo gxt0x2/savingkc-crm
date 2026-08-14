@@ -55,7 +55,7 @@ export interface MyDayGoalSet {
 }
 
 export interface MyDayMetric {
-  key: 'calls' | 'conversations' | 'opportunities' | 'appointments' | 'offers' | 'contracts'
+  key: 'calls' | 'conversations' | 'leads' | 'opportunities' | 'appointments' | 'offers' | 'contracts'
   label: string
   value: number | null
   conversion: number | null
@@ -64,7 +64,7 @@ export interface MyDayMetric {
 }
 
 export interface MyDayWeeklyRow {
-  key: 'calls' | 'conversations' | 'opportunities' | 'appointments' | 'offers' | 'contracts'
+  key: 'calls' | 'conversations' | 'leads' | 'opportunities' | 'appointments' | 'offers' | 'contracts'
   label: string
   icon: string
   tone: MyDayMetric['tone']
@@ -338,11 +338,15 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const stats = input.stats.filter((row) => row.date.startsWith(input.month))
   const calls = input.availability.agentStats ? stats.reduce((sum, row) => sum + number(row.calls_made), 0) : null
   const conversations = input.availability.agentStats ? stats.reduce((sum, row) => sum + number(row.meaningful_conversations), 0) : null
+  const leadEntries = new Map(input.leads
+    .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinMonth(lead.created_at, input.month))
+    .map((lead) => [lead.id, lead.created_at]))
   const opportunityEntries = stageEntries(input, 2)
   const appointmentEntries = stageEntries(input, 3)
   const offerEntries = stageEntries(input, 4)
   const contractEntries = stageEntries(input, 5)
   const opportunityCount = opportunityEntries.size
+  const leadCount = leadEntries.size
   const appointmentCount = appointmentEntries.size
   const offerCount = offerEntries.size
   const contractCount = contractEntries.size
@@ -350,7 +354,8 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const rawFunnel: Array<Omit<MyDayMetric, 'conversion'> & { denominator: number | null }> = [
     { key: 'calls', label: 'Calls', value: calls, denominator: null, icon: 'call', tone: 'blue' },
     { key: 'conversations', label: 'Meaningful Conversations', value: conversations, denominator: calls, icon: 'forum', tone: 'violet' },
-    { key: 'opportunities', label: 'Opportunities', value: opportunityCount, denominator: conversations, icon: 'person_search', tone: 'coral' },
+    { key: 'leads', label: 'Leads', value: leadCount, denominator: conversations, icon: 'person_add', tone: 'coral' },
+    { key: 'opportunities', label: 'Opportunities', value: opportunityCount, denominator: leadCount, icon: 'person_search', tone: 'coral' },
     { key: 'appointments', label: 'Appointments Set', value: appointmentCount, denominator: opportunityCount, icon: 'event', tone: 'sky' },
     { key: 'offers', label: 'Offers Made', value: offerCount, denominator: appointmentCount, icon: 'sell', tone: 'green' },
     { key: 'contracts', label: 'Under Contract', value: contractCount, denominator: offerCount, icon: 'description', tone: 'indigo' },
@@ -371,6 +376,7 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
       key: 'conversations', label: 'Meaningful Conversations', icon: 'forum', tone: 'violet',
       days: days.map((day) => input.availability.agentStats ? number(statsByDate.get(day)?.meaningful_conversations) : null), total: null,
     },
+    { key: 'leads', label: 'Leads', icon: 'person_add', tone: 'coral', days: valuesByDay(leadEntries.values(), days), total: null },
     { key: 'opportunities', label: 'Opportunities', icon: 'person_search', tone: 'coral', days: valuesByDay(opportunityEntries.values(), days), total: null },
     { key: 'appointments', label: 'Appointments Set', icon: 'event', tone: 'sky', days: valuesByDay(appointmentEntries.values(), days), total: null },
     { key: 'offers', label: 'Offers Made', icon: 'sell', tone: 'green', days: valuesByDay(offerEntries.values(), days), total: null },
