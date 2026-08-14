@@ -24,6 +24,11 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Settings', icon: 'settings', href: '/settings', activeOn: ['/settings'] },
 ]
 
+const CASEY_NAV_ITEMS: NavItem[] = [
+  { label: 'My Day', icon: 'today', href: '/my-day', activeOn: ['/my-day'] },
+  ...NAV_ITEMS.filter((item) => ['Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings'].includes(item.label)),
+]
+
 function isItemActive(item: NavItem, pathname: string) {
   return item.activeOn.some((prefix) => pathname.startsWith(prefix))
 }
@@ -55,14 +60,13 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
 export function WorkspaceNav({ needsReply, userEmail }: { needsReply: number; userEmail?: string | null }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
-  const navItems = isCaseyCrmUser(userEmail)
-    ? [NAV_ITEMS[0], { label: 'My Day', icon: 'today', href: '/my-day', activeOn: ['/my-day'] }, ...NAV_ITEMS.slice(1)]
-    : NAV_ITEMS
+  const isCasey = isCaseyCrmUser(userEmail)
+  const navItems = isCasey ? CASEY_NAV_ITEMS : NAV_ITEMS
 
   return (
     <aside className={cn('hidden shrink-0 flex-col border-r border-black/15 bg-[var(--crm-nav)] text-[var(--crm-nav-text)] transition-[width] duration-200 lg:flex', collapsed ? 'w-[64px]' : 'w-[192px]')}>
       <svg width="0" height="0" aria-hidden="true"><filter id="crm-logo-dark" colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values="0 -0.5 -0.5 0 1 -1 0 0 0 1 -1 0 0 0 1 0 0 0 1 0" /></filter></svg>
-      <Link href="/dashboard" prefetch aria-label="Saving KC CRM dashboard" className={cn('flex h-[68px] items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-4')}>
+      <Link href={isCasey ? '/my-day' : '/dashboard'} prefetch aria-label="Saving KC CRM dashboard" className={cn('flex h-[68px] items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-4')}>
         <Image src="/logo.png" alt={collapsed ? '' : 'Saving KC Homebuyers'} width={489} height={141} className={cn('h-auto object-contain', collapsed ? 'w-[48px]' : 'w-[138px]')} style={{ filter: 'url(#crm-logo-dark)' }} />
       </Link>
       <nav className="flex-1 space-y-1 overflow-y-auto px-2.5 py-3" aria-label="CRM navigation">

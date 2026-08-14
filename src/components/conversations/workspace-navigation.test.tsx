@@ -44,12 +44,17 @@ describe('workspace navigation', () => {
     expect(within(navigationRegion).queryByRole('link', { name: 'ARI Insights' })).not.toBeInTheDocument()
   })
 
-  it('shows My Day only in Casey’s navigation', () => {
+  it('shows Casey’s exact seven-item navigation and leaves other users unchanged', () => {
     const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
-    expect(screen.getByRole('link', { name: 'My Day' })).toHaveAttribute('href', '/my-day')
+    const caseyNavigation = screen.getByRole('navigation', { name: 'CRM navigation' })
+    expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
+      'My Day', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings',
+    ])
+    expect(screen.getByRole('link', { name: 'Saving KC CRM dashboard' })).toHaveAttribute('href', '/my-day')
 
     rerender(<WorkspaceNav needsReply={0} userEmail="ernest@savingkc.com" />)
     expect(screen.queryByRole('link', { name: 'My Day' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Saving KC CRM dashboard' })).toHaveAttribute('href', '/dashboard')
   })
 
   it('keeps the system Andon available from the shared CRM navigation', () => {
