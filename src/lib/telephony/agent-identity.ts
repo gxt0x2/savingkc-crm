@@ -2,6 +2,7 @@ import { PHONE_SYSTEM } from '@/lib/operating-model/phone-system'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
 export const MAIN_SAVINGKC_CALLER_ID = TWILIO_NUMBERS.find((number) => number.purpose === 'main')?.value ?? '+18163077835'
+export const CASEY_CRM_EMAIL = 'casey@savingkc.com'
 
 export interface AgentTelephonyProfile {
   identity: string
@@ -73,6 +74,11 @@ export function resolveAgentTelephonyProfile(email: string | null | undefined): 
     defaultCallerId: MAIN_SAVINGKC_CALLER_ID,
     hasDedicatedCallerId: false,
   }
+}
+
+/** Exact match: this helper is also used as an authorization boundary. */
+export function isCaseyCrmUser(email: string | null | undefined): boolean {
+  return email?.trim().toLowerCase() === CASEY_CRM_EMAIL
 }
 
 export function agentNameForCallerId(callerId: string | null | undefined): string | null {

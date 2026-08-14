@@ -115,7 +115,7 @@ export function WorkspaceFrame({
       className="crm-workspace-shell flex h-screen overflow-hidden bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
       data-theme={theme}
     >
-      <WorkspaceNav needsReply={resolvedNeedsReply} />
+      <WorkspaceNav needsReply={resolvedNeedsReply} userEmail={userEmail} />
       <div className="flex min-w-0 flex-1 flex-col">
         <WorkspaceChromeContext.Provider value={chromeContextValue}>
           {resolvedHideHeader ? null : <header className={`crm-shell-header flex shrink-0 items-center gap-5 border-b px-6 backdrop-blur ${resolvedCommandBarActive ? 'min-h-[76px] py-2' : 'h-[62px]'}`}>
