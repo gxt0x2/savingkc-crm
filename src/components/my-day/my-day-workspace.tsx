@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
 import { CaseyAndonQueue } from '@/components/my-day/casey-andon-queue'
@@ -260,10 +261,23 @@ export function QueueCard({ data, selected, onToggle, onAction, onCreateCallingL
 }
 
 export function MyDayWorkspace({ initialData }: { initialData: MyDayData }) {
+  const router = useRouter()
   const [data, setData] = useState(initialData)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const months = useMemo(() => monthOptions(initialData.month), [initialData.month])
+
+  useEffect(() => setData(initialData), [initialData])
+
+  useEffect(() => {
+    const refresh = () => router.refresh()
+    const interval = window.setInterval(refresh, 60_000)
+    window.addEventListener('focus', refresh)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [router])
 
   async function changeMonth(month: string, force = false) {
     if (!force && month === data.month) return

@@ -86,6 +86,29 @@ describe('Casey My Day model', () => {
     expect(report.habits.find((habit) => habit.key === 'followup')?.value).toBe(80)
   })
 
+  it('adds Casey native and Heir Dialer dispositions without changing Mojo aggregates', () => {
+    const heirCall = activity({
+      id: 'heir-call',
+      activity_type: 'call',
+      agent: 'Casey',
+      metadata: { source: 'heir_dialer', disposition: 'spoke_with_owner' },
+      created_at: '2026-08-03T18:00:00.000Z',
+    })
+    const twilioDuplicate = activity({
+      id: 'twilio-status',
+      activity_type: 'call',
+      agent: 'Casey',
+      metadata: { source: 'twilio_status_callback', status: 'completed' },
+      created_at: '2026-08-03T18:00:05.000Z',
+    })
+    const report = buildMyDay(input({ activities: [...input().activities, heirCall, twilioDuplicate] }))
+
+    expect(report.funnel[0].value).toBe(31)
+    expect(report.funnel[1].value).toBe(10)
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([11, 20, 0, 0, 0])
+    expect(report.week.rows.find((row) => row.key === 'conversations')?.days).toEqual([5, 5, 0, 0, 0])
+  })
+
   it('turns Casey-assigned work into real commitments and call-list candidates', () => {
     const report = buildMyDay(input())
     expect(report.queue).toHaveLength(1)
