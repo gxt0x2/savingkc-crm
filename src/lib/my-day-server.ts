@@ -1,9 +1,22 @@
 import 'server-only'
 
+import { isCurrentUserAdmin } from '@/lib/auth/admin'
 import { buildMyDay, normalizeMyDayMonth, type MyDayActivity, type MyDayAgentStat, type MyDayAppointment, type MyDayData, type MyDayGoalSet, type MyDayLead } from '@/lib/my-day'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 
 const TASK_ACTIVITY_TYPES = ['task', 'appointment', 'follow_up', 'callback', 'send_offer'] as const
+
+/**
+ * Casey is the only agent who receives My Day in navigation. SavingKC admins
+ * may open the direct URL to review her workspace without exposing the tab to
+ * the rest of the team.
+ */
+export async function canAccessCaseyMyDay(email: string | null | undefined): Promise<boolean> {
+  if (!email) return false
+  if (isCaseyCrmUser(email)) return true
+  return isCurrentUserAdmin(email)
+}
 
 function configuredNumber(value: unknown): number | null {
   const parsed = Number(value)

@@ -4,15 +4,14 @@ export const revalidate = 0
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserEmail } from '@/lib/auth/admin'
-import { loadCaseyMyDay } from '@/lib/my-day-server'
-import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
+import { canAccessCaseyMyDay, loadCaseyMyDay } from '@/lib/my-day-server'
 
 const NO_STORE_HEADERS: HeadersInit = { 'Cache-Control': 'private, no-store, max-age=0' }
 
 export async function GET(request: NextRequest) {
   const email = await getCurrentUserEmail()
   if (!email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS })
-  if (!isCaseyCrmUser(email)) return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE_HEADERS })
+  if (!await canAccessCaseyMyDay(email)) return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE_HEADERS })
 
   try {
     const data = await loadCaseyMyDay(request.nextUrl.searchParams.get('month'))

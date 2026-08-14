@@ -15,8 +15,8 @@ export async function getCurrentUserEmail(): Promise<string | null> {
   }
 }
 
-export async function isCurrentUserAdmin(): Promise<boolean> {
-  const email = await getCurrentUserEmail()
+export async function isCurrentUserAdmin(currentEmail?: string): Promise<boolean> {
+  const email = currentEmail?.trim().toLowerCase() || await getCurrentUserEmail()
   if (!email) return false
   try {
     const { supabaseAdmin } = await import('@/lib/supabase/admin')
