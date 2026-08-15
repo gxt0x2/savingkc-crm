@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
+import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
 import { StreetViewPanel } from '@/components/leads/google-map-panel'
 import { LeadOpportunityPanel, LEAD_WORKSPACE_STAGES } from '@/components/leads/lead-opportunity-panel'
 import { RecordOfferModal } from '@/components/leads/record-offer-modal'
@@ -166,6 +167,7 @@ export function LeadWorkspace({
   const [operationsPanelOpen, setOperationsPanelOpen] = useState(false)
   const [streetViewOpen, setStreetViewOpen] = useState(false)
   const [offerModalOpen, setOfferModalOpen] = useState(false)
+  const [renderedAt] = useState(() => Date.now())
   const sectionHeadingRef = useRef<HTMLDivElement>(null)
   const name = toProperCase(lead.full_name) || 'Unknown contact'
   const firstName = name.split(/\s+/)[0]
@@ -190,7 +192,7 @@ export function LeadWorkspace({
       ? 'Verbal'
       : null
   const nextTask = activities.find((activity) => activity.activity_type === 'task')
-  const appointmentIsPast = Boolean(appointment && new Date(appointment.scheduledAt).getTime() < Date.now())
+  const appointmentIsPast = Boolean(appointment && new Date(appointment.scheduledAt).getTime() < renderedAt)
   const nextAction = appointmentIsPast
     ? 'Record appointment outcome'
     : appointment
@@ -998,9 +1000,9 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
         </div>
         <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-[var(--crm-text)]">{text}</p>
         {isCall ? recordingUrl ? (
-          <audio className="mt-3 w-full accent-[var(--crm-brand)]" controls preload="metadata" src={recordingUrl}>
+          <><audio className="mt-3 w-full accent-[var(--crm-brand)]" controls preload="metadata" src={recordingUrl}>
             Your browser does not support call recording playback.
-          </audio>
+          </audio><CallReviewSubmitButton activityId={activity.id} /></>
         ) : (
           <div className="mt-3 flex items-center gap-2 rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs font-semibold text-[var(--crm-text-muted)]">
             <Icon name="phone_in_talk" className="text-[17px] text-[var(--crm-brand)]" />

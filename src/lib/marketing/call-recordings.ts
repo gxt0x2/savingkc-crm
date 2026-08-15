@@ -26,6 +26,7 @@ export type CallReviewWorkflow = {
   framework: 'junior_acquisitions' | 'niche' | null
   submittedAt: string | null
   submittedBy: string | null
+  assignedReviewer: string | null
   submissionNote: string | null
   completedAt: string | null
   completedBy: string | null
@@ -119,6 +120,7 @@ export function readCallReviewWorkflow(metadata: unknown): CallReviewWorkflow {
     framework: framework === 'junior_acquisitions' || framework === 'niche' ? framework : null,
     submittedAt: text(workflow.submitted_at) || null,
     submittedBy: text(workflow.submitted_by) || null,
+    assignedReviewer: text(workflow.assigned_reviewer) || null,
     submissionNote: text(workflow.submission_note) || null,
     completedAt: text(workflow.completed_at) || null,
     completedBy: text(workflow.completed_by) || null,
@@ -136,6 +138,7 @@ export function mergeCallReviewWorkflow(metadata: unknown, workflow: Partial<Cal
     framework: workflow.framework,
     submitted_at: workflow.submittedAt,
     submitted_by: workflow.submittedBy,
+    assigned_reviewer: workflow.assignedReviewer,
     submission_note: workflow.submissionNote,
     completed_at: workflow.completedAt,
     completed_by: workflow.completedBy,

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
 import { getAgentProfile } from '@/lib/agent-profiles'
 import type { CallOutcomePresentation } from '@/lib/operating-model/conversation-presentation'
+import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
 
 export type MessageType = 'sms' | 'email' | 'call'
 export type MessageDirection = 'sent' | 'received'
@@ -318,6 +319,7 @@ function CallCard({ message }: { message: Message }) {
               </div>
             </div>
           ) : null}
+          {message.recordingUrl ? <CallReviewSubmitButton activityId={message.id} recordingSid={message.recordingSid} /> : null}
         </div>
 
         {/* View Transcript link */}
