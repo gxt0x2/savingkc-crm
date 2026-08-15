@@ -1,5 +1,4 @@
 'use client'
-/* eslint-disable react-hooks/set-state-in-effect, react-hooks/purity -- Existing workspace state hydration and clock-based filters are intentionally client-driven. */
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
