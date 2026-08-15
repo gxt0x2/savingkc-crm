@@ -327,8 +327,8 @@ export function MyDayWorkspace({ initialData }: { initialData: MyDayData }) {
       </header>
       {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void changeMonth(data.month, true)} className="underline">Retry</button></div> : null}
       <FunnelCard metrics={data.funnel} />
-      <WeeklySnapshot data={data} />
       <MyDayCallReview />
+      <WeeklySnapshot data={data} />
       <CaseyAndonQueue />
       {loading ? <div role="status" aria-live="polite" className="absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-[var(--crm-canvas)]/70 backdrop-blur-[1px]"><span className="rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2 text-xs font-black shadow-lg">Loading Casey’s month…</span></div> : null}
     </main>

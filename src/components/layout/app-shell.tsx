@@ -108,7 +108,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // progress UI. Keep the softphone docked there so closing a disposition does
   // not re-open a full-screen dialer over the heir queue.
   const dialerPresentation = pathname?.startsWith('/dialer') ? 'dock' : 'modal'
-  const effectiveWorkspaceEmail = viewedAgentEmail || user?.email
+  const effectiveWorkspaceEmail = pathname?.startsWith('/my-day')
+    ? 'casey@savingkc.com'
+    : viewedAgentEmail || user?.email
   const shouldRedirectCaseyDashboard = pathname === '/dashboard' && isCaseyCrmUser(effectiveWorkspaceEmail)
 
   useEffect(() => {
