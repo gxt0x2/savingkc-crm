@@ -99,6 +99,18 @@ type CallRecordingItem = {
   reviewWorkflow: ReturnType<typeof readCallReviewWorkflow>
 }
 
+function previewTestReview(): CallRecordingItem {
+  return {
+    id: 'test-review-preview', leadId: null, leadName: 'TEST REVIEW — Jordan Seller', leadPhone: null, leadPhoneDisplay: '(816) 555-0100', leadUrl: null,
+    leadSource: 'preview_test', leadStation: 'qualified', leadPriority: 'high', propertyAddress: '123 Test Property', city: 'Kansas City', state: 'MO', classification: 'opportunity', opportunityScore: 72,
+    recordingSid: 'TEST-REVIEW', recordingUrl: '/audio/ivr-voicemail.mp3', callSid: null, direction: 'outbound', from: null, to: null, fromDisplay: null, toDisplay: '(816) 555-0100', durationSeconds: 74,
+    createdAt: new Date().toISOString(), campaign: null, trafficSource: 'preview_test', trackingNumber: null, phoneProfile: 'Casey', isGoogleAds: false, outcome: 'unreviewed', reviewNote: null, reviewedAt: null, reviewedBy: null,
+    transcript: 'This is a preview-only test review. Use it to submit a framework, complete the scorecard, and verify the workflow.', transcriptActivityId: null,
+    analysisSummary: 'Test coaching opportunity: confirm motivation, timeline, decision makers, and a committed next step.',
+    reviewWorkflow: { status: 'available', framework: null, submittedAt: null, submittedBy: null, submissionNote: null, completedAt: null, completedBy: null, score: null, answers: {}, reviewNote: null },
+  }
+}
+
 function parsePositiveInt(value: string | null, fallback: number, min: number, max: number): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
@@ -284,6 +296,7 @@ export async function GET(req: NextRequest) {
   const recordings = candidateCalls
     .map((row) => rowToItem(row, leadById, transcriptRows, analysisRows))
     .filter((row): row is CallRecordingItem => Boolean(row))
+  if (process.env.VERCEL_ENV === 'preview' || process.env.NODE_ENV === 'development') recordings.unshift(previewTestReview())
 
   const summary = buildRecordingSummary(recordings.map((item) => ({
     durationSeconds: item.durationSeconds,

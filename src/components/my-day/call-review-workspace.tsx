@@ -40,6 +40,17 @@ export function CallReviewWorkspace() {
     const framework = call.reviewWorkflow.framework || frameworks[call.id] || 'junior_acquisitions'
     setBusy(true); setError(null)
     try {
+      if (call.id === 'test-review-preview') {
+        const definition = getCallReviewFramework(framework)!
+        const itemIds = definition.sections.flatMap((section) => section.items.map((item) => item.id))
+        const score = action === 'complete' ? Math.round((itemIds.filter((id) => answers[id] === true).length / itemIds.length) * 100) : null
+        setCalls((current) => current.map((item) => item.id === call.id ? {
+          ...item,
+          reviewWorkflow: { ...item.reviewWorkflow, status: action === 'submit' ? 'submitted' : 'completed', framework, score, submissionNote: action === 'submit' ? note : item.reviewWorkflow.submissionNote, reviewNote: action === 'complete' ? note : null },
+        } : item))
+        setSelected(null); setAnswers({}); setNote(''); setTab('review');
+        return
+      }
       const response = await fetch('/api/marketing/call-recordings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activityId: call.id, action, framework, answers, note }) })
       const payload = await response.json().catch(() => ({})) as { error?: string }
       if (!response.ok) throw new Error(payload.error || 'The review could not be saved.')
@@ -50,6 +61,7 @@ export function CallReviewWorkspace() {
   return (
     <main className="mx-auto w-full max-w-[1240px] px-5 py-6">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><Link href="/my-day" className="text-xs font-black text-[var(--crm-info)]">← My Day</Link><h1 className="mt-2 text-[30px] font-black tracking-[-0.04em]">Call Review</h1><p className="text-sm text-[var(--crm-text-muted)]">Submit a recorded call, then complete its framework scorecard.</p></div><div className="flex rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-1"><button onClick={() => { setTab('submit'); setSelected(null) }} className={`rounded-md px-4 py-2 text-xs font-black ${tab === 'submit' ? 'bg-[var(--crm-brand)] text-white' : ''}`}>Submit calls</button><button onClick={() => { setTab('review'); setSelected(null) }} className={`rounded-md px-4 py-2 text-xs font-black ${tab === 'review' ? 'bg-[var(--crm-brand)] text-white' : ''}`}>Review queue ({calls.filter((call) => call.reviewWorkflow.status === 'submitted').length})</button></div></header>
+      {calls.some((call) => call.id === 'test-review-preview') ? <div className="mb-3 rounded-lg border border-[var(--crm-info)]/35 bg-[var(--crm-info-soft)] px-4 py-3 text-xs font-bold text-[var(--crm-info)]">Preview test enabled: open <strong>Submit calls</strong>, submit “TEST REVIEW — Jordan Seller,” then complete it from the Review queue. No CRM data will be changed.</div> : null}
       {error ? <div role="alert" className="mb-3 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] p-3 text-sm font-bold text-[var(--crm-danger)]">{error}</div> : null}
       <section className="crm-panel overflow-hidden rounded-xl">
         {visible.length === 0 ? <div className="flex min-h-40 items-center justify-center gap-2 text-sm font-bold text-[var(--crm-text-muted)]"><Icon name="task_alt" className="text-[var(--crm-success)]" />{tab === 'review' ? 'No submitted calls waiting for review' : 'No available recorded calls'}</div> : visible.map((call) => (
