@@ -203,6 +203,8 @@ export async function POST(req: Request) {
           .update({
             full_name: contactName,
             phone: phoneRow.phone,
+            classification: 'lead',
+            station: 'contacted',
             updated_at: now,
           })
           .eq('id', resolvedLeadId)
@@ -224,6 +226,8 @@ export async function POST(req: Request) {
             prospect_owner_name: phoneRow.prospects?.owner_1,
             phone: phoneRow.phone,
             action: 'mark_as_lead',
+            classification: 'lead',
+            station: 'contacted',
           },
         })
       }

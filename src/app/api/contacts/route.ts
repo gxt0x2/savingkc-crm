@@ -6,6 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getContactSignal, getOutreachStatus, isOutboundAttempt, type ContactActivityLike, type ContactSignal, type OutreachStatus } from '@/lib/contact-display'
 import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { isActiveAcquisitionContact, isProspectingContact } from '@/lib/contact-smart-lists'
+import { getPipelineIntentSource } from '@/lib/pipeline-intent'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
@@ -46,6 +47,7 @@ export interface ContactRow {
   contactSignal: ContactSignal | null
   outreachStatus: OutreachStatus
   updatedAt: string | null
+  pipelineIntentSource: string | null
 }
 
 interface ManifestPayload {
@@ -131,20 +133,39 @@ export async function GET(request: NextRequest) {
 
   if (leadsErr) return NextResponse.json({ error: leadsErr.message }, { status: 500 })
   const rows = leads ?? []
+  const rowIds = rows.map((lead) => lead.id)
+  const { data: intentActivities } = rowIds.length > 0
+    ? await db
+      .from('lead_activities')
+      .select('lead_id, activity_type, metadata, created_at')
+      .in('lead_id', rowIds)
+      .in('activity_type', ['status_change', 'call'])
+      .order('created_at', { ascending: true })
+    : { data: [] }
+  const intentActivitiesByLead = new Map<string, Array<{ activity_type?: unknown; metadata?: unknown }>>()
+  for (const activity of intentActivities ?? []) {
+    intentActivitiesByLead.set(activity.lead_id, [...(intentActivitiesByLead.get(activity.lead_id) ?? []), activity])
+  }
   const scopedRows = rows
-    .map((lead) => ({ lead, station: getContactStation(lead.station) }))
-    .filter((row): row is { lead: typeof rows[number]; station: DealStage } => row.station !== null)
-    .filter(({ lead, station }) => {
+    .map((lead) => ({
+      lead,
+      station: getContactStation(lead.station),
+      pipelineIntentSource: getPipelineIntentSource(lead.source, intentActivitiesByLead.get(lead.id)),
+    }))
+    .filter((row): row is { lead: typeof rows[number]; station: DealStage; pipelineIntentSource: string | null } => row.station !== null)
+    .filter(({ lead, station, pipelineIntentSource }) => {
       const notLead = isNotLeadOutcome(lead.classification, station)
       if (scope === 'not_leads') return notLead
       if (scope === 'prospects') return isProspectingContact({
         classification: (lead.classification as ContactRow['classification']) ?? null,
         station,
+        pipelineIntentSource,
       })
       if (scope === 'all') return true
       return isActiveAcquisitionContact({
         classification: (lead.classification as ContactRow['classification']) ?? null,
         station,
+        pipelineIntentSource,
       })
     })
 
@@ -199,7 +220,7 @@ export async function GET(request: NextRequest) {
   }
 
   const items: ContactRow[] = []
-  for (const { lead, station } of scopedRows) {
+  for (const { lead, station, pipelineIntentSource } of scopedRows) {
     const manifest = latestManifest.get(lead.id) ?? {}
     const lastContactAt =
       manifest.communications?.lastSellerContactDate ??
@@ -228,6 +249,7 @@ export async function GET(request: NextRequest) {
       contactSignal: latestSignalByLead.get(lead.id) ?? null,
       outreachStatus: getOutreachStatus(communicationsByLead.get(lead.id) ?? []),
       updatedAt: lead.updated_at,
+      pipelineIntentSource,
     })
   }
 

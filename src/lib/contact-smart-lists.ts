@@ -2,6 +2,7 @@ import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import type { DealStage } from '@/types/pipeline'
 
 export type ContactSmartListNavigationId =
+  | 'new'
   | 'hot'
   | 'contacted'
   | 'qualified'
@@ -26,9 +27,11 @@ export interface SmartListContact {
   attentionState: 'needs_reply' | 'waiting_on_contact' | 'resolved'
   owner: string | null
   primaryNextAction: { overdue: boolean } | null
+  pipelineIntentSource?: string | null
 }
 
 export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartListNavigationId; label: string }> = [
+  { id: 'new', label: 'New' },
   { id: 'contacted', label: 'Leads' },
   { id: 'qualified', label: 'Opportunities' },
   { id: 'appointment_set', label: 'Appointment Set' },
@@ -58,6 +61,10 @@ export function normalizeContactSmartListOrder(value: unknown): ContactSmartList
 }
 
 export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; description: string }> = {
+  new: {
+    label: 'New',
+    description: 'Unreviewed seller inquiries from approved intent sources. Communication alone never enters Pipeline.',
+  },
   hot: {
     label: 'Hot',
     description: 'High-priority active records scored 75+ or manually starred.',
@@ -108,25 +115,36 @@ export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; 
   },
 }
 
+export function isIntentQualifiedNewContact(
+  contact: Pick<SmartListContact, 'station' | 'classification' | 'pipelineIntentSource'>,
+): boolean {
+  return contact.station === 'new'
+    && contact.classification === null
+    && Boolean(contact.pipelineIntentSource)
+    && !isNotLeadOutcome(contact.classification, contact.station)
+}
+
 export function isProspectingContact(
-  contact: Pick<SmartListContact, 'station' | 'classification'>,
+  contact: Pick<SmartListContact, 'station' | 'classification' | 'pipelineIntentSource'>,
 ): boolean {
   return contact.classification === null
     && !isNotLeadOutcome(contact.classification, contact.station)
     && (contact.station === 'new' || contact.station === 'contacted')
+    && !isIntentQualifiedNewContact(contact)
 }
 
 export function isActiveAcquisitionContact(
-  contact: Pick<SmartListContact, 'station' | 'classification'>,
+  contact: Pick<SmartListContact, 'station' | 'classification' | 'pipelineIntentSource'>,
 ): boolean {
   if (isNotLeadOutcome(contact.classification, contact.station)) return false
   if (contact.station === 'closed_won') return false
   if (contact.classification === 'lead' || contact.classification === 'opportunity') return true
+  if (isIntentQualifiedNewContact(contact)) return true
   return ['qualified', 'appointment_set', 'offer_made', 'under_contract'].includes(contact.station)
 }
 
 export function contactPipelineStatusLabel(
-  contact: Pick<SmartListContact, 'station' | 'classification'>,
+  contact: Pick<SmartListContact, 'station' | 'classification' | 'pipelineIntentSource'>,
 ): string {
   if (isNotLeadOutcome(contact.classification, contact.station)) return 'Not a lead'
   if (contact.station === 'appointment_set') return 'Appointment set'
@@ -135,6 +153,7 @@ export function contactPipelineStatusLabel(
   if (contact.station === 'closed_won') return 'Closed won'
   if (contact.station === 'qualified' || contact.classification === 'opportunity') return 'Opportunity'
   if (contact.classification === 'lead') return 'Lead'
+  if (isIntentQualifiedNewContact(contact)) return 'New inquiry'
   return 'Not in pipeline'
 }
 
@@ -145,6 +164,8 @@ export function contactMatchesSmartList(contact: SmartListContact, smartList: Co
   if (!active) return false
 
   switch (smartList) {
+    case 'new':
+      return isIntentQualifiedNewContact(contact)
     case 'hot':
       return contact.station !== 'under_contract' && (contact.score >= 75 || contact.isFavorite)
     case 'contacted':

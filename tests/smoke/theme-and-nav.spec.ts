@@ -76,7 +76,7 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
   const expectedLinks = new Map([
     ['Dashboard', '/dashboard'],
     ['Issue Log', '/reports/andon'],
-    ['Pipeline', '/contacts?list=contacted'],
+    ['Pipeline', '/contacts?list=new'],
     ['Conversations', '/conversations'],
     ['Calendar', '/calendar?department=acquisitions'],
     ['Dialer', '/dialer'],
@@ -157,7 +157,7 @@ for (const route of crmWorkspaceRoutes) {
         : page.getByPlaceholder('Search contacts, properties, or messages...');
     await expect(commandSearch).toBeVisible();
     await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
-    await expect(page.locator('a[href="/contacts?list=contacted"]').filter({ hasText: 'Pipeline' })).toBeVisible();
+    await expect(page.locator('a[href="/contacts?list=new"]').filter({ hasText: 'Pipeline' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
