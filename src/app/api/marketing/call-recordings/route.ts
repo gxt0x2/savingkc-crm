@@ -3,15 +3,18 @@ import { getCurrentUserEmail } from '@/lib/auth/admin'
 import { formatPhone } from '@/lib/format'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { cleanDeadReason } from '@/lib/lead-outcomes'
+import { getCallReviewFramework } from '@/lib/call-review-frameworks'
 import {
   buildRecordingSummary,
   compactTranscript,
   isGoogleAdsCall,
   isRecordingReviewOutcome,
   mergeRecordingReviewMetadata,
+  mergeCallReviewWorkflow,
   playableRecordingUrl,
   readRecordingDuration,
   readRecordingReview,
+  readCallReviewWorkflow,
   readRecordingSid,
   record,
   text,
@@ -93,6 +96,7 @@ type CallRecordingItem = {
   transcript: string | null
   transcriptActivityId: string | null
   analysisSummary: string | null
+  reviewWorkflow: ReturnType<typeof readCallReviewWorkflow>
 }
 
 function parsePositiveInt(value: string | null, fallback: number, min: number, max: number): number {
@@ -211,6 +215,7 @@ function rowToItem(
     transcript: transcript?.text || null,
     transcriptActivityId: transcript?.id || null,
     analysisSummary: findAnalysisFor(row, analysisRows),
+    reviewWorkflow: readCallReviewWorkflow(meta),
   }
 }
 
@@ -300,11 +305,12 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS })
   }
 
-  const body = await req.json().catch(() => null) as { activityId?: unknown; outcome?: unknown; note?: unknown } | null
+  const body = await req.json().catch(() => null) as { activityId?: unknown; action?: unknown; outcome?: unknown; note?: unknown; framework?: unknown; answers?: unknown } | null
   const activityId = text(body?.activityId)
+  const action = text(body?.action)
   const outcome = text(body?.outcome)
   const note = text(body?.note)
-  if (!activityId || !isRecordingReviewOutcome(outcome)) {
+  if (!activityId || (!['submit', 'complete'].includes(action) && !isRecordingReviewOutcome(outcome))) {
     return NextResponse.json({ error: 'Invalid review payload' }, { status: 400, headers: NO_STORE_HEADERS })
   }
 
@@ -325,6 +331,54 @@ export async function PATCH(req: NextRequest) {
   }
 
   const now = new Date().toISOString()
+  const activityRow = activity as LeadActivityRow
+
+  if (action === 'submit' || action === 'complete') {
+    const framework = getCallReviewFramework(body?.framework)
+    if (!framework) return NextResponse.json({ error: 'Select a valid review framework' }, { status: 400, headers: NO_STORE_HEADERS })
+    const existing = readCallReviewWorkflow(activityRow.metadata)
+    let updatedMetadata: Record<string, unknown>
+    let description: string
+    if (action === 'submit') {
+      updatedMetadata = mergeCallReviewWorkflow(activityRow.metadata, {
+        status: 'submitted',
+        framework: framework.id,
+        submittedAt: now,
+        submittedBy: email,
+        submissionNote: note,
+      })
+      description = `Call submitted for review — ${framework.label}`
+    } else {
+      if (existing.status !== 'submitted') return NextResponse.json({ error: 'Submit the call before completing its review' }, { status: 409, headers: NO_STORE_HEADERS })
+      const supplied = record(body?.answers)
+      const itemIds = framework.sections.flatMap((section) => section.items.map((item) => item.id))
+      const answers = Object.fromEntries(itemIds.map((id) => [id, supplied[id] === true]))
+      const score = itemIds.length ? Math.round((Object.values(answers).filter(Boolean).length / itemIds.length) * 100) : 0
+      updatedMetadata = mergeCallReviewWorkflow(activityRow.metadata, {
+        status: 'completed',
+        framework: framework.id,
+        completedAt: now,
+        completedBy: email,
+        score,
+        answers,
+        reviewNote: note,
+      })
+      description = `Call review completed — ${framework.label}: ${score}%`
+    }
+    const { error: workflowUpdateError } = await db.from('lead_activities').update({ metadata: updatedMetadata }).eq('id', activityId)
+    if (workflowUpdateError) return NextResponse.json({ error: workflowUpdateError.message }, { status: 500, headers: NO_STORE_HEADERS })
+    if (activityRow.lead_id) {
+      await db.from('lead_activities').insert({
+        lead_id: activityRow.lead_id,
+        activity_type: 'note',
+        description: `${description}${note ? ` — ${note}` : ''}`,
+        agent: email,
+        metadata: { source: 'call_review_workflow', call_activity_id: activityId, action, framework: framework.id },
+      })
+    }
+    return NextResponse.json({ ok: true, activityId, action, workflow: readCallReviewWorkflow(updatedMetadata) }, { headers: NO_STORE_HEADERS })
+  }
+
   const typedOutcome = outcome as RecordingReviewOutcome
   const updatedMetadata = mergeRecordingReviewMetadata((activity as LeadActivityRow).metadata, {
     outcome: typedOutcome,
@@ -341,7 +395,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: updateError.message }, { status: 500, headers: NO_STORE_HEADERS })
   }
 
-  const activityRow = activity as LeadActivityRow
   if (activityRow.lead_id) {
     const label = typedOutcome.replace(/_/g, ' ')
     const { error: noteError } = await db.from('lead_activities').insert({

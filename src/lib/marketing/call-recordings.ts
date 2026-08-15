@@ -21,6 +21,19 @@ export type RecordingSummary = {
   averageDurationSeconds: number
 }
 
+export type CallReviewWorkflow = {
+  status: 'available' | 'submitted' | 'completed'
+  framework: 'junior_acquisitions' | 'niche' | null
+  submittedAt: string | null
+  submittedBy: string | null
+  submissionNote: string | null
+  completedAt: string | null
+  completedBy: string | null
+  score: number | null
+  answers: Record<string, boolean>
+  reviewNote: string | null
+}
+
 export function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
@@ -94,6 +107,43 @@ export function readRecordingReview(metadata: unknown): RecordingReviewSnapshot 
     reviewedAt: text(review.reviewed_at) || text(meta.reviewed_at) || null,
     reviewedBy: text(review.reviewed_by) || text(meta.reviewed_by) || null,
   }
+}
+
+export function readCallReviewWorkflow(metadata: unknown): CallReviewWorkflow {
+  const workflow = record(record(metadata).call_review)
+  const rawStatus = text(workflow.status)
+  const framework = text(workflow.framework)
+  const rawAnswers = record(workflow.answers)
+  return {
+    status: rawStatus === 'submitted' || rawStatus === 'completed' ? rawStatus : 'available',
+    framework: framework === 'junior_acquisitions' || framework === 'niche' ? framework : null,
+    submittedAt: text(workflow.submitted_at) || null,
+    submittedBy: text(workflow.submitted_by) || null,
+    submissionNote: text(workflow.submission_note) || null,
+    completedAt: text(workflow.completed_at) || null,
+    completedBy: text(workflow.completed_by) || null,
+    score: numberValue(workflow.score),
+    answers: Object.fromEntries(Object.entries(rawAnswers).filter(([, value]) => typeof value === 'boolean')) as Record<string, boolean>,
+    reviewNote: text(workflow.review_note) || null,
+  }
+}
+
+export function mergeCallReviewWorkflow(metadata: unknown, workflow: Partial<CallReviewWorkflow>): Record<string, unknown> {
+  const meta = { ...record(metadata) }
+  const current = record(meta.call_review)
+  const keys: Record<string, unknown> = {
+    status: workflow.status,
+    framework: workflow.framework,
+    submitted_at: workflow.submittedAt,
+    submitted_by: workflow.submittedBy,
+    submission_note: workflow.submissionNote,
+    completed_at: workflow.completedAt,
+    completed_by: workflow.completedBy,
+    score: workflow.score,
+    answers: workflow.answers,
+    review_note: workflow.reviewNote,
+  }
+  return { ...meta, call_review: { ...current, ...Object.fromEntries(Object.entries(keys).filter(([, value]) => value !== undefined)) } }
 }
 
 export function mergeRecordingReviewMetadata(

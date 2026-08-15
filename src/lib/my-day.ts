@@ -1,6 +1,6 @@
 import { formatLeadSource } from '@/lib/contact-display'
 import { isReachedDisposition } from '@/lib/dialer-dispositions'
-import { playableRecordingUrl, readRecordingReview } from '@/lib/marketing/call-recordings'
+import { playableRecordingUrl, readCallReviewWorkflow, readRecordingReview } from '@/lib/marketing/call-recordings'
 import { stageLabel } from '@/lib/utils'
 
 export const MY_DAY_TIME_ZONE = 'America/Chicago'
@@ -110,6 +110,7 @@ export interface MyDayCallReview {
   happenedAt: string
   reason: string
   aiScore: number | null
+  status: 'available' | 'submitted'
   href: string
 }
 
@@ -439,7 +440,9 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const callReviews = input.activities
     .filter((activity) => {
       if (activity.activity_type.toLowerCase() !== 'call' || !activity.lead_id) return false
-      return Boolean(playableRecordingUrl(activity.metadata)) && readRecordingReview(activity.metadata).outcome === 'unreviewed'
+      return Boolean(playableRecordingUrl(activity.metadata))
+        && readRecordingReview(activity.metadata).outcome === 'unreviewed'
+        && readCallReviewWorkflow(activity.metadata).status !== 'completed'
     })
     .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
     .slice(0, 3)
@@ -450,7 +453,8 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
       happenedAt: activity.created_at,
       reason: callReviewReason(activity),
       aiScore: callReviewScore(activity.metadata),
-      href: `/leads/${activity.lead_id}`,
+      status: readCallReviewWorkflow(activity.metadata).status === 'submitted' ? 'submitted' : 'available',
+      href: `/call-review?activity=${activity.id}`,
     }))
   const nowTime = input.now.getTime()
   const openTasks = input.tasks.filter((task) => {

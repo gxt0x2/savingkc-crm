@@ -3,9 +3,11 @@ import {
   buildRecordingSummary,
   isGoogleAdsCall,
   mergeRecordingReviewMetadata,
+  mergeCallReviewWorkflow,
   playableRecordingUrl,
   readRecordingDuration,
   readRecordingReview,
+  readCallReviewWorkflow,
 } from './call-recordings'
 
 describe('marketing call recordings helpers', () => {
@@ -52,6 +54,17 @@ describe('marketing call recordings helpers', () => {
     expect(isGoogleAdsCall({ tracking_number: '(816) 608-8808' })).toBe(true)
     expect(isGoogleAdsCall({ tracking_number: '8166086648' })).toBe(true)
     expect(isGoogleAdsCall({ campaign: 'Direct mail' })).toBe(false)
+  })
+
+  it('stores the submit and completed review workflow without losing recording metadata', () => {
+    const submitted = mergeCallReviewWorkflow({ recordingSid: 'RE123' }, {
+      status: 'submitted', framework: 'junior_acquisitions', submittedAt: '2026-08-15T12:00:00Z', submittedBy: 'casey@savingkc.com', submissionNote: 'Please review discovery',
+    })
+    const completed = mergeCallReviewWorkflow(submitted, {
+      status: 'completed', completedAt: '2026-08-15T13:00:00Z', completedBy: 'ernest@savingkc.com', score: 80, answers: { permission: true }, reviewNote: 'Slow down',
+    })
+    expect(completed.recordingSid).toBe('RE123')
+    expect(readCallReviewWorkflow(completed)).toMatchObject({ status: 'completed', framework: 'junior_acquisitions', score: 80, answers: { permission: true }, reviewNote: 'Slow down' })
   })
 
   it('summarizes review workload and call quality bands', () => {

@@ -143,7 +143,8 @@ describe('Casey My Day model', () => {
       leadName: 'Seller One',
       reason: 'No next step set',
       aiScore: 62,
-      href: '/leads/lead-1',
+      status: 'available',
+      href: '/call-review?activity=review-me',
     })])
   })
 

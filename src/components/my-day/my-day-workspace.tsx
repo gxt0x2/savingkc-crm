@@ -189,7 +189,7 @@ function CallReviewCard({ data }: { data: MyDayData }) {
             <p className="text-[11px] font-semibold text-[var(--crm-text-muted)]">Latest recorded calls awaiting a quick review</p>
           </div>
         </div>
-        <span className="rounded-full bg-[var(--crm-brand-soft)] px-2.5 py-1 text-xs font-black text-[var(--crm-brand)]">{data.callReviews.length}</span>
+        <div className="flex items-center gap-2"><Link href="/call-review" className="crm-secondary-button inline-flex h-8 items-center rounded-md px-3 text-xs font-black text-[var(--crm-info)]">Submit / Review</Link><span className="rounded-full bg-[var(--crm-brand-soft)] px-2.5 py-1 text-xs font-black text-[var(--crm-brand)]">{data.callReviews.filter((call) => call.status === 'submitted').length}</span></div>
       </div>
       {data.callReviews.length === 0 ? (
         <div className="flex min-h-24 items-center justify-center gap-2 px-5 py-6 text-sm font-bold text-[var(--crm-text-muted)]">
@@ -203,7 +203,7 @@ function CallReviewCard({ data }: { data: MyDayData }) {
                 <p className="truncate text-sm font-black text-[var(--crm-ink)]">{call.leadName}</p>
                 <p className="mt-0.5 text-[11px] font-semibold text-[var(--crm-text-muted)]">{formatDateTime(call.happenedAt, 'due', data.generatedAt)}</p>
               </div>
-              <p className="truncate text-xs font-semibold text-[var(--crm-text)]">{call.reason}</p>
+              <p className="truncate text-xs font-semibold text-[var(--crm-text)]">{call.status === 'submitted' ? 'Submitted for review' : call.reason}</p>
               <span className="text-center text-xs font-black text-[var(--crm-text-muted)]">{call.aiScore === null ? '—' : `${call.aiScore}/100`}</span>
               <Link href={call.href} prefetch className="crm-secondary-button inline-flex h-8 items-center justify-center gap-1 rounded-md px-3 text-xs font-black text-[var(--crm-info)]"><Icon name="play_circle" className="text-[17px]" />Review</Link>
             </div>
