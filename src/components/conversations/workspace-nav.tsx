@@ -15,7 +15,7 @@ type NavItem = { label: string; icon: string; href: string; activeOn: string[] }
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', icon: 'home', href: '/dashboard', activeOn: ['/dashboard'] },
   { label: 'Issue Log', icon: 'warning_amber', href: '/reports/andon', activeOn: ['/reports/andon', '/reports/bottlenecks'] },
-  { label: 'Pipeline', icon: 'account_tree', href: '/contacts?list=new', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
+  { label: 'Pipeline', icon: 'account_tree', href: '/contacts?list=contacted', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
   { label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] },
   { label: 'Calendar', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
   { label: 'Dialer', icon: 'dialpad', href: '/dialer', activeOn: ['/dialer'] },

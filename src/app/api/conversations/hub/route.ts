@@ -12,7 +12,7 @@ import {
   type ConversationManifestLike,
 } from '@/lib/operating-model/conversation-tags'
 
-const HUB_ACTIVITY_TYPES = [
+const COMMUNICATION_ACTIVITY_TYPES = [
   'call',
   'sms',
   'sms_sent',
@@ -21,64 +21,84 @@ const HUB_ACTIVITY_TYPES = [
   'sms_outbound',
   'email',
   'voicemail',
-  'task',
-  'status_change',
 ]
+const SUPPORTING_ACTIVITY_TYPES = ['task', 'status_change']
+
+const PAGE_SIZE = 1000
+
+async function fetchAllCommunicationActivities(db: ReturnType<typeof supabaseAdmin>) {
+  const rows: ConversationHubActivity[] = []
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await db
+      .from('lead_activities')
+      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+      .in('activity_type', COMMUNICATION_ACTIVITY_TYPES)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (error) throw error
+    rows.push(...((data ?? []) as ConversationHubActivity[]))
+    if ((data?.length ?? 0) < PAGE_SIZE) return rows
+  }
+}
+
+async function fetchSupportingActivities(db: ReturnType<typeof supabaseAdmin>, leadIds: string[]) {
+  const rows: ConversationHubActivity[] = []
+  for (let offset = 0; offset < leadIds.length; offset += 200) {
+    const { data, error } = await db
+      .from('lead_activities')
+      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+      .in('lead_id', leadIds.slice(offset, offset + 200))
+      .in('activity_type', SUPPORTING_ACTIVITY_TYPES)
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    rows.push(...((data ?? []) as ConversationHubActivity[]))
+  }
+  return rows
+}
+
+async function fetchRowsByLeadIds<T>(
+  db: ReturnType<typeof supabaseAdmin>,
+  table: 'leads' | 'manifests',
+  select: string,
+  leadIds: string[],
+): Promise<T[]> {
+  const rows: T[] = []
+  for (let offset = 0; offset < leadIds.length; offset += 200) {
+    const ids = leadIds.slice(offset, offset + 200)
+    const query = db.from(table).select(select)
+    const { data, error } = table === 'leads' ? await query.in('id', ids) : await query.in('lead_id', ids)
+    if (error) throw error
+    rows.push(...((data ?? []) as T[]))
+  }
+  return rows
+}
 
 export async function GET() {
   const db = supabaseAdmin()
-  const { data: leads, error: leadsError } = await db
-    .from('leads')
-    .select('id, full_name, phone, email, property_address, city, county, station, priority, assigned_agent, classification, dead_reason, source, motivation_score, arv, offer_amount, appointment_date, created_at')
-    .or('station.is.null,station.not.in.(dead,closed_lost)')
-    .or('classification.is.null,classification.neq.dead')
-    .order('created_at', { ascending: false })
-    .limit(100)
+  try {
+    const communicationActivities = await fetchAllCommunicationActivities(db)
+    const leadIds = [...new Set(communicationActivities.flatMap((activity) => activity.lead_id ? [activity.lead_id] : []))]
+    const [leadRows, manifests, supportingActivities] = await Promise.all([
+      fetchRowsByLeadIds<ConversationHubLead>(db, 'leads', 'id, full_name, phone, email, property_address, city, county, station, priority, assigned_agent, classification, dead_reason, source, motivation_score, arv, offer_amount, appointment_date, created_at', leadIds),
+      fetchRowsByLeadIds<{ lead_id: string; manifest: ConversationManifestLike; created_at: string }>(db, 'manifests', 'lead_id, manifest, created_at', leadIds),
+      fetchSupportingActivities(db, leadIds),
+    ])
 
-  if (leadsError) {
-    return NextResponse.json({ error: leadsError.message }, { status: 500 })
-  }
-
-  const leadRows = (leads ?? []) as ConversationHubLead[]
-  if (leadRows.length === 0) return NextResponse.json({ items: [] })
-
-  const [activityResult, manifestResult] = await Promise.all([
-    db
-      .from('lead_activities')
-      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-      .in('lead_id', leadRows.map((lead) => lead.id))
-      .in('activity_type', HUB_ACTIVITY_TYPES)
-      .order('created_at', { ascending: false })
-      .limit(3000),
-    db
-      .from('manifests')
-      .select('lead_id, manifest, created_at')
-      .in('lead_id', leadRows.map((lead) => lead.id))
-      .order('created_at', { ascending: false }),
-  ])
-
-  const { data: activities, error: activitiesError } = activityResult
-
-  if (activitiesError) {
-    return NextResponse.json({ error: activitiesError.message }, { status: 500 })
-  }
-
-  const latestManifestByLead = new Map<string, ConversationManifestLike>()
-  for (const row of manifestResult.data ?? []) {
-    if (!latestManifestByLead.has(row.lead_id)) {
-      latestManifestByLead.set(row.lead_id, (row.manifest ?? {}) as ConversationManifestLike)
+    const latestManifestByLead = new Map<string, ConversationManifestLike>()
+    for (const row of manifests.sort((a, b) => b.created_at.localeCompare(a.created_at))) {
+      if (!latestManifestByLead.has(row.lead_id)) latestManifestByLead.set(row.lead_id, row.manifest ?? {})
     }
+
+    const enrichedLeadRows = leadRows.map((lead) => ({
+      ...lead,
+      decision_tags: buildConversationDecisionTags(latestManifestByLead.get(lead.id), lead),
+    }))
+
+    return NextResponse.json({
+      items: buildConversationHubThreads(enrichedLeadRows, [...communicationActivities, ...supportingActivities]),
+      unmatchedActivities: communicationActivities.filter((activity) => !activity.lead_id),
+    })
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Conversation hub could not be loaded' }, { status: 500 })
   }
-
-  const enrichedLeadRows = leadRows.map((lead) => ({
-    ...lead,
-    decision_tags: buildConversationDecisionTags(latestManifestByLead.get(lead.id), lead),
-  }))
-
-  return NextResponse.json({
-    items: buildConversationHubThreads(
-      enrichedLeadRows,
-      (activities ?? []) as ConversationHubActivity[],
-    ),
-  })
 }

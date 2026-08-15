@@ -3,7 +3,6 @@ import type { DealStage } from '@/types/pipeline'
 
 export type ContactSmartListNavigationId =
   | 'hot'
-  | 'new'
   | 'contacted'
   | 'qualified'
   | 'appointment_set'
@@ -16,6 +15,7 @@ export type ContactSmartList =
   | 'needs_reply'
   | 'overdue'
   | 'unassigned'
+  | 'prospects'
   | 'not_leads'
 
 export interface SmartListContact {
@@ -29,7 +29,6 @@ export interface SmartListContact {
 }
 
 export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartListNavigationId; label: string }> = [
-  { id: 'new', label: 'New' },
   { id: 'contacted', label: 'Leads' },
   { id: 'qualified', label: 'Opportunities' },
   { id: 'appointment_set', label: 'Appointment Set' },
@@ -63,10 +62,6 @@ export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; 
     label: 'Hot',
     description: 'High-priority active records scored 75+ or manually starred.',
   },
-  new: {
-    label: 'New',
-    description: 'Unclassified new intake from calls, forms, imports, or other sources awaiting a pipeline decision.',
-  },
   contacted: {
     label: 'Leads',
     description: 'Seller records an agent explicitly confirmed as leads.',
@@ -89,7 +84,7 @@ export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; 
   },
   all: {
     label: 'All',
-    description: 'Every active acquisition record, excluding contacts marked Not a lead.',
+    description: 'Every explicitly classified acquisition record in the active sales pipeline.',
   },
   needs_reply: {
     label: 'Needs Reply',
@@ -103,14 +98,31 @@ export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; 
     label: 'Unassigned',
     description: 'Active records that still need an accountable owner.',
   },
+  prospects: {
+    label: 'Prospects',
+    description: 'Unclassified contacts available for prospecting. Calls and messages do not add them to Pipeline.',
+  },
   not_leads: {
     label: 'Not Leads',
     description: 'Records removed from the active pipeline with a required disposition reason.',
   },
 }
 
-export function isActiveAcquisitionContact(contact: SmartListContact): boolean {
-  return !isNotLeadOutcome(contact.classification, contact.station)
+export function isProspectingContact(
+  contact: Pick<SmartListContact, 'station' | 'classification'>,
+): boolean {
+  return contact.classification === null
+    && !isNotLeadOutcome(contact.classification, contact.station)
+    && (contact.station === 'new' || contact.station === 'contacted')
+}
+
+export function isActiveAcquisitionContact(
+  contact: Pick<SmartListContact, 'station' | 'classification'>,
+): boolean {
+  if (isNotLeadOutcome(contact.classification, contact.station)) return false
+  if (contact.station === 'closed_won') return false
+  if (contact.classification === 'lead' || contact.classification === 'opportunity') return true
+  return ['qualified', 'appointment_set', 'offer_made', 'under_contract'].includes(contact.station)
 }
 
 export function contactPipelineStatusLabel(
@@ -123,21 +135,18 @@ export function contactPipelineStatusLabel(
   if (contact.station === 'closed_won') return 'Closed won'
   if (contact.station === 'qualified' || contact.classification === 'opportunity') return 'Opportunity'
   if (contact.classification === 'lead') return 'Lead'
-  return 'New intake'
+  return 'Not in pipeline'
 }
 
 export function contactMatchesSmartList(contact: SmartListContact, smartList: ContactSmartList): boolean {
   const active = isActiveAcquisitionContact(contact)
-  if (smartList === 'not_leads') return !active
+  if (smartList === 'prospects') return isProspectingContact(contact)
+  if (smartList === 'not_leads') return isNotLeadOutcome(contact.classification, contact.station)
   if (!active) return false
 
   switch (smartList) {
     case 'hot':
       return contact.station !== 'under_contract' && (contact.score >= 75 || contact.isFavorite)
-    case 'new':
-      // Communication activity does not qualify a record. New is the intake
-      // queue for records that have not yet received a pipeline classification.
-      return contact.classification === null && (contact.station === 'new' || contact.station === 'contacted')
     case 'contacted':
       // Keep older explicitly-classified leads discoverable even when a legacy
       // write left their station at new. Later pipeline stages take precedence.

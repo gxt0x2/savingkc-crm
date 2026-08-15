@@ -261,44 +261,46 @@ export default function ConversationsPage() {
 
     if (currentLeadId.startsWith('unmatched:')) {
       const phone = currentLeadId.replace('unmatched:', '')
-      const { data } = await supabase
-        .from('lead_activities')
-        .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-        .is('lead_id', null)
-        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'letter_tracking'])
-        .order('created_at', { ascending: true })
-        .limit(100)
-      const filtered = ((data || []) as DatabaseActivityRow[]).filter((a) => {
+      const rows: DatabaseActivityRow[] = []
+      for (let offset = 0; ; offset += 1000) {
+        const { data } = await supabase
+          .from('lead_activities')
+          .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+          .is('lead_id', null)
+          .in('activity_type', ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'letter_tracking'])
+          .order('created_at', { ascending: true })
+          .range(offset, offset + 999)
+        rows.push(...((data || []) as DatabaseActivityRow[]))
+        if ((data?.length ?? 0) < 1000) break
+      }
+      const filtered = rows.filter((a) => {
         const meta = a.metadata || {}
         return meta.from === phone || meta.to === phone
       })
       setActivities(filtered.map((a) => ({ ...a, type: a.activity_type })))
     } else {
-      const { data } = await supabase
-        .from('lead_activities')
-        .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-        .eq('lead_id', currentLeadId)
-        .in('activity_type', ['sms', 'email', 'call', 'voicemail', 'letter_tracking'])
-        .order('created_at', { ascending: true })
-        .limit(100)
-      setActivities(((data || []) as DatabaseActivityRow[]).map((a) => ({ ...a, type: a.activity_type })))
+      const rows: DatabaseActivityRow[] = []
+      for (let offset = 0; ; offset += 1000) {
+        const { data } = await supabase
+          .from('lead_activities')
+          .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+          .eq('lead_id', currentLeadId)
+          .in('activity_type', ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'letter_tracking'])
+          .order('created_at', { ascending: true })
+          .range(offset, offset + 999)
+        rows.push(...((data || []) as DatabaseActivityRow[]))
+        if ((data?.length ?? 0) < 1000) break
+      }
+      setActivities(rows.map((a) => ({ ...a, type: a.activity_type })))
     }
   }, [activeLeadId])
 
   const fetchThreads = useCallback(async (force = false) => {
-    const supabase = createClient()
-    const unmatchedRequest = supabase
-      .from('lead_activities')
-      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-      .is('lead_id', null)
-      .in('activity_type', ['call', 'sms', 'voicemail'])
-      .order('created_at', { ascending: false })
-      .limit(50)
     const payload = await queryClient.fetchQuery({
       queryKey: conversationHubQueryKey,
-      queryFn: () => fetchConversationHub<LeadRow>(),
+      queryFn: () => fetchConversationHub<LeadRow, ConversationHubActivity>(),
       staleTime: force ? 0 : conversationHubStaleTime,
-    }).catch(() => ({ items: [] as LeadRow[] }))
+    }).catch(() => ({ items: [] as LeadRow[], unmatchedActivities: [] as ConversationHubActivity[] }))
     const rows = payload.items
     const requestedLeadId = new URLSearchParams(window.location.search).get('lead')
 
@@ -315,9 +317,7 @@ export default function ConversationsPage() {
       initialThreadsLoaded.current = true
     }
 
-    const unmatchedResult = await unmatchedRequest
-    const unmatched = ((unmatchedResult.data || []) as DatabaseActivityRow[])
-      .map((activity) => ({ ...activity, type: activity.activity_type }))
+    const unmatched = payload.unmatchedActivities.map((activity) => ({ ...activity, type: activity.activity_type }))
 
     const phoneMap = new Map<string, ActivityRow[]>()
     for (const act of unmatched) {

@@ -25,7 +25,6 @@ function contact(overrides: Partial<SmartListContact>): SmartListContact {
 describe('contact smart lists', () => {
   it('keeps the approved labels and order', () => {
     expect(CONTACT_SMART_LISTS.map(({ label }) => label)).toEqual([
-      'New',
       'Leads',
       'Opportunities',
       'Appointment Set',
@@ -35,10 +34,9 @@ describe('contact smart lists', () => {
     ])
   })
 
-  it('restores a saved tab order without losing new or invalid smart lists', () => {
+  it('restores a saved tab order while discarding retired and invalid smart lists', () => {
     expect(normalizeContactSmartListOrder(['all', 'hot', 'all', 'not_leads', 'new'])).toEqual([
       'all',
-      'new',
       'contacted',
       'qualified',
       'appointment_set',
@@ -71,42 +69,42 @@ describe('contact smart lists', () => {
     ]
 
     expect(contactSmartListCounts(contacts)).toMatchObject({
-      hot: 1,
-      new: 1,
+      hot: 0,
       contacted: 1,
       qualified: 1,
       appointment_set: 1,
       offer_made: 1,
       in_closing: 1,
-      all: 6,
-      needs_reply: 1,
+      all: 5,
+      needs_reply: 0,
       overdue: 1,
-      unassigned: 1,
+      unassigned: 0,
+      prospects: 1,
       not_leads: 3,
     })
   })
 
-  it('uses classification instead of communication activity to separate New from Leads', () => {
+  it('keeps unclassified prospecting contacts outside every pipeline list', () => {
     const newForm = contact({ station: 'new', classification: null })
     const unclassifiedCaller = contact({ station: 'contacted', classification: null, attentionState: 'resolved' })
     const confirmedLead = contact({ station: 'contacted', classification: 'lead', attentionState: 'needs_reply' })
     const legacyConfirmedLead = contact({ station: 'new', classification: 'lead' })
-    const opportunity = contact({ station: 'qualified', classification: 'opportunity' })
-
-    expect(contactMatchesSmartList(newForm, 'new')).toBe(true)
-    expect(contactMatchesSmartList(unclassifiedCaller, 'new')).toBe(true)
-    expect(contactMatchesSmartList(confirmedLead, 'new')).toBe(false)
-    expect(contactMatchesSmartList(legacyConfirmedLead, 'new')).toBe(false)
-    expect(contactMatchesSmartList(opportunity, 'new')).toBe(false)
+    for (const { id } of CONTACT_SMART_LISTS) {
+      expect(contactMatchesSmartList(newForm, id)).toBe(false)
+      expect(contactMatchesSmartList(unclassifiedCaller, id)).toBe(false)
+    }
 
     expect(contactMatchesSmartList(newForm, 'contacted')).toBe(false)
     expect(contactMatchesSmartList(unclassifiedCaller, 'contacted')).toBe(false)
+    expect(contactMatchesSmartList(newForm, 'prospects')).toBe(true)
+    expect(contactMatchesSmartList(unclassifiedCaller, 'prospects')).toBe(true)
+    expect(contactMatchesSmartList(confirmedLead, 'prospects')).toBe(false)
     expect(contactMatchesSmartList(confirmedLead, 'contacted')).toBe(true)
     expect(contactMatchesSmartList(legacyConfirmedLead, 'contacted')).toBe(true)
   })
 
   it('labels rows by their actual pipeline classification and stage', () => {
-    expect(contactPipelineStatusLabel(contact({ station: 'new', classification: null }))).toBe('New intake')
+    expect(contactPipelineStatusLabel(contact({ station: 'new', classification: null }))).toBe('Not in pipeline')
     expect(contactPipelineStatusLabel(contact({ station: 'contacted', classification: 'lead' }))).toBe('Lead')
     expect(contactPipelineStatusLabel(contact({ station: 'qualified', classification: 'opportunity' }))).toBe('Opportunity')
     expect(contactPipelineStatusLabel(contact({ station: 'appointment_set', classification: 'opportunity' }))).toBe('Appointment set')

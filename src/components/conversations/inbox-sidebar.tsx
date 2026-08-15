@@ -44,7 +44,7 @@ const OWNER_FILTERS: { value: OwnerFilter; label: string }[] = [
   { value: 'casey', label: 'Casey' },
   { value: 'ernest', label: 'Ernest' },
   { value: 'gertha', label: 'Gertha' },
-  { value: 'team', label: 'Team' },
+  { value: 'team', label: 'All' },
   { value: 'unassigned', label: 'Unassigned' },
 ]
 
@@ -160,7 +160,7 @@ export function InboxSidebar({
 
   const tabs: { key: TabFilter; label: string; count: number }[] = [
     { key: 'agent', label: currentUserName, count: threads.filter((thread) => thread.owner?.toLowerCase().startsWith(currentUserOwnerFilter)).length },
-    { key: 'team', label: 'Team', count: threads.length },
+    { key: 'team', label: 'All', count: threads.length },
     { key: 'recent', label: 'Recent', count: threads.length },
     { key: 'hot', label: 'Hot', count: threads.filter((thread) => thread.hot).length },
   ]

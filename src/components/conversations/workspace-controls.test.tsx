@@ -52,7 +52,7 @@ describe('rebuilt conversation workspace controls', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('uses the signed-in agent, Team, Recent, and Hot as the primary work queues', () => {
+  it('uses the signed-in agent, All, Recent, and Hot as the primary work queues', () => {
     render(<InboxSidebar
       threads={[
         { ...baseThread, hot: true },
@@ -64,7 +64,7 @@ describe('rebuilt conversation workspace controls', () => {
     />)
 
     expect(screen.getByRole('button', { name: /Ernest 1/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Team 2/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /All 2/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Recent 2/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Hot 1/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Inbox/ })).not.toBeInTheDocument()
@@ -132,7 +132,7 @@ describe('rebuilt conversation workspace controls', () => {
 
     const ownerFilter = screen.getByRole('combobox', { name: 'Filter by assigned team member' })
     expect(within(ownerFilter).getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Casey', 'Ernest', 'Gertha', 'Team', 'Unassigned',
+      'Casey', 'Ernest', 'Gertha', 'All', 'Unassigned',
     ])
 
     fireEvent.change(ownerFilter, { target: { value: 'casey' } })
