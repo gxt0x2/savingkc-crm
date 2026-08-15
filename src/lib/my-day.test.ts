@@ -117,6 +117,36 @@ describe('Casey My Day model', () => {
     expect(report.commitments.map((item) => item.id)).toContain('task:task-1')
   })
 
+  it('surfaces only Casey recorded calls that still need review', () => {
+    const report = buildMyDay(input({
+      activities: [
+        ...input().activities,
+        activity({
+          id: 'review-me',
+          activity_type: 'call',
+          description: 'Completed seller call',
+          metadata: { recordingSid: 'RE123', review_reason: 'No next step set', ai_score: 62 },
+          created_at: '2026-08-05T17:30:00.000Z',
+        }),
+        activity({
+          id: 'already-reviewed',
+          activity_type: 'call',
+          metadata: { recordingSid: 'RE456', recording_review: { outcome: 'seller' } },
+          created_at: '2026-08-05T17:45:00.000Z',
+        }),
+        activity({ id: 'no-recording', activity_type: 'call', metadata: {}, created_at: '2026-08-05T17:50:00.000Z' }),
+      ],
+    }))
+
+    expect(report.callReviews).toEqual([expect.objectContaining({
+      id: 'review-me',
+      leadName: 'Seller One',
+      reason: 'No next step set',
+      aiScore: 62,
+      href: '/leads/lead-1',
+    })])
+  })
+
   it('shows unavailable stats as not recorded instead of silently fabricating zeros', () => {
     const report = buildMyDay(input({ stats: [], availability: { agentStats: false, appointments: true, habits: false } }))
     expect(report.funnel[0].value).toBeNull()

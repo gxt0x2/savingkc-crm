@@ -1,5 +1,6 @@
 import { formatLeadSource } from '@/lib/contact-display'
 import { isReachedDisposition } from '@/lib/dialer-dispositions'
+import { playableRecordingUrl, readRecordingReview } from '@/lib/marketing/call-recordings'
 import { stageLabel } from '@/lib/utils'
 
 export const MY_DAY_TIME_ZONE = 'America/Chicago'
@@ -102,6 +103,16 @@ export interface MyDayQueueItem {
   dueAt: string | null
 }
 
+export interface MyDayCallReview {
+  id: string
+  leadId: string
+  leadName: string
+  happenedAt: string
+  reason: string
+  aiScore: number | null
+  href: string
+}
+
 export interface MyDayData {
   month: string
   monthLabel: string
@@ -117,6 +128,7 @@ export interface MyDayData {
   habits: MyDayHabit[]
   commitments: MyDayCommitment[]
   queue: MyDayQueueItem[]
+  callReviews: MyDayCallReview[]
   goals: MyDayGoalSet
   availability: {
     agentStats: boolean
@@ -335,6 +347,19 @@ function commitmentIcon(type: string): string {
   return 'task_alt'
 }
 
+function callReviewScore(metadata: Record<string, unknown> | null): number | null {
+  const value = metadata?.ai_score ?? metadata?.call_score ?? metadata?.quality_score
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : null
+}
+
+function callReviewReason(activity: MyDayActivity): string {
+  return text(activity.metadata?.review_reason)
+    || text(activity.metadata?.flag_reason)
+    || text(activity.metadata?.coaching_theme)
+    || 'Recent recorded call'
+}
+
 export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const stats = input.stats.filter((row) => row.date.startsWith(input.month))
   // Mojo owns agent_daily_stats. Native CRM and Heir Dialer dispositions are
@@ -411,6 +436,22 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   ]
 
   const leadsById = new Map(input.leads.map((lead) => [lead.id, lead]))
+  const callReviews = input.activities
+    .filter((activity) => {
+      if (activity.activity_type.toLowerCase() !== 'call' || !activity.lead_id) return false
+      return Boolean(playableRecordingUrl(activity.metadata)) && readRecordingReview(activity.metadata).outcome === 'unreviewed'
+    })
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+    .slice(0, 3)
+    .map((activity): MyDayCallReview => ({
+      id: activity.id,
+      leadId: activity.lead_id!,
+      leadName: leadsById.get(activity.lead_id!)?.full_name?.trim() || 'Unknown seller',
+      happenedAt: activity.created_at,
+      reason: callReviewReason(activity),
+      aiScore: callReviewScore(activity.metadata),
+      href: `/leads/${activity.lead_id}`,
+    }))
   const nowTime = input.now.getTime()
   const openTasks = input.tasks.filter((task) => {
     const status = taskStatus(task)
@@ -492,6 +533,7 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     habits,
     commitments,
     queue,
+    callReviews,
     goals: input.goals,
     availability: { ...input.availability, habits: habits.some((habit) => habit.value !== null) },
   }

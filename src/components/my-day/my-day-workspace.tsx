@@ -178,6 +178,42 @@ function WeeklySnapshot({ data }: { data: MyDayData }) {
   )
 }
 
+function CallReviewCard({ data }: { data: MyDayData }) {
+  return (
+    <section aria-labelledby="call-review-title" className="crm-panel overflow-hidden rounded-xl">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--crm-border)] px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="headphones" className="text-[20px]" /></span>
+          <div>
+            <h2 id="call-review-title" className="text-[20px] font-black tracking-[-0.02em]">Call Review</h2>
+            <p className="text-[11px] font-semibold text-[var(--crm-text-muted)]">Latest recorded calls awaiting a quick review</p>
+          </div>
+        </div>
+        <span className="rounded-full bg-[var(--crm-brand-soft)] px-2.5 py-1 text-xs font-black text-[var(--crm-brand)]">{data.callReviews.length}</span>
+      </div>
+      {data.callReviews.length === 0 ? (
+        <div className="flex min-h-24 items-center justify-center gap-2 px-5 py-6 text-sm font-bold text-[var(--crm-text-muted)]">
+          <Icon name="task_alt" className="text-[20px] text-[var(--crm-success)]" />No calls waiting for review
+        </div>
+      ) : (
+        <div className="divide-y divide-[var(--crm-border)]">
+          {data.callReviews.map((call) => (
+            <div key={call.id} className="grid items-center gap-3 px-5 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,0.7fr)_72px_88px]">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-[var(--crm-ink)]">{call.leadName}</p>
+                <p className="mt-0.5 text-[11px] font-semibold text-[var(--crm-text-muted)]">{formatDateTime(call.happenedAt, 'due', data.generatedAt)}</p>
+              </div>
+              <p className="truncate text-xs font-semibold text-[var(--crm-text)]">{call.reason}</p>
+              <span className="text-center text-xs font-black text-[var(--crm-text-muted)]">{call.aiScore === null ? '—' : `${call.aiScore}/100`}</span>
+              <Link href={call.href} prefetch className="crm-secondary-button inline-flex h-8 items-center justify-center gap-1 rounded-md px-3 text-xs font-black text-[var(--crm-info)]"><Icon name="play_circle" className="text-[17px]" />Review</Link>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function CommitmentsCard({ data }: { data: MyDayData }) {
   return (
     <section aria-labelledby="next-commitments-title" className="crm-panel flex min-h-[284px] flex-col rounded-xl">
@@ -325,6 +361,7 @@ export function MyDayWorkspace({ initialData }: { initialData: MyDayData }) {
       {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void changeMonth(data.month, true)} className="underline">Retry</button></div> : null}
       <FunnelCard metrics={data.funnel} />
       <WeeklySnapshot data={data} />
+      <CallReviewCard data={data} />
       <CaseyAndonQueue />
       {loading ? <div role="status" aria-live="polite" className="absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-[var(--crm-canvas)]/70 backdrop-blur-[1px]"><span className="rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2 text-xs font-black shadow-lg">Loading Casey’s month…</span></div> : null}
     </main>
