@@ -1,5 +1,5 @@
-import { CallReviewWorkspace } from '@/components/my-day/call-review-workspace'
+import { redirect } from 'next/navigation'
 
 export default function CallReviewPage() {
-  return <CallReviewWorkspace />
+  redirect('/my-day')
 }
