@@ -10,6 +10,19 @@ type Call = { id: string; leadName: string; leadUrl: string | null; recordingUrl
 
 function duration(value: number) { return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}` }
 
+function previewTestCall(): Call {
+  return {
+    id: 'test-review-preview',
+    leadName: 'TEST REVIEW — Jordan Seller',
+    leadUrl: null,
+    recordingUrl: '/audio/ivr-voicemail.mp3',
+    durationSeconds: 74,
+    createdAt: new Date().toISOString(),
+    analysisSummary: 'Test coaching opportunity: confirm motivation, timeline, decision makers, and a committed next step.',
+    reviewWorkflow: { status: 'available', framework: null, score: null, submissionNote: null, reviewNote: null },
+  }
+}
+
 export function CallReviewWorkspace() {
   const [calls, setCalls] = useState<Call[]>([])
   const [tab, setTab] = useState<'submit' | 'review'>('review')
@@ -24,11 +37,17 @@ export function CallReviewWorkspace() {
     const response = await fetch('/api/marketing/call-recordings?days=30&minDuration=30', { cache: 'no-store' })
     if (!response.ok) throw new Error('Call review queue could not load.')
     const payload = await response.json() as { recordings: Call[] }
-    setCalls(payload.recordings)
+    const isPreview = window.location.hostname.endsWith('.vercel.app') || window.location.hostname === 'localhost'
+    const recordings = isPreview && !payload.recordings.some((call) => call.id === 'test-review-preview')
+      ? [previewTestCall(), ...payload.recordings]
+      : payload.recordings
+    setCalls(recordings)
     const requested = new URLSearchParams(window.location.search).get('activity')
     if (requested) {
-      const match = payload.recordings.find((call) => call.id === requested)
+      const match = recordings.find((call) => call.id === requested)
       if (match) { setSelected(match); setTab(match.reviewWorkflow.status === 'submitted' ? 'review' : 'submit') }
+    } else if (isPreview && recordings.some((call) => call.id === 'test-review-preview')) {
+      setTab('submit')
     }
   }
 
