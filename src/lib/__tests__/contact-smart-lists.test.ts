@@ -79,6 +79,7 @@ describe('contact smart lists', () => {
       needs_reply: 0,
       overdue: 1,
       unassigned: 0,
+      prospects: 1,
       not_leads: 3,
     })
   })
@@ -95,6 +96,9 @@ describe('contact smart lists', () => {
 
     expect(contactMatchesSmartList(newForm, 'contacted')).toBe(false)
     expect(contactMatchesSmartList(unclassifiedCaller, 'contacted')).toBe(false)
+    expect(contactMatchesSmartList(newForm, 'prospects')).toBe(true)
+    expect(contactMatchesSmartList(unclassifiedCaller, 'prospects')).toBe(true)
+    expect(contactMatchesSmartList(confirmedLead, 'prospects')).toBe(false)
     expect(contactMatchesSmartList(confirmedLead, 'contacted')).toBe(true)
     expect(contactMatchesSmartList(legacyConfirmedLead, 'contacted')).toBe(true)
   })

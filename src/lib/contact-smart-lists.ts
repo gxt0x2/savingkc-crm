@@ -15,6 +15,7 @@ export type ContactSmartList =
   | 'needs_reply'
   | 'overdue'
   | 'unassigned'
+  | 'prospects'
   | 'not_leads'
 
 export interface SmartListContact {
@@ -97,10 +98,22 @@ export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; 
     label: 'Unassigned',
     description: 'Active records that still need an accountable owner.',
   },
+  prospects: {
+    label: 'Prospects',
+    description: 'Unclassified contacts available for prospecting. Calls and messages do not add them to Pipeline.',
+  },
   not_leads: {
     label: 'Not Leads',
     description: 'Records removed from the active pipeline with a required disposition reason.',
   },
+}
+
+export function isProspectingContact(
+  contact: Pick<SmartListContact, 'station' | 'classification'>,
+): boolean {
+  return contact.classification === null
+    && !isNotLeadOutcome(contact.classification, contact.station)
+    && (contact.station === 'new' || contact.station === 'contacted')
 }
 
 export function isActiveAcquisitionContact(
@@ -127,6 +140,7 @@ export function contactPipelineStatusLabel(
 
 export function contactMatchesSmartList(contact: SmartListContact, smartList: ContactSmartList): boolean {
   const active = isActiveAcquisitionContact(contact)
+  if (smartList === 'prospects') return isProspectingContact(contact)
   if (smartList === 'not_leads') return isNotLeadOutcome(contact.classification, contact.station)
   if (!active) return false
 

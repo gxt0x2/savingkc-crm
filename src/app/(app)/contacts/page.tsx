@@ -1,4 +1,5 @@
 'use client'
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/purity -- Existing workspace state hydration and clock-based filters are intentionally client-driven. */
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -27,23 +28,13 @@ import { formatPhone } from '@/lib/format'
 import type { ContactSignal } from '@/lib/contact-display'
 import type { DealStage } from '@/types/pipeline'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
+import { ProspectsWorkspaceTab } from '@/components/contacts/prospects-workspace-tab'
 import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
 import { PipelineFilterSelect, PipelineModal, PipelineModalActions } from '@/components/pipeline/pipeline-controls'
 import { DEAD_REASONS, deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { useAuth } from '@/hooks/use-auth'
 import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
-import {
-  CONTACT_SMART_LIST_COPY,
-  CONTACT_SMART_LIST_ORDER_STORAGE_KEY,
-  CONTACT_SMART_LISTS,
-  DEFAULT_CONTACT_SMART_LIST_ORDER,
-  contactMatchesSmartList,
-  contactPipelineStatusLabel,
-  contactSmartListCounts,
-  normalizeContactSmartListOrder,
-  type ContactSmartList,
-  type ContactSmartListNavigationId,
-} from '@/lib/contact-smart-lists'
+import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, contactMatchesSmartList, contactPipelineStatusLabel, contactSmartListCounts, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId } from '@/lib/contact-smart-lists'
 
 interface ContactRow {
   id: string
@@ -89,7 +80,7 @@ interface ContactWorkspaceRow extends ContactRow {
 type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
 type ContactDialog = 'add' | 'import' | 'view' | null
 type ToolbarMenu = 'filters' | 'sort' | null
-type ContactScope = 'active' | 'not_leads'
+type ContactScope = 'active' | 'prospects' | 'not_leads'
 type BulkAction = '' | 'assign:Ernest' | 'assign:Casey' | 'assign:Gertha' | 'assign:unassigned' | 'classify:new' | 'classify:lead' | `stage:${DealStage}` | 'not_lead'
 
 interface SavedView {
@@ -141,6 +132,7 @@ const SMART_LIST_TONES: Record<ContactSmartList, { active: string; count: string
   overdue: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' },
   hot: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
   unassigned: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' },
+  prospects: { active: 'border-[var(--crm-info)] text-[var(--crm-info)]', count: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
   not_leads: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' },
 }
 
@@ -277,12 +269,13 @@ export default function ContactsPage() {
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkMessage, setBulkMessage] = useState<string | null>(null)
   const activeQuery = useContactWorkspace('active')
+  const prospectsQuery = useContactWorkspace('prospects')
   const archiveQuery = useContactWorkspace('not_leads', smartList === 'not_leads')
-  const currentQuery = smartList === 'not_leads' ? archiveQuery : activeQuery
+  const currentQuery = smartList === 'not_leads' ? archiveQuery : smartList === 'prospects' ? prospectsQuery : activeQuery
   const items = useMemo(() => currentQuery.data?.items ?? [], [currentQuery.data])
   const allKnownItems = useMemo(
-    () => [...(activeQuery.data?.items ?? []), ...(archiveQuery.data?.items ?? [])],
-    [activeQuery.data, archiveQuery.data],
+    () => [...(activeQuery.data?.items ?? []), ...(prospectsQuery.data?.items ?? []), ...(archiveQuery.data?.items ?? [])],
+    [activeQuery.data, archiveQuery.data, prospectsQuery.data],
   )
   const { isLoading, error, refetch, isFetching } = currentQuery
   const smartListSensors = useSensors(
@@ -411,6 +404,7 @@ export default function ContactsPage() {
   async function refreshContactScopes() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_KEY('active') }),
+      queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_KEY('prospects') }),
       queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_KEY('not_leads') }),
       queryClient.invalidateQueries({ queryKey: conversationHubQueryKey }),
     ])
@@ -418,6 +412,7 @@ export default function ContactsPage() {
 
   function handleLeadStatusChanged(id: string, update: LeadStatusUpdate) {
     const becameNotLead = isNotLeadOutcome(update.classification, update.station)
+    const becameActive = update.classification === 'lead' || update.classification === 'opportunity'
     queryClient.setQueryData<{ items: ContactWorkspaceRow[] }>(CONTACT_QUERY_KEY('active'), (current) => ({
       items: becameNotLead
         ? (current?.items ?? []).filter((item) => item.id !== id)
@@ -428,6 +423,7 @@ export default function ContactsPage() {
         ? (current?.items ?? [])
         : (current?.items ?? []).filter((item) => item.id !== id),
     }))
+    queryClient.setQueryData<{ items: ContactWorkspaceRow[] }>(CONTACT_QUERY_KEY('prospects'), (current) => ({ items: becameActive || becameNotLead ? (current?.items ?? []).filter((item) => item.id !== id) : (current?.items ?? []) }))
     if (becameNotLead) {
       setSelectedId(null)
       setDetailsOpen(false)
@@ -639,7 +635,7 @@ export default function ContactsPage() {
   const contactsCommandBar = (
     <div data-testid="contacts-command-header" className="grid min-w-0 items-center gap-3 lg:grid-cols-[minmax(11rem,1fr)_minmax(13rem,26rem)_auto]">
       <div data-header-slot="context" className="min-w-0">
-        <p className="crm-eyebrow">Pipeline</p>
+        <p className="crm-eyebrow">{smartList === 'prospects' ? 'Prospecting' : 'Pipeline'}</p>
         <div className="flex items-center gap-2">
           <h1 className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{smartListCopy.label}</h1>
           <span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-xs font-bold text-[var(--crm-info)]">{counts[smartList]}</span>
@@ -678,6 +674,7 @@ export default function ContactsPage() {
               </SortableContext>
             </DndContext>
             {hasCustomSmartListOrder ? <button type="button" onClick={resetSmartListOrder} className="ml-2 flex shrink-0 items-center gap-1 border-l border-[var(--crm-border)] px-3 text-xs font-semibold text-[var(--crm-text-muted)] hover:text-[var(--crm-brand)]" aria-label="Reset smart-list order"><Icon name="restart_alt" className="text-[16px]" />Reset order</button> : null}
+            <ProspectsWorkspaceTab count={counts.prospects} active={smartList === 'prospects'} onSelect={() => selectSmartList('prospects')} />
           </div>
 
           <div className="px-7 py-3">

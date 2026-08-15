@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getContactSignal, getOutreachStatus, isOutboundAttempt, type ContactActivityLike, type ContactSignal, type OutreachStatus } from '@/lib/contact-display'
 import { isNotLeadOutcome } from '@/lib/lead-outcomes'
-import { isActiveAcquisitionContact } from '@/lib/contact-smart-lists'
+import { isActiveAcquisitionContact, isProspectingContact } from '@/lib/contact-smart-lists'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
@@ -121,7 +121,7 @@ function pickTags(m: ManifestPayload): string[] {
 export async function GET(request: NextRequest) {
   const db = supabaseAdmin()
   const requestedScope = request.nextUrl.searchParams.get('scope')
-  const scope = requestedScope === 'not_leads' || requestedScope === 'all' ? requestedScope : 'active'
+  const scope = requestedScope === 'not_leads' || requestedScope === 'prospects' || requestedScope === 'all' ? requestedScope : 'active'
 
   const { data: leads, error: leadsErr } = await db
     .from('leads')
@@ -137,6 +137,10 @@ export async function GET(request: NextRequest) {
     .filter(({ lead, station }) => {
       const notLead = isNotLeadOutcome(lead.classification, station)
       if (scope === 'not_leads') return notLead
+      if (scope === 'prospects') return isProspectingContact({
+        classification: (lead.classification as ContactRow['classification']) ?? null,
+        station,
+      })
       if (scope === 'all') return true
       return isActiveAcquisitionContact({
         classification: (lead.classification as ContactRow['classification']) ?? null,

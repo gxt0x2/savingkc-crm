@@ -58,7 +58,9 @@ describe('ContactsPage smart-list workspace', () => {
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
       const scope = queryKey?.[1]
       const scopedContacts = scope === 'active'
-        ? contacts.filter((contact) => contact.station !== 'dead')
+        ? contacts.filter((contact) => contact.classification === 'lead' || contact.classification === 'opportunity')
+        : scope === 'prospects'
+          ? contacts.filter((contact) => contact.classification === null)
         : scope === 'not_leads'
           ? contacts.filter((contact) => contact.station === 'dead')
           : contacts
@@ -205,5 +207,17 @@ describe('ContactsPage smart-list workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /^All 1$/ }))
     expect(screen.queryByText('New Intake')).not.toBeInTheDocument()
     expect(screen.getAllByText('Active Lead')).toHaveLength(2)
+  })
+
+  it('keeps every unclassified contact viewable in a separate Prospects workspace', () => {
+    render(<ContactsPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Prospects 1' }))
+    expect(screen.getByText('Prospecting')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Prospects' })).toBeInTheDocument()
+    expect(screen.getByText('Unclassified contacts available for prospecting. Calls and messages do not add them to Pipeline.')).toBeInTheDocument()
+    expect(screen.getAllByText('New Intake')).toHaveLength(2)
+    expect(screen.queryByText('Active Lead')).not.toBeInTheDocument()
+    expect(window.location.search).toBe('?list=prospects')
   })
 })
