@@ -57,6 +57,7 @@ interface ContactRow {
   contactSignal: ContactSignal | null
   outreachStatus: OutreachStatus
   updatedAt: string | null
+  pipelineIntentSource: string | null
 }
 
 interface HubThread {
@@ -121,6 +122,7 @@ const SMART_LISTS = new Set<ContactSmartList>(Object.keys(CONTACT_SMART_LIST_COP
 const DATA_GAPS = new Set<DataGap>(['', 'missing_phone', 'missing_email', 'missing_next_action'])
 
 const SMART_LIST_TONES: Record<ContactSmartList, { active: string; count: string }> = {
+  new: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
   all: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
   contacted: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
   qualified: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' },
@@ -237,7 +239,7 @@ export default function ContactsPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const [smartList, setSmartList] = useState<ContactSmartList>('contacted')
+  const [smartList, setSmartList] = useState<ContactSmartList>('new')
   const [smartListOrder, setSmartListOrder] = useState<ContactSmartListNavigationId[]>([...DEFAULT_CONTACT_SMART_LIST_ORDER])
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)

@@ -36,7 +36,7 @@ describe('workspace navigation', () => {
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
     const labels = within(navigationRegion).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
     expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Reports', 'Settings'])
-    expect(within(navigationRegion).getByRole('link', { name: 'Pipeline' })).toHaveAttribute('href', '/contacts?list=contacted')
+    expect(within(navigationRegion).getByRole('link', { name: 'Pipeline' })).toHaveAttribute('href', '/contacts?list=new')
     expect(within(navigationRegion).getByRole('link', { name: 'Issue Log' })).toHaveAttribute('href', '/reports/andon')
     expect(within(navigationRegion).queryByRole('link', { name: 'Bottlenecks' })).not.toBeInTheDocument()
     expect(within(navigationRegion).queryByRole('link', { name: 'Bingo Board' })).not.toBeInTheDocument()

@@ -42,10 +42,11 @@ const baseContact = {
   lastMessage: null,
   lastActivityAt: null,
   primaryNextAction: null,
+  pipelineIntentSource: null,
 }
 
 const contacts = [
-  { ...baseContact, id: 'new-intake', fullName: 'New Intake', station: 'new' as const, classification: null, address: '6509 W 74TH ST', city: 'Overland Park', attentionState: 'needs_reply' as const },
+  { ...baseContact, id: 'new-intake', fullName: 'New Intake', station: 'new' as const, classification: null, pipelineIntentSource: 'website_form', address: '6509 W 74TH ST', city: 'Overland Park', attentionState: 'needs_reply' as const },
   { ...baseContact, id: 'active-lead', fullName: 'Active Lead', station: 'contacted' as const, classification: 'lead' as const, address: '6509 W 74TH ST', city: 'Overland Park', attentionState: 'needs_reply' as const },
   { ...baseContact, id: 'dead-record', fullName: 'Dead Record', station: 'dead' as const, classification: 'dead' as const, deadReason: 'dnc_refused' },
 ]
@@ -58,9 +59,9 @@ describe('ContactsPage smart-list workspace', () => {
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
       const scope = queryKey?.[1]
       const scopedContacts = scope === 'active'
-        ? contacts.filter((contact) => contact.classification === 'lead' || contact.classification === 'opportunity')
+        ? contacts.filter((contact) => contact.classification === 'lead' || Boolean(contact.pipelineIntentSource))
         : scope === 'prospects'
-          ? contacts.filter((contact) => contact.classification === null)
+          ? contacts.filter((contact) => contact.classification === null && !contact.pipelineIntentSource)
         : scope === 'not_leads'
           ? contacts.filter((contact) => contact.station === 'dead')
           : contacts
@@ -79,6 +80,7 @@ describe('ContactsPage smart-list workspace', () => {
     const navigation = screen.getByRole('navigation', { name: 'Pipeline smart lists' })
     const smartListButtons = within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder '))
     expect(smartListButtons.map((button) => button.textContent?.replace(/\d+$/, '').trim())).toEqual([
+      'New',
       'Leads',
       'Opportunities',
       'Appointment Set',
@@ -86,10 +88,10 @@ describe('ContactsPage smart-list workspace', () => {
       'In Closing',
       'All',
     ])
-    expect(screen.getByRole('heading', { name: 'Leads' })).toBeInTheDocument()
-    expect(screen.getByText('Seller records an agent explicitly confirmed as leads.')).toBeInTheDocument()
-    expect(screen.getAllByText('Active Lead')).toHaveLength(2)
-    expect(screen.queryByText('New Intake')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'New' })).toBeInTheDocument()
+    expect(screen.getByText('Unreviewed seller inquiries from approved intent sources. Communication alone never enters Pipeline.')).toBeInTheDocument()
+    expect(screen.getAllByText('New Intake')).toHaveLength(2)
+    expect(screen.queryByText('Active Lead')).not.toBeInTheDocument()
     expect(screen.queryByText('Dead Record')).not.toBeInTheDocument()
   })
 
@@ -115,7 +117,8 @@ describe('ContactsPage smart-list workspace', () => {
     const navigation = screen.getByRole('navigation', { name: 'Pipeline smart lists' })
     const smartListButtons = within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder '))
     expect(smartListButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
-      'All 1',
+      'All 2',
+      'New 1',
       'Leads 1',
       'Opportunities 0',
       'Appointment Set 0',
@@ -127,12 +130,13 @@ describe('ContactsPage smart-list workspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset smart-list order' }))
     expect(within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder ')).map((button) => button.getAttribute('aria-label'))).toEqual([
+      'New 1',
       'Leads 1',
       'Opportunities 0',
       'Appointment Set 0',
       'Offer Made 0',
       'In Closing 0',
-      'All 1',
+      'All 2',
     ])
     expect(screen.queryByRole('button', { name: 'Reset smart-list order' })).not.toBeInTheDocument()
   })
@@ -170,6 +174,7 @@ describe('ContactsPage smart-list workspace', () => {
 
   it('shows the city once and uses the SavingKC brand for needs-reply row attention', () => {
     render(<ContactsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /^Leads 1$/ }))
 
     const contactName = screen.getByRole('button', { name: /Active Lead/ })
     const contactRow = contactName.closest('.grid')
@@ -182,6 +187,7 @@ describe('ContactsPage smart-list workspace', () => {
 
   it('supports bulk selection and opens the full lead workspace on double-click', () => {
     render(<ContactsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /^Leads 1$/ }))
 
     const contactName = screen.getByRole('button', { name: /Active Lead/ })
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Active Lead' }))
@@ -194,6 +200,7 @@ describe('ContactsPage smart-list workspace', () => {
 
   it('labels the workspace Pipeline and exposes safe bulk classifications', () => {
     render(<ContactsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /^Leads 1$/ }))
 
     expect(screen.getByText('Pipeline')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Active Lead' }))
@@ -204,19 +211,20 @@ describe('ContactsPage smart-list workspace', () => {
   it('never shows an unclassified prospecting contact in All Pipeline records', () => {
     render(<ContactsPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: /^All 1$/ }))
-    expect(screen.queryByText('New Intake')).not.toBeInTheDocument()
-    expect(screen.getAllByText('Active Lead')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: /^All 2$/ }))
+    expect(screen.getAllByText('New Intake')).toHaveLength(2)
+    expect(screen.getAllByText('Active Lead')).toHaveLength(1)
   })
 
   it('keeps every unclassified contact viewable in a separate Prospects workspace', () => {
     render(<ContactsPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prospects 1' }))
+    expect(screen.getByRole('button', { name: 'Prospects 0' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Prospects 0' }))
     expect(screen.getByText('Prospecting')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Prospects' })).toBeInTheDocument()
     expect(screen.getByText('Unclassified contacts available for prospecting. Calls and messages do not add them to Pipeline.')).toBeInTheDocument()
-    expect(screen.getAllByText('New Intake')).toHaveLength(2)
+    expect(screen.queryByText('New Intake')).not.toBeInTheDocument()
     expect(screen.queryByText('Active Lead')).not.toBeInTheDocument()
     expect(window.location.search).toBe('?list=prospects')
   })
