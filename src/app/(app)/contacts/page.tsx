@@ -132,7 +132,6 @@ const DATA_GAPS = new Set<DataGap>(['', 'missing_phone', 'missing_email', 'missi
 
 const SMART_LIST_TONES: Record<ContactSmartList, { active: string; count: string }> = {
   all: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' },
-  new: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
   contacted: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' },
   qualified: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' },
   appointment_set: { active: 'border-[var(--crm-brand)] text-[var(--crm-brand)]', count: 'bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]' },
@@ -247,7 +246,7 @@ export default function ContactsPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const [smartList, setSmartList] = useState<ContactSmartList>('new')
+  const [smartList, setSmartList] = useState<ContactSmartList>('contacted')
   const [smartListOrder, setSmartListOrder] = useState<ContactSmartListNavigationId[]>([...DEFAULT_CONTACT_SMART_LIST_ORDER])
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -729,7 +728,7 @@ export default function ContactsPage() {
                   <option value="assign:unassigned">Set unassigned</option>
                 </optgroup>
                 <optgroup label="Classify intake">
-                  {smartList === 'contacted' ? <option value="classify:new">Return to New</option> : null}
+                  {smartList === 'contacted' ? <option value="classify:new">Remove from Pipeline</option> : null}
                   <option value="classify:lead">Add to Leads</option>
                 </optgroup>
                 <optgroup label="Move stage">

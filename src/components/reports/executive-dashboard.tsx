@@ -42,7 +42,7 @@ export function ExecutiveDashboard({
     { icon: 'description', label: 'Under contract', value: report.core.underContract, numericValue: report.core.underContract, detail: `${percent(report.core.underContract, report.acquisitions.offers)} of offers`, tone: 'amber' as const, href: '/contacts?min_stage=under_contract', series: report.trends.underContract, goal: null },
     { icon: 'request_quote', label: 'Offers made', value: report.acquisitions.offers, numericValue: report.acquisitions.offers, detail: `${percent(report.acquisitions.offers, report.core.qualified)} of opportunities`, tone: 'violet' as const, href: '/contacts?min_stage=offer_made', series: report.trends.offers, goal: null },
     { icon: 'verified', label: 'Opportunities (period)', value: report.core.qualified, numericValue: report.core.qualified, detail: `${percent(report.core.qualified, report.core.leads)} of period leads`, tone: 'blue' as const, href: '/contacts?min_stage=qualified', series: report.trends.qualified, goal: scaledGoal(report.goals.weeklyQualified, report, 'weekly') },
-    { icon: 'group', label: 'Leads (period)', value: report.core.leads, numericValue: report.core.leads, detail: 'New seller records', tone: 'teal' as const, href: '/contacts?list=new', series: report.trends.leads, goal: null },
+    { icon: 'group', label: 'Leads (period)', value: report.core.leads, numericValue: report.core.leads, detail: 'New seller records', tone: 'teal' as const, href: '/contacts?list=contacted', series: report.trends.leads, goal: null },
   ]
 
   return (

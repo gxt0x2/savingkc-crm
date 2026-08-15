@@ -117,7 +117,7 @@ function MarketingView({ report }: { report: OperatingReport }) {
       <NumberedPanel number="1" title="Core marketing metrics" hint="CRM-attributed outcomes">
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard icon="campaign" label="Lead sources" value={report.marketing.sources.length} numericValue={report.marketing.sources.length} detail="Sources with recorded leads" tone="violet" href="/reports/marketing" />
-          <MetricCard icon="group_add" label="Leads" value={report.core.leads} numericValue={report.core.leads} detail="Created in selected period" tone="teal" href="/contacts?list=new" series={report.trends.leads} />
+          <MetricCard icon="group_add" label="Leads" value={report.core.leads} numericValue={report.core.leads} detail="Created in selected period" tone="teal" href="/contacts?list=contacted" series={report.trends.leads} />
           <MetricCard icon="verified" label="Opportunities" value={report.core.qualified} numericValue={report.core.qualified} detail={`${percent(report.core.qualified, report.core.leads)} opportunity rate`} tone="blue" href="/contacts?min_stage=qualified" series={report.trends.qualified} goal={scaledGoal(report.goals.weeklyQualified, report, 'weekly')} />
           <MetricCard icon="trophy" label="Top source" value={top ? formatLeadSource(top.source) : 'No data'} numericValue={top?.leads ?? null} detail={top ? `${top.leads} recorded leads` : 'No lead-source records'} tone="green" href="/reports/marketing" />
         </div>

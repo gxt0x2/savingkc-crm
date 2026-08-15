@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getContactSignal, getOutreachStatus, isOutboundAttempt, type ContactActivityLike, type ContactSignal, type OutreachStatus } from '@/lib/contact-display'
 import { isNotLeadOutcome } from '@/lib/lead-outcomes'
+import { isActiveAcquisitionContact } from '@/lib/contact-smart-lists'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
@@ -137,7 +138,10 @@ export async function GET(request: NextRequest) {
       const notLead = isNotLeadOutcome(lead.classification, station)
       if (scope === 'not_leads') return notLead
       if (scope === 'all') return true
-      return !notLead
+      return isActiveAcquisitionContact({
+        classification: (lead.classification as ContactRow['classification']) ?? null,
+        station,
+      })
     })
 
   if (scopedRows.length === 0) return NextResponse.json({ items: [], scope })
