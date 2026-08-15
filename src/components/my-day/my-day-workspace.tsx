@@ -268,7 +268,9 @@ export function MyDayWorkspace({ initialData }: { initialData: MyDayData }) {
   const [error, setError] = useState<string | null>(null)
   const months = useMemo(() => monthOptions(initialData.month), [initialData.month])
 
-  useEffect(() => setData(initialData), [initialData])
+  useEffect(() => {
+    void Promise.resolve().then(() => setData(initialData))
+  }, [initialData])
 
   useEffect(() => {
     const refresh = () => router.refresh()

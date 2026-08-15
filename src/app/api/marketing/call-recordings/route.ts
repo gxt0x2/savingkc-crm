@@ -297,7 +297,7 @@ export async function GET(req: NextRequest) {
   const recordings = candidateCalls
     .map((row) => rowToItem(row, leadById, transcriptRows, analysisRows))
     .filter((row): row is CallRecordingItem => Boolean(row))
-  if (process.env.VERCEL_ENV === 'preview' || process.env.NODE_ENV === 'development') recordings.unshift(previewTestReview())
+  if (process.env.VERCEL_ENV === 'preview') recordings.unshift(previewTestReview())
 
   const summary = buildRecordingSummary(recordings.map((item) => ({
     durationSeconds: item.durationSeconds,
