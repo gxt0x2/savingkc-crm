@@ -237,7 +237,7 @@ export function CallRecordingsPage() {
           <header className="recording-header">
             <div>
               <Link className="back-link" href="/my-day">My Day</Link>
-              <h1>Scorecard</h1>
+              <h1>Call Recordings</h1>
               <p>Tag recorded calls, select a scorecard and reviewer, then submit only the calls that need review.</p>
             </div>
             <button className="refresh-button" type="button" onClick={() => loadRecordings()} disabled={loading}>

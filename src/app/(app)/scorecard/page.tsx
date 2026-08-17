@@ -1,5 +1,5 @@
-import { CallRecordingsPage } from '@/components/marketing/call-recordings-page'
+import { ScorecardResultsPage } from '@/components/scorecard/scorecard-results-page'
 
 export default function ScorecardPage() {
-  return <CallRecordingsPage />
+  return <ScorecardResultsPage />
 }
