@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserEmail } from '@/lib/auth/admin'
+import { getCurrentUserEmail, isCurrentUserAdmin } from '@/lib/auth/admin'
 import { formatPhone } from '@/lib/format'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { cleanDeadReason } from '@/lib/lead-outcomes'
+import { CALL_REVIEWERS, isCallReviewer } from '@/lib/call-review-reviewers'
+import { CALL_REVIEW_TAGS, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import {
   buildRecordingSummary,
   compactTranscript,
   isGoogleAdsCall,
   isRecordingReviewOutcome,
   mergeRecordingReviewMetadata,
+  mergeCallReviewWorkflow,
   playableRecordingUrl,
   readRecordingDuration,
   readRecordingReview,
+  readCallReviewWorkflow,
   readRecordingSid,
   record,
   text,
@@ -93,6 +97,19 @@ type CallRecordingItem = {
   transcript: string | null
   transcriptActivityId: string | null
   analysisSummary: string | null
+  reviewWorkflow: ReturnType<typeof readCallReviewWorkflow>
+}
+
+function previewTestReview(): CallRecordingItem {
+  return {
+    id: 'test-review-preview', leadId: null, leadName: 'TEST REVIEW — Jordan Seller', leadPhone: null, leadPhoneDisplay: '(816) 555-0100', leadUrl: null,
+    leadSource: 'preview_test', leadStation: 'qualified', leadPriority: 'high', propertyAddress: '123 Test Property', city: 'Kansas City', state: 'MO', classification: 'opportunity', opportunityScore: 72,
+    recordingSid: 'TEST-REVIEW', recordingUrl: '/audio/ivr-voicemail.mp3', callSid: null, direction: 'outbound', from: null, to: null, fromDisplay: null, toDisplay: '(816) 555-0100', durationSeconds: 74,
+    createdAt: new Date().toISOString(), campaign: null, trafficSource: 'preview_test', trackingNumber: null, phoneProfile: 'Casey', isGoogleAds: false, outcome: 'unreviewed', reviewNote: null, reviewedAt: null, reviewedBy: null,
+    transcript: 'This is a preview-only test review. Use it to submit a framework, complete the scorecard, and verify the workflow.', transcriptActivityId: null,
+    analysisSummary: 'Test coaching opportunity: confirm motivation, timeline, decision makers, and a committed next step.',
+    reviewWorkflow: { status: 'available', framework: null, submittedAt: null, submittedBy: null, assignedReviewer: null, submissionNote: null, completedAt: null, completedBy: null, score: null, answers: {}, tags: [], reviewNote: null, voiceoverPath: null, voiceoverMimeType: null },
+  }
 }
 
 function parsePositiveInt(value: string | null, fallback: number, min: number, max: number): number {
@@ -211,6 +228,7 @@ function rowToItem(
     transcript: transcript?.text || null,
     transcriptActivityId: transcript?.id || null,
     analysisSummary: findAnalysisFor(row, analysisRows),
+    reviewWorkflow: readCallReviewWorkflow(meta),
   }
 }
 
@@ -279,6 +297,7 @@ export async function GET(req: NextRequest) {
   const recordings = candidateCalls
     .map((row) => rowToItem(row, leadById, transcriptRows, analysisRows))
     .filter((row): row is CallRecordingItem => Boolean(row))
+  if (process.env.VERCEL_ENV === 'preview') recordings.unshift(previewTestReview())
 
   const summary = buildRecordingSummary(recordings.map((item) => ({
     durationSeconds: item.durationSeconds,
@@ -288,6 +307,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
+    viewerEmail: email,
+    reviewers: CALL_REVIEWERS,
     filters: { days, minDuration, since },
     summary,
     recordings,
@@ -300,22 +321,24 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS })
   }
 
-  const body = await req.json().catch(() => null) as { activityId?: unknown; outcome?: unknown; note?: unknown } | null
+  const body = await req.json().catch(() => null) as { activityId?: unknown; recordingSid?: unknown; action?: unknown; outcome?: unknown; note?: unknown; framework?: unknown; answers?: unknown; tags?: unknown; assignedReviewer?: unknown; voiceoverPath?: unknown; voiceoverMimeType?: unknown } | null
   const activityId = text(body?.activityId)
+  const recordingSid = text(body?.recordingSid)
+  const action = text(body?.action)
   const outcome = text(body?.outcome)
   const note = text(body?.note)
-  if (!activityId || !isRecordingReviewOutcome(outcome)) {
+  if ((!activityId && !recordingSid) || (!['submit', 'complete'].includes(action) && !isRecordingReviewOutcome(outcome))) {
     return NextResponse.json({ error: 'Invalid review payload' }, { status: 400, headers: NO_STORE_HEADERS })
   }
 
   const db = supabaseAdmin()
-  const { data: activity, error: activityError } = await db
+  let activityQuery = db
     .from('lead_activities')
     .select('id, lead_id, activity_type, description, metadata, created_at, agent')
-    .eq('id', activityId)
     .eq('activity_type', 'call')
     .limit(1)
-    .maybeSingle()
+  activityQuery = activityId ? activityQuery.eq('id', activityId) : activityQuery.eq('metadata->>recordingSid', recordingSid)
+  const { data: activity, error: activityError } = await activityQuery.maybeSingle()
 
   if (activityError) {
     return NextResponse.json({ error: activityError.message }, { status: 500, headers: NO_STORE_HEADERS })
@@ -325,6 +348,75 @@ export async function PATCH(req: NextRequest) {
   }
 
   const now = new Date().toISOString()
+  const activityRow = activity as LeadActivityRow
+
+  if (action === 'submit' || action === 'complete') {
+    const framework = getCallReviewFramework(body?.framework)
+    if (!framework) return NextResponse.json({ error: 'Select a valid review framework' }, { status: 400, headers: NO_STORE_HEADERS })
+    const existing = readCallReviewWorkflow(activityRow.metadata)
+    let updatedMetadata: Record<string, unknown>
+    let description: string
+    if (action === 'submit') {
+      const assignedReviewer = text(body?.assignedReviewer).toLowerCase()
+      if (!isCallReviewer(assignedReviewer)) return NextResponse.json({ error: 'Select a valid reviewer' }, { status: 400, headers: NO_STORE_HEADERS })
+      const allowedTags = new Set<string>(CALL_REVIEW_TAGS)
+      const tags = Array.isArray(body?.tags) ? body.tags.map(text).filter((tag) => allowedTags.has(tag)) : []
+      updatedMetadata = mergeCallReviewWorkflow(activityRow.metadata, {
+        status: 'submitted',
+        framework: framework.id,
+        submittedAt: now,
+        submittedBy: email,
+        assignedReviewer,
+        tags,
+        submissionNote: note,
+      })
+      const reviewerName = CALL_REVIEWERS.find((reviewer) => reviewer.email === assignedReviewer)?.name || assignedReviewer
+      description = `Call submitted to ${reviewerName} for review — ${framework.label}`
+    } else {
+      if (existing.status !== 'submitted') return NextResponse.json({ error: 'Submit the call before completing its review' }, { status: 409, headers: NO_STORE_HEADERS })
+      if (existing.assignedReviewer !== email && !(await isCurrentUserAdmin())) {
+        return NextResponse.json({ error: 'This review is assigned to another reviewer' }, { status: 403, headers: NO_STORE_HEADERS })
+      }
+      const supplied = record(body?.answers)
+      const itemIds = framework.sections.flatMap((section) => section.items.map((item) => item.id))
+      const answers = Object.fromEntries(itemIds.map((id) => {
+        const value = Number(supplied[id])
+        return [id, Number.isFinite(value) ? Math.min(3, Math.max(0, Math.round(value))) : 0]
+      }))
+      const score = itemIds.length ? Math.round((Object.values(answers).reduce((sum, value) => sum + value, 0) / itemIds.length) * 100) / 100 : 0
+      const voiceoverPath = text(body?.voiceoverPath)
+      const voiceoverMimeType = text(body?.voiceoverMimeType)
+      if (voiceoverPath && !voiceoverPath.startsWith(`call-review-voiceovers/${activityRow.id}/`)) {
+        return NextResponse.json({ error: 'Invalid coaching voiceover attachment' }, { status: 400, headers: NO_STORE_HEADERS })
+      }
+      updatedMetadata = mergeCallReviewWorkflow(activityRow.metadata, {
+        status: 'completed',
+        framework: framework.id,
+        completedAt: now,
+        completedBy: email,
+        score,
+        answers,
+        reviewNote: note,
+        voiceoverPath: voiceoverPath || null,
+        voiceoverMimeType: voiceoverMimeType || null,
+      })
+      description = `Scorecard completed — ${framework.label}: ${score}/3`
+    }
+    const resolvedActivityId = activityRow.id
+    const { error: workflowUpdateError } = await db.from('lead_activities').update({ metadata: updatedMetadata }).eq('id', resolvedActivityId)
+    if (workflowUpdateError) return NextResponse.json({ error: workflowUpdateError.message }, { status: 500, headers: NO_STORE_HEADERS })
+    if (activityRow.lead_id) {
+      await db.from('lead_activities').insert({
+        lead_id: activityRow.lead_id,
+        activity_type: 'note',
+        description: `${description}${note ? ` — ${note}` : ''}`,
+        agent: email,
+        metadata: { source: 'call_review_workflow', call_activity_id: resolvedActivityId, action, framework: framework.id, assigned_reviewer: readCallReviewWorkflow(updatedMetadata).assignedReviewer },
+      })
+    }
+    return NextResponse.json({ ok: true, activityId: resolvedActivityId, action, workflow: readCallReviewWorkflow(updatedMetadata) }, { headers: NO_STORE_HEADERS })
+  }
+
   const typedOutcome = outcome as RecordingReviewOutcome
   const updatedMetadata = mergeRecordingReviewMetadata((activity as LeadActivityRow).metadata, {
     outcome: typedOutcome,
@@ -341,7 +433,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: updateError.message }, { status: 500, headers: NO_STORE_HEADERS })
   }
 
-  const activityRow = activity as LeadActivityRow
   if (activityRow.lead_id) {
     const label = typedOutcome.replace(/_/g, ' ')
     const { error: noteError } = await db.from('lead_activities').insert({

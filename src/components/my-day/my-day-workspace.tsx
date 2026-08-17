@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
 import { CaseyAndonQueue } from '@/components/my-day/casey-andon-queue'
+import { MyDayCallReview } from '@/components/my-day/my-day-call-review'
 import { MY_DAY_TIME_ZONE, type MyDayData, type MyDayMetric, type MyDayQueueItem } from '@/lib/my-day'
 import { cn } from '@/lib/utils'
 
@@ -265,19 +266,24 @@ export function MyDayWorkspace({ initialData }: { initialData: MyDayData }) {
   const [data, setData] = useState(initialData)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [scorecardActive, setScorecardActive] = useState(false)
   const months = useMemo(() => monthOptions(initialData.month), [initialData.month])
 
-  useEffect(() => setData(initialData), [initialData])
+  useEffect(() => {
+    void Promise.resolve().then(() => setData(initialData))
+  }, [initialData])
 
   useEffect(() => {
-    const refresh = () => router.refresh()
+    const refresh = () => {
+      if (!scorecardActive) router.refresh()
+    }
     const interval = window.setInterval(refresh, 60_000)
     window.addEventListener('focus', refresh)
     return () => {
       window.clearInterval(interval)
       window.removeEventListener('focus', refresh)
     }
-  }, [router])
+  }, [router, scorecardActive])
 
   async function changeMonth(month: string, force = false) {
     if (!force && month === data.month) return
@@ -325,6 +331,7 @@ export function MyDayWorkspace({ initialData }: { initialData: MyDayData }) {
       {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void changeMonth(data.month, true)} className="underline">Retry</button></div> : null}
       <FunnelCard metrics={data.funnel} />
       <WeeklySnapshot data={data} />
+      <MyDayCallReview onReviewActiveChange={setScorecardActive} />
       <CaseyAndonQueue />
       {loading ? <div role="status" aria-live="polite" className="absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-[var(--crm-canvas)]/70 backdrop-blur-[1px]"><span className="rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2 text-xs font-black shadow-lg">Loading Casey’s month…</span></div> : null}
     </main>

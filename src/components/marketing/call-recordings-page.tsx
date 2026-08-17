@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CALL_REVIEW_FRAMEWORKS, CALL_REVIEW_TAGS, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
 import type { RecordingReviewOutcome, StoredRecordingReviewOutcome } from '@/lib/marketing/call-recordings'
 
 type RecordingSummary = {
@@ -48,6 +49,7 @@ type CallRecordingItem = {
   analysisSummary: string | null
   classification: string | null
   opportunityScore: number | null
+  reviewWorkflow: { status: 'available' | 'submitted' | 'completed'; framework: CallReviewFrameworkId | null; assignedReviewer: string | null; score: number | null; tags: string[] }
 }
 
 type CallRecordingsResponse = {
@@ -59,6 +61,7 @@ type CallRecordingsResponse = {
   }
   summary: RecordingSummary
   recordings: CallRecordingItem[]
+  reviewers: Array<{ name: string; email: string }>
 }
 
 type RecordingFilter = 'all' | 'needs_review' | 'google_ads' | 'seller' | 'spam' | 'follow_up'
@@ -146,6 +149,9 @@ export function CallRecordingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [reviewerByCall, setReviewerByCall] = useState<Record<string, string>>({})
+  const [frameworkByCall, setFrameworkByCall] = useState<Record<string, CallReviewFrameworkId>>({})
+  const [tagsByCall, setTagsByCall] = useState<Record<string, string[]>>({})
 
   const loadRecordings = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
@@ -167,7 +173,7 @@ export function CallRecordingsPage() {
 
   useEffect(() => {
     const controller = new AbortController()
-    void loadRecordings(controller.signal)
+    void Promise.resolve().then(() => loadRecordings(controller.signal))
     return () => controller.abort()
   }, [loadRecordings])
 
@@ -198,6 +204,29 @@ export function CallRecordingsPage() {
     }
   }
 
+  async function submitForCoaching(row: CallRecordingItem) {
+    const assignedReviewer = reviewerByCall[row.id] || data?.reviewers[0]?.email
+    if (!assignedReviewer) return setError('No reviewer is available.')
+    setPendingId(row.id)
+    setError(null)
+    try {
+      const response = await fetch('/api/marketing/call-recordings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activityId: row.id, action: 'submit', assignedReviewer, framework: frameworkByCall[row.id] || 'junior_acquisitions', tags: tagsByCall[row.id] || [], note: notes[row.id] || '' }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(payload?.error || `Submission failed (${response.status})`)
+      }
+      await loadRecordings()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setPendingId(null)
+    }
+  }
+
   const summary = data?.summary
 
   return (
@@ -207,9 +236,9 @@ export function CallRecordingsPage() {
         <div className="recording-wrap">
           <header className="recording-header">
             <div>
-              <Link className="back-link" href="/marketing/google-ads">Google Ads</Link>
-              <h1>Call Recording Review</h1>
-              <p>Seller-call recordings over {formatDuration(minDuration)} from the last {days} days.</p>
+              <Link className="back-link" href="/my-day">My Day</Link>
+              <h1>Call Recordings</h1>
+              <p>Tag recorded calls, select a scorecard and reviewer, then submit only the calls that need review.</p>
             </div>
             <button className="refresh-button" type="button" onClick={() => loadRecordings()} disabled={loading}>
               {loading ? 'Refreshing' : 'Refresh'}
@@ -307,6 +336,21 @@ export function CallRecordingsPage() {
                         ))}
                       </div>
                     </div>
+                    <div className="review-line coaching-line">
+                      <select aria-label={`Scorecard for ${row.leadName}`} disabled={row.reviewWorkflow.status !== 'available'} value={row.reviewWorkflow.framework || frameworkByCall[row.id] || 'junior_acquisitions'} onChange={(event) => setFrameworkByCall((current) => ({ ...current, [row.id]: event.target.value as CallReviewFrameworkId }))}>
+                        {CALL_REVIEW_FRAMEWORKS.map((framework) => <option key={framework.id} value={framework.id}>{framework.label}</option>)}
+                      </select>
+                      <select aria-label={`Reviewer for ${row.leadName}`} disabled={row.reviewWorkflow.status !== 'available'} value={reviewerByCall[row.id] || data?.reviewers[0]?.email || ''} onChange={(event) => setReviewerByCall((current) => ({ ...current, [row.id]: event.target.value }))}>
+                        {(data?.reviewers || []).map((reviewer) => <option key={reviewer.email} value={reviewer.email}>{reviewer.name}</option>)}
+                      </select>
+                      <button className="review-button tone-blue" type="button" disabled={pendingId === row.id || row.reviewWorkflow.status !== 'available'} onClick={() => submitForCoaching(row)}>
+                        {row.reviewWorkflow.status === 'submitted' ? `Assigned to ${row.reviewWorkflow.assignedReviewer}` : row.reviewWorkflow.status === 'completed' ? `Reviewed ${row.reviewWorkflow.score ?? 0}%` : 'Submit for coaching'}
+                      </button>
+                    </div>
+                    {row.reviewWorkflow.status === 'available' ? <div className="flex flex-wrap gap-2">{CALL_REVIEW_TAGS.map((tag) => {
+                      const selected = (tagsByCall[row.id] || []).includes(tag)
+                      return <button key={tag} type="button" onClick={() => setTagsByCall((current) => ({ ...current, [row.id]: selected ? (current[row.id] || []).filter((value) => value !== tag) : [...(current[row.id] || []), tag] }))} className={`review-button ${selected ? 'tone-blue' : ''}`}>{tag}</button>
+                    })}</div> : <div className="flex flex-wrap gap-2">{row.reviewWorkflow.tags.map((tag) => <span key={tag} className="source-pill">{tag}</span>)}</div>}
                   </div>
 
                   <aside className="row-side">
@@ -407,6 +451,9 @@ const CALL_RECORDINGS_STYLES = `
 .review-line { display: grid; grid-template-columns: minmax(230px, .42fr) minmax(0, 1fr); gap: 10px; align-items: center; }
 .review-line input { width: 100%; min-height: 38px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.24); color: #fff; border-radius: 10px; padding: 0 12px; outline: none; font-size: 13px; }
 .review-line input:focus { border-color: rgba(227,46,46,.7); box-shadow: 0 0 0 3px rgba(227,46,46,.14); }
+.coaching-line { grid-template-columns: minmax(190px, .6fr) minmax(150px, .45fr) minmax(160px, .45fr); }
+.coaching-line select { width: 100%; min-height: 38px; border: 1px solid rgba(255,255,255,.12); background: #171717; color: #fff; border-radius: 10px; padding: 0 10px; outline: none; font-size: 12px; font-weight: 800; }
+.coaching-line select:focus { border-color: rgba(96,165,250,.7); box-shadow: 0 0 0 3px rgba(96,165,250,.12); }
 .review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .review-button { min-height: 34px; padding: 0 11px; font-size: 12px; }
 .review-button.tone-green { color: #bbf7d0; border-color: rgba(34,197,94,.3); background: rgba(34,197,94,.1); }
@@ -437,6 +484,7 @@ const CALL_RECORDINGS_STYLES = `
   .recording-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .row-title,
   .review-line { grid-template-columns: 1fr; display: grid; }
+  .coaching-line { grid-template-columns: 1fr; }
   .row-badges { justify-content: flex-start; }
   .segmented.wide { overflow-x: auto; flex-wrap: nowrap; }
 }
