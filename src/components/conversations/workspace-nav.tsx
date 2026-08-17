@@ -19,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] },
   { label: 'Calendar', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
   { label: 'Dialer', icon: 'dialpad', href: '/dialer', activeOn: ['/dialer'] },
+  { label: 'Scorecard', icon: 'fact_check', href: '/scorecard', activeOn: ['/scorecard'] },
   { label: 'Task', icon: 'checklist', href: '/tasks', activeOn: ['/tasks'] },
   { label: 'Reports', icon: 'bar_chart', href: '/reports/acquisitions', activeOn: ['/reports/acquisitions', '/reports/dispositions', '/reports/marketing', '/reports/finance', '/reports/call-sms'] },
   { label: 'Settings', icon: 'settings', href: '/settings', activeOn: ['/settings'] },
@@ -26,7 +27,7 @@ const NAV_ITEMS: NavItem[] = [
 
 const CASEY_NAV_ITEMS: NavItem[] = [
   { label: 'My Day', icon: 'today', href: '/my-day', activeOn: ['/my-day'] },
-  ...NAV_ITEMS.filter((item) => ['Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings'].includes(item.label)),
+  ...NAV_ITEMS.filter((item) => ['Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Scorecard', 'Task', 'Settings'].includes(item.label)),
 ]
 
 function isItemActive(item: NavItem, pathname: string) {

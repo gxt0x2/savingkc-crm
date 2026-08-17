@@ -31,7 +31,8 @@ export type CallReviewWorkflow = {
   completedAt: string | null
   completedBy: string | null
   score: number | null
-  answers: Record<string, boolean>
+  answers: Record<string, number>
+  tags: string[]
   reviewNote: string | null
 }
 
@@ -125,7 +126,12 @@ export function readCallReviewWorkflow(metadata: unknown): CallReviewWorkflow {
     completedAt: text(workflow.completed_at) || null,
     completedBy: text(workflow.completed_by) || null,
     score: numberValue(workflow.score),
-    answers: Object.fromEntries(Object.entries(rawAnswers).filter(([, value]) => typeof value === 'boolean')) as Record<string, boolean>,
+    answers: Object.fromEntries(Object.entries(rawAnswers).flatMap(([key, value]) => {
+      if (typeof value === 'boolean') return [[key, value ? 3 : 0]]
+      const parsed = numberValue(value)
+      return parsed === null ? [] : [[key, Math.min(3, Math.max(0, Math.round(parsed)))]]
+    })) as Record<string, number>,
+    tags: Array.isArray(workflow.tags) ? workflow.tags.filter((tag): tag is string => typeof tag === 'string' && Boolean(tag.trim())) : [],
     reviewNote: text(workflow.review_note) || null,
   }
 }
@@ -144,6 +150,7 @@ export function mergeCallReviewWorkflow(metadata: unknown, workflow: Partial<Cal
     completed_by: workflow.completedBy,
     score: workflow.score,
     answers: workflow.answers,
+    tags: workflow.tags,
     review_note: workflow.reviewNote,
   }
   return { ...meta, call_review: { ...current, ...Object.fromEntries(Object.entries(keys).filter(([, value]) => value !== undefined)) } }

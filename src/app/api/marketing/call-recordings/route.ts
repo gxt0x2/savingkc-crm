@@ -4,7 +4,7 @@ import { formatPhone } from '@/lib/format'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { cleanDeadReason } from '@/lib/lead-outcomes'
 import { CALL_REVIEWERS, isCallReviewer } from '@/lib/call-review-reviewers'
-import { getCallReviewFramework } from '@/lib/call-review-frameworks'
+import { CALL_REVIEW_TAGS, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import {
   buildRecordingSummary,
   compactTranscript,
@@ -108,7 +108,7 @@ function previewTestReview(): CallRecordingItem {
     createdAt: new Date().toISOString(), campaign: null, trafficSource: 'preview_test', trackingNumber: null, phoneProfile: 'Casey', isGoogleAds: false, outcome: 'unreviewed', reviewNote: null, reviewedAt: null, reviewedBy: null,
     transcript: 'This is a preview-only test review. Use it to submit a framework, complete the scorecard, and verify the workflow.', transcriptActivityId: null,
     analysisSummary: 'Test coaching opportunity: confirm motivation, timeline, decision makers, and a committed next step.',
-    reviewWorkflow: { status: 'available', framework: null, submittedAt: null, submittedBy: null, assignedReviewer: null, submissionNote: null, completedAt: null, completedBy: null, score: null, answers: {}, reviewNote: null },
+    reviewWorkflow: { status: 'available', framework: null, submittedAt: null, submittedBy: null, assignedReviewer: null, submissionNote: null, completedAt: null, completedBy: null, score: null, answers: {}, tags: [], reviewNote: null },
   }
 }
 
@@ -321,7 +321,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS })
   }
 
-  const body = await req.json().catch(() => null) as { activityId?: unknown; recordingSid?: unknown; action?: unknown; outcome?: unknown; note?: unknown; framework?: unknown; answers?: unknown; assignedReviewer?: unknown } | null
+  const body = await req.json().catch(() => null) as { activityId?: unknown; recordingSid?: unknown; action?: unknown; outcome?: unknown; note?: unknown; framework?: unknown; answers?: unknown; tags?: unknown; assignedReviewer?: unknown } | null
   const activityId = text(body?.activityId)
   const recordingSid = text(body?.recordingSid)
   const action = text(body?.action)
@@ -359,12 +359,15 @@ export async function PATCH(req: NextRequest) {
     if (action === 'submit') {
       const assignedReviewer = text(body?.assignedReviewer).toLowerCase()
       if (!isCallReviewer(assignedReviewer)) return NextResponse.json({ error: 'Select a valid reviewer' }, { status: 400, headers: NO_STORE_HEADERS })
+      const allowedTags = new Set<string>(CALL_REVIEW_TAGS)
+      const tags = Array.isArray(body?.tags) ? body.tags.map(text).filter((tag) => allowedTags.has(tag)) : []
       updatedMetadata = mergeCallReviewWorkflow(activityRow.metadata, {
         status: 'submitted',
         framework: framework.id,
         submittedAt: now,
         submittedBy: email,
         assignedReviewer,
+        tags,
         submissionNote: note,
       })
       const reviewerName = CALL_REVIEWERS.find((reviewer) => reviewer.email === assignedReviewer)?.name || assignedReviewer
@@ -376,8 +379,11 @@ export async function PATCH(req: NextRequest) {
       }
       const supplied = record(body?.answers)
       const itemIds = framework.sections.flatMap((section) => section.items.map((item) => item.id))
-      const answers = Object.fromEntries(itemIds.map((id) => [id, supplied[id] === true]))
-      const score = itemIds.length ? Math.round((Object.values(answers).filter(Boolean).length / itemIds.length) * 100) : 0
+      const answers = Object.fromEntries(itemIds.map((id) => {
+        const value = Number(supplied[id])
+        return [id, Number.isFinite(value) ? Math.min(3, Math.max(0, Math.round(value))) : 0]
+      }))
+      const score = itemIds.length ? Math.round((Object.values(answers).reduce((sum, value) => sum + value, 0) / itemIds.length) * 100) / 100 : 0
       updatedMetadata = mergeCallReviewWorkflow(activityRow.metadata, {
         status: 'completed',
         framework: framework.id,
@@ -387,7 +393,7 @@ export async function PATCH(req: NextRequest) {
         answers,
         reviewNote: note,
       })
-      description = `Call review completed — ${framework.label}: ${score}%`
+      description = `Scorecard completed — ${framework.label}: ${score}/3`
     }
     const resolvedActivityId = activityRow.id
     const { error: workflowUpdateError } = await db.from('lead_activities').update({ metadata: updatedMetadata }).eq('id', resolvedActivityId)

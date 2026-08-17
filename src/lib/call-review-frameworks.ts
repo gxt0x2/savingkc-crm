@@ -6,17 +6,27 @@ export type CallReviewFramework = {
   sections: Array<{ label: string; items: Array<{ id: string; label: string }> }>
 }
 
+export const CALL_REVIEW_TAGS = ['Great Call', 'Needs Coaching', 'Motivation', 'Property Condition', 'Timeline', 'Price', 'Objections', 'Appointment Setting'] as const
+
+export const CALL_SCORE_RUBRIC = [
+  { value: 0, label: 'Missed', description: 'Not demonstrated' },
+  { value: 1, label: 'Attempted', description: 'Attempted but incomplete or inconsistent' },
+  { value: 2, label: 'Meets Standard', description: 'Clear, complete, and effective' },
+  { value: 3, label: 'Excellent', description: 'Intentional, natural, and repeatable' },
+] as const
+
 export const CALL_REVIEW_FRAMEWORKS: CallReviewFramework[] = [
   {
     id: 'junior_acquisitions',
     label: 'Jr. Acquisitions Scorecard',
     sections: [
       { label: 'Introduction', items: [['seller_name', 'Used seller’s name'], ['rep_name', 'Introduced themselves'], ['permission', 'Asked permission to continue']] },
-      { label: 'Motivation / Discovery', items: [['why_now', 'Asked why now'], ['deeper_one', 'Asked one question deeper'], ['deeper_two', 'Asked one question more'], ['whats_next', 'Asked what happens next'], ['understanding', 'Demonstrated understanding'], ['occupancy', 'Confirmed occupied or vacant'], ['condition', 'Explored overall condition']] },
+      { label: 'Motivation / Discovery', items: [['why_now', 'Asked why now'], ['deeper_one', 'Asked one question deeper'], ['deeper_two', 'Asked one question more'], ['whats_next', 'Asked what happens next'], ['understanding', 'Demonstrated understanding']] },
+      { label: 'Property Condition', items: [['occupancy', 'Confirmed occupied or vacant'], ['condition', 'Explored overall condition'], ['trouble_areas', 'Identified trouble areas or issues']] },
       { label: 'Timeline & Price', items: [['timeline', 'Established desired timeline'], ['timing_reason', 'Asked what makes now right'], ['liens', 'Covered mortgage, taxes, and liens'], ['price_three', 'Asked for price thoroughly'], ['walkaway', 'Asked needed walk-away amount'], ['price_received', 'Received a price']] },
       { label: 'Decision Process', items: [['decision_makers', 'Confirmed all decision makers'], ['other_options', 'Explored agents and investors'], ['push_away', 'Used a push-away'], ['why_us', 'Asked why SavingKC'], ['blockers', 'Identified remaining blockers']] },
       { label: 'Summary & Solution', items: [['primary_pain', 'Summarized primary motivation'], ['secondary_pain', 'Summarized secondary motivation'], ['desired_outcome', 'Confirmed desired outcome'], ['commitment', 'Acknowledged commitment'], ['next_step', 'Clearly stated the next step']] },
-      { label: 'Appointment Setting', items: [['date_time', 'Confirmed date and time'], ['before_next', 'Defined what happens before next contact'], ['next_conversation', 'Defined next conversation'], ['questions_thanks', 'Invited questions and thanked seller']] },
+      { label: 'Appointment Setting', items: [['date_time', 'Confirmed date and time'], ['before_next', 'Defined what happens before next contact'], ['when_happens', 'Confirmed when required actions will happen'], ['next_conversation', 'Defined what happens in the next conversation'], ['questions_thanks', 'Invited questions and thanked seller']] },
     ].map((section) => ({ ...section, items: section.items.map(([id, label]) => ({ id, label })) })),
   },
   {
@@ -35,4 +45,3 @@ export const CALL_REVIEW_FRAMEWORKS: CallReviewFramework[] = [
 export function getCallReviewFramework(value: unknown): CallReviewFramework | null {
   return CALL_REVIEW_FRAMEWORKS.find((framework) => framework.id === value) ?? null
 }
-

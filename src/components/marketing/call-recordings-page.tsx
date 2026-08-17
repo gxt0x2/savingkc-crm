@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CALL_REVIEW_FRAMEWORKS, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
+import { CALL_REVIEW_FRAMEWORKS, CALL_REVIEW_TAGS, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
 import type { RecordingReviewOutcome, StoredRecordingReviewOutcome } from '@/lib/marketing/call-recordings'
 
 type RecordingSummary = {
@@ -49,7 +49,7 @@ type CallRecordingItem = {
   analysisSummary: string | null
   classification: string | null
   opportunityScore: number | null
-  reviewWorkflow: { status: 'available' | 'submitted' | 'completed'; framework: CallReviewFrameworkId | null; assignedReviewer: string | null; score: number | null }
+  reviewWorkflow: { status: 'available' | 'submitted' | 'completed'; framework: CallReviewFrameworkId | null; assignedReviewer: string | null; score: number | null; tags: string[] }
 }
 
 type CallRecordingsResponse = {
@@ -151,6 +151,7 @@ export function CallRecordingsPage() {
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [reviewerByCall, setReviewerByCall] = useState<Record<string, string>>({})
   const [frameworkByCall, setFrameworkByCall] = useState<Record<string, CallReviewFrameworkId>>({})
+  const [tagsByCall, setTagsByCall] = useState<Record<string, string[]>>({})
 
   const loadRecordings = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
@@ -212,7 +213,7 @@ export function CallRecordingsPage() {
       const response = await fetch('/api/marketing/call-recordings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activityId: row.id, action: 'submit', assignedReviewer, framework: frameworkByCall[row.id] || 'junior_acquisitions', note: notes[row.id] || '' }),
+        body: JSON.stringify({ activityId: row.id, action: 'submit', assignedReviewer, framework: frameworkByCall[row.id] || 'junior_acquisitions', tags: tagsByCall[row.id] || [], note: notes[row.id] || '' }),
       })
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: string } | null
@@ -235,9 +236,9 @@ export function CallRecordingsPage() {
         <div className="recording-wrap">
           <header className="recording-header">
             <div>
-              <Link className="back-link" href="/marketing/google-ads">Google Ads</Link>
-              <h1>Call Recording Review</h1>
-              <p>Seller-call recordings over {formatDuration(minDuration)} from the last {days} days.</p>
+              <Link className="back-link" href="/my-day">My Day</Link>
+              <h1>Scorecard</h1>
+              <p>Tag recorded calls, select a scorecard and reviewer, then submit only the calls that need review.</p>
             </div>
             <button className="refresh-button" type="button" onClick={() => loadRecordings()} disabled={loading}>
               {loading ? 'Refreshing' : 'Refresh'}
@@ -346,6 +347,10 @@ export function CallRecordingsPage() {
                         {row.reviewWorkflow.status === 'submitted' ? `Assigned to ${row.reviewWorkflow.assignedReviewer}` : row.reviewWorkflow.status === 'completed' ? `Reviewed ${row.reviewWorkflow.score ?? 0}%` : 'Submit for coaching'}
                       </button>
                     </div>
+                    {row.reviewWorkflow.status === 'available' ? <div className="flex flex-wrap gap-2">{CALL_REVIEW_TAGS.map((tag) => {
+                      const selected = (tagsByCall[row.id] || []).includes(tag)
+                      return <button key={tag} type="button" onClick={() => setTagsByCall((current) => ({ ...current, [row.id]: selected ? (current[row.id] || []).filter((value) => value !== tag) : [...(current[row.id] || []), tag] }))} className={`review-button ${selected ? 'tone-blue' : ''}`}>{tag}</button>
+                    })}</div> : <div className="flex flex-wrap gap-2">{row.reviewWorkflow.tags.map((tag) => <span key={tag} className="source-pill">{tag}</span>)}</div>}
                   </div>
 
                   <aside className="row-side">
