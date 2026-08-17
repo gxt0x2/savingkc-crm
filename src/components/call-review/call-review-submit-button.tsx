@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { DEFAULT_CALL_REVIEWER } from '@/lib/call-review-reviewers'
+import { savePreviewCallReviewSubmission } from '@/lib/call-review-preview-queue'
 
 const DEFAULT_FRAMEWORK = 'junior_acquisitions'
 
-export function CallReviewSubmitButton({ activityId, recordingSid }: { activityId?: string; recordingSid?: string }) {
+export function CallReviewSubmitButton({ activityId, recordingSid, recordingUrl, durationSeconds = 0 }: { activityId?: string; recordingSid?: string; recordingUrl?: string; durationSeconds?: number }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
@@ -24,7 +25,18 @@ export function CallReviewSubmitButton({ activityId, recordingSid }: { activityI
           assignedReviewer: DEFAULT_CALL_REVIEWER.email,
         }),
       })
-      const payload = await response.json().catch(() => null) as { error?: string } | null
+      const payload = await response.json().catch(() => null) as { error?: string; previewReadOnly?: boolean } | null
+      if (!response.ok && payload?.previewReadOnly && recordingUrl) {
+        savePreviewCallReviewSubmission(window.localStorage, {
+          activityId: activityId || null,
+          recordingSid: recordingSid || null,
+          recordingUrl,
+          durationSeconds: Math.max(0, Math.round(durationSeconds)),
+          submittedAt: new Date().toISOString(),
+        })
+        setMessage(`Preview submission saved. Open My Day to review it.`)
+        return
+      }
       if (!response.ok) throw new Error(payload?.error || 'Call could not be submitted.')
       setMessage(`Sent to ${DEFAULT_CALL_REVIEWER.name} for review.`)
     } catch (error) {

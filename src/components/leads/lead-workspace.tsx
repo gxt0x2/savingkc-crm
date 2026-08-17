@@ -1002,7 +1002,7 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
         {isCall ? recordingUrl ? (
           <><audio className="mt-3 w-full accent-[var(--crm-brand)]" controls preload="metadata" src={recordingUrl}>
             Your browser does not support call recording playback.
-          </audio><CallReviewSubmitButton activityId={activity.id} /></>
+          </audio><CallReviewSubmitButton activityId={activity.id} recordingUrl={recordingUrl} /></>
         ) : (
           <div className="mt-3 flex items-center gap-2 rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs font-semibold text-[var(--crm-text-muted)]">
             <Icon name="phone_in_talk" className="text-[17px] text-[var(--crm-brand)]" />

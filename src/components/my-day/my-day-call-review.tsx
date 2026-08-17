@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { CALL_SCORE_RUBRIC, getCallReviewFramework, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
-
+import { readPreviewCallReviewQueue, readPreviewCallReviewResult, savePreviewCallReviewResult } from '@/lib/call-review-preview-queue'
 type Workflow = {
   status: 'available' | 'submitted' | 'completed'
   framework: CallReviewFrameworkId | null
@@ -47,6 +47,7 @@ type ReviewCall = {
   durationSeconds: number
   analysisSummary: string | null
   reviewWorkflow: Workflow
+  previewLocal?: boolean
 }
 
 type QueueView = 'assigned' | 'completed'
@@ -248,7 +249,35 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
       .then(async (response) => (response.ok ? response.json() : Promise.reject(new Error('Scorecard reviews could not load.'))))
       .then((payload: { recordings: ReviewCall[]; viewerEmail: string }) => {
         const preview = window.location.hostname.endsWith('.vercel.app') || window.location.hostname === 'localhost'
-        const submitted = payload.recordings.filter((call) => call.reviewWorkflow.status !== 'available')
+        const previewCalls: ReviewCall[] = preview
+          ? readPreviewCallReviewQueue(window.localStorage).map((submission) => {
+              const id = submission.activityId || submission.recordingSid || `preview-${submission.submittedAt}`
+              const savedResult = readPreviewCallReviewResult<Workflow>(window.localStorage, id)
+              return {
+                id,
+                leadName: `Preview submitted call${submission.recordingSid ? ` · ${submission.recordingSid.slice(-8)}` : ''}`,
+                recordingUrl: submission.recordingUrl,
+                durationSeconds: submission.durationSeconds,
+                analysisSummary: 'Preview-safe review. Production data was not changed.',
+                previewLocal: true,
+                reviewWorkflow: savedResult || {
+                  status: 'submitted',
+                  framework: 'junior_acquisitions',
+                  score: null,
+                  submittedBy: 'preview-user',
+                  assignedReviewer: payload.viewerEmail,
+                  tags: ['Preview'],
+                  aiStatus: 'failed',
+                  aiError: 'AI pre-scoring runs after production submission. This preview copy can be scored manually.',
+                },
+              }
+            })
+          : []
+        const previewIds = new Set(previewCalls.map((call) => call.id))
+        const submitted = [
+          ...previewCalls,
+          ...payload.recordings.filter((call) => call.reviewWorkflow.status !== 'available' && !previewIds.has(call.id)),
+        ]
         setCalls(preview && !submitted.some((call) => call.id === 'test-review-preview') ? [testCall(payload.viewerEmail, savedTestWorkflow()), ...submitted] : submitted)
         setViewerEmail(payload.viewerEmail || '')
       })
@@ -296,7 +325,7 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
   }
 
   async function retryAiScore(call: ReviewCall) {
-    if (call.id === 'test-review-preview') return
+    if (call.id === 'test-review-preview' || call.previewLocal) return
     setBusy(true)
     setError(null)
     try {
@@ -440,7 +469,7 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
     setError(null)
     try {
       let workflow: Workflow
-      if (call.id === 'test-review-preview') {
+      if (call.id === 'test-review-preview' || call.previewLocal) {
         const preservedVoiceover = voiceoverBlob ? await blobAsDataUrl(voiceoverBlob) : null
         workflow = {
           ...call.reviewWorkflow,
@@ -457,16 +486,12 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
           voiceoverMimeType: voiceoverBlob?.type || null,
         }
         try {
-          window.localStorage.setItem(TEST_REVIEW_STORAGE_KEY, JSON.stringify(workflow))
+          if (call.previewLocal) savePreviewCallReviewResult(window.localStorage, call.id, workflow)
+          else window.localStorage.setItem(TEST_REVIEW_STORAGE_KEY, JSON.stringify(workflow))
         } catch {
-          window.localStorage.setItem(
-            TEST_REVIEW_STORAGE_KEY,
-            JSON.stringify({
-              ...workflow,
-              voiceoverPath: null,
-              voiceoverMimeType: null,
-            }),
-          )
+          const fallback = { ...workflow, voiceoverPath: null, voiceoverMimeType: null }
+          if (call.previewLocal) savePreviewCallReviewResult(window.localStorage, call.id, fallback)
+          else window.localStorage.setItem(TEST_REVIEW_STORAGE_KEY, JSON.stringify(fallback))
         }
       } else {
         let voiceoverPath: string | null = null
@@ -701,7 +726,7 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
                 </div>
                 {reviewing.reviewWorkflow.aiStatus === 'ready' ? (
                   <strong className="rounded-full bg-[var(--crm-info-soft)] px-3 py-1 text-xs text-[var(--crm-info)]">{reviewing.reviewWorkflow.aiScore?.toFixed(2) || '0.00'} / 3</strong>
-                ) : reviewing.reviewWorkflow.aiStatus === 'failed' ? (
+                ) : reviewing.reviewWorkflow.aiStatus === 'failed' && !reviewing.previewLocal ? (
                   <button type="button" disabled={busy} onClick={() => void retryAiScore(reviewing)} className="crm-secondary-button h-9 rounded-lg px-3 text-xs font-black">
                     Retry AI score
                   </button>
