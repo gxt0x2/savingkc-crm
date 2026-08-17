@@ -55,6 +55,8 @@ export async function POST(request: NextRequest) {
   const metadata = {
     protocol,
     checklist,
+    personalGoal: String(body.personalGoal ?? '').trim().slice(0, 1000),
+    personalWhy: String(body.personalWhy ?? '').trim().slice(0, 1000),
     focus: String(body.focus ?? '').trim().slice(0, 500),
     coachingCommitment: String(body.coachingCommitment ?? '').trim().slice(0, 500),
     energy: Math.max(1, Math.min(5, Number(body.energy) || 3)),
