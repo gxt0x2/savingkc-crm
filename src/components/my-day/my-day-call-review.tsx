@@ -27,6 +27,7 @@ type ReviewCall = {
 }
 
 type QueueView = 'assigned' | 'completed'
+type ReviewMode = 'idle' | 'call' | 'comment'
 
 function testCall(viewerEmail: string): ReviewCall {
   return {
@@ -55,12 +56,17 @@ export function MyDayCallReview() {
   const [recordingVoiceover, setRecordingVoiceover] = useState(false)
   const [voiceoverBlob, setVoiceoverBlob] = useState<Blob | null>(null)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
+  const [reviewMode, setReviewMode] = useState<ReviewMode>('idle')
+  const [callPosition, setCallPosition] = useState(0)
+  const [callDuration, setCallDuration] = useState(0)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const originalAudioRef = useRef<HTMLAudioElement | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const callSourceRef = useRef<MediaElementAudioSourceNode | null>(null)
   const mixNodesRef = useRef<AudioNode[]>([])
+  const callGainRef = useRef<GainNode | null>(null)
+  const microphoneGainRef = useRef<GainNode | null>(null)
 
   useEffect(() => {
     void fetch('/api/marketing/call-recordings?days=30&minDuration=30', { cache: 'no-store' })
@@ -122,11 +128,13 @@ export function MyDayCallReview() {
       const callGain = context.createGain()
       const microphoneGain = context.createGain()
       callGain.gain.value = 0.82
-      microphoneGain.gain.value = 1.08
+      microphoneGain.gain.value = 0
       const microphoneSource = context.createMediaStreamSource(stream)
       callSourceRef.current.connect(callGain).connect(destination)
       microphoneSource.connect(microphoneGain).connect(destination)
       mixNodesRef.current = [callGain, microphoneSource, microphoneGain, destination]
+      callGainRef.current = callGain
+      microphoneGainRef.current = microphoneGain
 
       const preferredType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((type) => MediaRecorder.isTypeSupported(type))
       const recorder = new MediaRecorder(destination.stream, preferredType ? { mimeType: preferredType } : undefined)
@@ -142,18 +150,45 @@ export function MyDayCallReview() {
         streamRef.current = null
         recorderRef.current = null
         setRecordingVoiceover(false)
+        setReviewMode('idle')
       }
       streamRef.current = stream
       recorderRef.current = recorder
       recorder.start(1000)
       setRecordingVoiceover(true)
-    } catch {
-      setError('Microphone access is required to record coaching voiceover.')
+      setReviewMode('call')
+      callAudio.currentTime = 0
+      await callAudio.play()
+    } catch (reason) {
+      if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+      setRecordingVoiceover(false)
+      setReviewMode('idle')
+      setError(reason instanceof Error && reason.message === 'Call audio is unavailable.' ? reason.message : 'Microphone access and playable call audio are required to start Review Mode.')
     }
   }
 
   function stopVoiceover() {
+    originalAudioRef.current?.pause()
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
+  }
+
+  function pauseAndComment() {
+    originalAudioRef.current?.pause()
+    if (callGainRef.current && audioContextRef.current) callGainRef.current.gain.setValueAtTime(0, audioContextRef.current.currentTime)
+    if (microphoneGainRef.current && audioContextRef.current) microphoneGainRef.current.gain.setValueAtTime(1.08, audioContextRef.current.currentTime)
+    setReviewMode('comment')
+  }
+
+  async function resumeCall() {
+    if (microphoneGainRef.current && audioContextRef.current) microphoneGainRef.current.gain.setValueAtTime(0, audioContextRef.current.currentTime)
+    if (callGainRef.current && audioContextRef.current) callGainRef.current.gain.setValueAtTime(0.82, audioContextRef.current.currentTime)
+    setReviewMode('call')
+    await originalAudioRef.current?.play()
+  }
+
+  function handleCallEnded() {
+    if (recordingVoiceover) pauseAndComment()
   }
 
   function closeReview() {
@@ -165,6 +200,7 @@ export function MyDayCallReview() {
     audioContextRef.current = null
     callSourceRef.current = null
     setReviewing(null)
+    setReviewMode('idle')
   }
 
   async function completeReview(call: ReviewCall) {
@@ -219,6 +255,6 @@ export function MyDayCallReview() {
       {error ? <p className="m-4 rounded-lg bg-[var(--crm-danger-soft)] p-3 text-xs font-bold text-[var(--crm-danger)]">{error}</p> : null}
       {visibleCalls.length === 0 ? <div className="flex min-h-24 items-center justify-center gap-2 text-sm font-bold text-[var(--crm-text-muted)]"><Icon name="task_alt" className="text-[var(--crm-success)]" />No scorecards in this view</div> : <div className="divide-y divide-[var(--crm-border)]">{visibleCalls.map((call) => <div key={call.id} className="grid items-center gap-3 px-5 py-3 md:grid-cols-[minmax(0,1fr)_210px_220px_125px]"><div><p className="font-black">{call.leadName}</p><p className="text-[11px] text-[var(--crm-text-muted)]">{call.reviewWorkflow.status === 'completed' ? `${call.reviewWorkflow.score ?? 0} / 3 · ${call.reviewWorkflow.completedBy || 'Reviewed'}` : `Submitted for review · ${formatDuration(call.durationSeconds)}`}</p><div className="mt-1 flex flex-wrap gap-1">{call.reviewWorkflow.tags.map((tag) => <span key={tag} className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--crm-info)]">{tag}</span>)}</div></div><audio controls preload="none" src={call.recordingUrl} className="h-8 w-full" /><span className="truncate text-xs font-bold text-[var(--crm-text-muted)]">{getCallReviewFramework(call.reviewWorkflow.framework)?.label || 'Jr. Acquisitions Scorecard'}</span><button disabled={busy || call.reviewWorkflow.status === 'completed'} onClick={() => openReview(call)} className="crm-primary-button h-9 rounded-md px-3 text-xs font-black">{call.reviewWorkflow.status === 'completed' ? 'Complete' : 'Score Call'}</button></div>)}</div>}
     </section>
-    {reviewing && framework ? <div className="fixed inset-0 z-50 flex justify-end bg-black/60"><section role="dialog" aria-modal="true" aria-labelledby="scorecard-title" className="h-full w-full max-w-[760px] overflow-y-auto bg-[var(--crm-surface)] p-5 shadow-2xl"><div className="flex justify-between"><div><p className="crm-eyebrow">{framework.label}</p><h2 id="scorecard-title" className="text-2xl font-black">{reviewing.leadName}</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Rate every behavior from 0 to 3.</p></div><button aria-label="Close scorecard" onClick={closeReview} className="crm-icon-button h-9 w-9 rounded-lg"><Icon name="close" /></button></div><audio ref={originalAudioRef} controls src={reviewing.recordingUrl} className="mt-4 w-full" /><div className="mt-3 rounded-xl border border-[var(--crm-border)] p-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black">Mixed call voiceover</p><p className="text-[11px] text-[var(--crm-text-muted)]">Start recording, then play, pause, or scrub the call above while you coach. Your voice and the call audio are captured together.</p></div>{recordingVoiceover ? <button type="button" onClick={stopVoiceover} className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--crm-danger)] px-3 text-xs font-black text-white"><Icon name="stop_circle" />Stop recording</button> : <button type="button" onClick={() => void startVoiceover()} className="crm-secondary-button inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-black"><Icon name="mic" />{voiceoverBlob ? 'Replace mixed review' : 'Record mixed review'}</button>}</div>{recordingVoiceover ? <p className="mt-3 flex items-center gap-2 text-xs font-black text-[var(--crm-danger)]"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--crm-danger)]" />Recording your microphone and the call audio…</p> : null}{voiceoverUrl ? <audio aria-label="Mixed coaching review preview" controls src={voiceoverUrl} className="mt-3 w-full" /> : null}</div><div className="mt-3 grid grid-cols-4 gap-2">{CALL_SCORE_RUBRIC.map((level) => <div key={level.value} className="rounded-lg border border-[var(--crm-border)] p-2"><strong className="text-xs">{level.value} - {level.label}</strong><p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">{level.description}</p></div>)}</div>{reviewing.analysisSummary ? <p className="mt-3 rounded-lg bg-[var(--crm-info-soft)] p-3 text-sm">{reviewing.analysisSummary}</p> : null}<div className="mt-5 space-y-5">{framework.sections.map((section) => <fieldset key={section.label}><legend className="mb-2 text-sm font-black">{section.label}</legend><div className="space-y-2">{section.items.map((item) => <div key={item.id} className="grid items-center gap-3 rounded-lg border border-[var(--crm-border)] p-3 sm:grid-cols-[minmax(0,1fr)_240px]"><span className="text-sm font-semibold">{item.label}</span><div className="grid grid-cols-4 gap-1" role="radiogroup" aria-label={item.label}>{CALL_SCORE_RUBRIC.map((level) => <label key={level.value} className={`cursor-pointer rounded-md border px-2 py-2 text-center text-xs font-black ${ratings[item.id] === level.value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)]'}`}><input className="sr-only" type="radio" name={item.id} value={level.value} checked={ratings[item.id] === level.value} onChange={() => setRatings((current) => ({ ...current, [item.id]: level.value }))} />{level.value}</label>)}</div></div>)}</div></fieldset>)}</div><label className="mt-5 block text-xs font-black">Coaching note<textarea value={note} onChange={(event) => setNote(event.target.value)} className="crm-field mt-2 min-h-24 w-full rounded-lg p-3 text-sm font-normal" /></label><div className="sticky bottom-0 mt-5 flex items-center justify-between border-t border-[var(--crm-border)] bg-[var(--crm-surface)] py-4"><strong>{liveScore} / 3</strong><button disabled={busy || recordingVoiceover || Object.keys(ratings).length !== itemCount} onClick={() => void completeReview(reviewing)} className="crm-primary-button rounded-lg px-5 py-3 text-sm font-black">Complete Scorecard</button></div></section></div> : null}
+    {reviewing && framework ? <div className="fixed inset-0 z-50 flex justify-end bg-black/60"><section role="dialog" aria-modal="true" aria-labelledby="scorecard-title" className="h-full w-full max-w-[760px] overflow-y-auto bg-[var(--crm-surface)] p-5 shadow-2xl"><div className="flex justify-between"><div><p className="crm-eyebrow">{framework.label}</p><h2 id="scorecard-title" className="text-2xl font-black">{reviewing.leadName}</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Rate every behavior from 0 to 3.</p></div><button aria-label="Close scorecard" onClick={closeReview} className="crm-icon-button h-9 w-9 rounded-lg"><Icon name="close" /></button></div><audio ref={originalAudioRef} controls={!recordingVoiceover} src={reviewing.recordingUrl} onTimeUpdate={(event) => setCallPosition(event.currentTarget.currentTime)} onLoadedMetadata={(event) => setCallDuration(event.currentTarget.duration)} onEnded={handleCallEnded} className="mt-4 w-full" />{recordingVoiceover ? <div className="mt-3 rounded-xl border border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-black text-[var(--crm-brand)]">Review Mode</p><p className="mt-1 text-[11px] text-[var(--crm-text-muted)]">{reviewMode === 'call' ? 'The seller call is playing. Your microphone is muted.' : 'The call is paused. Your coaching commentary is recording.'}</p></div><span className={`h-3 w-3 rounded-full ${reviewMode === 'comment' ? 'animate-pulse bg-[var(--crm-danger)]' : 'bg-[var(--crm-success)]'}`} /></div><input aria-label="Call position" type="range" min={0} max={Math.max(callDuration, 1)} step={0.1} value={callPosition} onChange={(event) => { const value = Number(event.target.value); if (originalAudioRef.current) originalAudioRef.current.currentTime = value; setCallPosition(value) }} className="mt-4 w-full" /><div className="mt-1 flex justify-between text-[10px] font-bold text-[var(--crm-text-muted)]"><span>{formatDuration(Math.floor(callPosition))}</span><span>{formatDuration(Math.floor(callDuration || 0))}</span></div><div className="mt-4 grid grid-cols-2 gap-2">{reviewMode === 'call' ? <button type="button" onClick={pauseAndComment} className="crm-primary-button inline-flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black"><Icon name="mic" />Pause & Comment</button> : <button type="button" onClick={() => void resumeCall()} className="crm-primary-button inline-flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black"><Icon name="play_arrow" />Resume Call</button>}<button type="button" onClick={stopVoiceover} className="crm-secondary-button inline-flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black"><Icon name="stop_circle" />Finish Review</button></div></div> : <div className="mt-3 rounded-xl border border-[var(--crm-border)] p-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black">Guided voice review</p><p className="text-[11px] text-[var(--crm-text-muted)]">The call plays automatically. Pause it to comment, then resume when ready.</p></div><button type="button" onClick={() => void startVoiceover()} className="crm-secondary-button inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-black"><Icon name="mic" />{voiceoverBlob ? 'Replace review' : 'Start Review'}</button></div>{voiceoverUrl ? <audio aria-label="Mixed coaching review preview" controls src={voiceoverUrl} className="mt-3 w-full" /> : null}</div>}<div className="mt-3 grid grid-cols-4 gap-2">{CALL_SCORE_RUBRIC.map((level) => <div key={level.value} className="rounded-lg border border-[var(--crm-border)] p-2"><strong className="text-xs">{level.value} - {level.label}</strong><p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">{level.description}</p></div>)}</div>{reviewing.analysisSummary ? <p className="mt-3 rounded-lg bg-[var(--crm-info-soft)] p-3 text-sm">{reviewing.analysisSummary}</p> : null}<div className="mt-5 space-y-5">{framework.sections.map((section) => <fieldset key={section.label}><legend className="mb-2 text-sm font-black">{section.label}</legend><div className="space-y-2">{section.items.map((item) => <div key={item.id} className="grid items-center gap-3 rounded-lg border border-[var(--crm-border)] p-3 sm:grid-cols-[minmax(0,1fr)_240px]"><span className="text-sm font-semibold">{item.label}</span><div className="grid grid-cols-4 gap-1" role="radiogroup" aria-label={item.label}>{CALL_SCORE_RUBRIC.map((level) => <label key={level.value} className={`cursor-pointer rounded-md border px-2 py-2 text-center text-xs font-black ${ratings[item.id] === level.value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)]'}`}><input className="sr-only" type="radio" name={item.id} value={level.value} checked={ratings[item.id] === level.value} onChange={() => setRatings((current) => ({ ...current, [item.id]: level.value }))} />{level.value}</label>)}</div></div>)}</div></fieldset>)}</div><label className="mt-5 block text-xs font-black">Coaching note<textarea value={note} onChange={(event) => setNote(event.target.value)} className="crm-field mt-2 min-h-24 w-full rounded-lg p-3 text-sm font-normal" /></label><div className="sticky bottom-0 mt-5 flex items-center justify-between border-t border-[var(--crm-border)] bg-[var(--crm-surface)] py-4"><strong>{liveScore} / 3</strong><button disabled={busy || recordingVoiceover || Object.keys(ratings).length !== itemCount} onClick={() => void completeReview(reviewing)} className="crm-primary-button rounded-lg px-5 py-3 text-sm font-black">Complete Scorecard</button></div></section></div> : null}
   </>
 }
