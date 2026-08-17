@@ -32,13 +32,15 @@ type ReviewMode = 'idle' | 'call' | 'comment'
 const TEST_REVIEW_STORAGE_KEY = 'savingkc:test-scorecard-review'
 
 function testCall(viewerEmail: string, savedWorkflow?: Workflow | null): ReviewCall {
+  const framework = getCallReviewFramework('junior_acquisitions')
+  const recoveredAnswers = Object.fromEntries(framework?.sections.flatMap((section) => section.items.map((item) => [item.id, 2])) || [])
   return {
     id: 'test-review-preview',
     leadName: 'TEST SCORECARD - Jordan Seller',
     recordingUrl: '/audio/ivr-voicemail.mp3',
     durationSeconds: 74,
     analysisSummary: 'Confirm motivation, timeline, decision makers, and a committed next step.',
-    reviewWorkflow: savedWorkflow || { status: 'submitted', framework: 'junior_acquisitions', score: null, submittedBy: 'casey@savingkc.com', assignedReviewer: viewerEmail, tags: ['Needs Coaching', 'Motivation'] },
+    reviewWorkflow: savedWorkflow || { status: 'completed', framework: 'junior_acquisitions', score: 2, submittedBy: 'casey@savingkc.com', assignedReviewer: viewerEmail, completedBy: viewerEmail, reviewNote: 'Recovered completed test review.', answers: recoveredAnswers, tags: ['Needs Coaching', 'Motivation'] },
   }
 }
 
