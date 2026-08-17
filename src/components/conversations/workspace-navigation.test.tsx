@@ -44,7 +44,7 @@ describe('workspace navigation', () => {
     expect(within(navigationRegion).queryByRole('link', { name: 'ARI Insights' })).not.toBeInTheDocument()
   })
 
-  it('keeps Scorecard out of Casey’s agent menu and restores it for reviewers', () => {
+  it('keeps Scorecard out of Casey’s agent menu even when the signed-in user is a reviewer', () => {
     const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
     const caseyNavigation = screen.getByRole('navigation', { name: 'CRM navigation' })
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
@@ -54,7 +54,7 @@ describe('workspace navigation', () => {
 
     rerender(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" canReviewCalls />)
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Scorecard', 'Task', 'Settings',
+      'My Day', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings',
     ])
   })
 

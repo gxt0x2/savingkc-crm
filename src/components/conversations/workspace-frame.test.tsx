@@ -70,6 +70,16 @@ describe('WorkspaceFrame route persistence', () => {
     expect(screen.getByRole('button', { name: 'Open phone' })).toBeInTheDocument()
   })
 
+  it('shows the viewed agent profile photo in the persistent header', () => {
+    render(
+      <WorkspaceFrame needsReply={0} userEmail="casey@savingkc.com" profilePhotoUrl="https://example.com/casey.jpg">
+        <main>Casey workspace</main>
+      </WorkspaceFrame>,
+    )
+
+    expect(screen.getByRole('img', { name: 'Casey profile' })).toHaveAttribute('src', 'https://example.com/casey.jpg')
+  })
+
   it('opens the persistent giraffe assistant from the lower-right launcher', () => {
     render(
       <WorkspaceFrame needsReply={0}>
