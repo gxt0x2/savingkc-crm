@@ -29,15 +29,25 @@ type ReviewCall = {
 
 type QueueView = 'assigned' | 'completed'
 type ReviewMode = 'idle' | 'call' | 'comment'
+const TEST_REVIEW_STORAGE_KEY = 'savingkc:test-scorecard-review'
 
-function testCall(viewerEmail: string): ReviewCall {
+function testCall(viewerEmail: string, savedWorkflow?: Workflow | null): ReviewCall {
   return {
     id: 'test-review-preview',
     leadName: 'TEST SCORECARD - Jordan Seller',
     recordingUrl: '/audio/ivr-voicemail.mp3',
     durationSeconds: 74,
     analysisSummary: 'Confirm motivation, timeline, decision makers, and a committed next step.',
-    reviewWorkflow: { status: 'submitted', framework: 'junior_acquisitions', score: null, submittedBy: 'casey@savingkc.com', assignedReviewer: viewerEmail, tags: ['Needs Coaching', 'Motivation'] },
+    reviewWorkflow: savedWorkflow || { status: 'submitted', framework: 'junior_acquisitions', score: null, submittedBy: 'casey@savingkc.com', assignedReviewer: viewerEmail, tags: ['Needs Coaching', 'Motivation'] },
+  }
+}
+
+function savedTestWorkflow() {
+  try {
+    const saved = window.localStorage.getItem(TEST_REVIEW_STORAGE_KEY)
+    return saved ? JSON.parse(saved) as Workflow : null
+  } catch {
+    return null
   }
 }
 
@@ -103,7 +113,7 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
       .then((payload: { recordings: ReviewCall[]; viewerEmail: string }) => {
         const preview = window.location.hostname.endsWith('.vercel.app') || window.location.hostname === 'localhost'
         const submitted = payload.recordings.filter((call) => call.reviewWorkflow.status !== 'available')
-        setCalls(preview && !submitted.some((call) => call.id === 'test-review-preview') ? [testCall(payload.viewerEmail), ...submitted] : submitted)
+        setCalls(preview && !submitted.some((call) => call.id === 'test-review-preview') ? [testCall(payload.viewerEmail, savedTestWorkflow()), ...submitted] : submitted)
         setViewerEmail(payload.viewerEmail || '')
       })
       .catch((reason: Error) => setError(reason.message))
@@ -262,6 +272,11 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
       if (call.id === 'test-review-preview') {
         const preservedVoiceover = voiceoverBlob ? await blobAsDataUrl(voiceoverBlob) : null
         workflow = { ...call.reviewWorkflow, status: 'completed', score: liveScore, completedBy: viewerEmail, reviewNote: note, answers: ratings, voiceoverPath: preservedVoiceover, voiceoverMimeType: voiceoverBlob?.type || null }
+        try {
+          window.localStorage.setItem(TEST_REVIEW_STORAGE_KEY, JSON.stringify(workflow))
+        } catch {
+          window.localStorage.setItem(TEST_REVIEW_STORAGE_KEY, JSON.stringify({ ...workflow, voiceoverPath: null, voiceoverMimeType: null }))
+        }
       } else {
         let voiceoverPath: string | null = null
         let voiceoverMimeType: string | null = null
@@ -285,6 +300,7 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
         workflow = payload.workflow
       }
       setCalls((current) => current.map((item) => item.id === call.id ? { ...item, reviewWorkflow: workflow } : item))
+      setView('completed')
       setReviewing(null)
       setRatings({})
       setNote('')
