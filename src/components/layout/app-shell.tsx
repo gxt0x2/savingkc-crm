@@ -251,54 +251,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function loadProfile() {
-      // The rebuilt workspace renders its signed-in identity from the auth
-      // session and does not use the legacy profile-photo header. Avoid an
-      // unnecessary settings request on every modern CRM first load.
-      if (isConversationWorkspace || !user?.email) return
-      console.log('[AppShell] Loading profile for email:', user.email)
+      const profileEmail = effectiveWorkspaceEmail || user?.email
+      if (!profileEmail) return
+      setProfilePhotoUrl(null)
       try {
-        const res = await fetch(`/api/settings?email=${encodeURIComponent(user.email)}`)
+        const res = await fetch(`/api/settings?email=${encodeURIComponent(profileEmail)}`)
         const data = await res.json()
-        console.log('[AppShell] Profile loaded:', data.profile ? 'Found' : 'Not found')
-        console.log('[AppShell] Has photo URL:', !!data.profile?.profile_photo_url)
 
         if (data.profile?.profile_photo_url) {
-          console.log('[AppShell] Setting profile photo URL')
           setProfilePhotoUrl(data.profile.profile_photo_url)
-        } else if (!data.profile) {
-          console.log('[AppShell] Profile not found, attempting to link')
+        } else if (!data.profile && profileEmail.toLowerCase() === signedInEmail) {
           // Profile not found by email — try linking Google OAuth to existing agent_profile
           const meta = (user as { user_metadata?: { full_name?: string; name?: string; phone?: string } }).user_metadata || {}
           const linkRes = await fetch('/api/auth/link-profile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              email: user.email,
+              email: profileEmail,
               name: meta?.full_name || meta?.name || '',
               phone: meta?.phone || '',
             }),
           })
           if (linkRes.ok) {
-            console.log('[AppShell] Profile linked, retrying load')
             // Retry loading profile after linking
-            const res2 = await fetch(`/api/settings?email=${encodeURIComponent(user.email!)}`)
+            const res2 = await fetch(`/api/settings?email=${encodeURIComponent(profileEmail)}`)
             const data2 = await res2.json()
             if (data2.profile?.profile_photo_url) {
-              console.log('[AppShell] Setting profile photo URL after linking')
               setProfilePhotoUrl(data2.profile.profile_photo_url)
             }
-          } else {
-            console.log('[AppShell] Profile linking failed')
           }
-        } else {
-          console.log('[AppShell] Profile found but no photo URL')
         }
       } catch (err) {
         console.error('[AppShell] Error loading profile:', err)
       }
     }
-    loadProfile()
-  }, [isConversationWorkspace, user])
+    void loadProfile()
+  }, [effectiveWorkspaceEmail, signedInEmail, user])
 
   if (isConversationWorkspace) {
     return (
@@ -306,7 +294,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="min-h-screen bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
         data-theme={userTheme}
       >
-        <WorkspaceFrame userEmail={effectiveWorkspaceEmail} canReviewCalls={canReviewCalls}>
+        <WorkspaceFrame userEmail={effectiveWorkspaceEmail} profilePhotoUrl={profilePhotoUrl} canReviewCalls={canReviewCalls}>
           {shouldRedirectCaseyDashboard ? (
             <div role="status" className="grid min-h-full place-items-center text-sm font-semibold text-[var(--crm-text-muted)]">
               Opening Casey’s My Day…

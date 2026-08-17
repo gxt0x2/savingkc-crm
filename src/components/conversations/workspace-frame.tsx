@@ -58,6 +58,7 @@ export function WorkspaceFrame({
   commandBar,
   hideHeader = false,
   userEmail,
+  profilePhotoUrl,
   canReviewCalls = false,
 }: {
   children: ReactNode
@@ -65,6 +66,7 @@ export function WorkspaceFrame({
   commandBar?: ReactNode
   hideHeader?: boolean
   userEmail?: string | null
+  profilePhotoUrl?: string | null
   canReviewCalls?: boolean
 }) {
   const router = useRouter()
@@ -156,7 +158,12 @@ export function WorkspaceFrame({
             </div>
             <div className="relative">
             <button type="button" onClick={() => setProfileOpen((value) => !value)} aria-expanded={profileOpen} aria-label="Open user menu" className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-[var(--crm-surface-subtle)]">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-xs font-bold text-[var(--crm-surface)]">{userProfile.initials}</div>
+              {profilePhotoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- agent profile photos are user-configured external URLs.
+                <img src={profilePhotoUrl} alt={`${userProfile.displayName} profile`} className="h-9 w-9 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-xs font-bold text-[var(--crm-surface)]">{userProfile.initials}</div>
+              )}
               <span className="text-sm font-semibold text-[var(--crm-ink)]">{userProfile.displayName}</span>
               <Icon name="expand_more" className="text-[var(--crm-text-muted)]" />
             </button>
