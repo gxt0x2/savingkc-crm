@@ -17,6 +17,13 @@
     ],
     "approvedOversizedSources": [
       {
+        "path": "src/components/my-day/my-day-call-review.tsx",
+        "maximumLines": 800,
+        "owner": "Acquisitions",
+        "reason": "The guided audio review and AI pre-score remain consolidated during reviewer validation; freeze growth while the scorecard overlays are extracted into owned components.",
+        "targetDate": "2026-10-31"
+      },
+      {
         "path": "src/app/(app)/dispo/pipeline/page.tsx",
         "maximumLines": 863,
         "owner": "Dispositions",
@@ -147,9 +154,9 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/reports/acquisitions", "/my-day"],
-      "apiRoutes": ["/api/stage/advance", "/api/stage/validate", "/api/my-day"],
+      "apiRoutes": ["/api/stage/advance", "/api/stage/validate", "/api/my-day", "/api/marketing/call-recordings"],
       "tables": ["leads", "lead_stage_history", "offers", "agent_daily_stats"],
-      "environment": []
+      "environment": ["GROQ_API_KEY"]
     },
     {
       "id": "dispositions_tc",

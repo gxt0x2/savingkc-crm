@@ -31,6 +31,27 @@ export type CallReviewWorkflow = {
   completedAt: string | null
   completedBy: string | null
   score: number | null
+  criticalScore: number | null
+  needsCoaching: boolean
+  coachingReasons: string[]
+  scoringVersion: string | null
+  aiStatus: 'idle' | 'processing' | 'ready' | 'failed'
+  aiProcessedAt: string | null
+  aiModel: string | null
+  aiError: string | null
+  aiScore: number | null
+  aiCriticalScore: number | null
+  aiAnswers: Record<
+    string,
+    {
+      score: number
+      confidence: 'low' | 'medium' | 'high'
+      evidence: string
+      timestamp: string | null
+      reasoning: string
+    }
+  >
+  aiCorrections: string[]
   answers: Record<string, number>
   tags: string[]
   reviewNote: string | null
@@ -39,7 +60,7 @@ export type CallReviewWorkflow = {
 }
 
 export function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
 export function text(value: unknown): string {
@@ -59,12 +80,7 @@ export function numberValue(value: unknown): number | null {
 
 export function readRecordingDuration(metadata: unknown): number {
   const meta = record(metadata)
-  return Math.max(0, Math.round(
-    numberValue(meta.duration)
-      ?? numberValue(meta.recordingDuration)
-      ?? numberValue(meta.RecordingDuration)
-      ?? 0,
-  ))
+  return Math.max(0, Math.round(numberValue(meta.duration) ?? numberValue(meta.recordingDuration) ?? numberValue(meta.RecordingDuration) ?? 0))
 }
 
 export function readRecordingSid(metadata: unknown): string {
@@ -118,6 +134,7 @@ export function readCallReviewWorkflow(metadata: unknown): CallReviewWorkflow {
   const rawStatus = text(workflow.status)
   const framework = text(workflow.framework)
   const rawAnswers = record(workflow.answers)
+  const rawAiAnswers = record(workflow.ai_answers)
   return {
     status: rawStatus === 'submitted' || rawStatus === 'completed' ? rawStatus : 'available',
     framework: framework === 'junior_acquisitions' || framework === 'niche' ? framework : null,
@@ -128,11 +145,44 @@ export function readCallReviewWorkflow(metadata: unknown): CallReviewWorkflow {
     completedAt: text(workflow.completed_at) || null,
     completedBy: text(workflow.completed_by) || null,
     score: numberValue(workflow.score),
-    answers: Object.fromEntries(Object.entries(rawAnswers).flatMap(([key, value]) => {
-      if (typeof value === 'boolean') return [[key, value ? 3 : 0]]
-      const parsed = numberValue(value)
-      return parsed === null ? [] : [[key, Math.min(3, Math.max(0, Math.round(parsed)))]]
-    })) as Record<string, number>,
+    criticalScore: numberValue(workflow.critical_score),
+    needsCoaching: workflow.needs_coaching === true,
+    coachingReasons: Array.isArray(workflow.coaching_reasons) ? workflow.coaching_reasons.filter((reason): reason is string => typeof reason === 'string' && Boolean(reason.trim())) : [],
+    scoringVersion: text(workflow.scoring_version) || null,
+    aiStatus: ['processing', 'ready', 'failed'].includes(text(workflow.ai_status)) ? (text(workflow.ai_status) as 'processing' | 'ready' | 'failed') : 'idle',
+    aiProcessedAt: text(workflow.ai_processed_at) || null,
+    aiModel: text(workflow.ai_model) || null,
+    aiError: text(workflow.ai_error) || null,
+    aiScore: numberValue(workflow.ai_score),
+    aiCriticalScore: numberValue(workflow.ai_critical_score),
+    aiAnswers: Object.fromEntries(
+      Object.entries(rawAiAnswers).flatMap(([id, value]) => {
+        const assessment = record(value)
+        const score = numberValue(assessment.score)
+        if (score === null) return []
+        const confidence = text(assessment.confidence)
+        return [
+          [
+            id,
+            {
+              score: Math.min(3, Math.max(0, Math.round(score))),
+              confidence: confidence === 'high' || confidence === 'medium' ? confidence : 'low',
+              evidence: text(assessment.evidence),
+              timestamp: text(assessment.timestamp) || null,
+              reasoning: text(assessment.reasoning),
+            },
+          ],
+        ]
+      }),
+    ),
+    aiCorrections: Array.isArray(workflow.ai_corrections) ? workflow.ai_corrections.filter((id): id is string => typeof id === 'string' && Boolean(id.trim())) : [],
+    answers: Object.fromEntries(
+      Object.entries(rawAnswers).flatMap(([key, value]) => {
+        if (typeof value === 'boolean') return [[key, value ? 3 : 0]]
+        const parsed = numberValue(value)
+        return parsed === null ? [] : [[key, Math.min(3, Math.max(0, Math.round(parsed)))]]
+      }),
+    ) as Record<string, number>,
     tags: Array.isArray(workflow.tags) ? workflow.tags.filter((tag): tag is string => typeof tag === 'string' && Boolean(tag.trim())) : [],
     reviewNote: text(workflow.review_note) || null,
     voiceoverPath: text(workflow.voiceover_path) || null,
@@ -153,13 +203,31 @@ export function mergeCallReviewWorkflow(metadata: unknown, workflow: Partial<Cal
     completed_at: workflow.completedAt,
     completed_by: workflow.completedBy,
     score: workflow.score,
+    critical_score: workflow.criticalScore,
+    needs_coaching: workflow.needsCoaching,
+    coaching_reasons: workflow.coachingReasons,
+    scoring_version: workflow.scoringVersion,
+    ai_status: workflow.aiStatus,
+    ai_processed_at: workflow.aiProcessedAt,
+    ai_model: workflow.aiModel,
+    ai_error: workflow.aiError,
+    ai_score: workflow.aiScore,
+    ai_critical_score: workflow.aiCriticalScore,
+    ai_answers: workflow.aiAnswers,
+    ai_corrections: workflow.aiCorrections,
     answers: workflow.answers,
     tags: workflow.tags,
     review_note: workflow.reviewNote,
     voiceover_path: workflow.voiceoverPath,
     voiceover_mime_type: workflow.voiceoverMimeType,
   }
-  return { ...meta, call_review: { ...current, ...Object.fromEntries(Object.entries(keys).filter(([, value]) => value !== undefined)) } }
+  return {
+    ...meta,
+    call_review: {
+      ...current,
+      ...Object.fromEntries(Object.entries(keys).filter(([, value]) => value !== undefined)),
+    },
+  }
 }
 
 export function mergeRecordingReviewMetadata(
@@ -187,12 +255,7 @@ export function mergeRecordingReviewMetadata(
 
 export function isGoogleAdsCall(metadata: unknown): boolean {
   const meta = record(metadata)
-  return (
-    text(meta.traffic_source).toLowerCase() === 'google_ads'
-    || text(meta.campaign).toLowerCase().includes('search')
-    || text(meta.lead_source).toLowerCase().includes('google_ads')
-    || ['8166088808', '8166086648'].includes(text(meta.tracking_number).replace(/\D/g, ''))
-  )
+  return text(meta.traffic_source).toLowerCase() === 'google_ads' || text(meta.campaign).toLowerCase().includes('search') || text(meta.lead_source).toLowerCase().includes('google_ads') || ['8166088808', '8166086648'].includes(text(meta.tracking_number).replace(/\D/g, ''))
 }
 
 export function compactTranscript(value: unknown, fallback = ''): string {
@@ -200,7 +263,13 @@ export function compactTranscript(value: unknown, fallback = ''): string {
   return raw.replace(/\s+/g, ' ').trim()
 }
 
-export function buildRecordingSummary(items: Array<{ durationSeconds: number; outcome: StoredRecordingReviewOutcome; isGoogleAds: boolean }>): RecordingSummary {
+export function buildRecordingSummary(
+  items: Array<{
+    durationSeconds: number
+    outcome: StoredRecordingReviewOutcome
+    isGoogleAds: boolean
+  }>,
+): RecordingSummary {
   const totalDuration = items.reduce((sum, item) => sum + item.durationSeconds, 0)
   return {
     total: items.length,

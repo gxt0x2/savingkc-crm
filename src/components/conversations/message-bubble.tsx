@@ -319,7 +319,7 @@ function CallCard({ message }: { message: Message }) {
               </div>
             </div>
           ) : null}
-          {message.recordingUrl ? <CallReviewSubmitButton activityId={message.id} recordingSid={message.recordingSid} /> : null}
+          {message.recordingUrl ? <CallReviewSubmitButton activityId={message.id} recordingSid={message.recordingSid} recordingUrl={message.recordingUrl} durationSeconds={duration} /> : null}
         </div>
 
         {/* View Transcript link */}

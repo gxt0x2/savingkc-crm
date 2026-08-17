@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { CALL_SCORE_RUBRIC, getCallReviewFramework, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
+import { CALL_SCORECARD_SCORING_VERSION, scoreCallReview, scorecardCalibrationStatus } from '@/lib/call-review-scoring'
 
 type CompletedWorkflow = {
   status: 'available' | 'submitted' | 'completed'
@@ -14,6 +15,10 @@ type CompletedWorkflow = {
   completedAt: string | null
   completedBy: string | null
   score: number | null
+  criticalScore: number | null
+  needsCoaching: boolean
+  coachingReasons: string[]
+  scoringVersion: string | null
   answers: Record<string, number>
   tags: string[]
   reviewNote: string | null
@@ -63,8 +68,7 @@ function address(call: ScorecardCall) {
 function previewCompletedCall(): ScorecardCall {
   const framework = getCallReviewFramework('junior_acquisitions')!
   const answers = Object.fromEntries(framework.sections.flatMap((section, sectionIndex) => section.items.map((item, itemIndex) => [item.id, (sectionIndex + itemIndex) % 4])))
-  const values = Object.values(answers)
-  const score = Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100
+  const scoring = scoreCallReview(framework, answers)
   return {
     id: 'test-review-preview',
     leadId: null,
@@ -80,7 +84,7 @@ function previewCompletedCall(): ScorecardCall {
     createdAt: new Date().toISOString(),
     analysisSummary: 'Jordan wants to resolve the property within 30 days. Motivation and condition were covered well; price discovery and the committed next step need coaching.',
     reviewWorkflow: {
-      status: 'completed', framework: 'junior_acquisitions', submittedAt: new Date().toISOString(), submittedBy: 'casey@savingkc.com', assignedReviewer: 'ernest@savingkc.com', completedAt: new Date().toISOString(), completedBy: 'ernest@savingkc.com', score, answers, tags: ['Needs Coaching', 'Motivation', 'Price'], reviewNote: 'Strong empathy and discovery. Ask for the price more directly and lock in a specific next conversation date and time.', voiceoverPath: '/audio/ivr-voicemail.mp3', voiceoverMimeType: 'audio/mpeg',
+      status: 'completed', framework: 'junior_acquisitions', submittedAt: new Date().toISOString(), submittedBy: 'casey@savingkc.com', assignedReviewer: 'ernest@savingkc.com', completedAt: new Date().toISOString(), completedBy: 'ernest@savingkc.com', score: scoring.score, criticalScore: scoring.criticalScore, needsCoaching: scoring.needsCoaching, coachingReasons: scoring.coachingReasons, scoringVersion: scoring.scoringVersion, answers, tags: ['Needs Coaching', 'Motivation', 'Price'], reviewNote: 'Strong empathy and discovery. Ask for the price more directly and lock in a specific next conversation date and time.', voiceoverPath: '/audio/ivr-voicemail.mp3', voiceoverMimeType: 'audio/mpeg',
     },
   }
 }
@@ -112,6 +116,9 @@ export function ScorecardResultsPage({ initialExpandedId = null }: { initialExpa
   }, [])
 
   const average = useMemo(() => calls.length ? calls.reduce((sum, call) => sum + (call.reviewWorkflow.score || 0), 0) / calls.length : 0, [calls])
+  const criticalScores = useMemo(() => calls.map((call) => call.reviewWorkflow.criticalScore).filter((score): score is number => typeof score === 'number'), [calls])
+  const averageCritical = criticalScores.length ? criticalScores.reduce((sum, score) => sum + score, 0) / criticalScores.length : 0
+  const calibration = useMemo(() => scorecardCalibrationStatus(calls.filter((call) => call.id !== 'test-review-preview' && call.reviewWorkflow.scoringVersion === CALL_SCORECARD_SCORING_VERSION).length), [calls])
 
   return <main className="mx-auto w-full max-w-[1500px] space-y-5 p-4 md:p-6">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -123,10 +130,15 @@ export function ScorecardResultsPage({ initialExpandedId = null }: { initialExpa
       <Link href="/marketing/calls" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-xs font-black"><Icon name="headphones" />Open Call Recordings</Link>
     </header>
 
-    <section aria-label="Scorecard summary" className="grid gap-3 sm:grid-cols-3">
+    <section aria-label="Scorecard summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <div className="crm-panel rounded-xl p-4"><p className="text-[11px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Completed reviews</p><strong className="mt-1 block text-2xl">{calls.length}</strong></div>
       <div className="crm-panel rounded-xl p-4"><p className="text-[11px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Average score</p><strong className="mt-1 block text-2xl">{average.toFixed(2)} / 3</strong></div>
-      <div className="crm-panel rounded-xl p-4"><p className="text-[11px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Needs coaching</p><strong className="mt-1 block text-2xl">{calls.filter((call) => (call.reviewWorkflow.score || 0) < 2.5).length}</strong></div>
+      <div className="crm-panel rounded-xl p-4"><p className="text-[11px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Critical discovery</p><strong className="mt-1 block text-2xl">{criticalScores.length ? averageCritical.toFixed(2) : '—'} / 3</strong><p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">Motivation, timeline/price, and decision process</p></div>
+      <div className="crm-panel rounded-xl p-4"><p className="text-[11px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Needs coaching</p><strong className="mt-1 block text-2xl">{calls.filter((call) => call.reviewWorkflow.needsCoaching || (call.reviewWorkflow.score || 0) < 2.5).length}</strong></div>
+    </section>
+
+    <section aria-label="Scorecard recalibration" className={`rounded-xl border p-4 ${calibration.due ? 'border-[var(--crm-warning)] bg-[var(--crm-warning-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)]'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black">{calibration.due ? 'Scorecard recalibration due' : 'Scorecard calibration cycle'}</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">{calibration.due ? `${calibration.completed} human-reviewed calls are ready for weight and AI-agreement analysis. Weights remain unchanged until approved.` : `${calibration.completed} of ${calibration.target} human-reviewed calls completed on the current weighted model.`}</p></div><strong className="text-sm">{calibration.due ? 'Review calibration' : `${calibration.remaining} remaining`}</strong></div>
     </section>
 
     <section aria-labelledby="completed-scorecards-title" className="crm-panel overflow-hidden rounded-xl">

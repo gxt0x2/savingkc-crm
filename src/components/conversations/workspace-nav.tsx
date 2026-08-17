@@ -27,8 +27,10 @@ const NAV_ITEMS: NavItem[] = [
 
 const CASEY_NAV_ITEMS: NavItem[] = [
   { label: 'My Day', icon: 'today', href: '/my-day', activeOn: ['/my-day'] },
-  ...NAV_ITEMS.filter((item) => ['Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Scorecard', 'Task', 'Settings'].includes(item.label)),
+  ...NAV_ITEMS.filter((item) => ['Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings'].includes(item.label)),
 ]
+
+const SCORECARD_NAV_ITEM = NAV_ITEMS.find((item) => item.label === 'Scorecard') as NavItem
 
 function isItemActive(item: NavItem, pathname: string) {
   return item.activeOn.some((prefix) => pathname.startsWith(prefix))
@@ -58,11 +60,14 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
   )
 }
 
-export function WorkspaceNav({ needsReply, userEmail }: { needsReply: number; userEmail?: string | null }) {
+export function WorkspaceNav({ needsReply, userEmail, canReviewCalls = false }: { needsReply: number; userEmail?: string | null; canReviewCalls?: boolean }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const isCasey = isCaseyCrmUser(userEmail)
-  const navItems = isCasey ? CASEY_NAV_ITEMS : NAV_ITEMS
+  const baseNavItems = isCasey ? CASEY_NAV_ITEMS : NAV_ITEMS
+  const navItems = canReviewCalls
+    ? (isCasey ? [...CASEY_NAV_ITEMS.slice(0, 5), SCORECARD_NAV_ITEM, ...CASEY_NAV_ITEMS.slice(5)] : baseNavItems)
+    : baseNavItems.filter((item) => item.label !== 'Scorecard')
 
   return (
     <aside className={cn('hidden shrink-0 flex-col border-r border-black/15 bg-[var(--crm-nav)] text-[var(--crm-nav-text)] transition-[width] duration-200 lg:flex', collapsed ? 'w-[64px]' : 'w-[192px]')}>

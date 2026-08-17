@@ -30,8 +30,8 @@ describe('workspace navigation', () => {
     navigation.search = ''
   })
 
-  it('uses the approved compact ten-item order and hides retired menu labels', () => {
-    render(<WorkspaceNav needsReply={3} />)
+  it('uses the approved compact ten-item reviewer order and hides retired menu labels', () => {
+    render(<WorkspaceNav needsReply={3} canReviewCalls />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
     const labels = within(navigationRegion).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
@@ -44,15 +44,23 @@ describe('workspace navigation', () => {
     expect(within(navigationRegion).queryByRole('link', { name: 'ARI Insights' })).not.toBeInTheDocument()
   })
 
-  it('shows Casey’s exact eight-item navigation and leaves other users unchanged', () => {
+  it('keeps Scorecard out of Casey’s agent menu and restores it for reviewers', () => {
     const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
     const caseyNavigation = screen.getByRole('navigation', { name: 'CRM navigation' })
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Scorecard', 'Task', 'Settings',
+      'My Day', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings',
     ])
     expect(screen.getByRole('link', { name: 'Saving KC CRM dashboard' })).toHaveAttribute('href', '/my-day')
 
-    rerender(<WorkspaceNav needsReply={0} userEmail="ernest@savingkc.com" />)
+    rerender(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" canReviewCalls />)
+    expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
+      'My Day', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Scorecard', 'Task', 'Settings',
+    ])
+  })
+
+  it('hides Scorecard from non-reviewers outside Casey’s workspace', () => {
+    render(<WorkspaceNav needsReply={0} userEmail="agent@savingkc.com" />)
+    expect(screen.queryByRole('link', { name: 'Scorecard' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'My Day' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Saving KC CRM dashboard' })).toHaveAttribute('href', '/dashboard')
   })
