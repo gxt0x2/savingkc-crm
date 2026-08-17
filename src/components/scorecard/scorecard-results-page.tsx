@@ -66,7 +66,7 @@ function previewCompletedCall(): ScorecardCall {
   const values = Object.values(answers)
   const score = Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100
   return {
-    id: 'test-completed-scorecard',
+    id: 'test-review-preview',
     leadId: null,
     leadName: 'Jordan Seller',
     leadUrl: null,
@@ -91,9 +91,9 @@ function ScorePill({ score }: { score: number | null }) {
   return <span className="inline-flex min-w-16 items-center justify-center rounded-full px-3 py-1 text-xs font-black" style={{ background: `color-mix(in srgb, ${tone} 15%, transparent)`, color: tone }}>{value.toFixed(2)} / 3</span>
 }
 
-export function ScorecardResultsPage() {
+export function ScorecardResultsPage({ initialExpandedId = null }: { initialExpandedId?: string | null }) {
   const [calls, setCalls] = useState<ScorecardCall[]>([])
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(initialExpandedId)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -104,7 +104,7 @@ export function ScorecardResultsPage() {
       .then((payload: { recordings: ScorecardCall[] }) => {
         const completed = payload.recordings.filter((call) => call.reviewWorkflow.status === 'completed')
         const preview = window.location.hostname.endsWith('.vercel.app') || window.location.hostname === 'localhost'
-        setCalls(preview ? [previewCompletedCall(), ...completed.filter((call) => call.id !== 'test-completed-scorecard')] : completed)
+        setCalls(preview ? [previewCompletedCall(), ...completed.filter((call) => call.id !== 'test-review-preview')] : completed)
       })
       .catch((reason: Error) => { if (reason.name !== 'AbortError') setError(reason.message) })
       .finally(() => setLoading(false))
