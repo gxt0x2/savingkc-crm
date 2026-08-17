@@ -108,7 +108,7 @@ function previewTestReview(): CallRecordingItem {
     createdAt: new Date().toISOString(), campaign: null, trafficSource: 'preview_test', trackingNumber: null, phoneProfile: 'Casey', isGoogleAds: false, outcome: 'unreviewed', reviewNote: null, reviewedAt: null, reviewedBy: null,
     transcript: 'This is a preview-only test review. Use it to submit a framework, complete the scorecard, and verify the workflow.', transcriptActivityId: null,
     analysisSummary: 'Test coaching opportunity: confirm motivation, timeline, decision makers, and a committed next step.',
-    reviewWorkflow: { status: 'available', framework: null, submittedAt: null, submittedBy: null, assignedReviewer: null, submissionNote: null, completedAt: null, completedBy: null, score: null, answers: {}, tags: [], reviewNote: null },
+    reviewWorkflow: { status: 'available', framework: null, submittedAt: null, submittedBy: null, assignedReviewer: null, submissionNote: null, completedAt: null, completedBy: null, score: null, answers: {}, tags: [], reviewNote: null, voiceoverPath: null, voiceoverMimeType: null },
   }
 }
 
@@ -321,7 +321,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS })
   }
 
-  const body = await req.json().catch(() => null) as { activityId?: unknown; recordingSid?: unknown; action?: unknown; outcome?: unknown; note?: unknown; framework?: unknown; answers?: unknown; tags?: unknown; assignedReviewer?: unknown } | null
+  const body = await req.json().catch(() => null) as { activityId?: unknown; recordingSid?: unknown; action?: unknown; outcome?: unknown; note?: unknown; framework?: unknown; answers?: unknown; tags?: unknown; assignedReviewer?: unknown; voiceoverPath?: unknown; voiceoverMimeType?: unknown } | null
   const activityId = text(body?.activityId)
   const recordingSid = text(body?.recordingSid)
   const action = text(body?.action)
@@ -384,6 +384,11 @@ export async function PATCH(req: NextRequest) {
         return [id, Number.isFinite(value) ? Math.min(3, Math.max(0, Math.round(value))) : 0]
       }))
       const score = itemIds.length ? Math.round((Object.values(answers).reduce((sum, value) => sum + value, 0) / itemIds.length) * 100) / 100 : 0
+      const voiceoverPath = text(body?.voiceoverPath)
+      const voiceoverMimeType = text(body?.voiceoverMimeType)
+      if (voiceoverPath && !voiceoverPath.startsWith(`call-review-voiceovers/${activityRow.id}/`)) {
+        return NextResponse.json({ error: 'Invalid coaching voiceover attachment' }, { status: 400, headers: NO_STORE_HEADERS })
+      }
       updatedMetadata = mergeCallReviewWorkflow(activityRow.metadata, {
         status: 'completed',
         framework: framework.id,
@@ -392,6 +397,8 @@ export async function PATCH(req: NextRequest) {
         score,
         answers,
         reviewNote: note,
+        voiceoverPath: voiceoverPath || null,
+        voiceoverMimeType: voiceoverMimeType || null,
       })
       description = `Scorecard completed — ${framework.label}: ${score}/3`
     }

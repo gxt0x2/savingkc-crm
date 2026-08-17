@@ -61,10 +61,10 @@ describe('marketing call recordings helpers', () => {
       status: 'submitted', framework: 'junior_acquisitions', submittedAt: '2026-08-15T12:00:00Z', submittedBy: 'casey@savingkc.com', assignedReviewer: 'ernest@savingkc.com', tags: ['Needs Coaching', 'Motivation'], submissionNote: 'Please review discovery',
     })
     const completed = mergeCallReviewWorkflow(submitted, {
-      status: 'completed', completedAt: '2026-08-15T13:00:00Z', completedBy: 'ernest@savingkc.com', score: 2.5, answers: { permission: 3 }, reviewNote: 'Slow down',
+      status: 'completed', completedAt: '2026-08-15T13:00:00Z', completedBy: 'ernest@savingkc.com', score: 2.5, answers: { permission: 3 }, reviewNote: 'Slow down', voiceoverPath: 'call-review-voiceovers/call-1/review.webm', voiceoverMimeType: 'audio/webm',
     })
     expect(completed.recordingSid).toBe('RE123')
-    expect(readCallReviewWorkflow(completed)).toMatchObject({ status: 'completed', framework: 'junior_acquisitions', assignedReviewer: 'ernest@savingkc.com', tags: ['Needs Coaching', 'Motivation'], score: 2.5, answers: { permission: 3 }, reviewNote: 'Slow down' })
+    expect(readCallReviewWorkflow(completed)).toMatchObject({ status: 'completed', framework: 'junior_acquisitions', assignedReviewer: 'ernest@savingkc.com', tags: ['Needs Coaching', 'Motivation'], score: 2.5, answers: { permission: 3 }, reviewNote: 'Slow down', voiceoverPath: 'call-review-voiceovers/call-1/review.webm', voiceoverMimeType: 'audio/webm' })
   })
 
   it('summarizes review workload and call quality bands', () => {

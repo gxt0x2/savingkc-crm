@@ -34,6 +34,8 @@ export type CallReviewWorkflow = {
   answers: Record<string, number>
   tags: string[]
   reviewNote: string | null
+  voiceoverPath: string | null
+  voiceoverMimeType: string | null
 }
 
 export function record(value: unknown): Record<string, unknown> {
@@ -133,6 +135,8 @@ export function readCallReviewWorkflow(metadata: unknown): CallReviewWorkflow {
     })) as Record<string, number>,
     tags: Array.isArray(workflow.tags) ? workflow.tags.filter((tag): tag is string => typeof tag === 'string' && Boolean(tag.trim())) : [],
     reviewNote: text(workflow.review_note) || null,
+    voiceoverPath: text(workflow.voiceover_path) || null,
+    voiceoverMimeType: text(workflow.voiceover_mime_type) || null,
   }
 }
 
@@ -152,6 +156,8 @@ export function mergeCallReviewWorkflow(metadata: unknown, workflow: Partial<Cal
     answers: workflow.answers,
     tags: workflow.tags,
     review_note: workflow.reviewNote,
+    voiceover_path: workflow.voiceoverPath,
+    voiceover_mime_type: workflow.voiceoverMimeType,
   }
   return { ...meta, call_review: { ...current, ...Object.fromEntries(Object.entries(keys).filter(([, value]) => value !== undefined)) } }
 }
