@@ -60,7 +60,7 @@ function blobAsDataUrl(blob: Blob) {
   })
 }
 
-export function MyDayCallReview() {
+export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange?: (active: boolean) => void }) {
   const [calls, setCalls] = useState<ReviewCall[]>([])
   const [viewerEmail, setViewerEmail] = useState('')
   const [view, setView] = useState<QueueView>('assigned')
@@ -98,6 +98,11 @@ export function MyDayCallReview() {
       })
       .catch((reason: Error) => setError(reason.message))
   }, [])
+
+  useEffect(() => {
+    onReviewActiveChange?.(Boolean(reviewing))
+    return () => onReviewActiveChange?.(false)
+  }, [onReviewActiveChange, reviewing])
 
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((track) => track.stop())
