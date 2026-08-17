@@ -102,7 +102,7 @@ export function MyDayCallReview() {
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((track) => track.stop())
     mixNodesRef.current.forEach((node) => node.disconnect())
-    if (reviewTimerRef.current !== null) window.clearInterval(reviewTimerRef.current)
+    if (reviewTimerRef.current !== null) window.clearTimeout(reviewTimerRef.current)
     void audioContextRef.current?.close()
   }, [])
 
@@ -171,7 +171,7 @@ export function MyDayCallReview() {
         recorderRef.current = null
         setRecordingVoiceover(false)
         setReviewMode('idle')
-        if (reviewTimerRef.current !== null) window.clearInterval(reviewTimerRef.current)
+        if (reviewTimerRef.current !== null) window.clearTimeout(reviewTimerRef.current)
         reviewTimerRef.current = null
         if (reviewStartedAtRef.current !== null) setReviewElapsed(Math.floor((Date.now() - reviewStartedAtRef.current) / 1000))
       }
@@ -182,9 +182,11 @@ export function MyDayCallReview() {
       setReviewMode('call')
       setReviewElapsed(0)
       reviewStartedAtRef.current = Date.now()
-      reviewTimerRef.current = window.setInterval(() => {
+      const updateReviewElapsed = () => {
         if (reviewStartedAtRef.current !== null) setReviewElapsed(Math.floor((Date.now() - reviewStartedAtRef.current) / 1000))
-      }, 250)
+        reviewTimerRef.current = window.setTimeout(updateReviewElapsed, 250)
+      }
+      reviewTimerRef.current = window.setTimeout(updateReviewElapsed, 250)
       callAudio.currentTime = 0
       await callAudio.play()
     } catch (reason) {
@@ -192,7 +194,7 @@ export function MyDayCallReview() {
       streamRef.current?.getTracks().forEach((track) => track.stop())
       setRecordingVoiceover(false)
       setReviewMode('idle')
-      if (reviewTimerRef.current !== null) window.clearInterval(reviewTimerRef.current)
+      if (reviewTimerRef.current !== null) window.clearTimeout(reviewTimerRef.current)
       reviewTimerRef.current = null
       setError(reason instanceof Error && reason.message === 'Call audio is unavailable.' ? reason.message : 'Microphone access and playable call audio are required to start Review Mode.')
     }
@@ -226,7 +228,7 @@ export function MyDayCallReview() {
     streamRef.current?.getTracks().forEach((track) => track.stop())
     mixNodesRef.current.forEach((node) => node.disconnect())
     mixNodesRef.current = []
-    if (reviewTimerRef.current !== null) window.clearInterval(reviewTimerRef.current)
+    if (reviewTimerRef.current !== null) window.clearTimeout(reviewTimerRef.current)
     reviewTimerRef.current = null
     void audioContextRef.current?.close()
     audioContextRef.current = null
