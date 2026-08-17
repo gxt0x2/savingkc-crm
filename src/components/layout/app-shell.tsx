@@ -16,6 +16,7 @@ import { SystemAndon } from '@/components/feedback/system-andon'
 import { preloadGlobalDialer } from '@/components/telephony/global-dialer-button'
 import { getServerViewedAgentEmailSnapshot, getViewedAgentEmailSnapshot, subscribeToViewedAgentChange } from '@/lib/viewed-agent-session'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
+import { isCallReviewer } from '@/lib/call-review-reviewers'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
@@ -64,6 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [dialerMounted, setDialerMounted] = useState(false)
   const [dialerStatus, setDialerStatus] = useState<CallStatus>('offline')
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [adminReviewerEmail, setAdminReviewerEmail] = useState<string | null>(null)
   const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
@@ -113,6 +115,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ? 'casey@savingkc.com'
     : viewedAgentEmail || user?.email
   const shouldRedirectCaseyDashboard = pathname === '/dashboard' && isCaseyCrmUser(effectiveWorkspaceEmail)
+  const signedInEmail = user?.email?.toLowerCase() ?? null
+  const canReviewCalls = Boolean(signedInEmail && (isCallReviewer(signedInEmail) || adminReviewerEmail === signedInEmail))
+
+  useEffect(() => {
+    const email = signedInEmail
+    if (!email) return
+
+    if (isCallReviewer(email)) return
+
+    let cancelled = false
+    void fetch('/api/call-review/access', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : { canReviewCalls: false })
+      .then((payload) => {
+        if (!cancelled) setAdminReviewerEmail(payload.canReviewCalls ? email : null)
+      })
+      .catch(() => {
+        if (!cancelled) setAdminReviewerEmail(null)
+      })
+    return () => { cancelled = true }
+  }, [signedInEmail])
 
   useEffect(() => {
     if (shouldRedirectCaseyDashboard) router.replace('/my-day')
@@ -284,7 +306,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="min-h-screen bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
         data-theme={userTheme}
       >
-        <WorkspaceFrame userEmail={effectiveWorkspaceEmail}>
+        <WorkspaceFrame userEmail={effectiveWorkspaceEmail} canReviewCalls={canReviewCalls}>
           {shouldRedirectCaseyDashboard ? (
             <div role="status" className="grid min-h-full place-items-center text-sm font-semibold text-[var(--crm-text-muted)]">
               Opening Casey’s My Day…

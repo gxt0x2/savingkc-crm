@@ -58,12 +58,14 @@ export function WorkspaceFrame({
   commandBar,
   hideHeader = false,
   userEmail,
+  canReviewCalls = false,
 }: {
   children: ReactNode
   needsReply?: number
   commandBar?: ReactNode
   hideHeader?: boolean
   userEmail?: string | null
+  canReviewCalls?: boolean
 }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
@@ -115,7 +117,7 @@ export function WorkspaceFrame({
       className="crm-workspace-shell flex h-screen overflow-hidden bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
       data-theme={theme}
     >
-      <WorkspaceNav needsReply={resolvedNeedsReply} userEmail={userEmail} />
+      <WorkspaceNav needsReply={resolvedNeedsReply} userEmail={userEmail} canReviewCalls={canReviewCalls} />
       <div className="flex min-w-0 flex-1 flex-col">
         <WorkspaceChromeContext.Provider value={chromeContextValue}>
           {resolvedHideHeader ? null : <header className={`crm-shell-header flex shrink-0 items-center gap-5 border-b px-6 backdrop-blur ${resolvedCommandBarActive ? 'min-h-[76px] py-2' : 'h-[62px]'}`}>

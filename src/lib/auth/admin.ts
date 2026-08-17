@@ -13,6 +13,10 @@ export async function getCurrentUserEmail(): Promise<string | null> {
 export async function isCurrentUserAdmin(): Promise<boolean> {
   const email = await getCurrentUserEmail()
   if (!email) return false
+  return isUserAdmin(email)
+}
+
+export async function isUserAdmin(email: string): Promise<boolean> {
   try {
     const { supabaseAdmin } = await import('@/lib/supabase/admin')
     const { data } = await supabaseAdmin()
