@@ -86,10 +86,6 @@ function metricValue(value: number | null) {
   return value === null ? '—' : value.toLocaleString()
 }
 
-function habitValue(value: number | null) {
-  return value === null ? '—' : `${value}%`
-}
-
 function ordinalDay(day: number) {
   const remainder = day % 100
   if (remainder >= 11 && remainder <= 13) return `${day}th`
@@ -166,14 +162,6 @@ function WeeklySnapshot({ data }: { data: MyDayData }) {
             })}
           </tbody>
         </table>
-      </div>
-      <div className="mt-4 grid grid-cols-2 border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] sm:grid-cols-4">
-        {data.habits.map((habit) => (
-          <div key={habit.key} className="flex min-h-16 items-center justify-center gap-3 border-b border-r border-[var(--crm-border)] px-3 text-center sm:border-b-0">
-            <span className="text-xs font-extrabold">{habit.label}</span>
-            <span className={cn('flex h-9 min-w-9 items-center justify-center rounded-full border-2 px-1 text-[10px] font-black', habit.value === null ? 'border-[var(--crm-border-strong)] text-[var(--crm-text-muted)]' : habit.value >= 90 ? 'border-[var(--crm-success)] text-[var(--crm-success)]' : habit.value >= 70 ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]' : 'border-[var(--crm-danger)] text-[var(--crm-danger)]')}>{habitValue(habit.value)}</span>
-          </div>
-        ))}
       </div>
     </section>
   )
