@@ -16,10 +16,12 @@ describe('DailyRhythmWorkspace', () => {
   it('centers the morning launch and daily closeout jobs', async () => {
     render(<DailyRhythmWorkspace userEmail="casey@savingkc.com" />)
 
-    expect(screen.getByRole('heading', { name: 'Win the day on purpose.' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Start strong. Finish clean.' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Morning Launch' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Daily Closeout' })).toBeVisible()
-    expect(screen.getByText('Know the opportunities')).toBeVisible()
+    expect(screen.getByText('Review Vision')).toBeVisible()
+    expect(screen.getByText('Practice Objections')).toBeVisible()
+    expect(screen.getByText('Review Follow-Ups')).toBeVisible()
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/daily-rhythm', { cache: 'no-store' }))
   })
 
@@ -30,15 +32,15 @@ describe('DailyRhythmWorkspace', () => {
       .mockResolvedValueOnce({ ok: true, json: vi.fn().mockResolvedValue({ success: true, id: 'sod-1', submittedAt: '2026-08-17T13:00:00Z' }) } as unknown as Response)
 
     render(<DailyRhythmWorkspace userEmail="casey@savingkc.com" />)
-    const opportunityStep = screen.getByRole('button', { name: /Know the opportunities/ })
+    const opportunityStep = screen.getByRole('button', { name: /Review Vision/ })
     await waitFor(() => expect(opportunityStep).toBeEnabled())
     fireEvent.click(opportunityStep)
-    fireEvent.change(screen.getByPlaceholderText('One clear, measurable outcome…'), { target: { value: 'Book two qualified appointments' } })
+    fireEvent.change(screen.getByPlaceholderText('What must happen today?'), { target: { value: 'Book two qualified appointments' } })
     const launchButton = screen.getByRole('button', { name: /Launch my day/ })
     await waitFor(() => expect(launchButton).toBeEnabled())
     fireEvent.click(launchButton)
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Close the loops' })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Close the day' })).toBeVisible())
     expect(fetchMock).toHaveBeenLastCalledWith('/api/daily-rhythm', expect.objectContaining({ method: 'POST' }))
   })
 })

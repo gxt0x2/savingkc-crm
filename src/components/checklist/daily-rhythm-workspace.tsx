@@ -10,17 +10,19 @@ type Submission = { id: string; submittedAt: string; checklist?: string[] } & Re
 type DailyState = { date: string; sod: Submission | null; eod: Submission | null }
 
 const MORNING_STEPS = [
-  { id: 'pipeline', title: 'Know the opportunities', detail: 'Review priority sellers and the next best action for each.' },
-  { id: 'calendar', title: 'Protect the commitments', detail: 'Confirm appointments, callbacks, and time-sensitive follow-ups.' },
-  { id: 'calling', title: 'Load the runway', detail: 'Open the right calling list and remove anything that should not be there.' },
-  { id: 'practice', title: 'Sharpen one skill', detail: 'Practice the objection or framework moment most likely to matter today.' },
+  { id: 'vision', title: 'Review Vision', detail: 'Read your vision and remember why today matters.' },
+  { id: 'practice', title: 'Practice Objections', detail: 'Practice one objection before the first call.' },
+  { id: 'followups', title: 'Review Follow-Ups', detail: 'Know who needs a response today.' },
+  { id: 'pipeline', title: 'Check Priority Sellers', detail: 'Review the next action for each priority seller.' },
+  { id: 'calendar', title: 'Confirm Calendar', detail: 'Check appointments and callbacks.' },
+  { id: 'calling', title: 'Load Call List', detail: 'Open the right list before calling.' },
 ]
 
 const EVENING_STEPS = [
-  { id: 'dispositions', title: 'Every conversation has an outcome', detail: 'Calls and messages are dispositioned with accurate notes.' },
-  { id: 'next-actions', title: 'Every live seller has a next action', detail: 'No opportunity is left depending on memory.' },
-  { id: 'calendar', title: 'Tomorrow is ready', detail: 'Callbacks, appointments, and priority work are on the calendar.' },
-  { id: 'inbox', title: 'Close the communication loop', detail: 'Urgent replies are handled or deliberately scheduled.' },
+  { id: 'dispositions', title: 'Log Every Outcome', detail: 'Update calls, messages, and notes.' },
+  { id: 'next-actions', title: 'Set Next Actions', detail: 'Every active seller has a clear next step.' },
+  { id: 'calendar', title: 'Plan Tomorrow', detail: 'Schedule callbacks and priority work.' },
+  { id: 'inbox', title: 'Clear Urgent Replies', detail: 'Reply now or schedule the response.' },
 ]
 
 function displayName(email: string) {
@@ -115,8 +117,8 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
         <div className="grid gap-6 px-6 py-6 lg:grid-cols-[1fr_360px] lg:px-8">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">Daily operating rhythm</p>
-            <h1 className="mt-1 text-[32px] font-black tracking-[-0.04em]">Win the day on purpose.</h1>
-            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[var(--crm-text-muted)]">Launch with clarity. Close every loop. Leave tomorrow easier than you found today.</p>
+            <h1 className="mt-1 text-[32px] font-black tracking-[-0.04em]">Start strong. Finish clean.</h1>
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[var(--crm-text-muted)]">Plan the day. Do the work. Set up tomorrow.</p>
             <div className="mt-5 flex flex-wrap items-center gap-2 text-xs font-bold">
               <span className="rounded-full bg-[var(--crm-brand-soft)] px-3 py-1.5 text-[var(--crm-brand)]">{displayName(userEmail)}</span>
               <span className="text-[var(--crm-text-muted)]">{dateLabel}</span>
@@ -140,8 +142,8 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
         </div>
         <div className="grid lg:grid-cols-[1fr_390px]">
           <div className="border-b border-[var(--crm-border)] p-5 lg:border-b-0 lg:border-r lg:p-7">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--crm-brand)]">{active === 'sod' ? 'Set the day before it sets you' : 'Finish clean'}</p>
-            <h2 className="mt-1 text-2xl font-black tracking-[-0.03em]">{active === 'sod' ? 'Build the runway' : 'Close the loops'}</h2>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--crm-brand)]">{active === 'sod' ? 'Get ready' : 'Finish the day'}</p>
+            <h2 className="mt-1 text-2xl font-black tracking-[-0.03em]">{active === 'sod' ? 'Start the day' : 'Close the day'}</h2>
             <div className="mt-5 space-y-2">
               {steps.map((step) => {
                 const done = selected.includes(step.id)
@@ -152,13 +154,13 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
 
           <div className="bg-[var(--crm-surface-subtle)] p-5 lg:p-7">
             {active === 'sod' ? <>
-              <label className="block text-xs font-black">What outcome makes today a win?<textarea value={focus} onChange={(event) => setFocus(event.target.value)} rows={3} placeholder="One clear, measurable outcome…" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
-              <label className="mt-5 block text-xs font-black">One skill commitment<textarea value={coachingCommitment} onChange={(event) => setCoachingCommitment(event.target.value)} rows={2} placeholder="Example: ask one question deeper before moving on." className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
-              <fieldset className="mt-5"><legend className="text-xs font-black">Starting energy</legend><div className="mt-2 grid grid-cols-5 gap-2">{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" onClick={() => setEnergy(value)} aria-pressed={energy === value} className={cn('rounded-lg border py-2 text-xs font-black', energy === value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)] text-white' : 'border-[var(--crm-border)] bg-[var(--crm-surface)]')}>{value}</button>)}</div></fieldset>
+              <label className="block text-xs font-black">Today’s main goal<textarea value={focus} onChange={(event) => setFocus(event.target.value)} rows={3} placeholder="What must happen today?" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
+              <label className="mt-5 block text-xs font-black">Skill to practice<textarea value={coachingCommitment} onChange={(event) => setCoachingCommitment(event.target.value)} rows={2} placeholder="Example: ask one question deeper." className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
+              <fieldset className="mt-5"><legend className="text-xs font-black">Energy level</legend><div className="mt-2 grid grid-cols-5 gap-2">{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" onClick={() => setEnergy(value)} aria-pressed={energy === value} className={cn('rounded-lg border py-2 text-xs font-black', energy === value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)] text-white' : 'border-[var(--crm-border)] bg-[var(--crm-surface)]')}>{value}</button>)}</div></fieldset>
             </> : <>
               <label className="block text-xs font-black">Today’s win<textarea value={win} onChange={(event) => setWin(event.target.value)} rows={2} placeholder="What moved forward today?" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
-              <label className="mt-4 block text-xs font-black">Lesson worth carrying<textarea value={lesson} onChange={(event) => setLesson(event.target.value)} rows={2} placeholder="What will you repeat or change?" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
-              <label className="mt-4 block text-xs font-black">Tomorrow’s first move<textarea value={tomorrow} onChange={(event) => setTomorrow(event.target.value)} rows={2} placeholder="The first action that removes uncertainty tomorrow…" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
+              <label className="mt-4 block text-xs font-black">What did you learn?<textarea value={lesson} onChange={(event) => setLesson(event.target.value)} rows={2} placeholder="What will you repeat or change?" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
+              <label className="mt-4 block text-xs font-black">First move tomorrow<textarea value={tomorrow} onChange={(event) => setTomorrow(event.target.value)} rows={2} placeholder="What will you do first?" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
             </>}
             <button type="button" disabled={submitting || loading || selected.length === 0} onClick={submit} className="crm-primary-button mt-6 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-black disabled:cursor-not-allowed disabled:opacity-45"><Icon name={daily?.[active] ? 'refresh' : 'check_circle'} className="text-[18px]" />{submitting ? 'Saving…' : daily?.[active] ? 'Update rhythm' : active === 'sod' ? 'Launch my day' : 'Close my day'}</button>
             {message ? <p role="status" className="mt-3 text-center text-xs font-bold text-[var(--crm-text-muted)]">{message}</p> : null}
