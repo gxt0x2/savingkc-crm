@@ -5,6 +5,7 @@ import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { cleanDeadReason } from '@/lib/lead-outcomes'
 import { CALL_REVIEWERS, isCallReviewer } from '@/lib/call-review-reviewers'
 import { CALL_REVIEW_TAGS, getCallReviewFramework } from '@/lib/call-review-frameworks'
+import { scoreCallReview } from '@/lib/call-review-scoring'
 import {
   buildRecordingSummary,
   compactTranscript,
@@ -108,7 +109,7 @@ function previewTestReview(): CallRecordingItem {
     createdAt: new Date().toISOString(), campaign: null, trafficSource: 'preview_test', trackingNumber: null, phoneProfile: 'Casey', isGoogleAds: false, outcome: 'unreviewed', reviewNote: null, reviewedAt: null, reviewedBy: null,
     transcript: 'This is a preview-only test review. Use it to submit a framework, complete the scorecard, and verify the workflow.', transcriptActivityId: null,
     analysisSummary: 'Test coaching opportunity: confirm motivation, timeline, decision makers, and a committed next step.',
-    reviewWorkflow: { status: 'available', framework: null, submittedAt: null, submittedBy: null, assignedReviewer: null, submissionNote: null, completedAt: null, completedBy: null, score: null, answers: {}, tags: [], reviewNote: null, voiceoverPath: null, voiceoverMimeType: null },
+    reviewWorkflow: { status: 'available', framework: null, submittedAt: null, submittedBy: null, assignedReviewer: null, submissionNote: null, completedAt: null, completedBy: null, score: null, criticalScore: null, needsCoaching: false, coachingReasons: [], scoringVersion: null, answers: {}, tags: [], reviewNote: null, voiceoverPath: null, voiceoverMimeType: null },
   }
 }
 
@@ -383,7 +384,7 @@ export async function PATCH(req: NextRequest) {
         const value = Number(supplied[id])
         return [id, Number.isFinite(value) ? Math.min(3, Math.max(0, Math.round(value))) : 0]
       }))
-      const score = itemIds.length ? Math.round((Object.values(answers).reduce((sum, value) => sum + value, 0) / itemIds.length) * 100) / 100 : 0
+      const scoring = scoreCallReview(framework, answers)
       const voiceoverPath = text(body?.voiceoverPath)
       const voiceoverMimeType = text(body?.voiceoverMimeType)
       if (voiceoverPath && !voiceoverPath.startsWith(`call-review-voiceovers/${activityRow.id}/`)) {
@@ -394,13 +395,17 @@ export async function PATCH(req: NextRequest) {
         framework: framework.id,
         completedAt: now,
         completedBy: email,
-        score,
+        score: scoring.score,
+        criticalScore: scoring.criticalScore,
+        needsCoaching: scoring.needsCoaching,
+        coachingReasons: scoring.coachingReasons,
+        scoringVersion: scoring.scoringVersion,
         answers,
         reviewNote: note,
         voiceoverPath: voiceoverPath || null,
         voiceoverMimeType: voiceoverMimeType || null,
       })
-      description = `Scorecard completed — ${framework.label}: ${score}/3`
+      description = `Scorecard completed — ${framework.label}: ${scoring.score}/3${scoring.needsCoaching ? ' — Needs Coaching' : ''}`
     }
     const resolvedActivityId = activityRow.id
     const { error: workflowUpdateError } = await db.from('lead_activities').update({ metadata: updatedMetadata }).eq('id', resolvedActivityId)

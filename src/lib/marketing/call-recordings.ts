@@ -31,6 +31,10 @@ export type CallReviewWorkflow = {
   completedAt: string | null
   completedBy: string | null
   score: number | null
+  criticalScore: number | null
+  needsCoaching: boolean
+  coachingReasons: string[]
+  scoringVersion: string | null
   answers: Record<string, number>
   tags: string[]
   reviewNote: string | null
@@ -128,6 +132,10 @@ export function readCallReviewWorkflow(metadata: unknown): CallReviewWorkflow {
     completedAt: text(workflow.completed_at) || null,
     completedBy: text(workflow.completed_by) || null,
     score: numberValue(workflow.score),
+    criticalScore: numberValue(workflow.critical_score),
+    needsCoaching: workflow.needs_coaching === true,
+    coachingReasons: Array.isArray(workflow.coaching_reasons) ? workflow.coaching_reasons.filter((reason): reason is string => typeof reason === 'string' && Boolean(reason.trim())) : [],
+    scoringVersion: text(workflow.scoring_version) || null,
     answers: Object.fromEntries(Object.entries(rawAnswers).flatMap(([key, value]) => {
       if (typeof value === 'boolean') return [[key, value ? 3 : 0]]
       const parsed = numberValue(value)
@@ -153,6 +161,10 @@ export function mergeCallReviewWorkflow(metadata: unknown, workflow: Partial<Cal
     completed_at: workflow.completedAt,
     completed_by: workflow.completedBy,
     score: workflow.score,
+    critical_score: workflow.criticalScore,
+    needs_coaching: workflow.needsCoaching,
+    coaching_reasons: workflow.coachingReasons,
+    scoring_version: workflow.scoringVersion,
     answers: workflow.answers,
     tags: workflow.tags,
     review_note: workflow.reviewNote,

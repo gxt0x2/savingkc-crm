@@ -3,11 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { CALL_SCORE_RUBRIC, getCallReviewFramework, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
+import { scoreCallReview } from '@/lib/call-review-scoring'
 
 type Workflow = {
   status: 'available' | 'submitted' | 'completed'
   framework: CallReviewFrameworkId | null
   score: number | null
+  criticalScore?: number | null
+  needsCoaching?: boolean
+  coachingReasons?: string[]
+  scoringVersion?: string | null
   submittedBy: string | null
   assignedReviewer: string | null
   completedBy?: string | null
@@ -147,7 +152,8 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
   const completed = calls.filter((call) => call.reviewWorkflow.status === 'completed' && (call.reviewWorkflow.submittedBy === viewerEmail || call.reviewWorkflow.assignedReviewer === viewerEmail)).length
   const framework = reviewing ? getCallReviewFramework(reviewing.reviewWorkflow.framework || 'junior_acquisitions') : null
   const itemCount = framework?.sections.reduce((count, section) => count + section.items.length, 0) || 0
-  const liveScore = itemCount ? Math.round((Object.values(ratings).reduce((sum, rating) => sum + rating, 0) / itemCount) * 100) / 100 : 0
+  const liveScoring = framework ? scoreCallReview(framework, ratings) : null
+  const liveScore = liveScoring?.score ?? 0
 
   function openReview(call: ReviewCall) {
     setReviewing(call)
@@ -274,7 +280,7 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
       let workflow: Workflow
       if (call.id === 'test-review-preview') {
         const preservedVoiceover = voiceoverBlob ? await blobAsDataUrl(voiceoverBlob) : null
-        workflow = { ...call.reviewWorkflow, status: 'completed', score: liveScore, completedBy: viewerEmail, reviewNote: note, answers: ratings, voiceoverPath: preservedVoiceover, voiceoverMimeType: voiceoverBlob?.type || null }
+        workflow = { ...call.reviewWorkflow, status: 'completed', score: liveScore, criticalScore: liveScoring?.criticalScore, needsCoaching: liveScoring?.needsCoaching, coachingReasons: liveScoring?.coachingReasons, scoringVersion: liveScoring?.scoringVersion, completedBy: viewerEmail, reviewNote: note, answers: ratings, voiceoverPath: preservedVoiceover, voiceoverMimeType: voiceoverBlob?.type || null }
         try {
           window.localStorage.setItem(TEST_REVIEW_STORAGE_KEY, JSON.stringify(workflow))
         } catch {
