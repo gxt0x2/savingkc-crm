@@ -48,13 +48,13 @@ describe('workspace navigation', () => {
     const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
     const caseyNavigation = screen.getByRole('navigation', { name: 'CRM navigation' })
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings',
+      'My Day', 'Daily Rhythm', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings',
     ])
     expect(screen.getByRole('link', { name: 'Saving KC CRM dashboard' })).toHaveAttribute('href', '/my-day')
 
     rerender(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" canReviewCalls />)
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings',
+      'My Day', 'Daily Rhythm', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings',
     ])
   })
 

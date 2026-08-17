@@ -27,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
 
 const CASEY_NAV_ITEMS: NavItem[] = [
   { label: 'My Day', icon: 'today', href: '/my-day', activeOn: ['/my-day'] },
+  { label: 'Daily Rhythm', icon: 'routine', href: '/checklist', activeOn: ['/checklist'] },
   ...NAV_ITEMS.filter((item) => ['Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings'].includes(item.label)),
 ]
 

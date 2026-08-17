@@ -88,6 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isConversationWorkspace =
     (pathname?.startsWith('/conversations') ?? false) ||
     (pathname?.startsWith('/my-day') ?? false) ||
+    (pathname?.startsWith('/checklist') ?? false) ||
     (pathname?.startsWith('/contacts') ?? false) ||
     (pathname?.startsWith('/leads') ?? false) ||
     (pathname?.startsWith('/workflows') ?? false) ||
