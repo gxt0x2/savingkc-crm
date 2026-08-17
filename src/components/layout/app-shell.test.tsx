@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell } from './app-shell'
@@ -41,15 +41,17 @@ describe('AppShell first-load work', () => {
     navigation.pathname = '/dashboard'
     navigation.replace.mockReset()
     window.sessionStorage.clear()
-    vi.stubGlobal('fetch', vi.fn())
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue({ profile: { profile_photo_url: 'https://example.com/ernest.jpg' } }),
+    }))
   })
 
-  it('does not mount the softphone or request a legacy profile on a modern route', () => {
+  it('does not mount the softphone and loads the viewed profile on a modern route', async () => {
     render(<AppShell><main>Dashboard content</main></AppShell>)
 
     expect(screen.getByText('Dashboard content')).toBeInTheDocument()
     expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
-    expect(fetch).not.toHaveBeenCalled()
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings?email=ernest%40savingkc.com'))
   })
 
   it('loads the softphone only after the global phone control is used', () => {
