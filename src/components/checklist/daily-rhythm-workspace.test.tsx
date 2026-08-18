@@ -9,20 +9,35 @@ describe('DailyRhythmWorkspace', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ date: '2026-08-17', sod: null, eod: null }),
+      json: vi.fn().mockResolvedValue({
+        date: '2026-08-17',
+        sod: null,
+        eod: null,
+        purpose: { personalGoal: 'Build a family safety net', personalWhy: 'Create long-term freedom' },
+        queue: [
+          { id: 'task-1', leadId: 'lead-1', leadName: 'Jordan Seller', property: '123 Test St', stage: 'Lead', priority: 'High', action: 'Call', dueAt: null },
+          { id: 'task-2', leadId: 'lead-2', leadName: 'Taylor Owner', property: '456 Oak Ave', stage: 'Opportunity', priority: 'Medium', action: 'Open', dueAt: null },
+        ],
+      }),
     }))
   })
 
   it('centers the morning launch and daily closeout jobs', async () => {
     render(<DailyRhythmWorkspace userEmail="casey@savingkc.com" />)
 
-    expect(screen.getByRole('heading', { name: 'Start strong. Finish clean.' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Let’s make today count, Casey.' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Morning Launch' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Daily Closeout' })).toBeVisible()
     expect(screen.getAllByText('Your Goal & Why')[0]).toBeVisible()
     expect(screen.getByText('Clear Urgent Messages')).toBeVisible()
     expect(screen.queryByText('Practice Objections')).not.toBeInTheDocument()
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/daily-rhythm', { cache: 'no-store' }))
+    expect(screen.getByDisplayValue('Build a family safety net')).toBeVisible()
+    expect(screen.getByDisplayValue('Create long-term freedom')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /Review Priority Sellers/ }))
+    expect(screen.getByText('Top 2 priority actions')).toBeVisible()
+    expect(screen.getByText('Jordan Seller')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open Pipeline' })).toHaveAttribute('href', '/contacts?list=new')
   })
 
   it('submits a meaningful morning launch and advances to closeout', async () => {

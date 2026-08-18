@@ -21,15 +21,23 @@ export async function GET() {
   if (!email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS })
 
   const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
-  const { data, error } = await supabaseAdmin()
-    .from('lead_activities')
-    .select('id, activity_type, metadata, created_at')
-    .eq('agent', email)
-    .in('activity_type', ['sod_submission', 'eod_submission'])
-    .gte('created_at', since)
-    .order('created_at', { ascending: false })
+  const db = supabaseAdmin()
+  const [{ data, error }, { data: latestMorningRows, error: purposeError }] = await Promise.all([
+    db.from('lead_activities')
+      .select('id, activity_type, metadata, created_at')
+      .eq('agent', email)
+      .in('activity_type', ['sod_submission', 'eod_submission'])
+      .gte('created_at', since)
+      .order('created_at', { ascending: false }),
+    db.from('lead_activities')
+      .select('metadata, created_at')
+      .eq('agent', email)
+      .eq('activity_type', 'sod_submission')
+      .order('created_at', { ascending: false })
+      .limit(1),
+  ])
 
-  if (error) return NextResponse.json({ error: 'Daily Rhythm could not load.' }, { status: 500, headers: NO_STORE_HEADERS })
+  if (error || purposeError) return NextResponse.json({ error: 'Daily Rhythm could not load.' }, { status: 500, headers: NO_STORE_HEADERS })
 
   const today = dayKey(new Date())
   const todayRows = (data ?? []).filter((row) => dayKey(row.created_at) === today)
@@ -38,7 +46,15 @@ export async function GET() {
     return row ? { id: row.id, protocol, submittedAt: row.created_at, ...record(row.metadata) } : null
   }
 
-  return NextResponse.json({ date: today, sod: submission('sod'), eod: submission('eod') }, { headers: NO_STORE_HEADERS })
+  const latestMorning = latestMorningRows?.[0]
+  const latestMetadata = record(latestMorning?.metadata)
+  const purpose = {
+    personalGoal: String(latestMetadata.personalGoal ?? ''),
+    personalWhy: String(latestMetadata.personalWhy ?? ''),
+    updatedAt: latestMorning?.created_at ?? null,
+  }
+
+  return NextResponse.json({ date: today, sod: submission('sod'), eod: submission('eod'), purpose }, { headers: NO_STORE_HEADERS })
 }
 
 export async function POST(request: NextRequest) {

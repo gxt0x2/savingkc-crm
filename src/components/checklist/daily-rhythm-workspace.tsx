@@ -8,9 +8,24 @@ import { cn } from '@/lib/utils'
 
 type Protocol = 'sod' | 'eod'
 type Submission = { id: string; submittedAt: string; checklist?: string[] } & Record<string, unknown>
-type DailyState = { date: string; sod: Submission | null; eod: Submission | null }
+type DailyState = {
+  date: string
+  sod: Submission | null
+  eod: Submission | null
+  purpose?: { personalGoal?: string; personalWhy?: string; updatedAt?: string | null }
+}
 type HubThread = { attentionState?: string; lastChannel?: string | null; primaryNextAction?: { overdue?: boolean } | null }
-type MyDay = { commitments?: unknown[]; queue?: unknown[] }
+type QueueItem = {
+  id: string
+  leadId: string | null
+  leadName: string
+  property: string
+  stage: string
+  priority: 'High' | 'Medium' | 'Low'
+  action: 'Call' | 'SMS' | 'Open'
+  dueAt: string | null
+}
+type MyDay = { commitments?: unknown[]; queue?: QueueItem[] }
 
 const MORNING_STEPS = [
   { id: 'purpose', title: 'Your Goal & Why', detail: 'Remember what you are working toward.' },
@@ -59,6 +74,7 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const completionCount = Number(Boolean(daily?.sod)) + Number(Boolean(daily?.eod))
+  const teamMemberName = displayName(userEmail)
   const dateLabel = useMemo(() => new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Chicago', weekday: 'long', month: 'long', day: 'numeric',
   }).format(new Date()), [])
@@ -86,8 +102,8 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
       setMyDay(myDayPayload)
       setHubThreads(Array.isArray(threads) ? threads : [])
       setChecked({ sod: payload.sod?.checklist ?? [], eod: payload.eod?.checklist ?? [] })
-      setPersonalGoal(readText(payload.sod, 'personalGoal'))
-      setPersonalWhy(readText(payload.sod, 'personalWhy'))
+      setPersonalGoal(readText(payload.sod, 'personalGoal') || payload.purpose?.personalGoal || '')
+      setPersonalWhy(readText(payload.sod, 'personalWhy') || payload.purpose?.personalWhy || '')
       setFocus(readText(payload.sod, 'focus'))
       setEnergy(typeof payload.sod?.energy === 'number' ? payload.sod.energy : 3)
       setWin(readText(payload.eod, 'win'))
@@ -131,10 +147,12 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
   const canContinue = step.id !== 'purpose' || Boolean(personalGoal.trim() && personalWhy.trim())
 
   return <main className="mx-auto flex w-full max-w-[1180px] flex-col gap-4 px-4 py-5 sm:px-6 lg:py-7">
-    <header className="crm-panel overflow-hidden rounded-2xl">
-      <div className="grid gap-6 px-6 py-6 lg:grid-cols-[1fr_360px] lg:px-8">
-        <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">Daily Rhythm</p><h1 className="mt-1 text-[32px] font-black tracking-[-0.04em]">Start strong. Finish clean.</h1><p className="mt-2 text-sm font-semibold text-[var(--crm-text-muted)]">Set up the day in a few focused steps.</p><div className="mt-5 flex gap-2 text-xs font-bold"><span className="rounded-full bg-[var(--crm-brand-soft)] px-3 py-1.5 text-[var(--crm-brand)]">{displayName(userEmail)}</span><span className="py-1.5 text-[var(--crm-text-muted)]">{dateLabel}</span></div></div>
-        <div className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-5"><div className="flex items-center justify-between"><span className="text-xs font-black uppercase text-[var(--crm-text-muted)]">Today’s rhythm</span><span className="text-2xl font-black">{completionCount}/2</span></div><div className="mt-4 grid grid-cols-2 gap-2">{(['sod', 'eod'] as Protocol[]).map((protocol) => { const done = Boolean(daily?.[protocol]); return <div key={protocol} className={cn('rounded-lg border p-3', done ? 'border-[var(--crm-success)] bg-[var(--crm-success-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)]')}><Icon name={done ? 'check_circle' : protocol === 'sod' ? 'light_mode' : 'dark_mode'} className={cn('text-[20px]', done ? 'text-[var(--crm-success)]' : 'text-[var(--crm-text-muted)]')} /><p className="mt-1 text-xs font-black">{protocol === 'sod' ? 'Morning Launch' : 'Daily Closeout'}</p><p className="mt-0.5 text-[10px] text-[var(--crm-text-muted)]">{done ? `Saved ${formatTime(daily![protocol]!.submittedAt)}` : 'Not completed'}</p></div> })}</div></div>
+    <header className="daily-rhythm-hero relative overflow-hidden rounded-2xl border shadow-sm">
+      <div aria-hidden="true" className="daily-rhythm-hero-image absolute inset-0 bg-cover" style={{ backgroundImage: "url('/kc-skyline.jpg')", backgroundPosition: 'center 66%' }} />
+      <div aria-hidden="true" className="daily-rhythm-hero-wash absolute inset-0" />
+      <div className="relative grid gap-6 px-6 py-8 lg:grid-cols-[1fr_360px] lg:px-8 lg:py-10">
+        <div><p className="daily-rhythm-kicker text-[10px] font-black uppercase tracking-[0.18em]">Daily Rhythm · Kansas City</p><h1 className="daily-rhythm-title mt-2 max-w-2xl text-[36px] font-black leading-[1.02] tracking-[-0.05em]">Let’s make today count, <span>{teamMemberName}.</span></h1><p className="daily-rhythm-copy mt-3 max-w-xl text-sm font-semibold leading-6">Start with purpose, protect the important work, and finish with nothing left hanging.</p><div className="daily-rhythm-motto mt-5 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black"><Icon name="bolt" className="text-[16px]" />One focused step at a time.</div><div className="mt-4 flex gap-2 text-xs font-bold"><span className="daily-rhythm-person rounded-full border px-3 py-1.5">{teamMemberName}</span><span className="daily-rhythm-date py-1.5">{dateLabel}</span></div></div>
+        <div className="daily-rhythm-status rounded-xl border p-5 shadow-[0_18px_55px_rgba(0,0,0,0.32)] backdrop-blur-md"><div className="flex items-center justify-between"><span className="daily-rhythm-status-muted text-xs font-black uppercase">Today’s rhythm</span><span className="daily-rhythm-status-value text-2xl font-black">{completionCount}/2</span></div><div className="mt-4 grid grid-cols-2 gap-2">{(['sod', 'eod'] as Protocol[]).map((protocol) => { const done = Boolean(daily?.[protocol]); return <div key={protocol} className={cn('daily-rhythm-status-item rounded-lg border p-3', done && 'is-done')}><Icon name={done ? 'check_circle' : protocol === 'sod' ? 'light_mode' : 'dark_mode'} className="daily-rhythm-status-icon text-[20px]" /><p className="daily-rhythm-status-label mt-1 text-xs font-black">{protocol === 'sod' ? 'Morning Launch' : 'Daily Closeout'}</p><p className="daily-rhythm-status-detail mt-0.5 text-[10px]">{done ? `Saved ${formatTime(daily![protocol]!.submittedAt)}` : 'Not completed'}</p></div> })}</div></div>
       </div>
     </header>
 
@@ -146,7 +164,7 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
           {step.id === 'purpose' ? <div className="grid gap-5"><label className="text-xs font-black">Personal goal<textarea value={personalGoal} onChange={(event) => setPersonalGoal(event.target.value)} rows={3} placeholder="What are you working toward personally?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label><label className="text-xs font-black">Your why<textarea value={personalWhy} onChange={(event) => setPersonalWhy(event.target.value)} rows={3} placeholder="Why does this matter to you?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label><fieldset><legend className="text-xs font-black">Energy level</legend><div className="mt-2 grid max-w-sm grid-cols-5 gap-2">{[1,2,3,4,5].map((value) => <button key={value} type="button" onClick={() => setEnergy(value)} className={cn('rounded-lg border py-2 text-xs font-black', energy === value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)] text-white' : 'border-[var(--crm-border)]')}>{value}</button>)}</div></fieldset></div> : null}
           {step.id === 'urgent' ? <div className="grid gap-3 sm:grid-cols-2">{[['missed_call','Missed calls',urgentCounts.calls],['mail','Emails',urgentCounts.emails],['sms','Texts',urgentCounts.texts],['schedule','Overdue actions',urgentCounts.overdue]].map(([icon,label,value]) => <div key={String(label)} className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4"><Icon name={String(icon)} className="text-[22px] text-[var(--crm-brand)]" /><p className="mt-2 text-2xl font-black">{loading ? '—' : String(value)}</p><p className="text-xs font-bold text-[var(--crm-text-muted)]">{label}</p></div>)}<Link href="/conversations" className="crm-secondary-button col-span-full rounded-lg px-4 py-3 text-center text-xs font-black">Open Conversations</Link></div> : null}
           {step.id === 'calendar' ? <SummaryCard icon="calendar_month" value={myDay.commitments?.length ?? 0} label="commitments scheduled" href="/calendar" action="Review calendar" /> : null}
-          {step.id === 'pipeline' ? <SummaryCard icon="conversion_path" value={myDay.queue?.length ?? 0} label="priority actions ready" href="/pipeline" action="Review Pipeline" /> : null}
+          {step.id === 'pipeline' ? <PriorityPreview items={myDay.queue ?? []} /> : null}
           {step.id === 'calling' ? <SummaryCard icon="dialpad" value={myDay.queue?.length ?? 0} label="people ready for action" href="/dialer" action="Open Dialer" /> : null}
           {step.id === 'commit' ? <label className="block text-xs font-black">Today’s main goal<textarea value={focus} onChange={(event) => setFocus(event.target.value)} rows={4} placeholder="What must happen today?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label> : null}
         </div></div><div className="mt-8 flex items-center justify-between border-t border-[var(--crm-border)] pt-5"><button type="button" disabled={wizardStep === 0} onClick={() => setWizardStep((current) => current - 1)} className="crm-secondary-button rounded-lg px-4 py-2 text-xs font-black disabled:opacity-30">Back</button>{wizardStep < MORNING_STEPS.length - 1 ? <button type="button" disabled={!canContinue || loading} onClick={completeMorningStep} className="crm-primary-button rounded-lg px-5 py-2.5 text-xs font-black disabled:opacity-40">Continue</button> : <button type="button" disabled={submitting || !focus.trim()} onClick={() => { const checklist = checked.sod.includes('commit') ? checked.sod : [...checked.sod, 'commit']; setChecked((current) => ({ ...current, sod: checklist })); void submit('sod', checklist) }} className="crm-primary-button rounded-lg px-5 py-2.5 text-xs font-black disabled:opacity-40">{submitting ? 'Saving…' : 'Start My Day'}</button>}</div></div>
@@ -158,4 +176,13 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
 
 function SummaryCard({ icon, value, label, href, action }: { icon: string; value: number; label: string; href: string; action: string }) {
   return <div className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-5"><Icon name={icon} className="text-2xl text-[var(--crm-brand)]" /><p className="mt-3 text-3xl font-black">{value}</p><p className="text-sm font-bold text-[var(--crm-text-muted)]">{label}</p><Link href={href} className="crm-secondary-button mt-5 inline-flex rounded-lg px-4 py-2 text-xs font-black">{action}</Link></div>
+}
+
+function PriorityPreview({ items }: { items: QueueItem[] }) {
+  const preview = items.slice(0, 4)
+  return <div className="overflow-hidden rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
+    <div className="flex items-center justify-between border-b border-[var(--crm-border)] px-4 py-3"><div><p className="text-sm font-black">Top {items.length} priority actions</p><p className="text-[11px] text-[var(--crm-text-muted)]">Sorted by priority, then due date.</p></div><Icon name="conversion_path" className="text-xl text-[var(--crm-brand)]" /></div>
+    {preview.length > 0 ? <div className="divide-y divide-[var(--crm-border)]">{preview.map((item) => <Link key={item.id} href={item.leadId ? `/leads/${item.leadId}` : '/contacts?list=new'} className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 hover:bg-[var(--crm-surface)]"><span className="min-w-0"><strong className="block truncate text-xs">{item.leadName}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--crm-text-muted)]">{item.property} · {item.stage}</span></span><span className="flex items-center gap-2"><span className={cn('rounded-full px-2 py-1 text-[9px] font-black', item.priority === 'High' ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'bg-[var(--crm-surface)] text-[var(--crm-text-muted)]')}>{item.priority}</span><span className="text-[10px] font-black text-[var(--crm-brand)]">{item.action}</span></span></Link>)}</div> : <p className="px-4 py-6 text-center text-xs font-bold text-[var(--crm-text-muted)]">No priority actions are waiting.</p>}
+    <div className="flex items-center justify-between border-t border-[var(--crm-border)] px-4 py-3"><span className="text-[10px] font-bold text-[var(--crm-text-muted)]">{items.length > preview.length ? `+${items.length - preview.length} more in today’s queue` : 'Full list ready'}</span><Link href="/contacts?list=new" className="crm-secondary-button rounded-lg px-3 py-2 text-[10px] font-black">Open Pipeline</Link></div>
+  </div>
 }
