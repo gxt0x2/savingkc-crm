@@ -260,6 +260,79 @@ body {
   box-shadow: var(--crm-shadow-sm);
 }
 
+/* Daily Rhythm is intentionally a cohesive dark photo hero in both themes. */
+.daily-rhythm-hero {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: #111516 !important;
+  color: #fff !important;
+}
+
+.daily-rhythm-hero-image {
+  opacity: 0.78;
+  filter: saturate(0.92) contrast(1.08);
+}
+
+.daily-rhythm-hero-wash {
+  background:
+    linear-gradient(90deg, rgba(11, 14, 15, 0.94) 0%, rgba(11, 14, 15, 0.82) 44%, rgba(11, 14, 15, 0.52) 72%, rgba(11, 14, 15, 0.30) 100%),
+    linear-gradient(0deg, rgba(9, 12, 13, 0.74) 0%, rgba(9, 12, 13, 0.06) 76%);
+}
+
+.daily-rhythm-kicker,
+.daily-rhythm-title span {
+  color: #f56570 !important;
+}
+
+.daily-rhythm-title,
+.daily-rhythm-status-value,
+.daily-rhythm-status-label {
+  color: #fff !important;
+}
+
+.daily-rhythm-copy,
+.daily-rhythm-date,
+.daily-rhythm-status-muted,
+.daily-rhythm-status-detail {
+  color: rgba(255, 255, 255, 0.74) !important;
+}
+
+.daily-rhythm-motto {
+  border-color: rgba(90, 214, 153, 0.38) !important;
+  background: rgba(14, 116, 70, 0.34) !important;
+  color: #79e6ad !important;
+}
+
+.daily-rhythm-person {
+  border-color: rgba(255, 255, 255, 0.24) !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #fff !important;
+}
+
+.daily-rhythm-status {
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  background: rgba(13, 17, 18, 0.76) !important;
+  color: #fff !important;
+}
+
+.daily-rhythm-status-item {
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #fff !important;
+}
+
+.daily-rhythm-status-item.is-done {
+  border-color: rgba(90, 214, 153, 0.48) !important;
+  background: rgba(14, 116, 70, 0.34) !important;
+}
+
+.daily-rhythm-status-icon {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+.daily-rhythm-status-item.is-done .daily-rhythm-status-icon {
+  color: #79e6ad !important;
+}
+
 .crm-panel-raised {
   border: 1px solid var(--crm-border);
   background: var(--crm-surface-raised);
