@@ -654,16 +654,11 @@ export default function ContactsPage() {
             <ProspectsWorkspaceTab count={counts.prospects} active={smartList === 'prospects'} onSelect={() => selectSmartList('prospects')} />
           </div> : null}
 
-          {isMobile ? <nav className="flex snap-x gap-1 overflow-x-auto border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Pipeline smart lists">
-            {[...orderedSmartLists, { id: 'prospects' as const, label: 'Prospects' }].map(({ id, label }) => {
-              const active = smartList === id
-              return <button key={id} type="button" onClick={() => selectSmartList(id)} aria-current={active ? 'page' : undefined} className={`min-h-12 shrink-0 snap-start border-b-[3px] px-3 text-sm font-bold ${active ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]' : 'border-transparent text-[var(--crm-text-muted)]'}`}>{label}<span className="ml-1.5 rounded-full bg-[var(--crm-surface-subtle)] px-2 py-0.5 text-[11px]">{counts[id]}</span></button>
-            })}
-          </nav> : null}
+          {isMobile ? <label className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2"><span className="text-xs font-bold text-[var(--crm-text-muted)]">View</span><select aria-label="Pipeline view" value={smartList} onChange={(event) => selectSmartList(event.target.value as ContactSmartListNavigationId)} className="crm-field h-10 min-w-0 flex-1 rounded-xl px-3 text-base font-bold">{[...orderedSmartLists, { id: 'prospects' as const, label: 'Prospects' }].map(({ id, label }) => <option key={id} value={id}>{label} ({counts[id]})</option>)}</select></label> : null}
 
           <div className="px-3 py-3 sm:px-5 lg:px-7">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
+            <div className="relative">
                 <button type="button" aria-label="Filters" onClick={() => setToolbarMenu((current) => current === 'filters' ? null : 'filters')} aria-expanded={toolbarMenu === 'filters'} aria-controls="contact-filter-panel" className={`crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${activeFilterCount ? 'border-[var(--crm-brand-border)] text-[var(--crm-brand)]' : ''}`}><Icon name="filter_alt" className="text-[16px]" />Filters{activeFilterCount ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span> : null}</button>
                 {toolbarMenu === 'filters' ? <div id="contact-filter-panel" role="dialog" aria-label="Contact filters" className="crm-panel fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 max-h-[70dvh] overflow-y-auto rounded-2xl p-4 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-11 sm:w-[min(30rem,calc(100vw-3rem))] sm:max-h-none sm:rounded-xl">
                   <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold text-[var(--crm-ink)]">Filters</h2><p className="text-xs text-[var(--crm-text-muted)]">Narrow the active smart list without losing table space.</p></div><button type="button" onClick={() => setToolbarMenu(null)} aria-label="Close filters" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="close" /></button></div>
@@ -686,13 +681,13 @@ export default function ContactsPage() {
                   </div>
                 </div> : null}
               </div>
-              <div className="relative">
+              <div className="relative hidden sm:block">
                 <button type="button" aria-label="Sort" onClick={() => setToolbarMenu((current) => current === 'sort' ? null : 'sort')} aria-expanded={toolbarMenu === 'sort'} aria-controls="contact-sort-panel" className="crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold"><Icon name="swap_vert" className="text-[16px]" />Sort</button>
                 {toolbarMenu === 'sort' ? <div id="contact-sort-panel" role="dialog" aria-label="Sort contacts" className="crm-panel fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 rounded-2xl p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-11 sm:w-56 sm:rounded-xl">
                   {([['priority', 'Priority first'], ['recent', 'Recently active'], ['name', 'Name A–Z']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortBy(value); setToolbarMenu(null) }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${sortBy === value ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'}`}>{label}{sortBy === value ? <Icon name="check" className="text-[16px]" /> : null}</button>)}
                 </div> : null}
               </div>
-              <button type="button" onClick={() => void refetch()} aria-label="Refresh contacts" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-full"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
+            <button type="button" onClick={() => void refetch()} aria-label="Refresh contacts" className="crm-icon-button hidden h-9 w-9 items-center justify-center rounded-full sm:flex"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
               {hasFilters ? <button type="button" onClick={clearFilters} className="rounded-full border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear ×</button> : null}
               <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{visible.length} results</span>
             </div>

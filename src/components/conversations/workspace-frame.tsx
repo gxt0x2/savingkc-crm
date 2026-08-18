@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import Image from 'next/image'
 import { createContext, FormEvent, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { usePathname, useRouter } from 'next/navigation'
@@ -127,7 +126,7 @@ export function WorkspaceFrame({
           {resolvedHideHeader ? null : <header className={`crm-shell-header flex shrink-0 flex-col border-b px-3 pb-2 pt-[max(.5rem,env(safe-area-inset-top))] backdrop-blur md:flex-row md:items-center md:gap-5 md:px-6 md:py-2 ${resolvedCommandBarActive ? 'md:min-h-[76px]' : 'md:h-[62px]'}`}>
             <div ref={setCommandBarHost} className="order-2 min-w-0 w-full md:order-1 md:flex-1">
               {commandBar ?? (pageCommandBarActive ? null : (
-                <form onSubmit={submitSearch} className="relative mt-2 w-full md:mt-0 md:max-w-[610px]">
+                <form onSubmit={submitSearch} className="relative mt-2 hidden w-full md:mt-0 md:block md:max-w-[610px]">
                   <span className="sr-only">Search contacts, properties, or messages</span>
                   <Icon name="search" className="absolute left-4 top-1/2 -translate-y-1/2 text-[21px] text-[var(--crm-text-muted)]" />
                   <input
@@ -140,11 +139,11 @@ export function WorkspaceFrame({
                 </form>
               ))}
             </div>
-            <div className="order-1 flex h-12 w-full shrink-0 items-center gap-2 md:order-2 md:ml-auto md:h-auto md:w-auto md:gap-5">
+            <div className="order-1 flex h-11 w-full shrink-0 items-center gap-2 md:order-2 md:ml-auto md:h-auto md:w-auto md:gap-5">
               <Link href="/dashboard" className="mr-auto flex min-w-0 items-center gap-2 md:hidden" aria-label="Saving KC home">
-                <Image src="/logo.png" alt="" width={489} height={141} className="h-7 w-10 object-contain" />
-                <span className="truncate text-sm font-black text-[var(--crm-ink)]">{workspaceLabelForPath(pathname)}</span>
+                <span className="truncate text-base font-black text-[var(--crm-ink)]">{workspaceLabelForPath(pathname)}</span>
               </Link>
+              <div className="hidden items-center gap-5 md:flex">
               <GlobalDialerButton />
             <button
               type="button"
@@ -175,6 +174,7 @@ export function WorkspaceFrame({
             </button>
             {profileOpen ? <div className="crm-menu absolute right-0 top-12 z-50 w-48 overflow-hidden rounded-xl py-1"><Link href="/dashboard" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="home" className="text-[18px]" />Dashboard</Link><Link href="/reports/acquisitions" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="bar_chart" className="text-[18px]" />Reports</Link><Link href="/settings" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="settings" className="text-[18px]" />Settings</Link></div> : null}
             </div>
+              </div>
             </div>
           </header>}
           <Suspense fallback={null}>

@@ -229,7 +229,7 @@ export function GiraffeAssistant() {
           </form>
         </section>
       ) : null}
-      {!open ? <button type="button" onClick={() => setOpen(true)} aria-label="Open AI Assistant" aria-expanded={false} className="relative grid h-14 w-14 place-items-center overflow-hidden rounded-full border-2 border-[var(--crm-warning-border)] bg-[#fffdf8] shadow-[0_10px_30px_rgba(32,33,36,.28)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(32,33,36,.34)] focus:outline-none focus:ring-4 focus:ring-[var(--crm-violet-soft)] lg:h-16 lg:w-16">
+      {!open ? <button type="button" onClick={() => setOpen(true)} aria-label="Open AI Assistant" aria-expanded={false} className="relative hidden h-16 w-16 place-items-center overflow-hidden rounded-full border-2 border-[var(--crm-warning-border)] bg-[#fffdf8] shadow-[0_10px_30px_rgba(32,33,36,.28)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(32,33,36,.34)] focus:outline-none focus:ring-4 focus:ring-[var(--crm-violet-soft)] lg:grid">
         <Image src="/ai/giraffe-assistant.webp" alt="AI Assistant giraffe" fill sizes="64px" className="object-cover" priority={false} />
         <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-[var(--crm-success)]" />
       </button> : null}

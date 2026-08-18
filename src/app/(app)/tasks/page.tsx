@@ -8,6 +8,7 @@ import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { Icon } from '@/components/ui/icon'
 import { useCalendarTasks } from '@/hooks/use-calendar-tasks'
+import { useMobileViewport } from '@/hooks/use-mobile-viewport'
 import type { Task, TaskStatus } from '@/types'
 
 type TaskView = 'all' | 'due_today' | 'overdue' | 'upcoming' | 'completed'
@@ -80,6 +81,7 @@ function taskTypeCategory(value: string): Exclude<TaskTypeFilter, 'any'> | null 
 }
 
 export default function TasksPage() {
+  const isMobile = useMobileViewport()
   const { data: sourceTasks = [], isLoading, error, refetch, isFetching } = useCalendarTasks('acquisitions')
   const [view, setView] = useState<TaskView>('all')
   const [search, setSearch] = useState('')
@@ -115,6 +117,8 @@ export default function TasksPage() {
     })), [assigneeOverrides, hiddenTaskIds, sourceTasks, statusOverrides])
 
   useEffect(() => {
+    // Reconcile optimistic mutations after the server query catches up.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStatusOverrides((current) => {
       const next = { ...current }
       let changed = false
@@ -187,7 +191,11 @@ export default function TasksPage() {
     })
   }, [assigneeFilter, dueFilter, now, search, sortBy, statusFilter, taskTypeFilter, tasks, todayStart, tomorrowStart, view])
 
-  useEffect(() => setPage(1), [assigneeFilter, dueFilter, search, sortBy, statusFilter, taskTypeFilter, view])
+  useEffect(() => {
+    // Pagination is reset whenever the active result set changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+  }, [assigneeFilter, dueFilter, search, sortBy, statusFilter, taskTypeFilter, view])
 
   const pageCount = Math.max(1, Math.ceil(filteredTasks.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
@@ -354,22 +362,22 @@ export default function TasksPage() {
   }
 
   const commandBar = (
-    <div data-testid="tasks-command-header" className="grid min-w-0 items-center gap-3 lg:grid-cols-[minmax(11rem,1fr)_minmax(13rem,26rem)_auto]">
+    <div data-testid="tasks-command-header" className="grid min-w-0 grid-cols-[1fr_auto] items-center gap-2 md:gap-3 lg:grid-cols-[minmax(11rem,1fr)_minmax(13rem,26rem)_auto]">
       <div data-header-slot="context" className="min-w-0">
-        <p className="crm-eyebrow">Tasks smart list</p>
+        <p className="crm-eyebrow hidden md:block">Tasks smart list</p>
         <div className="flex items-center gap-2">
           <h1 className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{viewCopy.label}</h1>
           <span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-xs font-bold text-[var(--crm-info)]">{counts[view]}</span>
         </div>
-        <p className="truncate text-[11px] text-[var(--crm-text-muted)]" title={viewCopy.description}>{viewCopy.description}</p>
+        <p className="hidden truncate text-[11px] text-[var(--crm-text-muted)] md:block" title={viewCopy.description}>{viewCopy.description}</p>
       </div>
-      <label data-header-slot="search" className="relative min-w-0">
+      <label data-header-slot="search" className="relative col-span-2 min-w-0 lg:col-span-1">
         <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" />
         <input aria-label="Search tasks" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks..." className="crm-field h-10 w-full rounded-lg pl-9 pr-3 text-sm outline-none" />
       </label>
-      <div data-header-slot="actions" className="flex justify-start gap-2 lg:justify-end">
-        <Link href="/calendar?department=acquisitions" className="crm-secondary-button flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold"><Icon name="calendar_month" />Calendar</Link>
-        <button type="button" onClick={() => setNewTaskOpen(true)} className="crm-primary-button flex h-10 items-center gap-2 rounded-lg px-5 text-sm font-semibold"><Icon name="add" />Add task</button>
+      <div data-header-slot="actions" className="col-start-2 row-start-1 flex justify-end gap-2 lg:col-auto lg:row-auto">
+        <Link href="/calendar?department=acquisitions" className="crm-secondary-button hidden h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold md:flex"><Icon name="calendar_month" />Calendar</Link>
+        <button type="button" onClick={() => setNewTaskOpen(true)} aria-label="Add task" className="crm-primary-button flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold md:w-auto md:gap-2 md:px-5"><Icon name="add" /><span className="hidden md:inline">Add task</span></button>
       </div>
     </div>
   )
@@ -378,7 +386,7 @@ export default function TasksPage() {
     <>
       <WorkspaceChrome commandBar={commandBar} />
       <main className="min-h-full min-w-0 bg-[var(--crm-canvas)]">
-        <div className="flex items-stretch border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
+        {!isMobile ? <div className="flex items-stretch border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
           <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label="Task smart lists">
             {(Object.keys(TASK_VIEW_COPY) as TaskView[]).map((id) => (
               <button key={id} type="button" aria-current={view === id ? 'page' : undefined} aria-label={`${TASK_VIEW_COPY[id].label} ${counts[id]}`} onClick={() => selectView(id)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-4 text-sm font-semibold transition-colors ${view === id ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]' : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'}`}>
@@ -387,11 +395,11 @@ export default function TasksPage() {
               </button>
             ))}
           </nav>
-        </div>
+        </div> : <label className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2"><span className="text-xs font-bold text-[var(--crm-text-muted)]">View</span><select aria-label="Task view" value={view} onChange={(event) => selectView(event.target.value as TaskView)} className="crm-field h-10 min-w-0 flex-1 rounded-xl px-3 text-base font-bold">{(Object.keys(TASK_VIEW_COPY) as TaskView[]).map((id) => <option key={id} value={id}>{TASK_VIEW_COPY[id].label} ({counts[id]})</option>)}</select></label>}
 
-        <section className="px-7 py-3">
+        <section className="px-3 py-3 md:px-7">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
+            <div className="relative hidden sm:block">
               <button type="button" aria-label="Filters" onClick={() => setToolbarMenu((current) => current === 'filters' ? null : 'filters')} aria-expanded={toolbarMenu === 'filters'} className={`crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${activeFilterCount ? 'border-[var(--crm-brand-border)] text-[var(--crm-brand)]' : ''}`}><Icon name="filter_alt" className="text-[16px]" />Filters{activeFilterCount ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span> : null}</button>
               {toolbarMenu === 'filters' ? <div role="dialog" aria-label="Task filters" className="crm-panel absolute left-0 top-11 z-40 w-[min(30rem,calc(100vw-3rem))] rounded-xl p-4 shadow-xl">
                 <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold">Filters</h2><p className="text-xs text-[var(--crm-text-muted)]">Narrow this smart list without taking over the page.</p></div><button type="button" onClick={() => setToolbarMenu(null)} aria-label="Close filters" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="close" /></button></div>
@@ -404,13 +412,13 @@ export default function TasksPage() {
                 <div className="mt-4 flex justify-end border-t border-[var(--crm-border)] pt-3"><button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any'); setTaskTypeFilter('any') }} className="text-xs font-bold text-[var(--crm-brand)] hover:underline">Clear all</button></div>
               </div> : null}
             </div>
-            <div className="relative">
+            <div className="relative hidden sm:block">
               <button type="button" aria-label="Sort" onClick={() => setToolbarMenu((current) => current === 'sort' ? null : 'sort')} aria-expanded={toolbarMenu === 'sort'} className="crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold"><Icon name="swap_vert" className="text-[16px]" />Sort</button>
               {toolbarMenu === 'sort' ? <div role="dialog" aria-label="Sort tasks" className="crm-panel absolute left-0 top-11 z-40 w-56 rounded-xl p-2 shadow-xl">
                 {([['due_asc', 'Due date: soonest'], ['due_desc', 'Due date: latest'], ['newest', 'Recently created'], ['title', 'Title A–Z']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortBy(value); setToolbarMenu(null) }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${sortBy === value ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'hover:bg-[var(--crm-surface-subtle)]'}`}>{label}{sortBy === value ? <Icon name="check" className="text-[16px]" /> : null}</button>)}
               </div> : null}
             </div>
-            <button type="button" onClick={() => void refetch()} aria-label="Refresh tasks" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-full"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
+            <button type="button" onClick={() => void refetch()} aria-label="Refresh tasks" className="crm-icon-button hidden h-9 w-9 items-center justify-center rounded-full sm:flex"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
             {activeFilterCount ? <button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any'); setTaskTypeFilter('any') }} className="rounded-full border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear ×</button> : null}
             <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{filteredTasks.length} results</span>
           </div>
@@ -434,7 +442,7 @@ export default function TasksPage() {
 
           {message ? <div role="status" className={`mt-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold ${message.tone === 'error' ? 'border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`}><Icon name={message.tone === 'error' ? 'error' : 'check_circle'} className="text-[17px]" />{message.text}</div> : null}
 
-          <div className="crm-panel mt-3 overflow-x-auto rounded-xl">
+          {!isMobile ? <div className="crm-panel mt-3 overflow-x-auto rounded-xl">
             <div className="crm-table-header grid min-w-[1120px] grid-cols-[2rem_3rem_1.05fr_1.25fr_1fr_.75fr_1fr_5rem] items-center gap-3 border-b px-3 py-3 text-[11px] font-bold uppercase tracking-[0.06em]">
               <input type="checkbox" aria-label="Select tasks on this page" checked={pageItemsSelected} onChange={togglePageSelection} className="h-4 w-4 accent-[var(--crm-brand)]" />
               <span>Status</span><span>Title</span><span>Description</span><span>Associated contact</span><span>Assignee</span><span>Due date</span><span className="text-right">Actions</span>
@@ -458,7 +466,25 @@ export default function TasksPage() {
                 <span className="flex justify-end gap-1"><button type="button" onClick={() => setEditingTaskId(task.id)} aria-label={`Edit ${task.title}`} title="Edit task" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="edit" className="text-[17px]" /></button><button type="button" onClick={() => setDeleteRequest({ kind: 'single', ids: [task.id], label: task.title })} aria-label={`Delete ${task.title}`} title="Delete task" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg hover:!border-[var(--crm-danger-border)] hover:!bg-[var(--crm-danger-soft)] hover:!text-[var(--crm-danger)]"><Icon name="delete" className="text-[17px]" /></button></span>
               </div>
             }) : null}
-          </div>
+          </div> : <div className="mt-3 space-y-2" aria-label="Tasks">
+            {isLoading ? <div className="crm-panel rounded-xl p-5 text-sm text-[var(--crm-text-muted)]">Loading tasks…</div> : null}
+            {error ? <div className="crm-panel rounded-xl p-5 text-sm text-[var(--crm-danger)]">Tasks could not be loaded. <button type="button" onClick={() => void refetch()} className="font-bold underline">Try again</button></div> : null}
+            {!isLoading && !error && pageTasks.length === 0 ? <div className="crm-panel rounded-xl p-8 text-center"><Icon name="task_alt" className="text-3xl text-[var(--crm-text-muted)]" /><h2 className="mt-2 text-sm font-black">No tasks in this view</h2></div> : null}
+            {!isLoading && !error ? pageTasks.map((task) => {
+              const overdue = isTaskOverdue(task, now)
+              const completed = task.status === 'completed'
+              const busy = busyIds.has(task.id)
+              return <article key={task.id} className="crm-panel flex items-start gap-3 rounded-xl p-3">
+                <button type="button" disabled={busy} onClick={() => void updateTask(task.id, { status: completed ? 'pending' : 'completed' })} aria-label={completed ? `Reopen ${task.title}` : `Mark ${task.title} complete`} className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 ${completed ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-white' : overdue ? 'border-[var(--crm-danger)] text-[var(--crm-danger)]' : 'border-[var(--crm-border-strong)] text-[var(--crm-text-muted)]'}`}><Icon name={busy ? 'progress_activity' : 'check'} className={busy ? 'animate-spin' : ''} /></button>
+                <button type="button" onClick={() => setSelectedTaskId(task.id)} className="min-w-0 flex-1 text-left">
+                  <strong className={`block truncate text-sm ${completed ? 'text-[var(--crm-text-muted)] line-through' : 'text-[var(--crm-ink)]'}`}>{task.title}</strong>
+                  <span className={`mt-1 flex items-center gap-1 text-xs font-semibold ${overdue ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}><Icon name="event" className="text-[15px]" />{dueLabel(task)}</span>
+                  {task.contact_id ? <span className="mt-1 block truncate text-xs text-[var(--crm-info)]">{contactName(task)}</span> : null}
+                </button>
+                <Icon name="chevron_right" className="mt-2 shrink-0 text-[var(--crm-text-muted)]" />
+              </article>
+            }) : null}
+          </div>}
 
           <div className="mt-7 flex items-center text-xs text-[var(--crm-text-muted)]">
             <span>Showing {filteredTasks.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0} to {Math.min(currentPage * PAGE_SIZE, filteredTasks.length)} of {filteredTasks.length} results</span>
