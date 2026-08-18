@@ -52,6 +52,9 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Canonical CRM build gate
+        run: npm run gate:canonical
+
       - name: Code hygiene gate
         env:
           HYGIENE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}

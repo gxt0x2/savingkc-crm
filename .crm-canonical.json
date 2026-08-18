@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "application": "SavingKC CRM",
+  "repository": "gxt0x2/savingkc-crm",
+  "canonicalBranch": "main",
+  "vercelProjectId": "prj_NOdFDJ328LIAGbIdQ7wwZnMFQTq2",
+  "vercelProjectName": "savingkc-crm",
+  "routes": {
+    "pipeline": "/contacts?list=new",
+    "legacyPipeline": "/pipeline"
+  }
+}
