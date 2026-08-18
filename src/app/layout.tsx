@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import '@fontsource-variable/inter'
 import './globals.css'
 import './daily-rhythm.css'
+import './mobile-crm.css'
 import { Providers } from '@/lib/providers'
 
 export const metadata: Metadata = {

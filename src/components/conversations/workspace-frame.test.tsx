@@ -7,6 +7,7 @@ import { WorkspaceChrome, WorkspaceFrame } from './workspace-frame'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => '/dashboard',
 }))
 
 vi.mock('next/link', () => ({
@@ -29,6 +30,8 @@ vi.mock('@/components/telephony/global-dialer-button', () => ({
 
 vi.mock('./workspace-nav', () => ({
   WorkspaceNav: ({ needsReply }: { needsReply: number }) => <nav data-testid="workspace-nav">{needsReply}</nav>,
+  WorkspaceMobileNav: ({ needsReply }: { needsReply: number }) => <nav data-testid="workspace-mobile-nav">{needsReply}</nav>,
+  workspaceLabelForPath: () => 'Dashboard',
 }))
 
 vi.mock('./workspace-context-nav', () => ({

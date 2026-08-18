@@ -67,7 +67,11 @@ export function GiraffeAssistant() {
   const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
   const [sending, setSending] = useState(false)
   const [listening, setListening] = useState(false)
-  const [dictationAvailable, setDictationAvailable] = useState(false)
+  const [dictationAvailable] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const browserWindow = window as typeof window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor }
+    return Boolean(browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition)
+  })
   const [error, setError] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -81,9 +85,13 @@ export function GiraffeAssistant() {
   }, [messages, open, sending])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const browserWindow = window as typeof window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor }
-    setDictationAvailable(Boolean(browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition))
+    if (!open) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [open])
+
+  useEffect(() => {
     return () => recognitionRef.current?.stop()
   }, [])
 
@@ -184,10 +192,10 @@ export function GiraffeAssistant() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-[90] flex flex-col items-end gap-3">
+    <div className={open ? 'fixed inset-0 z-[90] flex flex-col items-end lg:inset-auto lg:bottom-5 lg:right-5 lg:gap-3' : 'fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-3 z-[50] flex flex-col items-end gap-3 lg:bottom-5 lg:right-5 lg:z-[90]'}>
       {open ? (
-        <section role="dialog" aria-modal="false" aria-label="AI Assistant" className="crm-panel-raised flex h-[min(660px,calc(100vh-110px))] w-[min(420px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl shadow-2xl">
-          <header className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-3">
+        <section role="dialog" aria-modal="true" aria-label="AI Assistant" className="crm-panel-raised flex h-[100dvh] w-full flex-col overflow-hidden rounded-none shadow-2xl lg:h-[min(660px,calc(100dvh-110px))] lg:w-[min(420px,calc(100vw-32px))] lg:rounded-2xl">
+          <header className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 pb-3 pt-[max(.75rem,env(safe-area-inset-top))] lg:py-3">
             <Image src="/ai/giraffe-assistant.webp" alt="" width={48} height={48} className="h-11 w-11 rounded-full border-2 border-[var(--crm-warning-border)] object-cover" />
             <div className="min-w-0 flex-1"><h2 className="font-black text-[var(--crm-ink)]">AI Assistant</h2><p className="text-[11px] font-semibold text-[var(--crm-success)]">Company goals + live CRM context</p></div>
             <button type="button" onClick={() => setOpen(false)} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg" aria-label="Close AI Assistant"><Icon name="close" /></button>
@@ -195,7 +203,7 @@ export function GiraffeAssistant() {
           <div ref={transcriptRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[var(--crm-surface-subtle)] p-4">
             {messages.map((message, index) => (
               <div key={`${message.role}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-5 shadow-sm ${message.role === 'user' ? 'rounded-br-md bg-[var(--crm-brand)] text-white' : 'rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'}`}>
+                <div className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-5 shadow-sm sm:max-w-[88%] sm:text-sm ${message.role === 'user' ? 'rounded-br-md bg-[var(--crm-brand)] text-white' : 'rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'}`}>
                   <p className="whitespace-pre-wrap">{message.content}</p>
                   {message.attachments?.length ? <div className="mt-2 flex flex-wrap gap-1">{message.attachments.map((name) => <span key={name} className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold">{name}</span>)}</div> : null}
                 </div>
@@ -204,12 +212,12 @@ export function GiraffeAssistant() {
             {sending ? <div className="flex justify-start"><div className="rounded-2xl rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3.5 py-2.5 text-sm text-[var(--crm-text-muted)]">Checking goals, live CRM, and workflow path…</div></div> : null}
             {error ? <p role="alert" className="rounded-xl border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-danger)]">{error}</p> : null}
           </div>
-          <form onSubmit={submit} className="border-t border-[var(--crm-border)] bg-[var(--crm-surface)] p-3">
+          <form onSubmit={submit} className="border-t border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3">
             {attachments.length ? <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Attached files">{attachments.map((attachment) => <span key={attachment.id} className="inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] py-1 pl-2.5 pr-1 text-[10px] font-bold"><span className="max-w-52 truncate">{attachment.name}</span><button type="button" onClick={() => setAttachments((current) => current.filter((entry) => entry.id !== attachment.id))} aria-label={`Remove ${attachment.name}`} className="grid h-5 w-5 place-items-center rounded-full hover:bg-[var(--crm-surface)]"><Icon name="close" className="text-[13px]" /></button></span>)}</div> : null}
             <label htmlFor="giraffe-ai-request" className="sr-only">Ask the AI Assistant</label>
             <input ref={fileInputRef} type="file" multiple accept=".csv,.json,.md,.pdf,.txt,.xml,image/heic,image/jpeg,image/png,image/webp" onChange={(event) => void addAttachments(event)} className="sr-only" aria-label="Attach files to AI request" />
             <div className="rounded-xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] p-2 focus-within:border-[var(--crm-violet)]">
-              <textarea id="giraffe-ai-request" rows={2} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendPrompt(input) } }} placeholder="Ask what is off track, what happens next, or what to implement…" className="min-h-12 w-full resize-none bg-transparent px-1 py-1 text-sm text-[var(--crm-ink)] outline-none placeholder:text-[var(--crm-text-dim)]" />
+              <textarea id="giraffe-ai-request" rows={2} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendPrompt(input) } }} placeholder="Ask what is off track or what happens next…" className="min-h-12 w-full resize-none bg-transparent px-1 py-1 text-base text-[var(--crm-ink)] outline-none placeholder:text-[var(--crm-text-dim)]" />
               <div className="mt-1 flex items-center gap-1.5 border-t border-[var(--crm-border)] pt-2">
                 <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || attachments.length >= MAX_ATTACHMENTS} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40" aria-label="Attach evidence"><Icon name="attach_file" /></button>
                 <button type="button" onClick={toggleDictation} disabled={sending || !dictationAvailable} className={`crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40 ${listening ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : ''}`} aria-label={listening ? 'Stop voice dictation' : 'Start voice dictation'} aria-pressed={listening}><Icon name={listening ? 'mic_off' : 'mic'} /></button>
@@ -221,10 +229,10 @@ export function GiraffeAssistant() {
           </form>
         </section>
       ) : null}
-      <button type="button" onClick={() => setOpen((value) => !value)} aria-label={open ? 'Hide AI Assistant' : 'Open AI Assistant'} aria-expanded={open} className="relative grid h-16 w-16 place-items-center overflow-hidden rounded-full border-2 border-[var(--crm-warning-border)] bg-[#fffdf8] shadow-[0_10px_30px_rgba(32,33,36,.28)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(32,33,36,.34)] focus:outline-none focus:ring-4 focus:ring-[var(--crm-violet-soft)]">
+      {!open ? <button type="button" onClick={() => setOpen(true)} aria-label="Open AI Assistant" aria-expanded={false} className="relative grid h-14 w-14 place-items-center overflow-hidden rounded-full border-2 border-[var(--crm-warning-border)] bg-[#fffdf8] shadow-[0_10px_30px_rgba(32,33,36,.28)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(32,33,36,.34)] focus:outline-none focus:ring-4 focus:ring-[var(--crm-violet-soft)] lg:h-16 lg:w-16">
         <Image src="/ai/giraffe-assistant.webp" alt="AI Assistant giraffe" fill sizes="64px" className="object-cover" priority={false} />
         <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-[var(--crm-success)]" />
-      </button>
+      </button> : null}
     </div>
   )
 }
