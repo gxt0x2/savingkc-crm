@@ -84,9 +84,10 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
     ['Reports', '/reports/acquisitions'],
     ['Settings', '/settings'],
   ]);
+  const desktopNavigation = page.getByRole('navigation', { name: 'CRM navigation' });
 
   for (const [name, href] of expectedLinks) {
-    const destination = page.locator(`a[href="${href}"]`).filter({ hasText: name });
+    const destination = desktopNavigation.locator(`a[href="${href}"]`).filter({ hasText: name });
     await expect(destination).toBeVisible();
   }
 

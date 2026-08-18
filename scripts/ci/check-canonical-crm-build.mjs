@@ -55,7 +55,9 @@ if (!existsSync(path.join(root, workspaceNav)) || !read(workspaceNav).includes("
 const vercelProjectPath = path.join(root, '.vercel/project.json')
 if (existsSync(vercelProjectPath)) {
   const project = JSON.parse(readFileSync(vercelProjectPath, 'utf8'))
-  if (project.projectId !== manifest.vercelProjectId || project.projectName !== manifest.vercelProjectName) {
+  const projectIdMismatch = project.projectId !== manifest.vercelProjectId
+  const projectNameMismatch = Boolean(project.projectName) && project.projectName !== manifest.vercelProjectName
+  if (projectIdMismatch || projectNameMismatch) {
     fail(`This checkout is linked to Vercel project ${project.projectName || project.projectId}, not ${manifest.vercelProjectName}.`)
   }
 }
@@ -73,7 +75,7 @@ if (process.env.VERCEL_ENV === 'production' && process.env.VERCEL_GIT_COMMIT_REF
   fail(`Production deployment attempted from ${process.env.VERCEL_GIT_COMMIT_REF}; only main is allowed.`)
 }
 
-if (existsSync(path.join(root, '.git'))) {
+if (existsSync(path.join(root, '.git')) && !process.env.VERCEL) {
   try {
     const remote = git(['remote', 'get-url', 'origin'])
     if (!/(?:github\.com[:/])gxt0x2\/savingkc-crm(?:\.git)?$/.test(remote)) fail(`Git origin is not canonical: ${remote}`)
