@@ -99,6 +99,16 @@
   },
   "features": [
     {
+      "id": "canonical_build",
+      "name": "Canonical CRM build identity",
+      "owner": "Platform",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": [],
+      "tables": [],
+      "environment": ["VERCEL", "VERCEL_ENV", "VERCEL_PROJECT_ID", "VERCEL_GIT_REPO_SLUG", "VERCEL_GIT_REPO_OWNER", "VERCEL_GIT_COMMIT_REF"]
+    },
+    {
       "id": "dashboard",
       "name": "CEO Dashboard",
       "owner": "Operations",

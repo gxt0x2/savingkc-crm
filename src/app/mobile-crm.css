@@ -1,0 +1,22 @@
+.crm-workspace-shell {
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (max-width: 767px) {
+  .crm-workspace-shell button,
+  .crm-workspace-shell a,
+  .crm-workspace-shell select {
+    touch-action: manipulation;
+  }
+
+  .crm-workspace-shell input,
+  .crm-workspace-shell select,
+  .crm-workspace-shell textarea {
+    font-size: 16px;
+  }
+
+  .crm-workspace-shell :focus-visible {
+    outline: 2px solid var(--crm-brand);
+    outline-offset: 2px;
+  }
+}

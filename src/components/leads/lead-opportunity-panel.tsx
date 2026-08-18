@@ -58,7 +58,7 @@ export function LeadOpportunityPanel({
   const offerSummary = offerAmount ? `${offerMethod ? `${offerMethod} · ` : ''}${money(offerAmount)}` : 'Verbal or written'
 
   return (
-    <section className="crm-panel flex h-[calc(100vh-300px)] min-h-[560px] max-h-[820px] flex-col overflow-hidden rounded-xl">
+    <section className="crm-panel flex min-h-[24rem] flex-col overflow-hidden rounded-xl xl:h-[calc(100vh-300px)] xl:min-h-[560px] xl:max-h-[820px]">
       <div className="flex h-13 items-center border-b border-[var(--crm-border)] px-5">
         <span className="mr-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]"><Icon name="paid" className="text-[18px]" /></span>
         <h2 className="text-base font-bold text-[var(--crm-ink)]">Opportunity</h2>

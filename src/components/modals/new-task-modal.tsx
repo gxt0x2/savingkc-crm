@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect, useId } from 'react'
 import type { AppMode } from '@/hooks/use-app-mode'
+import { useAuth } from '@/hooks/use-auth'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
+import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 
 interface Lead {
   id: string
@@ -27,6 +29,8 @@ export function NewTaskModal({
   showLeadSelector = false,
   department = 'acquisitions',
 }: NewTaskModalProps) {
+  const { user, loading: authLoading } = useAuth()
+  const authenticatedActor = user ? resolveAgentTelephonyProfile(user.email).displayName : ''
   const [title, setTitle] = useState('')
   const [taskType, setTaskType] = useState('follow_up')
   const [dueDate, setDueDate] = useState(() => {
@@ -34,12 +38,15 @@ export function NewTaskModal({
     d.setHours(d.getHours() + 1, 0, 0, 0)
     return d.toISOString().slice(0, 16)
   })
-  const [assignedTo, setAssignedTo] = useState('Casey')
+  // `null` means "follow the authenticated actor". An empty string is an
+  // intentional Unassigned choice and must not fall back to the viewed agent.
+  const [assignedTo, setAssignedTo] = useState<string | null>(null)
   const [role, setRole] = useState<'setter' | 'closer' | 'admin'>(
     department === 'tc' ? 'admin' : department === 'dispositions' ? 'closer' : 'setter'
   )
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [leadId, setLeadId] = useState(initialLeadId || '')
   const [leads, setLeads] = useState<Lead[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
@@ -48,6 +55,8 @@ export function NewTaskModal({
   const titleId = useId()
   const fieldIdPrefix = useId()
   const dialogRef = useDialogAccessibility<HTMLFormElement>(true, onClose, titleRef)
+  const selectedAssignee = assignedTo ?? authenticatedActor
+  const assigneeOptions = Array.from(new Set([authenticatedActor, 'Casey', 'Ernest', 'Gertha'].filter(Boolean)))
 
   // Load leads when showing the selector
   useEffect(() => {
@@ -81,8 +90,9 @@ export function NewTaskModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!title.trim()) return
+    if (!title.trim() || authLoading || !selectedAssignee) return
     setSaving(true)
+    setSaveError('')
 
     try {
       const res = await fetch('/api/calendar/tasks', {
@@ -92,7 +102,7 @@ export function NewTaskModal({
           title: title.trim(),
           taskType,
           dueDate,
-          assignedTo,
+          assignedTo: selectedAssignee,
           role,
           notes,
           leadId,
@@ -101,33 +111,35 @@ export function NewTaskModal({
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
-        console.error('Failed to create task:', data.error)
+        setSaveError(data.error || 'Task could not be created. Your entries are still here.')
         return
       }
       onCreated()
     } catch (err) {
       console.error('Failed to create task:', err)
+      setSaveError('Task could not be created. Check your connection and try again.')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
       <form
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="crm-panel-raised w-full max-w-md overflow-hidden rounded-2xl"
+        className="crm-panel-raised flex max-h-[calc(100dvh-env(safe-area-inset-top)-.75rem)] w-full max-w-md flex-col overflow-hidden rounded-t-3xl sm:max-h-[min(90dvh,46rem)] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
       >
-        <div className="border-b border-[var(--crm-border)] px-6 pb-4 pt-6">
-          <p className="crm-eyebrow">Task workspace</p>
-          <h2 id={titleId} className="mt-1 text-xl font-black text-[var(--crm-ink)]">Add task</h2>
+        <div className="flex items-start border-b border-[var(--crm-border)] px-4 pb-3 pt-3 sm:px-6 sm:pb-4 sm:pt-6">
+          <div className="min-w-0 flex-1"><div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-[var(--crm-border-strong)] sm:hidden" /><p className="crm-eyebrow">Task workspace</p>
+          <h2 id={titleId} className="mt-0.5 text-xl font-black text-[var(--crm-ink)]">Add task</h2></div>
+          <button type="button" onClick={onClose} className="crm-icon-button mt-4 grid h-11 w-11 place-items-center rounded-xl sm:mt-0" aria-label="Close task form">×</button>
         </div>
-        <div className="px-6 py-5 space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           <div>
             <label htmlFor={`${fieldIdPrefix}-title`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Title</label>
             <input
@@ -137,7 +149,7 @@ export function NewTaskModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Follow up with seller, Run comps..."
-              className="crm-field w-full rounded-lg px-3 py-2 text-sm outline-none"
+              className="crm-field min-h-11 w-full rounded-lg px-3 py-2 text-base outline-none"
             />
           </div>
 
@@ -196,10 +208,10 @@ export function NewTaskModal({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label htmlFor={`${fieldIdPrefix}-type`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Type</label>
-              <select id={`${fieldIdPrefix}-type`} value={taskType} onChange={(e) => setTaskType(e.target.value)} className="crm-field w-full rounded-lg px-3 py-2 text-sm">
+              <select id={`${fieldIdPrefix}-type`} value={taskType} onChange={(e) => setTaskType(e.target.value)} className="crm-field min-h-11 w-full rounded-lg px-3 py-2 text-base sm:text-sm">
                 <option value="follow_up">Follow-up</option>
                 <option value="callback">Callback</option>
                 <option value="appointment">Appointment</option>
@@ -210,10 +222,9 @@ export function NewTaskModal({
             </div>
             <div>
               <label htmlFor={`${fieldIdPrefix}-owner`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Assigned To</label>
-              <select id={`${fieldIdPrefix}-owner`} value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="crm-field w-full rounded-lg px-3 py-2 text-sm">
-                <option value="Casey">Casey</option>
-                <option value="Ernest">Ernest</option>
-                <option value="Gertha">Gertha</option>
+              <select id={`${fieldIdPrefix}-owner`} value={selectedAssignee} onChange={(e) => setAssignedTo(e.target.value)} disabled={authLoading} className="crm-field min-h-11 w-full rounded-lg px-3 py-2 text-base disabled:opacity-60 sm:text-sm">
+                {authLoading ? <option value="">Loading your profile…</option> : null}
+                {assigneeOptions.map((name) => <option key={name} value={name}>{name}{name === authenticatedActor ? ' (me)' : ''}</option>)}
                 <option value="">Unassigned</option>
               </select>
             </div>
@@ -223,7 +234,7 @@ export function NewTaskModal({
                 id={`${fieldIdPrefix}-role`}
                 value={role}
                 onChange={(e) => setRole(e.target.value as 'setter' | 'closer' | 'admin')}
-                className="crm-field w-full rounded-lg px-3 py-2 text-sm"
+                className="crm-field min-h-11 w-full rounded-lg px-3 py-2 text-base sm:text-sm"
               >
                 <option value="setter">Setter</option>
                 <option value="closer">Closer</option>
@@ -238,7 +249,7 @@ export function NewTaskModal({
               type="datetime-local"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="crm-field w-full rounded-lg px-3 py-2 text-sm"
+              className="crm-field min-h-11 w-full rounded-lg px-3 py-2 text-base sm:text-sm"
             />
           </div>
           <div>
@@ -249,16 +260,17 @@ export function NewTaskModal({
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Additional details..."
               rows={2}
-              className="crm-field w-full resize-none rounded-lg px-3 py-2 text-sm"
+              className="crm-field w-full resize-none rounded-lg px-3 py-2 text-base"
             />
           </div>
+          {saveError ? <p role="alert" className="rounded-xl border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--crm-danger)]">{saveError}</p> : null}
         </div>
-        <div className="flex justify-between border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-6 py-4">
-          <button type="button" onClick={onClose} className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-bold">Cancel</button>
+        <div className="flex justify-between gap-3 border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:px-6 sm:py-4">
+          <button type="button" onClick={onClose} className="crm-secondary-button min-h-11 flex-1 rounded-xl px-4 py-2 text-sm font-bold sm:flex-none">Cancel</button>
           <button
             type="submit"
-            disabled={saving || !title.trim()}
-            className="crm-primary-button rounded-lg px-6 py-2 text-sm font-bold disabled:opacity-40"
+            disabled={saving || authLoading || !selectedAssignee || !title.trim()}
+            className="crm-primary-button min-h-11 flex-[1.35] rounded-xl px-6 py-2 text-sm font-bold disabled:opacity-40 sm:flex-none"
           >
             {saving ? 'Creating...' : 'Create Task'}
           </button>

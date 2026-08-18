@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "npm run gate:canonical",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -20,6 +21,7 @@
     "mojo:email": "node scripts/mojo-email-sync.mjs",
     "mojo:queue": "node scripts/mojo-queue-status.mjs",
     "gate:kpi-coverage": "node scripts/ci/check-kpi-coverage.mjs",
+    "gate:canonical": "node scripts/ci/check-canonical-crm-build.mjs",
     "gate:proxy": "node scripts/ci/check-proxy-registration.mjs",
     "gate:theme": "node scripts/ci/check-theme-guard.mjs",
     "gate:terminology": "node scripts/ci/check-opportunity-terminology.mjs",
@@ -33,7 +35,8 @@
     "gate:security": "node scripts/ci/check-e2e-secret-fallbacks.mjs && npm audit --audit-level=high",
     "audit:worktrees": "node scripts/maintenance/audit-worktrees.mjs",
     "telephony:carrier-fallbacks": "node scripts/telephony/configure-carrier-fallbacks.mjs",
-    "hygiene": "npm run gate:hygiene"
+    "hygiene": "npm run gate:hygiene",
+    "preview": "npm run gate:canonical && vercel deploy --yes"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import { ThreadView } from '@/components/conversations/thread-view'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
+import { Icon } from '@/components/ui/icon'
 import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
 import { NextActionDialog } from '@/components/conversations/next-action-dialog'
@@ -563,7 +564,7 @@ export default function ConversationsPage() {
       )}
 
       {/* Sidebar - hidden on mobile unless sidebarOpen, always visible on desktop */}
-      <div className={`${sidebarOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden'} md:block`}>
+      <div className={`${sidebarOpen ? 'absolute inset-0 z-50 [&>*]:w-full' : 'hidden'} md:static md:block`}>
         <InboxSidebar
           threads={threads}
           activeThreadId={activeLeadId || ''}
@@ -575,18 +576,19 @@ export default function ConversationsPage() {
       {/* Thread view - full width on mobile, flex-1 on desktop */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--crm-canvas)]">
         {/* Mobile header with menu button */}
-        <div className="md:hidden flex items-center gap-3 p-4 border-b border-slate-200 bg-white">
+        <div className="flex h-12 items-center gap-2 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 md:hidden">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
             aria-label="Open conversation inbox"
-            className="p-2 hover:bg-slate-50 rounded-lg transition-colors"
+            className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <h2 className="font-bold text-lg">{contact.name}</h2>
+          <h2 className="min-w-0 flex-1 truncate text-sm font-bold text-[var(--crm-ink)]">{contact.name}</h2>
+          <button type="button" onClick={openActiveDialer} disabled={!activeLead?.phone} aria-label="Call contact" className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--crm-success-soft)] text-[var(--crm-success)] disabled:opacity-40"><Icon name="call" /></button>
         </div>
 
         <ThreadView

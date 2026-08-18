@@ -326,8 +326,8 @@ export function LeadWorkspace({
           onSaved={onRefresh}
         />
       ) : null}
-      <div className="mx-auto max-w-[1640px] px-4 pb-8 pt-4 xl:px-6">
-        <header className="crm-panel-raised relative overflow-hidden rounded-xl px-4 py-3.5 sm:px-5">
+      <div className="mx-auto max-w-[1640px] px-3 pb-5 pt-3 sm:px-4 sm:pb-8 sm:pt-4 xl:px-6">
+        <header className="crm-panel-raised relative overflow-hidden rounded-2xl px-3 py-3 sm:rounded-xl sm:px-5 sm:py-3.5">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-2.5">
@@ -337,10 +337,10 @@ export function LeadWorkspace({
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--crm-brand)] text-sm font-bold text-white ring-4 ring-[var(--crm-brand-soft)]">
                   {initials || 'SK'}
                 </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="truncate text-xl font-bold tracking-[-0.03em] text-[var(--crm-ink)] sm:text-2xl">{name}</h1>
-                    <LeadStatusControl
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2 sm:flex-wrap">
+                    <h1 className="min-w-0 flex-1 truncate text-lg font-bold tracking-[-0.03em] text-[var(--crm-ink)] sm:flex-none sm:text-2xl">{name}</h1>
+                    <span className="hidden sm:inline-flex"><LeadStatusControl
                       leadId={lead.id}
                       classification={lead.classification}
                       station={lead.station}
@@ -348,26 +348,27 @@ export function LeadWorkspace({
                       deadReason={lead.dead_reason}
                       agent={lead.assigned_agent}
                       onChanged={onLeadStatusChange}
-                    />
+                    /></span>
+                    <button type="button" onClick={openOperationsPanel} className="crm-icon-button grid h-10 w-10 shrink-0 place-items-center rounded-xl sm:hidden" aria-label="Open lead status and actions"><Icon name="tune" /></button>
                     {(lead.priority || '').toLowerCase() === 'hot' ? (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-brand)]">
+                      <span className="hidden items-center gap-1 rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-brand)] sm:inline-flex">
                         <Icon name="local_fire_department" className="text-[14px]" />Hot
                       </span>
                     ) : null}
-                    <span className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-success)]">
+                    <span className="hidden items-center gap-1 rounded-md border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-success)] sm:inline-flex">
                       <Icon name="flag" className="text-[13px]" />
                       {LEAD_WORKSPACE_STAGES[stageIndex]?.label || toProperCase(lead.station) || 'New'}
                     </span>
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--crm-text-muted)]">
+                    <span className="hidden items-center gap-1.5 text-[11px] font-semibold text-[var(--crm-text-muted)] sm:inline-flex">
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-[8px] font-bold text-[var(--crm-surface)]">{owner.slice(0, 2).toUpperCase()}</span>
                       {owner}
                     </span>
-                    <button type="button" onClick={onEdit} className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg" aria-label="Edit contact">
+                    <button type="button" onClick={onEdit} className="crm-icon-button hidden h-8 w-8 items-center justify-center rounded-lg sm:flex" aria-label="Edit contact">
                       <Icon name="edit" className="text-[17px]" />
                     </button>
                   </div>
-                  <div className="mt-0.5 flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--crm-text-muted)]">
-                    {address ? <button type="button" onClick={openContextPanel} className="flex max-w-[520px] items-center gap-1 truncate text-left hover:text-[var(--crm-info)]"><Icon name="location_on" className="shrink-0 text-[16px]" />{address}</button> : null}
+                  <div className="mt-1 flex min-w-0 flex-col gap-1 text-xs text-[var(--crm-text-muted)] sm:flex-row sm:flex-wrap sm:gap-x-4">
+                    {address ? <button type="button" onClick={openContextPanel} className="flex min-w-0 max-w-[520px] items-center gap-1 text-left hover:text-[var(--crm-info)]"><Icon name="location_on" className="shrink-0 text-[16px]" /><span className="truncate">{address}</span></button> : null}
                     {lead.phone ? <button type="button" onClick={onCall} className="flex items-center gap-1 hover:text-[var(--crm-brand)]" aria-label={`Call ${name}`}><Icon name="call" className="text-[15px]" />{formatPhone(lead.phone)}</button> : null}
                     <button
                       type="button"
@@ -381,7 +382,7 @@ export function LeadWorkspace({
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap">
               <ActionButton icon="call" label="Call" onClick={onCall} disabled={!lead.phone} tone="teal" />
               <ActionButton icon="chat_bubble" label="Text" onClick={onText} disabled={!lead.phone} tone="blue" />
               <ActionButton icon="mail" label="Email" onClick={onEmail} disabled={!lead.email} tone="violet" />
@@ -401,7 +402,7 @@ export function LeadWorkspace({
           </div>
         </header>
 
-        <nav ref={sectionHeadingRef} className="crm-panel sticky top-0 z-20 mt-3 grid scroll-mt-4 grid-cols-3 overflow-hidden rounded-xl md:grid-cols-6" aria-label="Lead workspace sections">
+        <nav ref={sectionHeadingRef} className="crm-panel sticky top-0 z-20 mt-3 flex scroll-mt-4 overflow-x-auto rounded-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-6" aria-label="Lead workspace sections">
           {WORKSPACE_SECTIONS.map(({ key, icon, label, activeTone, iconTone }) => (
             <button
               key={key}
@@ -409,7 +410,7 @@ export function LeadWorkspace({
               onClick={() => selectSection(key)}
               aria-current={activeSection === key ? 'page' : undefined}
               className={cn(
-                'flex h-11 items-center justify-center gap-1.5 border-b-2 px-2 text-xs font-semibold transition-colors md:text-sm',
+                'flex h-11 shrink-0 items-center justify-center gap-1.5 border-b-2 px-3 text-xs font-semibold transition-colors md:px-2 md:text-sm',
                 activeSection === key
                   ? activeTone
                   : 'border-transparent text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface-subtle)] hover:text-[var(--crm-ink)]',
@@ -436,7 +437,7 @@ export function LeadWorkspace({
             role="dialog"
             aria-modal="true"
             aria-labelledby="lead-context-title"
-            className="crm-panel-raised fixed bottom-3 left-3 top-3 z-50 flex w-[min(390px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl shadow-2xl"
+            className="crm-panel-raised fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:bottom-3 sm:left-3 sm:right-auto sm:top-3 sm:max-h-none sm:w-[min(390px,calc(100vw-24px))] sm:rounded-xl"
           >
             <CardHeader
               id="lead-context-title"
@@ -470,6 +471,7 @@ export function LeadWorkspace({
                       <img
                         src={streetViewUrl}
                         alt={`Street view of ${address}`}
+                        loading="lazy"
                         className="h-36 w-full object-cover transition-transform duration-300 group-hover:scale-[1.015]"
                         onError={() => setImageFailed(true)}
                       />
@@ -522,7 +524,7 @@ export function LeadWorkspace({
             role="dialog"
             aria-modal="true"
             aria-labelledby="lead-operations-title"
-            className="crm-panel-raised fixed bottom-3 right-3 top-3 z-50 flex w-[min(410px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl shadow-2xl"
+            className="crm-panel-raised fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:bottom-3 sm:left-auto sm:right-3 sm:top-3 sm:max-h-none sm:w-[min(410px,calc(100vw-24px))] sm:rounded-xl"
           >
             <CardHeader
               id="lead-operations-title"
@@ -601,7 +603,7 @@ export function LeadWorkspace({
             onOpenProperty={openPropertyDetails}
           />
 
-          <section className="crm-panel flex h-[calc(100vh-300px)] min-h-[560px] max-h-[820px] flex-col overflow-hidden rounded-xl">
+          <section className="crm-panel flex h-[min(72dvh,38rem)] min-h-[24rem] flex-col overflow-hidden rounded-xl xl:h-[calc(100vh-300px)] xl:min-h-[560px] xl:max-h-[820px]">
             <CardHeader title="Conversation" icon="forum" />
             <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2.5">
               <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filter conversation by communication type">
@@ -662,7 +664,7 @@ export function LeadWorkspace({
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
                   placeholder={composeMode === 'note' ? 'Add context for your team...' : `Write a ${composeMode === 'sms' ? 'text' : 'message'} to ${firstName}...`}
-                  className="h-24 w-full resize-none bg-[var(--crm-surface)] px-4 py-3 text-sm text-[var(--crm-text)] outline-none placeholder:text-[var(--crm-text-dim)]"
+                  className="h-24 w-full resize-none bg-[var(--crm-surface)] px-4 py-3 text-base text-[var(--crm-text)] outline-none placeholder:text-[var(--crm-text-dim)] sm:text-sm"
                 />
                 {sendError ? <p className="px-4 pb-2 text-xs font-semibold text-[var(--crm-danger)]">{sendError}</p> : null}
                 <div className="flex items-center gap-2 border-t border-[var(--crm-border)] px-3 py-2.5">
@@ -706,7 +708,7 @@ export function LeadWorkspace({
         ) : (
           <section
             aria-labelledby={`lead-section-${activeSection}`}
-            className="crm-panel mt-4 min-h-[520px] overflow-hidden rounded-xl p-5 sm:p-6"
+            className="crm-panel mt-4 min-h-[22rem] overflow-hidden rounded-xl p-4 sm:min-h-[520px] sm:p-6"
           >
             <div className="mb-5 flex items-center justify-between border-b border-[var(--crm-border)] pb-4">
               <div>
@@ -755,7 +757,7 @@ function PropertyOverviewPanel({
   const baths = (lead.baths_full || 0) + (lead.baths_half ? 0.5 : 0)
 
   return (
-    <section className="crm-panel flex h-[calc(100vh-300px)] min-h-[560px] max-h-[820px] flex-col overflow-hidden rounded-xl">
+    <section className="crm-panel flex flex-col overflow-hidden rounded-xl xl:h-[calc(100vh-300px)] xl:min-h-[560px] xl:max-h-[820px]">
       <CardHeader
         title="Property details"
         icon="home_work"
@@ -777,11 +779,12 @@ function PropertyOverviewPanel({
             <img
               src={streetViewUrl}
               alt={`Street view of ${address}`}
-              className="aspect-[16/10] w-full object-cover transition-transform duration-300 group-hover:scale-[1.015]"
+              loading="lazy"
+              className="h-44 w-full object-cover transition-transform duration-300 group-hover:scale-[1.015] sm:h-auto sm:aspect-[16/10]"
               onError={onImageError}
             />
           ) : (
-            <span className="flex aspect-[16/10] items-center justify-center bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]">
+            <span className="flex h-44 items-center justify-center bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)] sm:h-auto sm:aspect-[16/10]">
               <Icon name="home" className="text-[42px]" />
             </span>
           )}

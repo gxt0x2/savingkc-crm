@@ -4,7 +4,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WorkspaceContextNav } from './workspace-context-nav'
-import { WorkspaceNav } from './workspace-nav'
+import { WorkspaceMobileNav, WorkspaceNav } from './workspace-nav'
 
 const navigation = vi.hoisted(() => ({ pathname: '/dashboard', search: '' }))
 
@@ -63,6 +63,20 @@ describe('workspace navigation', () => {
     expect(screen.queryByRole('link', { name: 'Scorecard' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'My Day' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Saving KC CRM dashboard' })).toHaveAttribute('href', '/dashboard')
+  })
+
+  it('gives Casey a persistent mobile menu with role-safe secondary navigation', () => {
+    navigation.pathname = '/my-day'
+    render(<WorkspaceMobileNav needsReply={4} userEmail="casey@savingkc.com" canReviewCalls />)
+
+    const primary = screen.getByRole('navigation', { name: 'Primary CRM navigation' })
+    expect(within(primary).getByRole('link', { name: /My Day/ })).toHaveAttribute('aria-current', 'page')
+    expect(within(primary).getByRole('link', { name: /Inbox/ })).toHaveTextContent('4')
+
+    fireEvent.click(within(primary).getByRole('button', { name: /More/ }))
+    const more = screen.getByRole('dialog', { name: 'More navigation' })
+    expect(within(more).getByRole('link', { name: /Daily Rhythm/ })).toBeVisible()
+    expect(within(more).queryByRole('link', { name: /Scorecard/ })).not.toBeInTheDocument()
   })
 
   it('keeps the system Andon available from the shared CRM navigation', () => {

@@ -166,7 +166,7 @@ export function InboxSidebar({
   ]
 
   return (
-    <aside className="flex h-full w-[330px] flex-col border-r border-[var(--crm-border)] bg-[var(--crm-surface)] text-sm font-semibold">
+    <aside className="flex h-full w-full flex-col border-r border-[var(--crm-border)] bg-[var(--crm-surface)] text-sm font-semibold md:w-[330px]">
       <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface)]">
         {/* Header */}
         <div className="flex h-[76px] items-center justify-between px-5">

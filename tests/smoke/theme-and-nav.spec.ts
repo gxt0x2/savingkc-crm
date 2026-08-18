@@ -84,9 +84,10 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
     ['Reports', '/reports/acquisitions'],
     ['Settings', '/settings'],
   ]);
+  const desktopNavigation = page.getByRole('navigation', { name: 'CRM navigation' });
 
   for (const [name, href] of expectedLinks) {
-    const destination = page.locator(`a[href="${href}"]`).filter({ hasText: name });
+    const destination = desktopNavigation.locator(`a[href="${href}"]`).filter({ hasText: name });
     await expect(destination).toBeVisible();
   }
 
@@ -156,9 +157,10 @@ for (const route of crmWorkspaceRoutes) {
         ? page.getByPlaceholder('Search tasks...')
         : page.getByPlaceholder('Search contacts, properties, or messages...');
     await expect(commandSearch).toBeVisible();
-    await expect(page.locator('a[href="/conversations"]').filter({ hasText: 'Conversations' })).toBeVisible();
-    await expect(page.locator('a[href="/contacts?list=new"]').filter({ hasText: 'Pipeline' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+    const desktopNavigation = page.getByRole('navigation', { name: 'CRM navigation' });
+    await expect(desktopNavigation.getByRole('link', { name: 'Conversations' })).toBeVisible();
+    await expect(desktopNavigation.getByRole('link', { name: 'Pipeline' })).toBeVisible();
+    await expect(desktopNavigation.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
 
     await page.screenshot({

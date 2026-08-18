@@ -168,7 +168,7 @@ export function ThreadView({
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--crm-canvas)]">
       {/* Thread Header */}
-      <header className="flex h-[76px] flex-shrink-0 items-center justify-between border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-5">
+      <header className="hidden h-[76px] flex-shrink-0 items-center justify-between border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-5 md:flex">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-sm font-bold text-[var(--crm-surface)]">
             {contact.initials}
@@ -254,7 +254,7 @@ export function ThreadView({
 
       {(contact.attentionState !== 'resolved' || contact.nextAction) && (
         <div className={cn(
-          'mx-5 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border-l-4 px-4 py-3',
+          'mx-3 mt-2 flex items-center justify-between gap-2 rounded-xl border-l-4 px-3 py-2 md:mx-5 md:mt-3 md:flex-wrap md:gap-3 md:px-4 md:py-3',
           contact.attentionState === 'needs_reply'
             ? 'border border-[var(--crm-brand-border)] border-l-[var(--crm-brand)] bg-[var(--crm-brand-soft)]'
             : 'border border-[var(--crm-violet)]/30 border-l-[var(--crm-violet)] bg-[var(--crm-violet-soft)]',
@@ -267,11 +267,11 @@ export function ThreadView({
             }>
               {contact.attentionState === 'needs_reply' ? 'Needs Reply' : 'Waiting on contact'}
             </span>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-bold text-slate-900">
                 {contact.nextAction?.title || 'Review this conversation'}
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="hidden text-xs text-slate-500 md:block">
                 Owner: {contact.nextAction?.owner || contact.owner || 'Unassigned'}
                 {contact.nextAction?.dueAt
                   ? ` · Due ${new Date(contact.nextAction.dueAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
@@ -280,14 +280,14 @@ export function ThreadView({
             </div>
           </div>
           {contact.nextAction?.overdue && (
-            <span className="text-xs font-black uppercase tracking-wide text-red-700">Overdue</span>
+            <span className="hidden text-xs font-black uppercase tracking-wide text-red-700 md:inline">Overdue</span>
           )}
           {contact.nextAction && (
             <button
               type="button"
               onClick={completePrimaryAction}
               disabled={completingTask}
-              className="crm-secondary-button rounded-lg px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60"
+              className="crm-secondary-button hidden rounded-lg px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 md:block"
             >
               {completingTask ? 'Completing…' : 'Mark complete'}
             </button>
@@ -297,7 +297,7 @@ export function ThreadView({
       )}
 
       {/* Chat Content */}
-      <div ref={scrollRef} className="flex-1 space-y-6 overflow-y-auto bg-[var(--crm-canvas)] px-6 py-5 scroll-smooth">
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-[var(--crm-canvas)] px-3 py-3 scroll-smooth md:space-y-6 md:px-6 md:py-5">
         {dateGroups.map((group) => (
           <div key={group.label} className="space-y-5">
             {/* Date Divider */}
@@ -317,7 +317,7 @@ export function ThreadView({
         ))}
       </div>
 
-      <div className="flex shrink-0 gap-2 border-t border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 pt-3">
+      <div className="hidden shrink-0 gap-2 border-t border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 pt-3 md:flex">
         {[
           { label: 'I can call at 2:30', tone: 'border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] text-[var(--crm-success)] hover:brightness-95' },
           { label: 'Send property details', tone: 'border-[var(--crm-border-strong)] bg-[var(--crm-info-soft)] text-[var(--crm-info)] hover:brightness-95' },
