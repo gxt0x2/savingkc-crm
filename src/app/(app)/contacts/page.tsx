@@ -612,7 +612,7 @@ export default function ContactsPage() {
   const contactsCommandBar = (
     <div data-testid="contacts-command-header" className="grid min-w-0 grid-cols-[1fr_auto] items-end gap-2 md:grid-cols-[minmax(11rem,1fr)_minmax(13rem,26rem)_auto] md:items-center md:gap-3">
       <div data-header-slot="context" className="min-w-0">
-        <p className="crm-eyebrow">{smartList === 'prospects' ? 'Prospecting' : 'Pipeline'}</p>
+        <p className="crm-eyebrow hidden md:block">{smartList === 'prospects' ? 'Prospecting' : 'Pipeline'}</p>
         <div className="flex items-center gap-2">
           <h1 className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{smartListCopy.label}</h1>
           <span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-xs font-bold text-[var(--crm-info)]">{counts[smartList]}</span>
@@ -620,7 +620,7 @@ export default function ContactsPage() {
         <p className="hidden truncate text-[11px] text-[var(--crm-text-muted)] sm:block" title={smartListCopy.description}>{smartListCopy.description}</p>
       </div>
       <label data-header-slot="search" className="relative col-span-2 min-w-0 md:col-span-1"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input aria-label="Search contacts" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-11 w-full rounded-xl pl-9 pr-3 text-base outline-none md:h-10 md:rounded-lg md:text-sm" /></label>
-      <div data-header-slot="actions" className="flex justify-end gap-2 md:justify-start lg:justify-end">
+      <div data-header-slot="actions" className="col-start-2 row-start-1 flex justify-end gap-2 md:col-auto md:row-auto md:justify-start lg:justify-end">
         <button type="button" onClick={() => { setDialogError(null); setDialog('import') }} className="crm-secondary-button hidden h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold sm:flex"><Icon name="upload" />Import</button>
         <button type="button" onClick={() => { setDialogError(null); setDialog('add') }} className="crm-primary-button flex h-11 w-11 items-center justify-center rounded-xl text-sm font-semibold md:h-10 md:w-auto md:gap-2 md:rounded-lg md:px-5"><Icon name="add" /><span className="sr-only md:not-sr-only">Add contact</span></button>
       </div>
