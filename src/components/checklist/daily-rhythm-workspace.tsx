@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
@@ -8,15 +9,17 @@ import { cn } from '@/lib/utils'
 type Protocol = 'sod' | 'eod'
 type Submission = { id: string; submittedAt: string; checklist?: string[] } & Record<string, unknown>
 type DailyState = { date: string; sod: Submission | null; eod: Submission | null }
+type HubThread = { attentionState?: string; lastChannel?: string | null; primaryNextAction?: { overdue?: boolean } | null }
+type MyDay = { commitments?: unknown[]; queue?: unknown[] }
 
 const MORNING_STEPS = [
-  { id: 'vision', title: 'Review Vision', detail: 'Read your vision and remember why today matters.' },
-  { id: 'practice', title: 'Practice Objections', detail: 'Practice one objection before the first call.' },
-  { id: 'followups', title: 'Review Follow-Ups', detail: 'Know who needs a response today.' },
-  { id: 'pipeline', title: 'Check Priority Sellers', detail: 'Review the next action for each priority seller.' },
-  { id: 'calendar', title: 'Confirm Calendar', detail: 'Check appointments and callbacks.' },
-  { id: 'calling', title: 'Load Call List', detail: 'Open the right list before calling.' },
-]
+  { id: 'purpose', title: 'Your Goal & Why', detail: 'Remember what you are working toward.' },
+  { id: 'urgent', title: 'Clear Urgent Messages', detail: 'Review missed calls, emails, texts, and overdue replies.' },
+  { id: 'calendar', title: 'Confirm Today', detail: 'Check appointments, callbacks, and meetings.' },
+  { id: 'pipeline', title: 'Review Priority Sellers', detail: 'Know the next action for every priority seller.' },
+  { id: 'calling', title: 'Ready the Call List', detail: 'Start with the right people in the right order.' },
+  { id: 'commit', title: 'Set Today’s Goal', detail: 'Choose the result that makes today successful.' },
+] as const
 
 const EVENING_STEPS = [
   { id: 'dispositions', title: 'Log Every Outcome', detail: 'Update calls, messages, and notes.' },
@@ -42,131 +45,117 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
   const [active, setActive] = useState<Protocol>('sod')
   const [daily, setDaily] = useState<DailyState | null>(null)
   const [checked, setChecked] = useState<Record<Protocol, string[]>>({ sod: [], eod: [] })
+  const [wizardStep, setWizardStep] = useState(0)
+  const [personalGoal, setPersonalGoal] = useState('')
+  const [personalWhy, setPersonalWhy] = useState('')
   const [focus, setFocus] = useState('')
-  const [coachingCommitment, setCoachingCommitment] = useState('')
   const [energy, setEnergy] = useState(3)
   const [win, setWin] = useState('')
   const [lesson, setLesson] = useState('')
   const [tomorrow, setTomorrow] = useState('')
+  const [hubThreads, setHubThreads] = useState<HubThread[]>([])
+  const [myDay, setMyDay] = useState<MyDay>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const steps = active === 'sod' ? MORNING_STEPS : EVENING_STEPS
-  const selected = checked[active]
   const completionCount = Number(Boolean(daily?.sod)) + Number(Boolean(daily?.eod))
   const dateLabel = useMemo(() => new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Chicago', weekday: 'long', month: 'long', day: 'numeric',
   }).format(new Date()), [])
+  const needsReply = hubThreads.filter((thread) => thread.attentionState === 'needs_reply')
+  const urgentCounts = {
+    calls: needsReply.filter((thread) => ['call', 'voicemail'].includes(thread.lastChannel ?? '')).length,
+    emails: needsReply.filter((thread) => thread.lastChannel === 'email').length,
+    texts: needsReply.filter((thread) => thread.lastChannel === 'sms').length,
+    overdue: hubThreads.filter((thread) => thread.primaryNextAction?.overdue).length,
+  }
 
   useEffect(() => {
     let cancelled = false
-    void fetch('/api/daily-rhythm', { cache: 'no-store' })
-      .then(async (response) => {
+    void Promise.all([
+      fetch('/api/daily-rhythm', { cache: 'no-store' }).then(async (response) => {
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.error || 'Daily Rhythm could not load.')
         return payload as DailyState
-      })
-      .then((payload) => {
-        if (cancelled) return
-        setDaily(payload)
-        setChecked({ sod: payload.sod?.checklist ?? [], eod: payload.eod?.checklist ?? [] })
-        setFocus(readText(payload.sod, 'focus'))
-        setCoachingCommitment(readText(payload.sod, 'coachingCommitment'))
-        setEnergy(typeof payload.sod?.energy === 'number' ? payload.sod.energy : 3)
-        setWin(readText(payload.eod, 'win'))
-        setLesson(readText(payload.eod, 'lesson'))
-        setTomorrow(readText(payload.eod, 'tomorrow'))
-      })
-      .catch((reason) => { if (!cancelled) setMessage(reason instanceof Error ? reason.message : 'Daily Rhythm could not load.') })
+      }),
+      fetch('/api/my-day', { cache: 'no-store' }).then((response) => response.ok ? response.json() as Promise<MyDay> : {}),
+      fetch('/api/conversations/hub', { cache: 'no-store' }).then(async (response) => response.ok ? (await response.json()).items as HubThread[] : []),
+    ]).then(([payload, myDayPayload, threads]) => {
+      if (cancelled) return
+      setDaily(payload)
+      setMyDay(myDayPayload)
+      setHubThreads(Array.isArray(threads) ? threads : [])
+      setChecked({ sod: payload.sod?.checklist ?? [], eod: payload.eod?.checklist ?? [] })
+      setPersonalGoal(readText(payload.sod, 'personalGoal'))
+      setPersonalWhy(readText(payload.sod, 'personalWhy'))
+      setFocus(readText(payload.sod, 'focus'))
+      setEnergy(typeof payload.sod?.energy === 'number' ? payload.sod.energy : 3)
+      setWin(readText(payload.eod, 'win'))
+      setLesson(readText(payload.eod, 'lesson'))
+      setTomorrow(readText(payload.eod, 'tomorrow'))
+    }).catch((reason) => { if (!cancelled) setMessage(reason instanceof Error ? reason.message : 'Daily Rhythm could not load.') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])
 
-  function toggleStep(id: string) {
-    setChecked((current) => ({
-      ...current,
-      [active]: current[active].includes(id) ? current[active].filter((item) => item !== id) : [...current[active], id],
-    }))
+  function completeMorningStep() {
+    const id = MORNING_STEPS[wizardStep].id
+    setChecked((current) => ({ ...current, sod: current.sod.includes(id) ? current.sod : [...current.sod, id] }))
+    if (wizardStep < MORNING_STEPS.length - 1) setWizardStep((current) => current + 1)
   }
 
-  async function submit() {
+  function toggleEveningStep(id: string) {
+    setChecked((current) => ({ ...current, eod: current.eod.includes(id) ? current.eod.filter((item) => item !== id) : [...current.eod, id] }))
+  }
+
+  async function submit(protocol: Protocol, checklist = checked[protocol]) {
     setSubmitting(true)
     setMessage(null)
     try {
       const response = await fetch('/api/daily-rhythm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ protocol: active, checklist: selected, focus, coachingCommitment, energy, win, lesson, tomorrow }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ protocol, checklist, personalGoal, personalWhy, focus, energy, win, lesson, tomorrow }),
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Daily Rhythm could not be saved.')
-      const submission = { id: payload.id, submittedAt: payload.submittedAt, checklist: selected }
-      setDaily((current) => ({ date: current?.date ?? '', sod: active === 'sod' ? submission : current?.sod ?? null, eod: active === 'eod' ? submission : current?.eod ?? null }))
-      setMessage(active === 'sod' ? 'Morning Launch saved. Your day has a clear target.' : 'Daily Closeout saved. Tomorrow already has a first move.')
-      if (active === 'sod') setActive('eod')
+      const submission = { id: payload.id, submittedAt: payload.submittedAt, checklist }
+      setDaily((current) => ({ date: current?.date ?? '', sod: protocol === 'sod' ? submission : current?.sod ?? null, eod: protocol === 'eod' ? submission : current?.eod ?? null }))
+      setMessage(protocol === 'sod' ? 'Your day is ready. Open My Day and start with the first priority.' : 'Daily Closeout saved. Tomorrow already has a first move.')
+      if (protocol === 'sod') setActive('eod')
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : 'Daily Rhythm could not be saved.')
-    } finally {
-      setSubmitting(false)
-    }
+    } finally { setSubmitting(false) }
   }
 
-  return (
-    <main className="mx-auto flex w-full max-w-[1180px] flex-col gap-4 px-4 py-5 sm:px-6 lg:py-7">
-      <header className="crm-panel overflow-hidden rounded-2xl">
-        <div className="grid gap-6 px-6 py-6 lg:grid-cols-[1fr_360px] lg:px-8">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">Daily operating rhythm</p>
-            <h1 className="mt-1 text-[32px] font-black tracking-[-0.04em]">Start strong. Finish clean.</h1>
-            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[var(--crm-text-muted)]">Plan the day. Do the work. Set up tomorrow.</p>
-            <div className="mt-5 flex flex-wrap items-center gap-2 text-xs font-bold">
-              <span className="rounded-full bg-[var(--crm-brand-soft)] px-3 py-1.5 text-[var(--crm-brand)]">{displayName(userEmail)}</span>
-              <span className="text-[var(--crm-text-muted)]">{dateLabel}</span>
-            </div>
-          </div>
-          <div className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-5">
-            <div className="flex items-center justify-between"><span className="text-xs font-black uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">Today’s rhythm</span><span className="text-2xl font-black">{completionCount}/2</span></div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {(['sod', 'eod'] as Protocol[]).map((protocol) => {
-                const done = Boolean(daily?.[protocol])
-                return <div key={protocol} className={cn('rounded-lg border p-3', done ? 'border-[var(--crm-success)] bg-[var(--crm-success-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)]')}><Icon name={done ? 'check_circle' : protocol === 'sod' ? 'light_mode' : 'dark_mode'} className={cn('text-[20px]', done ? 'text-[var(--crm-success)]' : 'text-[var(--crm-text-muted)]')} /><p className="mt-1 text-xs font-black">{protocol === 'sod' ? 'Morning Launch' : 'Daily Closeout'}</p><p className="mt-0.5 text-[10px] text-[var(--crm-text-muted)]">{done ? `Saved ${formatTime(daily![protocol]!.submittedAt)}` : 'Not completed'}</p></div>
-              })}
-            </div>
-          </div>
-        </div>
-      </header>
+  const step = MORNING_STEPS[wizardStep]
+  const canContinue = step.id !== 'purpose' || Boolean(personalGoal.trim() && personalWhy.trim())
 
-      <section className="crm-panel overflow-hidden rounded-2xl">
-        <div className="flex border-b border-[var(--crm-border)] p-2">
-          {(['sod', 'eod'] as Protocol[]).map((protocol) => <button key={protocol} type="button" onClick={() => { setActive(protocol); setMessage(null) }} className={cn('flex-1 rounded-lg px-4 py-3 text-sm font-black transition-colors', active === protocol ? 'bg-[var(--crm-brand)] text-white' : 'text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface-subtle)]')}>{protocol === 'sod' ? 'Morning Launch' : 'Daily Closeout'}{daily?.[protocol] ? '  ✓' : ''}</button>)}
-        </div>
-        <div className="grid lg:grid-cols-[1fr_390px]">
-          <div className="border-b border-[var(--crm-border)] p-5 lg:border-b-0 lg:border-r lg:p-7">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--crm-brand)]">{active === 'sod' ? 'Get ready' : 'Finish the day'}</p>
-            <h2 className="mt-1 text-2xl font-black tracking-[-0.03em]">{active === 'sod' ? 'Start the day' : 'Close the day'}</h2>
-            <div className="mt-5 space-y-2">
-              {steps.map((step) => {
-                const done = selected.includes(step.id)
-                return <button key={step.id} type="button" disabled={loading} onClick={() => toggleStep(step.id)} aria-pressed={done} className={cn('flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors disabled:cursor-wait disabled:opacity-60', done ? 'border-[var(--crm-success)] bg-[var(--crm-success-soft)]' : 'border-[var(--crm-border)] hover:border-[var(--crm-brand-border)] hover:bg-[var(--crm-surface-subtle)]')}><span className={cn('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2', done ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-white' : 'border-[var(--crm-border-strong)]')}><Icon name={done ? 'check' : 'circle'} className="text-[15px]" /></span><span><strong className="block text-sm">{step.title}</strong><span className="mt-0.5 block text-xs leading-5 text-[var(--crm-text-muted)]">{step.detail}</span></span></button>
-              })}
-            </div>
-          </div>
+  return <main className="mx-auto flex w-full max-w-[1180px] flex-col gap-4 px-4 py-5 sm:px-6 lg:py-7">
+    <header className="crm-panel overflow-hidden rounded-2xl">
+      <div className="grid gap-6 px-6 py-6 lg:grid-cols-[1fr_360px] lg:px-8">
+        <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">Daily Rhythm</p><h1 className="mt-1 text-[32px] font-black tracking-[-0.04em]">Start strong. Finish clean.</h1><p className="mt-2 text-sm font-semibold text-[var(--crm-text-muted)]">Set up the day in a few focused steps.</p><div className="mt-5 flex gap-2 text-xs font-bold"><span className="rounded-full bg-[var(--crm-brand-soft)] px-3 py-1.5 text-[var(--crm-brand)]">{displayName(userEmail)}</span><span className="py-1.5 text-[var(--crm-text-muted)]">{dateLabel}</span></div></div>
+        <div className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-5"><div className="flex items-center justify-between"><span className="text-xs font-black uppercase text-[var(--crm-text-muted)]">Today’s rhythm</span><span className="text-2xl font-black">{completionCount}/2</span></div><div className="mt-4 grid grid-cols-2 gap-2">{(['sod', 'eod'] as Protocol[]).map((protocol) => { const done = Boolean(daily?.[protocol]); return <div key={protocol} className={cn('rounded-lg border p-3', done ? 'border-[var(--crm-success)] bg-[var(--crm-success-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)]')}><Icon name={done ? 'check_circle' : protocol === 'sod' ? 'light_mode' : 'dark_mode'} className={cn('text-[20px]', done ? 'text-[var(--crm-success)]' : 'text-[var(--crm-text-muted)]')} /><p className="mt-1 text-xs font-black">{protocol === 'sod' ? 'Morning Launch' : 'Daily Closeout'}</p><p className="mt-0.5 text-[10px] text-[var(--crm-text-muted)]">{done ? `Saved ${formatTime(daily![protocol]!.submittedAt)}` : 'Not completed'}</p></div> })}</div></div>
+      </div>
+    </header>
 
-          <div className="bg-[var(--crm-surface-subtle)] p-5 lg:p-7">
-            {active === 'sod' ? <>
-              <label className="block text-xs font-black">Today’s main goal<textarea value={focus} onChange={(event) => setFocus(event.target.value)} rows={3} placeholder="What must happen today?" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
-              <label className="mt-5 block text-xs font-black">Skill to practice<textarea value={coachingCommitment} onChange={(event) => setCoachingCommitment(event.target.value)} rows={2} placeholder="Example: ask one question deeper." className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
-              <fieldset className="mt-5"><legend className="text-xs font-black">Energy level</legend><div className="mt-2 grid grid-cols-5 gap-2">{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" onClick={() => setEnergy(value)} aria-pressed={energy === value} className={cn('rounded-lg border py-2 text-xs font-black', energy === value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)] text-white' : 'border-[var(--crm-border)] bg-[var(--crm-surface)]')}>{value}</button>)}</div></fieldset>
-            </> : <>
-              <label className="block text-xs font-black">Today’s win<textarea value={win} onChange={(event) => setWin(event.target.value)} rows={2} placeholder="What moved forward today?" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
-              <label className="mt-4 block text-xs font-black">What did you learn?<textarea value={lesson} onChange={(event) => setLesson(event.target.value)} rows={2} placeholder="What will you repeat or change?" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
-              <label className="mt-4 block text-xs font-black">First move tomorrow<textarea value={tomorrow} onChange={(event) => setTomorrow(event.target.value)} rows={2} placeholder="What will you do first?" className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 text-sm font-medium outline-none focus:border-[var(--crm-brand)]" /></label>
-            </>}
-            <button type="button" disabled={submitting || loading || selected.length === 0} onClick={submit} className="crm-primary-button mt-6 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-black disabled:cursor-not-allowed disabled:opacity-45"><Icon name={daily?.[active] ? 'refresh' : 'check_circle'} className="text-[18px]" />{submitting ? 'Saving…' : daily?.[active] ? 'Update rhythm' : active === 'sod' ? 'Launch my day' : 'Close my day'}</button>
-            {message ? <p role="status" className="mt-3 text-center text-xs font-bold text-[var(--crm-text-muted)]">{message}</p> : null}
-          </div>
-        </div>
-      </section>
-    </main>
-  )
+    <section className="crm-panel overflow-hidden rounded-2xl">
+      <div className="flex border-b border-[var(--crm-border)] p-2">{(['sod', 'eod'] as Protocol[]).map((protocol) => <button key={protocol} type="button" onClick={() => { setActive(protocol); setMessage(null) }} className={cn('flex-1 rounded-lg px-4 py-3 text-sm font-black', active === protocol ? 'bg-[var(--crm-brand)] text-white' : 'text-[var(--crm-text-muted)]')}>{protocol === 'sod' ? 'Morning Launch' : 'Daily Closeout'}{daily?.[protocol] ? '  ✓' : ''}</button>)}</div>
+      {active === 'sod' ? <div className="grid min-h-[500px] lg:grid-cols-[270px_1fr]">
+        <aside className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-5 lg:border-b-0 lg:border-r"><p className="text-[10px] font-black uppercase tracking-widest text-[var(--crm-brand)]">Morning setup</p><p className="mt-1 text-sm font-bold">Step {wizardStep + 1} of {MORNING_STEPS.length}</p><div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--crm-border)]"><div className="h-full rounded-full bg-[var(--crm-brand)] transition-all" style={{ width: `${((wizardStep + 1) / MORNING_STEPS.length) * 100}%` }} /></div><nav className="mt-5 space-y-1">{MORNING_STEPS.map((item, index) => <button key={item.id} type="button" onClick={() => setWizardStep(index)} className={cn('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold', index === wizardStep ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'text-[var(--crm-text-muted)]')}><Icon name={checked.sod.includes(item.id) ? 'check_circle' : 'radio_button_unchecked'} className="text-[18px]" />{item.title}</button>)}</nav></aside>
+        <div className="flex flex-col p-6 lg:p-8"><div className="flex-1"><p className="text-[10px] font-black uppercase tracking-widest text-[var(--crm-brand)]">{String(wizardStep + 1).padStart(2, '0')}</p><h2 className="mt-1 text-2xl font-black tracking-tight">{step.title}</h2><p className="mt-1 text-sm text-[var(--crm-text-muted)]">{step.detail}</p><div className="mt-6 max-w-2xl">
+          {step.id === 'purpose' ? <div className="grid gap-5"><label className="text-xs font-black">Personal goal<textarea value={personalGoal} onChange={(event) => setPersonalGoal(event.target.value)} rows={3} placeholder="What are you working toward personally?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label><label className="text-xs font-black">Your why<textarea value={personalWhy} onChange={(event) => setPersonalWhy(event.target.value)} rows={3} placeholder="Why does this matter to you?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label><fieldset><legend className="text-xs font-black">Energy level</legend><div className="mt-2 grid max-w-sm grid-cols-5 gap-2">{[1,2,3,4,5].map((value) => <button key={value} type="button" onClick={() => setEnergy(value)} className={cn('rounded-lg border py-2 text-xs font-black', energy === value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)] text-white' : 'border-[var(--crm-border)]')}>{value}</button>)}</div></fieldset></div> : null}
+          {step.id === 'urgent' ? <div className="grid gap-3 sm:grid-cols-2">{[['missed_call','Missed calls',urgentCounts.calls],['mail','Emails',urgentCounts.emails],['sms','Texts',urgentCounts.texts],['schedule','Overdue actions',urgentCounts.overdue]].map(([icon,label,value]) => <div key={String(label)} className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4"><Icon name={String(icon)} className="text-[22px] text-[var(--crm-brand)]" /><p className="mt-2 text-2xl font-black">{loading ? '—' : String(value)}</p><p className="text-xs font-bold text-[var(--crm-text-muted)]">{label}</p></div>)}<Link href="/conversations" className="crm-secondary-button col-span-full rounded-lg px-4 py-3 text-center text-xs font-black">Open Conversations</Link></div> : null}
+          {step.id === 'calendar' ? <SummaryCard icon="calendar_month" value={myDay.commitments?.length ?? 0} label="commitments scheduled" href="/calendar" action="Review calendar" /> : null}
+          {step.id === 'pipeline' ? <SummaryCard icon="conversion_path" value={myDay.queue?.length ?? 0} label="priority actions ready" href="/pipeline" action="Review Pipeline" /> : null}
+          {step.id === 'calling' ? <SummaryCard icon="dialpad" value={myDay.queue?.length ?? 0} label="people ready for action" href="/dialer" action="Open Dialer" /> : null}
+          {step.id === 'commit' ? <label className="block text-xs font-black">Today’s main goal<textarea value={focus} onChange={(event) => setFocus(event.target.value)} rows={4} placeholder="What must happen today?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label> : null}
+        </div></div><div className="mt-8 flex items-center justify-between border-t border-[var(--crm-border)] pt-5"><button type="button" disabled={wizardStep === 0} onClick={() => setWizardStep((current) => current - 1)} className="crm-secondary-button rounded-lg px-4 py-2 text-xs font-black disabled:opacity-30">Back</button>{wizardStep < MORNING_STEPS.length - 1 ? <button type="button" disabled={!canContinue || loading} onClick={completeMorningStep} className="crm-primary-button rounded-lg px-5 py-2.5 text-xs font-black disabled:opacity-40">Continue</button> : <button type="button" disabled={submitting || !focus.trim()} onClick={() => { const checklist = checked.sod.includes('commit') ? checked.sod : [...checked.sod, 'commit']; setChecked((current) => ({ ...current, sod: checklist })); void submit('sod', checklist) }} className="crm-primary-button rounded-lg px-5 py-2.5 text-xs font-black disabled:opacity-40">{submitting ? 'Saving…' : 'Start My Day'}</button>}</div></div>
+      </div> : <div className="grid lg:grid-cols-[1fr_390px]"><div className="border-b border-[var(--crm-border)] p-6 lg:border-b-0 lg:border-r"><h2 className="text-2xl font-black">Close the day</h2><div className="mt-5 space-y-2">{EVENING_STEPS.map((item) => { const done = checked.eod.includes(item.id); return <button key={item.id} type="button" onClick={() => toggleEveningStep(item.id)} className={cn('flex w-full items-start gap-3 rounded-xl border p-4 text-left', done ? 'border-[var(--crm-success)] bg-[var(--crm-success-soft)]' : 'border-[var(--crm-border)]')}><Icon name={done ? 'check_circle' : 'radio_button_unchecked'} className={done ? 'text-[var(--crm-success)]' : ''} /><span><strong className="block text-sm">{item.title}</strong><span className="text-xs text-[var(--crm-text-muted)]">{item.detail}</span></span></button> })}</div></div><div className="bg-[var(--crm-surface-subtle)] p-6"><label className="block text-xs font-black">Today’s win<textarea value={win} onChange={(event) => setWin(event.target.value)} rows={2} className="crm-field mt-2 w-full rounded-lg p-3 text-sm" /></label><label className="mt-4 block text-xs font-black">What did you learn?<textarea value={lesson} onChange={(event) => setLesson(event.target.value)} rows={2} className="crm-field mt-2 w-full rounded-lg p-3 text-sm" /></label><label className="mt-4 block text-xs font-black">First move tomorrow<textarea value={tomorrow} onChange={(event) => setTomorrow(event.target.value)} rows={2} className="crm-field mt-2 w-full rounded-lg p-3 text-sm" /></label><button type="button" disabled={submitting || checked.eod.length === 0} onClick={() => void submit('eod')} className="crm-primary-button mt-6 w-full rounded-lg px-4 py-3 text-sm font-black disabled:opacity-40">Close My Day</button></div></div>}
+      {message ? <p role="status" className="border-t border-[var(--crm-border)] px-6 py-3 text-center text-xs font-bold text-[var(--crm-text-muted)]">{message}</p> : null}
+    </section>
+  </main>
+}
+
+function SummaryCard({ icon, value, label, href, action }: { icon: string; value: number; label: string; href: string; action: string }) {
+  return <div className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-5"><Icon name={icon} className="text-2xl text-[var(--crm-brand)]" /><p className="mt-3 text-3xl font-black">{value}</p><p className="text-sm font-bold text-[var(--crm-text-muted)]">{label}</p><Link href={href} className="crm-secondary-button mt-5 inline-flex rounded-lg px-4 py-2 text-xs font-black">{action}</Link></div>
 }
