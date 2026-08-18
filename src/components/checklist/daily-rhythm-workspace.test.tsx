@@ -21,7 +21,7 @@ describe('DailyRhythmWorkspace', () => {
   it('centers the morning launch and daily closeout jobs', async () => {
     render(<DailyRhythmWorkspace userEmail="casey@savingkc.com" />)
 
-    expect(screen.getByRole('heading', { name: 'Start strong. Finish clean.' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Let’s make today count, Casey.' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Morning Launch' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Daily Closeout' })).toBeVisible()
     expect(screen.getAllByText('Your Goal & Why')[0]).toBeVisible()
@@ -30,6 +30,8 @@ describe('DailyRhythmWorkspace', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/daily-rhythm', { cache: 'no-store' }))
     expect(screen.getByDisplayValue('Build a family safety net')).toBeVisible()
     expect(screen.getByDisplayValue('Create long-term freedom')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /Review Priority Sellers/ }))
+    expect(screen.getByRole('link', { name: 'Open Pipeline' })).toHaveAttribute('href', '/contacts?list=new')
   })
 
   it('submits a meaningful morning launch and advances to closeout', async () => {
