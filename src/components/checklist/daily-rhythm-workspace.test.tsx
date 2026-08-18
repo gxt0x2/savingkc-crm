@@ -9,7 +9,12 @@ describe('DailyRhythmWorkspace', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ date: '2026-08-17', sod: null, eod: null }),
+      json: vi.fn().mockResolvedValue({
+        date: '2026-08-17',
+        sod: null,
+        eod: null,
+        purpose: { personalGoal: 'Build a family safety net', personalWhy: 'Create long-term freedom' },
+      }),
     }))
   })
 
@@ -23,6 +28,8 @@ describe('DailyRhythmWorkspace', () => {
     expect(screen.getByText('Clear Urgent Messages')).toBeVisible()
     expect(screen.queryByText('Practice Objections')).not.toBeInTheDocument()
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/daily-rhythm', { cache: 'no-store' }))
+    expect(screen.getByDisplayValue('Build a family safety net')).toBeVisible()
+    expect(screen.getByDisplayValue('Create long-term freedom')).toBeVisible()
   })
 
   it('submits a meaningful morning launch and advances to closeout', async () => {

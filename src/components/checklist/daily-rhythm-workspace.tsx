@@ -8,7 +8,12 @@ import { cn } from '@/lib/utils'
 
 type Protocol = 'sod' | 'eod'
 type Submission = { id: string; submittedAt: string; checklist?: string[] } & Record<string, unknown>
-type DailyState = { date: string; sod: Submission | null; eod: Submission | null }
+type DailyState = {
+  date: string
+  sod: Submission | null
+  eod: Submission | null
+  purpose?: { personalGoal?: string; personalWhy?: string; updatedAt?: string | null }
+}
 type HubThread = { attentionState?: string; lastChannel?: string | null; primaryNextAction?: { overdue?: boolean } | null }
 type MyDay = { commitments?: unknown[]; queue?: unknown[] }
 
@@ -86,8 +91,8 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
       setMyDay(myDayPayload)
       setHubThreads(Array.isArray(threads) ? threads : [])
       setChecked({ sod: payload.sod?.checklist ?? [], eod: payload.eod?.checklist ?? [] })
-      setPersonalGoal(readText(payload.sod, 'personalGoal'))
-      setPersonalWhy(readText(payload.sod, 'personalWhy'))
+      setPersonalGoal(readText(payload.sod, 'personalGoal') || payload.purpose?.personalGoal || '')
+      setPersonalWhy(readText(payload.sod, 'personalWhy') || payload.purpose?.personalWhy || '')
       setFocus(readText(payload.sod, 'focus'))
       setEnergy(typeof payload.sod?.energy === 'number' ? payload.sod.energy : 3)
       setWin(readText(payload.eod, 'win'))
