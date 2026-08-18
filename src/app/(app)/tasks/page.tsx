@@ -118,7 +118,6 @@ export default function TasksPage() {
 
   useEffect(() => {
     // Reconcile optimistic mutations after the server query catches up.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStatusOverrides((current) => {
       const next = { ...current }
       let changed = false
@@ -193,7 +192,6 @@ export default function TasksPage() {
 
   useEffect(() => {
     // Pagination is reset whenever the active result set changes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1)
   }, [assigneeFilter, dueFilter, search, sortBy, statusFilter, taskTypeFilter, view])
 

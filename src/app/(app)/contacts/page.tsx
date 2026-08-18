@@ -256,7 +256,6 @@ export default function ContactsPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  /* eslint-disable react-hooks/set-state-in-effect -- URL and saved-view hydration are external browser state. */
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem('savingkc-contact-views')
@@ -285,7 +284,6 @@ export default function ContactsPage() {
     const requestedOutreach = params.get('outreach')
     if (requestedOutreach && ['unattempted', 'attempted_no_response', 'connected_unclassified'].includes(requestedOutreach)) setOutreachFilter(requestedOutreach)
   }, [])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const counts = useMemo(() => contactSmartListCounts(allKnownItems), [allKnownItems])
   const orderedSmartLists = useMemo(() => {
@@ -329,11 +327,9 @@ export default function ContactsPage() {
     })
   }, [activityFilter, attentionFilter, dataGapFilter, filterReferenceTime, items, minimumStageFilter, outreachFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setPage(1), [activityFilter, attentionFilter, dataGapFilter, minimumStageFilter, outreachFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedIds((current) => {
       const visibleIds = new Set(items.map((item) => item.id))
       const next = new Set([...current].filter((id) => visibleIds.has(id)))
