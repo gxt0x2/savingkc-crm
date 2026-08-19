@@ -160,7 +160,10 @@ function loginRedirect(request: NextRequest) {
 }
 
 function unauthorized() {
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  return NextResponse.json(
+    { error: 'Unauthorized' },
+    { status: 401, headers: { 'Cache-Control': 'private, no-store, max-age=0' } },
+  )
 }
 
 const PAID_LANDING_PATHS = new Set([

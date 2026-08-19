@@ -43,6 +43,7 @@ describe('/api/leads proxy containment', () => {
     const response = await proxy(request(method), event)
 
     expect(response.status).toBe(401)
+    expect(response.headers.get('cache-control')).toBe('private, no-store, max-age=0')
     await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
     expect(mocks.getClaims).toHaveBeenCalledOnce()
   })
