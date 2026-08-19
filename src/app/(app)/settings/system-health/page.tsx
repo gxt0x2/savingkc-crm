@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { isCurrentUserAdmin } from '@/lib/auth/admin'
+import { TwilioSecurityStatus } from '@/components/settings/twilio-security-status'
 import { getSystemHygieneSnapshot } from '@/lib/system-hygiene/snapshot'
 import { systemRegistry } from '@/lib/system-hygiene/registry'
 
@@ -79,6 +80,8 @@ export default async function SystemHealthPage() {
           </article>
         ))}
       </section>
+
+      <TwilioSecurityStatus />
 
       <section className="mb-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <article className="overflow-hidden rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] shadow-sm">
