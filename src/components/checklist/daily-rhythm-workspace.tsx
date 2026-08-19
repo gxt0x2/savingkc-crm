@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
+import { useWorkspaceUserEmail } from '@/components/conversations/workspace-frame'
 import { cn } from '@/lib/utils'
 
 type Protocol = 'sod' | 'eod'
@@ -14,7 +15,7 @@ type DailyState = {
   eod: Submission | null
   purpose?: { personalGoal?: string; personalWhy?: string; updatedAt?: string | null }
 }
-type HubThread = { attentionState?: string; lastChannel?: string | null; primaryNextAction?: { overdue?: boolean } | null }
+type AttentionSummary = { needsReply: number; calls: number; emails: number; texts: number; overdue: number }
 type QueueItem = {
   id: string
   leadId: string | null
@@ -57,6 +58,7 @@ function readText(submission: Submission | null, key: string) {
 }
 
 export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
+  const workspaceUserEmail = useWorkspaceUserEmail()
   const [active, setActive] = useState<Protocol>('sod')
   const [daily, setDaily] = useState<DailyState | null>(null)
   const [checked, setChecked] = useState<Record<Protocol, string[]>>({ sod: [], eod: [] })
@@ -68,22 +70,21 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
   const [win, setWin] = useState('')
   const [lesson, setLesson] = useState('')
   const [tomorrow, setTomorrow] = useState('')
-  const [hubThreads, setHubThreads] = useState<HubThread[]>([])
+  const [attentionSummary, setAttentionSummary] = useState<AttentionSummary>({ needsReply: 0, calls: 0, emails: 0, texts: 0, overdue: 0 })
   const [myDay, setMyDay] = useState<MyDay>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const completionCount = Number(Boolean(daily?.sod)) + Number(Boolean(daily?.eod))
-  const teamMemberName = displayName(userEmail)
+  const teamMemberName = displayName(workspaceUserEmail || userEmail)
   const dateLabel = useMemo(() => new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Chicago', weekday: 'long', month: 'long', day: 'numeric',
   }).format(new Date()), [])
-  const needsReply = hubThreads.filter((thread) => thread.attentionState === 'needs_reply')
   const urgentCounts = {
-    calls: needsReply.filter((thread) => ['call', 'voicemail'].includes(thread.lastChannel ?? '')).length,
-    emails: needsReply.filter((thread) => thread.lastChannel === 'email').length,
-    texts: needsReply.filter((thread) => thread.lastChannel === 'sms').length,
-    overdue: hubThreads.filter((thread) => thread.primaryNextAction?.overdue).length,
+    calls: attentionSummary.calls,
+    emails: attentionSummary.emails,
+    texts: attentionSummary.texts,
+    overdue: attentionSummary.overdue,
   }
 
   useEffect(() => {
@@ -95,12 +96,12 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
         return payload as DailyState
       }),
       fetch('/api/my-day', { cache: 'no-store' }).then((response) => response.ok ? response.json() as Promise<MyDay> : {}),
-      fetch('/api/conversations/hub', { cache: 'no-store' }).then(async (response) => response.ok ? (await response.json()).items as HubThread[] : []),
-    ]).then(([payload, myDayPayload, threads]) => {
+      fetch('/api/conversations/attention-count', { cache: 'no-store' }).then(async (response) => response.ok ? await response.json() as AttentionSummary : { needsReply: 0, calls: 0, emails: 0, texts: 0, overdue: 0 }),
+    ]).then(([payload, myDayPayload, summary]) => {
       if (cancelled) return
       setDaily(payload)
       setMyDay(myDayPayload)
-      setHubThreads(Array.isArray(threads) ? threads : [])
+      setAttentionSummary(summary)
       setChecked({ sod: payload.sod?.checklist ?? [], eod: payload.eod?.checklist ?? [] })
       setPersonalGoal(readText(payload.sod, 'personalGoal') || payload.purpose?.personalGoal || '')
       setPersonalWhy(readText(payload.sod, 'personalWhy') || payload.purpose?.personalWhy || '')
@@ -162,7 +163,7 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
         <aside className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-5 lg:border-b-0 lg:border-r"><p className="text-[10px] font-black uppercase tracking-widest text-[var(--crm-brand)]">Morning setup</p><p className="mt-1 text-sm font-bold">Step {wizardStep + 1} of {MORNING_STEPS.length}</p><div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--crm-border)]"><div className="h-full rounded-full bg-[var(--crm-brand)] transition-all" style={{ width: `${((wizardStep + 1) / MORNING_STEPS.length) * 100}%` }} /></div><nav className="mt-5 space-y-1">{MORNING_STEPS.map((item, index) => <button key={item.id} type="button" onClick={() => setWizardStep(index)} className={cn('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold', index === wizardStep ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'text-[var(--crm-text-muted)]')}><Icon name={checked.sod.includes(item.id) ? 'check_circle' : 'radio_button_unchecked'} className="text-[18px]" />{item.title}</button>)}</nav></aside>
         <div className="flex flex-col p-6 lg:p-8"><div className="flex-1"><p className="text-[10px] font-black uppercase tracking-widest text-[var(--crm-brand)]">{String(wizardStep + 1).padStart(2, '0')}</p><h2 className="mt-1 text-2xl font-black tracking-tight">{step.title}</h2><p className="mt-1 text-sm text-[var(--crm-text-muted)]">{step.detail}</p><div className="mt-6 max-w-2xl">
           {step.id === 'purpose' ? <div className="grid gap-5"><label className="text-xs font-black">Personal goal<textarea value={personalGoal} onChange={(event) => setPersonalGoal(event.target.value)} rows={3} placeholder="What are you working toward personally?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label><label className="text-xs font-black">Your why<textarea value={personalWhy} onChange={(event) => setPersonalWhy(event.target.value)} rows={3} placeholder="Why does this matter to you?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label><fieldset><legend className="text-xs font-black">Energy level</legend><div className="mt-2 grid max-w-sm grid-cols-5 gap-2">{[1,2,3,4,5].map((value) => <button key={value} type="button" onClick={() => setEnergy(value)} className={cn('rounded-lg border py-2 text-xs font-black', energy === value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)] text-white' : 'border-[var(--crm-border)]')}>{value}</button>)}</div></fieldset></div> : null}
-          {step.id === 'urgent' ? <div className="grid gap-3 sm:grid-cols-2">{[['missed_call','Missed calls',urgentCounts.calls],['mail','Emails',urgentCounts.emails],['sms','Texts',urgentCounts.texts],['schedule','Overdue actions',urgentCounts.overdue]].map(([icon,label,value]) => <div key={String(label)} className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4"><Icon name={String(icon)} className="text-[22px] text-[var(--crm-brand)]" /><p className="mt-2 text-2xl font-black">{loading ? '—' : String(value)}</p><p className="text-xs font-bold text-[var(--crm-text-muted)]">{label}</p></div>)}<Link href="/conversations" className="crm-secondary-button col-span-full rounded-lg px-4 py-3 text-center text-xs font-black">Open Conversations</Link></div> : null}
+          {step.id === 'urgent' ? <div className="grid gap-3 sm:grid-cols-2">{[['phone_missed','Missed calls',urgentCounts.calls],['mail','Emails',urgentCounts.emails],['sms','Texts',urgentCounts.texts],['schedule','Overdue actions',urgentCounts.overdue]].map(([icon,label,value]) => <div key={String(label)} className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4"><Icon name={String(icon)} className="text-[22px] text-[var(--crm-brand)]" /><p className="mt-2 text-2xl font-black">{loading ? '—' : String(value)}</p><p className="text-xs font-bold text-[var(--crm-text-muted)]">{label}</p></div>)}<Link href="/conversations" className="crm-secondary-button col-span-full rounded-lg px-4 py-3 text-center text-xs font-black">Open Conversations</Link></div> : null}
           {step.id === 'calendar' ? <SummaryCard icon="calendar_month" value={myDay.commitments?.length ?? 0} label="commitments scheduled" href="/calendar" action="Review calendar" /> : null}
           {step.id === 'pipeline' ? <PriorityPreview items={myDay.queue ?? []} /> : null}
           {step.id === 'calling' ? <SummaryCard icon="dialpad" value={myDay.queue?.length ?? 0} label="people ready for action" href="/dialer" action="Open Dialer" /> : null}
@@ -182,7 +183,7 @@ function PriorityPreview({ items }: { items: QueueItem[] }) {
   const preview = items.slice(0, 4)
   return <div className="overflow-hidden rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
     <div className="flex items-center justify-between border-b border-[var(--crm-border)] px-4 py-3"><div><p className="text-sm font-black">Top {items.length} priority actions</p><p className="text-[11px] text-[var(--crm-text-muted)]">Sorted by priority, then due date.</p></div><Icon name="conversion_path" className="text-xl text-[var(--crm-brand)]" /></div>
-    {preview.length > 0 ? <div className="divide-y divide-[var(--crm-border)]">{preview.map((item) => <Link key={item.id} href={item.leadId ? `/leads/${item.leadId}` : '/contacts?list=new'} className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 hover:bg-[var(--crm-surface)]"><span className="min-w-0"><strong className="block truncate text-xs">{item.leadName}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--crm-text-muted)]">{item.property} · {item.stage}</span></span><span className="flex items-center gap-2"><span className={cn('rounded-full px-2 py-1 text-[9px] font-black', item.priority === 'High' ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'bg-[var(--crm-surface)] text-[var(--crm-text-muted)]')}>{item.priority}</span><span className="text-[10px] font-black text-[var(--crm-brand)]">{item.action}</span></span></Link>)}</div> : <p className="px-4 py-6 text-center text-xs font-bold text-[var(--crm-text-muted)]">No priority actions are waiting.</p>}
+    {preview.length > 0 ? <div className="divide-y divide-[var(--crm-border)]">{preview.map((item) => <Link key={item.id} href={item.leadId ? `/leads/${item.leadId}` : '/contacts?list=new'} prefetch={false} className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 hover:bg-[var(--crm-surface)]"><span className="min-w-0"><strong className="block truncate text-xs">{item.leadName}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--crm-text-muted)]">{item.property} · {item.stage}</span></span><span className="flex items-center gap-2"><span className={cn('rounded-full px-2 py-1 text-[9px] font-black', item.priority === 'High' ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'bg-[var(--crm-surface)] text-[var(--crm-text-muted)]')}>{item.priority}</span><span className="text-[10px] font-black text-[var(--crm-brand)]">{item.action}</span></span></Link>)}</div> : <p className="px-4 py-6 text-center text-xs font-bold text-[var(--crm-text-muted)]">No priority actions are waiting.</p>}
     <div className="flex items-center justify-between border-t border-[var(--crm-border)] px-4 py-3"><span className="text-[10px] font-bold text-[var(--crm-text-muted)]">{items.length > preview.length ? `+${items.length - preview.length} more in today’s queue` : 'Full list ready'}</span><Link href="/contacts?list=new" className="crm-secondary-button rounded-lg px-3 py-2 text-[10px] font-black">Open Pipeline</Link></div>
   </div>
 }

@@ -60,8 +60,8 @@ function readAsDataUrl(file: File) {
   })
 }
 
-export function GiraffeAssistant() {
-  const [open, setOpen] = useState(false)
+export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen)
   const [messages, setMessages] = useState<Message[]>([INTRO])
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<AssistantAttachment[]>([])

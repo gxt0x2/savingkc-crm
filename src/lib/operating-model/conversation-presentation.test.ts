@@ -93,4 +93,9 @@ describe('conversation activity presentation', () => {
     })).toBeUndefined()
     expect(getEligibleSmsReplySender({ activity_type: 'sms', description: null, metadata: null })).toBeUndefined()
   })
+
+  it('recognizes stored email variants even when legacy rows omit direction metadata', () => {
+    expect(getConversationDirection({ activity_type: 'email_received', description: null, metadata: {} })).toBe('inbound')
+    expect(getConversationDirection({ activity_type: 'email_sent', description: null, metadata: {} })).toBe('outbound')
+  })
 })

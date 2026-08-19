@@ -72,7 +72,7 @@ export function HotOpportunityCardCompact({
 
       <div className="p-4">
         {/* Header - Clickable to lead page */}
-        <Link href={`/leads/${opp.leadId}`}>
+        <Link href={`/leads/${opp.leadId}`} prefetch={false}>
         <div className="mb-3 cursor-pointer hover:opacity-80 transition-opacity">
           {/* County */}
           {opp.county && (

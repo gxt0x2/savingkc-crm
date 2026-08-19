@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import { ThreadView } from '@/components/conversations/thread-view'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
@@ -202,6 +201,9 @@ export default function ConversationsPage() {
   const [newConversationSearch, setNewConversationSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const initialThreadsLoaded = useRef(false)
+  const activityRequestId = useRef(0)
+  const activeLeadIdRef = useRef<string | null>(null)
+  const leadsRef = useRef<LeadRow[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [contactDetailsOpen, setContactDetailsOpen] = useState(true)
   const [nextActionDialogOpen, setNextActionDialogOpen] = useState(false)
@@ -214,6 +216,8 @@ export default function ConversationsPage() {
   })
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastCounter = useRef(0)
+  activeLeadIdRef.current = activeLeadId
+  leadsRef.current = leads
   const closeNewConversation = useCallback(() => {
     setShowNewMessage(false)
     setNewConversationSearch('')
@@ -260,41 +264,51 @@ export default function ConversationsPage() {
   const fetchActivities = useCallback(async () => {
     const currentLeadId = activeLeadId
     if (!currentLeadId) return
-    const supabase = createClient()
+    const requestId = ++activityRequestId.current
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
 
-    if (currentLeadId.startsWith('unmatched:')) {
-      const phone = currentLeadId.replace('unmatched:', '')
-      const rows: DatabaseActivityRow[] = []
-      for (let offset = 0; ; offset += 1000) {
-        const { data } = await supabase
-          .from('lead_activities')
-          .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-          .is('lead_id', null)
-          .in('activity_type', ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'letter_tracking'])
-          .order('created_at', { ascending: true })
-          .range(offset, offset + 999)
-        rows.push(...((data || []) as DatabaseActivityRow[]))
-        if ((data?.length ?? 0) < 1000) break
+      if (currentLeadId.startsWith('unmatched:')) {
+        const phone = currentLeadId.replace('unmatched:', '')
+        const rows: DatabaseActivityRow[] = []
+        for (let offset = 0; ; offset += 1000) {
+          const { data } = await supabase
+            .from('lead_activities')
+            .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+            .is('lead_id', null)
+            .in('activity_type', ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'letter_tracking'])
+            .order('created_at', { ascending: true })
+            .range(offset, offset + 999)
+          rows.push(...((data || []) as DatabaseActivityRow[]))
+          if ((data?.length ?? 0) < 1000) break
+        }
+        const filtered = rows.filter((a) => {
+          const meta = a.metadata || {}
+          return meta.from === phone || meta.to === phone
+        })
+        if (requestId === activityRequestId.current && activeLeadIdRef.current === currentLeadId) {
+          setActivities(filtered.map((a) => ({ ...a, type: a.activity_type })))
+        }
+      } else {
+        const rows: DatabaseActivityRow[] = []
+        for (let offset = 0; ; offset += 1000) {
+          const { data } = await supabase
+            .from('lead_activities')
+            .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+            .eq('lead_id', currentLeadId)
+            .in('activity_type', ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'letter_tracking'])
+            .order('created_at', { ascending: true })
+            .range(offset, offset + 999)
+          rows.push(...((data || []) as DatabaseActivityRow[]))
+          if ((data?.length ?? 0) < 1000) break
+        }
+        if (requestId === activityRequestId.current && activeLeadIdRef.current === currentLeadId) {
+          setActivities(rows.map((a) => ({ ...a, type: a.activity_type })))
+        }
       }
-      const filtered = rows.filter((a) => {
-        const meta = a.metadata || {}
-        return meta.from === phone || meta.to === phone
-      })
-      setActivities(filtered.map((a) => ({ ...a, type: a.activity_type })))
-    } else {
-      const rows: DatabaseActivityRow[] = []
-      for (let offset = 0; ; offset += 1000) {
-        const { data } = await supabase
-          .from('lead_activities')
-          .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-          .eq('lead_id', currentLeadId)
-          .in('activity_type', ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'letter_tracking'])
-          .order('created_at', { ascending: true })
-          .range(offset, offset + 999)
-        rows.push(...((data || []) as DatabaseActivityRow[]))
-        if ((data?.length ?? 0) < 1000) break
-      }
-      setActivities(rows.map((a) => ({ ...a, type: a.activity_type })))
+    } catch (error) {
+      console.error('[Conversations] Could not load thread activities', error)
     }
   }, [activeLeadId])
 
@@ -382,46 +396,65 @@ export default function ConversationsPage() {
 
   useEffect(() => {
     if (!activeLeadId) return
-    const supabase = createClient()
+    let disposed = false
+    let removeRealtimeChannel: (() => void) | undefined
 
     const refreshTimer = window.setTimeout(() => {
       void fetchActivities()
     }, 0)
 
-    // Realtime subscription — new activities appear without refresh
-    const channel = supabase
-      .channel(`lead-activities-${activeLeadId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'lead_activities',
-          ...(activeLeadId.startsWith('unmatched:') ? {} : { filter: `lead_id=eq.${activeLeadId}` }),
-        },
-        (payload) => {
-          void Promise.all([fetchActivities(), fetchThreads(true)])
-
-          // Toast notification for inbound messages
-          const meta = payload.new?.metadata || {}
-          const direction = (meta.direction as string) || ''
-          const isInbound = direction === 'inbound' || direction === 'received'
-          if (isInbound) {
-            const lead = leads.find((l) => l.id === activeLeadId)
-            const name = lead?.full_name && lead.full_name !== lead.phone
-              ? toProperCase(lead.full_name)
-              : formatPhone(lead?.phone)
-            addToast(`New message from ${name}`)
+    // Realtime is valuable after the inbox is visible, but the Supabase SDK
+    // does not belong in the route's critical bundle.
+    void import('@/lib/supabase/client').then(({ createClient }) => {
+      if (disposed) return
+      const supabase = createClient()
+      const channel = supabase
+        .channel(`lead-activities-${activeLeadId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'lead_activities',
+            ...(activeLeadId.startsWith('unmatched:') ? {} : { filter: `lead_id=eq.${activeLeadId}` }),
+          },
+          (payload) => {
+            const meta = payload.new?.metadata || {}
+            const direction = (meta.direction as string) || ''
+            const isInbound = direction === 'inbound' || direction === 'received'
+            if (activeLeadId.startsWith('unmatched:')) {
+              const phone = activeLeadId.replace('unmatched:', '')
+              if (meta.from !== phone && meta.to !== phone) return
+            }
+            void fetchActivities()
+            const description = typeof payload.new?.description === 'string' ? payload.new.description : ''
+            const createdAt = typeof payload.new?.created_at === 'string' ? payload.new.created_at : new Date().toISOString()
+            setLeads((current) => current.map((lead) => lead.id === activeLeadId ? {
+              ...lead,
+              lastMessage: description || lead.lastMessage,
+              lastActivityAt: createdAt,
+              unread: isInbound,
+              attentionState: isInbound ? 'needs_reply' : 'waiting_on_contact',
+            } : lead))
+            if (isInbound) {
+              const lead = leadsRef.current.find((item) => item.id === activeLeadId)
+              const name = lead?.full_name && lead.full_name !== lead.phone
+                ? toProperCase(lead.full_name)
+                : formatPhone(lead?.phone)
+              addToast(`New message from ${name}`)
+            }
           }
-        }
-      )
-      .subscribe()
+        )
+        .subscribe()
+      removeRealtimeChannel = () => { void supabase.removeChannel(channel) }
+    })
 
     return () => {
+      disposed = true
       window.clearTimeout(refreshTimer)
-      supabase.removeChannel(channel)
+      removeRealtimeChannel?.()
     }
-  }, [activeLeadId, fetchActivities, fetchThreads, leads])
+  }, [activeLeadId, fetchActivities])
 
   const refreshConversation = useCallback(() => {
     void Promise.all([fetchActivities(), fetchThreads(true)])

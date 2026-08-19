@@ -115,7 +115,7 @@ export function ContactDetailsPanel({
             variant="panel"
           />
         </div> : null}
-        <Link href={`/leads/${contact.id}`} className="crm-primary-button mt-4 flex h-9 items-center justify-center rounded-lg text-sm font-bold">
+        <Link href={`/leads/${contact.id}`} prefetch={false} className="crm-primary-button mt-4 flex h-9 items-center justify-center rounded-lg text-sm font-bold">
           Open contact
         </Link>
       </section>

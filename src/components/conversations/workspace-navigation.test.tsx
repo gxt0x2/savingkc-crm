@@ -6,11 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceContextNav } from './workspace-context-nav'
 import { WorkspaceMobileNav, WorkspaceNav } from './workspace-nav'
 
-const navigation = vi.hoisted(() => ({ pathname: '/dashboard', search: '' }))
+const navigation = vi.hoisted(() => ({ pathname: '/dashboard', search: '', prefetch: vi.fn() }))
 
 vi.mock('next/navigation', () => ({
   usePathname: () => navigation.pathname,
   useSearchParams: () => new URLSearchParams(navigation.search),
+  useRouter: () => ({ prefetch: navigation.prefetch }),
 }))
 
 vi.mock('next/link', () => ({
@@ -28,6 +29,7 @@ describe('workspace navigation', () => {
   beforeEach(() => {
     navigation.pathname = '/dashboard'
     navigation.search = ''
+    navigation.prefetch.mockReset()
   })
 
   it('uses the approved compact ten-item reviewer order and hides retired menu labels', () => {
@@ -79,11 +81,11 @@ describe('workspace navigation', () => {
     expect(within(more).queryByRole('link', { name: /Scorecard/ })).not.toBeInTheDocument()
   })
 
-  it('keeps the system Andon available from the shared CRM navigation', () => {
+  it('keeps the system Andon available from the shared CRM navigation', async () => {
     render(<WorkspaceNav needsReply={0} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Raise an Andon and report an issue' }))
-    expect(screen.getByRole('dialog', { name: 'Report an issue' })).toBeVisible()
+    expect(await screen.findByRole('dialog', { name: 'Report an issue' })).toBeVisible()
     expect(screen.getByRole('button', { name: /Process issue/ })).toBeVisible()
     expect(screen.getByRole('button', { name: /AI Glitch/ })).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'What happened' })).toBeVisible()

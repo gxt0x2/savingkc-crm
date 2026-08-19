@@ -261,7 +261,7 @@ function ContactTile({
           </a>
         )}
         {href && (
-          <Link href={href} className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-2 py-1 text-xs font-bold text-[var(--crm-text-muted)] hover:border-[var(--crm-brand)]/40 hover:bg-[var(--crm-brand-soft)]">
+          <Link href={href} prefetch={href.startsWith('/leads/') ? false : undefined} className="inline-flex items-center gap-1 rounded-md border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-2 py-1 text-xs font-bold text-[var(--crm-text-muted)] hover:border-[var(--crm-brand)]/40 hover:bg-[var(--crm-brand-soft)]">
             <Icon name="open_in_new" size="text-xs" />
             Open
           </Link>
@@ -778,7 +778,7 @@ function DetailDrawer({
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {file.lead_id && (
-                  <Link href={`/leads/${file.lead_id}`} className={secondaryButtonClass}>
+                  <Link href={`/leads/${file.lead_id}`} prefetch={false} className={secondaryButtonClass}>
                     <Icon name="person" size="text-sm" /> Lead
                   </Link>
                 )}

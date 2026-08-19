@@ -71,6 +71,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Performance bundle gate
+        run: npm run gate:performance-bundles
+
       - name: Proxy registration gate
         run: npm run gate:proxy
 
@@ -95,6 +98,9 @@ jobs:
       - name: KPI dashboard smoke gate
         run: npx playwright test tests/e2e/kpi-page.spec.ts
 
+      - name: Sub-second navigation performance gate
+        run: npm run test:performance
+
       - name: Upload smoke screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -103,6 +109,7 @@ jobs:
           path: |
             test-results
             test-results/smoke
+            test-results/performance
             playwright-report
           if-no-files-found: warn
 

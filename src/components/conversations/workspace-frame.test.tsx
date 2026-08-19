@@ -3,7 +3,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { WorkspaceChrome, WorkspaceFrame } from './workspace-frame'
+import { useWorkspaceUserEmail, WorkspaceChrome, WorkspaceFrame } from './workspace-frame'
+
+const useQueryMock = vi.hoisted(() => vi.fn(() => ({ data: undefined, isPending: false })))
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -17,7 +19,7 @@ vi.mock('next/link', () => ({
 }))
 
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: { items: [] } }),
+  useQuery: useQueryMock,
 }))
 
 vi.mock('@/hooks/use-theme-preference', () => ({
@@ -39,6 +41,20 @@ vi.mock('./workspace-context-nav', () => ({
 }))
 
 describe('WorkspaceFrame route persistence', () => {
+  function ProfileAwareContent() {
+    return <p>Active profile: {useWorkspaceUserEmail()}</p>
+  }
+
+  it('provides the active viewed profile to profile-aware pages', () => {
+    render(
+      <WorkspaceFrame userEmail="casey@savingkc.com">
+        <ProfileAwareContent />
+      </WorkspaceFrame>,
+    )
+
+    expect(screen.getByText('Active profile: casey@savingkc.com')).toBeVisible()
+  })
+
   it('lets a route replace the persistent command bar and notification count', () => {
     const { rerender } = render(
       <WorkspaceFrame needsReply={2}>
@@ -73,6 +89,21 @@ describe('WorkspaceFrame route persistence', () => {
     expect(screen.getByRole('button', { name: 'Open phone' })).toBeInTheDocument()
   })
 
+  it('does not render a false zero badge while the global conversation count is unknown', () => {
+    render(
+      <WorkspaceFrame>
+        <main>Dashboard route</main>
+      </WorkspaceFrame>,
+    )
+
+    expect(within(screen.getByRole('button', { name: 'Notifications' })).queryByText('0')).not.toBeInTheDocument()
+    expect(useQueryMock).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+
+    expect(useQueryMock).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: true }))
+  })
+
   it('shows the viewed agent profile photo in the persistent header', () => {
     render(
       <WorkspaceFrame needsReply={0} userEmail="casey@savingkc.com" profilePhotoUrl="https://example.com/casey.jpg">
@@ -83,7 +114,21 @@ describe('WorkspaceFrame route persistence', () => {
     expect(screen.getByRole('img', { name: 'Casey profile' })).toHaveAttribute('src', 'https://example.com/casey.jpg')
   })
 
-  it('opens the persistent giraffe assistant from the lower-right launcher', () => {
+  it('opens the user menu below the persistent header and above page content', () => {
+    render(
+      <WorkspaceFrame userEmail="casey@savingkc.com">
+        <main>Casey workspace</main>
+      </WorkspaceFrame>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open user menu' }))
+
+    const menu = screen.getByRole('link', { name: 'Dashboard' }).parentElement
+    expect(menu).toHaveClass('top-full', 'z-[70]')
+    expect(menu?.closest('header')).toHaveClass('z-[60]', 'overflow-visible')
+  })
+
+  it('opens the persistent giraffe assistant from the lower-right launcher', async () => {
     render(
       <WorkspaceFrame needsReply={0}>
         <main>Pipeline route</main>
@@ -95,7 +140,7 @@ describe('WorkspaceFrame route persistence', () => {
 
     fireEvent.click(launcher)
 
-    expect(screen.getByRole('dialog', { name: 'AI Assistant' })).toBeVisible()
+    expect(await screen.findByRole('dialog', { name: 'AI Assistant' })).toBeVisible()
     expect(screen.getByLabelText('Ask the AI Assistant')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Attach evidence' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Start voice dictation' })).toBeInTheDocument()

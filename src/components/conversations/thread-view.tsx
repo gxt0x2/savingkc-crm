@@ -225,7 +225,7 @@ export function ThreadView({
         </div>
         <div className="relative flex shrink-0 items-center gap-2">
           <button type="button" onClick={onCall} disabled={!phone} className="flex h-9 items-center gap-1.5 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-success-soft)] px-3 text-xs font-bold text-[var(--crm-success)] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"><Icon name="call" className="text-[17px]" /> Call</button>
-          {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} aria-label="Open full contact workspace" title="Open full contact workspace" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="open_in_new" className="text-[18px]" /></Link> : null}
+          {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} prefetch={false} aria-label="Open full contact workspace" title="Open full contact workspace" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="open_in_new" className="text-[18px]" /></Link> : null}
           {onToggleContactDetails ? (
             <button
               type="button"
@@ -246,7 +246,7 @@ export function ThreadView({
                 <Icon name={contact.attentionState === 'needs_reply' ? 'mark_email_read' : 'mark_email_unread'} className="text-[17px]" />
                 {contact.attentionState === 'needs_reply' ? 'Mark resolved' : 'Mark needs reply'}
               </button>
-              {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="person" className="text-[17px]" />Open contact</Link> : null}
+              {leadId && !leadId.startsWith('unmatched:') ? <Link href={`/leads/${leadId}`} prefetch={false} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="person" className="text-[17px]" />Open contact</Link> : null}
             </div>
           ) : null}
         </div>

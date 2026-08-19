@@ -76,6 +76,7 @@ export function HotOpportunityRow({
       {/* Avatar + core identity (clickable to lead detail) */}
       <Link
         href={`/leads/${opp.leadId}`}
+        prefetch={false}
         className="flex items-center gap-3 py-3 flex-1 min-w-0 hover:brightness-110 transition-all"
       >
         <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[var(--ck-surface-hi)] to-[var(--ck-border-strong)] text-[var(--ck-text)] flex items-center justify-center text-sm font-black flex-shrink-0">

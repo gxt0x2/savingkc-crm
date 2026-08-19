@@ -7,6 +7,8 @@ import { getContactSignal, getOutreachStatus, isOutboundAttempt, type ContactAct
 import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { isActiveAcquisitionContact, isProspectingContact } from '@/lib/contact-smart-lists'
 import { getPipelineIntentSource } from '@/lib/pipeline-intent'
+import { buildConversationHubThread, type ConversationHubActivity, type ConversationHubThread } from '@/lib/operating-model/conversation-hub'
+import { readConversationActivitySnapshot } from '@/lib/server/conversation-activity-snapshot'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
@@ -48,6 +50,10 @@ export interface ContactRow {
   outreachStatus: OutreachStatus
   updatedAt: string | null
   pipelineIntentSource: string | null
+  attentionState: ConversationHubThread['attentionState']
+  lastMessage: string
+  lastActivityAt: string
+  primaryNextAction: ConversationHubThread['primaryNextAction']
 }
 
 interface ManifestPayload {
@@ -83,7 +89,8 @@ const CONTACT_STAGES = new Set<DealStage>([
   'closed_lost',
   'dead',
 ])
-const CONTACT_ACTIVITY_TYPES = ['call', 'sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'email_sent', 'email_received', 'voicemail', 'missed_call']
+const CONTACT_ACTIVITY_TYPES = ['call', 'sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'email_sent', 'email_received', 'voicemail', 'missed_call', 'task', 'status_change']
+const CONTACT_ACTIVITY_TYPE_SET = new Set(CONTACT_ACTIVITY_TYPES)
 
 function getContactStation(station: string | null | undefined): DealStage | null {
   const normalized = normalizeDealStage(station) ?? 'new'
@@ -125,34 +132,49 @@ export async function GET(request: NextRequest) {
   const requestedScope = request.nextUrl.searchParams.get('scope')
   const scope = requestedScope === 'not_leads' || requestedScope === 'prospects' || requestedScope === 'all' ? requestedScope : 'active'
 
-  const { data: leads, error: leadsErr } = await db
-    .from('leads')
-    .select('id, full_name, phone, email, source, station, classification, dead_reason, assigned_agent, property_address, city, created_at, updated_at, is_parked, is_favorite')
-    .eq('is_parked', false)
-    .order('updated_at', { ascending: false })
+  const [{ data: leads, error: leadsErr }, activitySnapshot] = await Promise.all([
+    db
+      .from('leads')
+      .select('id, full_name, phone, email, source, station, classification, dead_reason, assigned_agent, property_address, city, created_at, updated_at, is_parked, is_favorite')
+      .eq('is_parked', false)
+      .order('updated_at', { ascending: false }),
+    readConversationActivitySnapshot(),
+  ])
 
   if (leadsErr) return NextResponse.json({ error: leadsErr.message }, { status: 500 })
   const rows = leads ?? []
   const rowIds = rows.map((lead) => lead.id)
-  const { data: intentActivities } = rowIds.length > 0
-    ? await db
-      .from('lead_activities')
-      .select('lead_id, activity_type, metadata, created_at')
-      .in('lead_id', rowIds)
-      .in('activity_type', ['status_change', 'call'])
-      .order('created_at', { ascending: true })
-    : { data: [] }
+  const rowIdSet = new Set(rowIds)
+  const intentActivities = activitySnapshot.filter((activity) =>
+    Boolean(activity.lead_id && rowIdSet.has(activity.lead_id)) &&
+    ['status_change', 'call'].includes(activity.activity_type),
+  ).sort((a, b) => a.created_at.localeCompare(b.created_at))
   const intentActivitiesByLead = new Map<string, Array<{ activity_type?: unknown; metadata?: unknown }>>()
-  for (const activity of intentActivities ?? []) {
+  for (const activity of intentActivities) {
+    if (!activity.lead_id) continue
     intentActivitiesByLead.set(activity.lead_id, [...(intentActivitiesByLead.get(activity.lead_id) ?? []), activity])
   }
-  const scopedRows = rows
+  const classifiedRows = rows
     .map((lead) => ({
       lead,
       station: getContactStation(lead.station),
       pipelineIntentSource: getPipelineIntentSource(lead.source, intentActivitiesByLead.get(lead.id)),
     }))
     .filter((row): row is { lead: typeof rows[number]; station: DealStage; pipelineIntentSource: string | null } => row.station !== null)
+
+  const scopeCounts = classifiedRows.reduce((counts, { lead, station, pipelineIntentSource }) => {
+    const contact = {
+      classification: (lead.classification as ContactRow['classification']) ?? null,
+      station,
+      pipelineIntentSource,
+    }
+    if (isNotLeadOutcome(contact.classification, station)) counts.not_leads += 1
+    else if (isProspectingContact(contact)) counts.prospects += 1
+    else if (isActiveAcquisitionContact(contact)) counts.active += 1
+    return counts
+  }, { active: 0, prospects: 0, not_leads: 0 })
+
+  const scopedRows = classifiedRows
     .filter(({ lead, station, pipelineIntentSource }) => {
       const notLead = isNotLeadOutcome(lead.classification, station)
       if (scope === 'not_leads') return notLead
@@ -169,11 +191,11 @@ export async function GET(request: NextRequest) {
       })
     })
 
-  if (scopedRows.length === 0) return NextResponse.json({ items: [], scope })
+  if (scopedRows.length === 0) return NextResponse.json({ items: [], scope, scopeCounts })
 
   const leadIds = scopedRows.map(({ lead }) => lead.id)
 
-  const [{ data: manifests }, { data: scores }, { data: activities }] = await Promise.all([
+  const [{ data: manifests }, { data: scores }] = await Promise.all([
     db
       .from('manifests')
       .select('lead_id, manifest, created_at')
@@ -183,13 +205,12 @@ export async function GET(request: NextRequest) {
       .from('hot_opportunities_cache')
       .select('lead_id, composite_score')
       .in('lead_id', leadIds),
-    db
-      .from('lead_activities')
-      .select('lead_id, activity_type, type, description, metadata, created_at')
-      .in('lead_id', leadIds)
-      .in('activity_type', CONTACT_ACTIVITY_TYPES)
-      .order('created_at', { ascending: true }),
   ])
+  const leadIdSet = new Set(leadIds)
+  const activities = activitySnapshot.filter((activity) =>
+    Boolean(activity.lead_id && leadIdSet.has(activity.lead_id)) &&
+    CONTACT_ACTIVITY_TYPE_SET.has(activity.activity_type),
+  ).sort((a, b) => a.created_at.localeCompare(b.created_at))
 
   const latestManifest = new Map<string, ManifestPayload>()
   for (const m of manifests ?? []) {
@@ -206,10 +227,15 @@ export async function GET(request: NextRequest) {
   const firstOutboundByLead = new Map<string, string>()
   const latestSignalByLead = new Map<string, ContactSignal>()
   const communicationsByLead = new Map<string, ContactActivityLike[]>()
-  for (const activity of (activities ?? []) as ContactActivityLike[]) {
+  const hubActivitiesByLead = new Map<string, ConversationHubActivity[]>()
+  for (const activity of activities as ContactActivityLike[]) {
     const leadId = typeof activity.lead_id === 'string' ? activity.lead_id : null
     if (!leadId) continue
     communicationsByLead.set(leadId, [...(communicationsByLead.get(leadId) ?? []), activity])
+    hubActivitiesByLead.set(leadId, [
+      ...(hubActivitiesByLead.get(leadId) ?? []),
+      activity as ConversationHubActivity,
+    ])
 
     if (!firstOutboundByLead.has(leadId) && isOutboundAttempt(activity) && activity.created_at) {
       firstOutboundByLead.set(leadId, activity.created_at)
@@ -222,6 +248,21 @@ export async function GET(request: NextRequest) {
   const items: ContactRow[] = []
   for (const { lead, station, pipelineIntentSource } of scopedRows) {
     const manifest = latestManifest.get(lead.id) ?? {}
+    const hubThread = buildConversationHubThread({
+      id: lead.id,
+      full_name: lead.full_name,
+      phone: lead.phone,
+      email: lead.email,
+      property_address: lead.property_address,
+      city: lead.city,
+      station,
+      priority: null,
+      assigned_agent: lead.assigned_agent,
+      classification: (lead.classification as ContactRow['classification']) ?? null,
+      dead_reason: lead.dead_reason ?? null,
+      source: lead.source,
+      created_at: lead.created_at ?? lead.updated_at ?? '1970-01-01T00:00:00.000Z',
+    }, hubActivitiesByLead.get(lead.id) ?? [])
     const lastContactAt =
       manifest.communications?.lastSellerContactDate ??
       manifest.communications?.lastInboundDate ??
@@ -238,7 +279,7 @@ export async function GET(request: NextRequest) {
       station,
       classification: (lead.classification as ContactRow['classification']) ?? null,
       deadReason: lead.dead_reason ?? null,
-      owner: lead.assigned_agent ?? null,
+      owner: hubThread.owner,
       score: scoreByLead.get(lead.id) ?? 0,
       isFavorite: Boolean((lead as { is_favorite?: boolean | null }).is_favorite),
       nextActivity: pickNextActivity(manifest),
@@ -250,10 +291,14 @@ export async function GET(request: NextRequest) {
       outreachStatus: getOutreachStatus(communicationsByLead.get(lead.id) ?? []),
       updatedAt: lead.updated_at,
       pipelineIntentSource,
+      attentionState: hubThread.attentionState,
+      lastMessage: hubThread.lastMessage,
+      lastActivityAt: hubThread.lastActivityAt,
+      primaryNextAction: hubThread.primaryNextAction,
     })
   }
 
-  return NextResponse.json({ items, scope })
+  return NextResponse.json({ items, scope, scopeCounts })
 }
 
 function cleanText(value: unknown): string | null {

@@ -97,6 +97,7 @@ export default function InClosingPage() {
                     <div className="min-w-0 flex-1">
                       <Link
                         href={`/leads/${lead.id}`}
+                        prefetch={false}
                         className="text-base font-bold text-[var(--ck-text)] hover:text-[#E32E2E] transition-colors"
                       >
                         {toProperCase(fullName)}
@@ -127,6 +128,7 @@ export default function InClosingPage() {
                       </div>
                       <Link
                         href={`/leads/${lead.id}`}
+                        prefetch={false}
                         className="rounded-md border border-[var(--ck-border)] bg-[var(--ck-bg)] px-3 py-1.5 text-xs font-medium text-[var(--ck-text)] hover:border-[#E32E2E]/40 hover:text-[#E32E2E] transition-colors"
                       >
                         Open

@@ -157,7 +157,7 @@ export default function AriPage() {
         <div className="flex items-center gap-1.5 mb-2">
           <Icon name="auto_awesome" size="text-xs" className="text-[#E32E2E]" />
           <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[var(--ck-text-muted)]">
-            Ari's Brief
+            Ari&apos;s Brief
           </span>
         </div>
         {data.loading && !data.coaching ? (
@@ -234,7 +234,7 @@ export default function AriPage() {
           emptyIcon="person_add"
         >
           {recentLeads.map((l) => (
-            <FreshLeadRow key={l.id} lead={l} now={now} />
+            <FreshLeadRow key={l.id} lead={l} />
           ))}
         </Tile>
       </div>
@@ -344,7 +344,7 @@ function ScheduleRow({ task, now }: { task: FollowUp; now: Date }) {
   const href = task.lead_id ? `/leads/${task.lead_id}` : '#'
   return (
     <li>
-      <Link href={href} className="block px-4 py-3 hover:bg-white/5 transition-colors">
+      <Link href={href} prefetch={false} className="block px-4 py-3 hover:bg-white/5 transition-colors">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-[var(--ck-text)] truncate">{task.title}</p>
@@ -366,7 +366,7 @@ function ScheduleRow({ task, now }: { task: FollowUp; now: Date }) {
 function AttentionRow({ item }: { item: PipelineAction }) {
   return (
     <li>
-      <Link href={`/leads/${item.id}`} className="block px-4 py-3 hover:bg-white/5 transition-colors">
+      <Link href={`/leads/${item.id}`} prefetch={false} className="block px-4 py-3 hover:bg-white/5 transition-colors">
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-[var(--ck-text)] truncate">
@@ -389,7 +389,7 @@ function MessageRow({ msg, now }: { msg: InboxItem; now: Date }) {
   const isCall = msg.type === 'missed_call'
   return (
     <li>
-      <Link href={`/leads/${msg.lead_id}`} className="block px-4 py-3 hover:bg-white/5 transition-colors">
+      <Link href={`/leads/${msg.lead_id}`} prefetch={false} className="block px-4 py-3 hover:bg-white/5 transition-colors">
         <div className="flex items-start gap-3">
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isCall ? 'bg-[#E32E2E]/15 text-[#E32E2E]' : 'bg-emerald-500/15 text-emerald-400'}`}>
             <Icon name={isCall ? 'missed_call_badge' : 'chat'} size="text-sm" />
@@ -419,12 +419,12 @@ function MessageRow({ msg, now }: { msg: InboxItem; now: Date }) {
   )
 }
 
-function FreshLeadRow({ lead, now }: { lead: RecentLead; now: Date }) {
+function FreshLeadRow({ lead }: { lead: RecentLead }) {
   const dateStr = new Date(lead.created_at).toLocaleDateString('en-US', { weekday: 'short' })
   const hot = lead.priority === 'hot' || (lead.motivation_score !== null && lead.motivation_score >= 7)
   return (
     <li>
-      <Link href={`/leads/${lead.id}`} className="block px-4 py-3 hover:bg-white/5 transition-colors">
+      <Link href={`/leads/${lead.id}`} prefetch={false} className="block px-4 py-3 hover:bg-white/5 transition-colors">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-1.5">
@@ -462,7 +462,7 @@ function CallRow({ lead, rank }: { lead: CallQueueLead; rank: number }) {
       <div className="w-6 text-center text-[10px] font-black text-[var(--ck-text-dim)] tabular-nums">
         {rank}
       </div>
-      <Link href={`/leads/${lead.id}`} className="flex-1 min-w-0">
+      <Link href={`/leads/${lead.id}`} prefetch={false} className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
           <p className="text-xs font-semibold text-[var(--ck-text)] truncate">
             {toProperCase(lead.full_name)}
