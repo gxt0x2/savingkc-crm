@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 export type MojoHealthStatus = 'clean' | 'watch' | 'attention'
 
 export type MojoHealth = {
@@ -36,9 +38,7 @@ export type MojoHealth = {
   }
 }
 
-type SupabaseLike = {
-  from: (table: string) => any
-}
+type SupabaseLike = Pick<SupabaseClient, 'from'>
 
 type SystemConfigRow = {
   key: string
@@ -325,7 +325,7 @@ export async function persistMojoHealth(supabase: SupabaseLike, health: MojoHeal
     name: 'Mojo Health',
     type: 'cron',
     description: 'Checks Mojo session cookie, call queue, and CRM lead intake health.',
-    check_interval_minutes: 15,
+    check_interval_minutes: 60,
     last_run: now,
     status: systemWorkerStatus(health.status),
     last_error: health.status === 'clean' ? null : health.message,
