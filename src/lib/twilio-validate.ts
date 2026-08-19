@@ -5,8 +5,21 @@
 
 import twilio from 'twilio'
 
-const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN!
-const SKIP_SIGNATURE_VALIDATION = process.env.TWILIO_SKIP_SIGNATURE_VALIDATION === 'true'
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production'
+}
+
+function canSkipSignatureValidation(): boolean {
+  const requested = process.env.TWILIO_SKIP_SIGNATURE_VALIDATION === 'true'
+  if (!requested) return false
+
+  if (isProductionRuntime()) {
+    console.error('Ignoring TWILIO_SKIP_SIGNATURE_VALIDATION in a production runtime')
+    return false
+  }
+
+  return true
+}
 
 /**
  * Validate that a request came from Twilio using its signature
@@ -17,24 +30,25 @@ export function validateTwilioRequest(
   params: Record<string, string>,
   signature: string | null
 ): boolean {
-  if (SKIP_SIGNATURE_VALIDATION) {
+  if (canSkipSignatureValidation()) {
     console.warn('TWILIO_SKIP_SIGNATURE_VALIDATION is enabled - accepting Twilio webhook without signature validation')
     return true
   }
   if (!signature) return false
-  if (!AUTH_TOKEN) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN
+  if (!authToken) {
     console.error('TWILIO_AUTH_TOKEN not set - rejecting Twilio webhook')
     return false
   }
-  return twilio.validateRequest(AUTH_TOKEN, signature, url, params)
+  return twilio.validateRequest(authToken, signature, url, params)
 }
 
 /**
  * Extract Twilio signature and build params from a Request object
  */
 export async function validateTwilioWebhook(req: Request): Promise<boolean> {
-  // In development, skip validation
-  if (process.env.NODE_ENV === 'development') return true
+  // Local development may bypass validation, but deployed production never can.
+  if (process.env.NODE_ENV === 'development' && !isProductionRuntime()) return true
 
   const signature = req.headers.get('x-twilio-signature')
   if (!signature) return false

@@ -1,6 +1,6 @@
 import type { Call, CallInvite, Voice } from '@twilio/voice-react-native-sdk'
 
-import { fetchVoiceToken } from './api'
+import { fetchVoiceToken, requestMobileCallIntent } from './api'
 
 export type VoiceState = 'registering' | 'ready' | 'ringing' | 'connecting' | 'connected' | 'offline' | 'error'
 
@@ -19,6 +19,7 @@ export type NativeVoiceCall = {
 let voice: Voice | null = null
 let token: string | null = null
 let callerId: string | null = null
+let outboundCallPending = false
 
 function wrapCall(call: Call, sdk: typeof import('@twilio/voice-react-native-sdk'), onState?: (state: VoiceState) => void): NativeVoiceCall {
   const endedCallbacks = new Set<() => void>()
@@ -77,18 +78,39 @@ export async function registerTwilioVoice(input: {
 }
 
 export async function startTwilioVoiceCall(input: {
+  accessToken: string
   phone: string
   contactName?: string | null
+  leadId?: string | null
+  prospectPhoneId?: string | null
+  clientAttemptId?: string | null
   onState: (state: VoiceState) => void
 }): Promise<NativeVoiceCall> {
   if (!voice || !token || !callerId) throw new Error('Phone is not registered. Open the Phone tab and retry.')
-  const sdk = await import('@twilio/voice-react-native-sdk')
-  input.onState('connecting')
-  const phone = input.phone.replace(/[^\d+]/g, '')
-  const call = await voice.connect(token, {
-    contactHandle: input.contactName || phone,
-    notificationDisplayName: 'SavingKC CRM',
-    params: { To: phone, CallerId: callerId },
-  })
-  return wrapCall(call, sdk, input.onState)
+  if (outboundCallPending) throw new Error('A call is already starting.')
+  outboundCallPending = true
+  try {
+    const phone = input.phone.replace(/[^\d+]/g, '')
+    const clientAttemptId = input.clientAttemptId?.trim() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const kind = input.prospectPhoneId ? 'heir' : input.leadId ? 'lead' : 'manual'
+    const authorized = await requestMobileCallIntent({
+      accessToken: input.accessToken,
+      phone,
+      callerId,
+      kind,
+      leadId: kind === 'manual' ? null : input.leadId,
+      prospectPhoneId: kind === 'heir' ? input.prospectPhoneId : null,
+      clientAttemptId,
+    })
+    const sdk = await import('@twilio/voice-react-native-sdk')
+    input.onState('connecting')
+    const call = await voice.connect(token, {
+      contactHandle: input.contactName || authorized.to,
+      notificationDisplayName: 'SavingKC CRM',
+      params: { To: authorized.to, CallerId: authorized.callerId, DialIntentToken: authorized.intent },
+    })
+    return wrapCall(call, sdk, input.onState)
+  } finally {
+    outboundCallPending = false
+  }
 }

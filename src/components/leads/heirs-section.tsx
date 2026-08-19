@@ -108,7 +108,9 @@ function verifiedPhoneOf(heir: Heir): HeirPhone | null {
 }
 
 function isAutoCallablePhone(p: HeirPhone): boolean {
-  return Boolean(p.number?.trim()) && !dispositionStopsNumber(p.last_disposition)
+  return Boolean(p.number?.trim())
+    && p.connected?.toLowerCase() !== 'disconnected'
+    && !dispositionStopsNumber(p.last_disposition)
 }
 
 function dispositionLabel(d: string | null): string {
@@ -267,18 +269,17 @@ export function HeirsSection({
     dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { ringCount })
   }
 
-  // EXPLICIT per-heir action — dials every number for this heir, attempted or
-  // not, freshest first. This is the "call them back" path: an agent can always
-  // re-queue a heir even after every number has been tried or verified.
+  // Explicit recalls may include attempted/verified numbers, but hard-stop
+  // outcomes are never reintroduced into a dial queue.
   function queueHeir(heir: Heir) {
-    const fresh = heir.phones.filter((p) => !p.attempted)
-    const tried = heir.phones.filter((p) => p.attempted)
-    dispatchHeirQueue(mapHeirPhones(heir, [...fresh, ...tried]), dialerCallerId, dialerCallerPlan, { ringCount })
+    dispatchHeirQueue(mapHeirPhones(heir, callablePhonesForHeir(heir)), dialerCallerId, dialerCallerPlan, { ringCount })
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
-    // Clicked number always dials (even if attempted/verified) — recall is
-    // never blocked. Remaining auto-queue follows the property heir ordering.
+    if (!isAutoCallablePhone(phone)) {
+      setError(`${formatPhone(phone.number) || phone.number} is blocked by its saved call outcome.`)
+      return
+    }
     const clicked = mapHeirPhones(heir, [phone])[0]
     const remaining = heirs
       .flatMap((h) => buildQueueForHeir(h))
@@ -454,6 +455,8 @@ function HeirRow({
 }) {
   const verified = verifiedPhoneOf(heir)
   const allAttempted = heir.unattempted_count === 0 && heir.phones.length > 0
+  const callablePhones = heir.phones.filter(isAutoCallablePhone)
+  const freshCallableCount = callablePhones.filter((phone) => !phone.attempted).length
 
   // Show every number — recall is never hidden. The verified line (if any)
   // floats to the top and is styled green; the rest stay callable underneath.
@@ -509,32 +512,30 @@ function HeirRow({
           </span>
         </div>
 
-        {/* Corner action: a Verified badge when we've confirmed the heir, plus a
-            Call button that is ALWAYS available — "Call (n)" while fresh numbers
-            remain, "Call again" once everything's been tried. Recall is never
-            blocked. */}
+        {/* Attempted and verified numbers remain recallable. Hard-stop outcomes
+            are visible for history but never return to a dial queue. */}
         <div className="flex items-center gap-2 shrink-0">
           {verified && (
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 whitespace-nowrap flex items-center gap-1">
               <Icon name="verified" size="text-sm" filled /> Verified
             </span>
           )}
-          {heir.phones.length > 0 && (
+          {callablePhones.length > 0 && (
             <button
               onClick={(e) => { e.stopPropagation(); onCallHeir() }}
               className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors text-white ${
-                heir.unattempted_count > 0
+                freshCallableCount > 0
                   ? 'bg-[#E32E2E] hover:bg-[#C42626]'
                   : 'bg-[var(--ck-surface-hi)] hover:bg-[var(--ck-border-strong)] text-[var(--ck-text)]'
               }`}
               title={
-                heir.unattempted_count > 0
-                  ? `Queue ${heir.unattempted_count} ${heir.unattempted_count === 1 ? 'phone' : 'phones'} for this heir`
-                  : 'Call this heir again (re-dials every number)'
+                freshCallableCount > 0
+                  ? `Queue ${callablePhones.length} callable ${callablePhones.length === 1 ? 'phone' : 'phones'} for this heir`
+                  : 'Call this heir again using callable numbers'
               }
             >
-              <Icon name={heir.unattempted_count > 0 ? 'call' : 'restart_alt'} size="text-xs" />
-              {heir.unattempted_count > 0 ? `Call (${heir.unattempted_count})` : 'Call again'}
+              <Icon name={freshCallableCount > 0 ? 'call' : 'restart_alt'} size="text-xs" />
+              {freshCallableCount > 0 ? `Call (${callablePhones.length})` : 'Call again'}
             </button>
           )}
           <Icon
@@ -590,6 +591,7 @@ function PhonePill({
 }) {
   const icon = phoneIcon(phone.type)
   const typeLabel = (phone.type ?? 'phone').toLowerCase()
+  const callable = isAutoCallablePhone(phone)
 
   return (
     <div
@@ -663,23 +665,26 @@ function PhonePill({
           <Icon name="chat" size="text-sm" />
         </button>
       )}
-      {/* Call is ALWAYS enabled — an attempted or verified number can always be
-          recalled. This is the fix for "greys out after the first call". */}
       <button
         onClick={onCall}
-        className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-white ${
-          verified
+        disabled={!callable}
+        className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-white disabled:cursor-not-allowed disabled:bg-[var(--ck-surface-hi)] disabled:text-[var(--ck-text-dim)] ${
+          !callable
+            ? ''
+            : verified
             ? 'bg-emerald-500 hover:bg-emerald-600'
             : 'bg-[#E32E2E] hover:bg-[#C42626]'
         }`}
         title={
-          verified
+          !callable
+            ? 'Calling blocked by saved disposition'
+            : verified
             ? 'Redial the verified number'
             : phone.attempted
             ? 'Call this number again'
             : 'Call this number'
         }
-        aria-label="Call this number"
+        aria-label={callable ? 'Call this number' : 'Calling blocked for this number'}
       >
         <Icon name={phone.attempted ? 'restart_alt' : 'call'} size="text-sm" />
       </button>

@@ -13,6 +13,10 @@ vi.mock('@/lib/lead-alert-routing', () => ({
   getLeadAlertRecipients: vi.fn(),
 }))
 
+vi.mock('@/lib/twilio-validate', () => ({
+  validateTwilioWebhook: vi.fn().mockResolvedValue(true),
+}))
+
 describe('/api/ivr/sim-ring', () => {
   beforeEach(() => {
     vi.clearAllMocks()

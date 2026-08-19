@@ -23,6 +23,11 @@ import type { CallOutcome, ConversationThread, CrmActivity, CrmLead } from './sr
 
 const queryClient = new QueryClient()
 
+function phoneKey(value: string | null | undefined) {
+  const digits = value?.replace(/\D/g, '') ?? ''
+  return digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -209,7 +214,7 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
       }
     }
     void registerPhone()
-    const tokenRefresh = setInterval(() => void registerPhone(), 50 * 60 * 1000)
+    const tokenRefresh = setInterval(() => void registerPhone(), 3_000_000)
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') void registerPhone()
     })
@@ -330,7 +335,7 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
           refreshing={leadsQuery.isFetching}
           onRefresh={() => leadsQuery.refetch()}
         />
-      )}</> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : <PhoneScreen callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
+      )}</> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : <PhoneScreen accessToken={accessToken} callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
     </SafeAreaView>
   )
 }
@@ -412,7 +417,7 @@ function ConversationDetailScreen({ accessToken, leadId, onBack }: { accessToken
   </SafeAreaView>
 }
 
-function PhoneScreen({ callerId, agentName, voiceState, error, activeCall, onActiveCall }: { callerId: string | null; agentName: string; voiceState: VoiceState; error: string | null; activeCall: NativeVoiceCall | null; onActiveCall: (call: NativeVoiceCall | null) => void }) {
+function PhoneScreen({ accessToken, callerId, agentName, voiceState, error, activeCall, onActiveCall }: { accessToken: string; callerId: string | null; agentName: string; voiceState: VoiceState; error: string | null; activeCall: NativeVoiceCall | null; onActiveCall: (call: NativeVoiceCall | null) => void }) {
   const [phone, setPhone] = useState('')
   const [callError, setCallError] = useState<string | null>(null)
   const [currentState, setCurrentState] = useState<VoiceState>(voiceState)
@@ -423,11 +428,11 @@ function PhoneScreen({ callerId, agentName, voiceState, error, activeCall, onAct
     if (!phone.trim() || activeCall) return
     setCallError(null)
     try {
-      const call = await startTwilioVoiceCall({ phone, onState: setCurrentState })
+      const call = await startTwilioVoiceCall({ accessToken, phone, onState: setCurrentState })
       onActiveCall(call)
     } catch (caught) {
       setCallError(caught instanceof Error ? caught.message : 'Call could not be started.')
-      setCurrentState('error')
+      setCurrentState('ready')
     }
   }
 
@@ -501,7 +506,23 @@ function LeadDetailScreen({
     setCallError(null)
     const clientCallId = `${Date.now()}-${lead.id}`
     try {
-      const voiceCall = await startTwilioVoiceCall({ phone: lead.phone, contactName: lead.full_name, onState: () => {} })
+      const queuedEvents = await getQueuedCallEvents()
+      const locallyBlocked = queuedEvents.some((event) => (
+        event.event === 'ended'
+        && phoneKey(event.phone) === phoneKey(lead.phone)
+        && (event.outcome === 'bad_number' || ['bad_number', 'wrong_number', 'disconnected', 'dnc'].includes(event.disposition || ''))
+      ))
+      if (locallyBlocked) {
+        throw new Error('This number has an unsynced stop outcome and cannot be called again.')
+      }
+      const voiceCall = await startTwilioVoiceCall({
+        accessToken,
+        phone: lead.phone,
+        contactName: lead.full_name,
+        leadId: lead.id,
+        clientAttemptId: clientCallId,
+        onState: () => {},
+      })
       const startEvent = {
         accessToken,
         leadId: lead.id,

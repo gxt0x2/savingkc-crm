@@ -40,6 +40,8 @@ function tableChain(table: string) {
   const chain: Record<string, unknown> = {}
   chain.select = vi.fn(() => chain)
   chain.eq = vi.fn(() => chain)
+  chain.in = vi.fn(() => chain)
+  chain.limit = vi.fn(() => chain)
   chain.maybeSingle = vi.fn(async () => ({ data: suppressionState, error: null }))
   chain.insert = vi.fn(async (payload: unknown) => {
     if (table === 'lead_activities') insertedActivities.push(payload)

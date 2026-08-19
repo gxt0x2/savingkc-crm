@@ -13,6 +13,7 @@ export function OPTIONS() {
 
 const AccessToken = twilio.jwt.AccessToken
 const VoiceGrant = AccessToken.VoiceGrant
+const CALLING_UNAVAILABLE = 'Calling is temporarily unavailable'
 
 export async function GET(req: NextRequest) {
   try {
@@ -29,16 +30,16 @@ export async function GET(req: NextRequest) {
 
     if (missing.length > 0) {
       return NextResponse.json(
-        { error: `Missing required env vars: ${missing.join(', ')}` },
-        { status: 500, headers: mobileNoStoreHeaders() },
+        { error: CALLING_UNAVAILABLE },
+        { status: 503, headers: mobileNoStoreHeaders() },
       )
     }
 
     const outgoingApplicationSid = await resolveTwimlAppSid()
     if (!outgoingApplicationSid) {
       return NextResponse.json(
-        { error: 'SavingKC CRM TwiML App is not configured' },
-        { status: 500, headers: mobileNoStoreHeaders() },
+        { error: CALLING_UNAVAILABLE },
+        { status: 503, headers: mobileNoStoreHeaders() },
       )
     }
 
@@ -57,8 +58,8 @@ export async function GET(req: NextRequest) {
       { headers: mobileNoStoreHeaders() },
     )
   } catch (error) {
-    const status = error instanceof MobileAuthError ? error.status : 500
-    const message = error instanceof MobileAuthError ? error.message : 'Internal error'
+    const status = error instanceof MobileAuthError ? error.status : 503
+    const message = error instanceof MobileAuthError ? error.message : CALLING_UNAVAILABLE
     return NextResponse.json({ error: message }, { status, headers: mobileNoStoreHeaders() })
   }
 }

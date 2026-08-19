@@ -1,5 +1,18 @@
 import { mobileConfig } from '../config'
-import type { CallOutcome, ConversationDetailResponse, ConversationsResponse, ConversationThread, CrmLead, LeadDetailResponse, LeadsResponse, MobileSession, VoiceTokenResponse } from '../types'
+import type {
+  CallIntentAllowedResponse,
+  CallIntentKind,
+  CallIntentResponse,
+  CallOutcome,
+  ConversationDetailResponse,
+  ConversationsResponse,
+  ConversationThread,
+  CrmLead,
+  LeadDetailResponse,
+  LeadsResponse,
+  MobileSession,
+  VoiceTokenResponse,
+} from '../types'
 
 type ApiOptions = {
   accessToken?: string | null
@@ -162,4 +175,32 @@ export async function sendMobileMessage(input: { accessToken: string; leadId: st
 
 export async function fetchVoiceToken(options: ApiOptions = {}): Promise<VoiceTokenResponse> {
   return mobileRequest<VoiceTokenResponse>('/api/mobile/v1/twilio/token', options)
+}
+
+export async function requestMobileCallIntent(input: {
+  accessToken: string
+  phone: string
+  callerId: string
+  kind: CallIntentKind
+  leadId?: string | null
+  prospectPhoneId?: string | null
+  clientAttemptId: string
+}): Promise<CallIntentAllowedResponse> {
+  const payload = await mobileRequest<CallIntentResponse>('/api/mobile/v1/twilio/call-intents', {
+    accessToken: input.accessToken,
+    method: 'POST',
+    body: {
+      phone: input.phone,
+      callerId: input.callerId,
+      kind: input.kind,
+      leadId: input.leadId ?? null,
+      prospectPhoneId: input.prospectPhoneId ?? null,
+      clientAttemptId: input.clientAttemptId,
+    },
+  })
+  if (!payload.allowed) throw new CrmApiError(payload.error || payload.reason || 'This call is not allowed.')
+  if (!payload.intent || !payload.to || !payload.callerId || !payload.clientAttemptId) {
+    throw new CrmApiError('Call authorization returned an incomplete response.')
+  }
+  return payload
 }

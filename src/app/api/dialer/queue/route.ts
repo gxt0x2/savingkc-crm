@@ -3,6 +3,7 @@ export const revalidate = 0
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { isWithinDialerCallingHours, phoneLookupVariants } from '@/lib/dialer-call-policy'
 
 const NO_STORE_HEADERS: HeadersInit = {
   'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
@@ -25,6 +26,7 @@ const LEAD_SELECT = [
   'is_favorite',
   'source',
   'station',
+  'classification',
   'priority',
   'seller_situation',
   'motivation_score',
@@ -35,6 +37,49 @@ const LEAD_SELECT = [
 
 const FOLLOWUP_TYPES = ['task', 'appointment', 'follow_up', 'callback', 'send_offer']
 const CONTACT_TYPES = ['call', 'voicemail', 'sms', 'sms_sent', 'sms_received', 'sms_inbound']
+
+interface DialerQueueLeadRow {
+  id: string
+  phone: string | null
+  station: string | null
+  classification: string | null
+  [key: string]: unknown
+}
+
+async function activeSuppressedPhones(leads: DialerQueueLeadRow[]): Promise<Set<string>> {
+  const variants = Array.from(new Set(leads.flatMap((lead) => phoneLookupVariants(lead.phone))))
+  const blocked = new Set<string>()
+  for (let index = 0; index < variants.length; index += 100) {
+    const { data, error } = await supabase
+      .from('sms_opt_outs')
+      .select('phone')
+      .in('phone', variants.slice(index, index + 100))
+      .eq('is_opted_out', true)
+      .limit(1000)
+    if (error) throw new Error(error.message)
+    for (const row of data ?? []) {
+      const normalized = phoneLookupVariants((row as { phone?: string | null }).phone).find((value) => value.startsWith('+1'))
+      if (normalized) blocked.add(normalized)
+    }
+  }
+  return blocked
+}
+
+function isTerminalLead(lead: DialerQueueLeadRow): boolean {
+  return ['dead', 'closed_lost'].includes(lead.station?.toLowerCase() ?? '')
+    || lead.classification?.toLowerCase() === 'dead'
+}
+
+export function filterDialerQueueLeads(
+  leads: DialerQueueLeadRow[],
+  suppressedPhones: ReadonlySet<string>,
+): DialerQueueLeadRow[] {
+  return leads.filter((lead) => {
+    if (isTerminalLead(lead)) return false
+    const normalized = phoneLookupVariants(lead.phone).find((value) => value.startsWith('+1'))
+    return Boolean(normalized && !suppressedPhones.has(normalized))
+  })
+}
 
 function parseLeadIds(value: string | null): string[] {
   if (!value) return []
@@ -97,7 +142,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: leadError.message }, { status: 500, headers: NO_STORE_HEADERS })
     }
 
-    const normalizedLeadRows = (leadRows || []) as unknown as Array<{ id: string }>
+    const rawLeadRows = (leadRows || []) as unknown as DialerQueueLeadRow[]
+    const suppressedPhones = await activeSuppressedPhones(rawLeadRows)
+    const normalizedLeadRows = filterDialerQueueLeads(rawLeadRows, suppressedPhones)
     const leadIds = Array.from(new Set(
       normalizedLeadRows
         .map((row) => row.id)
@@ -106,7 +153,14 @@ export async function GET(req: NextRequest) {
 
     if (leadIds.length === 0) {
       return NextResponse.json(
-        { success: true, leads: [], followups: [], contactActivities: [], prospects: [] },
+        {
+          success: true,
+          leads: [],
+          followups: [],
+          contactActivities: [],
+          prospects: [],
+          queuePolicy: { callingWindowOpen: isWithinDialerCallingHours() },
+        },
         { headers: NO_STORE_HEADERS },
       )
     }
@@ -153,6 +207,7 @@ export async function GET(req: NextRequest) {
         followups: followups || [],
         contactActivities: contactActivities || [],
         prospects: prospects || [],
+        queuePolicy: { callingWindowOpen: isWithinDialerCallingHours() },
       },
       { headers: NO_STORE_HEADERS },
     )

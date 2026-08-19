@@ -10,6 +10,7 @@ export const revalidate = 0
 
 const AccessToken = twilio.jwt.AccessToken
 const VoiceGrant = AccessToken.VoiceGrant
+const CALLING_UNAVAILABLE = 'Calling is temporarily unavailable'
 
 const NO_STORE_HEADERS: HeadersInit = {
   'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
@@ -47,8 +48,8 @@ export async function GET() {
     const missing = required.filter((k) => !cleanTwilioEnv(k))
     if (missing.length > 0) {
       return NextResponse.json(
-        { error: `Missing required env vars: ${missing.join(', ')}` },
-        { status: 500, headers: NO_STORE_HEADERS }
+        { error: CALLING_UNAVAILABLE },
+        { status: 503, headers: NO_STORE_HEADERS }
       )
     }
 
@@ -61,7 +62,10 @@ export async function GET() {
 
     const twimlAppSid = await resolveTwimlAppSid()
     if (!twimlAppSid) {
-      throw new Error('SavingKC CRM TwiML App is not configured')
+      return NextResponse.json(
+        { error: CALLING_UNAVAILABLE },
+        { status: 503, headers: NO_STORE_HEADERS },
+      )
     }
     const voiceGrant = new VoiceGrant({
       outgoingApplicationSid: twimlAppSid,
@@ -78,11 +82,11 @@ export async function GET() {
     )
     token.addGrant(voiceGrant)
     return NextResponse.json(
-      { token: token.toJwt(), identity, callerId, twimlAppSid },
+      { token: token.toJwt(), identity, callerId },
       { headers: NO_STORE_HEADERS }
     )
   } catch (err) {
     console.error('twilio-token error:', err)
-    return NextResponse.json({ error: 'Failed to generate token' }, { status: 500, headers: NO_STORE_HEADERS })
+    return NextResponse.json({ error: CALLING_UNAVAILABLE }, { status: 503, headers: NO_STORE_HEADERS })
   }
 }

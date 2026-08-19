@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { buildFormLeadCallbackIntro } from '@/lib/lead-form-callback'
 import { supabase } from '@/lib/supabase-lazy'
+import { evaluateOutboundDialerCall, recordBlockedDialerCall } from '@/lib/server/dialer-call-eligibility'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -39,8 +41,10 @@ async function claimCallbackBatch(input: {
   trigger: string
   agentCallSid: string
   source: string
-}): Promise<{ claimed: boolean; winnerAgent?: string }> {
-  if (!input.leadId || !input.batchId) return { claimed: true }
+}): Promise<{ claimed: boolean; unavailable?: boolean; winnerAgent?: string }> {
+  if (!input.leadId || !input.batchId) {
+    return { claimed: false, unavailable: true }
+  }
 
   const claimMetadata = {
     source: input.source,
@@ -68,7 +72,7 @@ async function claimCallbackBatch(input: {
 
   if (claimError || !claim?.id) {
     console.error('[IVR/form-lead-agent-callback] claim insert failed:', claimError)
-    return { claimed: true }
+    return { claimed: false, unavailable: true }
   }
 
   const claimWindow = new Date(Date.now() - 5 * 60 * 1000).toISOString()
@@ -88,7 +92,7 @@ async function claimCallbackBatch(input: {
 
   if (claimsError || !claims?.length) {
     console.error('[IVR/form-lead-agent-callback] claim lookup failed:', claimsError)
-    return { claimed: true }
+    return { claimed: false, unavailable: true }
   }
 
   const winner = claims[0]
@@ -99,6 +103,15 @@ async function claimCallbackBatch(input: {
 }
 
 export async function POST(req: Request) {
+  let signatureIsValid = false
+  try {
+    signatureIsValid = await validateTwilioWebhook(req)
+  } catch (error) {
+    console.error('[IVR/form-lead-agent-callback] Twilio signature validation failed:', error)
+  }
+  if (!signatureIsValid) {
+    return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', 403)
+  }
   const url = new URL(req.url)
   const leadId = url.searchParams.get('leadId') || ''
   const leadPhone = url.searchParams.get('leadPhone') || ''
@@ -122,10 +135,30 @@ export async function POST(req: Request) {
 </Response>`)
   }
 
+  const policyInput = {
+    phone: leadPhone,
+    leadId: leadId || null,
+    prospectPhoneId: null,
+    source: 'form_lead_callback' as const,
+    identity: agentName,
+    callerId,
+    callSid: agentCallSid,
+    clientAttemptId: batchId || null,
+  }
+  const initialPolicy = await evaluateOutboundDialerCall(policyInput)
+  if (!initialPolicy.allowed) {
+    await recordBlockedDialerCall(policyInput, initialPolicy)
+    return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Call blocked by contact policy. Review the contact record.</Say>
+  <Hangup/>
+</Response>`)
+  }
+
   const claim = await claimCallbackBatch({
     leadId,
     batchId,
-    leadPhone,
+    leadPhone: initialPolicy.normalizedPhone,
     callerId,
     agentName,
     agentPhone,
@@ -135,6 +168,13 @@ export async function POST(req: Request) {
   })
 
   if (!claim.claimed) {
+    if (claim.unavailable) {
+      return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">The callback could not be safely claimed. Please review the lead and try again.</Say>
+  <Hangup/>
+</Response>`)
+    }
     const winner = claim.winnerAgent || 'another teammate'
     return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -143,14 +183,27 @@ export async function POST(req: Request) {
 </Response>`)
   }
 
+  // Claiming can involve multiple database round trips. Re-run the complete
+  // policy afterward so a suppression or terminal status written during that
+  // window still wins immediately before the seller leg is emitted.
+  const policy = await evaluateOutboundDialerCall(policyInput)
+  if (!policy.allowed) {
+    await recordBlockedDialerCall(policyInput, policy)
+    return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Call blocked by contact policy. Review the contact record.</Say>
+  <Hangup/>
+</Response>`)
+  }
+
   const intro = buildFormLeadCallbackIntro({ fullName, address, city })
   const resultAction = `${BASE_URL}/api/ivr/form-lead-agent-callback-result?leadId=${escParam(leadId)}&amp;leadPhone=${escParam(leadPhone)}&amp;callerId=${escParam(callerId)}&amp;trigger=${escParam(trigger)}&amp;batchId=${escParam(batchId)}&amp;agentName=${escParam(agentName)}&amp;agentPhone=${escParam(agentPhone)}`
-  const recordingCallback = `${BASE_URL}/api/twilio-recording-callback?source=${escParam(callbackSource)}&amp;from=${escParam(leadPhone)}&amp;leadId=${escParam(leadId)}&amp;calledNumber=${escParam(callerId)}`
+  const recordingCallback = `${BASE_URL}/api/twilio-recording-callback?source=${escParam(callbackSource)}&amp;from=${escParam(policy.normalizedPhone)}&amp;leadId=${escParam(leadId)}&amp;calledNumber=${escParam(callerId)}`
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna">${escXml(intro)}</Say>
   <Dial action="${resultAction}" method="POST" timeout="20" callerId="${escXml(callerId)}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${recordingCallback}" recordingStatusCallbackMethod="POST">
-    <Number>${escXml(leadPhone)}</Number>
+    <Number>${escXml(policy.normalizedPhone)}</Number>
   </Dial>
 </Response>`
 

@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+const INVALID_TWILIO_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>'
+
+function invalidTwilioResponse() {
+  return new NextResponse(INVALID_TWILIO_TWIML, {
+    status: 403,
+    headers: { 'Content-Type': 'text/xml', 'Cache-Control': 'no-store' },
+  })
+}
 
 const COLD_CALL_NUMBERS = new Set([
   '+18163100845', '+18162538313', '+18164761344', '+18164761589',
@@ -22,6 +31,13 @@ const DEFAULT_GREETING = `You've reached Saving KC Homebuyers. No one is availab
 const COLD_GREETING = `Hey, sorry we missed you. Leave a message after the beep and we'll call you right back.`
 
 export async function POST(req: Request) {
+  try {
+    if (!(await validateTwilioWebhook(req))) return invalidTwilioResponse()
+  } catch (error) {
+    console.error('[IVR/voicemail] Twilio signature validation failed:', error)
+    return invalidTwilioResponse()
+  }
+
   try {
     const url = new URL(req.url)
     const agent = url.searchParams.get('agent') || ''
